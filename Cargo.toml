@@ -1,0 +1,39 @@
+[workspace]
+members = [
+  "crates/compose-core",
+  "crates/compose-ui",
+  "crates/compose-render-wgpu",
+  "crates/compose-platform",
+  "crates/compose-devtools",
+  "crates/compose-macros",
+  "examples/desktop_counter",
+  "examples/textfield_ime",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.75"
+
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "1"
+log = "0.4"
+env_logger = "0.11"
+parking_lot = "0.12"
+smallvec = "1"
+slotmap = "1"
+bitflags = "2"
+
+# Layout
+taffy = { version = "0.3", default-features = true }
+
+# Platform + GPU
+winit = { version = "0.29", default-features = true }
+wgpu = { version = "0.19", features = ["wgsl"] }
+pollster = "0.3"
+
+# Text
+ab_glyph = "0.2"
+fontdb = "0.15"

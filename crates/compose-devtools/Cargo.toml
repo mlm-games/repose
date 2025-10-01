@@ -1,0 +1,9 @@
+[package]
+name = "compose-devtools"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+compose-core = { path = "../compose-core", version = "0.1.0" }
+log = { workspace = true }
