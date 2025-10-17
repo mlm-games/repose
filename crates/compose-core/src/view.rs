@@ -4,15 +4,19 @@ use std::rc::Rc;
 pub type ViewId = u64;
 
 pub type Callback = Rc<dyn Fn()>;
+pub type ScrollCallback = Rc<dyn Fn(f32)>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum ViewKind {
     Surface,
     Box,
     Row,
     Column,
     Stack,
-    ScrollV,
+    ScrollV {
+        on_scroll: Option<ScrollCallback>,
+        set_viewport_height: Option<Rc<dyn Fn(f32)>>,
+    },
     Text {
         text: String,
         color: Color,
@@ -26,6 +30,39 @@ pub enum ViewKind {
         state_key: ViewId,
         hint: String,
     },
+}
+
+impl std::fmt::Debug for ViewKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ViewKind::Surface => write!(f, "Surface"),
+            ViewKind::Box => write!(f, "Box"),
+            ViewKind::Row => write!(f, "Row"),
+            ViewKind::Column => write!(f, "Column"),
+            ViewKind::Stack => write!(f, "Stack"),
+            ViewKind::ScrollV { .. } => write!(f, "ScrollV"),
+            ViewKind::Text {
+                text,
+                color,
+                font_size,
+            } => f
+                .debug_struct("Text")
+                .field("text", text)
+                .field("color", color)
+                .field("font_size", font_size)
+                .finish(),
+            ViewKind::Button { text, .. } => f
+                .debug_struct("Button")
+                .field("text", text)
+                .field("on_click", &"<callback>")
+                .finish(),
+            ViewKind::TextField { state_key, hint } => f
+                .debug_struct("TextField")
+                .field("state_key", state_key)
+                .field("hint", hint)
+                .finish(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -88,50 +125,3 @@ pub enum SceneNode {
         size: f32,
     },
 }
-
-// impl View {
-//     pub fn child(self, children: impl IntoChildren) -> Self {
-//         self.with_children(children.into_children())
-//     }
-// }
-
-// pub trait IntoChildren {
-//     fn into_children(self) -> Vec<View>;
-// }
-
-// impl IntoChildren for View {
-//     fn into_children(self) -> Vec<View> {
-//         vec![self]
-//     }
-// }
-
-// impl<const N: usize> IntoChildren for [View; N] {
-//     fn into_children(self) -> Vec<View> {
-//         self.into()
-//     }
-// }
-
-// impl IntoChildren for Vec<View> {
-//     fn into_children(self) -> Vec<View> {
-//         self
-//     }
-// }
-
-// // Support tuple nesting like Compose's Column { Text(); Button() }
-// macro_rules! impl_into_children_tuple {
-//     ($($t:ident),+) => {
-//         impl<$($t: IntoChildren),+> IntoChildren for ($($t,)+) {
-//             fn into_children(self) -> Vec<View> {
-//                 let ($($t,)+) = self;
-//                 let mut v = Vec::new();
-//                 $(v.extend($t.into_children());)+
-//                 v
-//             }
-//         }
-//     };
-// }
-
-// impl_into_children_tuple!(A, B);
-// impl_into_children_tuple!(A, B, C);
-// impl_into_children_tuple!(A, B, C, D);
-// impl_into_children_tuple!(A, B, C, D, E);

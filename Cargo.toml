@@ -8,13 +8,16 @@ members = [
   "crates/compose-macros",
   "examples/desktop_counter",
   "examples/textfield_ime",
+  "examples/lazy_list",
+  "examples/animation_demo",
 ]
 resolver = "2"
 
 [workspace.package]
 edition = "2021"
 license = "MIT OR Apache-2.0"
-rust-version = "1.75"
+# Winit 0.30 MSRV policy is 1.80
+rust-version = "1.80"
 
 [workspace.dependencies]
 anyhow = "1"
@@ -26,14 +29,14 @@ smallvec = "1"
 slotmap = "1"
 bitflags = "2"
 
-# Layout
-taffy = { version = "0.3", default-features = true }
+# Layout (latest)
+taffy = { version = "0.9.1", default-features = true }
 
-# Platform + GPU
-winit = { version = "0.29", default-features = true }
-wgpu = { version = "0.19", features = ["wgsl"] }
-pollster = "0.3"
+# Platform + GPU (latest)
+winit = { version = "0.30.12", default-features = true }
+wgpu = { version = "27.0.1", features = ["wgsl"] }
+pollster = "0.4.0"
 
-# Text
-ab_glyph = "0.2"
-fontdb = "0.15"
+# Text (latest)
+ab_glyph = "0.2.31"
+fontdb = "0.23.0"

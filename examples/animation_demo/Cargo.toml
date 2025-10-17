@@ -1,6 +1,6 @@
 [package]
-name = "desktop_counter"
-version = "0.1.0"
+name = "animation_demo"
+version = "0.2.0"
 edition = "2021"
 publish = false
 
@@ -12,3 +12,4 @@ compose-platform = { path = "../../crates/compose-platform", version = "0.2.0", 
 ] }
 env_logger = { workspace = true }
 anyhow = { workspace = true }
+log = { workspace = true }

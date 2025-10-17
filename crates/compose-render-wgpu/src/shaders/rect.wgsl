@@ -1,40 +1,51 @@
-struct VSIn {
-  @location(0) xywh_r: vec4<f32>,
-  @location(1) color_a: vec4<f32>, // color in 1, but we'll forward through
-};
 struct VSOut {
-  @builtin(position) pos: vec4<f32>,
-  @location(0) color: vec4<f32>,
-  @location(1) xywh_r: vec4<f32>,
+    @builtin(position) pos: vec4<f32>,
+    @location(0) color: vec4<f32>,
+    @location(1) xywh: vec4<f32>, // NDC rect: xy = min corner, wh = extents
+    @location(2) radius: f32,     // NDC radius (min of x/y scale)
+    @location(3) pos_ndc: vec2<f32>, // interpolated NDC position
 };
+
 @vertex
-fn vs_main(@location(0) xywh_r: vec4<f32>, @location(1) color: vec4<f32>, @builtin(instance_index) i: u32, @builtin(vertex_index) v: u32) -> VSOut {
-  var positions = array<vec2<f32>, 6>(
-    vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 1.0),
-    vec2(0.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0)
-  );
-  let p = positions[v];
-  let xy = xywh_r.xy + p * xywh_r.zw;
-  var out: VSOut;
-  // convert to NDC (assuming framebuffer size baked into coordinates)
-  // Coordinates are already in pixel space; we map in fragment via screen size from uniforms normally.
-  // For simplicity, assume 1:1 mapping with a 0..width/height space mapped to -1..1 using a fixed viewport of 1280x800.
-  // The host side feeds rects in window-space; here we approximate using hardcoded 1280x800 mapping.
-  let w: f32 = 1280.0;
-  let h: f32 = 800.0;
-  let ndc = vec2((xy.x / w) * 2.0 - 1.0, 1.0 - (xy.y / h) * 2.0);
-  out.pos = vec4(ndc, 0.0, 1.0);
-  out.color = color;
-  out.xywh_r = xywh_r;
-  return out;
+fn vs_main(
+    @location(0) xywh: vec4<f32>,   // already in NDC
+    @location(1) radius: f32,
+    @location(2) color: vec4<f32>,
+    @builtin(vertex_index) v: u32
+) -> VSOut {
+    var positions = array<vec2<f32>, 6>(
+        vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 1.0),
+        vec2(0.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0)
+    );
+    let p = positions[v];
+    let pos_ndc = xywh.xy + p * xywh.zw;
+
+    var out: VSOut;
+    out.pos = vec4(pos_ndc, 0.0, 1.0);
+    out.xywh = xywh;
+    out.radius = radius;
+    out.color = color;
+    out.pos_ndc = pos_ndc;
+    return out;
+}
+
+// Signed distance to rounded rectangle in NDC, using iq's round-box SDF.
+// We treat xywh in NDC; radius is in NDC too.
+fn sdf_round_box(pos_ndc: vec2<f32>, xywh: vec4<f32>, r: f32) -> f32 {
+    let half = 0.5 * xywh.zw;
+    let center = xywh.xy + half;
+    let p = pos_ndc - center;
+    let q = abs(p) - (half - vec2<f32>(r, r));
+    let outside = max(q, vec2<f32>(0.0, 0.0));
+    let inside = min(max(q.x, q.y), 0.0);
+    return length(outside) + inside - r;
 }
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
-  // Rounded corners: discard outside radius
-  let r = in.xywh_r.w;
-  if (r > 0.0) {
-    let px = in.pos.xy; // NDC, not strictly correct; we will ignore precise rounding for simplicity.
-  }
-  return in.color;
+  // Compute smooth alpha based on distance and derivatives
+    let d = sdf_round_box(in.pos_ndc, in.xywh, in.radius);
+    let aa = length(fwidth(in.pos_ndc)); // screen-space derivative
+    let alpha = clamp(0.5 - d / aa, 0.0, 1.0);
+    return vec4(in.color.rgb, in.color.a * alpha);
 }

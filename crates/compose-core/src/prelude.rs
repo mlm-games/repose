@@ -1,9 +1,16 @@
+pub use crate::animation::*;
 pub use crate::color::Color;
 pub use crate::effects::{effect, on_unmount, Dispose};
+pub use crate::error::*;
 pub use crate::geometry::{Rect, Size, Vec2};
+pub use crate::input::*;
 pub use crate::modifier::Modifier;
-pub use crate::render_api::{RenderBackend, GlyphRasterConfig};
-pub use crate::runtime::{remember, remember_state, ComposeGuard, Scheduler, Frame, Key};
+pub use crate::render_api::{GlyphRasterConfig, RenderBackend};
+pub use crate::runtime::{
+    remember, remember_state, remember_state_with_key, remember_with_key, ComposeGuard, Frame,
+    Scheduler,
+};
+pub use crate::scope::{current_scope, scoped_effect, Scope};
+pub use crate::semantics::{Role, Semantics};
 pub use crate::signal::{signal, Signal};
-pub use crate::semantics::{Semantics, Role};
-pub use crate::view::{View, ViewId, ViewKind, Scene, SceneNode};
+pub use crate::view::{Scene, SceneNode, View, ViewId, ViewKind};
