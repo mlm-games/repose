@@ -7,7 +7,7 @@ thread_local! {
 }
 
 pub struct Scope {
-    pub inner: Rc<ScopeInner>,
+    inner: Rc<ScopeInner>,
 }
 
 struct ScopeInner {
