@@ -370,6 +370,27 @@ pub fn layout_and_paint(
             }
 
             ViewKind::Button { text, on_click } => {
+                // Default background if none provided
+                if v.modifier.background.is_none() {
+                    scene.nodes.push(SceneNode::Rect {
+                        rect,
+                        color: Color::from_hex("#34af82"),
+                        radius: v.modifier.clip_rounded.unwrap_or(6.0),
+                    });
+                }
+                // Label
+                scene.nodes.push(SceneNode::Text {
+                    rect: compose_core::Rect {
+                        x: rect.x + 12.0,
+                        y: rect.y + 10.0,
+                        w: rect.w - 24.0,
+                        h: rect.h - 20.0,
+                    },
+                    text: text.clone(),
+                    color: Color::WHITE,
+                    size: 16.0,
+                });
+
                 if v.modifier.click || on_click.is_some() {
                     hits.push(HitRegion {
                         id: v.id,

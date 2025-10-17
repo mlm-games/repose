@@ -8,7 +8,7 @@ fn app(s: &mut Scheduler) -> View {
     Surface(
         Modifier::new()
             .fill_max_size()
-            .background(Color::from_hex("#121212")),
+            .background(Color::from_hex("#221628")),
         Column(Modifier::new().padding(24.0).size(300.0, 200.0)).with_children(vec![
             Text(format!("Count: {}", count.get())).modifier(Modifier::new().padding(12.0)),
             Button("Increment", {

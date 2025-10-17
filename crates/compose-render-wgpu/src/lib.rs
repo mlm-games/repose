@@ -570,8 +570,14 @@ impl RenderBackend for WgpuBackend {
             let y0 = 1.0 - (y / fb_h) * 2.0;
             let x1 = ((x + w) / fb_w) * 2.0 - 1.0;
             let y1 = 1.0 - ((y + h) / fb_h) * 2.0;
-            [x0, y0, x1 - x0, y1 - y0]
+
+            let min_x = x0.min(x1);
+            let min_y = y0.min(y1);
+            let w_ndc = (x1 - x0).abs();
+            let h_ndc = (y1 - y0).abs();
+            [min_x, min_y, w_ndc, h_ndc]
         }
+
         fn to_ndc_scalar(px: f32, fb_dim: f32) -> f32 {
             (px / fb_dim) * 2.0
         }
@@ -639,7 +645,8 @@ impl RenderBackend for WgpuBackend {
                             let y = baseline - info.bearing_y;
                             glyphs.push(GlyphInstance {
                                 xywh: to_ndc(x, y, info.w, info.h, fb_w, fb_h),
-                                uv: [info.u0, info.v0, info.u1, info.v1],
+                                // flip V to match bottom→top NDC extents
+                                uv: [info.u0, info.v1, info.u1, info.v0],
                                 color: color.to_linear(),
                             });
                             pen_x += info.advance;
