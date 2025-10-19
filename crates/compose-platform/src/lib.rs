@@ -1,5 +1,6 @@
 use compose_core::*;
 use compose_ui::layout_and_paint;
+use compose_ui::textfield::{index_for_x, positions_for, TF_FONT_PX, TF_PADDING_X};
 
 #[cfg(feature = "desktop")]
 pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> anyhow::Result<()> {
@@ -8,12 +9,19 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
     use std::rc::Rc;
     use std::sync::Arc;
 
+    use compose_ui::TextFieldState;
     use winit::application::ApplicationHandler;
     use winit::dpi::{LogicalPosition, LogicalSize, PhysicalSize};
     use winit::event::{ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent};
     use winit::event_loop::EventLoop;
     use winit::keyboard::{KeyCode, PhysicalKey};
     use winit::window::{ImePurpose, Window, WindowAttributes};
+
+    enum ImeState {
+        Disabled,
+        Enabled,
+        Preedit,
+    }
 
     struct App {
         // App state
@@ -25,8 +33,10 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
         frame_cache: Option<Frame>,
         mouse_pos: (f32, f32),
         modifiers: Modifiers,
-        textfield_states: HashMap<u64, Rc<RefCell<compose_ui::textfield::TextFieldState>>>,
-        ime_active: bool,
+        textfield_states: HashMap<u64, Rc<RefCell<TextFieldState>>>,
+        ime_preedit: bool,
+        hover_id: Option<u64>,
+        capture_id: Option<u64>,
     }
 
     impl App {
@@ -41,7 +51,9 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                 mouse_pos: (0.0, 0.0),
                 modifiers: Modifiers::default(),
                 textfield_states: HashMap::new(),
-                ime_active: false,
+                ime_preedit: false,
+                hover_id: None,
+                capture_id: None,
             }
         }
 
@@ -49,6 +61,12 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
             if let Some(w) = &self.window {
                 w.request_redraw();
             }
+        }
+        fn tf_ensure_caret_visible(st: &mut TextFieldState) {
+            let px = TF_FONT_PX as u32;
+            let posv = positions_for(&st.text, px);
+            let caret_x = posv.get(st.caret_index()).copied().unwrap_or(0.0);
+            st.ensure_caret_visible(caret_x, st.inner_width);
         }
     }
 
@@ -125,22 +143,79 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         }
                     }
 
-                    // Keep IME candidate box aligned with focused TextField
-                    if self.ime_active {
-                        if let (Some(win), Some(focused_id), Some(frame)) = (
-                            self.window.as_ref(),
-                            self.sched.focused,
-                            self.frame_cache.as_ref(),
-                        ) {
-                            if let Some(h) = frame.hit_regions.iter().find(|h| h.id == focused_id) {
-                                let sf = win.scale_factor();
-                                win.set_ime_cursor_area(
-                                    LogicalPosition::new(
-                                        h.rect.x as f64 / sf,
-                                        h.rect.y as f64 / sf,
-                                    ),
-                                    LogicalSize::new(h.rect.w as f64 / sf, h.rect.h as f64 / sf),
-                                );
+                    if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
+                        if let Some(_sem) = f
+                            .semantics_nodes
+                            .iter()
+                            .find(|n| n.id == cid && n.role == Role::TextField)
+                        {
+                            if let Some(state_rc) = self.textfield_states.get(&cid) {
+                                use compose_ui::textfield::{
+                                    index_for_x, positions_for, TF_FONT_PX, TF_PADDING_X,
+                                };
+
+                                let mut state = state_rc.borrow_mut();
+                                let inner_x = f
+                                    .hit_regions
+                                    .iter()
+                                    .find(|h| h.id == cid)
+                                    .map(|h| h.rect.x + TF_PADDING_X)
+                                    .unwrap_or(0.0);
+                                let content_x = self.mouse_pos.0 - inner_x + state.scroll_offset;
+                                let px = TF_FONT_PX as u32;
+                                let idx = index_for_x(&state.text, px, content_x.max(0.0));
+                                state.drag_to(idx);
+
+                                // Scroll caret into view
+                                let posv = positions_for(&state.text, px);
+                                let caret_x = posv.get(state.caret_index()).copied().unwrap_or(0.0);
+                                // We also need inner width; get rect
+                                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
+                                    state.ensure_caret_visible(
+                                        caret_x,
+                                        hit.rect.w - 2.0 * TF_PADDING_X,
+                                    );
+                                }
+                                self.request_redraw();
+                            }
+                        }
+                    }
+
+                    // Pointer routing: hover + move/capture
+                    if let Some(f) = &self.frame_cache {
+                        let pos = Vec2 {
+                            x: self.mouse_pos.0,
+                            y: self.mouse_pos.1,
+                        };
+                        // Topmost hit (hits are z-sorted; take last that contains)
+                        let top = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos));
+
+                        // Hover target change
+                        let new_hover = top.map(|h| h.id);
+                        if new_hover != self.hover_id {
+                            self.hover_id = new_hover;
+                        }
+
+                        // Build PointerEvent
+                        let pe = compose_core::input::PointerEvent {
+                            id: compose_core::input::PointerId(0),
+                            kind: compose_core::input::PointerKind::Mouse,
+                            event: compose_core::input::PointerEventKind::Move,
+                            position: pos,
+                            pressure: 1.0,
+                            modifiers: self.modifiers,
+                        };
+
+                        // Deliver Move: captured first, else hover target
+                        if let Some(cid) = self.capture_id {
+                            if let Some(h) = f.hit_regions.iter().find(|h| h.id == cid) {
+                                if let Some(cb) = &h.on_pointer_move {
+                                    cb(pe.clone());
+                                }
+                            }
+                        } else if let Some(h) = top {
+                            if let Some(cb) = &h.on_pointer_move {
+                                cb(pe);
                             }
                         }
                     }
@@ -155,61 +230,113 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             x: self.mouse_pos.0,
                             y: self.mouse_pos.1,
                         };
-                        let mut clicked_focusable = false;
+                        if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos))
+                        {
+                            // Capture starts on press
+                            self.capture_id = Some(hit.id);
 
-                        for hit in &f.hit_regions {
-                            if hit.rect.contains(pos) {
-                                if let Some(cb) = &hit.on_click {
-                                    cb();
+                            // Focus & IME first for focusables (so state exists)
+                            if hit.focusable {
+                                self.sched.focused = Some(hit.id);
+                                self.textfield_states.entry(hit.id).or_insert_with(|| {
+                                    Rc::new(RefCell::new(
+                                        compose_ui::textfield::TextFieldState::new(),
+                                    ))
+                                });
+                                if let Some(win) = &self.window {
+                                    let sf = win.scale_factor();
+                                    win.set_ime_allowed(true);
+                                    win.set_ime_purpose(ImePurpose::Normal);
+                                    win.set_ime_cursor_area(
+                                        LogicalPosition::new(
+                                            hit.rect.x as f64 / sf,
+                                            hit.rect.y as f64 / sf,
+                                        ),
+                                        LogicalSize::new(
+                                            hit.rect.w as f64 / sf,
+                                            hit.rect.h as f64 / sf,
+                                        ),
+                                    );
                                 }
-
-                                if hit.focusable {
-                                    clicked_focusable = true;
-                                    self.sched.focused = Some(hit.id);
-
-                                    // Ensure state
-                                    self.textfield_states.entry(hit.id).or_insert_with(|| {
-                                        Rc::new(RefCell::new(
-                                            compose_ui::textfield::TextFieldState::new(),
-                                        ))
-                                    });
-
-                                    // Enable IME and set candidate box
-                                    if let Some(win) = &self.window {
-                                        let sf = win.scale_factor();
-                                        win.set_ime_allowed(true);
-                                        win.set_ime_purpose(ImePurpose::Normal);
-                                        win.set_ime_cursor_area(
-                                            LogicalPosition::new(
-                                                hit.rect.x as f64 / sf,
-                                                hit.rect.y as f64 / sf,
-                                            ),
-                                            LogicalSize::new(
-                                                hit.rect.w as f64 / sf,
-                                                hit.rect.h as f64 / sf,
-                                            ),
-                                        );
-                                        self.ime_active = true;
-                                    }
-                                }
-
-                                self.request_redraw();
-                                break;
                             }
-                        }
 
-                        // Click outside any focusable -> disable IME and clear focus.
-                        if !clicked_focusable {
-                            if self.ime_active {
+                            // PointerDown callback (legacy)
+                            if let Some(cb) = &hit.on_pointer_down {
+                                let pe = compose_core::input::PointerEvent {
+                                    id: compose_core::input::PointerId(0),
+                                    kind: compose_core::input::PointerKind::Mouse,
+                                    event: compose_core::input::PointerEventKind::Down(
+                                        compose_core::input::PointerButton::Primary,
+                                    ),
+                                    position: pos,
+                                    pressure: 1.0,
+                                    modifiers: self.modifiers,
+                                };
+                                cb(pe);
+                            }
+
+                            // Legacy click
+                            if let Some(cb) = &hit.on_click {
+                                cb();
+                            }
+
+                            // TextField: place caret and start drag selection
+                            if let Some(_sem) = f
+                                .semantics_nodes
+                                .iter()
+                                .find(|n| n.id == hit.id && n.role == Role::TextField)
+                            {
+                                if let Some(state_rc) = self.textfield_states.get(&hit.id) {
+                                    let mut state = state_rc.borrow_mut();
+                                    let inner_x = hit.rect.x + TF_PADDING_X;
+                                    let content_x =
+                                        self.mouse_pos.0 - inner_x + state.scroll_offset;
+                                    let px = TF_FONT_PX as u32;
+                                    let idx = index_for_x(&state.text, px, content_x.max(0.0));
+                                    state.begin_drag(idx, self.modifiers.shift);
+
+                                    // Scroll caret into view
+                                    let posv = positions_for(&state.text, px);
+                                    let caret_x =
+                                        posv.get(state.caret_index()).copied().unwrap_or(0.0);
+                                    state.ensure_caret_visible(
+                                        caret_x,
+                                        hit.rect.w - 2.0 * TF_PADDING_X,
+                                    );
+                                }
+                            }
+
+                            self.request_redraw();
+                        } else {
+                            // Click outside: drop focus/IME
+                            if self.ime_preedit {
                                 if let Some(win) = &self.window {
                                     win.set_ime_allowed(false);
                                 }
-                                self.ime_active = false;
+                                self.ime_preedit = false;
                             }
                             self.sched.focused = None;
                             self.request_redraw();
                         }
                     }
+                }
+                WindowEvent::MouseInput {
+                    state: ElementState::Released,
+                    button: MouseButton::Left,
+                    ..
+                } => {
+                    if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
+                        if let Some(_sem) = f
+                            .semantics_nodes
+                            .iter()
+                            .find(|n| n.id == cid && n.role == Role::TextField)
+                        {
+                            if let Some(state_rc) = self.textfield_states.get(&cid) {
+                                state_rc.borrow_mut().end_drag();
+                            }
+                        }
+                    }
+                    self.capture_id = None;
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
                     let dy = match delta {
@@ -261,31 +388,40 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                 match key_event.physical_key {
                                     PhysicalKey::Code(KeyCode::Backspace) => {
                                         state.delete_backward();
+                                        App::tf_ensure_caret_visible(&mut state);
                                         self.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::Delete) => {
                                         state.delete_forward();
+                                        App::tf_ensure_caret_visible(&mut state);
                                         self.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::ArrowLeft) => {
                                         state.move_cursor(-1, self.modifiers.shift);
+                                        App::tf_ensure_caret_visible(&mut state);
                                         self.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::ArrowRight) => {
                                         state.move_cursor(1, self.modifiers.shift);
+                                        App::tf_ensure_caret_visible(&mut state);
                                         self.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::Home) => {
                                         state.selection = 0..0;
+                                        App::tf_ensure_caret_visible(&mut state);
                                         self.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::End) => {
-                                        let end = state.text.len();
-                                        state.selection = end..end;
+                                        {
+                                            let end = state.text.len();
+                                            state.selection = end..end;
+                                        }
+                                        App::tf_ensure_caret_visible(&mut state);
                                         self.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::KeyA) if self.modifiers.ctrl => {
                                         state.selection = 0..state.text.len();
+                                        App::tf_ensure_caret_visible(&mut state);
                                         self.request_redraw();
                                     }
                                     _ => {}
@@ -294,13 +430,21 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         }
 
                         // Plain text input when IME is not active
-                        if !self.ime_active {
+                        if !self.ime_preedit
+                            && !self.modifiers.ctrl
+                            && !self.modifiers.alt
+                            && !self.modifiers.meta
+                        {
                             if let Some(text) = key_event.text.as_deref() {
                                 if !text.is_empty() {
                                     if let Some(focused_id) = self.sched.focused {
-                                        if let Some(state) = self.textfield_states.get(&focused_id)
+                                        if let Some(state_rc) =
+                                            self.textfield_states.get(&focused_id)
                                         {
-                                            state.borrow_mut().insert_text(text);
+                                            let mut st = state_rc.borrow_mut();
+
+                                            st.insert_text(text);
+                                            App::tf_ensure_caret_visible(&mut st);
                                             self.request_redraw();
                                         }
                                     }
@@ -317,22 +461,34 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             let mut state = state.borrow_mut();
                             match ime {
                                 Ime::Enabled => {
-                                    self.ime_active = true;
+                                    // IME allowed, but not necessarily composing
+                                    self.ime_preedit = false;
                                 }
                                 Ime::Preedit(text, cursor) => {
-                                    state.set_composition(text, cursor);
+                                    {
+                                        state.set_composition(text.clone(), cursor);
+                                    }
+                                    self.ime_preedit = !text.is_empty();
+                                    App::tf_ensure_caret_visible(&mut state);
                                     self.request_redraw();
                                 }
                                 Ime::Commit(text) => {
-                                    state.commit_composition(text);
+                                    {
+                                        state.commit_composition(text);
+                                    }
+                                    self.ime_preedit = false;
+                                    App::tf_ensure_caret_visible(&mut state);
                                     self.request_redraw();
                                 }
                                 Ime::Disabled => {
-                                    self.ime_active = false;
+                                    self.ime_preedit = false;
                                     if state.composition.is_some() {
-                                        state.cancel_composition();
-                                        self.request_redraw();
+                                        {
+                                            state.cancel_composition();
+                                        }
+                                        App::tf_ensure_caret_visible(&mut state);
                                     }
+                                    self.request_redraw();
                                 }
                             }
                         }

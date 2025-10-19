@@ -1,7 +1,67 @@
 use compose_core::*;
-use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
+use std::time::Duration;
+use std::{cell::RefCell, time::Instant};
+
+use ab_glyph::{Font, FontArc, PxScale, ScaleFont};
+use fontdb::Database;
+use std::sync::OnceLock;
+
+pub const TF_FONT_PX: f32 = 16.0;
+pub const TF_PADDING_X: f32 = 8.0;
+
+fn ui_font() -> &'static FontArc {
+    static FONT: OnceLock<FontArc> = OnceLock::new();
+    FONT.get_or_init(|| {
+        let mut db = Database::new();
+        db.load_system_fonts();
+        let query = fontdb::Query {
+            families: &[fontdb::Family::SansSerif],
+            ..Default::default()
+        };
+        let id = db.query(&query).expect("No system sans-serif font found");
+        let (source, _) = db.face_source(id).expect("Font face not found");
+        match source {
+            fontdb::Source::Binary(data) => {
+                FontArc::try_from_vec(data.as_ref().as_ref().to_vec()).expect("load font")
+            }
+            fontdb::Source::File(path) | fontdb::Source::SharedFile(path, _) => {
+                let bytes = std::fs::read(path).expect("read font file");
+                FontArc::try_from_vec(bytes).expect("load font")
+            }
+        }
+    })
+}
+
+// Returns cumulative X positions per codepoint boundary (len+1 entries; pos[0] = 0, pos[i] = advance up to char i)
+pub fn positions_for(text: &str, px: u32) -> Vec<f32> {
+    let scaled = ui_font().as_scaled(PxScale::from(px as f32));
+    let mut x = 0.0;
+    let mut pos = Vec::with_capacity(text.len() + 1);
+    pos.push(0.0);
+    for ch in text.chars() {
+        let gid = scaled.glyph_id(ch);
+        x += scaled.h_advance(gid);
+        pos.push(x);
+    }
+    pos
+}
+
+// Clamp to [0..=len], nearest insertion point for a given x (content coords, before scroll)
+pub fn index_for_x(text: &str, px: u32, x: f32) -> usize {
+    let pos = positions_for(text, px);
+    let mut best_i = 0usize;
+    let mut best_d = f32::INFINITY;
+    for i in 0..pos.len() {
+        let d = (pos[i] - x).abs();
+        if d < best_d {
+            best_d = d;
+            best_i = i;
+        }
+    }
+    best_i
+}
 
 #[derive(Clone, Debug)]
 pub struct TextFieldState {
@@ -9,6 +69,9 @@ pub struct TextFieldState {
     pub selection: Range<usize>,
     pub composition: Option<Range<usize>>, // IME composition range
     pub scroll_offset: f32,
+    pub drag_anchor: Option<usize>, // caret index where drag began
+    pub blink_start: Instant,       // caret's
+    pub inner_width: f32,
 }
 
 impl TextFieldState {
@@ -18,6 +81,9 @@ impl TextFieldState {
             selection: 0..0,
             composition: None,
             scroll_offset: 0.0,
+            drag_anchor: None,
+            blink_start: Instant::now(),
+            inner_width: 0.0,
         }
     }
 
@@ -28,6 +94,7 @@ impl TextFieldState {
         self.text.replace_range(start..end, text);
         let new_pos = start + text.len();
         self.selection = new_pos..new_pos;
+        self.reset_caret_blink();
     }
 
     pub fn delete_backward(&mut self) {
@@ -37,6 +104,7 @@ impl TextFieldState {
                 self.text.remove(pos);
                 self.selection = pos..pos;
             }
+            self.reset_caret_blink();
         } else {
             self.insert_text("");
         }
@@ -47,6 +115,7 @@ impl TextFieldState {
             if self.selection.start < self.text.len() {
                 self.text.remove(self.selection.start);
             }
+            self.reset_caret_blink();
         } else {
             self.insert_text("");
         }
@@ -64,6 +133,7 @@ impl TextFieldState {
         } else {
             self.selection = pos..pos;
         }
+        self.reset_caret_blink();
     }
 
     pub fn set_composition(&mut self, text: String, cursor: Option<(usize, usize)>) {
@@ -82,6 +152,7 @@ impl TextFieldState {
         if let Some((cursor_start, cursor_end)) = cursor {
             self.selection = (start + cursor_start)..(start + cursor_end);
         }
+        self.reset_caret_blink();
     }
 
     pub fn commit_composition(&mut self, text: String) {
@@ -90,12 +161,14 @@ impl TextFieldState {
             let new_pos = range.start + text.len();
             self.selection = new_pos..new_pos;
         }
+        self.reset_caret_blink();
     }
 
     pub fn cancel_composition(&mut self) {
         if let Some(range) = self.composition.take() {
             self.text.replace_range(range, "");
         }
+        self.reset_caret_blink();
     }
 
     pub fn delete_surrounding(&mut self, before_bytes: usize, after_bytes: usize) {
@@ -116,6 +189,60 @@ impl TextFieldState {
             self.text.replace_range(start..end, "");
             self.selection = start..start;
         }
+    }
+
+    // Begin a selection on press; if extend==true, keep existing anchor; else set new anchor
+    pub fn begin_drag(&mut self, idx: usize, extend: bool) {
+        if extend {
+            let anchor = self.selection.start;
+            self.selection = anchor.min(idx)..anchor.max(idx);
+            self.drag_anchor = Some(anchor);
+        } else {
+            self.selection = idx..idx;
+            self.drag_anchor = Some(idx);
+        }
+        self.reset_caret_blink();
+    }
+
+    // Extend selection during drag; updates end relative to anchor
+    pub fn drag_to(&mut self, idx: usize) {
+        if let Some(anchor) = self.drag_anchor {
+            self.selection = anchor.min(idx)..anchor.max(idx);
+        }
+        self.reset_caret_blink();
+    }
+
+    pub fn end_drag(&mut self) {
+        self.drag_anchor = None;
+    }
+
+    pub fn caret_index(&self) -> usize {
+        self.selection.end
+    }
+
+    // Keep caret visible inside inner content width
+    pub fn ensure_caret_visible(&mut self, caret_x: f32, inner_width: f32) {
+        // small 2px inset
+        let inset = 2.0;
+        let left = self.scroll_offset + inset;
+        let right = self.scroll_offset + inner_width - inset;
+        if caret_x < left {
+            self.scroll_offset = (caret_x - inset).max(0.0);
+        } else if caret_x > right {
+            self.scroll_offset = (caret_x - inner_width + inset).max(0.0);
+        }
+    }
+
+    pub fn reset_caret_blink(&mut self) {
+        self.blink_start = Instant::now();
+    }
+    pub fn caret_visible(&self) -> bool {
+        const PERIOD: Duration = Duration::from_millis(500);
+        ((Instant::now() - self.blink_start).as_millis() / PERIOD.as_millis() as u128) % 2 == 0
+    }
+
+    pub fn set_inner_width(&mut self, w: f32) {
+        self.inner_width = w.max(0.0);
     }
 }
 

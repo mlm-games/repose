@@ -1,9 +1,15 @@
-use crate::{Color, Size};
+use std::rc::Rc;
+
+use crate::{Color, PointerEvent, Size};
 
 #[derive(Clone, Debug)]
-pub struct Border { pub width: f32, pub color: Color, pub radius: f32 }
+pub struct Border {
+    pub width: f32,
+    pub color: Color,
+    pub radius: f32,
+}
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct Modifier {
     pub padding: Option<f32>,
     pub size: Option<Size>,
@@ -14,23 +20,96 @@ pub struct Modifier {
     pub semantics_label: Option<String>,
     pub z_index: f32,
     pub clip_rounded: Option<f32>,
+    // (desktop/mobile gestures build on top later)
+    pub on_pointer_down: Option<Rc<dyn Fn(PointerEvent)>>,
+    pub on_pointer_move: Option<Rc<dyn Fn(PointerEvent)>>,
+    pub on_pointer_up: Option<Rc<dyn Fn(PointerEvent)>>,
 }
 
 impl Default for Border {
-    fn default() -> Self { Border { width: 1.0, color: Color::WHITE, radius: 0.0 } }
+    fn default() -> Self {
+        Border {
+            width: 1.0,
+            color: Color::WHITE,
+            radius: 0.0,
+        }
+    }
+}
+
+impl std::fmt::Debug for Modifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Modifier")
+            .field("padding", &self.padding)
+            .field("size", &self.size)
+            .field("fill_max", &self.fill_max)
+            .field("background", &self.background)
+            .field("border", &self.border)
+            .field("click", &self.click)
+            .field("semantics_label", &self.semantics_label)
+            .field("z_index", &self.z_index)
+            .field("clip_rounded", &self.clip_rounded)
+            .finish()
+    }
 }
 
 impl Modifier {
-    pub fn new() -> Self { Self::default() }
-    pub fn padding(mut self, px: f32) -> Self { self.padding = Some(px); self }
-    pub fn size(mut self, w: f32, h: f32) -> Self { self.size = Some(Size{width:w, height:h}); self }
-    pub fn fill_max_size(mut self) -> Self { self.fill_max = true; self }
-    pub fn background(mut self, color: Color) -> Self { self.background = Some(color); self }
-    pub fn border(mut self, width: f32, color: Color, radius: f32) -> Self {
-        self.border = Some(Border{ width, color, radius }); self
+    pub fn new() -> Self {
+        Self::default()
     }
-    pub fn clickable(mut self) -> Self { self.click = true; self }
-    pub fn semantics(mut self, label: impl Into<String>) -> Self { self.semantics_label = Some(label.into()); self }
-    pub fn z_index(mut self, z: f32) -> Self { self.z_index = z; self }
-    pub fn clip_rounded(mut self, r: f32) -> Self { self.clip_rounded = Some(r); self }
+    pub fn padding(mut self, px: f32) -> Self {
+        self.padding = Some(px);
+        self
+    }
+    pub fn size(mut self, w: f32, h: f32) -> Self {
+        self.size = Some(Size {
+            width: w,
+            height: h,
+        });
+        self
+    }
+    pub fn fill_max_size(mut self) -> Self {
+        self.fill_max = true;
+        self
+    }
+    pub fn background(mut self, color: Color) -> Self {
+        self.background = Some(color);
+        self
+    }
+    pub fn border(mut self, width: f32, color: Color, radius: f32) -> Self {
+        self.border = Some(Border {
+            width,
+            color,
+            radius,
+        });
+        self
+    }
+    pub fn clickable(mut self) -> Self {
+        self.click = true;
+        self
+    }
+    pub fn semantics(mut self, label: impl Into<String>) -> Self {
+        self.semantics_label = Some(label.into());
+        self
+    }
+    pub fn z_index(mut self, z: f32) -> Self {
+        self.z_index = z;
+        self
+    }
+    pub fn clip_rounded(mut self, r: f32) -> Self {
+        self.clip_rounded = Some(r);
+        self
+    }
+
+    pub fn on_pointer_down(mut self, f: impl Fn(PointerEvent) + 'static) -> Self {
+        self.on_pointer_down = Some(Rc::new(f));
+        self
+    }
+    pub fn on_pointer_move(mut self, f: impl Fn(PointerEvent) + 'static) -> Self {
+        self.on_pointer_move = Some(Rc::new(f));
+        self
+    }
+    pub fn on_pointer_up(mut self, f: impl Fn(PointerEvent) + 'static) -> Self {
+        self.on_pointer_up = Some(Rc::new(f));
+        self
+    }
 }

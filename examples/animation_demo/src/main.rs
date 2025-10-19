@@ -93,7 +93,7 @@ fn app(_s: &mut Scheduler) -> View {
                             "✓ Idle"
                         },
                     ),
-                    14.0,
+                    64.0,
                 ),
                 Color::from_hex("#888888"),
             )

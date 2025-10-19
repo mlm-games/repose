@@ -1,15 +1,17 @@
 #![allow(non_snake_case)]
 pub mod lazy;
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::{cell::RefCell, cmp::Ordering};
 
 use compose_core::*;
 use taffy::style::{AlignItems, Dimension, Display, FlexDirection, JustifyContent, Style};
 
 pub mod textfield;
 pub use textfield::{TextField, TextFieldState};
+
+use crate::textfield::{positions_for, TF_FONT_PX, TF_PADDING_X};
 
 pub fn Surface(modifier: Modifier, child: View) -> View {
     let mut v = View::new(0, ViewKind::Surface).modifier(modifier);
@@ -398,6 +400,10 @@ pub fn layout_and_paint(
                         on_click: on_click.clone(),
                         on_scroll: None,
                         focusable: false,
+                        on_pointer_down: v.modifier.on_pointer_down.clone(),
+                        on_pointer_move: v.modifier.on_pointer_move.clone(),
+                        on_pointer_up: v.modifier.on_pointer_up.clone(),
+                        z_index: v.modifier.z_index,
                     });
                 }
                 sems.push(SemNode {
@@ -416,57 +422,132 @@ pub fn layout_and_paint(
                     on_click: None,
                     on_scroll: None,
                     focusable: true,
+                    on_pointer_down: None,
+                    on_pointer_move: None,
+                    on_pointer_up: None,
+                    z_index: v.modifier.z_index,
                 });
 
-                // Render TextField content from state
-                let display_text = if let Some(state) = textfield_states.get(&v.id) {
-                    let state = state.borrow();
-                    if state.text.is_empty() {
-                        hint.clone()
-                    } else {
-                        state.text.clone()
-                    }
-                } else {
-                    hint.clone()
+                // Inner content rect (padding)
+                let inner = compose_core::Rect {
+                    x: rect.x + TF_PADDING_X,
+                    y: rect.y + 8.0,
+                    w: rect.w - 2.0 * TF_PADDING_X,
+                    h: rect.h - 16.0,
                 };
+                if let Some(state_rc) = textfield_states.get(&v.id) {
+                    state_rc.borrow_mut().set_inner_width(inner.w);
 
-                scene.nodes.push(SceneNode::Text {
-                    rect: compose_core::Rect {
-                        x: rect.x + 8.0,
-                        y: rect.y + 8.0,
-                        w: rect.w - 16.0,
-                        h: rect.h - 16.0,
-                    },
-                    text: display_text.clone(),
-                    color: Color::from_hex("#CCCCCC"),
-                    size: 16.0,
-                });
+                    let state = state_rc.borrow();
+                    let text = &state.text;
+                    let px = TF_FONT_PX as u32;
 
-                sems.push(SemNode {
-                    id: v.id,
-                    role: Role::TextField,
-                    label: Some(display_text),
-                    rect,
-                    focused: false,
-                });
-            }
+                    // Selection highlight
+                    if state.selection.start != state.selection.end && !text.is_empty() {
+                        let pos = positions_for(text, px);
+                        let sx = pos[state.selection.start] - state.scroll_offset;
+                        let ex = pos[state.selection.end] - state.scroll_offset;
+                        let sel_x = inner.x + sx.max(0.0);
+                        let sel_w = (ex - sx).max(0.0);
+                        scene.nodes.push(SceneNode::Rect {
+                            rect: compose_core::Rect {
+                                x: sel_x,
+                                y: inner.y,
+                                w: sel_w,
+                                h: inner.h,
+                            },
+                            color: Color::from_hex("#3B7BFF55"),
+                            radius: 0.0,
+                        });
+                    }
 
-            ViewKind::ScrollV {
-                on_scroll,
-                set_viewport_height,
-            } => {
-                // Provide scroll hit region over the viewport
-                hits.push(HitRegion {
-                    id: v.id,
-                    rect,
-                    on_click: None,
-                    on_scroll: on_scroll.clone(),
-                    focusable: false,
-                });
+                    // Composition underline
+                    if let Some(range) = &state.composition {
+                        if range.start < range.end && !text.is_empty() {
+                            let pos = positions_for(text, px);
+                            let sx = pos[range.start] - state.scroll_offset;
+                            let ex = pos[range.end] - state.scroll_offset;
+                            let ux = inner.x + sx.max(0.0);
+                            let uw = (ex - sx).max(0.0);
+                            scene.nodes.push(SceneNode::Rect {
+                                rect: compose_core::Rect {
+                                    x: ux,
+                                    y: inner.y + inner.h - 2.0,
+                                    w: uw,
+                                    h: 2.0,
+                                },
+                                color: Color::from_hex("#88CCFF"),
+                                radius: 0.0,
+                            });
+                        }
+                    }
 
-                // Inform state of viewport height if requested
-                if let Some(set_vh) = set_viewport_height {
-                    set_vh(rect.h);
+                    // Text (offset by scroll)
+                    scene.nodes.push(SceneNode::Text {
+                        rect: compose_core::Rect {
+                            x: inner.x - state.scroll_offset,
+                            y: inner.y,
+                            w: inner.w,
+                            h: inner.h,
+                        },
+                        text: if text.is_empty() {
+                            hint.clone()
+                        } else {
+                            text.clone()
+                        },
+                        color: if text.is_empty() {
+                            Color::from_hex("#666666")
+                        } else {
+                            Color::from_hex("#CCCCCC")
+                        },
+                        size: TF_FONT_PX,
+                    });
+
+                    // Caret (blink)
+                    if state.selection.start == state.selection.end && state.caret_visible() {
+                        let pos = positions_for(text, px);
+                        let cx = pos.get(state.selection.end).copied().unwrap_or(0.0)
+                            - state.scroll_offset;
+                        let caret_x = inner.x + cx.max(0.0);
+                        scene.nodes.push(SceneNode::Rect {
+                            rect: compose_core::Rect {
+                                x: caret_x,
+                                y: inner.y,
+                                w: 1.0,
+                                h: inner.h,
+                            },
+                            color: Color::WHITE,
+                            radius: 0.0,
+                        });
+                    }
+
+                    sems.push(SemNode {
+                        id: v.id,
+                        role: Role::TextField,
+                        label: Some(text.clone()),
+                        rect,
+                        focused: false,
+                    });
+                } else {
+                    // No state yet: show hint only
+                    scene.nodes.push(SceneNode::Text {
+                        rect: compose_core::Rect {
+                            x: inner.x,
+                            y: inner.y,
+                            w: inner.w,
+                            h: inner.h,
+                        },
+                        text: hint.clone(),
+                        color: Color::from_hex("#666666"),
+                        size: TF_FONT_PX,
+                    });
+                    sems.push(SemNode {
+                        id: v.id,
+                        role: Role::TextField,
+                        label: Some(hint.clone()),
+                        rect,
+                        focused: false,
+                    });
                 }
             }
 
@@ -487,5 +568,8 @@ pub fn layout_and_paint(
         &mut sems,
         textfield_states,
     );
+    // Ensure visual order: low z_index first. Topmost will be found by iter().rev().
+    hits.sort_by(|a, b| a.z_index.partial_cmp(&b.z_index).unwrap_or(Ordering::Equal));
+
     (scene, hits, sems)
 }

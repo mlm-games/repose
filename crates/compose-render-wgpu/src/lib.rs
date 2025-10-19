@@ -98,7 +98,7 @@ impl WgpuBackend {
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
         }))
-        .map_err(|e| anyhow::anyhow!("No adapter"))?;
+        .map_err(|_e| anyhow::anyhow!("No adapter"))?;
 
         let (device, queue) =
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
