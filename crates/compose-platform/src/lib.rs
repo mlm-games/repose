@@ -1,6 +1,8 @@
 use compose_core::*;
 use compose_ui::layout_and_paint;
-use compose_ui::textfield::{index_for_x, positions_for, TF_FONT_PX, TF_PADDING_X};
+use compose_ui::textfield::{
+    byte_to_char_index, index_for_x_bytes, measure_text, TextFieldState, TF_FONT_PX, TF_PADDING_X,
+};
 
 #[cfg(feature = "desktop")]
 pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> anyhow::Result<()> {
@@ -64,8 +66,10 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
         }
         fn tf_ensure_caret_visible(st: &mut TextFieldState) {
             let px = TF_FONT_PX as u32;
-            let posv = positions_for(&st.text, px);
-            let caret_x = posv.get(st.caret_index()).copied().unwrap_or(0.0);
+            let m = measure_text(&st.text, px);
+            let i0 = byte_to_char_index(&m, st.selection.start);
+            let i1 = byte_to_char_index(&m, st.selection.end);
+            let caret_x = m.positions.get(st.caret_index()).copied().unwrap_or(0.0);
             st.ensure_caret_visible(caret_x, st.inner_width);
         }
     }
@@ -150,10 +154,6 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             .find(|n| n.id == cid && n.role == Role::TextField)
                         {
                             if let Some(state_rc) = self.textfield_states.get(&cid) {
-                                use compose_ui::textfield::{
-                                    index_for_x, positions_for, TF_FONT_PX, TF_PADDING_X,
-                                };
-
                                 let mut state = state_rc.borrow_mut();
                                 let inner_x = f
                                     .hit_regions
@@ -163,12 +163,16 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     .unwrap_or(0.0);
                                 let content_x = self.mouse_pos.0 - inner_x + state.scroll_offset;
                                 let px = TF_FONT_PX as u32;
-                                let idx = index_for_x(&state.text, px, content_x.max(0.0));
+                                let idx = index_for_x_bytes(&state.text, px, content_x.max(0.0));
                                 state.drag_to(idx);
 
                                 // Scroll caret into view
-                                let posv = positions_for(&state.text, px);
-                                let caret_x = posv.get(state.caret_index()).copied().unwrap_or(0.0);
+                                let px = TF_FONT_PX as u32;
+                                let m = measure_text(&state.text, px);
+                                let i0 = byte_to_char_index(&m, state.selection.start);
+                                let i1 = byte_to_char_index(&m, state.selection.end);
+                                let caret_x =
+                                    m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
                                 // We also need inner width; get rect
                                 if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
                                     state.ensure_caret_visible(
@@ -292,13 +296,20 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     let content_x =
                                         self.mouse_pos.0 - inner_x + state.scroll_offset;
                                     let px = TF_FONT_PX as u32;
-                                    let idx = index_for_x(&state.text, px, content_x.max(0.0));
+                                    let idx =
+                                        index_for_x_bytes(&state.text, px, content_x.max(0.0));
                                     state.begin_drag(idx, self.modifiers.shift);
 
                                     // Scroll caret into view
-                                    let posv = positions_for(&state.text, px);
-                                    let caret_x =
-                                        posv.get(state.caret_index()).copied().unwrap_or(0.0);
+                                    let px = TF_FONT_PX as u32;
+                                    let m = measure_text(&state.text, px);
+                                    let i0 = byte_to_char_index(&m, state.selection.start);
+                                    let i1 = byte_to_char_index(&m, state.selection.end);
+                                    let caret_x = m
+                                        .positions
+                                        .get(state.caret_index())
+                                        .copied()
+                                        .unwrap_or(0.0);
                                     state.ensure_caret_visible(
                                         caret_x,
                                         hit.rect.w - 2.0 * TF_PADDING_X,
@@ -435,15 +446,18 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             && !self.modifiers.alt
                             && !self.modifiers.meta
                         {
-                            if let Some(text) = key_event.text.as_deref() {
+                            if let Some(raw) = key_event.text.as_deref() {
+                                // Drop control chars (e.g., backspace/delete), keep printable only
+                                let text: String =
+                                    raw.chars().filter(|c| !c.is_control()).collect();
+
                                 if !text.is_empty() {
                                     if let Some(focused_id) = self.sched.focused {
                                         if let Some(state_rc) =
                                             self.textfield_states.get(&focused_id)
                                         {
                                             let mut st = state_rc.borrow_mut();
-
-                                            st.insert_text(text);
+                                            st.insert_text(&text);
                                             App::tf_ensure_caret_visible(&mut st);
                                             self.request_redraw();
                                         }

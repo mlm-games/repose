@@ -11,6 +11,57 @@ use std::sync::OnceLock;
 pub const TF_FONT_PX: f32 = 16.0;
 pub const TF_PADDING_X: f32 = 8.0;
 
+pub struct TextMetrics {
+    /// positions[i] = advance up to the i-th char (positions.len() == chars+1)
+    pub positions: Vec<f32>,
+    /// byte_offsets[i] = byte index of the i-th char (byte_offsets.len() == chars+1; last is text.len())
+    pub byte_offsets: Vec<usize>,
+}
+
+pub fn measure_text(text: &str, px: u32) -> TextMetrics {
+    let scaled = ui_font().as_scaled(PxScale::from(px as f32));
+    let mut positions = Vec::with_capacity(text.chars().count() + 1);
+    let mut byte_offsets = Vec::with_capacity(text.chars().count() + 1);
+    positions.push(0.0);
+    byte_offsets.push(0);
+
+    let mut x = 0.0;
+    let mut byte = 0usize;
+    for ch in text.chars() {
+        let gid = scaled.glyph_id(ch);
+        x += scaled.h_advance(gid);
+        byte += ch.len_utf8();
+        positions.push(x);
+        byte_offsets.push(byte);
+    }
+    TextMetrics {
+        positions,
+        byte_offsets,
+    }
+}
+
+pub fn byte_to_char_index(m: &TextMetrics, byte: usize) -> usize {
+    match m.byte_offsets.binary_search(&byte) {
+        Ok(i) => i,
+        Err(i) => i,
+    }
+}
+
+pub fn index_for_x_bytes(text: &str, px: u32, x: f32) -> usize {
+    let m = measure_text(text, px);
+    // find nearest advance position, return its byte offset
+    let mut best_i = 0usize;
+    let mut best_d = f32::INFINITY;
+    for i in 0..m.positions.len() {
+        let d = (m.positions[i] - x).abs();
+        if d < best_d {
+            best_d = d;
+            best_i = i;
+        }
+    }
+    m.byte_offsets[best_i]
+}
+
 fn ui_font() -> &'static FontArc {
     static FONT: OnceLock<FontArc> = OnceLock::new();
     FONT.get_or_init(|| {
@@ -99,35 +150,69 @@ impl TextFieldState {
 
     pub fn delete_backward(&mut self) {
         if self.selection.start == self.selection.end {
-            if self.selection.start > 0 {
-                let pos = self.selection.start - 1;
-                self.text.remove(pos);
-                self.selection = pos..pos;
+            let pos = self.selection.start.min(self.text.len());
+            if pos > 0 {
+                // previous UTF-8 char boundary
+                let prev = self.text[..pos]
+                    .char_indices()
+                    .last()
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                self.text.replace_range(prev..pos, "");
+                self.selection = prev..prev;
             }
-            self.reset_caret_blink();
         } else {
             self.insert_text("");
         }
+        self.reset_caret_blink();
     }
 
     pub fn delete_forward(&mut self) {
         if self.selection.start == self.selection.end {
-            if self.selection.start < self.text.len() {
-                self.text.remove(self.selection.start);
+            let pos = self.selection.start.min(self.text.len());
+            if pos < self.text.len() {
+                // next UTF-8 char boundary
+                let rel = self.text[pos..]
+                    .char_indices()
+                    .nth(1)
+                    .map(|(i, _)| i)
+                    .unwrap_or(self.text[pos..].len());
+                let next = pos + rel;
+                self.text.replace_range(pos..next, "");
             }
-            self.reset_caret_blink();
         } else {
             self.insert_text("");
         }
+        self.reset_caret_blink();
     }
 
     pub fn move_cursor(&mut self, delta: isize, extend_selection: bool) {
-        let pos = if delta < 0 {
-            self.selection.end.saturating_sub(delta.unsigned_abs())
-        } else {
-            (self.selection.end + delta as usize).min(self.text.len())
-        };
-
+        let mut pos = self.selection.end.min(self.text.len());
+        if delta < 0 {
+            for _ in 0..delta.unsigned_abs() {
+                pos = if pos == 0 {
+                    0
+                } else {
+                    self.text[..pos]
+                        .char_indices()
+                        .last()
+                        .map(|(i, _)| i)
+                        .unwrap_or(0)
+                };
+            }
+        } else if delta > 0 {
+            for _ in 0..(delta as usize) {
+                if pos >= self.text.len() {
+                    break;
+                }
+                let rel = self.text[pos..]
+                    .char_indices()
+                    .nth(1)
+                    .map(|(i, _)| i)
+                    .unwrap_or(self.text[pos..].len());
+                pos += rel;
+            }
+        }
         if extend_selection {
             self.selection.end = pos;
         } else {
@@ -192,7 +277,8 @@ impl TextFieldState {
     }
 
     // Begin a selection on press; if extend==true, keep existing anchor; else set new anchor
-    pub fn begin_drag(&mut self, idx: usize, extend: bool) {
+    pub fn begin_drag(&mut self, idx_byte: usize, extend: bool) {
+        let idx = idx_byte.min(self.text.len());
         if extend {
             let anchor = self.selection.start;
             self.selection = anchor.min(idx)..anchor.max(idx);
@@ -204,14 +290,13 @@ impl TextFieldState {
         self.reset_caret_blink();
     }
 
-    // Extend selection during drag; updates end relative to anchor
-    pub fn drag_to(&mut self, idx: usize) {
+    pub fn drag_to(&mut self, idx_byte: usize) {
         if let Some(anchor) = self.drag_anchor {
-            self.selection = anchor.min(idx)..anchor.max(idx);
+            let i = idx_byte.min(self.text.len());
+            self.selection = anchor.min(i)..anchor.max(i);
         }
         self.reset_caret_blink();
     }
-
     pub fn end_drag(&mut self) {
         self.drag_anchor = None;
     }

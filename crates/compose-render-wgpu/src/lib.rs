@@ -633,24 +633,32 @@ impl RenderBackend for WgpuBackend {
                     size,
                 } => {
                     let px = (*size).clamp(8.0, 96.0) as u32;
+
+                    // Build scaled font once per text node later (moved in due to borrow)
+
                     let mut pen_x = rect.x;
                     let baseline = rect.y + size * 0.9;
+
                     for ch in text.chars() {
                         if ch == '\n' {
-                            pen_x = rect.x;
                             continue;
                         }
+                        let scaled = self.font.as_scaled(ab_glyph::PxScale::from(px as f32));
+
+                        let gid = scaled.glyph_id(ch);
+                        let advance = scaled.h_advance(gid);
+
                         if let Some(info) = self.upload_glyph(ch, px) {
                             let x = pen_x + info.bearing_x;
                             let y = baseline - info.bearing_y;
                             glyphs.push(GlyphInstance {
                                 xywh: to_ndc(x, y, info.w, info.h, fb_w, fb_h),
-                                // flip V to match bottom→top NDC extents
                                 uv: [info.u0, info.v1, info.u1, info.v0],
                                 color: color.to_linear(),
                             });
-                            pen_x += info.advance;
                         }
+
+                        pen_x += advance;
                     }
                 }
             }

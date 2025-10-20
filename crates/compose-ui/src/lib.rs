@@ -11,7 +11,7 @@ use taffy::style::{AlignItems, Dimension, Display, FlexDirection, JustifyContent
 pub mod textfield;
 pub use textfield::{TextField, TextFieldState};
 
-use crate::textfield::{positions_for, TF_FONT_PX, TF_PADDING_X};
+use crate::textfield::{byte_to_char_index, measure_text, positions_for, TF_FONT_PX, TF_PADDING_X};
 
 pub fn Surface(modifier: Modifier, child: View) -> View {
     let mut v = View::new(0, ViewKind::Surface).modifier(modifier);
@@ -441,12 +441,14 @@ pub fn layout_and_paint(
                     let state = state_rc.borrow();
                     let text = &state.text;
                     let px = TF_FONT_PX as u32;
+                    let m = measure_text(text, px);
 
                     // Selection highlight
-                    if state.selection.start != state.selection.end && !text.is_empty() {
-                        let pos = positions_for(text, px);
-                        let sx = pos[state.selection.start] - state.scroll_offset;
-                        let ex = pos[state.selection.end] - state.scroll_offset;
+                    if state.selection.start != state.selection.end {
+                        let i0 = byte_to_char_index(&m, state.selection.start);
+                        let i1 = byte_to_char_index(&m, state.selection.end);
+                        let sx = m.positions[i0] - state.scroll_offset;
+                        let ex = m.positions[i1] - state.scroll_offset;
                         let sel_x = inner.x + sx.max(0.0);
                         let sel_w = (ex - sx).max(0.0);
                         scene.nodes.push(SceneNode::Rect {
@@ -464,9 +466,10 @@ pub fn layout_and_paint(
                     // Composition underline
                     if let Some(range) = &state.composition {
                         if range.start < range.end && !text.is_empty() {
-                            let pos = positions_for(text, px);
-                            let sx = pos[range.start] - state.scroll_offset;
-                            let ex = pos[range.end] - state.scroll_offset;
+                            let i0 = byte_to_char_index(&m, range.start);
+                            let i1 = byte_to_char_index(&m, range.end);
+                            let sx = m.positions[i0] - state.scroll_offset;
+                            let ex = m.positions[i1] - state.scroll_offset;
                             let ux = inner.x + sx.max(0.0);
                             let uw = (ex - sx).max(0.0);
                             scene.nodes.push(SceneNode::Rect {
@@ -505,9 +508,8 @@ pub fn layout_and_paint(
 
                     // Caret (blink)
                     if state.selection.start == state.selection.end && state.caret_visible() {
-                        let pos = positions_for(text, px);
-                        let cx = pos.get(state.selection.end).copied().unwrap_or(0.0)
-                            - state.scroll_offset;
+                        let i = byte_to_char_index(&m, state.selection.end);
+                        let cx = m.positions[i] - state.scroll_offset;
                         let caret_x = inner.x + cx.max(0.0);
                         scene.nodes.push(SceneNode::Rect {
                             rect: compose_core::Rect {
