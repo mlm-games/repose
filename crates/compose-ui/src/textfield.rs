@@ -11,26 +11,33 @@ use std::sync::OnceLock;
 pub const TF_FONT_PX: f32 = 16.0;
 pub const TF_PADDING_X: f32 = 8.0;
 
+use unicode_segmentation::UnicodeSegmentation;
+
 pub struct TextMetrics {
-    /// positions[i] = advance up to the i-th char (positions.len() == chars+1)
+    /// positions[i] = advance up to the i-th grapheme (len == graphemes + 1)
     pub positions: Vec<f32>,
-    /// byte_offsets[i] = byte index of the i-th char (byte_offsets.len() == chars+1; last is text.len())
+    /// byte_offsets[i] = byte index of the i-th grapheme (last == text.len())
     pub byte_offsets: Vec<usize>,
 }
 
 pub fn measure_text(text: &str, px: u32) -> TextMetrics {
     let scaled = ui_font().as_scaled(PxScale::from(px as f32));
-    let mut positions = Vec::with_capacity(text.chars().count() + 1);
-    let mut byte_offsets = Vec::with_capacity(text.chars().count() + 1);
+    let mut positions = Vec::with_capacity(text.graphemes(true).count() + 1);
+    let mut byte_offsets = Vec::with_capacity(text.graphemes(true).count() + 1);
     positions.push(0.0);
     byte_offsets.push(0);
 
     let mut x = 0.0;
     let mut byte = 0usize;
-    for ch in text.chars() {
-        let gid = scaled.glyph_id(ch);
-        x += scaled.h_advance(gid);
-        byte += ch.len_utf8();
+    for g in text.graphemes(true) {
+        // Sum advances of codepoints in the grapheme (approx without shaping)
+        let mut adv = 0.0;
+        for ch in g.chars() {
+            let gid = scaled.glyph_id(ch);
+            adv += scaled.h_advance(gid);
+        }
+        x += adv;
+        byte += g.len();
         positions.push(x);
         byte_offsets.push(byte);
     }
@@ -41,15 +48,15 @@ pub fn measure_text(text: &str, px: u32) -> TextMetrics {
 }
 
 pub fn byte_to_char_index(m: &TextMetrics, byte: usize) -> usize {
+    // Now returns grapheme index for a byte position
     match m.byte_offsets.binary_search(&byte) {
-        Ok(i) => i,
-        Err(i) => i,
+        Ok(i) | Err(i) => i,
     }
 }
 
 pub fn index_for_x_bytes(text: &str, px: u32, x: f32) -> usize {
     let m = measure_text(text, px);
-    // find nearest advance position, return its byte offset
+    // nearest grapheme boundary -> byte index
     let mut best_i = 0usize;
     let mut best_d = f32::INFINITY;
     for i in 0..m.positions.len() {
@@ -60,6 +67,27 @@ pub fn index_for_x_bytes(text: &str, px: u32, x: f32) -> usize {
         }
     }
     m.byte_offsets[best_i]
+}
+
+/// find prev/next grapheme boundaries around a byte index
+fn prev_grapheme_boundary(text: &str, byte: usize) -> usize {
+    let mut last = 0usize;
+    for (i, _) in text.grapheme_indices(true) {
+        if i >= byte {
+            break;
+        }
+        last = i;
+    }
+    last
+}
+
+fn next_grapheme_boundary(text: &str, byte: usize) -> usize {
+    for (i, _) in text.grapheme_indices(true) {
+        if i > byte {
+            return i;
+        }
+    }
+    text.len()
 }
 
 fn ui_font() -> &'static FontArc {
@@ -152,12 +180,7 @@ impl TextFieldState {
         if self.selection.start == self.selection.end {
             let pos = self.selection.start.min(self.text.len());
             if pos > 0 {
-                // previous UTF-8 char boundary
-                let prev = self.text[..pos]
-                    .char_indices()
-                    .last()
-                    .map(|(i, _)| i)
-                    .unwrap_or(0);
+                let prev = prev_grapheme_boundary(&self.text, pos);
                 self.text.replace_range(prev..pos, "");
                 self.selection = prev..prev;
             }
@@ -171,13 +194,7 @@ impl TextFieldState {
         if self.selection.start == self.selection.end {
             let pos = self.selection.start.min(self.text.len());
             if pos < self.text.len() {
-                // next UTF-8 char boundary
-                let rel = self.text[pos..]
-                    .char_indices()
-                    .nth(1)
-                    .map(|(i, _)| i)
-                    .unwrap_or(self.text[pos..].len());
-                let next = pos + rel;
+                let next = next_grapheme_boundary(&self.text, pos);
                 self.text.replace_range(pos..next, "");
             }
         } else {
@@ -190,27 +207,11 @@ impl TextFieldState {
         let mut pos = self.selection.end.min(self.text.len());
         if delta < 0 {
             for _ in 0..delta.unsigned_abs() {
-                pos = if pos == 0 {
-                    0
-                } else {
-                    self.text[..pos]
-                        .char_indices()
-                        .last()
-                        .map(|(i, _)| i)
-                        .unwrap_or(0)
-                };
+                pos = prev_grapheme_boundary(&self.text, pos);
             }
         } else if delta > 0 {
             for _ in 0..(delta as usize) {
-                if pos >= self.text.len() {
-                    break;
-                }
-                let rel = self.text[pos..]
-                    .char_indices()
-                    .nth(1)
-                    .map(|(i, _)| i)
-                    .unwrap_or(self.text[pos..].len());
-                pos += rel;
+                pos = next_grapheme_boundary(&self.text, pos);
             }
         }
         if extend_selection {
@@ -219,6 +220,14 @@ impl TextFieldState {
             self.selection = pos..pos;
         }
         self.reset_caret_blink();
+    }
+
+    pub fn selected_text(&self) -> String {
+        if self.selection.start == self.selection.end {
+            String::new()
+        } else {
+            self.text[self.selection.clone()].to_string()
+        }
     }
 
     pub fn set_composition(&mut self, text: String, cursor: Option<(usize, usize)>) {
@@ -414,5 +423,33 @@ mod tests {
         state.delete_surrounding(2, 1); // delete "lo"
         assert_eq!(state.text, "Hel");
         assert_eq!(state.selection, 3..3);
+    }
+
+    #[test]
+    fn test_grapheme_delete_and_move() {
+        // "👍🏽" is a grapheme cluster (thumbs up + skin tone)
+        let mut st = TextFieldState::new();
+        st.insert_text("A👍🏽B");
+        assert_eq!(st.text, "A👍🏽B");
+        // Move left over 'B'
+        st.move_cursor(-1, false);
+        assert_eq!(st.selection.end, "A👍🏽".len());
+        st.delete_backward();
+        assert_eq!(st.text, "AB");
+        assert_eq!(st.selection, "A".len().."A".len());
+    }
+
+    #[test]
+    fn test_index_for_x_bytes_grapheme() {
+        // Ensure we return boundaries consistent with graphemes
+        let t = "A👍🏽B";
+        let px = 16u32;
+        let m = measure_text(t, px);
+        // All byte_offsets must be grapheme boundaries
+        for i in 0..m.byte_offsets.len() - 1 {
+            let b = m.byte_offsets[i];
+            // slicing at boundary must be OK
+            let _ = &t[..b];
+        }
     }
 }

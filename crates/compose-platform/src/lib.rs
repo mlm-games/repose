@@ -39,6 +39,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
         ime_preedit: bool,
         hover_id: Option<u64>,
         capture_id: Option<u64>,
+        clipboard: Option<arboard::Clipboard>,
     }
 
     impl App {
@@ -56,6 +57,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                 ime_preedit: false,
                 hover_id: None,
                 capture_id: None,
+                clipboard: None,
             }
         }
 
@@ -76,6 +78,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 
     impl ApplicationHandler<()> for App {
         fn resumed(&mut self, el: &winit::event_loop::ActiveEventLoop) {
+            self.clipboard = arboard::Clipboard::new().ok();
             // Create the window once when app resumes.
             if self.window.is_none() {
                 match el.create_window(
@@ -438,6 +441,70 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     _ => {}
                                 }
                             }
+                            if self.modifiers.ctrl {
+                                match key_event.physical_key {
+                                    PhysicalKey::Code(KeyCode::KeyC) => {
+                                        if let Some(fid) = self.sched.focused {
+                                            if let Some(state) = self.textfield_states.get(&fid) {
+                                                let txt = state.borrow().selected_text();
+                                                if !txt.is_empty() {
+                                                    if let Some(cb) = self.clipboard.as_mut() {
+                                                        let _ = cb.set_text(txt);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        return;
+                                    }
+                                    PhysicalKey::Code(KeyCode::KeyX) => {
+                                        if let Some(fid) = self.sched.focused {
+                                            if let Some(state_rc) = self.textfield_states.get(&fid)
+                                            {
+                                                // Copy
+                                                let txt = state_rc.borrow().selected_text();
+                                                if !txt.is_empty() {
+                                                    if let Some(cb) = self.clipboard.as_mut() {
+                                                        let _ = cb.set_text(txt.clone());
+                                                    }
+                                                    // Cut (delete selection)
+                                                    {
+                                                        let mut st = state_rc.borrow_mut();
+                                                        st.insert_text(""); // replace selection with empty
+                                                        App::tf_ensure_caret_visible(&mut st);
+                                                    }
+                                                    self.request_redraw();
+                                                }
+                                            }
+                                        }
+                                        return;
+                                    }
+                                    PhysicalKey::Code(KeyCode::KeyV) => {
+                                        if let Some(fid) = self.sched.focused {
+                                            if let Some(state_rc) = self.textfield_states.get(&fid)
+                                            {
+                                                if let Some(cb) = self.clipboard.as_mut() {
+                                                    if let Ok(mut txt) = cb.get_text() {
+                                                        // Single-line TextField: strip control/newlines
+                                                        txt.retain(|c| {
+                                                            !c.is_control()
+                                                                && c != '\n'
+                                                                && c != '\r'
+                                                        });
+                                                        if !txt.is_empty() {
+                                                            let mut st = state_rc.borrow_mut();
+                                                            st.insert_text(&txt);
+                                                            App::tf_ensure_caret_visible(&mut st);
+                                                            self.request_redraw();
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        return;
+                                    }
+                                    _ => {}
+                                }
+                            }
                         }
 
                         // Plain text input when IME is not active
@@ -447,15 +514,13 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             && !self.modifiers.meta
                         {
                             if let Some(raw) = key_event.text.as_deref() {
-                                // Drop control chars (e.g., backspace/delete), keep printable only
-                                let text: String =
-                                    raw.chars().filter(|c| !c.is_control()).collect();
-
+                                let text: String = raw
+                                    .chars()
+                                    .filter(|c| !c.is_control() && *c != '\n' && *c != '\r')
+                                    .collect();
                                 if !text.is_empty() {
-                                    if let Some(focused_id) = self.sched.focused {
-                                        if let Some(state_rc) =
-                                            self.textfield_states.get(&focused_id)
-                                        {
+                                    if let Some(fid) = self.sched.focused {
+                                        if let Some(state_rc) = self.textfield_states.get(&fid) {
                                             let mut st = state_rc.borrow_mut();
                                             st.insert_text(&text);
                                             App::tf_ensure_caret_visible(&mut st);
