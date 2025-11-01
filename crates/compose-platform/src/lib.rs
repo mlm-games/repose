@@ -404,7 +404,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     self.capture_id = None;
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
-                    let dy = match delta {
+                    let mut dy = match delta {
                         MouseScrollDelta::LineDelta(_x, y) => -y * 40.0,
                         MouseScrollDelta::PixelDelta(lp) => -(lp.y as f32),
                     };
@@ -414,16 +414,22 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             x: self.mouse_pos.0,
                             y: self.mouse_pos.1,
                         };
-                        if let Some(hit) = f
-                            .hit_regions
-                            .iter()
-                            .rev()
-                            .find(|h| h.rect.contains(pos) && h.on_scroll.is_some())
-                        {
+                        // Nested routing: from topmost to deeper ancestors under cursor
+                        let mut consumed_any = false;
+                        for hit in f.hit_regions.iter().rev().filter(|h| h.rect.contains(pos)) {
                             if let Some(cb) = &hit.on_scroll {
-                                cb(dy);
-                                self.request_redraw();
+                                let before = dy;
+                                dy = cb(dy); // returns leftover
+                                if (before - dy).abs() > 0.001 {
+                                    consumed_any = true;
+                                }
+                                if dy.abs() <= 0.001 {
+                                    break;
+                                }
                             }
+                        }
+                        if consumed_any {
+                            self.request_redraw();
                         }
                     }
                 }

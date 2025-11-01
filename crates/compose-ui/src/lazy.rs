@@ -1,10 +1,15 @@
 use compose_core::*;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Instant;
 
 pub struct LazyColumnState {
     pub scroll_offset: f32,
     pub viewport_height: f32,
+    // kinetic scrolling related
+    vel: f32,
+    last_t: Instant,
+    animating: bool,
 }
 
 impl LazyColumnState {
@@ -12,13 +17,68 @@ impl LazyColumnState {
         Self {
             scroll_offset: 0.0,
             viewport_height: 600.0,
+            vel: 0.0,
+            last_t: Instant::now(),
+            animating: false,
         }
     }
+    // Immediate scroll (for wheel routing, no overscroll propagation)
+    fn clamp_to_bounds(&self, content_height: f32) -> (f32, f32) {
+        let max_off = (content_height - self.viewport_height).max(0.0);
+        (0.0, max_off)
+    }
+    pub fn scroll_immediate(&mut self, delta: f32, content_height: f32) -> f32 {
+        let (min_off, max_off) = self.clamp_to_bounds(content_height);
+        let old = self.scroll_offset;
+        let unclamped = old + delta;
+        let clamped = unclamped.clamp(min_off, max_off);
+        self.scroll_offset = clamped;
+        let consumed = clamped - old;
+        let leftover = delta - consumed;
+        // Add a bit of kinetic continuation
+        self.vel += consumed;
+        self.animating = self.vel.abs() > 0.1;
+        leftover
+    }
 
-    pub fn scroll(&mut self, delta: f32, content_height: f32) {
-        self.scroll_offset = (self.scroll_offset + delta)
-            .max(0.0)
-            .min((content_height - self.viewport_height).max(0.0));
+    // Per-frame integration with friction and edge spring
+    pub fn tick(&mut self, content_height: f32) -> bool {
+        let now = Instant::now();
+        let dt = (now - self.last_t).as_secs_f32();
+        self.last_t = now;
+        if dt <= 0.0 {
+            return false;
+        }
+
+        let (min_off, max_off) = self.clamp_to_bounds(content_height);
+        if !self.animating && (self.scroll_offset >= min_off && self.scroll_offset <= max_off) {
+            return false;
+        }
+        // Integrate velocity
+        let friction = 8.0; // larger -> faster decay
+        self.scroll_offset += self.vel * dt;
+        self.vel *= (-friction * dt).exp(); // exp decay
+
+        // Edge spring (elastic bounce)
+        let k = 200.0; // spring stiffness
+        let c = 20.0; // damping
+        if self.scroll_offset < min_off {
+            let x = self.scroll_offset - min_off; // negative
+                                                  // x'' + (c)*x' + k*x = 0 -> Euler step on velocity
+            self.vel += (-k * x - c * self.vel) * dt;
+        } else if self.scroll_offset > max_off {
+            let x = self.scroll_offset - max_off; // positive
+            self.vel += (-k * x - c * self.vel) * dt;
+        }
+        // Stop if settled
+        let settled = self.vel.abs() < 0.02
+            && self.scroll_offset >= min_off - 0.5
+            && self.scroll_offset <= max_off + 0.5;
+        self.animating = !settled;
+        if settled {
+            self.scroll_offset = self.scroll_offset.clamp(min_off, max_off);
+        }
+        true
     }
 }
 
@@ -35,10 +95,20 @@ where
     T: Clone + 'static,
     F: Fn(T, usize) -> View + 'static,
 {
-    let state_ref = state.borrow();
-    let scroll_offset = state_ref.scroll_offset;
-    let viewport_height = state_ref.viewport_height;
-    drop(state_ref);
+    // Content height for physics and visible window
+    let content_height = items.len() as f32 * item_height;
+    // Advance animation once per frame
+    {
+        let mut st = state.borrow_mut();
+        let _ = st.tick(content_height);
+    }
+    let scroll_offset;
+    let viewport_height;
+    {
+        let st = state.borrow();
+        scroll_offset = st.scroll_offset;
+        viewport_height = st.viewport_height;
+    }
 
     // Calculate visible range
     let first_visible = (scroll_offset / item_height).floor() as usize;
@@ -73,12 +143,9 @@ where
     }
 
     // Scroll callbacks
-    let content_height = items.len() as f32 * item_height;
     let on_scroll = {
         let state = state.clone();
-        Rc::new(move |dy: f32| {
-            state.borrow_mut().scroll(dy, content_height);
-        })
+        Rc::new(move |dy: f32| -> f32 { state.borrow_mut().scroll_immediate(dy, content_height) })
     };
     let set_viewport = {
         let state = state.clone();

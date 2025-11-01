@@ -108,7 +108,7 @@ pub struct HitRegion {
     pub id: u64,
     pub rect: Rect,
     pub on_click: Option<Rc<dyn Fn()>>,
-    pub on_scroll: Option<Rc<dyn Fn(f32)>>,
+    pub on_scroll: Option<Rc<dyn Fn(f32) -> f32>>,
     pub focusable: bool,
     pub on_pointer_down: Option<Rc<dyn Fn(crate::input::PointerEvent)>>,
     pub on_pointer_move: Option<Rc<dyn Fn(crate::input::PointerEvent)>>,

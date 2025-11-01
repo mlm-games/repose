@@ -4,7 +4,7 @@ use std::rc::Rc;
 pub type ViewId = u64;
 
 pub type Callback = Rc<dyn Fn()>;
-pub type ScrollCallback = Rc<dyn Fn(f32)>;
+pub type ScrollCallback = Rc<dyn Fn(f32) -> f32>;
 
 #[derive(Clone)]
 pub enum ViewKind {
