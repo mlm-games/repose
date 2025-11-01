@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 pub mod lazy;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::{cell::RefCell, cmp::Ordering};
 
@@ -12,6 +12,12 @@ pub mod textfield;
 pub use textfield::{TextField, TextFieldState};
 
 use crate::textfield::{byte_to_char_index, measure_text, positions_for, TF_FONT_PX, TF_PADDING_X};
+
+#[derive(Default)]
+pub struct Interactions {
+    pub hover: Option<u64>,
+    pub pressed: HashSet<u64>,
+}
 
 pub fn Surface(modifier: Modifier, child: View) -> View {
     let mut v = View::new(0, ViewKind::Surface).modifier(modifier);
@@ -62,7 +68,7 @@ pub fn TextColor(mut v: View, color: Color) -> View {
     if let ViewKind::Text {
         color: ref mut text_color,
         ..
-    } = v.kind
+    } = &mut v.kind
     {
         *text_color = color;
     }
@@ -74,7 +80,7 @@ pub fn TextSize(mut v: View, size: f32) -> View {
     if let ViewKind::Text {
         font_size: ref mut text_size,
         ..
-    } = v.kind
+    } = &mut v.kind
     {
         *text_size = size;
     }
@@ -156,6 +162,8 @@ pub fn layout_and_paint(
     root: &View,
     size: (u32, u32),
     textfield_states: &HashMap<u64, Rc<RefCell<TextFieldState>>>,
+    interactions: &Interactions,
+    focused: Option<u64>,
 ) -> (Scene, Vec<HitRegion>, Vec<SemNode>) {
     // Assign ids
     let mut id = 1u64;
@@ -328,8 +336,14 @@ pub fn layout_and_paint(
         hits: &mut Vec<HitRegion>,
         sems: &mut Vec<SemNode>,
         textfield_states: &HashMap<u64, Rc<RefCell<TextFieldState>>>,
+        interactions: &Interactions,
+        focused: Option<u64>,
     ) {
         let rect = layout_of(nodes[&v.id], t);
+
+        let is_hovered = interactions.hover == Some(v.id);
+        let is_pressed = interactions.pressed.contains(&v.id);
+        let is_focused = focused == Some(v.id);
 
         // Background
         if let Some(bg) = v.modifier.background {
@@ -374,9 +388,16 @@ pub fn layout_and_paint(
             ViewKind::Button { text, on_click } => {
                 // Default background if none provided
                 if v.modifier.background.is_none() {
+                    let base = if is_pressed {
+                        Color::from_hex("#1f7556")
+                    } else if is_hovered {
+                        Color::from_hex("#2a8f6a")
+                    } else {
+                        Color::from_hex("#34af82")
+                    };
                     scene.nodes.push(SceneNode::Rect {
                         rect,
-                        color: Color::from_hex("#34af82"),
+                        color: base,
                         radius: v.modifier.clip_rounded.unwrap_or(6.0),
                     });
                 }
@@ -399,10 +420,12 @@ pub fn layout_and_paint(
                         rect,
                         on_click: on_click.clone(),
                         on_scroll: None,
-                        focusable: false,
+                        focusable: true,
                         on_pointer_down: v.modifier.on_pointer_down.clone(),
                         on_pointer_move: v.modifier.on_pointer_move.clone(),
                         on_pointer_up: v.modifier.on_pointer_up.clone(),
+                        on_pointer_enter: v.modifier.on_pointer_enter.clone(),
+                        on_pointer_leave: v.modifier.on_pointer_leave.clone(),
                         z_index: v.modifier.z_index,
                     });
                 }
@@ -413,6 +436,15 @@ pub fn layout_and_paint(
                     rect,
                     focused: false,
                 });
+                // Focus ring
+                if is_focused {
+                    scene.nodes.push(SceneNode::Border {
+                        rect,
+                        color: Color::from_hex("#88CCFF"),
+                        width: 2.0,
+                        radius: v.modifier.clip_rounded.unwrap_or(6.0),
+                    });
+                }
             }
 
             ViewKind::TextField { hint, .. } => {
@@ -425,6 +457,8 @@ pub fn layout_and_paint(
                     on_pointer_down: None,
                     on_pointer_move: None,
                     on_pointer_up: None,
+                    on_pointer_enter: None,
+                    on_pointer_leave: None,
                     z_index: v.modifier.z_index,
                 });
 
@@ -435,6 +469,19 @@ pub fn layout_and_paint(
                     w: rect.w - 2.0 * TF_PADDING_X,
                     h: rect.h - 16.0,
                 };
+                scene.nodes.push(SceneNode::PushClip {
+                    rect: inner,
+                    radius: 0.0,
+                });
+                // TextField focus ring
+                if is_focused {
+                    scene.nodes.push(SceneNode::Border {
+                        rect,
+                        color: Color::from_hex("#88CCFF"),
+                        width: 2.0,
+                        radius: v.modifier.clip_rounded.unwrap_or(6.0),
+                    });
+                }
                 if let Some(state_rc) = textfield_states.get(&v.id) {
                     state_rc.borrow_mut().set_inner_width(inner.w);
 
@@ -447,8 +494,8 @@ pub fn layout_and_paint(
                     if state.selection.start != state.selection.end {
                         let i0 = byte_to_char_index(&m, state.selection.start);
                         let i1 = byte_to_char_index(&m, state.selection.end);
-                        let sx = m.positions[i0] - state.scroll_offset;
-                        let ex = m.positions[i1] - state.scroll_offset;
+                        let sx = m.positions.get(i0).copied().unwrap_or(0.0) - state.scroll_offset;
+                        let ex = m.positions.get(i1).copied().unwrap_or(sx) - state.scroll_offset;
                         let sel_x = inner.x + sx.max(0.0);
                         let sel_w = (ex - sx).max(0.0);
                         scene.nodes.push(SceneNode::Rect {
@@ -468,8 +515,10 @@ pub fn layout_and_paint(
                         if range.start < range.end && !text.is_empty() {
                             let i0 = byte_to_char_index(&m, range.start);
                             let i1 = byte_to_char_index(&m, range.end);
-                            let sx = m.positions[i0] - state.scroll_offset;
-                            let ex = m.positions[i1] - state.scroll_offset;
+                            let sx =
+                                m.positions.get(i0).copied().unwrap_or(0.0) - state.scroll_offset;
+                            let ex =
+                                m.positions.get(i1).copied().unwrap_or(sx) - state.scroll_offset;
                             let ux = inner.x + sx.max(0.0);
                             let uw = (ex - sx).max(0.0);
                             scene.nodes.push(SceneNode::Rect {
@@ -509,7 +558,7 @@ pub fn layout_and_paint(
                     // Caret (blink)
                     if state.selection.start == state.selection.end && state.caret_visible() {
                         let i = byte_to_char_index(&m, state.selection.end);
-                        let cx = m.positions[i] - state.scroll_offset;
+                        let cx = m.positions.get(i).copied().unwrap_or(0.0) - state.scroll_offset;
                         let caret_x = inner.x + cx.max(0.0);
                         scene.nodes.push(SceneNode::Rect {
                             rect: compose_core::Rect {
@@ -522,6 +571,8 @@ pub fn layout_and_paint(
                             radius: 0.0,
                         });
                     }
+                    // end inner clip
+                    scene.nodes.push(SceneNode::PopClip);
 
                     sems.push(SemNode {
                         id: v.id,
@@ -556,8 +607,28 @@ pub fn layout_and_paint(
             _ => {}
         }
 
+        let clip_children = matches!(v.kind, ViewKind::ScrollV { .. });
+        if clip_children {
+            scene.nodes.push(SceneNode::PushClip {
+                rect,
+                radius: v.modifier.clip_rounded.unwrap_or(0.0),
+            });
+        }
         for c in &v.children {
-            walk(c, t, nodes, scene, hits, sems, textfield_states);
+            walk(
+                c,
+                t,
+                nodes,
+                scene,
+                hits,
+                sems,
+                textfield_states,
+                interactions,
+                focused,
+            );
+        }
+        if clip_children {
+            scene.nodes.push(SceneNode::PopClip);
         }
     }
 
@@ -569,6 +640,8 @@ pub fn layout_and_paint(
         &mut hits,
         &mut sems,
         textfield_states,
+        interactions,
+        focused,
     );
     // Ensure visual order: low z_index first. Topmost will be found by iter().rev().
     hits.sort_by(|a, b| a.z_index.partial_cmp(&b.z_index).unwrap_or(Ordering::Equal));

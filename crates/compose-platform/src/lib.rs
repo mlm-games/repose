@@ -7,7 +7,7 @@ use compose_ui::textfield::{
 #[cfg(feature = "desktop")]
 pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> anyhow::Result<()> {
     use std::cell::RefCell;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::rc::Rc;
     use std::sync::Arc;
 
@@ -39,6 +39,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
         ime_preedit: bool,
         hover_id: Option<u64>,
         capture_id: Option<u64>,
+        pressed_ids: HashSet<u64>,
+        key_pressed_active: Option<u64>, // for Space/Enter press/release activation
         clipboard: Option<arboard::Clipboard>,
     }
 
@@ -57,6 +59,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                 ime_preedit: false,
                 hover_id: None,
                 capture_id: None,
+                pressed_ids: HashSet::new(),
+                key_pressed_active: None,
                 clipboard: None,
             }
         }
@@ -190,16 +194,44 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 
                     // Pointer routing: hover + move/capture
                     if let Some(f) = &self.frame_cache {
+                        // Determine topmost hit
                         let pos = Vec2 {
                             x: self.mouse_pos.0,
                             y: self.mouse_pos.1,
                         };
-                        // Topmost hit (hits are z-sorted; take last that contains)
                         let top = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos));
-
-                        // Hover target change
                         let new_hover = top.map(|h| h.id);
+
+                        // Enter/Leave
                         if new_hover != self.hover_id {
+                            if let Some(prev_id) = self.hover_id {
+                                if let Some(prev) = f.hit_regions.iter().find(|h| h.id == prev_id) {
+                                    if let Some(cb) = &prev.on_pointer_leave {
+                                        let mut pe = compose_core::input::PointerEvent {
+                                            id: compose_core::input::PointerId(0),
+                                            kind: compose_core::input::PointerKind::Mouse,
+                                            event: compose_core::input::PointerEventKind::Leave,
+                                            position: pos,
+                                            pressure: 1.0,
+                                            modifiers: self.modifiers,
+                                        };
+                                        cb(pe);
+                                    }
+                                }
+                            }
+                            if let Some(h) = top {
+                                if let Some(cb) = &h.on_pointer_enter {
+                                    let pe = compose_core::input::PointerEvent {
+                                        id: compose_core::input::PointerId(0),
+                                        kind: compose_core::input::PointerKind::Mouse,
+                                        event: compose_core::input::PointerEventKind::Enter,
+                                        position: pos,
+                                        pressure: 1.0,
+                                        modifiers: self.modifiers,
+                                    };
+                                    cb(pe);
+                                }
+                            }
                             self.hover_id = new_hover;
                         }
 
@@ -213,14 +245,14 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             modifiers: self.modifiers,
                         };
 
-                        // Deliver Move: captured first, else hover target
+                        // Move delivery (captured first)
                         if let Some(cid) = self.capture_id {
                             if let Some(h) = f.hit_regions.iter().find(|h| h.id == cid) {
                                 if let Some(cb) = &h.on_pointer_move {
                                     cb(pe.clone());
                                 }
                             }
-                        } else if let Some(h) = top {
+                        } else if let Some(h) = &top {
                             if let Some(cb) = &h.on_pointer_move {
                                 cb(pe);
                             }
@@ -241,6 +273,10 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         {
                             // Capture starts on press
                             self.capture_id = Some(hit.id);
+                            // Pressed visual for mouse
+                            self.pressed_ids.insert(hit.id);
+                            // Repaint for pressed state
+                            self.request_redraw();
 
                             // Focus & IME first for focusables (so state exists)
                             if hit.focusable {
@@ -280,11 +316,6 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     modifiers: self.modifiers,
                                 };
                                 cb(pe);
-                            }
-
-                            // Legacy click
-                            if let Some(cb) = &hit.on_click {
-                                cb();
                             }
 
                             // TextField: place caret and start drag selection
@@ -339,6 +370,26 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     button: MouseButton::Left,
                     ..
                 } => {
+                    if let Some(cid) = self.capture_id {
+                        self.pressed_ids.remove(&cid);
+                        self.request_redraw();
+                    }
+
+                    // Click on release if pointer is still over the captured hit region
+                    if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
+                        let pos = Vec2 {
+                            x: self.mouse_pos.0,
+                            y: self.mouse_pos.1,
+                        };
+                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
+                            if hit.rect.contains(pos) {
+                                if let Some(cb) = &hit.on_click {
+                                    cb();
+                                }
+                            }
+                        }
+                    }
+                    // TextField drag end
                     if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
                         if let Some(_sem) = f
                             .semantics_nodes
@@ -385,6 +436,68 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                 WindowEvent::KeyboardInput {
                     event: key_event, ..
                 } => {
+                    // Focus traversal: Tab / Shift+Tab
+                    if matches!(
+                        key_event.physical_key,
+                        winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Tab)
+                    ) {
+                        if let Some(f) = &self.frame_cache {
+                            let chain = &f.focus_chain;
+                            if !chain.is_empty() {
+                                let shift = self.modifiers.shift;
+                                let current = self.sched.focused;
+                                let next = if let Some(cur) = current {
+                                    if let Some(idx) = chain.iter().position(|&id| id == cur) {
+                                        if shift {
+                                            if idx == 0 {
+                                                chain[chain.len() - 1]
+                                            } else {
+                                                chain[idx - 1]
+                                            }
+                                        } else {
+                                            chain[(idx + 1) % chain.len()]
+                                        }
+                                    } else {
+                                        chain[0]
+                                    }
+                                } else {
+                                    chain[0]
+                                };
+                                self.sched.focused = Some(next);
+                                // IME on TextField focus; off otherwise
+                                if let Some(win) = &self.window {
+                                    if f.semantics_nodes
+                                        .iter()
+                                        .any(|n| n.id == next && n.role == Role::TextField)
+                                    {
+                                        win.set_ime_allowed(true);
+                                        win.set_ime_purpose(winit::window::ImePurpose::Normal);
+                                    } else {
+                                        win.set_ime_allowed(false);
+                                    }
+                                }
+                                self.request_redraw();
+                            }
+                        }
+                        return;
+                    }
+
+                    // Keyboard activation for focused widgets (Space/Enter)
+                    if let Some(fid) = self.sched.focused {
+                        match key_event.physical_key {
+                            winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Space)
+                            | winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Enter) =>
+                            {
+                                // pressed visual and remember which to release
+                                self.pressed_ids.insert(fid);
+                                self.key_pressed_active = Some(fid);
+                                self.request_redraw();
+                                return; // don't fall through to text input path
+                            }
+                            _ => {}
+                        }
+                    }
+
                     if key_event.state == ElementState::Pressed {
                         // Inspector hotkey: Ctrl+Shift+I
                         if self.modifiers.ctrl && self.modifiers.shift {
@@ -530,8 +643,32 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                 }
                             }
                         }
+                    } else if key_event.state == ElementState::Released {
+                        // Finish keyboard activation on release (Space/Enter)
+                        if let Some(active) = self.key_pressed_active.take() {
+                            if matches!(
+                                key_event.physical_key,
+                                winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Space)
+                                    | winit::keyboard::PhysicalKey::Code(
+                                        winit::keyboard::KeyCode::Enter
+                                    )
+                            ) {
+                                self.pressed_ids.remove(&active);
+                                // Fire on_click if the focused item has it
+                                if let Some(f) = &self.frame_cache {
+                                    if let Some(h) = f.hit_regions.iter().find(|h| h.id == active) {
+                                        if let Some(cb) = &h.on_click {
+                                            cb();
+                                        }
+                                    }
+                                }
+                                self.request_redraw();
+                                return;
+                            }
+                        }
                     }
                 }
+
                 WindowEvent::Ime(ime) => {
                     use winit::event::Ime;
 
@@ -578,8 +715,18 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         (self.backend.as_mut(), self.window.as_ref())
                     {
                         // Compose
-                        let frame = self.sched.compose(&mut self.root, |view, size| {
-                            layout_and_paint(view, size, &self.textfield_states)
+                        let focused = self.sched.focused;
+                        let hover_id = self.hover_id;
+                        let pressed_ids = self.pressed_ids.clone();
+                        let tf_states = &self.textfield_states;
+
+                        let frame = self.sched.compose(&mut self.root, move |view, size| {
+                            let interactions = compose_ui::Interactions {
+                                hover: hover_id,
+                                pressed: pressed_ids.clone(),
+                            };
+
+                            layout_and_paint(view, size, tf_states, &interactions, focused)
                         });
 
                         // Render

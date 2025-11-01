@@ -24,6 +24,8 @@ pub struct Modifier {
     pub on_pointer_down: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_move: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_up: Option<Rc<dyn Fn(PointerEvent)>>,
+    pub on_pointer_enter: Option<Rc<dyn Fn(PointerEvent)>>,
+    pub on_pointer_leave: Option<Rc<dyn Fn(PointerEvent)>>,
 }
 
 impl Default for Border {
@@ -110,6 +112,14 @@ impl Modifier {
     }
     pub fn on_pointer_up(mut self, f: impl Fn(PointerEvent) + 'static) -> Self {
         self.on_pointer_up = Some(Rc::new(f));
+        self
+    }
+    pub fn on_pointer_enter(mut self, f: impl Fn(PointerEvent) + 'static) -> Self {
+        self.on_pointer_enter = Some(Rc::new(f));
+        self
+    }
+    pub fn on_pointer_leave(mut self, f: impl Fn(PointerEvent) + 'static) -> Self {
+        self.on_pointer_leave = Some(Rc::new(f));
         self
     }
 }

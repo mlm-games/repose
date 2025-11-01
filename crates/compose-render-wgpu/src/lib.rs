@@ -570,14 +570,12 @@ impl RenderBackend for WgpuBackend {
             let y0 = 1.0 - (y / fb_h) * 2.0;
             let x1 = ((x + w) / fb_w) * 2.0 - 1.0;
             let y1 = 1.0 - ((y + h) / fb_h) * 2.0;
-
             let min_x = x0.min(x1);
             let min_y = y0.min(y1);
             let w_ndc = (x1 - x0).abs();
             let h_ndc = (y1 - y0).abs();
             [min_x, min_y, w_ndc, h_ndc]
         }
-
         fn to_ndc_scalar(px: f32, fb_dim: f32) -> f32 {
             (px / fb_dim) * 2.0
         }
@@ -591,14 +589,28 @@ impl RenderBackend for WgpuBackend {
             let sy = to_ndc_scalar(w, fb_h);
             sx.min(sy)
         }
-
-        // Collect instances
-        let mut rects: Vec<RectInstance> = vec![];
-        let mut borders: Vec<BorderInstance> = vec![];
-        let mut glyphs: Vec<GlyphInstance> = vec![];
+        fn to_scissor(r: &compose_core::Rect) -> (u32, u32, u32, u32) {
+            let x = r.x.max(0.0).floor() as u32;
+            let y = r.y.max(0.0).floor() as u32;
+            let w = r.w.max(0.0).ceil() as u32;
+            let h = r.h.max(0.0).ceil() as u32;
+            (x, y, w.max(1), h.max(1))
+        }
 
         let fb_w = self.config.width as f32;
         let fb_h = self.config.height as f32;
+
+        let mut clip_stack: Vec<compose_core::Rect> = Vec::new();
+
+        // Prebuild draw commands (buffers) in node order to preserve clips
+        enum Cmd {
+            SetClipPush(compose_core::Rect),
+            SetClipPop,
+            Rect(wgpu::Buffer, u32),
+            Border(wgpu::Buffer, u32),
+            Glyphs(wgpu::Buffer, u32),
+        }
+        let mut cmds: Vec<Cmd> = Vec::with_capacity(scene.nodes.len());
 
         for node in &scene.nodes {
             match node {
@@ -607,11 +619,19 @@ impl RenderBackend for WgpuBackend {
                     color,
                     radius,
                 } => {
-                    rects.push(RectInstance {
+                    let inst = RectInstance {
                         xywh: to_ndc(rect.x, rect.y, rect.w, rect.h, fb_w, fb_h),
                         radius: to_ndc_radius(*radius, fb_w, fb_h),
                         color: color.to_linear(),
-                    });
+                    };
+                    let buf = self
+                        .device
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("rect instance"),
+                            contents: bytemuck::bytes_of(&inst),
+                            usage: wgpu::BufferUsages::VERTEX,
+                        });
+                    cmds.push(Cmd::Rect(buf, 1));
                 }
                 SceneNode::Border {
                     rect,
@@ -619,12 +639,20 @@ impl RenderBackend for WgpuBackend {
                     width,
                     radius,
                 } => {
-                    borders.push(BorderInstance {
+                    let inst = BorderInstance {
                         xywh: to_ndc(rect.x, rect.y, rect.w, rect.h, fb_w, fb_h),
                         radius_outer: to_ndc_radius(*radius, fb_w, fb_h),
                         stroke: to_ndc_stroke(*width, fb_w, fb_h),
                         color: color.to_linear(),
-                    });
+                    };
+                    let buf = self
+                        .device
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("border instance"),
+                            contents: bytemuck::bytes_of(&inst),
+                            usage: wgpu::BufferUsages::VERTEX,
+                        });
+                    cmds.push(Cmd::Border(buf, 1));
                 }
                 SceneNode::Text {
                     rect,
@@ -633,76 +661,44 @@ impl RenderBackend for WgpuBackend {
                     size,
                 } => {
                     let px = (*size).clamp(8.0, 96.0) as u32;
-
-                    // Build scaled font once per text node later (moved in due to borrow)
-
+                    let font = self.font.clone();
+                    let scaled = font.as_scaled(ab_glyph::PxScale::from(px as f32));
+                    let ascent = scaled.ascent(); // baseline-correct
                     let mut pen_x = rect.x;
-                    let baseline = rect.y + size * 0.9;
-
+                    let baseline_y = rect.y + ascent;
+                    let mut instances: Vec<GlyphInstance> = Vec::with_capacity(text.len());
                     for ch in text.chars() {
                         if ch == '\n' {
                             continue;
                         }
-                        let scaled = self.font.as_scaled(ab_glyph::PxScale::from(px as f32));
-
                         let gid = scaled.glyph_id(ch);
                         let advance = scaled.h_advance(gid);
-
                         if let Some(info) = self.upload_glyph(ch, px) {
                             let x = pen_x + info.bearing_x;
-                            let y = baseline - info.bearing_y;
-                            glyphs.push(GlyphInstance {
+                            let y = baseline_y - info.bearing_y;
+                            instances.push(GlyphInstance {
                                 xywh: to_ndc(x, y, info.w, info.h, fb_w, fb_h),
                                 uv: [info.u0, info.v1, info.u1, info.v0],
                                 color: color.to_linear(),
                             });
                         }
-
                         pen_x += advance;
                     }
+                    if !instances.is_empty() {
+                        let buf =
+                            self.device
+                                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                                    label: Some("glyph instances"),
+                                    contents: bytemuck::cast_slice(&instances),
+                                    usage: wgpu::BufferUsages::VERTEX,
+                                });
+                        cmds.push(Cmd::Glyphs(buf, instances.len() as u32));
+                    }
                 }
+                SceneNode::PushClip { rect, .. } => cmds.push(Cmd::SetClipPush(*rect)),
+                SceneNode::PopClip => cmds.push(Cmd::SetClipPop),
             }
         }
-
-        // Buffers
-        let rect_buf = if !rects.is_empty() {
-            Some(
-                self.device
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("rect instances"),
-                        contents: bytemuck::cast_slice(&rects),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    }),
-            )
-        } else {
-            None
-        };
-
-        let border_buf = if !borders.is_empty() {
-            Some(
-                self.device
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("border instances"),
-                        contents: bytemuck::cast_slice(&borders),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    }),
-            )
-        } else {
-            None
-        };
-
-        let glyph_buf = if !glyphs.is_empty() {
-            Some(
-                self.device
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("glyph instances"),
-                        contents: bytemuck::cast_slice(&glyphs),
-                        usage: wgpu::BufferUsages::VERTEX,
-                    }),
-            )
-        } else {
-            None
-        };
 
         let mut encoder = self
             .device
@@ -732,28 +728,70 @@ impl RenderBackend for WgpuBackend {
                 occlusion_query_set: None,
             });
 
-            if let Some(buf) = &rect_buf {
-                rpass.set_pipeline(&self.rect_pipeline);
-                rpass.set_vertex_buffer(0, buf.slice(..));
-                rpass.draw(0..6, 0..rects.len() as u32);
-            }
+            // initial full scissor
+            rpass.set_scissor_rect(0, 0, self.config.width, self.config.height);
+            let bind = self.atlas_bind_group();
+            let mut clip_stack: Vec<compose_core::Rect> = Vec::new();
 
-            if let Some(buf) = &border_buf {
-                rpass.set_pipeline(&self.border_pipeline);
-                rpass.set_vertex_buffer(0, buf.slice(..));
-                rpass.draw(0..6, 0..borders.len() as u32);
-            }
-
-            if let Some(buf) = &glyph_buf {
-                let bind = self.atlas_bind_group();
-                rpass.set_pipeline(&self.text_pipeline);
-                rpass.set_bind_group(0, &bind, &[]);
-                rpass.set_vertex_buffer(0, buf.slice(..));
-                rpass.draw(0..6, 0..glyphs.len() as u32);
+            for cmd in cmds {
+                match cmd {
+                    Cmd::SetClipPush(r) => {
+                        clip_stack.push(r);
+                        // compute intersection of all active clips
+                        let mut acc = r;
+                        for c in &clip_stack {
+                            let x0 = acc.x.max(c.x);
+                            let y0 = acc.y.max(c.y);
+                            let x1 = (acc.x + acc.w).min(c.x + c.w);
+                            let y1 = (acc.y + acc.h).min(c.y + c.h);
+                            acc = compose_core::Rect {
+                                x: x0,
+                                y: y0,
+                                w: (x1 - x0).max(0.0),
+                                h: (y1 - y0).max(0.0),
+                            };
+                        }
+                        let (x, y, w, h) = to_scissor(&acc);
+                        rpass.set_scissor_rect(x, y, w, h);
+                    }
+                    Cmd::SetClipPop => {
+                        let _ = clip_stack.pop();
+                        if let Some(top) = clip_stack.last() {
+                            let (x, y, w, h) = to_scissor(top);
+                            rpass.set_scissor_rect(x, y, w, h);
+                        } else {
+                            rpass.set_scissor_rect(0, 0, self.config.width, self.config.height);
+                        }
+                    }
+                    Cmd::Rect(buf, n) => {
+                        rpass.set_pipeline(&self.rect_pipeline);
+                        rpass.set_vertex_buffer(0, buf.slice(..));
+                        rpass.draw(0..6, 0..n);
+                    }
+                    Cmd::Border(buf, n) => {
+                        rpass.set_pipeline(&self.border_pipeline);
+                        rpass.set_vertex_buffer(0, buf.slice(..));
+                        rpass.draw(0..6, 0..n);
+                    }
+                    Cmd::Glyphs(buf, n) => {
+                        rpass.set_pipeline(&self.text_pipeline);
+                        rpass.set_bind_group(0, &bind, &[]);
+                        rpass.set_vertex_buffer(0, buf.slice(..));
+                        rpass.draw(0..6, 0..n);
+                    }
+                }
             }
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
     }
+}
+
+fn to_scissor(r: &compose_core::Rect) -> (u32, u32, u32, u32) {
+    let x = r.x.max(0.0).floor() as u32;
+    let y = r.y.max(0.0).floor() as u32;
+    let w = r.w.max(0.0).ceil() as u32;
+    let h = r.h.max(0.0).ceil() as u32;
+    (x, y, w.max(1), h.max(1))
 }

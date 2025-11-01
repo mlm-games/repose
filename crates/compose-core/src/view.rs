@@ -124,4 +124,9 @@ pub enum SceneNode {
         color: Color,
         size: f32,
     },
+    PushClip {
+        rect: Rect,
+        radius: f32,
+    },
+    PopClip,
 }
