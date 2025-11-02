@@ -1,13 +1,13 @@
 #[cfg(test)]
 mod tests {
+    use crate::COMPOSER;
+    use crate::Color;
+    use crate::Rect;
+    use crate::Vec2;
     use crate::animation::*;
     use crate::remember_with_key;
     use crate::scope::*;
     use crate::signal::*;
-    use crate::Color;
-    use crate::Rect;
-    use crate::Vec2;
-    use crate::COMPOSER;
     use std::time::{Duration, Instant};
 
     #[test]

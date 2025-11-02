@@ -1,20 +1,20 @@
 pub use crate::animation::*;
 pub use crate::color::Color;
-pub use crate::effects::{effect, on_unmount, Dispose};
+pub use crate::effects::{Dispose, effect, on_unmount};
 pub use crate::error::*;
 pub use crate::geometry::{Rect, Size, Vec2};
 pub use crate::input::*;
 pub use crate::locals::{
-    density, dp, text_scale, theme, with_density, with_text_scale, with_theme, Density, TextScale,
-    Theme,
+    Density, TextScale, Theme, density, dp, text_scale, theme, with_density, with_text_scale,
+    with_theme,
 };
 pub use crate::modifier::Modifier;
 pub use crate::render_api::{GlyphRasterConfig, RenderBackend};
 pub use crate::runtime::{
-    remember, remember_state, remember_state_with_key, remember_with_key, ComposeGuard, Frame,
-    Scheduler,
+    ComposeGuard, Frame, Scheduler, remember, remember_state, remember_state_with_key,
+    remember_with_key,
 };
-pub use crate::scope::{current_scope, scoped_effect, Scope};
+pub use crate::scope::{Scope, current_scope, scoped_effect};
 pub use crate::semantics::{Role, Semantics};
-pub use crate::signal::{signal, Signal};
+pub use crate::signal::{Signal, signal};
 pub use crate::view::{Scene, SceneNode, View, ViewId, ViewKind};

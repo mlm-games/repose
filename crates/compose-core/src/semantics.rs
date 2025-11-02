@@ -16,6 +16,11 @@ pub struct Semantics {
 
 impl Semantics {
     pub fn new(role: Role) -> Self {
-        Self { role, label: None, focused: false, enabled: true }
+        Self {
+            role,
+            label: None,
+            focused: false,
+            enabled: true,
+        }
     }
 }

@@ -64,7 +64,7 @@ impl LazyColumnState {
         let c = 20.0; // damping
         if self.scroll_offset < min_off {
             let x = self.scroll_offset - min_off; // negative
-                                                  // x'' + (c)*x' + k*x = 0 -> Euler step on velocity
+            // x'' + (c)*x' + k*x = 0 -> Euler step on velocity
             self.vel += (-k * x - c * self.vel) * dt;
         } else if self.scroll_offset > max_off {
             let x = self.scroll_offset - max_off; // positive

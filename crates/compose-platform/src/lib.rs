@@ -1,8 +1,8 @@
 use compose_core::*;
-use compose_core::{with_density, Density};
+use compose_core::{Density, with_density};
 use compose_ui::layout_and_paint;
 use compose_ui::textfield::{
-    byte_to_char_index, index_for_x_bytes, measure_text, TextFieldState, TF_FONT_PX, TF_PADDING_X,
+    TF_FONT_PX, TF_PADDING_X, TextFieldState, byte_to_char_index, index_for_x_bytes, measure_text,
 };
 use std::time::Instant;
 

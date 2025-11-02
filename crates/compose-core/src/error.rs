@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 use crate::View;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 
 pub struct ErrorInfo {

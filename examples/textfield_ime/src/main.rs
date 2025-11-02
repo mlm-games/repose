@@ -19,7 +19,7 @@ fn app(_s: &mut Scheduler) -> View {
         Column(Modifier::new().padding(24.0)).child((
             Text("TextField demo").modifier(Modifier::new().padding(4.0)),
             tf,
-            Row(Modifier::new()).child(Button("Clear (no-op in this demo)", || {}))
+            Row(Modifier::new()).child(Button("Clear (no-op in this demo)", || {})),
         )),
     )
 }

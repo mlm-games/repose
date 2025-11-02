@@ -3,11 +3,11 @@ use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use ab_glyph::{point, Font, FontArc, Glyph, PxScale, ScaleFont};
+use ab_glyph::{Font, FontArc, Glyph, PxScale, ScaleFont, point};
 use compose_core::{Color, GlyphRasterConfig, RenderBackend, Scene, SceneNode};
 use cosmic_text;
 use fontdb::Database;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use wgpu::util::DeviceExt;
 
 struct UploadRing {

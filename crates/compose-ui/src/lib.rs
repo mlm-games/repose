@@ -7,13 +7,13 @@ use std::rc::Rc;
 use std::{cell::RefCell, cmp::Ordering};
 
 use compose_core::*;
-use taffy::style::{AlignItems, Dimension, Display, FlexDirection, JustifyContent, Style};
 use taffy::Overflow;
+use taffy::style::{AlignItems, Dimension, Display, FlexDirection, JustifyContent, Style};
 
 pub mod textfield;
 pub use textfield::{TextField, TextFieldState};
 
-use crate::textfield::{byte_to_char_index, measure_text, positions_for, TF_FONT_PX, TF_PADDING_X};
+use crate::textfield::{TF_FONT_PX, TF_PADDING_X, byte_to_char_index, measure_text, positions_for};
 use compose_core::locals;
 
 #[derive(Default)]
@@ -69,8 +69,7 @@ pub fn Text(text: impl Into<String>) -> View {
 #[allow(non_snake_case)]
 pub fn TextColor(mut v: View, color: Color) -> View {
     if let ViewKind::Text {
-        color: ref mut text_color,
-        ..
+        color: text_color, ..
     } = &mut v.kind
     {
         *text_color = color;
@@ -81,7 +80,7 @@ pub fn TextColor(mut v: View, color: Color) -> View {
 #[allow(non_snake_case)]
 pub fn TextSize(mut v: View, size: f32) -> View {
     if let ViewKind::Text {
-        font_size: ref mut text_size,
+        font_size: text_size,
         ..
     } = &mut v.kind
     {
