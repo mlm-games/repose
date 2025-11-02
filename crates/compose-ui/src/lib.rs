@@ -459,8 +459,8 @@ pub fn layout_and_paint(
         }
 
         if m.fill_max {
-            s.size.width = percent(1.0);
-            s.size.height = percent(1.0);
+            s.size.width = percent(100.0);
+            s.size.height = percent(100.0);
             s.flex_grow = 1.0;
             s.flex_shrink = 1.0;
         }
@@ -725,6 +725,7 @@ pub fn layout_and_paint(
     ) {
         let local = layout_of(nodes[&v.id], t);
         let rect = add_offset(local, parent_offset);
+        let base = (parent_offset.0 + local.x, parent_offset.1 + local.y);
 
         let is_hovered = interactions.hover == Some(v.id);
         let is_pressed = interactions.pressed.contains(&v.id);
@@ -1776,7 +1777,7 @@ pub fn layout_and_paint(
                 textfield_states,
                 interactions,
                 focused,
-                parent_offset,
+                base,
             );
         }
     }
