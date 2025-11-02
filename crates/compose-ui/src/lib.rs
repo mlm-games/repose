@@ -8,6 +8,7 @@ use std::{cell::RefCell, cmp::Ordering};
 
 use compose_core::*;
 use taffy::style::{AlignItems, Dimension, Display, FlexDirection, JustifyContent, Style};
+use taffy::Overflow;
 
 pub mod textfield;
 pub use textfield::{TextField, TextFieldState};
@@ -225,6 +226,15 @@ pub fn layout_and_paint(
         if m.fill_max {
             s.size.width = Dimension::percent(1.0);
             s.size.height = Dimension::percent(1.0);
+            s.flex_grow = 1.0;
+            s.flex_shrink = 1.0;
+        }
+
+        if matches!(kind, ViewKind::ScrollV { .. }) {
+            s.overflow = taffy::Point {
+                x: Overflow::Hidden,
+                y: Overflow::Hidden,
+            };
         }
 
         s.align_items = Some(AlignItems::FlexStart);

@@ -1,4 +1,5 @@
 use compose_core::*;
+use compose_core::{with_density, Density};
 use compose_ui::layout_and_paint;
 use compose_ui::textfield::{
     byte_to_char_index, index_for_x_bytes, measure_text, TextFieldState, TF_FONT_PX, TF_PADDING_X,
@@ -101,7 +102,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
             if self.window.is_none() {
                 match el.create_window(
                     WindowAttributes::default()
-                        .with_title("Repose v0.2")
+                        .with_title("Repose Example")
                         .with_inner_size(PhysicalSize::new(1280, 800)),
                 ) {
                     Ok(win) => {
@@ -838,14 +839,344 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
     let event_loop = EventLoop::new()?;
     let mut app = App::new(Box::new(root));
     // Install system clock once
-    compose_core::animation::set_clock(Box::new(compose_core::animation::TestClock {
-        t: std::time::Instant::now(),
-    }));
-    // replace TestClock with SystemClock and check later (if needed):
-    // compose_core::animation::set_clock(Box::new(compose_core::animation::SystemClock));
+    compose_core::animation::set_clock(Box::new(compose_core::animation::SystemClock));
     event_loop.run_app(&mut app)?;
     Ok(())
 }
+
+// #[cfg(feature = "android")]
+// pub mod android {
+//     use super::*;
+//     use std::rc::Rc;
+//     use std::sync::Arc;
+//     use winit::application::ApplicationHandler;
+//     use winit::dpi::PhysicalSize;
+//     use winit::event::{ElementState, MouseScrollDelta, WindowEvent};
+//     use winit::event_loop::EventLoop;
+//     use winit::keyboard::{KeyCode, PhysicalKey};
+//     use winit::platform::android::activity::AndroidApp;
+//     use winit::window::{ImePurpose, Window, WindowAttributes};
+
+//     pub fn run_android_app(
+//         app: AndroidApp,
+//         mut root: impl FnMut(&mut Scheduler) -> View + 'static,
+//     ) -> anyhow::Result<()> {
+//         compose_core::animation::set_clock(Box::new(compose_core::animation::SystemClock));
+//         let event_loop = winit::event_loop::EventLoopBuilder::new()
+//             .with_android_app(app)
+//             .build()?;
+
+//         struct A {
+//             root: Box<dyn FnMut(&mut Scheduler) -> View>,
+//             window: Option<Arc<Window>>,
+//             backend: Option<compose_render_wgpu::WgpuBackend>,
+//             sched: Scheduler,
+//             inspector: compose_devtools::Inspector,
+//             frame_cache: Option<Frame>,
+//             mouse_pos: (f32, f32),
+//             modifiers: Modifiers,
+//             textfield_states: HashMap<u64, Rc<std::cell::RefCell<TextFieldState>>>,
+//             ime_preedit: bool,
+//             hover_id: Option<u64>,
+//             capture_id: Option<u64>,
+//             pressed_ids: HashSet<u64>,
+//             key_pressed_active: Option<u64>,
+//             last_scale: f64,
+//         }
+//         impl A {
+//             fn new(root: Box<dyn FnMut(&mut Scheduler) -> View>) -> Self {
+//                 Self {
+//                     root,
+//                     window: None,
+//                     backend: None,
+//                     sched: Scheduler::new(),
+//                     inspector: compose_devtools::Inspector::new(),
+//                     frame_cache: None,
+//                     mouse_pos: (0.0, 0.0),
+//                     modifiers: Modifiers::default(),
+//                     textfield_states: HashMap::new(),
+//                     ime_preedit: false,
+//                     hover_id: None,
+//                     capture_id: None,
+//                     pressed_ids: HashSet::new(),
+//                     key_pressed_active: None,
+//                     last_scale: 1.0,
+//                 }
+//             }
+//             fn request_redraw(&self) {
+//                 if let Some(w) = &self.window {
+//                     w.request_redraw();
+//                 }
+//             }
+//         }
+//         impl ApplicationHandler<()> for A {
+//             fn resumed(&mut self, el: &winit::event_loop::ActiveEventLoop) {
+//                 if self.window.is_none() {
+//                     match el.create_window(WindowAttributes::default().with_title("Repose android")) {
+//                         Ok(win) => {
+//                             let w = Arc::new(win);
+//                             let size = w.inner_size();
+//                             self.sched.size = (size.width, size.height);
+//                             self.last_scale = w.scale_factor();
+//                             match compose_render_wgpu::WgpuBackend::new(w.clone()) {
+//                                 Ok(b) => {
+//                                     self.backend = Some(b);
+//                                     self.window = Some(w);
+//                                     self.request_redraw();
+//                                 }
+//                                 Err(e) => {
+//                                     log::error!("WGPU backend init failed: {e:?}");
+//                                     el.exit();
+//                                 }
+//                             }
+//                         }
+//                         Err(e) => {
+//                             log::error!("Window create failed: {e:?}");
+//                             el.exit();
+//                         }
+//                     }
+//                 }
+//             }
+//             fn window_event(
+//                 &mut self,
+//                 el: &winit::event_loop::ActiveEventLoop,
+//                 _id: winit::window::WindowId,
+//                 event: WindowEvent,
+//             ) {
+//                 match event {
+//                     WindowEvent::Ime(ime) => {
+//                         use winit::event::Ime;
+//                         if let Some(focused_id) = self.sched.focused {
+//                             if let Some(state) = self.textfield_states.get(&focused_id) {
+//                                 let mut state = state.borrow_mut();
+//                                 match ime {
+//                                     Ime::Enabled => {
+//                                         self.ime_preedit = false;
+//                                     }
+//                                     Ime::Preedit(text, cursor) => {
+//                                         state.set_composition(text.clone(), cursor);
+//                                         self.ime_preedit = !text.is_empty();
+//                                         self.request_redraw();
+//                                     }
+//                                     Ime::Commit(text) => {
+//                                         state.commit_composition(text);
+//                                         self.ime_preedit = false;
+//                                         self.request_redraw();
+//                                     }
+//                                     Ime::Disabled => {
+//                                         self.ime_preedit = false;
+//                                         if state.composition.is_some() {
+//                                             state.cancel_composition();
+//                                         }
+//                                         self.request_redraw();
+//                                     }
+//                                 }
+//                             }
+//                         }
+//                     }
+//                     WindowEvent::CloseRequested => el.exit(),
+//                     WindowEvent::Resized(size) => {
+//                         self.sched.size = (size.width, size.height);
+//                         if let Some(b) = &mut self.backend {
+//                             b.configure_surface(size.width, size.height);
+//                         }
+//                         self.request_redraw();
+//                     }
+//                     WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+//                         self.last_scale = scale_factor;
+//                         self.request_redraw();
+//                     }
+//                     WindowEvent::CursorMoved { position, .. } => {
+//                         self.mouse_pos = (position.x as f32, position.y as f32);
+//                         // hover/move same as desktop (omitted for brevity; reuse desktop branch)
+//                         if let Some(f) = &self.frame_cache {
+//                             let pos = Vec2 {
+//                                 x: self.mouse_pos.0,
+//                                 y: self.mouse_pos.1,
+//                             };
+//                             let top = f
+//                                 .hit_regions
+//                                 .iter()
+//                                 .rev()
+//                                 .find(|h| h.rect.contains(pos))
+//                                 .cloned();
+//                             let new_hover = top.as_ref().map(|h| h.id);
+//                             if new_hover != self.hover_id {
+//                                 if let Some(prev_id) = self.hover_id {
+//                                     if let Some(prev) =
+//                                         f.hit_regions.iter().find(|h| h.id == prev_id)
+//                                     {
+//                                         if let Some(cb) = &prev.on_pointer_leave {
+//                                             cb(compose_core::input::PointerEvent {
+//                                                 id: compose_core::input::PointerId(0),
+//                                                 kind: compose_core::input::PointerKind::Touch,
+//                                                 event: compose_core::input::PointerEventKind::Leave,
+//                                                 position: pos,
+//                                                 pressure: 1.0,
+//                                                 modifiers: self.modifiers,
+//                                             });
+//                                         }
+//                                     }
+//                                 }
+//                                 if let Some(h) = &top {
+//                                     if let Some(cb) = &h.on_pointer_enter {
+//                                         cb(compose_core::input::PointerEvent {
+//                                             id: compose_core::input::PointerId(0),
+//                                             kind: compose_core::input::PointerKind::Touch,
+//                                             event: compose_core::input::PointerEventKind::Enter,
+//                                             position: pos,
+//                                             pressure: 1.0,
+//                                             modifiers: self.modifiers,
+//                                         });
+//                                     }
+//                                 }
+//                                 self.hover_id = new_hover;
+//                             }
+//                             let pe = compose_core::input::PointerEvent {
+//                                 id: compose_core::input::PointerId(0),
+//                                 kind: compose_core::input::PointerKind::Touch,
+//                                 event: compose_core::input::PointerEventKind::Move,
+//                                 position: pos,
+//                                 pressure: 1.0,
+//                                 modifiers: self.modifiers,
+//                             };
+//                             if let Some(cid) = self.capture_id {
+//                                 if let Some(h) = f.hit_regions.iter().find(|h| h.id == cid) {
+//                                     if let Some(cb) = &h.on_pointer_move {
+//                                         cb(pe.clone());
+//                                     }
+//                                 }
+//                             } else if let Some(h) = top {
+//                                 if let Some(cb) = &h.on_pointer_move {
+//                                     cb(pe);
+//                                 }
+//                             }
+//                         }
+//                     }
+//                     WindowEvent::MouseInput {
+//                         state,
+//                         button: winit::event::MouseButton::Left,
+//                         ..
+//                     } => {
+//                         if state == ElementState::Pressed {
+//                             if let Some(f) = &self.frame_cache {
+//                                 let pos = Vec2 {
+//                                     x: self.mouse_pos.0,
+//                                     y: self.mouse_pos.1,
+//                                 };
+//                                 if let Some(hit) =
+//                                     f.hit_regions.iter().rev().find(|h| h.rect.contains(pos))
+//                                 {
+//                                     self.capture_id = Some(hit.id);
+//                                     self.pressed_ids.insert(hit.id);
+//                                     if hit.focusable {
+//                                         self.sched.focused = Some(hit.id);
+//                                         if let Some(win) = &self.window {
+//                                             win.set_ime_allowed(true);
+//                                             win.set_ime_purpose(ImePurpose::Normal);
+//                                         }
+//                                     }
+//                                     if let Some(cb) = &hit.on_pointer_down {
+//                                         cb(compose_core::input::PointerEvent {
+//                                             id: compose_core::input::PointerId(0),
+//                                             kind: compose_core::input::PointerKind::Touch,
+//                                             event: compose_core::input::PointerEventKind::Down(
+//                                                 compose_core::input::PointerButton::Primary,
+//                                             ),
+//                                             position: pos,
+//                                             pressure: 1.0,
+//                                             modifiers: self.modifiers,
+//                                         });
+//                                     }
+//                                     self.request_redraw();
+//                                 }
+//                             }
+//                         } else {
+//                             if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
+//                                 self.pressed_ids.remove(&cid);
+//                                 let pos = Vec2 {
+//                                     x: self.mouse_pos.0,
+//                                     y: self.mouse_pos.1,
+//                                 };
+//                                 if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
+//                                     if hit.rect.contains(pos) {
+//                                         if let Some(cb) = &hit.on_click {
+//                                             cb();
+//                                         }
+//                                     }
+//                                 }
+//                             }
+//                             self.capture_id = None;
+//                             self.request_redraw();
+//                         }
+//                     }
+//                     WindowEvent::MouseWheel { delta, .. } => {
+//                         let mut dy = match delta {
+//                             MouseScrollDelta::LineDelta(_x, y) => -y * 40.0,
+//                             MouseScrollDelta::PixelDelta(lp) => -(lp.y as f32),
+//                         };
+//                         if let Some(f) = &self.frame_cache {
+//                             let pos = Vec2 {
+//                                 x: self.mouse_pos.0,
+//                                 y: self.mouse_pos.1,
+//                             };
+//                             for hit in f.hit_regions.iter().rev().filter(|h| h.rect.contains(pos)) {
+//                                 if let Some(cb) = &hit.on_scroll {
+//                                     dy = cb(dy);
+//                                     if dy.abs() <= 0.001 {
+//                                         break;
+//                                     }
+//                                 }
+//                             }
+//                             self.request_redraw();
+//                         }
+//                     }
+//                     WindowEvent::RedrawRequested => {
+//                         if let (Some(backend), Some(win)) =
+//                             (self.backend.as_mut(), self.window.as_ref())
+//                         {
+//                             let scale = win.scale_factor();
+//                             self.last_scale = scale;
+//                             let t0 = Instant::now();
+//                             let frame = self.sched.compose(&mut self.root, |view, size| {
+//                                 let interactions = compose_ui::Interactions {
+//                                     hover: self.hover_id,
+//                                     pressed: self.pressed_ids.clone(),
+//                                 };
+//                                 // Density from scale factor (Android DPI / 160 roughly equals scale)
+//                                 with_density(
+//                                     Density {
+//                                         scale: scale as f32,
+//                                     },
+//                                     || {
+//                                         layout_and_paint(
+//                                             view,
+//                                             size,
+//                                             &self.textfield_states,
+//                                             &interactions,
+//                                             self.sched.focused,
+//                                         )
+//                                     },
+//                                 )
+//                             });
+//                             let build_layout_ms = (Instant::now() - t0).as_secs_f32() * 1000.0;
+//                             let mut scene = frame.scene.clone();
+//                             // HUD (opt-in via inspector hotkey; on Android you can toggle via programmatic flag later)
+//                             super::App::new(Box::new(|_| View::new(0, ViewKind::Surface))); // no-op; placeholder to keep structure similar
+//                             backend.frame(&scene, GlyphRasterConfig { px: 18.0 });
+//                             self.frame_cache = Some(frame);
+//                         }
+//                     }
+
+//                     _ => {}
+//                 }
+//             }
+//         }
+//         let mut app_state = A::new(Box::new(root));
+//         event_loop.run_app(&mut app_state)?;
+//         Ok(())
+//     }
+// }
 
 use std::collections::{HashMap, HashSet};
 

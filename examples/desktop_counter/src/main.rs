@@ -6,8 +6,8 @@ fn app(s: &mut Scheduler) -> View {
     let count = remember(|| signal(0i32));
     compose_core::with_theme(
         compose_core::Theme {
-            background: Color::from_hex("#FFFFFF"),
-            surface: Color::from_hex("#F4F4F4"),
+            background: Color::from_hex("#360e0eff"),
+            surface: Color::from_hex("#0c0b38ff"),
             on_surface: Color::from_hex("#222222"),
             primary: Color::from_hex("#3B82F6"),
             on_primary: Color::WHITE,

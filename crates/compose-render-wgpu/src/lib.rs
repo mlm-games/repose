@@ -10,6 +10,45 @@ use fontdb::Database;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use wgpu::util::DeviceExt;
 
+struct UploadRing {
+    buf: wgpu::Buffer,
+    cap: u64,
+    head: u64,
+}
+impl UploadRing {
+    fn new(device: &wgpu::Device, label: &str, cap: u64) -> Self {
+        let buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: cap,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        Self { buf, cap, head: 0 }
+    }
+    fn reset(&mut self) {
+        self.head = 0;
+    }
+    fn alloc_write(&mut self, queue: &wgpu::Queue, bytes: &[u8]) -> (u64, u64) {
+        let len = bytes.len() as u64;
+        let align = 4u64; // vertex buffer slice offset alignment
+        let start = (self.head + (align - 1)) & !(align - 1);
+        let end = start + len;
+        if end > self.cap {
+            // wrap and overwrite from start
+            self.head = 0;
+            let start = 0;
+            let end = len.min(self.cap);
+            queue.write_buffer(&self.buf, start, &bytes[0..end as usize]);
+            self.head = end;
+            (start, len.min(self.cap - start))
+        } else {
+            queue.write_buffer(&self.buf, start, bytes);
+            self.head = end;
+            (start, len)
+        }
+    }
+}
+
 pub struct WgpuBackend {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
@@ -27,6 +66,12 @@ pub struct WgpuBackend {
     // Glyph atlas
     atlas_mask: AtlasA8,
     atlas_color: AtlasRGBA,
+
+    // per-frame upload rings
+    ring_rect: UploadRing,
+    ring_border: UploadRing,
+    ring_glyph_mask: UploadRing,
+    ring_glyph_color: UploadRing,
 }
 
 struct AtlasA8 {
@@ -418,6 +463,12 @@ impl WgpuBackend {
         let atlas_mask = Self::init_atlas_mask(&device)?;
         let atlas_color = Self::init_atlas_color(&device)?;
 
+        // Upload rings (starts off small, grows in-place by recreating if needed — future work)
+        let ring_rect = UploadRing::new(&device, "ring rect", 1 << 20); // 1 MiB
+        let ring_border = UploadRing::new(&device, "ring border", 1 << 20);
+        let ring_glyph_mask = UploadRing::new(&device, "ring glyph mask", 1 << 20);
+        let ring_glyph_color = UploadRing::new(&device, "ring glyph color", 1 << 20);
+
         Ok(Self {
             surface,
             device,
@@ -432,6 +483,10 @@ impl WgpuBackend {
             text_bind_layout,
             atlas_mask,
             atlas_color,
+            ring_rect,
+            ring_border,
+            ring_glyph_color,
+            ring_glyph_mask,
         })
     }
 
@@ -843,27 +898,25 @@ impl RenderBackend for WgpuBackend {
             let sy = to_ndc_scalar(w, fb_h);
             sx.min(sy)
         }
-        fn to_scissor(r: &compose_core::Rect) -> (u32, u32, u32, u32) {
+        fn to_scissor(r: &compose_core::Rect, fb_w: u32, fb_h: u32) -> (u32, u32, u32, u32) {
             let x = r.x.max(0.0).floor() as u32;
             let y = r.y.max(0.0).floor() as u32;
-            let w = r.w.max(0.0).ceil() as u32;
-            let h = r.h.max(0.0).ceil() as u32;
-            (x, y, w.max(1), h.max(1))
+            let w = ((r.w.max(0.0).ceil() as u32).min(fb_w.saturating_sub(x))).max(1);
+            let h = ((r.h.max(0.0).ceil() as u32).min(fb_h.saturating_sub(y))).max(1);
+            (x, y, w, h)
         }
 
         let fb_w = self.config.width as f32;
         let fb_h = self.config.height as f32;
 
-        let mut clip_stack: Vec<compose_core::Rect> = Vec::new();
-
         // Prebuild draw commands, batching per pipeline between clip boundaries
         enum Cmd {
             SetClipPush(compose_core::Rect),
             SetClipPop,
-            Rect(wgpu::Buffer, u32),
-            Border(wgpu::Buffer, u32),
-            GlyphsMask(wgpu::Buffer, u32),
-            GlyphsColor(wgpu::Buffer, u32),
+            Rect { off: u64, cnt: u32 },
+            Border { off: u64, cnt: u32 },
+            GlyphsMask { off: u64, cnt: u32 },
+            GlyphsColor { off: u64, cnt: u32 },
         }
         let mut cmds: Vec<Cmd> = Vec::with_capacity(scene.nodes.len());
         struct Batch {
@@ -881,41 +934,67 @@ impl RenderBackend for WgpuBackend {
                     colors: vec![],
                 }
             }
-            fn flush(&mut self, dev: &wgpu::Device, cmds: &mut Vec<Cmd>) {
+
+            fn flush(
+                &mut self,
+                rings: (
+                    &mut UploadRing,
+                    &mut UploadRing,
+                    &mut UploadRing,
+                    &mut UploadRing,
+                ),
+                queue: &wgpu::Queue,
+                cmds: &mut Vec<Cmd>,
+            ) {
+                let (ring_rect, ring_border, ring_mask, ring_color) = rings;
+
                 if !self.rects.is_empty() {
-                    let buf = dev.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("rect batch"),
-                        contents: bytemuck::cast_slice(&self.rects),
-                        usage: wgpu::BufferUsages::VERTEX,
+                    let bytes = bytemuck::cast_slice(&self.rects);
+                    let (off, wrote) = ring_rect.alloc_write(queue, bytes);
+                    debug_assert_eq!(wrote as usize, bytes.len());
+                    cmds.push(Cmd::Rect {
+                        off,
+                        cnt: self.rects.len() as u32,
                     });
-                    cmds.push(Cmd::Rect(buf, self.rects.len() as u32));
+                    self.rects.clear();
                 }
                 if !self.borders.is_empty() {
-                    let buf = dev.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("border batch"),
-                        contents: bytemuck::cast_slice(&self.borders),
-                        usage: wgpu::BufferUsages::VERTEX,
+                    let bytes = bytemuck::cast_slice(&self.borders);
+                    let (off, wrote) = ring_border.alloc_write(queue, bytes);
+                    debug_assert_eq!(wrote as usize, bytes.len());
+                    cmds.push(Cmd::Border {
+                        off,
+                        cnt: self.borders.len() as u32,
                     });
-                    cmds.push(Cmd::Border(buf, self.borders.len() as u32));
+                    self.borders.clear();
                 }
                 if !self.masks.is_empty() {
-                    let buf = dev.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("glyph mask batch"),
-                        contents: bytemuck::cast_slice(&self.masks),
-                        usage: wgpu::BufferUsages::VERTEX,
+                    let bytes = bytemuck::cast_slice(&self.masks);
+                    let (off, wrote) = ring_mask.alloc_write(queue, bytes);
+                    debug_assert_eq!(wrote as usize, bytes.len());
+                    cmds.push(Cmd::GlyphsMask {
+                        off,
+                        cnt: self.masks.len() as u32,
                     });
-                    cmds.push(Cmd::GlyphsMask(buf, self.masks.len() as u32));
+                    self.masks.clear();
                 }
                 if !self.colors.is_empty() {
-                    let buf = dev.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("glyph color batch"),
-                        contents: bytemuck::cast_slice(&self.colors),
-                        usage: wgpu::BufferUsages::VERTEX,
+                    let bytes = bytemuck::cast_slice(&self.colors);
+                    let (off, wrote) = ring_color.alloc_write(queue, bytes);
+                    debug_assert_eq!(wrote as usize, bytes.len());
+                    cmds.push(Cmd::GlyphsColor {
+                        off,
+                        cnt: self.colors.len() as u32,
                     });
-                    cmds.push(Cmd::GlyphsColor(buf, self.colors.len() as u32));
+                    self.colors.clear();
                 }
             }
         }
+        // per frame
+        self.ring_rect.reset();
+        self.ring_border.reset();
+        self.ring_glyph_mask.reset();
+        self.ring_glyph_color.reset();
         let mut batch = Batch::new();
 
         for node in &scene.nodes {
@@ -975,16 +1054,43 @@ impl RenderBackend for WgpuBackend {
                     }
                 }
                 SceneNode::PushClip { rect, .. } => {
-                    batch.flush(&self.device, &mut cmds);
+                    batch.flush(
+                        (
+                            &mut self.ring_rect,
+                            &mut self.ring_border,
+                            &mut self.ring_glyph_mask,
+                            &mut self.ring_glyph_color,
+                        ),
+                        &self.queue,
+                        &mut cmds,
+                    );
                     cmds.push(Cmd::SetClipPush(*rect));
                 }
                 SceneNode::PopClip => {
-                    batch.flush(&self.device, &mut cmds);
+                    batch.flush(
+                        (
+                            &mut self.ring_rect,
+                            &mut self.ring_border,
+                            &mut self.ring_glyph_mask,
+                            &mut self.ring_glyph_color,
+                        ),
+                        &self.queue,
+                        &mut cmds,
+                    );
                     cmds.push(Cmd::SetClipPop);
                 }
             }
             // flush trailing batch
-            batch.flush(&self.device, &mut cmds);
+            batch.flush(
+                (
+                    &mut self.ring_rect,
+                    &mut self.ring_border,
+                    &mut self.ring_glyph_mask,
+                    &mut self.ring_glyph_color,
+                ),
+                &self.queue,
+                &mut cmds,
+            );
         }
 
         let mut encoder = self
@@ -1019,58 +1125,59 @@ impl RenderBackend for WgpuBackend {
             rpass.set_scissor_rect(0, 0, self.config.width, self.config.height);
             let bind_mask = self.atlas_bind_group_mask();
             let bind_color = self.atlas_bind_group_color();
-            let mut clip_stack: Vec<compose_core::Rect> = Vec::new();
+            let root_clip = compose_core::Rect {
+                x: 0.0,
+                y: 0.0,
+                w: fb_w,
+                h: fb_h,
+            };
+            let mut clip_stack: Vec<compose_core::Rect> = Vec::with_capacity(8);
 
             for cmd in cmds {
                 match cmd {
                     Cmd::SetClipPush(r) => {
-                        clip_stack.push(r);
-                        // compute intersection of all active clips
-                        let mut acc = r;
-                        for c in &clip_stack {
-                            let x0 = acc.x.max(c.x);
-                            let y0 = acc.y.max(c.y);
-                            let x1 = (acc.x + acc.w).min(c.x + c.w);
-                            let y1 = (acc.y + acc.h).min(c.y + c.h);
-                            acc = compose_core::Rect {
-                                x: x0,
-                                y: y0,
-                                w: (x1 - x0).max(0.0),
-                                h: (y1 - y0).max(0.0),
-                            };
-                        }
-                        let (x, y, w, h) = to_scissor(&acc);
+                        let top = clip_stack.last().copied().unwrap_or(root_clip);
+                        let next = intersect(top, r);
+                        clip_stack.push(next);
+                        let (x, y, w, h) = to_scissor(&next, self.config.width, self.config.height);
                         rpass.set_scissor_rect(x, y, w, h);
                     }
                     Cmd::SetClipPop => {
-                        let _ = clip_stack.pop();
-                        if let Some(top) = clip_stack.last() {
-                            let (x, y, w, h) = to_scissor(top);
-                            rpass.set_scissor_rect(x, y, w, h);
-                        } else {
-                            rpass.set_scissor_rect(0, 0, self.config.width, self.config.height);
+                        if clip_stack.pop().is_none() {
+                            log::warn!("PopClip with empty stack; ignoring.");
                         }
+                        let top = clip_stack.last().copied().unwrap_or(root_clip);
+                        let (x, y, w, h) = to_scissor(&top, self.config.width, self.config.height);
+                        rpass.set_scissor_rect(x, y, w, h);
                     }
-                    Cmd::Rect(buf, n) => {
+                    Cmd::Rect { off, cnt: n } => {
                         rpass.set_pipeline(&self.rect_pipeline);
-                        rpass.set_vertex_buffer(0, buf.slice(..));
+                        let bytes = (n as u64) * std::mem::size_of::<RectInstance>() as u64;
+                        rpass.set_vertex_buffer(0, self.ring_rect.buf.slice(off..off + bytes));
                         rpass.draw(0..6, 0..n);
                     }
-                    Cmd::Border(buf, n) => {
+                    Cmd::Border { off, cnt: n } => {
                         rpass.set_pipeline(&self.border_pipeline);
-                        rpass.set_vertex_buffer(0, buf.slice(..));
+                        let bytes = (n as u64) * std::mem::size_of::<BorderInstance>() as u64;
+                        rpass.set_vertex_buffer(0, self.ring_border.buf.slice(off..off + bytes));
                         rpass.draw(0..6, 0..n);
                     }
-                    Cmd::GlyphsMask(buf, n) => {
+                    Cmd::GlyphsMask { off, cnt: n } => {
                         rpass.set_pipeline(&self.text_pipeline_mask);
                         rpass.set_bind_group(0, &bind_mask, &[]);
-                        rpass.set_vertex_buffer(0, buf.slice(..));
+                        let bytes = (n as u64) * std::mem::size_of::<GlyphInstance>() as u64;
+                        rpass
+                            .set_vertex_buffer(0, self.ring_glyph_mask.buf.slice(off..off + bytes));
                         rpass.draw(0..6, 0..n);
                     }
-                    Cmd::GlyphsColor(buf, n) => {
+                    Cmd::GlyphsColor { off, cnt: n } => {
                         rpass.set_pipeline(&self.text_pipeline_color);
                         rpass.set_bind_group(0, &bind_color, &[]);
-                        rpass.set_vertex_buffer(0, buf.slice(..));
+                        let bytes = (n as u64) * std::mem::size_of::<GlyphInstance>() as u64;
+                        rpass.set_vertex_buffer(
+                            0,
+                            self.ring_glyph_color.buf.slice(off..off + bytes),
+                        );
                         rpass.draw(0..6, 0..n);
                     }
                 }
@@ -1084,10 +1191,15 @@ impl RenderBackend for WgpuBackend {
     }
 }
 
-fn to_scissor(r: &compose_core::Rect) -> (u32, u32, u32, u32) {
-    let x = r.x.max(0.0).floor() as u32;
-    let y = r.y.max(0.0).floor() as u32;
-    let w = r.w.max(0.0).ceil() as u32;
-    let h = r.h.max(0.0).ceil() as u32;
-    (x, y, w.max(1), h.max(1))
+fn intersect(a: compose_core::Rect, b: compose_core::Rect) -> compose_core::Rect {
+    let x0 = a.x.max(b.x);
+    let y0 = a.y.max(b.y);
+    let x1 = (a.x + a.w).min(b.x + b.w);
+    let y1 = (a.y + a.h).min(b.y + b.h);
+    compose_core::Rect {
+        x: x0,
+        y: y0,
+        w: (x1 - x0).max(0.0),
+        h: (y1 - y0).max(0.0),
+    }
 }

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::scope::Scope;
-use crate::{semantics::Role, semantics::Semantics, Color, Rect, Scene, View};
+use crate::{semantics::Role, Rect, Scene, View};
 
 thread_local! {
     pub static COMPOSER: RefCell<Composer> = RefCell::new(Composer::default());

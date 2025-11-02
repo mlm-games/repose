@@ -1,0 +1,33 @@
+[package]
+name = "android_counter"
+version = "0.3.0"
+edition = "2024"
+publish = false
+
+[lib]
+name = "android_counter"
+crate-type = ["cdylib"]
+
+[package.metadata.android]
+package = "com.example.android_counter"
+apk_name = "android_counter"
+target_sdk_version = 34
+min_sdk_version = 26
+build_targets = ["aarch64-linux-android"]
+# runtime_libs = []
+split_per_abi = true
+
+[package.metadata.android.application]
+# icon = "@mipmap/ic_launcher"
+label = "Repose Counter"
+fullscreen = true
+
+[dependencies]
+compose-core = { path = "../../crates/compose-core", version = "0.3.0" }
+compose-ui = { path = "../../crates/compose-ui", version = "0.3.0" }
+compose-platform = { path = "../../crates/compose-platform", version = "0.3.0", features = [
+    "android",
+] }
+winit = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }

@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::animation::*;
     use crate::remember_with_key;
     use crate::scope::*;

@@ -131,7 +131,7 @@ pub trait Clock: Send + Sync + 'static {
     fn now(&self) -> Instant;
 }
 
-struct SystemClock;
+pub struct SystemClock;
 impl Clock for SystemClock {
     fn now(&self) -> Instant {
         Instant::now()

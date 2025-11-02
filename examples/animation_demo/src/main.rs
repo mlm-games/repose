@@ -15,7 +15,7 @@ fn app(_s: &mut Scheduler) -> View {
     let animated_size = remember_with_key("size", || {
         Rc::new(RefCell::new(compose_core::animation::AnimatedValue::new(
             100.0f32,
-            compose_core::animation::AnimationSpec::spring(),
+            compose_core::animation::AnimationSpec::fast(),
         )))
     });
 
@@ -104,6 +104,6 @@ fn app(_s: &mut Scheduler) -> View {
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    log::info!("Starting Animation Demo v0.2");
+    log::info!("Starting Animation Demo");
     run_desktop_app(app)
 }

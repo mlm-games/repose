@@ -68,6 +68,6 @@ fn app(_s: &mut Scheduler) -> View {
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    log::info!("Starting LazyColumn Example v0.2");
+    log::info!("Starting LazyColumn Example (Broken/WIP currently)");
     run_desktop_app(app)
 }

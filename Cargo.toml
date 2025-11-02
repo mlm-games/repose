@@ -11,6 +11,7 @@ members = [
   "examples/textfield_ime",
   "examples/lazy_list",
   "examples/animation_demo",
+  "examples/android_counter",
 ]
 resolver = "2"
 
@@ -29,7 +30,7 @@ smallvec = "1"
 slotmap = "1"
 bitflags = "2"
 unicode-segmentation = "1.12"
-arboard = "3.6"
+arboard = { version = "3.6", features = ["wayland-data-control"] }
 
 
 # Layout
@@ -46,3 +47,4 @@ fontdb = "0.23.0"
 cosmic-text = { version = "0.15.0", default-features = true, features = [
   "swash",
 ] }
+android_logger = "0.15"
