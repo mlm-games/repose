@@ -6,6 +6,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 compose-core = { path = "../compose-core", version = "0.2.0" }
+compose-text = { path = "../compose-text", version = "0.1.0" }
 wgpu = { workspace = true }
 winit = { workspace = true }
 log = { workspace = true }
@@ -14,3 +15,4 @@ ab_glyph = { workspace = true }
 fontdb = { workspace = true }
 bytemuck = { version = "1.23.2", features = ["derive"] }
 pollster = { workspace = true }
+cosmic-text = { workspace = true }

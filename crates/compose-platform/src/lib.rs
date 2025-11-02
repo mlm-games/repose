@@ -3,6 +3,7 @@ use compose_ui::layout_and_paint;
 use compose_ui::textfield::{
     byte_to_char_index, index_for_x_bytes, measure_text, TextFieldState, TF_FONT_PX, TF_PADDING_X,
 };
+use std::time::Instant;
 
 #[cfg(feature = "desktop")]
 pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> anyhow::Result<()> {
@@ -42,6 +43,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
         pressed_ids: HashSet<u64>,
         key_pressed_active: Option<u64>, // for Space/Enter press/release activation
         clipboard: Option<arboard::Clipboard>,
+        a11y: Box<dyn A11yBridge>,
+        last_focus: Option<u64>,
     }
 
     impl App {
@@ -62,6 +65,17 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                 pressed_ids: HashSet::new(),
                 key_pressed_active: None,
                 clipboard: None,
+                a11y: {
+                    #[cfg(target_os = "linux")]
+                    {
+                        Box::new(LinuxAtspiStub) as Box<dyn A11yBridge>
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    {
+                        Box::new(NoopA11y) as Box<dyn A11yBridge>
+                    }
+                },
+                last_focus: None,
             }
         }
 
@@ -264,6 +278,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     button: MouseButton::Left,
                     ..
                 } => {
+                    let mut need_announce = false;
                     if let Some(f) = &self.frame_cache {
                         let pos = Vec2 {
                             x: self.mouse_pos.0,
@@ -281,6 +296,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             // Focus & IME first for focusables (so state exists)
                             if hit.focusable {
                                 self.sched.focused = Some(hit.id);
+                                need_announce = true;
                                 self.textfield_states.entry(hit.id).or_insert_with(|| {
                                     Rc::new(RefCell::new(
                                         compose_ui::textfield::TextFieldState::new(),
@@ -350,6 +366,9 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     );
                                 }
                             }
+                            if need_announce {
+                                self.announce_focus_change();
+                            }
 
                             self.request_redraw();
                         } else {
@@ -385,6 +404,13 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             if hit.rect.contains(pos) {
                                 if let Some(cb) = &hit.on_click {
                                     cb();
+                                    // A11y: announce activation (mouse)
+                                    if let Some(node) =
+                                        f.semantics_nodes.iter().find(|n| n.id == cid)
+                                    {
+                                        let label = node.label.as_deref().unwrap_or("");
+                                        self.a11y.announce(&format!("Activated {}", label));
+                                    }
                                 }
                             }
                         }
@@ -482,6 +508,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                         win.set_ime_allowed(false);
                                     }
                                 }
+                                self.announce_focus_change();
                                 self.request_redraw();
                             }
                         }
@@ -665,6 +692,13 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     if let Some(h) = f.hit_regions.iter().find(|h| h.id == active) {
                                         if let Some(cb) = &h.on_click {
                                             cb();
+                                            // A11y: announce activation
+                                            if let Some(node) =
+                                                f.semantics_nodes.iter().find(|n| n.id == active)
+                                            {
+                                                let label = node.label.as_deref().unwrap_or("");
+                                                self.a11y.announce(&format!("Activated {}", label));
+                                            }
                                         }
                                     }
                                 }
@@ -720,6 +754,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     if let (Some(backend), Some(_win)) =
                         (self.backend.as_mut(), self.window.as_ref())
                     {
+                        let t0 = Instant::now();
                         // Compose
                         let focused = self.sched.focused;
                         let hover_id = self.hover_id;
@@ -735,8 +770,27 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             layout_and_paint(view, size, tf_states, &interactions, focused)
                         });
 
+                        let build_layout_ms = (Instant::now() - t0).as_secs_f32() * 1000.0;
+
+                        // A11y: publish semantics tree each frame (cheap for now)
+                        self.a11y.publish_tree(&frame.semantics_nodes);
+                        // If focus id changed since last publish, send focused node
+                        if self.last_focus != self.sched.focused {
+                            let focused_node = self
+                                .sched
+                                .focused
+                                .and_then(|id| frame.semantics_nodes.iter().find(|n| n.id == id));
+                            self.a11y.focus_changed(focused_node);
+                            self.last_focus = self.sched.focused;
+                        }
+
                         // Render
                         let mut scene = frame.scene.clone();
+                        // Update HUD metrics before overlay draws
+                        self.inspector.hud.metrics = Some(compose_devtools::Metrics {
+                            build_layout_ms,
+                            scene_nodes: scene.nodes.len(),
+                        });
                         self.inspector.frame(&mut scene);
                         backend.frame(&scene, GlyphRasterConfig { px: 18.0 });
                         self.frame_cache = Some(frame);
@@ -769,8 +823,71 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
         fn memory_warning(&mut self, _: &winit::event_loop::ActiveEventLoop) {}
     }
 
+    impl App {
+        fn announce_focus_change(&mut self) {
+            if let Some(f) = &self.frame_cache {
+                let focused_node = self
+                    .sched
+                    .focused
+                    .and_then(|id| f.semantics_nodes.iter().find(|n| n.id == id));
+                self.a11y.focus_changed(focused_node);
+            }
+        }
+    }
+
     let event_loop = EventLoop::new()?;
     let mut app = App::new(Box::new(root));
+    // Install system clock once
+    compose_core::animation::set_clock(Box::new(compose_core::animation::TestClock {
+        t: std::time::Instant::now(),
+    }));
+    // replace TestClock with SystemClock and check later (if needed):
+    // compose_core::animation::set_clock(Box::new(compose_core::animation::SystemClock));
     event_loop.run_app(&mut app)?;
     Ok(())
+}
+
+use std::collections::{HashMap, HashSet};
+
+// Accessibility bridge stub (Noop by default; logs on Linux for now)
+pub trait A11yBridge: Send {
+    fn publish_tree(&mut self, nodes: &[compose_core::runtime::SemNode]);
+    fn focus_changed(&mut self, node: Option<&compose_core::runtime::SemNode>);
+    fn announce(&mut self, msg: &str);
+}
+
+struct NoopA11y;
+impl A11yBridge for NoopA11y {
+    fn publish_tree(&mut self, _nodes: &[compose_core::runtime::SemNode]) {
+        // no-op
+    }
+    fn focus_changed(&mut self, node: Option<&compose_core::runtime::SemNode>) {
+        if let Some(n) = node {
+            log::info!("A11y focus: {:?} {:?}", n.role, n.label);
+        } else {
+            log::info!("A11y focus: None");
+        }
+    }
+    fn announce(&mut self, msg: &str) {
+        log::info!("A11y announce: {msg}");
+    }
+}
+
+#[cfg(target_os = "linux")]
+struct LinuxAtspiStub;
+#[cfg(target_os = "linux")]
+impl A11yBridge for LinuxAtspiStub {
+    fn publish_tree(&mut self, nodes: &[compose_core::runtime::SemNode]) {
+        log::debug!("AT-SPI stub: publish {} nodes", nodes.len());
+    }
+    fn focus_changed(&mut self, node: Option<&compose_core::runtime::SemNode>) {
+        if let Some(n) = node {
+            log::info!("AT-SPI stub focus: {:?} {:?}", n.role, n.label);
+        } else {
+            log::info!("AT-SPI stub focus: None");
+        }
+    }
+    fn announce(&mut self, msg: &str) {
+        log::info!("AT-SPI stub announce: {msg}");
+    }
 }

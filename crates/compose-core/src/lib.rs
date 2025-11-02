@@ -4,6 +4,7 @@ pub mod effects;
 pub mod error;
 pub mod geometry;
 pub mod input;
+pub mod locals;
 pub mod modifier;
 pub mod prelude;
 pub mod render_api;
@@ -11,11 +12,13 @@ pub mod runtime;
 pub mod scope;
 pub mod semantics;
 pub mod signal;
+pub mod tests;
 pub mod view;
 
 pub use color::*;
 pub use effects::*;
 pub use geometry::*;
+pub use locals::*;
 pub use modifier::*;
 pub use prelude::*;
 pub use render_api::*;
@@ -23,3 +26,10 @@ pub use runtime::*;
 pub use semantics::*;
 pub use signal::*;
 pub use view::*;
+
+// Ensure a clock is installed even if platform didn't (tests, benches).
+#[doc(hidden)]
+#[allow(dead_code)]
+fn __ensure_clock() {
+    animation::ensure_system_clock();
+}

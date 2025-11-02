@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use ab_glyph::{point, Font, FontArc, Glyph, PxScale, ScaleFont};
 use compose_core::{Color, GlyphRasterConfig, RenderBackend, Scene, SceneNode};
+use cosmic_text;
 use fontdb::Database;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use wgpu::util::DeviceExt;
 
 pub struct WgpuBackend {
@@ -18,16 +20,16 @@ pub struct WgpuBackend {
     // rect_bind_layout: wgpu::BindGroupLayout,
     border_pipeline: wgpu::RenderPipeline,
     // border_bind_layout: wgpu::BindGroupLayout,
-    text_pipeline: wgpu::RenderPipeline,
+    text_pipeline_mask: wgpu::RenderPipeline,
+    text_pipeline_color: wgpu::RenderPipeline,
     text_bind_layout: wgpu::BindGroupLayout,
 
     // Glyph atlas
-    font: FontArc,
-    // font_size: f32,
-    atlas: Atlas,
+    atlas_mask: AtlasA8,
+    atlas_color: AtlasRGBA,
 }
 
-struct Atlas {
+struct AtlasA8 {
     tex: wgpu::Texture,
     view: wgpu::TextureView,
     sampler: wgpu::Sampler,
@@ -35,7 +37,18 @@ struct Atlas {
     next_x: u32,
     next_y: u32,
     row_h: u32,
-    map: HashMap<(char, u32), GlyphInfo>,
+    map: HashMap<(compose_text::GlyphKey, u32), GlyphInfo>,
+}
+
+struct AtlasRGBA {
+    tex: wgpu::Texture,
+    view: wgpu::TextureView,
+    sampler: wgpu::Sampler,
+    size: u32,
+    next_x: u32,
+    next_y: u32,
+    row_h: u32,
+    map: HashMap<(compose_text::GlyphKey, u32), GlyphInfo>,
 }
 
 #[derive(Clone, Copy)]
@@ -274,9 +287,15 @@ impl WgpuBackend {
         });
 
         // Pipelines: Text
-        let text_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        let text_mask_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("text.wgsl"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/text.wgsl"))),
+        });
+        let text_color_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("text_color.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                "shaders/text_color.wgsl"
+            ))),
         });
         let text_bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("text bind layout"),
@@ -304,11 +323,11 @@ impl WgpuBackend {
             bind_group_layouts: &[&text_bind_layout],
             push_constant_ranges: &[],
         });
-        let text_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("text pipeline"),
+        let text_pipeline_mask = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("text pipeline (mask)"),
             layout: Some(&text_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &text_shader,
+                module: &text_mask_shader,
                 entry_point: Some("vs_main"),
                 buffers: &[wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<GlyphInstance>() as u64,
@@ -334,7 +353,52 @@ impl WgpuBackend {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &text_shader,
+                module: &text_mask_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+        let text_pipeline_color = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("text pipeline (color)"),
+            layout: Some(&text_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &text_color_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<GlyphInstance>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            shader_location: 0,
+                            offset: 0,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 1,
+                            offset: 16,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 2,
+                            offset: 32,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                    ],
+                }],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &text_color_shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
@@ -350,8 +414,9 @@ impl WgpuBackend {
             cache: None,
         });
 
-        // Font and atlas
-        let (font, atlas) = Self::init_font_and_atlas(&device)?;
+        // Atlases
+        let atlas_mask = Self::init_atlas_mask(&device)?;
+        let atlas_color = Self::init_atlas_color(&device)?;
 
         Ok(Self {
             surface,
@@ -362,47 +427,18 @@ impl WgpuBackend {
             // rect_bind_layout,
             border_pipeline,
             // border_bind_layout,
-            text_pipeline,
+            text_pipeline_mask,
+            text_pipeline_color,
             text_bind_layout,
-            font,
-            // font_size: 24.0,
-            atlas,
+            atlas_mask,
+            atlas_color,
         })
     }
 
-    fn init_font_and_atlas(device: &wgpu::Device) -> anyhow::Result<(FontArc, Atlas)> {
-        // Load default sans-serif from system
-        let mut db = Database::new();
-        db.load_system_fonts();
-
-        let query = fontdb::Query {
-            families: &[fontdb::Family::SansSerif],
-            ..Default::default()
-        };
-        let id = db
-            .query(&query)
-            .ok_or_else(|| anyhow::anyhow!("No system sans-serif font found"))?;
-
-        let (source, _face_index) = db
-            .face_source(id)
-            .ok_or_else(|| anyhow::anyhow!("Font face not found"))?;
-
-        let font = match source {
-            fontdb::Source::Binary(data) => {
-                let bytes: &[u8] = data.as_ref().as_ref();
-                FontArc::try_from_vec(bytes.to_vec())
-                    .map_err(|_| anyhow::anyhow!("Failed to load font from binary data"))?
-            }
-            fontdb::Source::File(path) | fontdb::Source::SharedFile(path, _) => {
-                let bytes = std::fs::read(path)?;
-                FontArc::try_from_vec(bytes)
-                    .map_err(|_| anyhow::anyhow!("Failed to load font from file"))?
-            }
-        };
-
+    fn init_atlas_mask(device: &wgpu::Device) -> anyhow::Result<AtlasA8> {
         let size = 1024u32;
         let tex = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("glyph atlas"),
+            label: Some("glyph atlas A8"),
             size: wgpu::Extent3d {
                 width: size,
                 height: size,
@@ -417,7 +453,7 @@ impl WgpuBackend {
         });
         let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("glyph atlas sampler"),
+            label: Some("glyph atlas sampler A8"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -427,77 +463,124 @@ impl WgpuBackend {
             ..Default::default()
         });
 
-        Ok((
-            font,
-            Atlas {
-                tex,
-                view,
-                sampler,
-                size,
-                next_x: 1,
-                next_y: 1,
-                row_h: 0,
-                map: HashMap::new(),
-            },
-        ))
+        Ok(AtlasA8 {
+            tex,
+            view,
+            sampler,
+            size,
+            next_x: 1,
+            next_y: 1,
+            row_h: 0,
+            map: HashMap::new(),
+        })
     }
 
-    fn atlas_bind_group(&self) -> wgpu::BindGroup {
+    fn init_atlas_color(device: &wgpu::Device) -> anyhow::Result<AtlasRGBA> {
+        let size = 1024u32;
+        let tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("glyph atlas RGBA"),
+            size: wgpu::Extent3d {
+                width: size,
+                height: size,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("glyph atlas sampler RGBA"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+        Ok(AtlasRGBA {
+            tex,
+            view,
+            sampler,
+            size,
+            next_x: 1,
+            next_y: 1,
+            row_h: 0,
+            map: HashMap::new(),
+        })
+    }
+
+    fn atlas_bind_group_mask(&self) -> wgpu::BindGroup {
         self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("atlas bind"),
             layout: &self.text_bind_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&self.atlas.view),
+                    resource: wgpu::BindingResource::TextureView(&self.atlas_mask.view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.atlas.sampler),
+                    resource: wgpu::BindingResource::Sampler(&self.atlas_mask.sampler),
+                },
+            ],
+        })
+    }
+    fn atlas_bind_group_color(&self) -> wgpu::BindGroup {
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("atlas bind color"),
+            layout: &self.text_bind_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&self.atlas_color.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.atlas_color.sampler),
                 },
             ],
         })
     }
 
-    fn upload_glyph(&mut self, ch: char, px: u32) -> Option<GlyphInfo> {
-        let key = (ch, px);
-        if let Some(info) = self.atlas.map.get(&key) {
+    fn upload_glyph_mask(&mut self, key: compose_text::GlyphKey, px: u32) -> Option<GlyphInfo> {
+        let keyp = (key, px);
+        if let Some(info) = self.atlas_mask.map.get(&keyp) {
             return Some(*info);
         }
 
-        let scaled = self.font.as_scaled(PxScale::from(px as f32));
-
-        let glyph_id = scaled.glyph_id(ch);
-        let glyph = glyph_id.with_scale_and_position(PxScale::from(px as f32), point(0.0, 0.0));
-
-        let outlined = scaled.outline_glyph(glyph)?;
-        let bb = outlined.px_bounds();
-
-        let w = (bb.max.x - bb.min.x).ceil().max(1.0) as u32;
-        let h = (bb.max.y - bb.min.y).ceil().max(1.0) as u32;
-
-        // Packing
-        if self.atlas.next_x + w + 1 >= self.atlas.size {
-            self.atlas.next_x = 1;
-            self.atlas.next_y += self.atlas.row_h + 1;
-            self.atlas.row_h = 0;
+        let gb = compose_text::rasterize(key, px as f32)?;
+        if gb.w == 0 || gb.h == 0 || gb.data.is_empty() {
+            return None; //Whitespace, but doesn't get inserted?
         }
-        if self.atlas.next_y + h + 1 >= self.atlas.size {
-            // atlas full
+        if !matches!(
+            gb.content,
+            cosmic_text::SwashContent::Mask | cosmic_text::SwashContent::SubpixelMask
+        ) {
+            return None; // handled by color path
+        }
+        let w = gb.w.max(1);
+        let h = gb.h.max(1);
+        // Packing
+        if self.atlas_mask.next_x + w + 1 >= self.atlas_mask.size {
+            self.atlas_mask.next_x = 1;
+            self.atlas_mask.next_y += self.atlas_mask.row_h + 1;
+            self.atlas_mask.row_h = 0;
+        }
+        if self.atlas_mask.next_y + h + 1 >= self.atlas_mask.size {
+            // atlas_mask full
             return None;
         }
-        let x = self.atlas.next_x;
-        let y = self.atlas.next_y;
-        self.atlas.next_x += w + 1;
-        self.atlas.row_h = self.atlas.row_h.max(h + 1);
+        let x = self.atlas_mask.next_x;
+        let y = self.atlas_mask.next_y;
+        self.atlas_mask.next_x += w + 1;
+        self.atlas_mask.row_h = self.atlas_mask.row_h.max(h + 1);
 
-        let mut buf = vec![0u8; (w * h) as usize];
-        outlined.draw(|gx, gy, cov| {
-            let idx = (gy as u32 * w + gx as u32) as usize;
-            if idx < buf.len() {
-                buf[idx] = (cov * 255.0) as u8;
-            }
-        });
+        let buf = gb.data;
 
         // Upload
         let layout = wgpu::TexelCopyBufferLayout {
@@ -512,7 +595,7 @@ impl WgpuBackend {
         };
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfoBase {
-                texture: &self.atlas.tex,
+                texture: &self.atlas_mask.tex,
                 mip_level: 0,
                 origin: wgpu::Origin3d { x, y, z: 0 },
                 aspect: wgpu::TextureAspect::All,
@@ -522,21 +605,173 @@ impl WgpuBackend {
             size,
         );
 
-        let h_metrics = scaled.h_advance(glyph_id);
-
         let info = GlyphInfo {
-            u0: x as f32 / self.atlas.size as f32,
-            v0: y as f32 / self.atlas.size as f32,
-            u1: (x + w) as f32 / self.atlas.size as f32,
-            v1: (y + h) as f32 / self.atlas.size as f32,
+            u0: x as f32 / self.atlas_mask.size as f32,
+            v0: y as f32 / self.atlas_mask.size as f32,
+            u1: (x + w) as f32 / self.atlas_mask.size as f32,
+            v1: (y + h) as f32 / self.atlas_mask.size as f32,
             w: w as f32,
             h: h as f32,
-            bearing_x: bb.min.x,
-            bearing_y: -bb.min.y,
-            advance: h_metrics,
+            bearing_x: 0.0, // not used from atlas_mask so take it via shaping
+            bearing_y: 0.0,
+            advance: 0.0,
         };
-        self.atlas.map.insert(key, info);
+        self.atlas_mask.map.insert(keyp, info);
         Some(info)
+    }
+    fn upload_glyph_color(&mut self, key: compose_text::GlyphKey, px: u32) -> Option<GlyphInfo> {
+        let keyp = (key, px);
+        if let Some(info) = self.atlas_color.map.get(&keyp) {
+            return Some(*info);
+        }
+        let gb = compose_text::rasterize(key, px as f32)?;
+        if !matches!(gb.content, cosmic_text::SwashContent::Color) {
+            return None;
+        }
+        let w = gb.w.max(1);
+        let h = gb.h.max(1);
+        if !self.alloc_space_color(w, h) {
+            self.grow_color_and_rebuild();
+        }
+        if !self.alloc_space_color(w, h) {
+            return None;
+        }
+        let x = self.atlas_color.next_x;
+        let y = self.atlas_color.next_y;
+        self.atlas_color.next_x += w + 1;
+        self.atlas_color.row_h = self.atlas_color.row_h.max(h + 1);
+
+        let layout = wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(w * 4),
+            rows_per_image: Some(h),
+        };
+        let size = wgpu::Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        };
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfoBase {
+                texture: &self.atlas_color.tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x, y, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &gb.data,
+            layout,
+            size,
+        );
+        let info = GlyphInfo {
+            u0: x as f32 / self.atlas_color.size as f32,
+            v0: y as f32 / self.atlas_color.size as f32,
+            u1: (x + w) as f32 / self.atlas_color.size as f32,
+            v1: (y + h) as f32 / self.atlas_color.size as f32,
+            w: w as f32,
+            h: h as f32,
+            bearing_x: 0.0,
+            bearing_y: 0.0,
+            advance: 0.0,
+        };
+        self.atlas_color.map.insert(keyp, info);
+        Some(info)
+    }
+
+    // Atlas alloc/grow (A8)
+    fn alloc_space_mask(&mut self, w: u32, h: u32) -> bool {
+        if self.atlas_mask.next_x + w + 1 >= self.atlas_mask.size {
+            self.atlas_mask.next_x = 1;
+            self.atlas_mask.next_y += self.atlas_mask.row_h + 1;
+            self.atlas_mask.row_h = 0;
+        }
+        if self.atlas_mask.next_y + h + 1 >= self.atlas_mask.size {
+            return false;
+        }
+        true
+    }
+    fn grow_mask_and_rebuild(&mut self) {
+        let new_size = (self.atlas_mask.size * 2).min(4096);
+        if new_size == self.atlas_mask.size {
+            return;
+        }
+        // recreate texture
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("glyph atlas A8 (grown)"),
+            size: wgpu::Extent3d {
+                width: new_size,
+                height: new_size,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.atlas_mask.tex = tex;
+        self.atlas_mask.view = self
+            .atlas_mask
+            .tex
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        self.atlas_mask.size = new_size;
+        self.atlas_mask.next_x = 1;
+        self.atlas_mask.next_y = 1;
+        self.atlas_mask.row_h = 0;
+        // rebuild all keys
+        let keys: Vec<(compose_text::GlyphKey, u32)> =
+            self.atlas_mask.map.keys().copied().collect();
+        self.atlas_mask.map.clear();
+        for (k, px) in keys {
+            let _ = self.upload_glyph_mask(k, px);
+        }
+    }
+    // Atlas alloc/grow (RGBA)
+    fn alloc_space_color(&mut self, w: u32, h: u32) -> bool {
+        if self.atlas_color.next_x + w + 1 >= self.atlas_color.size {
+            self.atlas_color.next_x = 1;
+            self.atlas_color.next_y += self.atlas_color.row_h + 1;
+            self.atlas_color.row_h = 0;
+        }
+        if self.atlas_color.next_y + h + 1 >= self.atlas_color.size {
+            return false;
+        }
+        true
+    }
+    fn grow_color_and_rebuild(&mut self) {
+        let new_size = (self.atlas_color.size * 2).min(4096);
+        if new_size == self.atlas_color.size {
+            return;
+        }
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("glyph atlas RGBA (grown)"),
+            size: wgpu::Extent3d {
+                width: new_size,
+                height: new_size,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.atlas_color.tex = tex;
+        self.atlas_color.view = self
+            .atlas_color
+            .tex
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        self.atlas_color.size = new_size;
+        self.atlas_color.next_x = 1;
+        self.atlas_color.next_y = 1;
+        self.atlas_color.row_h = 0;
+        let keys: Vec<(compose_text::GlyphKey, u32)> =
+            self.atlas_color.map.keys().copied().collect();
+        self.atlas_color.map.clear();
+        for (k, px) in keys {
+            let _ = self.upload_glyph_color(k, px);
+        }
     }
 }
 
@@ -551,13 +786,32 @@ impl RenderBackend for WgpuBackend {
     }
 
     fn frame(&mut self, scene: &Scene, _glyph_cfg: GlyphRasterConfig) {
-        let frame = match self.surface.get_current_texture() {
-            Ok(f) => f,
-            Err(_) => {
-                self.surface.configure(&self.device, &self.config);
-                self.surface
-                    .get_current_texture()
-                    .expect("failed to acquire frame")
+        if self.config.width == 0 || self.config.height == 0 {
+            return;
+        }
+        let frame = loop {
+            match self.surface.get_current_texture() {
+                Ok(f) => break f,
+                Err(wgpu::SurfaceError::Lost) => {
+                    log::warn!("surface lost; reconfiguring");
+                    self.surface.configure(&self.device, &self.config);
+                }
+                Err(wgpu::SurfaceError::Outdated) => {
+                    log::warn!("surface outdated; reconfiguring");
+                    self.surface.configure(&self.device, &self.config);
+                }
+                Err(wgpu::SurfaceError::Timeout) => {
+                    log::warn!("surface timeout; retrying");
+                    continue;
+                }
+                Err(wgpu::SurfaceError::OutOfMemory) => {
+                    log::error!("surface OOM");
+                    return;
+                }
+                Err(wgpu::SurfaceError::Other) => {
+                    log::error!("Other error");
+                    return;
+                }
             }
         };
         let view = frame
@@ -602,15 +856,67 @@ impl RenderBackend for WgpuBackend {
 
         let mut clip_stack: Vec<compose_core::Rect> = Vec::new();
 
-        // Prebuild draw commands (buffers) in node order to preserve clips
+        // Prebuild draw commands, batching per pipeline between clip boundaries
         enum Cmd {
             SetClipPush(compose_core::Rect),
             SetClipPop,
             Rect(wgpu::Buffer, u32),
             Border(wgpu::Buffer, u32),
-            Glyphs(wgpu::Buffer, u32),
+            GlyphsMask(wgpu::Buffer, u32),
+            GlyphsColor(wgpu::Buffer, u32),
         }
         let mut cmds: Vec<Cmd> = Vec::with_capacity(scene.nodes.len());
+        struct Batch {
+            rects: Vec<RectInstance>,
+            borders: Vec<BorderInstance>,
+            masks: Vec<GlyphInstance>,
+            colors: Vec<GlyphInstance>,
+        }
+        impl Batch {
+            fn new() -> Self {
+                Self {
+                    rects: vec![],
+                    borders: vec![],
+                    masks: vec![],
+                    colors: vec![],
+                }
+            }
+            fn flush(&mut self, dev: &wgpu::Device, cmds: &mut Vec<Cmd>) {
+                if !self.rects.is_empty() {
+                    let buf = dev.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("rect batch"),
+                        contents: bytemuck::cast_slice(&self.rects),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    });
+                    cmds.push(Cmd::Rect(buf, self.rects.len() as u32));
+                }
+                if !self.borders.is_empty() {
+                    let buf = dev.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("border batch"),
+                        contents: bytemuck::cast_slice(&self.borders),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    });
+                    cmds.push(Cmd::Border(buf, self.borders.len() as u32));
+                }
+                if !self.masks.is_empty() {
+                    let buf = dev.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("glyph mask batch"),
+                        contents: bytemuck::cast_slice(&self.masks),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    });
+                    cmds.push(Cmd::GlyphsMask(buf, self.masks.len() as u32));
+                }
+                if !self.colors.is_empty() {
+                    let buf = dev.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("glyph color batch"),
+                        contents: bytemuck::cast_slice(&self.colors),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    });
+                    cmds.push(Cmd::GlyphsColor(buf, self.colors.len() as u32));
+                }
+            }
+        }
+        let mut batch = Batch::new();
 
         for node in &scene.nodes {
             match node {
@@ -619,19 +925,11 @@ impl RenderBackend for WgpuBackend {
                     color,
                     radius,
                 } => {
-                    let inst = RectInstance {
+                    batch.rects.push(RectInstance {
                         xywh: to_ndc(rect.x, rect.y, rect.w, rect.h, fb_w, fb_h),
                         radius: to_ndc_radius(*radius, fb_w, fb_h),
                         color: color.to_linear(),
-                    };
-                    let buf = self
-                        .device
-                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: Some("rect instance"),
-                            contents: bytemuck::bytes_of(&inst),
-                            usage: wgpu::BufferUsages::VERTEX,
-                        });
-                    cmds.push(Cmd::Rect(buf, 1));
+                    });
                 }
                 SceneNode::Border {
                     rect,
@@ -639,20 +937,12 @@ impl RenderBackend for WgpuBackend {
                     width,
                     radius,
                 } => {
-                    let inst = BorderInstance {
+                    batch.borders.push(BorderInstance {
                         xywh: to_ndc(rect.x, rect.y, rect.w, rect.h, fb_w, fb_h),
                         radius_outer: to_ndc_radius(*radius, fb_w, fb_h),
                         stroke: to_ndc_stroke(*width, fb_w, fb_h),
                         color: color.to_linear(),
-                    };
-                    let buf = self
-                        .device
-                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: Some("border instance"),
-                            contents: bytemuck::bytes_of(&inst),
-                            usage: wgpu::BufferUsages::VERTEX,
-                        });
-                    cmds.push(Cmd::Border(buf, 1));
+                    });
                 }
                 SceneNode::Text {
                     rect,
@@ -660,44 +950,41 @@ impl RenderBackend for WgpuBackend {
                     color,
                     size,
                 } => {
-                    let px = (*size).clamp(8.0, 96.0) as u32;
-                    let font = self.font.clone();
-                    let scaled = font.as_scaled(ab_glyph::PxScale::from(px as f32));
-                    let ascent = scaled.ascent(); // baseline-correct
-                    let mut pen_x = rect.x;
-                    let baseline_y = rect.y + ascent;
-                    let mut instances: Vec<GlyphInstance> = Vec::with_capacity(text.len());
-                    for ch in text.chars() {
-                        if ch == '\n' {
-                            continue;
-                        }
-                        let gid = scaled.glyph_id(ch);
-                        let advance = scaled.h_advance(gid);
-                        if let Some(info) = self.upload_glyph(ch, px) {
-                            let x = pen_x + info.bearing_x;
-                            let y = baseline_y - info.bearing_y;
-                            instances.push(GlyphInstance {
+                    let px = (*size).clamp(8.0, 96.0);
+                    // Shape line using compose-text (correct ligatures/bidi/fallback)
+                    let shaped = compose_text::shape_line(text, px);
+                    for sg in shaped {
+                        // Try color first; if not color, try mask
+                        if let Some(info) = self.upload_glyph_color(sg.key, px as u32) {
+                            let x = rect.x + sg.x + sg.bearing_x;
+                            let y = rect.y + sg.y - sg.bearing_y;
+                            batch.colors.push(GlyphInstance {
+                                xywh: to_ndc(x, y, info.w, info.h, fb_w, fb_h),
+                                uv: [info.u0, info.v1, info.u1, info.v0],
+                                color: [1.0, 1.0, 1.0, 1.0], // do not tint color glyphs
+                            });
+                        } else if let Some(info) = self.upload_glyph_mask(sg.key, px as u32) {
+                            let x = rect.x + sg.x + sg.bearing_x;
+                            let y = rect.y + sg.y - sg.bearing_y;
+                            batch.masks.push(GlyphInstance {
                                 xywh: to_ndc(x, y, info.w, info.h, fb_w, fb_h),
                                 uv: [info.u0, info.v1, info.u1, info.v0],
                                 color: color.to_linear(),
                             });
                         }
-                        pen_x += advance;
-                    }
-                    if !instances.is_empty() {
-                        let buf =
-                            self.device
-                                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                                    label: Some("glyph instances"),
-                                    contents: bytemuck::cast_slice(&instances),
-                                    usage: wgpu::BufferUsages::VERTEX,
-                                });
-                        cmds.push(Cmd::Glyphs(buf, instances.len() as u32));
                     }
                 }
-                SceneNode::PushClip { rect, .. } => cmds.push(Cmd::SetClipPush(*rect)),
-                SceneNode::PopClip => cmds.push(Cmd::SetClipPop),
+                SceneNode::PushClip { rect, .. } => {
+                    batch.flush(&self.device, &mut cmds);
+                    cmds.push(Cmd::SetClipPush(*rect));
+                }
+                SceneNode::PopClip => {
+                    batch.flush(&self.device, &mut cmds);
+                    cmds.push(Cmd::SetClipPop);
+                }
             }
+            // flush trailing batch
+            batch.flush(&self.device, &mut cmds);
         }
 
         let mut encoder = self
@@ -730,7 +1017,8 @@ impl RenderBackend for WgpuBackend {
 
             // initial full scissor
             rpass.set_scissor_rect(0, 0, self.config.width, self.config.height);
-            let bind = self.atlas_bind_group();
+            let bind_mask = self.atlas_bind_group_mask();
+            let bind_color = self.atlas_bind_group_color();
             let mut clip_stack: Vec<compose_core::Rect> = Vec::new();
 
             for cmd in cmds {
@@ -773,9 +1061,15 @@ impl RenderBackend for WgpuBackend {
                         rpass.set_vertex_buffer(0, buf.slice(..));
                         rpass.draw(0..6, 0..n);
                     }
-                    Cmd::Glyphs(buf, n) => {
-                        rpass.set_pipeline(&self.text_pipeline);
-                        rpass.set_bind_group(0, &bind, &[]);
+                    Cmd::GlyphsMask(buf, n) => {
+                        rpass.set_pipeline(&self.text_pipeline_mask);
+                        rpass.set_bind_group(0, &bind_mask, &[]);
+                        rpass.set_vertex_buffer(0, buf.slice(..));
+                        rpass.draw(0..6, 0..n);
+                    }
+                    Cmd::GlyphsColor(buf, n) => {
+                        rpass.set_pipeline(&self.text_pipeline_color);
+                        rpass.set_bind_group(0, &bind_color, &[]);
                         rpass.set_vertex_buffer(0, buf.slice(..));
                         rpass.draw(0..6, 0..n);
                     }
@@ -784,7 +1078,9 @@ impl RenderBackend for WgpuBackend {
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
-        frame.present();
+        if let Err(e) = catch_unwind(AssertUnwindSafe(|| frame.present())) {
+            log::warn!("frame.present panicked: {:?}", e);
+        }
     }
 }
 

@@ -1,0 +1,11 @@
+[package]
+name = "compose-text"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+cosmic-text = { workspace = true }
+fontdb = { workspace = true }
+once_cell = "1"
+ahash = "0.8"

@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+pub mod anim;
 pub mod lazy;
 
 use std::collections::{HashMap, HashSet};
@@ -12,6 +13,7 @@ pub mod textfield;
 pub use textfield::{TextField, TextFieldState};
 
 use crate::textfield::{byte_to_char_index, measure_text, positions_for, TF_FONT_PX, TF_PADDING_X};
+use compose_core::locals;
 
 #[derive(Default)]
 pub struct Interactions {
@@ -322,7 +324,7 @@ pub fn layout_and_paint(
     }
 
     let mut scene = Scene {
-        clear_color: Color::from_hex("#121212"),
+        clear_color: locals::theme().background,
         nodes: vec![],
     };
     let mut hits: Vec<HitRegion> = vec![];
@@ -370,18 +372,21 @@ pub fn layout_and_paint(
                 color,
                 font_size,
             } => {
+                // Apply text scale from CompositionLocal
+                let scaled_size = *font_size * locals::text_scale().0;
                 scene.nodes.push(SceneNode::Text {
                     rect,
                     text: text.clone(),
                     color: *color,
-                    size: *font_size,
+                    size: scaled_size,
                 });
                 sems.push(SemNode {
                     id: v.id,
                     role: Role::Text,
                     label: Some(text.clone()),
                     rect,
-                    focused: false,
+                    focused: is_focused,
+                    enabled: true,
                 });
             }
 
@@ -434,7 +439,8 @@ pub fn layout_and_paint(
                     role: Role::Button,
                     label: Some(text.clone()),
                     rect,
-                    focused: false,
+                    focused: is_focused,
+                    enabled: true,
                 });
                 // Focus ring
                 if is_focused {
@@ -579,7 +585,8 @@ pub fn layout_and_paint(
                         role: Role::TextField,
                         label: Some(text.clone()),
                         rect,
-                        focused: false,
+                        focused: is_focused,
+                        enabled: true,
                     });
                 } else {
                     // No state yet: show hint only
@@ -599,7 +606,8 @@ pub fn layout_and_paint(
                         role: Role::TextField,
                         label: Some(hint.clone()),
                         rect,
-                        focused: false,
+                        focused: is_focused,
+                        enabled: true,
                     });
                 }
             }

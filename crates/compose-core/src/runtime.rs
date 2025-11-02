@@ -7,15 +7,15 @@ use crate::scope::Scope;
 use crate::{semantics::Role, semantics::Semantics, Color, Rect, Scene, View};
 
 thread_local! {
-    static COMPOSER: RefCell<Composer> = RefCell::new(Composer::default());
+    pub static COMPOSER: RefCell<Composer> = RefCell::new(Composer::default());
     static ROOT_SCOPE: RefCell<Option<Scope>> = RefCell::new(None);
 }
 
 #[derive(Default)]
-struct Composer {
-    slots: Vec<Box<dyn Any>>,
-    cursor: usize,
-    keyed_slots: HashMap<String, Box<dyn Any>>,
+pub struct Composer {
+    pub slots: Vec<Box<dyn Any>>,
+    pub cursor: usize,
+    pub keyed_slots: HashMap<String, Box<dyn Any>>,
 }
 
 pub struct ComposeGuard {
@@ -125,6 +125,7 @@ pub struct SemNode {
     pub label: Option<String>,
     pub rect: Rect,
     pub focused: bool,
+    pub enabled: bool,
 }
 
 pub struct Scheduler {

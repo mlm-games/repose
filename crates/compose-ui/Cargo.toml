@@ -6,6 +6,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 compose-core = { path = "../compose-core", version = "0.2.0" }
+compose-text = { path = "../compose-text", version = "0.1.0" }
 taffy = { workspace = true }
 fontdb = { workspace = true }
 ab_glyph = { workspace = true }

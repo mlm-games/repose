@@ -1,8 +1,15 @@
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::animation::*;
+    use crate::remember_with_key;
     use crate::scope::*;
     use crate::signal::*;
+    use crate::Color;
+    use crate::Rect;
+    use crate::Vec2;
+    use crate::COMPOSER;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn test_signal_basic() {
@@ -96,5 +103,32 @@ mod tests {
         assert!(rect.contains(Vec2 { x: 50.0, y: 30.0 }));
         assert!(!rect.contains(Vec2 { x: 5.0, y: 30.0 }));
         assert!(!rect.contains(Vec2 { x: 50.0, y: 70.0 }));
+    }
+
+    #[test]
+    fn test_animation_deterministic() {
+        // Install test clock at fixed start
+        let t0 = Instant::now();
+        set_clock(Box::new(TestClock { t: t0 }));
+
+        let mut a = AnimatedValue::new(
+            0.0f32,
+            AnimationSpec::tween(Duration::from_millis(1000), Easing::Linear),
+        );
+        a.set_target(10.0);
+        // advance 250ms
+        // safety: emulate time by swapping the clock
+        set_clock(Box::new(TestClock {
+            t: t0 + Duration::from_millis(250),
+        }));
+        assert!(a.update());
+        assert!((*a.get() - 2.5).abs() < 0.01);
+
+        set_clock(Box::new(TestClock {
+            t: t0 + Duration::from_millis(1000),
+        }));
+        let cont = a.update();
+        assert!(!cont);
+        assert!((*a.get() - 10.0).abs() < 0.001);
     }
 }

@@ -1,4 +1,9 @@
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
+
+pub(crate) fn now() -> Instant {
+    CLOCK.get().map(|c| c.now()).unwrap_or_else(Instant::now)
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum Easing {
@@ -41,7 +46,7 @@ impl Easing {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct AnimationSpec {
     pub duration: Duration,
     pub easing: Easing,
@@ -59,6 +64,13 @@ impl Default for AnimationSpec {
 }
 
 impl AnimationSpec {
+    pub fn tween(duration: Duration, easing: Easing) -> Self {
+        Self {
+            duration,
+            easing,
+            delay: Duration::ZERO,
+        }
+    }
     pub fn spring() -> Self {
         Self {
             duration: Duration::from_millis(500),
@@ -69,7 +81,13 @@ impl AnimationSpec {
             delay: Duration::ZERO,
         }
     }
-
+    pub fn spring_phys(damping: f32, stiffness: f32, duration: Duration) -> Self {
+        Self {
+            duration,
+            easing: Easing::Spring { damping, stiffness },
+            delay: Duration::ZERO,
+        }
+    }
     pub fn fast() -> Self {
         Self {
             duration: Duration::from_millis(150),
@@ -108,6 +126,40 @@ impl Interpolate for crate::Color {
     }
 }
 
+// Animation clock
+pub trait Clock: Send + Sync + 'static {
+    fn now(&self) -> Instant;
+}
+
+struct SystemClock;
+impl Clock for SystemClock {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+}
+
+static CLOCK: OnceLock<Box<dyn Clock>> = OnceLock::new();
+
+/// Install a global animation clock. Platform sets this to SystemClock; tests can set TestClock.
+pub fn set_clock(clock: Box<dyn Clock>) {
+    let _ = CLOCK.set(clock);
+}
+/// Install default system clock if none present (idempotent).
+pub(crate) fn ensure_system_clock() {
+    let _ = CLOCK.set(Box::new(SystemClock));
+}
+
+/// A test clock you can drive deterministically.
+#[derive(Clone)]
+pub struct TestClock {
+    pub t: Instant,
+}
+impl Clock for TestClock {
+    fn now(&self) -> Instant {
+        self.t
+    }
+}
+
 /// Animated value that transitions smoothly
 pub struct AnimatedValue<T: Interpolate + Clone> {
     current: T,
@@ -133,12 +185,12 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             self.start = self.current.clone();
         }
         self.target = target;
-        self.start_time = Some(Instant::now());
+        self.start_time = Some(now());
     }
 
     pub fn update(&mut self) -> bool {
         if let Some(start) = self.start_time {
-            let elapsed = start.elapsed();
+            let elapsed = now().saturating_duration_since(start);
 
             if elapsed < self.spec.delay {
                 return true; // Still waiting for delay

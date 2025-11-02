@@ -21,29 +21,10 @@ pub struct TextMetrics {
 }
 
 pub fn measure_text(text: &str, px: u32) -> TextMetrics {
-    let scaled = ui_font().as_scaled(PxScale::from(px as f32));
-    let mut positions = Vec::with_capacity(text.graphemes(true).count() + 1);
-    let mut byte_offsets = Vec::with_capacity(text.graphemes(true).count() + 1);
-    positions.push(0.0);
-    byte_offsets.push(0);
-
-    let mut x = 0.0;
-    let mut byte = 0usize;
-    for g in text.graphemes(true) {
-        // Sum advances of codepoints in the grapheme (approx without shaping)
-        let mut adv = 0.0;
-        for ch in g.chars() {
-            let gid = scaled.glyph_id(ch);
-            adv += scaled.h_advance(gid);
-        }
-        x += adv;
-        byte += g.len();
-        positions.push(x);
-        byte_offsets.push(byte);
-    }
+    let m = compose_text::metrics_for_textfield(text, px as f32);
     TextMetrics {
-        positions,
-        byte_offsets,
+        positions: m.positions,
+        byte_offsets: m.byte_offsets,
     }
 }
 
@@ -90,56 +71,25 @@ fn next_grapheme_boundary(text: &str, byte: usize) -> usize {
     text.len()
 }
 
-fn ui_font() -> &'static FontArc {
-    static FONT: OnceLock<FontArc> = OnceLock::new();
-    FONT.get_or_init(|| {
-        let mut db = Database::new();
-        db.load_system_fonts();
-        let query = fontdb::Query {
-            families: &[fontdb::Family::SansSerif],
-            ..Default::default()
-        };
-        let id = db.query(&query).expect("No system sans-serif font found");
-        let (source, _) = db.face_source(id).expect("Font face not found");
-        match source {
-            fontdb::Source::Binary(data) => {
-                FontArc::try_from_vec(data.as_ref().as_ref().to_vec()).expect("load font")
-            }
-            fontdb::Source::File(path) | fontdb::Source::SharedFile(path, _) => {
-                let bytes = std::fs::read(path).expect("read font file");
-                FontArc::try_from_vec(bytes).expect("load font")
-            }
-        }
-    })
-}
-
 // Returns cumulative X positions per codepoint boundary (len+1 entries; pos[0] = 0, pos[i] = advance up to char i)
 pub fn positions_for(text: &str, px: u32) -> Vec<f32> {
-    let scaled = ui_font().as_scaled(PxScale::from(px as f32));
-    let mut x = 0.0;
-    let mut pos = Vec::with_capacity(text.len() + 1);
-    pos.push(0.0);
-    for ch in text.chars() {
-        let gid = scaled.glyph_id(ch);
-        x += scaled.h_advance(gid);
-        pos.push(x);
-    }
-    pos
+    compose_text::metrics_for_textfield(text, px as f32).positions
 }
 
 // Clamp to [0..=len], nearest insertion point for a given x (content coords, before scroll)
 pub fn index_for_x(text: &str, px: u32, x: f32) -> usize {
-    let pos = positions_for(text, px);
-    let mut best_i = 0usize;
-    let mut best_d = f32::INFINITY;
-    for i in 0..pos.len() {
-        let d = (pos[i] - x).abs();
-        if d < best_d {
-            best_d = d;
-            best_i = i;
+    let m = compose_text::metrics_for_textfield(text, px as f32);
+    // nearest boundary
+    let mut best = 0usize;
+    let mut dmin = f32::INFINITY;
+    for (i, &xx) in m.positions.iter().enumerate() {
+        let d = (xx - x).abs();
+        if d < dmin {
+            dmin = d;
+            best = i;
         }
     }
-    best_i
+    best
 }
 
 #[derive(Clone, Debug)]

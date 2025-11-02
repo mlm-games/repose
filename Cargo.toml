@@ -6,6 +6,7 @@ members = [
   "crates/compose-platform",
   "crates/compose-devtools",
   "crates/compose-macros",
+  "crates/compose-text",
   "examples/desktop_counter",
   "examples/textfield_ime",
   "examples/lazy_list",
@@ -42,3 +43,6 @@ pollster = "0.4.0"
 # Text
 ab_glyph = "0.2.31"
 fontdb = "0.23.0"
+cosmic-text = { version = "0.15.0", default-features = true, features = [
+  "swash",
+] }

@@ -4,6 +4,10 @@ pub use crate::effects::{effect, on_unmount, Dispose};
 pub use crate::error::*;
 pub use crate::geometry::{Rect, Size, Vec2};
 pub use crate::input::*;
+pub use crate::locals::{
+    density, dp, text_scale, theme, with_density, with_text_scale, with_theme, Density, TextScale,
+    Theme,
+};
 pub use crate::modifier::Modifier;
 pub use crate::render_api::{GlyphRasterConfig, RenderBackend};
 pub use crate::runtime::{
