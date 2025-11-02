@@ -374,8 +374,11 @@ pub fn layout_and_paint(
             kind,
             ViewKind::Column | ViewKind::Surface | ViewKind::ScrollV { .. }
         ) {
-            s.flex_direction = FlexDirection::Column;
+            s.align_items = Some(AlignItems::Stretch);
+        } else {
+            s.align_items = Some(AlignItems::FlexStart);
         }
+        s.justify_content = Some(JustifyContent::FlexStart);
 
         if let Some(r) = m.aspect_ratio {
             s.aspect_ratio = Some(r);
@@ -424,10 +427,6 @@ pub fn layout_and_paint(
             };
         }
 
-        // Baseline alignment default for rows/columns
-        s.align_items = Some(AlignItems::FlexStart);
-        s.justify_content = Some(JustifyContent::FlexStart);
-
         // Overflow for ScrollV
         if matches!(kind, ViewKind::ScrollV { .. }) {
             s.overflow = taffy::Point {
@@ -459,8 +458,8 @@ pub fn layout_and_paint(
         }
 
         if m.fill_max {
-            s.size.width = percent(100.0);
-            s.size.height = percent(100.0);
+            s.size.width = percent(1.0);
+            s.size.height = percent(1.0);
             s.flex_grow = 1.0;
             s.flex_shrink = 1.0;
         }
@@ -664,6 +663,13 @@ pub fn layout_and_paint(
             }
         })
         .unwrap();
+
+    // eprintln!(
+    //     "win {:?}x{:?} root {:?}",
+    //     size.0,
+    //     size.1,
+    //     taffy.layout(root_node).unwrap().size
+    // );
 
     fn layout_of(node: taffy::NodeId, t: &TaffyTree<impl Clone>) -> compose_core::Rect {
         let l = t.layout(node).unwrap();
@@ -1418,8 +1424,6 @@ pub fn layout_and_paint(
 
                 // per-hit-region current value (wheel deltas accumulate within a frame)
                 let current = Rc::new(RefCell::new(*value));
-                // drag state
-                let dragging = Rc::new(RefCell::new(false));
 
                 // pointer mapping closure (in global coords)
                 let update_at = {
@@ -1435,34 +1439,24 @@ pub fn layout_and_paint(
                     })
                 };
 
-                // on_pointer_down: start drag and update once
+                // on_pointer_down: update once at press
                 let on_pd: Rc<dyn Fn(compose_core::input::PointerEvent)> = {
                     let f = update_at.clone();
-                    let dragging = dragging.clone();
                     Rc::new(move |pe| {
-                        *dragging.borrow_mut() = true;
                         f(pe.position.x);
                     })
                 };
 
-                // on_pointer_move: update only while dragging
+                // on_pointer_move: no gating inside; platform only delivers here while captured
                 let on_pm: Rc<dyn Fn(compose_core::input::PointerEvent)> = {
                     let f = update_at.clone();
-                    let dragging = dragging.clone();
                     Rc::new(move |pe| {
-                        if *dragging.borrow() {
-                            f(pe.position.x);
-                        }
+                        f(pe.position.x);
                     })
                 };
 
-                // on_pointer_up: stop drag
-                let on_pu: Rc<dyn Fn(compose_core::input::PointerEvent)> = {
-                    let dragging = dragging.clone();
-                    Rc::new(move |_pe| {
-                        *dragging.borrow_mut() = false;
-                    })
-                };
+                // on_pointer_up: no-op
+                let on_pu: Rc<dyn Fn(compose_core::input::PointerEvent)> = Rc::new(move |_pe| {});
 
                 // Mouse wheel nudge: accumulate via 'current'
                 let on_scroll = {
@@ -1471,7 +1465,7 @@ pub fn layout_and_paint(
                     Rc::new(move |dy: f32| -> f32 {
                         let base = *current.borrow();
                         let delta = stepv.unwrap_or((maxv - minv) * 0.01);
-                        // winit: negative dy for wheel-up; treat that as increase
+                        // winit: negative dy for wheel-up; treat as increase
                         let dir = if dy.is_sign_negative() { 1.0 } else { -1.0 };
                         let new_v = snap_step(base + dir * delta, stepv, minv, maxv);
                         *current.borrow_mut() = new_v;
@@ -1482,6 +1476,7 @@ pub fn layout_and_paint(
                     })
                 };
 
+                // Register move handler only while pressed so hover doesn't change value
                 hits.push(HitRegion {
                     id: v.id,
                     rect,
@@ -1489,7 +1484,7 @@ pub fn layout_and_paint(
                     on_scroll: Some(on_scroll),
                     focusable: true,
                     on_pointer_down: Some(on_pd),
-                    on_pointer_move: Some(on_pm),
+                    on_pointer_move: if is_pressed { Some(on_pm) } else { None },
                     on_pointer_up: Some(on_pu),
                     on_pointer_enter: v.modifier.on_pointer_enter.clone(),
                     on_pointer_leave: v.modifier.on_pointer_leave.clone(),

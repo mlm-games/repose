@@ -23,12 +23,6 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
     use winit::keyboard::{KeyCode, PhysicalKey};
     use winit::window::{ImePurpose, Window, WindowAttributes};
 
-    enum ImeState {
-        Disabled,
-        Enabled,
-        Preedit,
-    }
-
     struct App {
         // App state
         root: Box<dyn FnMut(&mut Scheduler) -> View>,
@@ -1179,7 +1173,6 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 //         Ok(())
 //     }
 // }
-
 
 // Accessibility bridge stub (Noop by default; logs on Linux for now)
 pub trait A11yBridge: Send {
