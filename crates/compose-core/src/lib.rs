@@ -1,3 +1,7 @@
+//! Core runtime, view model, signals, composition locals, and animation clock.
+//!
+//! See compose-ui for widgets/layout and compose-platform for runners.
+
 pub mod animation;
 pub mod color;
 pub mod effects;

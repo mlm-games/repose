@@ -1,3 +1,7 @@
+//! Widgets, layout (Taffy), painting into a platform-agnostic Scene, and text fields.
+//!
+//! compose-render-wgpu is responsible for GPU interaction
+
 #![allow(non_snake_case)]
 pub mod anim;
 pub mod lazy;

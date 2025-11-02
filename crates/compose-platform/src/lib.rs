@@ -1,3 +1,6 @@
+//! Platform runners (desktop via winit; Android soon-to-be-in-alpha)
+//!
+
 use compose_core::*;
 use compose_core::{Density, with_density};
 use compose_ui::layout_and_paint;
