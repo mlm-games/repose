@@ -1049,10 +1049,9 @@ pub fn layout_and_paint(
                 });
 
                 // Child offset includes scroll translation (0, -scroll_offset)
-                let mut child_offset = parent_offset;
+                let mut child_offset = base;
                 if let Some(get) = get_scroll_offset {
-                    let so = get();
-                    child_offset.1 -= so;
+                    child_offset.1 -= get();
                 }
 
                 for c in &v.children {
