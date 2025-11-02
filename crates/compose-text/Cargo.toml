@@ -3,6 +3,7 @@ name = "compose-text"
 version = "0.3.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
+description = "Text handling (wrappers around cosmic-text apis)"
 
 [dependencies]
 cosmic-text = { workspace = true }

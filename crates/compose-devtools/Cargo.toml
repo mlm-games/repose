@@ -3,6 +3,7 @@ name = "compose-devtools"
 version = "0.3.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
+description = "Repose developer tools for debugging."
 
 [dependencies]
 compose-core = { path = "../compose-core", version = "0.3.0" }

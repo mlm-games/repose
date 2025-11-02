@@ -3,6 +3,7 @@ name = "compose-platform"
 version = "0.3.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
+description = "Platform runners (desktop via winit; Android soon-to-be-in-alpha)"
 
 [features]
 desktop = ["winit", "compose-render-wgpu", "arboard"]

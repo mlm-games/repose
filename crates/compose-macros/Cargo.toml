@@ -3,6 +3,7 @@ name = "compose-macros"
 version = "0.0.0"
 edition = "2024"
 publish = false
+description = "Wip macros for repose"
 
 [lib]
 proc-macro = true
