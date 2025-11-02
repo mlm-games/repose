@@ -1,5 +1,5 @@
-use compose_core::prelude::*;
-use compose_ui::*;
+use repose_core::prelude::*;
+use repose_ui::*;
 
 #[derive(Clone)]
 struct Item {
@@ -21,10 +21,10 @@ pub fn screen() -> View {
         )
     });
     let scroll = remember_with_key("lazy", || {
-        std::cell::RefCell::new(compose_ui::lazy::LazyColumnState::new())
+        std::cell::RefCell::new(repose_ui::lazy::LazyColumnState::new())
     });
 
-    compose_ui::lazy::LazyColumn(
+    repose_ui::lazy::LazyColumn(
         items.get(),
         48.0,
         scroll,

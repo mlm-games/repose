@@ -23,9 +23,9 @@ label = "Repose Counter"
 fullscreen = true
 
 [dependencies]
-compose-core = { path = "../../crates/compose-core", version = "0.3.0" }
-compose-ui = { path = "../../crates/compose-ui", version = "0.3.0" }
-compose-platform = { path = "../../crates/compose-platform", version = "0.3.0", features = [
+repose-core = { path = "../../crates/repose-core", version = "0.3.0" }
+repose-ui = { path = "../../crates/repose-ui", version = "0.3.0" }
+repose-platform = { path = "../../crates/repose-platform", version = "0.3.0", features = [
     "android",
 ] }
 winit = { workspace = true }

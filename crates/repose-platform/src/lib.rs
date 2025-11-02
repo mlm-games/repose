@@ -1,9 +1,9 @@
 //! Platform runners (desktop via winit; Android soon-to-be-in-alpha)
 //!
 
-use compose_core::*;
-use compose_ui::layout_and_paint;
-use compose_ui::textfield::{
+use repose_core::*;
+use repose_ui::layout_and_paint;
+use repose_ui::textfield::{
     TF_FONT_PX, TF_PADDING_X, byte_to_char_index, index_for_x_bytes, measure_text,
 };
 use std::time::Instant;
@@ -15,7 +15,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
     use std::rc::Rc;
     use std::sync::Arc;
 
-    use compose_ui::TextFieldState;
+    use repose_ui::TextFieldState;
     use winit::application::ApplicationHandler;
     use winit::dpi::{LogicalPosition, LogicalSize, PhysicalSize};
     use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
@@ -27,9 +27,9 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
         // App state
         root: Box<dyn FnMut(&mut Scheduler) -> View>,
         window: Option<Arc<Window>>,
-        backend: Option<compose_render_wgpu::WgpuBackend>,
+        backend: Option<repose_render_wgpu::WgpuBackend>,
         sched: Scheduler,
-        inspector: compose_devtools::Inspector,
+        inspector: repose_devtools::Inspector,
         frame_cache: Option<Frame>,
         mouse_pos: (f32, f32),
         modifiers: Modifiers,
@@ -51,7 +51,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                 window: None,
                 backend: None,
                 sched: Scheduler::new(),
-                inspector: compose_devtools::Inspector::new(),
+                inspector: repose_devtools::Inspector::new(),
                 frame_cache: None,
                 mouse_pos: (0.0, 0.0),
                 modifiers: Modifiers::default(),
@@ -106,7 +106,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         let size = w.inner_size();
                         self.sched.size = (size.width, size.height);
                         // Create WGPU backend
-                        match compose_render_wgpu::WgpuBackend::new(w.clone()) {
+                        match repose_render_wgpu::WgpuBackend::new(w.clone()) {
                             Ok(b) => {
                                 self.backend = Some(b);
                                 self.window = Some(w);
@@ -218,10 +218,10 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             if let Some(prev_id) = self.hover_id {
                                 if let Some(prev) = f.hit_regions.iter().find(|h| h.id == prev_id) {
                                     if let Some(cb) = &prev.on_pointer_leave {
-                                        let pe = compose_core::input::PointerEvent {
-                                            id: compose_core::input::PointerId(0),
-                                            kind: compose_core::input::PointerKind::Mouse,
-                                            event: compose_core::input::PointerEventKind::Leave,
+                                        let pe = repose_core::input::PointerEvent {
+                                            id: repose_core::input::PointerId(0),
+                                            kind: repose_core::input::PointerKind::Mouse,
+                                            event: repose_core::input::PointerEventKind::Leave,
                                             position: pos,
                                             pressure: 1.0,
                                             modifiers: self.modifiers,
@@ -232,10 +232,10 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             }
                             if let Some(h) = top {
                                 if let Some(cb) = &h.on_pointer_enter {
-                                    let pe = compose_core::input::PointerEvent {
-                                        id: compose_core::input::PointerId(0),
-                                        kind: compose_core::input::PointerKind::Mouse,
-                                        event: compose_core::input::PointerEventKind::Enter,
+                                    let pe = repose_core::input::PointerEvent {
+                                        id: repose_core::input::PointerId(0),
+                                        kind: repose_core::input::PointerKind::Mouse,
+                                        event: repose_core::input::PointerEventKind::Enter,
                                         position: pos,
                                         pressure: 1.0,
                                         modifiers: self.modifiers,
@@ -247,10 +247,10 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         }
 
                         // Build PointerEvent
-                        let pe = compose_core::input::PointerEvent {
-                            id: compose_core::input::PointerId(0),
-                            kind: compose_core::input::PointerKind::Mouse,
-                            event: compose_core::input::PointerEventKind::Move,
+                        let pe = repose_core::input::PointerEvent {
+                            id: repose_core::input::PointerId(0),
+                            kind: repose_core::input::PointerKind::Mouse,
+                            event: repose_core::input::PointerEventKind::Move,
                             position: pos,
                             pressure: 1.0,
                             modifiers: self.modifiers,
@@ -296,7 +296,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                 need_announce = true;
                                 self.textfield_states.entry(hit.id).or_insert_with(|| {
                                     Rc::new(RefCell::new(
-                                        compose_ui::textfield::TextFieldState::new(),
+                                        repose_ui::textfield::TextFieldState::new(),
                                     ))
                                 });
                                 if let Some(win) = &self.window {
@@ -318,11 +318,11 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 
                             // PointerDown callback (legacy)
                             if let Some(cb) = &hit.on_pointer_down {
-                                let pe = compose_core::input::PointerEvent {
-                                    id: compose_core::input::PointerId(0),
-                                    kind: compose_core::input::PointerKind::Mouse,
-                                    event: compose_core::input::PointerEventKind::Down(
-                                        compose_core::input::PointerButton::Primary,
+                                let pe = repose_core::input::PointerEvent {
+                                    id: repose_core::input::PointerId(0),
+                                    kind: repose_core::input::PointerKind::Mouse,
+                                    event: repose_core::input::PointerEventKind::Down(
+                                        repose_core::input::PointerButton::Primary,
                                     ),
                                     position: pos,
                                     pressure: 1.0,
@@ -777,8 +777,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         let pressed_ids = self.pressed_ids.clone();
                         let tf_states = &self.textfield_states;
 
-                        let frame = self.sched.compose(&mut self.root, move |view, size| {
-                            let interactions = compose_ui::Interactions {
+                        let frame = self.sched.repose(&mut self.root, move |view, size| {
+                            let interactions = repose_ui::Interactions {
                                 hover: hover_id,
                                 pressed: pressed_ids.clone(),
                             };
@@ -803,7 +803,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         // Render
                         let mut scene = frame.scene.clone();
                         // Update HUD metrics before overlay draws
-                        self.inspector.hud.metrics = Some(compose_devtools::Metrics {
+                        self.inspector.hud.metrics = Some(repose_devtools::Metrics {
                             build_layout_ms,
                             scene_nodes: scene.nodes.len(),
                         });
@@ -863,7 +863,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
     let event_loop = EventLoop::new()?;
     let mut app = App::new(Box::new(root));
     // Install system clock once
-    compose_core::animation::set_clock(Box::new(compose_core::animation::SystemClock));
+    repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
     event_loop.run_app(&mut app)?;
     Ok(())
 }
@@ -885,7 +885,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 //         app: AndroidApp,
 //         mut root: impl FnMut(&mut Scheduler) -> View + 'static,
 //     ) -> anyhow::Result<()> {
-//         compose_core::animation::set_clock(Box::new(compose_core::animation::SystemClock));
+//         repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
 //         let event_loop = winit::event_loop::EventLoopBuilder::new()
 //             .with_android_app(app)
 //             .build()?;
@@ -893,9 +893,9 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 //         struct A {
 //             root: Box<dyn FnMut(&mut Scheduler) -> View>,
 //             window: Option<Arc<Window>>,
-//             backend: Option<compose_render_wgpu::WgpuBackend>,
+//             backend: Option<repose_render_wgpu::WgpuBackend>,
 //             sched: Scheduler,
-//             inspector: compose_devtools::Inspector,
+//             inspector: repose_devtools::Inspector,
 //             frame_cache: Option<Frame>,
 //             mouse_pos: (f32, f32),
 //             modifiers: Modifiers,
@@ -914,7 +914,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 //                     window: None,
 //                     backend: None,
 //                     sched: Scheduler::new(),
-//                     inspector: compose_devtools::Inspector::new(),
+//                     inspector: repose_devtools::Inspector::new(),
 //                     frame_cache: None,
 //                     mouse_pos: (0.0, 0.0),
 //                     modifiers: Modifiers::default(),
@@ -942,7 +942,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 //                             let size = w.inner_size();
 //                             self.sched.size = (size.width, size.height);
 //                             self.last_scale = w.scale_factor();
-//                             match compose_render_wgpu::WgpuBackend::new(w.clone()) {
+//                             match repose_render_wgpu::WgpuBackend::new(w.clone()) {
 //                                 Ok(b) => {
 //                                     self.backend = Some(b);
 //                                     self.window = Some(w);
@@ -1031,10 +1031,10 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 //                                         f.hit_regions.iter().find(|h| h.id == prev_id)
 //                                     {
 //                                         if let Some(cb) = &prev.on_pointer_leave {
-//                                             cb(compose_core::input::PointerEvent {
-//                                                 id: compose_core::input::PointerId(0),
-//                                                 kind: compose_core::input::PointerKind::Touch,
-//                                                 event: compose_core::input::PointerEventKind::Leave,
+//                                             cb(repose_core::input::PointerEvent {
+//                                                 id: repose_core::input::PointerId(0),
+//                                                 kind: repose_core::input::PointerKind::Touch,
+//                                                 event: repose_core::input::PointerEventKind::Leave,
 //                                                 position: pos,
 //                                                 pressure: 1.0,
 //                                                 modifiers: self.modifiers,
@@ -1044,10 +1044,10 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 //                                 }
 //                                 if let Some(h) = &top {
 //                                     if let Some(cb) = &h.on_pointer_enter {
-//                                         cb(compose_core::input::PointerEvent {
-//                                             id: compose_core::input::PointerId(0),
-//                                             kind: compose_core::input::PointerKind::Touch,
-//                                             event: compose_core::input::PointerEventKind::Enter,
+//                                         cb(repose_core::input::PointerEvent {
+//                                             id: repose_core::input::PointerId(0),
+//                                             kind: repose_core::input::PointerKind::Touch,
+//                                             event: repose_core::input::PointerEventKind::Enter,
 //                                             position: pos,
 //                                             pressure: 1.0,
 //                                             modifiers: self.modifiers,
@@ -1056,10 +1056,10 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 //                                 }
 //                                 self.hover_id = new_hover;
 //                             }
-//                             let pe = compose_core::input::PointerEvent {
-//                                 id: compose_core::input::PointerId(0),
-//                                 kind: compose_core::input::PointerKind::Touch,
-//                                 event: compose_core::input::PointerEventKind::Move,
+//                             let pe = repose_core::input::PointerEvent {
+//                                 id: repose_core::input::PointerId(0),
+//                                 kind: repose_core::input::PointerKind::Touch,
+//                                 event: repose_core::input::PointerEventKind::Move,
 //                                 position: pos,
 //                                 pressure: 1.0,
 //                                 modifiers: self.modifiers,
@@ -1101,11 +1101,11 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 //                                         }
 //                                     }
 //                                     if let Some(cb) = &hit.on_pointer_down {
-//                                         cb(compose_core::input::PointerEvent {
-//                                             id: compose_core::input::PointerId(0),
-//                                             kind: compose_core::input::PointerKind::Touch,
-//                                             event: compose_core::input::PointerEventKind::Down(
-//                                                 compose_core::input::PointerButton::Primary,
+//                                         cb(repose_core::input::PointerEvent {
+//                                             id: repose_core::input::PointerId(0),
+//                                             kind: repose_core::input::PointerKind::Touch,
+//                                             event: repose_core::input::PointerEventKind::Down(
+//                                                 repose_core::input::PointerButton::Primary,
 //                                             ),
 //                                             position: pos,
 //                                             pressure: 1.0,
@@ -1162,8 +1162,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 //                             let scale = win.scale_factor();
 //                             self.last_scale = scale;
 //                             let t0 = Instant::now();
-//                             let frame = self.sched.compose(&mut self.root, |view, size| {
-//                                 let interactions = compose_ui::Interactions {
+//                             let frame = self.sched.repose(&mut self.root, |view, size| {
+//                                 let interactions = repose_ui::Interactions {
 //                                     hover: self.hover_id,
 //                                     pressed: self.pressed_ids.clone(),
 //                                 };
@@ -1204,17 +1204,17 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 
 // Accessibility bridge stub (Noop by default; logs on Linux for now)
 pub trait A11yBridge: Send {
-    fn publish_tree(&mut self, nodes: &[compose_core::runtime::SemNode]);
-    fn focus_changed(&mut self, node: Option<&compose_core::runtime::SemNode>);
+    fn publish_tree(&mut self, nodes: &[repose_core::runtime::SemNode]);
+    fn focus_changed(&mut self, node: Option<&repose_core::runtime::SemNode>);
     fn announce(&mut self, msg: &str);
 }
 
 struct NoopA11y;
 impl A11yBridge for NoopA11y {
-    fn publish_tree(&mut self, _nodes: &[compose_core::runtime::SemNode]) {
+    fn publish_tree(&mut self, _nodes: &[repose_core::runtime::SemNode]) {
         // no-op
     }
-    fn focus_changed(&mut self, node: Option<&compose_core::runtime::SemNode>) {
+    fn focus_changed(&mut self, node: Option<&repose_core::runtime::SemNode>) {
         if let Some(n) = node {
             log::info!("A11y focus: {:?} {:?}", n.role, n.label);
         } else {
@@ -1230,10 +1230,10 @@ impl A11yBridge for NoopA11y {
 struct LinuxAtspiStub;
 #[cfg(target_os = "linux")]
 impl A11yBridge for LinuxAtspiStub {
-    fn publish_tree(&mut self, nodes: &[compose_core::runtime::SemNode]) {
+    fn publish_tree(&mut self, nodes: &[repose_core::runtime::SemNode]) {
         log::debug!("AT-SPI stub: publish {} nodes", nodes.len());
     }
-    fn focus_changed(&mut self, node: Option<&compose_core::runtime::SemNode>) {
+    fn focus_changed(&mut self, node: Option<&repose_core::runtime::SemNode>) {
         if let Some(n) = node {
             log::info!("AT-SPI stub focus: {:?} {:?}", n.role, n.label);
         } else {

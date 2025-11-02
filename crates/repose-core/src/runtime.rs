@@ -150,7 +150,7 @@ impl Scheduler {
         id
     }
 
-    pub fn compose<F>(
+    pub fn repose<F>(
         &mut self,
         mut build_root: F,
         layout_paint: impl Fn(&View, (u32, u32)) -> (Scene, Vec<HitRegion>, Vec<SemNode>),

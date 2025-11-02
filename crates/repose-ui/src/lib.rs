@@ -1,6 +1,6 @@
 //! Widgets, layout (Taffy), painting into a platform-agnostic Scene, and text fields.
 //!
-//! compose-render-wgpu is responsible for GPU interaction
+//! repose-render-wgpu is responsible for GPU interaction
 
 #![allow(non_snake_case)]
 pub mod anim;
@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::{cell::RefCell, cmp::Ordering};
 
-use compose_core::*;
+use repose_core::*;
 use taffy::Overflow;
 use taffy::style::{AlignItems, Dimension, Display, FlexDirection, JustifyContent, Style};
 
@@ -20,7 +20,7 @@ pub mod textfield;
 pub use textfield::{TextField, TextFieldState};
 
 use crate::textfield::{TF_FONT_PX, TF_PADDING_X, byte_to_char_index, measure_text, positions_for};
-use compose_core::locals;
+use repose_core::locals;
 
 #[derive(Default)]
 pub struct Interactions {
@@ -255,7 +255,7 @@ pub fn ProgressBar(value: f32, range: (f32, f32), label: impl Into<String>) -> V
 fn flex_dir_for(kind: &ViewKind) -> Option<FlexDirection> {
     match kind {
         ViewKind::Row => {
-            if compose_core::locals::text_direction() == compose_core::locals::TextDirection::Rtl {
+            if repose_core::locals::text_direction() == repose_core::locals::TextDirection::Rtl {
                 Some(FlexDirection::RowReverse)
             } else {
                 Some(FlexDirection::Row)
@@ -401,7 +401,7 @@ pub fn layout_and_paint(
         }
 
         // Absolute positioning
-        if let Some(compose_core::modifier::PositionType::Absolute) = m.position_type {
+        if let Some(repose_core::modifier::PositionType::Absolute) = m.position_type {
             s.position = Position::Absolute;
             s.inset = taffy::geometry::Rect {
                 left: m.offset_left.map(length).unwrap_or_else(auto),
@@ -671,9 +671,9 @@ pub fn layout_and_paint(
     //     taffy.layout(root_node).unwrap().size
     // );
 
-    fn layout_of(node: taffy::NodeId, t: &TaffyTree<impl Clone>) -> compose_core::Rect {
+    fn layout_of(node: taffy::NodeId, t: &TaffyTree<impl Clone>) -> repose_core::Rect {
         let l = t.layout(node).unwrap();
-        compose_core::Rect {
+        repose_core::Rect {
             x: l.location.x,
             y: l.location.y,
             w: l.size.width,
@@ -681,7 +681,7 @@ pub fn layout_and_paint(
         }
     }
 
-    fn add_offset(mut r: compose_core::Rect, off: (f32, f32)) -> compose_core::Rect {
+    fn add_offset(mut r: repose_core::Rect, off: (f32, f32)) -> repose_core::Rect {
         r.x += off.0;
         r.y += off.1;
         r
@@ -821,7 +821,7 @@ pub fn layout_and_paint(
                 }
                 // Label
                 scene.nodes.push(SceneNode::Text {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: rect.x + 12.0,
                         y: rect.y + 10.0,
                         w: rect.w - 24.0,
@@ -886,7 +886,7 @@ pub fn layout_and_paint(
                 });
 
                 // Inner content rect (padding)
-                let inner = compose_core::Rect {
+                let inner = repose_core::Rect {
                     x: rect.x + TF_PADDING_X,
                     y: rect.y + 8.0,
                     w: rect.w - 2.0 * TF_PADDING_X,
@@ -922,7 +922,7 @@ pub fn layout_and_paint(
                         let sel_x = inner.x + sx.max(0.0);
                         let sel_w = (ex - sx).max(0.0);
                         scene.nodes.push(SceneNode::Rect {
-                            rect: compose_core::Rect {
+                            rect: repose_core::Rect {
                                 x: sel_x,
                                 y: inner.y,
                                 w: sel_w,
@@ -945,7 +945,7 @@ pub fn layout_and_paint(
                             let ux = inner.x + sx.max(0.0);
                             let uw = (ex - sx).max(0.0);
                             scene.nodes.push(SceneNode::Rect {
-                                rect: compose_core::Rect {
+                                rect: repose_core::Rect {
                                     x: ux,
                                     y: inner.y + inner.h - 2.0,
                                     w: uw,
@@ -959,7 +959,7 @@ pub fn layout_and_paint(
 
                     // Text (offset by scroll)
                     scene.nodes.push(SceneNode::Text {
-                        rect: compose_core::Rect {
+                        rect: repose_core::Rect {
                             x: inner.x - state.scroll_offset,
                             y: inner.y,
                             w: inner.w,
@@ -984,7 +984,7 @@ pub fn layout_and_paint(
                         let cx = m.positions.get(i).copied().unwrap_or(0.0) - state.scroll_offset;
                         let caret_x = inner.x + cx.max(0.0);
                         scene.nodes.push(SceneNode::Rect {
-                            rect: compose_core::Rect {
+                            rect: repose_core::Rect {
                                 x: caret_x,
                                 y: inner.y,
                                 w: 1.0,
@@ -1008,7 +1008,7 @@ pub fn layout_and_paint(
                 } else {
                     // No state yet: show hint only
                     scene.nodes.push(SceneNode::Text {
-                        rect: compose_core::Rect {
+                        rect: repose_core::Rect {
                             x: inner.x,
                             y: inner.y,
                             w: inner.w,
@@ -1096,7 +1096,7 @@ pub fn layout_and_paint(
                 let by = rect.y + (rect.h - box_size) * 0.5;
                 // box bg/border
                 scene.nodes.push(SceneNode::Rect {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: bx,
                         y: by,
                         w: box_size,
@@ -1110,7 +1110,7 @@ pub fn layout_and_paint(
                     radius: 3.0,
                 });
                 scene.nodes.push(SceneNode::Border {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: bx,
                         y: by,
                         w: box_size,
@@ -1123,7 +1123,7 @@ pub fn layout_and_paint(
                 // checkmark
                 if *checked {
                     scene.nodes.push(SceneNode::Text {
-                        rect: compose_core::Rect {
+                        rect: repose_core::Rect {
                             x: bx + 3.0,
                             y: by + 1.0,
                             w: box_size,
@@ -1136,7 +1136,7 @@ pub fn layout_and_paint(
                 }
                 // label
                 scene.nodes.push(SceneNode::Text {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: bx + box_size + 8.0,
                         y: rect.y,
                         w: rect.w - (box_size + 8.0),
@@ -1197,7 +1197,7 @@ pub fn layout_and_paint(
 
                 // outer circle (rounded rect as circle)
                 scene.nodes.push(SceneNode::Border {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: cx,
                         y: cy,
                         w: d,
@@ -1210,7 +1210,7 @@ pub fn layout_and_paint(
                 // inner dot if selected
                 if *selected {
                     scene.nodes.push(SceneNode::Rect {
-                        rect: compose_core::Rect {
+                        rect: repose_core::Rect {
                             x: cx + 4.0,
                             y: cy + 4.0,
                             w: d - 8.0,
@@ -1221,7 +1221,7 @@ pub fn layout_and_paint(
                     });
                 }
                 scene.nodes.push(SceneNode::Text {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: cx + d + 8.0,
                         y: rect.y,
                         w: rect.w - (d + 8.0),
@@ -1281,7 +1281,7 @@ pub fn layout_and_paint(
 
                 // track
                 scene.nodes.push(SceneNode::Rect {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: tx,
                         y: ty,
                         w: track_w,
@@ -1298,7 +1298,7 @@ pub fn layout_and_paint(
                 };
                 let ky = ty + (track_h - knob) * 0.5;
                 scene.nodes.push(SceneNode::Rect {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: kx,
                         y: ky,
                         w: knob,
@@ -1310,7 +1310,7 @@ pub fn layout_and_paint(
 
                 // label
                 scene.nodes.push(SceneNode::Text {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: tx + track_w + 8.0,
                         y: rect.y,
                         w: rect.w - (track_w + 8.0),
@@ -1377,7 +1377,7 @@ pub fn layout_and_paint(
 
                 // Track
                 scene.nodes.push(SceneNode::Rect {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: track_x,
                         y: cy - track_h * 0.5,
                         w: track_w,
@@ -1391,7 +1391,7 @@ pub fn layout_and_paint(
                 let t = clamp01(norm(*value, *min, *max));
                 let kx = track_x + t * track_w;
                 scene.nodes.push(SceneNode::Rect {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: kx - knob_d * 0.5,
                         y: cy - knob_d * 0.5,
                         w: knob_d,
@@ -1401,7 +1401,7 @@ pub fn layout_and_paint(
                     radius: knob_d * 0.5,
                 });
                 scene.nodes.push(SceneNode::Border {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: kx - knob_d * 0.5,
                         y: cy - knob_d * 0.5,
                         w: knob_d,
@@ -1414,7 +1414,7 @@ pub fn layout_and_paint(
 
                 // Label
                 scene.nodes.push(SceneNode::Text {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: label_x + gap,
                         y: rect.y,
                         w: rect.x + rect.w - (label_x + gap),
@@ -1449,7 +1449,7 @@ pub fn layout_and_paint(
                 };
 
                 // on_pointer_down: update once at press
-                let on_pd: Rc<dyn Fn(compose_core::input::PointerEvent)> = {
+                let on_pd: Rc<dyn Fn(repose_core::input::PointerEvent)> = {
                     let f = update_at.clone();
                     Rc::new(move |pe| {
                         f(pe.position.x);
@@ -1457,7 +1457,7 @@ pub fn layout_and_paint(
                 };
 
                 // on_pointer_move: no gating inside; platform only delivers here while captured
-                let on_pm: Rc<dyn Fn(compose_core::input::PointerEvent)> = {
+                let on_pm: Rc<dyn Fn(repose_core::input::PointerEvent)> = {
                     let f = update_at.clone();
                     Rc::new(move |pe| {
                         f(pe.position.x);
@@ -1465,7 +1465,7 @@ pub fn layout_and_paint(
                 };
 
                 // on_pointer_up: no-op
-                let on_pu: Rc<dyn Fn(compose_core::input::PointerEvent)> = Rc::new(move |_pe| {});
+                let on_pu: Rc<dyn Fn(repose_core::input::PointerEvent)> = Rc::new(move |_pe| {});
 
                 // Mouse wheel nudge: accumulate via 'current'
                 let on_scroll = {
@@ -1538,7 +1538,7 @@ pub fn layout_and_paint(
 
                 // Track
                 scene.nodes.push(SceneNode::Rect {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: track_x,
                         y: cy - track_h * 0.5,
                         w: track_w,
@@ -1556,7 +1556,7 @@ pub fn layout_and_paint(
 
                 // Range fill
                 scene.nodes.push(SceneNode::Rect {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: k0x.min(k1x),
                         y: cy - track_h * 0.5,
                         w: (k1x - k0x).abs(),
@@ -1569,7 +1569,7 @@ pub fn layout_and_paint(
                 // Knobs
                 for &kx in &[k0x, k1x] {
                     scene.nodes.push(SceneNode::Rect {
-                        rect: compose_core::Rect {
+                        rect: repose_core::Rect {
                             x: kx - knob_d * 0.5,
                             y: cy - knob_d * 0.5,
                             w: knob_d,
@@ -1579,7 +1579,7 @@ pub fn layout_and_paint(
                         radius: knob_d * 0.5,
                     });
                     scene.nodes.push(SceneNode::Border {
-                        rect: compose_core::Rect {
+                        rect: repose_core::Rect {
                             x: kx - knob_d * 0.5,
                             y: cy - knob_d * 0.5,
                             w: knob_d,
@@ -1593,7 +1593,7 @@ pub fn layout_and_paint(
 
                 // Label
                 scene.nodes.push(SceneNode::Text {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: label_x + gap,
                         y: rect.y,
                         w: rect.x + rect.w - (label_x + gap),
@@ -1642,7 +1642,7 @@ pub fn layout_and_paint(
                 };
 
                 // on_pointer_down: choose nearest thumb and update once
-                let on_pd: Rc<dyn Fn(compose_core::input::PointerEvent)> = {
+                let on_pd: Rc<dyn Fn(repose_core::input::PointerEvent)> = {
                     let active = active.clone();
                     let update = update.clone();
                     // snapshot thumb positions for hit decision
@@ -1658,7 +1658,7 @@ pub fn layout_and_paint(
                 };
 
                 // on_pointer_move: update only while a thumb is active
-                let on_pm: Rc<dyn Fn(compose_core::input::PointerEvent)> = {
+                let on_pm: Rc<dyn Fn(repose_core::input::PointerEvent)> = {
                     let active = active.clone();
                     let update = update.clone();
                     Rc::new(move |pe| {
@@ -1669,7 +1669,7 @@ pub fn layout_and_paint(
                 };
 
                 // on_pointer_up: clear active thumb
-                let on_pu: Rc<dyn Fn(compose_core::input::PointerEvent)> = {
+                let on_pu: Rc<dyn Fn(repose_core::input::PointerEvent)> = {
                     let active = active.clone();
                     Rc::new(move |_pe| {
                         *active.borrow_mut() = None;
@@ -1723,7 +1723,7 @@ pub fn layout_and_paint(
                 let cy = rect.y + rect.h * 0.5;
 
                 scene.nodes.push(SceneNode::Rect {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: track_x,
                         y: cy - track_h * 0.5,
                         w: track_w,
@@ -1735,7 +1735,7 @@ pub fn layout_and_paint(
 
                 let t = clamp01(norm(*value, *min, *max));
                 scene.nodes.push(SceneNode::Rect {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: track_x,
                         y: cy - track_h * 0.5,
                         w: track_w * t,
@@ -1746,7 +1746,7 @@ pub fn layout_and_paint(
                 });
 
                 scene.nodes.push(SceneNode::Text {
-                    rect: compose_core::Rect {
+                    rect: repose_core::Rect {
                         x: rect.x + label_w_split + gap,
                         y: rect.y,
                         w: rect.w - (label_w_split + gap),

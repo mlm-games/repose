@@ -78,10 +78,10 @@ name = "android_counter"
 version = "0.3.0"
 dependencies = [
  "anyhow",
- "compose-core",
- "compose-platform",
- "compose-ui",
  "log",
+ "repose-core",
+ "repose-platform",
+ "repose-ui",
  "winit",
 ]
 
@@ -99,11 +99,11 @@ name = "animation_demo"
 version = "0.3.0"
 dependencies = [
  "anyhow",
- "compose-core",
- "compose-platform",
- "compose-ui",
  "env_logger",
  "log",
+ "repose-core",
+ "repose-platform",
+ "repose-ui",
 ]
 
 [[package]]
@@ -392,92 +392,6 @@ checksum = "ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd"
 dependencies = [
  "bytes",
  "memchr",
-]
-
-[[package]]
-name = "compose-core"
-version = "0.3.0"
-dependencies = [
- "bitflags 2.9.4",
- "log",
- "parking_lot",
- "slotmap",
- "smallvec",
- "taffy",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "compose-devtools"
-version = "0.3.0"
-dependencies = [
- "compose-core",
- "log",
-]
-
-[[package]]
-name = "compose-macros"
-version = "0.0.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "compose-platform"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "arboard",
- "compose-core",
- "compose-devtools",
- "compose-render-wgpu",
- "compose-ui",
- "log",
- "winit",
-]
-
-[[package]]
-name = "compose-render-wgpu"
-version = "0.3.0"
-dependencies = [
- "ab_glyph",
- "anyhow",
- "bytemuck",
- "compose-core",
- "compose-text",
- "cosmic-text",
- "fontdb",
- "log",
- "pollster",
- "wgpu",
- "winit",
-]
-
-[[package]]
-name = "compose-text"
-version = "0.3.0"
-dependencies = [
- "ahash",
- "cosmic-text",
- "fontdb",
- "once_cell",
-]
-
-[[package]]
-name = "compose-ui"
-version = "0.3.0"
-dependencies = [
- "ab_glyph",
- "compose-core",
- "compose-text",
- "fontdb",
- "insta",
- "serde",
- "serde_json",
- "taffy",
- "unicode-segmentation",
 ]
 
 [[package]]
@@ -1983,6 +1897,92 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
+name = "repose-core"
+version = "0.3.0"
+dependencies = [
+ "bitflags 2.9.4",
+ "log",
+ "parking_lot",
+ "slotmap",
+ "smallvec",
+ "taffy",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "repose-devtools"
+version = "0.3.0"
+dependencies = [
+ "log",
+ "repose-core",
+]
+
+[[package]]
+name = "repose-macros"
+version = "0.0.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "repose-platform"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "log",
+ "repose-core",
+ "repose-devtools",
+ "repose-render-wgpu",
+ "repose-ui",
+ "winit",
+]
+
+[[package]]
+name = "repose-render-wgpu"
+version = "0.3.0"
+dependencies = [
+ "ab_glyph",
+ "anyhow",
+ "bytemuck",
+ "cosmic-text",
+ "fontdb",
+ "log",
+ "pollster",
+ "repose-core",
+ "repose-text",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
+name = "repose-text"
+version = "0.3.0"
+dependencies = [
+ "ahash",
+ "cosmic-text",
+ "fontdb",
+ "once_cell",
+]
+
+[[package]]
+name = "repose-ui"
+version = "0.3.0"
+dependencies = [
+ "ab_glyph",
+ "fontdb",
+ "insta",
+ "repose-core",
+ "repose-text",
+ "serde",
+ "serde_json",
+ "taffy",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "roxmltree"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2126,11 +2126,11 @@ name = "showcase"
 version = "0.3.0"
 dependencies = [
  "anyhow",
- "compose-core",
- "compose-platform",
- "compose-ui",
  "env_logger",
  "log",
+ "repose-core",
+ "repose-platform",
+ "repose-ui",
 ]
 
 [[package]]

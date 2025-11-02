@@ -1,5 +1,5 @@
-use compose_core::Color;
-use compose_core::{
+use repose_core::Color;
+use repose_core::{
     animation::{AnimatedValue, AnimationSpec},
     remember_state_with_key,
 };

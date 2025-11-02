@@ -1,21 +1,21 @@
-use compose_core::*;
-use compose_platform::run_desktop_app;
-use compose_ui::*;
+use repose_core::*;
+use repose_platform::run_desktop_app;
+use repose_ui::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
 fn app(_s: &mut Scheduler) -> View {
     let animated_color = remember_with_key("color", || {
-        Rc::new(RefCell::new(compose_core::animation::AnimatedValue::new(
+        Rc::new(RefCell::new(repose_core::animation::AnimatedValue::new(
             Color::from_hex("#2196F3"),
-            compose_core::animation::AnimationSpec::default(),
+            repose_core::animation::AnimationSpec::default(),
         )))
     });
 
     let animated_size = remember_with_key("size", || {
-        Rc::new(RefCell::new(compose_core::animation::AnimatedValue::new(
+        Rc::new(RefCell::new(repose_core::animation::AnimatedValue::new(
             100.0f32,
-            compose_core::animation::AnimationSpec::fast(),
+            repose_core::animation::AnimationSpec::fast(),
         )))
     });
 

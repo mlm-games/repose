@@ -1,7 +1,7 @@
 use crate::ui::Section;
 use anyhow::Ok;
-use compose_core::prelude::*;
-use compose_ui::*;
+use repose_core::prelude::*;
+use repose_ui::*;
 
 pub fn screen() -> View {
     Column(Modifier::new().padding(8.0)).child((

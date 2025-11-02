@@ -1,5 +1,5 @@
 use crate::{Box, ViewExt};
-use compose_core::*;
+use repose_core::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
@@ -162,9 +162,9 @@ where
     // Content inside scroll viewport (clip and translation happen in layout_and_paint)
     let content = crate::Column(Modifier::new()).with_children(children);
 
-    compose_core::View::new(
+    repose_core::View::new(
         0,
-        compose_core::ViewKind::ScrollV {
+        repose_core::ViewKind::ScrollV {
             on_scroll: Some(on_scroll),
             set_viewport_height: Some(set_viewport),
             get_scroll_offset: Some(get_scroll), // NEW

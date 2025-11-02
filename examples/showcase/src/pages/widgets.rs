@@ -1,6 +1,6 @@
 use crate::ui::{Card, Section};
-use compose_core::prelude::*;
-use compose_ui::*;
+use repose_core::prelude::*;
+use repose_ui::*;
 
 pub fn screen() -> View {
     let cb = remember(|| signal(true));

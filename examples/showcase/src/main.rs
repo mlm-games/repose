@@ -1,6 +1,6 @@
-use compose_core::prelude::*;
-use compose_platform::run_desktop_app;
-use compose_ui::*;
+use repose_core::prelude::*;
+use repose_platform::run_desktop_app;
+use repose_ui::*;
 mod ui;
 mod pages {
     pub mod layout;
@@ -83,7 +83,7 @@ fn app(_s: &mut Scheduler) -> View {
     );
 
     // Apply theme and direction
-    let themed = compose_core::with_theme(
+    let themed = repose_core::with_theme(
         if theme_dark.get() {
             theme_dark_v
         } else {
@@ -92,7 +92,7 @@ fn app(_s: &mut Scheduler) -> View {
         || root,
     );
     if rtl.get() {
-        compose_core::with_text_direction(compose_core::locals::TextDirection::Rtl, || themed)
+        repose_core::with_text_direction(repose_core::locals::TextDirection::Rtl, || themed)
     } else {
         themed
     }

@@ -1,4 +1,4 @@
-use compose_core::*;
+use repose_core::*;
 use std::ops::Range;
 use std::rc::Rc;
 use std::time::Duration;
@@ -21,7 +21,7 @@ pub struct TextMetrics {
 }
 
 pub fn measure_text(text: &str, px: u32) -> TextMetrics {
-    let m = compose_text::metrics_for_textfield(text, px as f32);
+    let m = repose_text::metrics_for_textfield(text, px as f32);
     TextMetrics {
         positions: m.positions,
         byte_offsets: m.byte_offsets,
@@ -73,12 +73,12 @@ fn next_grapheme_boundary(text: &str, byte: usize) -> usize {
 
 // Returns cumulative X positions per codepoint boundary (len+1 entries; pos[0] = 0, pos[i] = advance up to char i)
 pub fn positions_for(text: &str, px: u32) -> Vec<f32> {
-    compose_text::metrics_for_textfield(text, px as f32).positions
+    repose_text::metrics_for_textfield(text, px as f32).positions
 }
 
 // Clamp to [0..=len], nearest insertion point for a given x (content coords, before scroll)
 pub fn index_for_x(text: &str, px: u32, x: f32) -> usize {
-    let m = compose_text::metrics_for_textfield(text, px as f32);
+    let m = repose_text::metrics_for_textfield(text, px as f32);
     // nearest boundary
     let mut best = 0usize;
     let mut dmin = f32::INFINITY;

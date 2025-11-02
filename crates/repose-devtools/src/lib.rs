@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use compose_core::{Color, Rect, Scene, SceneNode};
+use repose_core::{Color, Rect, Scene, SceneNode};
 
 pub struct Hud {
     pub inspector_enabled: bool,

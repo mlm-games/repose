@@ -4,9 +4,9 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use ab_glyph::{Font, FontArc, Glyph, PxScale, ScaleFont, point};
-use compose_core::{Color, GlyphRasterConfig, RenderBackend, Scene, SceneNode, Transform};
 use cosmic_text;
 use fontdb::Database;
+use repose_core::{Color, GlyphRasterConfig, RenderBackend, Scene, SceneNode, Transform};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use wgpu::util::DeviceExt;
 
@@ -82,7 +82,7 @@ struct AtlasA8 {
     next_x: u32,
     next_y: u32,
     row_h: u32,
-    map: HashMap<(compose_text::GlyphKey, u32), GlyphInfo>,
+    map: HashMap<(repose_text::GlyphKey, u32), GlyphInfo>,
 }
 
 struct AtlasRGBA {
@@ -93,7 +93,7 @@ struct AtlasRGBA {
     next_x: u32,
     next_y: u32,
     row_h: u32,
-    map: HashMap<(compose_text::GlyphKey, u32), GlyphInfo>,
+    map: HashMap<(repose_text::GlyphKey, u32), GlyphInfo>,
 }
 
 #[derive(Clone, Copy)]
@@ -160,7 +160,7 @@ impl WgpuBackend {
 
         let (device, queue) =
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-                label: Some("compose-rs device"),
+                label: Some("repose-rs device"),
                 required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::default(),
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
@@ -602,13 +602,13 @@ impl WgpuBackend {
         })
     }
 
-    fn upload_glyph_mask(&mut self, key: compose_text::GlyphKey, px: u32) -> Option<GlyphInfo> {
+    fn upload_glyph_mask(&mut self, key: repose_text::GlyphKey, px: u32) -> Option<GlyphInfo> {
         let keyp = (key, px);
         if let Some(info) = self.atlas_mask.map.get(&keyp) {
             return Some(*info);
         }
 
-        let gb = compose_text::rasterize(key, px as f32)?;
+        let gb = repose_text::rasterize(key, px as f32)?;
         if gb.w == 0 || gb.h == 0 || gb.data.is_empty() {
             return None; //Whitespace, but doesn't get inserted?
         }
@@ -674,12 +674,12 @@ impl WgpuBackend {
         self.atlas_mask.map.insert(keyp, info);
         Some(info)
     }
-    fn upload_glyph_color(&mut self, key: compose_text::GlyphKey, px: u32) -> Option<GlyphInfo> {
+    fn upload_glyph_color(&mut self, key: repose_text::GlyphKey, px: u32) -> Option<GlyphInfo> {
         let keyp = (key, px);
         if let Some(info) = self.atlas_color.map.get(&keyp) {
             return Some(*info);
         }
-        let gb = compose_text::rasterize(key, px as f32)?;
+        let gb = repose_text::rasterize(key, px as f32)?;
         if !matches!(gb.content, cosmic_text::SwashContent::Color) {
             return None;
         }
@@ -774,8 +774,7 @@ impl WgpuBackend {
         self.atlas_mask.next_y = 1;
         self.atlas_mask.row_h = 0;
         // rebuild all keys
-        let keys: Vec<(compose_text::GlyphKey, u32)> =
-            self.atlas_mask.map.keys().copied().collect();
+        let keys: Vec<(repose_text::GlyphKey, u32)> = self.atlas_mask.map.keys().copied().collect();
         self.atlas_mask.map.clear();
         for (k, px) in keys {
             let _ = self.upload_glyph_mask(k, px);
@@ -821,7 +820,7 @@ impl WgpuBackend {
         self.atlas_color.next_x = 1;
         self.atlas_color.next_y = 1;
         self.atlas_color.row_h = 0;
-        let keys: Vec<(compose_text::GlyphKey, u32)> =
+        let keys: Vec<(repose_text::GlyphKey, u32)> =
             self.atlas_color.map.keys().copied().collect();
         self.atlas_color.map.clear();
         for (k, px) in keys {
@@ -898,7 +897,7 @@ impl RenderBackend for WgpuBackend {
             let sy = to_ndc_scalar(w, fb_h);
             sx.min(sy)
         }
-        fn to_scissor(r: &compose_core::Rect, fb_w: u32, fb_h: u32) -> (u32, u32, u32, u32) {
+        fn to_scissor(r: &repose_core::Rect, fb_w: u32, fb_h: u32) -> (u32, u32, u32, u32) {
             let x = r.x.max(0.0).floor() as u32;
             let y = r.y.max(0.0).floor() as u32;
             let w = ((r.w.max(0.0).ceil() as u32).min(fb_w.saturating_sub(x))).max(1);
@@ -911,7 +910,7 @@ impl RenderBackend for WgpuBackend {
 
         // Prebuild draw commands, batching per pipeline between clip boundaries
         enum Cmd {
-            SetClipPush(compose_core::Rect),
+            SetClipPush(repose_core::Rect),
             SetClipPop,
             Rect { off: u64, cnt: u32 },
             Border { off: u64, cnt: u32 },
@@ -1054,8 +1053,8 @@ impl RenderBackend for WgpuBackend {
                     size,
                 } => {
                     let px = (*size).clamp(8.0, 96.0);
-                    // Shape line using compose-text (correct ligatures/bidi/fallback)
-                    let shaped = compose_text::shape_line(text, px);
+                    // Shape line using repose-text (correct ligatures/bidi/fallback)
+                    let shaped = repose_text::shape_line(text, px);
                     for sg in shaped {
                         // Try color first; if not color, try mask
                         if let Some(info) = self.upload_glyph_color(sg.key, px as u32) {
@@ -1156,13 +1155,13 @@ impl RenderBackend for WgpuBackend {
             rpass.set_scissor_rect(0, 0, self.config.width, self.config.height);
             let bind_mask = self.atlas_bind_group_mask();
             let bind_color = self.atlas_bind_group_color();
-            let root_clip = compose_core::Rect {
+            let root_clip = repose_core::Rect {
                 x: 0.0,
                 y: 0.0,
                 w: fb_w,
                 h: fb_h,
             };
-            let mut clip_stack: Vec<compose_core::Rect> = Vec::with_capacity(8);
+            let mut clip_stack: Vec<repose_core::Rect> = Vec::with_capacity(8);
 
             for cmd in cmds {
                 match cmd {
@@ -1224,12 +1223,12 @@ impl RenderBackend for WgpuBackend {
     }
 }
 
-fn intersect(a: compose_core::Rect, b: compose_core::Rect) -> compose_core::Rect {
+fn intersect(a: repose_core::Rect, b: repose_core::Rect) -> repose_core::Rect {
     let x0 = a.x.max(b.x);
     let y0 = a.y.max(b.y);
     let x1 = (a.x + a.w).min(b.x + b.w);
     let y1 = (a.y + a.h).min(b.y + b.h);
-    compose_core::Rect {
+    repose_core::Rect {
         x: x0,
         y: y0,
         w: (x1 - x0).max(0.0),

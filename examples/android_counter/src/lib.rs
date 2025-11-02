@@ -1,7 +1,7 @@
 #![cfg(target_os = "android")]
-use compose_core::prelude::*;
-use compose_platform::android::run_android_app;
-use compose_ui::*;
+use repose_core::prelude::*;
+use repose_platform::android::run_android_app;
+use repose_ui::*;
 use winit::platform::android::activity::AndroidApp;
 
 fn app(_s: &mut Scheduler) -> View {
