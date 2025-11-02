@@ -4,7 +4,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use ab_glyph::{Font, FontArc, Glyph, PxScale, ScaleFont, point};
-use compose_core::{Color, GlyphRasterConfig, RenderBackend, Scene, SceneNode};
+use compose_core::{Color, GlyphRasterConfig, RenderBackend, Scene, SceneNode, Transform};
 use cosmic_text;
 use fontdb::Database;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -917,6 +917,8 @@ impl RenderBackend for WgpuBackend {
             Border { off: u64, cnt: u32 },
             GlyphsMask { off: u64, cnt: u32 },
             GlyphsColor { off: u64, cnt: u32 },
+            PushTransform(Transform),
+            PopTransform,
         }
         let mut cmds: Vec<Cmd> = Vec::with_capacity(scene.nodes.len());
         struct Batch {
@@ -997,15 +999,28 @@ impl RenderBackend for WgpuBackend {
         self.ring_glyph_color.reset();
         let mut batch = Batch::new();
 
+        let mut transform_stack: Vec<Transform> = vec![Transform::identity()];
+
         for node in &scene.nodes {
+            let t_identity = Transform::identity();
+            let current_transform = transform_stack.last().unwrap_or(&t_identity);
+
             match node {
                 SceneNode::Rect {
                     rect,
                     color,
                     radius,
                 } => {
+                    let transformed_rect = current_transform.apply_to_rect(*rect);
                     batch.rects.push(RectInstance {
-                        xywh: to_ndc(rect.x, rect.y, rect.w, rect.h, fb_w, fb_h),
+                        xywh: to_ndc(
+                            transformed_rect.x,
+                            transformed_rect.y,
+                            transformed_rect.w,
+                            transformed_rect.h,
+                            fb_w,
+                            fb_h,
+                        ),
                         radius: to_ndc_radius(*radius, fb_w, fb_h),
                         color: color.to_linear(),
                     });
@@ -1016,8 +1031,17 @@ impl RenderBackend for WgpuBackend {
                     width,
                     radius,
                 } => {
+                    let transformed_rect = current_transform.apply_to_rect(*rect);
+
                     batch.borders.push(BorderInstance {
-                        xywh: to_ndc(rect.x, rect.y, rect.w, rect.h, fb_w, fb_h),
+                        xywh: to_ndc(
+                            transformed_rect.x,
+                            transformed_rect.y,
+                            transformed_rect.w,
+                            transformed_rect.h,
+                            fb_w,
+                            fb_h,
+                        ),
                         radius_outer: to_ndc_radius(*radius, fb_w, fb_h),
                         stroke: to_ndc_stroke(*width, fb_w, fb_h),
                         color: color.to_linear(),
@@ -1078,6 +1102,13 @@ impl RenderBackend for WgpuBackend {
                         &mut cmds,
                     );
                     cmds.push(Cmd::SetClipPop);
+                }
+                SceneNode::PushTransform { transform } => {
+                    let combined = current_transform.combine(transform);
+                    transform_stack.push(combined);
+                }
+                SceneNode::PopTransform => {
+                    transform_stack.pop();
                 }
             }
             // flush trailing batch
@@ -1180,6 +1211,8 @@ impl RenderBackend for WgpuBackend {
                         );
                         rpass.draw(0..6, 0..n);
                     }
+                    Cmd::PushTransform(transform) => {}
+                    Cmd::PopTransform => {}
                 }
             }
         }

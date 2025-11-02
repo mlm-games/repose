@@ -54,6 +54,7 @@ pub fn Scroll(modifier: Modifier) -> View {
         ViewKind::ScrollV {
             on_scroll: None,
             set_viewport_height: None,
+            get_scroll_offset: None,
         },
     )
     .modifier(modifier)
@@ -353,8 +354,10 @@ pub fn layout_and_paint(
         textfield_states: &HashMap<u64, Rc<RefCell<TextFieldState>>>,
         interactions: &Interactions,
         focused: Option<u64>,
+        parent_transform: Transform,
     ) {
-        let rect = layout_of(nodes[&v.id], t);
+        let local_rect = layout_of(nodes[&v.id], t);
+        let rect = parent_transform.apply_to_rect(local_rect);
 
         let is_hovered = interactions.hover == Some(v.id);
         let is_pressed = interactions.pressed.contains(&v.id);
@@ -624,17 +627,96 @@ pub fn layout_and_paint(
                     });
                 }
             }
+            ViewKind::ScrollV {
+                on_scroll,
+                set_viewport_height,
+                get_scroll_offset,
+            } => {
+                // Register hit region (use local rect for hit testing)
+                hits.push(HitRegion {
+                    id: v.id,
+                    rect: local_rect, // Use untransformed rect for hit testing
+                    on_click: None,
+                    on_scroll: on_scroll.clone(),
+                    focusable: false,
+                    on_pointer_down: None,
+                    on_pointer_move: None,
+                    on_pointer_up: None,
+                    on_pointer_enter: None,
+                    on_pointer_leave: None,
+                    z_index: v.modifier.z_index,
+                });
+
+                // Report viewport height
+                if let Some(set_vh) = set_viewport_height {
+                    set_vh(local_rect.h);
+                }
+
+                // Push clip for viewport
+                scene.nodes.push(SceneNode::PushClip {
+                    rect: local_rect,
+                    radius: v.modifier.clip_rounded.unwrap_or(0.0),
+                });
+
+                // Apply scroll transform for children
+                if let Some(get_offset) = get_scroll_offset {
+                    let offset = get_offset();
+                    let scroll_transform = Transform::translate(0.0, -offset);
+                    scene.nodes.push(SceneNode::PushTransform {
+                        transform: scroll_transform,
+                    });
+
+                    // Render children with combined transform
+                    let child_transform = parent_transform.combine(&scroll_transform);
+                    for c in &v.children {
+                        walk(
+                            c,
+                            t,
+                            nodes,
+                            scene,
+                            hits,
+                            sems,
+                            textfield_states,
+                            interactions,
+                            focused,
+                            child_transform,
+                        );
+                    }
+
+                    scene.nodes.push(SceneNode::PopTransform);
+                } else {
+                    // No scroll offset, render normally
+                    for c in &v.children {
+                        walk(
+                            c,
+                            t,
+                            nodes,
+                            scene,
+                            hits,
+                            sems,
+                            textfield_states,
+                            interactions,
+                            focused,
+                            parent_transform,
+                        );
+                    }
+                }
+
+                scene.nodes.push(SceneNode::PopClip);
+                return; // Don't fall through to default child rendering
+            }
 
             _ => {}
         }
 
-        let clip_children = matches!(v.kind, ViewKind::ScrollV { .. });
-        if clip_children {
+        let clip_children = false;
+        if clip_children && v.modifier.clip_rounded.is_some() {
             scene.nodes.push(SceneNode::PushClip {
                 rect,
                 radius: v.modifier.clip_rounded.unwrap_or(0.0),
             });
         }
+
         for c in &v.children {
             walk(
                 c,
@@ -646,9 +728,11 @@ pub fn layout_and_paint(
                 textfield_states,
                 interactions,
                 focused,
+                parent_transform,
             );
         }
-        if clip_children {
+
+        if clip_children && v.modifier.clip_rounded.is_some() {
             scene.nodes.push(SceneNode::PopClip);
         }
     }
@@ -663,7 +747,9 @@ pub fn layout_and_paint(
         textfield_states,
         interactions,
         focused,
+        Transform::identity(),
     );
+
     // Ensure visual order: low z_index first. Topmost will be found by iter().rev().
     hits.sort_by(|a, b| a.z_index.partial_cmp(&b.z_index).unwrap_or(Ordering::Equal));
 

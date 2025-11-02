@@ -1,4 +1,4 @@
-use crate::{Color, Modifier, Rect};
+use crate::{Color, Modifier, Rect, Transform};
 use std::rc::Rc;
 
 pub type ViewId = u64;
@@ -16,6 +16,7 @@ pub enum ViewKind {
     ScrollV {
         on_scroll: Option<ScrollCallback>,
         set_viewport_height: Option<Rc<dyn Fn(f32)>>,
+        get_scroll_offset: Option<Rc<dyn Fn() -> f32>>,
     },
     Text {
         text: String,
@@ -129,4 +130,8 @@ pub enum SceneNode {
         radius: f32,
     },
     PopClip,
+    PushTransform {
+        transform: Transform,
+    },
+    PopTransform,
 }

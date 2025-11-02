@@ -1,7 +1,10 @@
+use crate::{Box, ViewExt};
 use compose_core::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
+
+use crate::Stack;
 
 pub struct LazyColumnState {
     pub scroll_offset: f32,
@@ -95,13 +98,14 @@ where
     T: Clone + 'static,
     F: Fn(T, usize) -> View + 'static,
 {
-    // Content height for physics and visible window
     let content_height = items.len() as f32 * item_height;
-    // Advance animation once per frame
+
+    // Advance animation
     {
         let mut st = state.borrow_mut();
         let _ = st.tick(content_height);
     }
+
     let scroll_offset;
     let viewport_height;
     {
@@ -110,43 +114,36 @@ where
         viewport_height = st.viewport_height;
     }
 
-    // Calculate visible range
-    let first_visible = (scroll_offset / item_height).floor() as usize;
-    let last_visible = ((scroll_offset + viewport_height) / item_height).ceil() as usize;
+    // Calculate visible range with buffer for smoother scrolling
+    let buffer = 2; // Render 2 extra items above/below viewport
+    let first_visible = ((scroll_offset / item_height).floor() as isize - buffer).max(0) as usize;
+    let last_visible = (((scroll_offset + viewport_height) / item_height).ceil() as usize
+        + buffer as usize)
+        .min(items.len());
 
-    let first_visible = first_visible.min(items.len());
-    let last_visible = last_visible.min(items.len());
-
-    // Build only visible items
     let mut children = Vec::new();
 
-    // Top spacer
-    if first_visible > 0 {
-        children.push(crate::Box(
-            Modifier::new().size(1.0, first_visible as f32 * item_height),
-        ));
-    }
-
-    // Visible items
+    // Instead of spacers, position items absolutely
     for i in first_visible..last_visible {
         if let Some(item) = items.get(i) {
-            children.push(item_builder(item.clone(), i));
+            let item_view = item_builder(item.clone(), i);
+            // Wrap each item with absolute positioning
+            children.push(
+                Box(Modifier::new().size(
+                    modifier.size.map(|s| s.width).unwrap_or(f32::INFINITY),
+                    item_height,
+                ))
+                .child(item_view),
+            );
         }
     }
 
-    // Bottom spacer
-    if last_visible < items.len() {
-        let remaining = items.len() - last_visible;
-        children.push(crate::Box(
-            Modifier::new().size(1.0, remaining as f32 * item_height),
-        ));
-    }
-
-    // Scroll callbacks
+    // Callbacks
     let on_scroll = {
         let state = state.clone();
         Rc::new(move |dy: f32| -> f32 { state.borrow_mut().scroll_immediate(dy, content_height) })
     };
+
     let set_viewport = {
         let state = state.clone();
         Rc::new(move |h: f32| {
@@ -154,13 +151,37 @@ where
         })
     };
 
-    // Wrap content in a scroll container; apply modifier to the viewport
-    let content = crate::Column(Modifier::new()).with_children(children);
+    let get_scroll = {
+        let state = state.clone();
+        Rc::new(move || -> f32 { state.borrow().scroll_offset })
+    };
+
+    // Create content that's the full height
+    let content = Box(Modifier::new().size(
+        modifier.size.map(|s| s.width).unwrap_or(f32::INFINITY),
+        content_height,
+    ))
+    .child(
+        Stack(Modifier::new()).with_children(
+            children
+                .into_iter()
+                .enumerate()
+                .map(|(idx, child)| {
+                    // Position each child at its absolute Y position
+                    let y_offset = (first_visible + idx) as f32 * item_height;
+                    Box(Modifier::new().padding(0.0)) // Would need absolute positioning here
+                        .child(child)
+                })
+                .collect(),
+        ),
+    );
+
     compose_core::View::new(
         0,
         compose_core::ViewKind::ScrollV {
             on_scroll: Some(on_scroll),
             set_viewport_height: Some(set_viewport),
+            get_scroll_offset: Some(get_scroll),
         },
     )
     .modifier(modifier)
