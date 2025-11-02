@@ -100,88 +100,74 @@ where
 {
     let content_height = items.len() as f32 * item_height;
 
-    // Advance animation
+    // Advance physics once per frame
     {
         let mut st = state.borrow_mut();
         let _ = st.tick(content_height);
     }
 
-    let scroll_offset;
-    let viewport_height;
-    {
+    let (scroll_offset, viewport_height) = {
         let st = state.borrow();
-        scroll_offset = st.scroll_offset;
-        viewport_height = st.viewport_height;
-    }
+        (st.scroll_offset, st.viewport_height)
+    };
 
-    // Calculate visible range with buffer for smoother scrolling
-    let buffer = 2; // Render 2 extra items above/below viewport
-    let first_visible = ((scroll_offset / item_height).floor() as isize - buffer).max(0) as usize;
-    let last_visible = (((scroll_offset + viewport_height) / item_height).ceil() as usize
-        + buffer as usize)
-        .min(items.len());
+    // Visible window (with a small render buffer for smoothness)
+    let buffer = 2usize;
+    let first_visible = (scroll_offset / item_height).floor().max(0.0) as usize;
+    let last_visible = ((scroll_offset + viewport_height) / item_height).ceil() as usize;
+
+    let first_visible = first_visible.min(items.len());
+    let last_visible = last_visible.saturating_add(buffer).min(items.len());
+    let first_with_buffer = first_visible.saturating_sub(buffer);
 
     let mut children = Vec::new();
 
-    // Instead of spacers, position items absolutely
-    for i in first_visible..last_visible {
+    // Top spacer = baseline start. After visual offset (-scroll_offset) this becomes -remainder.
+    if first_with_buffer > 0 {
+        children.push(crate::Box(
+            Modifier::new().size(1.0, first_with_buffer as f32 * item_height),
+        ));
+    }
+
+    for i in first_with_buffer..last_visible {
         if let Some(item) = items.get(i) {
-            let item_view = item_builder(item.clone(), i);
-            // Wrap each item with absolute positioning
-            children.push(
-                Box(Modifier::new().size(
-                    modifier.size.map(|s| s.width).unwrap_or(f32::INFINITY),
-                    item_height,
-                ))
-                .child(item_view),
-            );
+            children.push(item_builder(item.clone(), i));
         }
     }
 
-    // Callbacks
+    // Optional: bottom spacer (not strictly required for visual; harmless)
+    if last_visible < items.len() {
+        let remaining = items.len() - last_visible;
+        children.push(crate::Box(
+            Modifier::new().size(1.0, remaining as f32 * item_height),
+        ));
+    }
+
+    // Scroll callbacks
     let on_scroll = {
         let state = state.clone();
         Rc::new(move |dy: f32| -> f32 { state.borrow_mut().scroll_immediate(dy, content_height) })
     };
-
     let set_viewport = {
         let state = state.clone();
         Rc::new(move |h: f32| {
             state.borrow_mut().viewport_height = h;
         })
     };
-
     let get_scroll = {
         let state = state.clone();
         Rc::new(move || -> f32 { state.borrow().scroll_offset })
     };
 
-    // Create content that's the full height
-    let content = Box(Modifier::new().size(
-        modifier.size.map(|s| s.width).unwrap_or(f32::INFINITY),
-        content_height,
-    ))
-    .child(
-        Stack(Modifier::new()).with_children(
-            children
-                .into_iter()
-                .enumerate()
-                .map(|(idx, child)| {
-                    // Position each child at its absolute Y position
-                    let y_offset = (first_visible + idx) as f32 * item_height;
-                    Box(Modifier::new().padding(0.0)) // Would need absolute positioning here
-                        .child(child)
-                })
-                .collect(),
-        ),
-    );
+    // Content inside scroll viewport (clip and translation happen in layout_and_paint)
+    let content = crate::Column(Modifier::new()).with_children(children);
 
     compose_core::View::new(
         0,
         compose_core::ViewKind::ScrollV {
             on_scroll: Some(on_scroll),
             set_viewport_height: Some(set_viewport),
-            get_scroll_offset: Some(get_scroll),
+            get_scroll_offset: Some(get_scroll), // NEW
         },
     )
     .modifier(modifier)

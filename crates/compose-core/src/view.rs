@@ -31,11 +31,67 @@ pub enum ViewKind {
         state_key: ViewId,
         hint: String,
     },
+    Checkbox {
+        checked: bool,
+        label: String,
+        on_change: Option<Rc<dyn Fn(bool)>>,
+    },
+    RadioButton {
+        selected: bool,
+        label: String,
+        on_select: Option<Callback>,
+    },
+    Switch {
+        checked: bool,
+        label: String,
+        on_change: Option<Rc<dyn Fn(bool)>>,
+    },
+    Slider {
+        value: f32,
+        min: f32,
+        max: f32,
+        step: Option<f32>,
+        label: String,
+        on_change: Option<CallbackF32>,
+    },
+    RangeSlider {
+        start: f32,
+        end: f32,
+        min: f32,
+        max: f32,
+        step: Option<f32>,
+        label: String,
+        on_change: Option<CallbackRange>,
+    },
+    ProgressBar {
+        value: f32,
+        min: f32,
+        max: f32,
+        label: String,
+        circular: bool,
+    },
 }
 
 impl std::fmt::Debug for ViewKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ViewKind::Checkbox { checked, label, .. } => f
+                .debug_struct("Checkbox")
+                .field("checked", checked)
+                .field("label", label)
+                .finish(),
+            ViewKind::RadioButton {
+                selected, label, ..
+            } => f
+                .debug_struct("RadioButton")
+                .field("selected", selected)
+                .field("label", label)
+                .finish(),
+            ViewKind::Switch { checked, label, .. } => f
+                .debug_struct("Switch")
+                .field("checked", checked)
+                .field("label", label)
+                .finish(),
             ViewKind::Surface => write!(f, "Surface"),
             ViewKind::Box => write!(f, "Box"),
             ViewKind::Row => write!(f, "Row"),
@@ -61,6 +117,52 @@ impl std::fmt::Debug for ViewKind {
                 .debug_struct("TextField")
                 .field("state_key", state_key)
                 .field("hint", hint)
+                .finish(),
+            ViewKind::Slider {
+                value,
+                min,
+                max,
+                step,
+                label,
+                ..
+            } => f
+                .debug_struct("Slider")
+                .field("value", value)
+                .field("min", min)
+                .field("max", max)
+                .field("step", step)
+                .field("label", label)
+                .finish(),
+            ViewKind::RangeSlider {
+                start,
+                end,
+                min,
+                max,
+                step,
+                label,
+                ..
+            } => f
+                .debug_struct("RangeSlider")
+                .field("start", start)
+                .field("end", end)
+                .field("min", min)
+                .field("max", max)
+                .field("step", step)
+                .field("label", label)
+                .finish(),
+            ViewKind::ProgressBar {
+                value,
+                min,
+                max,
+                label,
+                circular,
+            } => f
+                .debug_struct("ProgressBar")
+                .field("value", value)
+                .field("min", min)
+                .field("max", max)
+                .field("label", label)
+                .field("circular", circular)
                 .finish(),
         }
     }
@@ -135,3 +237,6 @@ pub enum SceneNode {
     },
     PopTransform,
 }
+
+pub type CallbackF32 = Rc<dyn Fn(f32)>;
+pub type CallbackRange = Rc<dyn Fn(f32, f32)>;

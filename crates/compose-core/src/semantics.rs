@@ -4,6 +4,11 @@ pub enum Role {
     Button,
     TextField,
     Container,
+    Checkbox,
+    RadioButton,
+    Switch,
+    Slider,
+    ProgressBar,
 }
 
 #[derive(Clone, Debug)]

@@ -7,9 +7,7 @@ members = [
   "crates/compose-devtools",
   "crates/compose-macros",
   "crates/compose-text",
-  "examples/desktop_counter",
-  "examples/textfield_ime",
-  "examples/lazy_list",
+  "examples/showcase",
   "examples/animation_demo",
   "examples/android_counter",
 ]

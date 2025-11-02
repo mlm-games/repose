@@ -14,6 +14,8 @@ use compose_core::*;
 use taffy::Overflow;
 use taffy::style::{AlignItems, Dimension, Display, FlexDirection, JustifyContent, Style};
 
+use taffy::prelude::{Position, Size, auto, length, percent};
+
 pub mod textfield;
 pub use textfield::{TextField, TextFieldState};
 
@@ -71,6 +73,14 @@ pub fn Text(text: impl Into<String>) -> View {
     )
 }
 
+pub fn Spacer() -> View {
+    Box(Modifier::new().flex_grow(1.0))
+}
+
+pub fn Grid(columns: usize, modifier: Modifier, children: Vec<View>) -> View {
+    Column(modifier.grid(columns, 0.0, 0.0)).with_children(children)
+}
+
 #[allow(non_snake_case)]
 pub fn TextColor(mut v: View, color: Color) -> View {
     if let ViewKind::Text {
@@ -108,6 +118,154 @@ pub fn Button(text: impl Into<String>, on_click: impl Fn() + 'static) -> View {
         focused: false,
         enabled: true,
     })
+}
+
+pub fn Checkbox(
+    checked: bool,
+    label: impl Into<String>,
+    on_change: impl Fn(bool) + 'static,
+) -> View {
+    View::new(
+        0,
+        ViewKind::Checkbox {
+            checked,
+            label: label.into(),
+            on_change: Some(Rc::new(on_change)),
+        },
+    )
+    .semantics(Semantics {
+        role: Role::Checkbox,
+        label: None,
+        focused: false,
+        enabled: true,
+    })
+}
+
+pub fn RadioButton(
+    selected: bool,
+    label: impl Into<String>,
+    on_select: impl Fn() + 'static,
+) -> View {
+    View::new(
+        0,
+        ViewKind::RadioButton {
+            selected,
+            label: label.into(),
+            on_select: Some(Rc::new(on_select)),
+        },
+    )
+    .semantics(Semantics {
+        role: Role::RadioButton,
+        label: None,
+        focused: false,
+        enabled: true,
+    })
+}
+
+pub fn Switch(checked: bool, label: impl Into<String>, on_change: impl Fn(bool) + 'static) -> View {
+    View::new(
+        0,
+        ViewKind::Switch {
+            checked,
+            label: label.into(),
+            on_change: Some(Rc::new(on_change)),
+        },
+    )
+    .semantics(Semantics {
+        role: Role::Switch,
+        label: None,
+        focused: false,
+        enabled: true,
+    })
+}
+
+pub fn Slider(
+    value: f32,
+    range: (f32, f32),
+    step: Option<f32>,
+    label: impl Into<String>,
+    on_change: impl Fn(f32) + 'static,
+) -> View {
+    View::new(
+        0,
+        ViewKind::Slider {
+            value,
+            min: range.0,
+            max: range.1,
+            step,
+            label: label.into(),
+            on_change: Some(Rc::new(on_change)),
+        },
+    )
+    .semantics(Semantics {
+        role: Role::Slider,
+        label: None,
+        focused: false,
+        enabled: true,
+    })
+}
+
+pub fn RangeSlider(
+    start: f32,
+    end: f32,
+    range: (f32, f32),
+    step: Option<f32>,
+    label: impl Into<String>,
+    on_change: impl Fn(f32, f32) + 'static,
+) -> View {
+    View::new(
+        0,
+        ViewKind::RangeSlider {
+            start,
+            end,
+            min: range.0,
+            max: range.1,
+            step,
+            label: label.into(),
+            on_change: Some(Rc::new(on_change)),
+        },
+    )
+    .semantics(Semantics {
+        role: Role::Slider,
+        label: None,
+        focused: false,
+        enabled: true,
+    })
+}
+
+pub fn ProgressBar(value: f32, range: (f32, f32), label: impl Into<String>) -> View {
+    View::new(
+        0,
+        ViewKind::ProgressBar {
+            value,
+            min: range.0,
+            max: range.1,
+            label: label.into(),
+            circular: false,
+        },
+    )
+    .semantics(Semantics {
+        role: Role::ProgressBar,
+        label: None,
+        focused: false,
+        enabled: true,
+    })
+}
+
+fn flex_dir_for(kind: &ViewKind) -> Option<FlexDirection> {
+    match kind {
+        ViewKind::Row => {
+            if compose_core::locals::text_direction() == compose_core::locals::TextDirection::Rtl {
+                Some(FlexDirection::RowReverse)
+            } else {
+                Some(FlexDirection::Row)
+            }
+        }
+        ViewKind::Column | ViewKind::Surface | ViewKind::ScrollV { .. } => {
+            Some(FlexDirection::Column)
+        }
+        _ => None,
+    }
 }
 
 /// Extension trait for child building
@@ -190,6 +348,12 @@ pub fn layout_and_paint(
         Button { label: String },
         TextField,
         Container,
+        Checkbox { label: String },
+        Radio { label: String },
+        Switch { label: String },
+        Slider { label: String },
+        Range { label: String },
+        Progress { label: String },
     }
 
     let mut taffy: TaffyTree<NodeCtx> = TaffyTree::new();
@@ -197,19 +361,86 @@ pub fn layout_and_paint(
 
     fn style_from_modifier(m: &Modifier, kind: &ViewKind) -> Style {
         let mut s = Style::default();
-        s.display = Display::Flex;
-
-        match kind {
-            ViewKind::Row => s.flex_direction = FlexDirection::Row,
-            ViewKind::Column | ViewKind::Surface | ViewKind::ScrollV { .. } => {
-                s.flex_direction = FlexDirection::Column;
-            }
-            ViewKind::Stack => s.display = Display::Grid,
-            _ => {}
+        s.display = match kind {
+            ViewKind::Row => Display::Flex,
+            ViewKind::Column | ViewKind::Surface | ViewKind::ScrollV { .. } => Display::Flex,
+            ViewKind::Stack => Display::Grid, // stack is grid overlay
+            _ => Display::Flex,
+        };
+        if matches!(kind, ViewKind::Row) {
+            s.flex_direction = FlexDirection::Row;
+        }
+        if matches!(
+            kind,
+            ViewKind::Column | ViewKind::Surface | ViewKind::ScrollV { .. }
+        ) {
+            s.flex_direction = FlexDirection::Column;
         }
 
+        if let Some(r) = m.aspect_ratio {
+            s.aspect_ratio = Some(r);
+        }
+
+        // Flex
+        if let Some(g) = m.flex_grow {
+            s.flex_grow = g;
+        }
+        if let Some(sh) = m.flex_shrink {
+            s.flex_shrink = sh;
+        }
+        if let Some(b) = m.flex_basis {
+            s.flex_basis = length(b);
+        }
+
+        // Align self (including baseline)
+        if let Some(a) = m.align_self {
+            s.align_self = Some(a);
+        }
+
+        // Absolute positioning
+        if let Some(compose_core::modifier::PositionType::Absolute) = m.position_type {
+            s.position = Position::Absolute;
+            s.inset = taffy::geometry::Rect {
+                left: m.offset_left.map(length).unwrap_or_else(auto),
+                right: m.offset_right.map(length).unwrap_or_else(auto),
+                top: m.offset_top.map(length).unwrap_or_else(auto),
+                bottom: m.offset_bottom.map(length).unwrap_or_else(auto),
+            };
+        }
+
+        // Grid
+        if let Some(cfg) = &m.grid {
+            s.display = Display::Grid;
+
+            // Explicit N equal columns: repeat Single(flex(1.0)) N times
+            s.grid_template_columns = (0..cfg.columns)
+                .map(|_| GridTemplateComponent::Single(flex(1.0f32)))
+                .collect();
+
+            // Set gaps
+            s.gap = Size {
+                width: length(cfg.column_gap),
+                height: length(cfg.row_gap),
+            };
+        }
+
+        // Baseline alignment default for rows/columns
+        s.align_items = Some(AlignItems::FlexStart);
+        s.justify_content = Some(JustifyContent::FlexStart);
+
+        // Overflow for ScrollV
+        if matches!(kind, ViewKind::ScrollV { .. }) {
+            s.overflow = taffy::Point {
+                x: Overflow::Hidden,
+                y: Overflow::Hidden,
+            };
+        }
+
+        if let Some(dir) = flex_dir_for(kind) {
+            s.flex_direction = dir;
+        }
         if let Some(p) = m.padding {
-            let v = taffy::style::LengthPercentage::length(p);
+            let v = length(p);
             s.padding = taffy::geometry::Rect {
                 left: v,
                 right: v,
@@ -220,25 +451,18 @@ pub fn layout_and_paint(
 
         if let Some(sz) = m.size {
             if sz.width.is_finite() {
-                s.size.width = Dimension::length(sz.width);
+                s.size.width = length(sz.width);
             }
             if sz.height.is_finite() {
-                s.size.height = Dimension::length(sz.height);
+                s.size.height = length(sz.height);
             }
         }
 
         if m.fill_max {
-            s.size.width = Dimension::percent(1.0);
-            s.size.height = Dimension::percent(1.0);
+            s.size.width = percent(1.0);
+            s.size.height = percent(1.0);
             s.flex_grow = 1.0;
             s.flex_shrink = 1.0;
-        }
-
-        if matches!(kind, ViewKind::ScrollV { .. }) {
-            s.overflow = taffy::Point {
-                x: Overflow::Hidden,
-                y: Overflow::Hidden,
-            };
         }
 
         s.align_items = Some(AlignItems::FlexStart);
@@ -251,7 +475,25 @@ pub fn layout_and_paint(
         t: &mut TaffyTree<NodeCtx>,
         nodes_map: &mut HashMap<ViewId, taffy::NodeId>,
     ) -> taffy::NodeId {
-        let style = style_from_modifier(&v.modifier, &v.kind);
+        let mut style = style_from_modifier(&v.modifier, &v.kind);
+
+        if v.modifier.grid_col_span.is_some() || v.modifier.grid_row_span.is_some() {
+            use taffy::prelude::{GridPlacement, Line};
+
+            if let Some(cs) = v.modifier.grid_col_span {
+                style.grid_column = Line {
+                    start: GridPlacement::Auto,
+                    end: GridPlacement::Span(cs as u16),
+                };
+            }
+            if let Some(rs) = v.modifier.grid_row_span {
+                style.grid_row = Line {
+                    start: GridPlacement::Auto,
+                    end: GridPlacement::Span(rs as u16),
+                };
+            }
+        }
+
         let children: Vec<_> = v
             .children
             .iter()
@@ -281,6 +523,54 @@ pub fn layout_and_paint(
             ViewKind::TextField { .. } => {
                 t.new_leaf_with_context(style, NodeCtx::TextField).unwrap()
             }
+            ViewKind::Checkbox { label, .. } => t
+                .new_leaf_with_context(
+                    style,
+                    NodeCtx::Checkbox {
+                        label: label.clone(),
+                    },
+                )
+                .unwrap(),
+            ViewKind::RadioButton { label, .. } => t
+                .new_leaf_with_context(
+                    style,
+                    NodeCtx::Radio {
+                        label: label.clone(),
+                    },
+                )
+                .unwrap(),
+            ViewKind::Switch { label, .. } => t
+                .new_leaf_with_context(
+                    style,
+                    NodeCtx::Switch {
+                        label: label.clone(),
+                    },
+                )
+                .unwrap(),
+            ViewKind::Slider { label, .. } => t
+                .new_leaf_with_context(
+                    style,
+                    NodeCtx::Slider {
+                        label: label.clone(),
+                    },
+                )
+                .unwrap(),
+            ViewKind::RangeSlider { label, .. } => t
+                .new_leaf_with_context(
+                    style,
+                    NodeCtx::Range {
+                        label: label.clone(),
+                    },
+                )
+                .unwrap(),
+            ViewKind::ProgressBar { label, .. } => t
+                .new_leaf_with_context(
+                    style,
+                    NodeCtx::Progress {
+                        label: label.clone(),
+                    },
+                )
+                .unwrap(),
             _ => {
                 let n = t.new_with_children(style, &children).unwrap();
                 t.set_node_context(n, Some(NodeCtx::Container)).ok();
@@ -322,6 +612,54 @@ pub fn layout_and_paint(
                         height: 36.0,
                     }
                 }
+                Some(NodeCtx::Checkbox { label }) => {
+                    let label_w = (label.len() as f32) * 16.0 * 0.6;
+                    let w = 24.0 + 8.0 + label_w; // box + gap + text estimate
+                    taffy::geometry::Size {
+                        width: known.width.unwrap_or(w),
+                        height: 24.0,
+                    }
+                }
+                Some(NodeCtx::Radio { label }) => {
+                    let label_w = (label.len() as f32) * 16.0 * 0.6;
+                    let w = 24.0 + 8.0 + label_w; // circle + gap + text estimate
+                    taffy::geometry::Size {
+                        width: known.width.unwrap_or(w),
+                        height: 24.0,
+                    }
+                }
+                Some(NodeCtx::Switch { label }) => {
+                    let label_w = (label.len() as f32) * 16.0 * 0.6;
+                    let w = 46.0 + 8.0 + label_w; // track + gap + text
+                    taffy::geometry::Size {
+                        width: known.width.unwrap_or(w),
+                        height: 28.0,
+                    }
+                }
+                Some(NodeCtx::Slider { label }) => {
+                    let label_w = (label.len() as f32) * 16.0 * 0.6;
+                    let w = (known.width).unwrap_or(200.0f32.max(46.0 + 8.0 + label_w));
+                    taffy::geometry::Size {
+                        width: w,
+                        height: 28.0,
+                    }
+                }
+                Some(NodeCtx::Range { label }) => {
+                    let label_w = (label.len() as f32) * 16.0 * 0.6;
+                    let w = (known.width).unwrap_or(220.0f32.max(46.0 + 8.0 + label_w));
+                    taffy::geometry::Size {
+                        width: w,
+                        height: 28.0,
+                    }
+                }
+                Some(NodeCtx::Progress { label }) => {
+                    let label_w = (label.len() as f32) * 16.0 * 0.6;
+                    let w = (known.width).unwrap_or(200.0f32.max(100.0 + 8.0 + label_w));
+                    taffy::geometry::Size {
+                        width: w,
+                        height: 12.0 + 8.0,
+                    } // track + small padding
+                }
                 Some(NodeCtx::Container) | None => taffy::geometry::Size::ZERO,
             }
         })
@@ -334,6 +672,35 @@ pub fn layout_and_paint(
             y: l.location.y,
             w: l.size.width,
             h: l.size.height,
+        }
+    }
+
+    fn add_offset(mut r: compose_core::Rect, off: (f32, f32)) -> compose_core::Rect {
+        r.x += off.0;
+        r.y += off.1;
+        r
+    }
+
+    fn clamp01(x: f32) -> f32 {
+        x.max(0.0).min(1.0)
+    }
+    fn norm(value: f32, min: f32, max: f32) -> f32 {
+        if max > min {
+            (value - min) / (max - min)
+        } else {
+            0.0
+        }
+    }
+    fn denorm(t: f32, min: f32, max: f32) -> f32 {
+        min + t * (max - min)
+    }
+    fn snap_step(v: f32, step: Option<f32>, min: f32, max: f32) -> f32 {
+        match step {
+            Some(s) if s > 0.0 => {
+                let k = ((v - min) / s).round();
+                (min + k * s).clamp(min, max)
+            }
+            _ => v.clamp(min, max),
         }
     }
 
@@ -354,16 +721,16 @@ pub fn layout_and_paint(
         textfield_states: &HashMap<u64, Rc<RefCell<TextFieldState>>>,
         interactions: &Interactions,
         focused: Option<u64>,
-        parent_transform: Transform,
+        parent_offset: (f32, f32),
     ) {
-        let local_rect = layout_of(nodes[&v.id], t);
-        let rect = parent_transform.apply_to_rect(local_rect);
+        let local = layout_of(nodes[&v.id], t);
+        let rect = add_offset(local, parent_offset);
 
         let is_hovered = interactions.hover == Some(v.id);
         let is_pressed = interactions.pressed.contains(&v.id);
         let is_focused = focused == Some(v.id);
 
-        // Background
+        // Background/border (unchanged, but use 'rect')
         if let Some(bg) = v.modifier.background {
             scene.nodes.push(SceneNode::Rect {
                 rect,
@@ -379,6 +746,28 @@ pub fn layout_and_paint(
                 color: b.color,
                 width: b.width,
                 radius: b.radius.max(v.modifier.clip_rounded.unwrap_or(0.0)),
+            });
+        }
+
+        let has_pointer = v.modifier.on_pointer_down.is_some()
+            || v.modifier.on_pointer_move.is_some()
+            || v.modifier.on_pointer_up.is_some()
+            || v.modifier.on_pointer_enter.is_some()
+            || v.modifier.on_pointer_leave.is_some();
+
+        if has_pointer || v.modifier.click {
+            hits.push(HitRegion {
+                id: v.id,
+                rect,
+                on_click: None,  // unless ViewKind provides one
+                on_scroll: None, // provided by ScrollV case
+                focusable: false,
+                on_pointer_down: v.modifier.on_pointer_down.clone(),
+                on_pointer_move: v.modifier.on_pointer_move.clone(),
+                on_pointer_up: v.modifier.on_pointer_up.clone(),
+                on_pointer_enter: v.modifier.on_pointer_enter.clone(),
+                on_pointer_leave: v.modifier.on_pointer_leave.clone(),
+                z_index: v.modifier.z_index,
             });
         }
 
@@ -635,88 +1024,747 @@ pub fn layout_and_paint(
                 // Register hit region (use local rect for hit testing)
                 hits.push(HitRegion {
                     id: v.id,
-                    rect: local_rect, // Use untransformed rect for hit testing
+                    rect, // viewport in global coords
                     on_click: None,
                     on_scroll: on_scroll.clone(),
                     focusable: false,
-                    on_pointer_down: None,
-                    on_pointer_move: None,
-                    on_pointer_up: None,
-                    on_pointer_enter: None,
-                    on_pointer_leave: None,
+                    on_pointer_down: v.modifier.on_pointer_down.clone(),
+                    on_pointer_move: v.modifier.on_pointer_move.clone(),
+                    on_pointer_up: v.modifier.on_pointer_up.clone(),
+                    on_pointer_enter: v.modifier.on_pointer_enter.clone(),
+                    on_pointer_leave: v.modifier.on_pointer_leave.clone(),
                     z_index: v.modifier.z_index,
                 });
 
                 // Report viewport height
                 if let Some(set_vh) = set_viewport_height {
-                    set_vh(local_rect.h);
+                    set_vh(local.h); // use local height before offsets
                 }
 
-                // Push clip for viewport
+                // Clip to viewport
                 scene.nodes.push(SceneNode::PushClip {
-                    rect: local_rect,
+                    rect,
                     radius: v.modifier.clip_rounded.unwrap_or(0.0),
                 });
 
-                // Apply scroll transform for children
-                if let Some(get_offset) = get_scroll_offset {
-                    let offset = get_offset();
-                    let scroll_transform = Transform::translate(0.0, -offset);
-                    scene.nodes.push(SceneNode::PushTransform {
-                        transform: scroll_transform,
-                    });
+                // Child offset includes scroll translation (0, -scroll_offset)
+                let mut child_offset = parent_offset;
+                if let Some(get) = get_scroll_offset {
+                    let so = get();
+                    child_offset.1 -= so;
+                }
 
-                    // Render children with combined transform
-                    let child_transform = parent_transform.combine(&scroll_transform);
-                    for c in &v.children {
-                        walk(
-                            c,
-                            t,
-                            nodes,
-                            scene,
-                            hits,
-                            sems,
-                            textfield_states,
-                            interactions,
-                            focused,
-                            child_transform,
-                        );
-                    }
-
-                    scene.nodes.push(SceneNode::PopTransform);
-                } else {
-                    // No scroll offset, render normally
-                    for c in &v.children {
-                        walk(
-                            c,
-                            t,
-                            nodes,
-                            scene,
-                            hits,
-                            sems,
-                            textfield_states,
-                            interactions,
-                            focused,
-                            parent_transform,
-                        );
-                    }
+                for c in &v.children {
+                    walk(
+                        c,
+                        t,
+                        nodes,
+                        scene,
+                        hits,
+                        sems,
+                        textfield_states,
+                        interactions,
+                        focused,
+                        child_offset,
+                    );
                 }
 
                 scene.nodes.push(SceneNode::PopClip);
-                return; // Don't fall through to default child rendering
+                return; // done with children
+            }
+            ViewKind::Checkbox {
+                checked,
+                label,
+                on_change,
+            } => {
+                let theme = locals::theme();
+                // Box at left (20x20 centered vertically)
+                let box_size = 18.0f32;
+                let bx = rect.x;
+                let by = rect.y + (rect.h - box_size) * 0.5;
+                // box bg/border
+                scene.nodes.push(SceneNode::Rect {
+                    rect: compose_core::Rect {
+                        x: bx,
+                        y: by,
+                        w: box_size,
+                        h: box_size,
+                    },
+                    color: if *checked {
+                        theme.primary
+                    } else {
+                        theme.surface
+                    },
+                    radius: 3.0,
+                });
+                scene.nodes.push(SceneNode::Border {
+                    rect: compose_core::Rect {
+                        x: bx,
+                        y: by,
+                        w: box_size,
+                        h: box_size,
+                    },
+                    color: Color::from_hex("#555555"),
+                    width: 1.0,
+                    radius: 3.0,
+                });
+                // checkmark
+                if *checked {
+                    scene.nodes.push(SceneNode::Text {
+                        rect: compose_core::Rect {
+                            x: bx + 3.0,
+                            y: by + 1.0,
+                            w: box_size,
+                            h: box_size,
+                        },
+                        text: "✓".to_string(),
+                        color: theme.on_primary,
+                        size: 16.0,
+                    });
+                }
+                // label
+                scene.nodes.push(SceneNode::Text {
+                    rect: compose_core::Rect {
+                        x: bx + box_size + 8.0,
+                        y: rect.y,
+                        w: rect.w - (box_size + 8.0),
+                        h: rect.h,
+                    },
+                    text: label.clone(),
+                    color: theme.on_surface,
+                    size: 16.0,
+                });
+
+                // Hit + semantics + focus ring
+                let toggled = !*checked;
+                let on_click = on_change.as_ref().map(|cb| {
+                    let cb = cb.clone();
+                    Rc::new(move || cb(toggled)) as Rc<dyn Fn()>
+                });
+                hits.push(HitRegion {
+                    id: v.id,
+                    rect,
+                    on_click,
+                    on_scroll: None,
+                    focusable: true,
+                    on_pointer_down: v.modifier.on_pointer_down.clone(),
+                    on_pointer_move: v.modifier.on_pointer_move.clone(),
+                    on_pointer_up: v.modifier.on_pointer_up.clone(),
+                    on_pointer_enter: v.modifier.on_pointer_enter.clone(),
+                    on_pointer_leave: v.modifier.on_pointer_leave.clone(),
+                    z_index: v.modifier.z_index,
+                });
+                sems.push(SemNode {
+                    id: v.id,
+                    role: Role::Checkbox,
+                    label: Some(label.clone()),
+                    rect,
+                    focused: is_focused,
+                    enabled: true,
+                });
+                if is_focused {
+                    scene.nodes.push(SceneNode::Border {
+                        rect,
+                        color: Color::from_hex("#88CCFF"),
+                        width: 2.0,
+                        radius: v.modifier.clip_rounded.unwrap_or(6.0),
+                    });
+                }
+            }
+
+            ViewKind::RadioButton {
+                selected,
+                label,
+                on_select,
+            } => {
+                let theme = locals::theme();
+                let d = 18.0f32;
+                let cx = rect.x;
+                let cy = rect.y + (rect.h - d) * 0.5;
+
+                // outer circle (rounded rect as circle)
+                scene.nodes.push(SceneNode::Border {
+                    rect: compose_core::Rect {
+                        x: cx,
+                        y: cy,
+                        w: d,
+                        h: d,
+                    },
+                    color: Color::from_hex("#888888"),
+                    width: 1.5,
+                    radius: d * 0.5,
+                });
+                // inner dot if selected
+                if *selected {
+                    scene.nodes.push(SceneNode::Rect {
+                        rect: compose_core::Rect {
+                            x: cx + 4.0,
+                            y: cy + 4.0,
+                            w: d - 8.0,
+                            h: d - 8.0,
+                        },
+                        color: theme.primary,
+                        radius: (d - 8.0) * 0.5,
+                    });
+                }
+                scene.nodes.push(SceneNode::Text {
+                    rect: compose_core::Rect {
+                        x: cx + d + 8.0,
+                        y: rect.y,
+                        w: rect.w - (d + 8.0),
+                        h: rect.h,
+                    },
+                    text: label.clone(),
+                    color: theme.on_surface,
+                    size: 16.0,
+                });
+
+                hits.push(HitRegion {
+                    id: v.id,
+                    rect,
+                    on_click: on_select.clone(),
+                    on_scroll: None,
+                    focusable: true,
+                    on_pointer_down: v.modifier.on_pointer_down.clone(),
+                    on_pointer_move: v.modifier.on_pointer_move.clone(),
+                    on_pointer_up: v.modifier.on_pointer_up.clone(),
+                    on_pointer_enter: v.modifier.on_pointer_enter.clone(),
+                    on_pointer_leave: v.modifier.on_pointer_leave.clone(),
+                    z_index: v.modifier.z_index,
+                });
+                sems.push(SemNode {
+                    id: v.id,
+                    role: Role::RadioButton,
+                    label: Some(label.clone()),
+                    rect,
+                    focused: is_focused,
+                    enabled: true,
+                });
+                if is_focused {
+                    scene.nodes.push(SceneNode::Border {
+                        rect,
+                        color: Color::from_hex("#88CCFF"),
+                        width: 2.0,
+                        radius: v.modifier.clip_rounded.unwrap_or(6.0),
+                    });
+                }
+            }
+
+            ViewKind::Switch {
+                checked,
+                label,
+                on_change,
+            } => {
+                let theme = locals::theme();
+                // track 46x26, knob 22x22
+                let track_w = 46.0f32;
+                let track_h = 26.0f32;
+                let tx = rect.x;
+                let ty = rect.y + (rect.h - track_h) * 0.5;
+                let knob = 22.0f32;
+                let on_col = theme.primary;
+                let off_col = Color::from_hex("#333333");
+
+                // track
+                scene.nodes.push(SceneNode::Rect {
+                    rect: compose_core::Rect {
+                        x: tx,
+                        y: ty,
+                        w: track_w,
+                        h: track_h,
+                    },
+                    color: if *checked { on_col } else { off_col },
+                    radius: track_h * 0.5,
+                });
+                // knob position
+                let kx = if *checked {
+                    tx + track_w - knob - 2.0
+                } else {
+                    tx + 2.0
+                };
+                let ky = ty + (track_h - knob) * 0.5;
+                scene.nodes.push(SceneNode::Rect {
+                    rect: compose_core::Rect {
+                        x: kx,
+                        y: ky,
+                        w: knob,
+                        h: knob,
+                    },
+                    color: Color::from_hex("#EEEEEE"),
+                    radius: knob * 0.5,
+                });
+
+                // label
+                scene.nodes.push(SceneNode::Text {
+                    rect: compose_core::Rect {
+                        x: tx + track_w + 8.0,
+                        y: rect.y,
+                        w: rect.w - (track_w + 8.0),
+                        h: rect.h,
+                    },
+                    text: label.clone(),
+                    color: theme.on_surface,
+                    size: 16.0,
+                });
+
+                let toggled = !*checked;
+                let on_click = on_change.as_ref().map(|cb| {
+                    let cb = cb.clone();
+                    Rc::new(move || cb(toggled)) as Rc<dyn Fn()>
+                });
+                hits.push(HitRegion {
+                    id: v.id,
+                    rect,
+                    on_click,
+                    on_scroll: None,
+                    focusable: true,
+                    on_pointer_down: v.modifier.on_pointer_down.clone(),
+                    on_pointer_move: v.modifier.on_pointer_move.clone(),
+                    on_pointer_up: v.modifier.on_pointer_up.clone(),
+                    on_pointer_enter: v.modifier.on_pointer_enter.clone(),
+                    on_pointer_leave: v.modifier.on_pointer_leave.clone(),
+                    z_index: v.modifier.z_index,
+                });
+                sems.push(SemNode {
+                    id: v.id,
+                    role: Role::Switch,
+                    label: Some(label.clone()),
+                    rect,
+                    focused: is_focused,
+                    enabled: true,
+                });
+                if is_focused {
+                    scene.nodes.push(SceneNode::Border {
+                        rect,
+                        color: Color::from_hex("#88CCFF"),
+                        width: 2.0,
+                        radius: v.modifier.clip_rounded.unwrap_or(6.0),
+                    });
+                }
+            }
+            ViewKind::Slider {
+                value,
+                min,
+                max,
+                step,
+                label,
+                on_change,
+            } => {
+                let theme = locals::theme();
+                // Layout: [track | label]
+                let track_h = 4.0f32;
+                let knob_d = 20.0f32;
+                let gap = 8.0f32;
+                let label_x = rect.x + rect.w * 0.6; // simple split: 60% track, 40% label
+                let track_x = rect.x;
+                let track_w = (label_x - track_x).max(60.0);
+                let cy = rect.y + rect.h * 0.5;
+
+                // Track
+                scene.nodes.push(SceneNode::Rect {
+                    rect: compose_core::Rect {
+                        x: track_x,
+                        y: cy - track_h * 0.5,
+                        w: track_w,
+                        h: track_h,
+                    },
+                    color: Color::from_hex("#333333"),
+                    radius: track_h * 0.5,
+                });
+
+                // Knob position
+                let t = clamp01(norm(*value, *min, *max));
+                let kx = track_x + t * track_w;
+                scene.nodes.push(SceneNode::Rect {
+                    rect: compose_core::Rect {
+                        x: kx - knob_d * 0.5,
+                        y: cy - knob_d * 0.5,
+                        w: knob_d,
+                        h: knob_d,
+                    },
+                    color: theme.surface,
+                    radius: knob_d * 0.5,
+                });
+                scene.nodes.push(SceneNode::Border {
+                    rect: compose_core::Rect {
+                        x: kx - knob_d * 0.5,
+                        y: cy - knob_d * 0.5,
+                        w: knob_d,
+                        h: knob_d,
+                    },
+                    color: Color::from_hex("#888888"),
+                    width: 1.0,
+                    radius: knob_d * 0.5,
+                });
+
+                // Label
+                scene.nodes.push(SceneNode::Text {
+                    rect: compose_core::Rect {
+                        x: label_x + gap,
+                        y: rect.y,
+                        w: rect.x + rect.w - (label_x + gap),
+                        h: rect.h,
+                    },
+                    text: format!("{}: {:.2}", label, *value),
+                    color: theme.on_surface,
+                    size: 16.0,
+                });
+
+                // Interactions
+                let on_change_cb: Option<Rc<dyn Fn(f32)>> = on_change.as_ref().cloned();
+                let minv = *min;
+                let maxv = *max;
+                let stepv = *step;
+
+                // per-hit-region current value (wheel deltas accumulate within a frame)
+                let current = Rc::new(RefCell::new(*value));
+                // drag state
+                let dragging = Rc::new(RefCell::new(false));
+
+                // pointer mapping closure (in global coords)
+                let update_at = {
+                    let on_change_cb = on_change_cb.clone();
+                    let current = current.clone();
+                    Rc::new(move |px: f32| {
+                        let tt = clamp01((px - track_x) / track_w);
+                        let v = snap_step(denorm(tt, minv, maxv), stepv, minv, maxv);
+                        *current.borrow_mut() = v;
+                        if let Some(cb) = &on_change_cb {
+                            cb(v);
+                        }
+                    })
+                };
+
+                // on_pointer_down: start drag and update once
+                let on_pd: Rc<dyn Fn(compose_core::input::PointerEvent)> = {
+                    let f = update_at.clone();
+                    let dragging = dragging.clone();
+                    Rc::new(move |pe| {
+                        *dragging.borrow_mut() = true;
+                        f(pe.position.x);
+                    })
+                };
+
+                // on_pointer_move: update only while dragging
+                let on_pm: Rc<dyn Fn(compose_core::input::PointerEvent)> = {
+                    let f = update_at.clone();
+                    let dragging = dragging.clone();
+                    Rc::new(move |pe| {
+                        if *dragging.borrow() {
+                            f(pe.position.x);
+                        }
+                    })
+                };
+
+                // on_pointer_up: stop drag
+                let on_pu: Rc<dyn Fn(compose_core::input::PointerEvent)> = {
+                    let dragging = dragging.clone();
+                    Rc::new(move |_pe| {
+                        *dragging.borrow_mut() = false;
+                    })
+                };
+
+                // Mouse wheel nudge: accumulate via 'current'
+                let on_scroll = {
+                    let on_change_cb = on_change_cb.clone();
+                    let current = current.clone();
+                    Rc::new(move |dy: f32| -> f32 {
+                        let base = *current.borrow();
+                        let delta = stepv.unwrap_or((maxv - minv) * 0.01);
+                        // winit: negative dy for wheel-up; treat that as increase
+                        let dir = if dy.is_sign_negative() { 1.0 } else { -1.0 };
+                        let new_v = snap_step(base + dir * delta, stepv, minv, maxv);
+                        *current.borrow_mut() = new_v;
+                        if let Some(cb) = &on_change_cb {
+                            cb(new_v);
+                        }
+                        0.0
+                    })
+                };
+
+                hits.push(HitRegion {
+                    id: v.id,
+                    rect,
+                    on_click: None,
+                    on_scroll: Some(on_scroll),
+                    focusable: true,
+                    on_pointer_down: Some(on_pd),
+                    on_pointer_move: Some(on_pm),
+                    on_pointer_up: Some(on_pu),
+                    on_pointer_enter: v.modifier.on_pointer_enter.clone(),
+                    on_pointer_leave: v.modifier.on_pointer_leave.clone(),
+                    z_index: v.modifier.z_index,
+                });
+
+                sems.push(SemNode {
+                    id: v.id,
+                    role: Role::Slider,
+                    label: Some(label.clone()),
+                    rect,
+                    focused: is_focused,
+                    enabled: true,
+                });
+                if is_focused {
+                    scene.nodes.push(SceneNode::Border {
+                        rect,
+                        color: Color::from_hex("#88CCFF"),
+                        width: 2.0,
+                        radius: v.modifier.clip_rounded.unwrap_or(6.0),
+                    });
+                }
+            }
+            ViewKind::RangeSlider {
+                start,
+                end,
+                min,
+                max,
+                step,
+                label,
+                on_change,
+            } => {
+                let theme = locals::theme();
+                let track_h = 4.0f32;
+                let knob_d = 20.0f32;
+                let gap = 8.0f32;
+                let label_x = rect.x + rect.w * 0.6;
+                let track_x = rect.x;
+                let track_w = (label_x - track_x).max(80.0);
+                let cy = rect.y + rect.h * 0.5;
+
+                // Track
+                scene.nodes.push(SceneNode::Rect {
+                    rect: compose_core::Rect {
+                        x: track_x,
+                        y: cy - track_h * 0.5,
+                        w: track_w,
+                        h: track_h,
+                    },
+                    color: Color::from_hex("#333333"),
+                    radius: track_h * 0.5,
+                });
+
+                // Positions
+                let t0 = clamp01(norm(*start, *min, *max));
+                let t1 = clamp01(norm(*end, *min, *max));
+                let k0x = track_x + t0 * track_w;
+                let k1x = track_x + t1 * track_w;
+
+                // Range fill
+                scene.nodes.push(SceneNode::Rect {
+                    rect: compose_core::Rect {
+                        x: k0x.min(k1x),
+                        y: cy - track_h * 0.5,
+                        w: (k1x - k0x).abs(),
+                        h: track_h,
+                    },
+                    color: theme.primary,
+                    radius: track_h * 0.5,
+                });
+
+                // Knobs
+                for &kx in &[k0x, k1x] {
+                    scene.nodes.push(SceneNode::Rect {
+                        rect: compose_core::Rect {
+                            x: kx - knob_d * 0.5,
+                            y: cy - knob_d * 0.5,
+                            w: knob_d,
+                            h: knob_d,
+                        },
+                        color: theme.surface,
+                        radius: knob_d * 0.5,
+                    });
+                    scene.nodes.push(SceneNode::Border {
+                        rect: compose_core::Rect {
+                            x: kx - knob_d * 0.5,
+                            y: cy - knob_d * 0.5,
+                            w: knob_d,
+                            h: knob_d,
+                        },
+                        color: Color::from_hex("#888888"),
+                        width: 1.0,
+                        radius: knob_d * 0.5,
+                    });
+                }
+
+                // Label
+                scene.nodes.push(SceneNode::Text {
+                    rect: compose_core::Rect {
+                        x: label_x + gap,
+                        y: rect.y,
+                        w: rect.x + rect.w - (label_x + gap),
+                        h: rect.h,
+                    },
+                    text: format!("{}: {:.2} – {:.2}", label, *start, *end),
+                    color: theme.on_surface,
+                    size: 16.0,
+                });
+
+                // Interaction
+                let on_change_cb = on_change.as_ref().cloned();
+                let minv = *min;
+                let maxv = *max;
+                let stepv = *step;
+                let start_val = *start;
+                let end_val = *end;
+
+                // which thumb is active during drag: Some(0) or Some(1)
+                let active = Rc::new(RefCell::new(None::<u8>));
+
+                // update for current active thumb; does nothing if None
+                let update = {
+                    let active = active.clone();
+                    let on_change_cb = on_change_cb.clone();
+                    Rc::new(move |px: f32| {
+                        if let Some(thumb) = *active.borrow() {
+                            let tt = clamp01((px - track_x) / track_w);
+                            let v = snap_step(denorm(tt, minv, maxv), stepv, minv, maxv);
+                            match thumb {
+                                0 => {
+                                    let new_start = v.min(end_val).min(maxv).max(minv);
+                                    if let Some(cb) = &on_change_cb {
+                                        cb(new_start, end_val);
+                                    }
+                                }
+                                _ => {
+                                    let new_end = v.max(start_val).max(minv).min(maxv);
+                                    if let Some(cb) = &on_change_cb {
+                                        cb(start_val, new_end);
+                                    }
+                                }
+                            }
+                        }
+                    })
+                };
+
+                // on_pointer_down: choose nearest thumb and update once
+                let on_pd: Rc<dyn Fn(compose_core::input::PointerEvent)> = {
+                    let active = active.clone();
+                    let update = update.clone();
+                    // snapshot thumb positions for hit decision
+                    let k0x0 = k0x;
+                    let k1x0 = k1x;
+                    Rc::new(move |pe| {
+                        let px = pe.position.x;
+                        let d0 = (px - k0x0).abs();
+                        let d1 = (px - k1x0).abs();
+                        *active.borrow_mut() = Some(if d0 <= d1 { 0 } else { 1 });
+                        update(px);
+                    })
+                };
+
+                // on_pointer_move: update only while a thumb is active
+                let on_pm: Rc<dyn Fn(compose_core::input::PointerEvent)> = {
+                    let active = active.clone();
+                    let update = update.clone();
+                    Rc::new(move |pe| {
+                        if active.borrow().is_some() {
+                            update(pe.position.x);
+                        }
+                    })
+                };
+
+                // on_pointer_up: clear active thumb
+                let on_pu: Rc<dyn Fn(compose_core::input::PointerEvent)> = {
+                    let active = active.clone();
+                    Rc::new(move |_pe| {
+                        *active.borrow_mut() = None;
+                    })
+                };
+
+                hits.push(HitRegion {
+                    id: v.id,
+                    rect,
+                    on_click: None,
+                    on_scroll: None,
+                    focusable: true,
+                    on_pointer_down: Some(on_pd),
+                    on_pointer_move: Some(on_pm),
+                    on_pointer_up: Some(on_pu),
+                    on_pointer_enter: v.modifier.on_pointer_enter.clone(),
+                    on_pointer_leave: v.modifier.on_pointer_leave.clone(),
+                    z_index: v.modifier.z_index,
+                });
+                sems.push(SemNode {
+                    id: v.id,
+                    role: Role::Slider,
+                    label: Some(label.clone()),
+                    rect,
+                    focused: is_focused,
+                    enabled: true,
+                });
+                if is_focused {
+                    scene.nodes.push(SceneNode::Border {
+                        rect,
+                        color: Color::from_hex("#88CCFF"),
+                        width: 2.0,
+                        radius: v.modifier.clip_rounded.unwrap_or(6.0),
+                    });
+                }
+            }
+            ViewKind::ProgressBar {
+                value,
+                min,
+                max,
+                label,
+                circular,
+            } => {
+                let theme = locals::theme();
+                let track_h = 6.0f32;
+                let gap = 8.0f32;
+                let label_w_split = rect.w * 0.6;
+                let track_x = rect.x;
+                let track_w = (label_w_split - track_x).max(60.0);
+                let cy = rect.y + rect.h * 0.5;
+
+                scene.nodes.push(SceneNode::Rect {
+                    rect: compose_core::Rect {
+                        x: track_x,
+                        y: cy - track_h * 0.5,
+                        w: track_w,
+                        h: track_h,
+                    },
+                    color: Color::from_hex("#333333"),
+                    radius: track_h * 0.5,
+                });
+
+                let t = clamp01(norm(*value, *min, *max));
+                scene.nodes.push(SceneNode::Rect {
+                    rect: compose_core::Rect {
+                        x: track_x,
+                        y: cy - track_h * 0.5,
+                        w: track_w * t,
+                        h: track_h,
+                    },
+                    color: theme.primary,
+                    radius: track_h * 0.5,
+                });
+
+                scene.nodes.push(SceneNode::Text {
+                    rect: compose_core::Rect {
+                        x: rect.x + label_w_split + gap,
+                        y: rect.y,
+                        w: rect.w - (label_w_split + gap),
+                        h: rect.h,
+                    },
+                    text: format!("{}: {:.0}%", label, t * 100.0),
+                    color: theme.on_surface,
+                    size: 16.0,
+                });
+
+                sems.push(SemNode {
+                    id: v.id,
+                    role: Role::ProgressBar,
+                    label: Some(label.clone()),
+                    rect,
+                    focused: is_focused,
+                    enabled: true,
+                });
             }
 
             _ => {}
         }
 
-        let clip_children = false;
-        if clip_children && v.modifier.clip_rounded.is_some() {
-            scene.nodes.push(SceneNode::PushClip {
-                rect,
-                radius: v.modifier.clip_rounded.unwrap_or(0.0),
-            });
-        }
-
+        // Recurse (no extra clip by default)
         for c in &v.children {
             walk(
                 c,
@@ -728,15 +1776,12 @@ pub fn layout_and_paint(
                 textfield_states,
                 interactions,
                 focused,
-                parent_transform,
+                parent_offset,
             );
-        }
-
-        if clip_children && v.modifier.clip_rounded.is_some() {
-            scene.nodes.push(SceneNode::PopClip);
         }
     }
 
+    // Start with zero offset
     walk(
         &root,
         &taffy,
@@ -747,7 +1792,7 @@ pub fn layout_and_paint(
         textfield_states,
         interactions,
         focused,
-        Transform::identity(),
+        (0.0, 0.0),
     );
 
     // Ensure visual order: low z_index first. Topmost will be found by iter().rev().

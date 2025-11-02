@@ -2,8 +2,39 @@ use std::any::{Any, TypeId};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextDirection {
+    Ltr,
+    Rtl,
+}
+impl Default for TextDirection {
+    fn default() -> Self {
+        TextDirection::Ltr
+    }
+}
+
 thread_local! {
     static LOCALS_STACK: RefCell<Vec<HashMap<TypeId, Box<dyn Any>>>> = RefCell::new(Vec::new());
+}
+
+pub fn with_text_direction<R>(dir: TextDirection, f: impl FnOnce() -> R) -> R {
+    with_locals_frame(|| {
+        set_local_boxed(std::any::TypeId::of::<TextDirection>(), Box::new(dir));
+        f()
+    })
+}
+
+pub fn text_direction() -> TextDirection {
+    LOCALS_STACK.with(|st| {
+        for frame in st.borrow().iter().rev() {
+            if let Some(v) = frame.get(&std::any::TypeId::of::<TextDirection>()) {
+                if let Some(d) = v.downcast_ref::<TextDirection>() {
+                    return *d;
+                }
+            }
+        }
+        TextDirection::default()
+    })
 }
 
 fn with_locals_frame<R>(f: impl FnOnce() -> R) -> R {
@@ -24,20 +55,6 @@ fn set_local_boxed(t: TypeId, v: Box<dyn Any>) {
             st.borrow_mut().push(m);
         }
     });
-}
-
-fn get_local_boxed(t: TypeId) -> Option<Box<dyn Any>> {
-    LOCALS_STACK.with(|st| {
-        for frame in st.borrow().iter().rev() {
-            if let Some(v) = frame.get(&t) {
-                // clone Box<dyn Any> by reference to same allocation is not possible; values must be Clone
-                // Instead, return a borrowed downcast via Any. We’ll implement typed getters below.
-                // This helper is unused directly.
-                let _ = v;
-            }
-        }
-        None
-    })
 }
 
 // Typed API

@@ -1,5 +1,7 @@
 use std::rc::Rc;
 
+use taffy::AlignSelf;
+
 use crate::{Color, PointerEvent, Size};
 
 #[derive(Clone, Debug)]
@@ -16,6 +18,19 @@ pub struct Modifier {
     pub fill_max: bool,
     pub background: Option<Color>,
     pub border: Option<Border>,
+    pub flex_grow: Option<f32>,
+    pub flex_shrink: Option<f32>,
+    pub flex_basis: Option<f32>,
+    pub align_self: Option<AlignSelf>,
+    pub aspect_ratio: Option<f32>, // width/height
+    pub position_type: Option<PositionType>,
+    pub offset_left: Option<f32>,
+    pub offset_right: Option<f32>,
+    pub offset_top: Option<f32>,
+    pub offset_bottom: Option<f32>,
+    pub grid: Option<GridConfig>,
+    pub grid_col_span: Option<u16>,
+    pub grid_row_span: Option<u16>,
     pub click: bool,
     pub semantics_label: Option<String>,
     pub z_index: f32,
@@ -26,6 +41,19 @@ pub struct Modifier {
     pub on_pointer_up: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_enter: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_leave: Option<Rc<dyn Fn(PointerEvent)>>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum PositionType {
+    Relative,
+    Absolute,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct GridConfig {
+    pub columns: usize, // e.g. 3 (auto 1fr tracks)
+    pub row_gap: f32,
+    pub column_gap: f32,
 }
 
 impl Default for Border {
@@ -120,6 +148,60 @@ impl Modifier {
     }
     pub fn on_pointer_leave(mut self, f: impl Fn(PointerEvent) + 'static) -> Self {
         self.on_pointer_leave = Some(Rc::new(f));
+        self
+    }
+    pub fn flex_grow(mut self, g: f32) -> Self {
+        self.flex_grow = Some(g);
+        self
+    }
+    pub fn flex_shrink(mut self, s: f32) -> Self {
+        self.flex_shrink = Some(s);
+        self
+    }
+    pub fn flex_basis(mut self, px: f32) -> Self {
+        self.flex_basis = Some(px);
+        self
+    }
+    pub fn align_self_baseline(mut self) -> Self {
+        self.align_self = Some(taffy::style::AlignSelf::Baseline);
+        self
+    }
+    pub fn align_self_center(mut self) -> Self {
+        self.align_self = Some(taffy::style::AlignSelf::Center);
+        self
+    }
+    pub fn aspect_ratio(mut self, ratio: f32) -> Self {
+        self.aspect_ratio = Some(ratio.max(0.0));
+        self
+    }
+    pub fn absolute(mut self) -> Self {
+        self.position_type = Some(PositionType::Absolute);
+        self
+    }
+    pub fn offset(
+        mut self,
+        left: Option<f32>,
+        top: Option<f32>,
+        right: Option<f32>,
+        bottom: Option<f32>,
+    ) -> Self {
+        self.offset_left = left;
+        self.offset_top = top;
+        self.offset_right = right;
+        self.offset_bottom = bottom;
+        self
+    }
+    pub fn grid(mut self, columns: usize, row_gap: f32, column_gap: f32) -> Self {
+        self.grid = Some(GridConfig {
+            columns: columns.max(1),
+            row_gap,
+            column_gap,
+        });
+        self
+    }
+    pub fn grid_span(mut self, col_span: u16, row_span: u16) -> Self {
+        self.grid_col_span = Some(col_span.max(1));
+        self.grid_row_span = Some(row_span.max(1));
         self
     }
 }
