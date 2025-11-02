@@ -3,6 +3,7 @@ name = "animation_demo"
 version = "0.3.0"
 edition = "2024"
 publish = false
+description = "Animation demo for repose"
 
 [dependencies]
 compose-core = { path = "../../crates/compose-core", version = "0.3.0" }
