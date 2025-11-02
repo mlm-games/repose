@@ -1,4 +1,4 @@
-use compose_core::{prelude::*, *};
+use compose_core::prelude::*;
 use compose_platform::run_desktop_app;
 use compose_ui::*;
 

@@ -2,10 +2,9 @@
 //!
 
 use compose_core::*;
-use compose_core::{Density, with_density};
 use compose_ui::layout_and_paint;
 use compose_ui::textfield::{
-    TF_FONT_PX, TF_PADDING_X, TextFieldState, byte_to_char_index, index_for_x_bytes, measure_text,
+    TF_FONT_PX, TF_PADDING_X, byte_to_char_index, index_for_x_bytes, measure_text,
 };
 use std::time::Instant;
 
@@ -19,7 +18,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
     use compose_ui::TextFieldState;
     use winit::application::ApplicationHandler;
     use winit::dpi::{LogicalPosition, LogicalSize, PhysicalSize};
-    use winit::event::{ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent};
+    use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
     use winit::event_loop::EventLoop;
     use winit::keyboard::{KeyCode, PhysicalKey};
     use winit::window::{ImePurpose, Window, WindowAttributes};
@@ -225,7 +224,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             if let Some(prev_id) = self.hover_id {
                                 if let Some(prev) = f.hit_regions.iter().find(|h| h.id == prev_id) {
                                     if let Some(cb) = &prev.on_pointer_leave {
-                                        let mut pe = compose_core::input::PointerEvent {
+                                        let pe = compose_core::input::PointerEvent {
                                             id: compose_core::input::PointerId(0),
                                             kind: compose_core::input::PointerKind::Mouse,
                                             event: compose_core::input::PointerEventKind::Leave,
@@ -1181,7 +1180,6 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 //     }
 // }
 
-use std::collections::{HashMap, HashSet};
 
 // Accessibility bridge stub (Noop by default; logs on Linux for now)
 pub trait A11yBridge: Send {
