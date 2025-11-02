@@ -545,11 +545,15 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                 match key_event.physical_key {
                                     PhysicalKey::Code(KeyCode::Backspace) => {
                                         state.delete_backward();
+                                        let new_text = state.text.clone();
+                                        self.notify_text_change(focused_id, new_text);
                                         App::tf_ensure_caret_visible(&mut state);
                                         self.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::Delete) => {
                                         state.delete_forward();
+                                        let new_text = state.text.clone();
+                                        self.notify_text_change(focused_id, new_text);
                                         App::tf_ensure_caret_visible(&mut state);
                                         self.request_redraw();
                                     }
@@ -613,6 +617,10 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                                     {
                                                         let mut st = state_rc.borrow_mut();
                                                         st.insert_text(""); // replace selection with empty
+                                                        let new_text = st.text.clone();
+                                                        self.notify_text_change(
+                                                            focused_id, new_text,
+                                                        );
                                                         App::tf_ensure_caret_visible(&mut st);
                                                     }
                                                     self.request_redraw();
@@ -636,6 +644,10 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                                         if !txt.is_empty() {
                                                             let mut st = state_rc.borrow_mut();
                                                             st.insert_text(&txt);
+                                                            let new_text = st.text.clone();
+                                                            self.notify_text_change(
+                                                                focused_id, new_text,
+                                                            );
                                                             App::tf_ensure_caret_visible(&mut st);
                                                             self.request_redraw();
                                                         }
@@ -666,6 +678,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                         if let Some(state_rc) = self.textfield_states.get(&fid) {
                                             let mut st = state_rc.borrow_mut();
                                             st.insert_text(&text);
+                                            self.notify_text_change(fid, text.clone());
                                             App::tf_ensure_caret_visible(&mut st);
                                             self.request_redraw();
                                         }
@@ -722,6 +735,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                         state.set_composition(text.clone(), cursor);
                                     }
                                     self.ime_preedit = !text.is_empty();
+                                    let new_text = state.text.clone();
+                                    self.notify_text_change(focused_id, new_text);
                                     App::tf_ensure_caret_visible(&mut state);
                                     self.request_redraw();
                                 }
@@ -731,6 +746,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     }
                                     self.ime_preedit = false;
                                     App::tf_ensure_caret_visible(&mut state);
+                                    let new_text = state.text.clone();
+                                    self.notify_text_change(focused_id, new_text);
                                     self.request_redraw();
                                 }
                                 Ime::Disabled => {
@@ -738,6 +755,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     if state.composition.is_some() {
                                         {
                                             state.cancel_composition();
+                                            let new_text = state.text.clone();
+                                            self.notify_text_change(focused_id, new_text);
                                         }
                                         App::tf_ensure_caret_visible(&mut state);
                                     }
@@ -828,6 +847,15 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     .focused
                     .and_then(|id| f.semantics_nodes.iter().find(|n| n.id == id));
                 self.a11y.focus_changed(focused_node);
+            }
+        }
+        fn notify_text_change(&self, id: u64, text: String) {
+            if let Some(f) = &self.frame_cache {
+                if let Some(h) = f.hit_regions.iter().find(|h| h.id == id) {
+                    if let Some(cb) = &h.on_text_change {
+                        cb(text);
+                    }
+                }
             }
         }
     }

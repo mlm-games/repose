@@ -775,6 +775,7 @@ pub fn layout_and_paint(
                 on_pointer_enter: v.modifier.on_pointer_enter.clone(),
                 on_pointer_leave: v.modifier.on_pointer_leave.clone(),
                 z_index: v.modifier.z_index,
+                on_text_change: None,
             });
         }
 
@@ -844,6 +845,7 @@ pub fn layout_and_paint(
                         on_pointer_enter: v.modifier.on_pointer_enter.clone(),
                         on_pointer_leave: v.modifier.on_pointer_leave.clone(),
                         z_index: v.modifier.z_index,
+                        on_text_change: None,
                     });
                 }
                 sems.push(SemNode {
@@ -865,7 +867,9 @@ pub fn layout_and_paint(
                 }
             }
 
-            ViewKind::TextField { hint, .. } => {
+            ViewKind::TextField {
+                hint, on_change, ..
+            } => {
                 hits.push(HitRegion {
                     id: v.id,
                     rect,
@@ -878,6 +882,7 @@ pub fn layout_and_paint(
                     on_pointer_enter: None,
                     on_pointer_leave: None,
                     z_index: v.modifier.z_index,
+                    on_text_change: on_change.clone(),
                 });
 
                 // Inner content rect (padding)
@@ -1041,6 +1046,7 @@ pub fn layout_and_paint(
                     on_pointer_enter: v.modifier.on_pointer_enter.clone(),
                     on_pointer_leave: v.modifier.on_pointer_leave.clone(),
                     z_index: v.modifier.z_index,
+                    on_text_change: None,
                 });
 
                 // Report viewport height
@@ -1159,6 +1165,7 @@ pub fn layout_and_paint(
                     on_pointer_enter: v.modifier.on_pointer_enter.clone(),
                     on_pointer_leave: v.modifier.on_pointer_leave.clone(),
                     z_index: v.modifier.z_index,
+                    on_text_change: None,
                 });
                 sems.push(SemNode {
                     id: v.id,
@@ -1237,6 +1244,7 @@ pub fn layout_and_paint(
                     on_pointer_enter: v.modifier.on_pointer_enter.clone(),
                     on_pointer_leave: v.modifier.on_pointer_leave.clone(),
                     z_index: v.modifier.z_index,
+                    on_text_change: None,
                 });
                 sems.push(SemNode {
                     id: v.id,
@@ -1330,6 +1338,7 @@ pub fn layout_and_paint(
                     on_pointer_enter: v.modifier.on_pointer_enter.clone(),
                     on_pointer_leave: v.modifier.on_pointer_leave.clone(),
                     z_index: v.modifier.z_index,
+                    on_text_change: None,
                 });
                 sems.push(SemNode {
                     id: v.id,
@@ -1489,6 +1498,7 @@ pub fn layout_and_paint(
                     on_pointer_enter: v.modifier.on_pointer_enter.clone(),
                     on_pointer_leave: v.modifier.on_pointer_leave.clone(),
                     z_index: v.modifier.z_index,
+                    on_text_change: None,
                 });
 
                 sems.push(SemNode {
@@ -1678,6 +1688,7 @@ pub fn layout_and_paint(
                     on_pointer_enter: v.modifier.on_pointer_enter.clone(),
                     on_pointer_leave: v.modifier.on_pointer_leave.clone(),
                     z_index: v.modifier.z_index,
+                    on_text_change: None,
                 });
                 sems.push(SemNode {
                     id: v.id,

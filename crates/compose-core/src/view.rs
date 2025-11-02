@@ -30,6 +30,7 @@ pub enum ViewKind {
     TextField {
         state_key: ViewId,
         hint: String,
+        on_change: Option<Rc<dyn Fn(String)>>,
     },
     Checkbox {
         checked: bool,
@@ -113,7 +114,11 @@ impl std::fmt::Debug for ViewKind {
                 .field("text", text)
                 .field("on_click", &"<callback>")
                 .finish(),
-            ViewKind::TextField { state_key, hint } => f
+            ViewKind::TextField {
+                state_key,
+                hint,
+                on_change,
+            } => f
                 .debug_struct("TextField")
                 .field("state_key", state_key)
                 .field("hint", hint)

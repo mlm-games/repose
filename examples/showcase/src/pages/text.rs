@@ -1,4 +1,5 @@
 use crate::ui::Section;
+use anyhow::Ok;
 use compose_core::prelude::*;
 use compose_ui::*;
 
@@ -9,7 +10,7 @@ pub fn screen() -> View {
                 Modifier::new()
                     .size(360.0, 36.0)
                     .background(Color::from_hex("#1E1E1E"))
-                    .border(1.0, Color::from_hex("#444"), 6.0)
+                    .border(1.0, Color::from_hex("#444"), 6.0), |_| {},
             )
         ),
         Section("Multiline note",

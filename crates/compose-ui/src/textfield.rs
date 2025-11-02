@@ -291,20 +291,23 @@ impl TextFieldState {
 }
 
 // Platform-managed state: no Rc in builder, hint only.
-pub fn TextField(hint: impl Into<String>, modifier: Modifier) -> View {
-    let display_text = hint.into();
-
+pub fn TextField(
+    hint: impl Into<String>,
+    modifier: Modifier,
+    on_change: impl Fn(String) + 'static,
+) -> View {
     View::new(
         0,
         ViewKind::TextField {
-            state_key: 0, // assigned during composition
-            hint: display_text.clone(),
+            state_key: 0,
+            hint: hint.into(),
+            on_change: Some(Rc::new(on_change)),
         },
     )
     .modifier(modifier)
     .semantics(Semantics {
         role: Role::TextField,
-        label: Some(display_text),
+        label: None,
         focused: false,
         enabled: true,
     })

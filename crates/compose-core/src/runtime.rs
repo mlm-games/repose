@@ -116,6 +116,7 @@ pub struct HitRegion {
     pub on_pointer_enter: Option<Rc<dyn Fn(crate::input::PointerEvent)>>,
     pub on_pointer_leave: Option<Rc<dyn Fn(crate::input::PointerEvent)>>,
     pub z_index: f32,
+    pub on_text_change: Option<Rc<dyn Fn(String)>>,
 }
 
 #[derive(Clone)]
