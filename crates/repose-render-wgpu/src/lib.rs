@@ -10,6 +10,7 @@ use repose_core::{Color, GlyphRasterConfig, RenderBackend, Scene, SceneNode, Tra
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use wgpu::util::DeviceExt;
 
+#[derive(Clone)]
 struct UploadRing {
     buf: wgpu::Buffer,
     cap: u64,
@@ -1053,7 +1054,6 @@ impl RenderBackend for WgpuBackend {
                     size,
                 } => {
                     let px = (*size).clamp(8.0, 96.0);
-                    // Shape line using repose-text (correct ligatures/bidi/fallback)
                     let shaped = repose_text::shape_line(text, px);
                     for sg in shaped {
                         // Try color first; if not color, try mask

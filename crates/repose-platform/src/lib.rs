@@ -514,17 +514,29 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 
                     // Keyboard activation for focused widgets (Space/Enter)
                     if let Some(fid) = self.sched.focused {
-                        match key_event.physical_key {
-                            winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Space)
-                            | winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Enter) =>
-                            {
-                                // pressed visual and remember which to release
-                                self.pressed_ids.insert(fid);
-                                self.key_pressed_active = Some(fid);
-                                self.request_redraw();
-                                return; // don't fall through to text input path
+                        let focused_is_textfield = if let Some(f) = &self.frame_cache {
+                            f.semantics_nodes
+                                .iter()
+                                .any(|n| n.id == fid && n.role == repose_core::Role::TextField)
+                        } else {
+                            false
+                        };
+
+                        if !focused_is_textfield {
+                            match key_event.physical_key {
+                                winit::keyboard::PhysicalKey::Code(
+                                    winit::keyboard::KeyCode::Space,
+                                )
+                                | winit::keyboard::PhysicalKey::Code(
+                                    winit::keyboard::KeyCode::Enter,
+                                ) => {
+                                    self.pressed_ids.insert(fid);
+                                    self.key_pressed_active = Some(fid);
+                                    self.request_redraw();
+                                    return; // don't fall through to text input path
+                                }
+                                _ => {}
                             }
-                            _ => {}
                         }
                     }
 
