@@ -820,16 +820,20 @@ pub fn layout_and_paint(
                     });
                 }
                 // Label
+                let px = 16.0;
+                let approx_w = (text.len() as f32) * px * 0.6;
+                let tx = rect.x + (rect.w - approx_w).max(0.0) * 0.5;
+                let ty = rect.y + (rect.h - px).max(0.0) * 0.5;
                 scene.nodes.push(SceneNode::Text {
                     rect: repose_core::Rect {
-                        x: rect.x + 12.0,
-                        y: rect.y + 10.0,
-                        w: rect.w - 24.0,
-                        h: rect.h - 20.0,
+                        x: tx,
+                        y: ty,
+                        w: approx_w,
+                        h: px,
                     },
                     text: text.clone(),
                     color: Color::WHITE,
-                    size: 16.0,
+                    size: px,
                 });
 
                 if v.modifier.click || on_click.is_some() {

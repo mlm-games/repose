@@ -721,7 +721,6 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 
                 WindowEvent::Ime(ime) => {
                     use winit::event::Ime;
-
                     if let Some(focused_id) = self.sched.focused {
                         if let Some(state) = self.textfield_states.get(&focused_id) {
                             let mut state = state.borrow_mut();
@@ -731,34 +730,28 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     self.ime_preedit = false;
                                 }
                                 Ime::Preedit(text, cursor) => {
-                                    {
-                                        state.set_composition(text.clone(), cursor);
-                                    }
+                                    let cursor_usize =
+                                        cursor.map(|(a, b)| (a as usize, b as usize));
+                                    state.set_composition(text.clone(), cursor_usize);
                                     self.ime_preedit = !text.is_empty();
-                                    let new_text = state.text.clone();
-                                    self.notify_text_change(focused_id, new_text);
                                     App::tf_ensure_caret_visible(&mut state);
+                                    // notify on-change if you wired it:
+                                    self.notify_text_change(focused_id, state.text.clone());
                                     self.request_redraw();
                                 }
                                 Ime::Commit(text) => {
-                                    {
-                                        state.commit_composition(text);
-                                    }
+                                    state.commit_composition(text);
                                     self.ime_preedit = false;
                                     App::tf_ensure_caret_visible(&mut state);
-                                    let new_text = state.text.clone();
-                                    self.notify_text_change(focused_id, new_text);
+                                    self.notify_text_change(focused_id, state.text.clone());
                                     self.request_redraw();
                                 }
                                 Ime::Disabled => {
                                     self.ime_preedit = false;
                                     if state.composition.is_some() {
-                                        {
-                                            state.cancel_composition();
-                                            let new_text = state.text.clone();
-                                            self.notify_text_change(focused_id, new_text);
-                                        }
+                                        state.cancel_composition();
                                         App::tf_ensure_caret_visible(&mut state);
+                                        self.notify_text_change(focused_id, state.text.clone());
                                     }
                                     self.request_redraw();
                                 }

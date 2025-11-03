@@ -181,58 +181,102 @@ impl TextFieldState {
     }
 
     pub fn set_composition(&mut self, text: String, cursor: Option<(usize, usize)>) {
-        if let Some(range) = &self.composition {
-            // Replace existing composition
-            self.text.replace_range(range.clone(), &text);
+        if text.is_empty() {
+            if let Some(range) = self.composition.take() {
+                let s = clamp_to_char_boundary(&self.text, range.start.min(self.text.len()));
+                let e = clamp_to_char_boundary(&self.text, range.end.min(self.text.len()));
+                if s <= e {
+                    self.text.replace_range(s..e, "");
+                    self.selection = s..s;
+                }
+            }
+            self.reset_caret_blink();
+            return;
+        }
+
+        let anchor_start;
+        if let Some(r) = self.composition.take() {
+            // Clamp to current text and char boundaries
+            let mut s = clamp_to_char_boundary(&self.text, r.start.min(self.text.len()));
+            let mut e = clamp_to_char_boundary(&self.text, r.end.min(self.text.len()));
+            if e < s {
+                std::mem::swap(&mut s, &mut e);
+            }
+            self.text.replace_range(s..e, &text);
+            anchor_start = s;
         } else {
-            // Start new composition
-            let pos = self.selection.start;
+            // Insert at caret (snap to boundary)
+            let pos = clamp_to_char_boundary(&self.text, self.selection.start.min(self.text.len()));
             self.text.insert_str(pos, &text);
+            anchor_start = pos;
         }
 
-        let start = self.selection.start;
-        self.composition = Some(start..start + text.len());
+        // Update composition range to the new inserted/replaced span
+        self.composition = Some(anchor_start..(anchor_start + text.len()));
 
-        if let Some((cursor_start, cursor_end)) = cursor {
-            self.selection = (start + cursor_start)..(start + cursor_end);
+        // Map IME cursor (char indices in `text`) to byte offsets relative to anchor_start
+        if let Some((c0, c1)) = cursor {
+            let b0 = char_to_byte(&text, c0);
+            let b1 = char_to_byte(&text, c1);
+            self.selection = (anchor_start + b0)..(anchor_start + b1);
+        } else {
+            let end = anchor_start + text.len();
+            self.selection = end..end;
         }
+
         self.reset_caret_blink();
     }
 
     pub fn commit_composition(&mut self, text: String) {
-        if let Some(range) = self.composition.take() {
-            self.text.replace_range(range.clone(), &text);
-            let new_pos = range.start + text.len();
+        if let Some(r) = self.composition.take() {
+            let s = clamp_to_char_boundary(&self.text, r.start.min(self.text.len()));
+            let e = clamp_to_char_boundary(&self.text, r.end.min(self.text.len()));
+            self.text.replace_range(s..e, &text);
+            let new_pos = s + text.len();
+            self.selection = new_pos..new_pos;
+        } else {
+            // No active composition: insert at caret
+            let pos = clamp_to_char_boundary(&self.text, self.selection.end.min(self.text.len()));
+            self.text.insert_str(pos, &text);
+            let new_pos = pos + text.len();
             self.selection = new_pos..new_pos;
         }
         self.reset_caret_blink();
     }
 
     pub fn cancel_composition(&mut self) {
-        if let Some(range) = self.composition.take() {
-            self.text.replace_range(range, "");
+        if let Some(r) = self.composition.take() {
+            let s = clamp_to_char_boundary(&self.text, r.start.min(self.text.len()));
+            let e = clamp_to_char_boundary(&self.text, r.end.min(self.text.len()));
+            if s <= e {
+                self.text.replace_range(s..e, "");
+                self.selection = s..s;
+            }
         }
         self.reset_caret_blink();
     }
 
     pub fn delete_surrounding(&mut self, before_bytes: usize, after_bytes: usize) {
-        // Simplified: delete around current caret end, respecting selection first
         if self.selection.start != self.selection.end {
-            // If selection active, delete it
             let start = self.selection.start.min(self.text.len());
             let end = self.selection.end.min(self.text.len());
             self.text.replace_range(start..end, "");
             self.selection = start..start;
+            self.reset_caret_blink();
             return;
         }
 
         let caret = self.selection.end.min(self.text.len());
-        let start = caret.saturating_sub(before_bytes);
-        let end = (caret + after_bytes).min(self.text.len());
+        let start_raw = caret.saturating_sub(before_bytes);
+        let end_raw = (caret + after_bytes).min(self.text.len());
+        // Snap to nearest safe boundaries
+        let start = prev_grapheme_boundary(&self.text, start_raw);
+        let end = next_grapheme_boundary(&self.text, end_raw);
         if start < end {
             self.text.replace_range(start..end, "");
             self.selection = start..start;
         }
+        self.reset_caret_blink();
     }
 
     // Begin a selection on press; if extend==true, keep existing anchor; else set new anchor
@@ -404,5 +448,28 @@ mod tests {
             // slicing at boundary must be OK
             let _ = &t[..b];
         }
+    }
+}
+
+fn clamp_to_char_boundary(s: &str, i: usize) -> usize {
+    if i >= s.len() {
+        return s.len();
+    }
+    if s.is_char_boundary(i) {
+        return i;
+    }
+    // walk back to previous valid boundary
+    let mut j = i;
+    while j > 0 && !s.is_char_boundary(j) {
+        j -= 1;
+    }
+    j
+}
+
+fn char_to_byte(s: &str, ci: usize) -> usize {
+    if ci == 0 {
+        0
+    } else {
+        s.char_indices().nth(ci).map(|(i, _)| i).unwrap_or(s.len())
     }
 }
