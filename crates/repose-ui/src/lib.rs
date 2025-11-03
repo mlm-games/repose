@@ -463,9 +463,6 @@ pub fn layout_and_paint(
             s.flex_grow = 1.0;
             s.flex_shrink = 1.0;
         }
-
-        s.align_items = Some(AlignItems::FlexStart);
-        s.justify_content = Some(JustifyContent::FlexStart);
         s
     }
 
