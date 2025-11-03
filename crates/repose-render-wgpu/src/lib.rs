@@ -1168,18 +1168,31 @@ impl RenderBackend for WgpuBackend {
                     Cmd::SetClipPush(r) => {
                         let top = clip_stack.last().copied().unwrap_or(root_clip);
                         let next = intersect(top, r);
+
+                        // Validate clip rect
+                        let next = repose_core::Rect {
+                            x: next.x.max(0.0),
+                            y: next.y.max(0.0),
+                            w: next.w.max(1.0), // Minimum 1px to avoid GPU issues
+                            h: next.h.max(1.0),
+                        };
+
                         clip_stack.push(next);
                         let (x, y, w, h) = to_scissor(&next, self.config.width, self.config.height);
                         rpass.set_scissor_rect(x, y, w, h);
                     }
                     Cmd::SetClipPop => {
-                        if clip_stack.pop().is_none() {
-                            log::warn!("PopClip with empty stack; ignoring.");
+                        if !clip_stack.is_empty() {
+                            clip_stack.pop();
+                        } else {
+                            log::warn!("PopClip with empty stack");
                         }
+
                         let top = clip_stack.last().copied().unwrap_or(root_clip);
                         let (x, y, w, h) = to_scissor(&top, self.config.width, self.config.height);
                         rpass.set_scissor_rect(x, y, w, h);
                     }
+
                     Cmd::Rect { off, cnt: n } => {
                         rpass.set_pipeline(&self.rect_pipeline);
                         let bytes = (n as u64) * std::mem::size_of::<RectInstance>() as u64;

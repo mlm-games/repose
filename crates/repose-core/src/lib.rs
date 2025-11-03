@@ -16,6 +16,7 @@ pub mod runtime;
 pub mod scope;
 pub mod semantics;
 pub mod signal;
+pub mod state;
 pub mod tests;
 pub mod view;
 
@@ -29,6 +30,7 @@ pub use render_api::*;
 pub use runtime::*;
 pub use semantics::*;
 pub use signal::*;
+pub use state::*;
 pub use view::*;
 
 // Ensure a clock is installed even if platform didn't (tests, benches).

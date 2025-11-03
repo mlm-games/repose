@@ -181,9 +181,13 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
     }
 
     pub fn set_target(&mut self, target: T) {
-        if self.start_time.is_none() {
+        if self.start_time.is_some() {
+            self.update();
+            self.start = self.current.clone();
+        } else {
             self.start = self.current.clone();
         }
+
         self.target = target;
         self.start_time = Some(now());
     }
@@ -193,24 +197,28 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             let elapsed = now().saturating_duration_since(start);
 
             if elapsed < self.spec.delay {
-                return true; // Still waiting for delay
+                return true; // Still in delay phase
             }
 
             let animation_time = elapsed - self.spec.delay;
 
             if animation_time >= self.spec.duration {
+                // Animation complete
                 self.current = self.target.clone();
                 self.start_time = None;
-                return false; // Animation complete
+                return false;
             }
 
-            let t = animation_time.as_secs_f32() / self.spec.duration.as_secs_f32();
+            let t =
+                (animation_time.as_secs_f32() / self.spec.duration.as_secs_f32()).clamp(0.0, 1.0);
             let eased_t = self.spec.easing.interpolate(t);
-            self.current = self.start.interpolate(&self.target, eased_t);
 
-            true // Animation ongoing
+            let eased_t = eased_t.clamp(0.0, 1.0);
+
+            self.current = self.start.interpolate(&self.target, eased_t);
+            true
         } else {
-            false // No animation
+            false
         }
     }
 

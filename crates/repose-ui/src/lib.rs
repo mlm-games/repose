@@ -479,18 +479,17 @@ pub fn layout_and_paint(
         if v.modifier.grid_col_span.is_some() || v.modifier.grid_row_span.is_some() {
             use taffy::prelude::{GridPlacement, Line};
 
-            if let Some(cs) = v.modifier.grid_col_span {
-                style.grid_column = Line {
-                    start: GridPlacement::Auto,
-                    end: GridPlacement::Span(cs as u16),
-                };
-            }
-            if let Some(rs) = v.modifier.grid_row_span {
-                style.grid_row = Line {
-                    start: GridPlacement::Auto,
-                    end: GridPlacement::Span(rs as u16),
-                };
-            }
+            let col_span = v.modifier.grid_col_span.unwrap_or(1).max(1);
+            let row_span = v.modifier.grid_row_span.unwrap_or(1).max(1);
+
+            style.grid_column = Line {
+                start: GridPlacement::Auto,
+                end: GridPlacement::Span(col_span),
+            };
+            style.grid_row = Line {
+                start: GridPlacement::Auto,
+                end: GridPlacement::Span(row_span),
+            };
         }
 
         let children: Vec<_> = v

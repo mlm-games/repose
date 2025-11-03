@@ -92,3 +92,17 @@ where
         let _ = f();
     }
 }
+
+impl Drop for ScopeInner {
+    fn drop(&mut self) {
+        let children = std::mem::take(&mut *self.children.borrow_mut());
+        for child in children {
+            drop(child);
+        }
+
+        let disposers = std::mem::take(&mut *self.disposers.borrow_mut());
+        for disposer in disposers {
+            disposer();
+        }
+    }
+}

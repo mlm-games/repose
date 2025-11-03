@@ -49,38 +49,53 @@ impl LazyColumnState {
         let now = Instant::now();
         let dt = (now - self.last_t).as_secs_f32();
         self.last_t = now;
+
+        let dt = dt.min(0.1); // Cap at 100ms
+
         if dt <= 0.0 {
             return false;
         }
 
         let (min_off, max_off) = self.clamp_to_bounds(content_height);
-        if !self.animating && (self.scroll_offset >= min_off && self.scroll_offset <= max_off) {
-            return false;
-        }
-        // Integrate velocity
-        let friction = 8.0; // larger -> faster decay
-        self.scroll_offset += self.vel * dt;
-        self.vel *= (-friction * dt).exp(); // exp decay
 
-        // Edge spring (elastic bounce)
-        let k = 200.0; // spring stiffness
-        let c = 20.0; // damping
-        if self.scroll_offset < min_off {
-            let x = self.scroll_offset - min_off; // negative
-            // x'' + (c)*x' + k*x = 0 -> Euler step on velocity
-            self.vel += (-k * x - c * self.vel) * dt;
-        } else if self.scroll_offset > max_off {
-            let x = self.scroll_offset - max_off; // positive
-            self.vel += (-k * x - c * self.vel) * dt;
+        let friction = 5.0;
+        let k = 300.0;
+        let c = 30.0;
+
+        // Apply velocity
+        self.scroll_offset += self.vel * dt;
+
+        // Apply friction
+        self.vel *= (-friction * dt).exp();
+
+        // Edge springs with dead zone
+        let edge_threshold = 1.0;
+
+        if self.scroll_offset < min_off - edge_threshold {
+            let x = self.scroll_offset - min_off;
+            let spring_force = -k * x - c * self.vel;
+            self.vel += spring_force * dt;
+        } else if self.scroll_offset > max_off + edge_threshold {
+            let x = self.scroll_offset - max_off;
+            let spring_force = -k * x - c * self.vel;
+            self.vel += spring_force * dt;
         }
-        // Stop if settled
-        let settled = self.vel.abs() < 0.02
-            && self.scroll_offset >= min_off - 0.5
-            && self.scroll_offset <= max_off + 0.5;
+
+        let speed_threshold = 1.0; // pixels per second
+        let position_threshold = 0.5; // pixels
+
+        let settled = self.vel.abs() < speed_threshold
+            && self.scroll_offset >= min_off - position_threshold
+            && self.scroll_offset <= max_off + position_threshold;
+
         self.animating = !settled;
+
         if settled {
+            // Snap to bounds
             self.scroll_offset = self.scroll_offset.clamp(min_off, max_off);
+            self.vel = 0.0;
         }
+
         true
     }
 }
