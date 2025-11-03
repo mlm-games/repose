@@ -337,20 +337,22 @@ impl TextFieldState {
 // Platform-managed state: no Rc in builder, hint only.
 pub fn TextField(
     hint: impl Into<String>,
-    modifier: Modifier,
-    on_change: impl Fn(String) + 'static,
-) -> View {
-    View::new(
+    modifier: repose_core::Modifier,
+    on_change: Option<impl Fn(String) + 'static>,
+    on_submit: Option<impl Fn(String) + 'static>,
+) -> repose_core::View {
+    repose_core::View::new(
         0,
-        ViewKind::TextField {
+        repose_core::ViewKind::TextField {
             state_key: 0,
             hint: hint.into(),
-            on_change: Some(Rc::new(on_change)),
+            on_change: on_change.map(|f| std::rc::Rc::new(f) as _),
+            on_submit: on_submit.map(|f| std::rc::Rc::new(f) as _),
         },
     )
     .modifier(modifier)
-    .semantics(Semantics {
-        role: Role::TextField,
+    .semantics(repose_core::Semantics {
+        role: repose_core::Role::TextField,
         label: None,
         focused: false,
         enabled: true,

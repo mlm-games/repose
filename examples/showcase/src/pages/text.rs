@@ -10,7 +10,7 @@ pub fn screen() -> View {
                 Modifier::new()
                     .size(360.0, 36.0)
                     .background(Color::from_hex("#1E1E1E"))
-                    .border(1.0, Color::from_hex("#444"), 6.0), |_| {},
+                    .border(1.0, Color::from_hex("#444"), 6.0), Some(|_| {}), Some(|_| {})
             )
         ),
         Section("Multiline note",
