@@ -427,7 +427,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     self.capture_id = None;
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
-                    let mut dy = match delta {
+                    let dy = match delta {
                         MouseScrollDelta::LineDelta(_x, y) => -y * 40.0,
                         MouseScrollDelta::PixelDelta(lp) => -(lp.y as f32),
                     };
@@ -440,38 +440,23 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             y: self.mouse_pos.1,
                         };
 
-                        let hits_under_cursor: Vec<_> = f
-                            .hit_regions
-                            .iter()
-                            .filter(|h| h.rect.contains(pos))
-                            .collect();
-
-                        log::debug!("Hit regions under cursor: {}", hits_under_cursor.len());
-
-                        for hit in &hits_under_cursor {
-                            log::debug!(
-                                "  - id={}, has_scroll={}",
-                                hit.id,
-                                hit.on_scroll.is_some()
-                            );
-                        }
-
-                        // Nested routing: from topmost to deeper ancestors under cursor
-                        let mut consumed_any = false;
+                        // Find scrollable regions
                         for hit in f.hit_regions.iter().rev().filter(|h| h.rect.contains(pos)) {
                             if let Some(cb) = &hit.on_scroll {
+                                log::debug!("Calling on_scroll for hit region id={}", hit.id);
                                 let before = dy;
-                                dy = cb(dy); // returns leftover
-                                if (before - dy).abs() > 0.001 {
-                                    consumed_any = true;
-                                }
-                                if dy.abs() <= 0.001 {
-                                    break;
+                                let leftover = cb(dy);
+                                log::debug!(
+                                    "on_scroll consumed {} (leftover={})",
+                                    before - leftover,
+                                    leftover
+                                );
+
+                                if (before - leftover).abs() > 0.001 {
+                                    self.request_redraw();
+                                    break; // Stop after first handler consumes some
                                 }
                             }
-                        }
-                        if consumed_any {
-                            self.request_redraw();
                         }
                     }
                 }

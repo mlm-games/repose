@@ -1087,9 +1087,13 @@ pub fn layout_and_paint(
                 });
 
                 // Report viewport height
-                if let Some(set_vh) = set_viewport_height {
-                    set_vh(local.h); // use local height before offsets
-                }
+                let scroll_offset = if let Some(get) = get_scroll_offset {
+                    let offset = get();
+                    log::debug!("ScrollV walk: applying scroll offset = {}", offset);
+                    offset
+                } else {
+                    0.0
+                };
 
                 // Clip to viewport
                 scene.nodes.push(SceneNode::PushClip {
@@ -1097,11 +1101,13 @@ pub fn layout_and_paint(
                     radius: v.modifier.clip_rounded.unwrap_or(0.0),
                 });
 
-                // Child offset includes scroll translation (0, -scroll_offset)
-                let mut child_offset = base;
-                if let Some(get) = get_scroll_offset {
-                    child_offset.1 -= get();
-                }
+                // Apply scroll offset to children
+                let child_offset = (base.0, base.1 - scroll_offset); // Subtract scroll from Y
+                log::debug!(
+                    "ScrollV walk: base={:?}, child_offset={:?}",
+                    base,
+                    child_offset
+                );
 
                 for c in &v.children {
                     walk(
@@ -1119,8 +1125,9 @@ pub fn layout_and_paint(
                 }
 
                 scene.nodes.push(SceneNode::PopClip);
-                return; // done with children
+                return;
             }
+
             ViewKind::Checkbox {
                 checked,
                 label,
