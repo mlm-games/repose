@@ -1,5 +1,8 @@
 use repose_core::prelude::*;
-use repose_ui::*;
+use repose_ui::{
+    lazy::{LazyColumn, LazyColumnState},
+    *,
+};
 
 #[derive(Clone)]
 struct Item {
@@ -20,11 +23,9 @@ pub fn screen() -> View {
                 .collect::<Vec<_>>(),
         )
     });
-    let scroll = remember_with_key("lazy", || {
-        std::cell::RefCell::new(repose_ui::lazy::LazyColumnState::new())
-    });
+    let scroll = remember_with_key("lazy", || LazyColumnState::new());
 
-    repose_ui::lazy::LazyColumn(
+    LazyColumn(
         items.get(),
         48.0,
         scroll,

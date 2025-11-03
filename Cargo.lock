@@ -1974,6 +1974,7 @@ dependencies = [
  "ab_glyph",
  "fontdb",
  "insta",
+ "log",
  "repose-core",
  "repose-text",
  "serde",

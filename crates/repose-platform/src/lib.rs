@@ -432,11 +432,30 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         MouseScrollDelta::PixelDelta(lp) => -(lp.y as f32),
                     };
 
+                    log::debug!("MouseWheel: dy={}", dy);
+
                     if let Some(f) = &self.frame_cache {
                         let pos = Vec2 {
                             x: self.mouse_pos.0,
                             y: self.mouse_pos.1,
                         };
+
+                        let hits_under_cursor: Vec<_> = f
+                            .hit_regions
+                            .iter()
+                            .filter(|h| h.rect.contains(pos))
+                            .collect();
+
+                        log::debug!("Hit regions under cursor: {}", hits_under_cursor.len());
+
+                        for hit in &hits_under_cursor {
+                            log::debug!(
+                                "  - id={}, has_scroll={}",
+                                hit.id,
+                                hit.on_scroll.is_some()
+                            );
+                        }
+
                         // Nested routing: from topmost to deeper ancestors under cursor
                         let mut consumed_any = false;
                         for hit in f.hit_regions.iter().rev().filter(|h| h.rect.contains(pos)) {

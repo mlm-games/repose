@@ -348,6 +348,7 @@ pub fn layout_and_paint(
         Button { label: String },
         TextField,
         Container,
+        ScrollContainer,
         Checkbox { label: String },
         Radio { label: String },
         Switch { label: String },
@@ -566,6 +567,17 @@ pub fn layout_and_paint(
                     },
                 )
                 .unwrap(),
+            ViewKind::ScrollV { .. } => {
+                let children: Vec<_> = v
+                    .children
+                    .iter()
+                    .map(|c| build_node(c, t, nodes_map))
+                    .collect();
+
+                let n = t.new_with_children(style, &children).unwrap();
+                t.set_node_context(n, Some(NodeCtx::ScrollContainer)).ok();
+                n
+            }
             _ => {
                 let n = t.new_with_children(style, &children).unwrap();
                 t.set_node_context(n, Some(NodeCtx::Container)).ok();
@@ -586,7 +598,7 @@ pub fn layout_and_paint(
 
     // Measure function for intrinsic content
     taffy
-        .compute_layout_with_measure(root_node, available, |known, _avail, _node, ctx, _style| {
+        .compute_layout_with_measure(root_node, available, |known, avail, _node, ctx, _style| {
             match ctx {
                 Some(NodeCtx::Text { text, font_px }) => {
                     let approx_w = text.len() as f32 * *font_px * 0.6;
@@ -654,6 +666,22 @@ pub fn layout_and_paint(
                         width: w,
                         height: 12.0 + 8.0,
                     } // track + small padding
+                }
+                Some(NodeCtx::ScrollContainer) => {
+                    taffy::geometry::Size {
+                        width: known.width.unwrap_or_else(|| {
+                            match avail.width {
+                                AvailableSpace::Definite(w) => w,
+                                _ => 300.0, // Fallback width
+                            }
+                        }),
+                        height: known.height.unwrap_or_else(|| {
+                            match avail.height {
+                                AvailableSpace::Definite(h) => h,
+                                _ => 600.0, // Fallback height
+                            }
+                        }),
+                    }
                 }
                 Some(NodeCtx::Container) | None => taffy::geometry::Size::ZERO,
             }
@@ -1039,6 +1067,8 @@ pub fn layout_and_paint(
                 set_viewport_height,
                 get_scroll_offset,
             } => {
+                log::debug!("ScrollV: registering hit region at rect {:?}", rect);
+
                 // Register hit region (use local rect for hit testing)
                 hits.push(HitRegion {
                     id: v.id,

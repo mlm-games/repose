@@ -7,94 +7,76 @@ use std::time::Instant;
 use crate::Stack;
 
 pub struct LazyColumnState {
-    pub scroll_offset: f32,
-    pub viewport_height: f32,
-    // kinetic scrolling related
-    vel: f32,
-    last_t: Instant,
-    animating: bool,
+    scroll_offset: Signal<f32>,
+    viewport_height: Signal<f32>,
+    // Internal non-reactive state
+    vel: RefCell<f32>,
+    last_t: RefCell<Instant>,
+    animating: RefCell<bool>,
 }
 
 impl LazyColumnState {
     pub fn new() -> Self {
         Self {
-            scroll_offset: 0.0,
-            viewport_height: 600.0,
-            vel: 0.0,
-            last_t: Instant::now(),
-            animating: false,
+            scroll_offset: signal(0.0),
+            viewport_height: signal(600.0),
+            vel: RefCell::new(0.0),
+            last_t: RefCell::new(Instant::now()),
+            animating: RefCell::new(false),
         }
     }
-    // Immediate scroll (for wheel routing, no overscroll propagation)
-    fn clamp_to_bounds(&self, content_height: f32) -> (f32, f32) {
-        let max_off = (content_height - self.viewport_height).max(0.0);
-        (0.0, max_off)
-    }
-    pub fn scroll_immediate(&mut self, delta: f32, content_height: f32) -> f32 {
-        let (min_off, max_off) = self.clamp_to_bounds(content_height);
-        let old = self.scroll_offset;
-        let unclamped = old + delta;
-        let clamped = unclamped.clamp(min_off, max_off);
-        self.scroll_offset = clamped;
-        let consumed = clamped - old;
+
+    pub fn scroll_immediate(&self, delta: f32, content_height: f32) -> f32 {
+        let current = self.scroll_offset.get();
+        let viewport = self.viewport_height.get();
+
+        let max_offset = (content_height - viewport).max(0.0);
+        let new_offset = (current + delta).clamp(0.0, max_offset);
+
+        // THIS IS THE KEY: Setting the signal triggers recomposition!
+        self.scroll_offset.set(new_offset);
+
+        let consumed = new_offset - current;
         let leftover = delta - consumed;
-        // Add a bit of kinetic continuation
-        self.vel += consumed;
-        self.animating = self.vel.abs() > 0.1;
+
+        *self.vel.borrow_mut() = consumed * 5.0;
+        *self.animating.borrow_mut() = true;
+
         leftover
     }
 
-    // Per-frame integration with friction and edge spring
-    pub fn tick(&mut self, content_height: f32) -> bool {
-        let now = Instant::now();
-        let dt = (now - self.last_t).as_secs_f32();
-        self.last_t = now;
+    pub fn tick(&self, content_height: f32) -> bool {
+        if !*self.animating.borrow() {
+            return false;
+        }
 
-        let dt = dt.min(0.1); // Cap at 100ms
+        let now = Instant::now();
+        let dt = (now - *self.last_t.borrow()).as_secs_f32().min(0.1);
+        *self.last_t.borrow_mut() = now;
 
         if dt <= 0.0 {
             return false;
         }
 
-        let (min_off, max_off) = self.clamp_to_bounds(content_height);
+        let vel = *self.vel.borrow();
+        if vel.abs() < 0.5 {
+            *self.vel.borrow_mut() = 0.0;
+            *self.animating.borrow_mut() = false;
+            return false;
+        }
 
-        let friction = 5.0;
-        let k = 300.0;
-        let c = 30.0;
+        // Update position
+        let current = self.scroll_offset.get();
+        let viewport = self.viewport_height.get();
+        let max_offset = (content_height - viewport).max(0.0);
 
-        // Apply velocity
-        self.scroll_offset += self.vel * dt;
+        let new_offset = (current + vel * dt * 60.0).clamp(0.0, max_offset);
+
+        // Signal update triggers recomposition!
+        self.scroll_offset.set(new_offset);
 
         // Apply friction
-        self.vel *= (-friction * dt).exp();
-
-        // Edge springs with dead zone
-        let edge_threshold = 1.0;
-
-        if self.scroll_offset < min_off - edge_threshold {
-            let x = self.scroll_offset - min_off;
-            let spring_force = -k * x - c * self.vel;
-            self.vel += spring_force * dt;
-        } else if self.scroll_offset > max_off + edge_threshold {
-            let x = self.scroll_offset - max_off;
-            let spring_force = -k * x - c * self.vel;
-            self.vel += spring_force * dt;
-        }
-
-        let speed_threshold = 1.0; // pixels per second
-        let position_threshold = 0.5; // pixels
-
-        let settled = self.vel.abs() < speed_threshold
-            && self.scroll_offset >= min_off - position_threshold
-            && self.scroll_offset <= max_off + position_threshold;
-
-        self.animating = !settled;
-
-        if settled {
-            // Snap to bounds
-            self.scroll_offset = self.scroll_offset.clamp(min_off, max_off);
-            self.vel = 0.0;
-        }
+        *self.vel.borrow_mut() *= 0.95;
 
         true
     }
@@ -105,7 +87,7 @@ impl LazyColumnState {
 pub fn LazyColumn<T, F>(
     items: Vec<T>,
     item_height: f32,
-    state: Rc<RefCell<LazyColumnState>>,
+    state: Rc<LazyColumnState>,
     modifier: Modifier,
     item_builder: F,
 ) -> View
@@ -115,24 +97,18 @@ where
 {
     let content_height = items.len() as f32 * item_height;
 
-    // Advance physics once per frame
-    {
-        let mut st = state.borrow_mut();
-        let _ = st.tick(content_height);
-    }
+    // Get current values from signals - this subscribes to changes!
+    let scroll_offset = state.scroll_offset.get();
+    let viewport_height = state.viewport_height.get();
 
-    let (scroll_offset, viewport_height) = {
-        let st = state.borrow();
-        (st.scroll_offset, st.viewport_height)
-    };
+    // Tick physics
+    state.tick(content_height);
 
-    // Visible window (with a small render buffer for smoothness)
-    let buffer = 2usize;
+    // Calculate visible range
     let first_visible = (scroll_offset / item_height).floor().max(0.0) as usize;
-    let last_visible = ((scroll_offset + viewport_height) / item_height).ceil() as usize;
+    let last_visible = ((scroll_offset + viewport_height) / item_height).ceil() as usize + 2;
 
-    let first_visible = first_visible.min(items.len());
-    let last_visible = last_visible.saturating_add(buffer).min(items.len());
+    let buffer = 2usize;
     let first_with_buffer = first_visible.saturating_sub(buffer);
 
     let mut children = Vec::new();
@@ -159,20 +135,17 @@ where
     }
 
     // Scroll callbacks
-    let on_scroll = {
-        let state = state.clone();
-        Rc::new(move |dy: f32| -> f32 { state.borrow_mut().scroll_immediate(dy, content_height) })
-    };
-    let set_viewport = {
-        let state = state.clone();
-        Rc::new(move |h: f32| {
-            state.borrow_mut().viewport_height = h;
-        })
-    };
-    let get_scroll = {
-        let state = state.clone();
-        Rc::new(move || -> f32 { state.borrow().scroll_offset })
-    };
+    let state_clone = state.clone();
+    let on_scroll =
+        Rc::new(move |dy: f32| -> f32 { state_clone.scroll_immediate(dy, content_height) });
+
+    let state_clone = state.clone();
+    let set_viewport = Rc::new(move |h: f32| {
+        state_clone.viewport_height.set(h);
+    });
+
+    let state_clone = state.clone();
+    let get_scroll = Rc::new(move || -> f32 { state_clone.scroll_offset.get() });
 
     // Content inside scroll viewport (clip and translation happen in layout_and_paint)
     let content = crate::Column(Modifier::new()).with_children(children);
