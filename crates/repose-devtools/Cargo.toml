@@ -1,10 +1,10 @@
 [package]
 name = "repose-devtools"
-version = "0.3.0"
+version = "0.3.5"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Repose developer tools for debugging."
 
 [dependencies]
-repose-core = { path = "../repose-core", version = "0.3.0" }
+repose-core = { path = "../repose-core", version = "0.3.5" }
 log = { workspace = true }
