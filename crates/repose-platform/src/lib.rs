@@ -470,76 +470,105 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     event: key_event, ..
                 } => {
                     // Focus traversal: Tab / Shift+Tab
-                    if matches!(
-                        key_event.physical_key,
-                        winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Tab)
-                    ) {
-                        if let Some(f) = &self.frame_cache {
-                            let chain = &f.focus_chain;
-                            if !chain.is_empty() {
-                                let shift = self.modifiers.shift;
-                                let current = self.sched.focused;
-                                let next = if let Some(cur) = current {
-                                    if let Some(idx) = chain.iter().position(|&id| id == cur) {
-                                        if shift {
-                                            if idx == 0 {
-                                                chain[chain.len() - 1]
+                    if matches!(key_event.physical_key, PhysicalKey::Code(KeyCode::Tab)) {
+                        // Only act on initial press, ignore repeats
+                        if key_event.state == ElementState::Pressed && !key_event.repeat {
+                            if let Some(f) = &self.frame_cache {
+                                let chain = &f.focus_chain;
+                                if !chain.is_empty() {
+                                    // If a button was “pressed” via keyboard, clear it when we move focus
+                                    if let Some(active) = self.key_pressed_active.take() {
+                                        self.pressed_ids.remove(&active);
+                                    }
+
+                                    let shift = self.modifiers.shift;
+                                    let current = self.sched.focused;
+                                    let next = if let Some(cur) = current {
+                                        if let Some(idx) = chain.iter().position(|&id| id == cur) {
+                                            if shift {
+                                                if idx == 0 {
+                                                    chain[chain.len() - 1]
+                                                } else {
+                                                    chain[idx - 1]
+                                                }
                                             } else {
-                                                chain[idx - 1]
+                                                chain[(idx + 1) % chain.len()]
                                             }
                                         } else {
-                                            chain[(idx + 1) % chain.len()]
+                                            chain[0]
                                         }
                                     } else {
                                         chain[0]
+                                    };
+                                    self.sched.focused = Some(next);
+
+                                    // IME only for TextField
+                                    if let Some(win) = &self.window {
+                                        if f.semantics_nodes
+                                            .iter()
+                                            .any(|n| n.id == next && n.role == Role::TextField)
+                                        {
+                                            win.set_ime_allowed(true);
+                                            win.set_ime_purpose(ImePurpose::Normal);
+                                        } else {
+                                            win.set_ime_allowed(false);
+                                        }
                                     }
-                                } else {
-                                    chain[0]
-                                };
-                                self.sched.focused = Some(next);
-                                // IME on TextField focus; off otherwise
-                                if let Some(win) = &self.window {
-                                    if f.semantics_nodes
-                                        .iter()
-                                        .any(|n| n.id == next && n.role == Role::TextField)
-                                    {
-                                        win.set_ime_allowed(true);
-                                        win.set_ime_purpose(winit::window::ImePurpose::Normal);
-                                    } else {
-                                        win.set_ime_allowed(false);
-                                    }
+                                    self.announce_focus_change();
+                                    self.request_redraw();
                                 }
-                                self.announce_focus_change();
-                                self.request_redraw();
                             }
                         }
-                        return;
+                        return; // swallow Tab
                     }
 
-                    // Keyboard activation for focused widgets (Space/Enter)
                     if let Some(fid) = self.sched.focused {
-                        let focused_is_textfield = if let Some(f) = &self.frame_cache {
+                        // If focused is NOT a TextField, allow Space/Enter activation
+                        let is_textfield = if let Some(f) = &self.frame_cache {
                             f.semantics_nodes
                                 .iter()
-                                .any(|n| n.id == fid && n.role == repose_core::Role::TextField)
+                                .any(|n| n.id == fid && n.role == Role::TextField)
                         } else {
                             false
                         };
 
-                        if !focused_is_textfield {
+                        if !is_textfield {
                             match key_event.physical_key {
-                                winit::keyboard::PhysicalKey::Code(
-                                    winit::keyboard::KeyCode::Space,
-                                )
-                                | winit::keyboard::PhysicalKey::Code(
-                                    winit::keyboard::KeyCode::Enter,
-                                ) => {
-                                    self.pressed_ids.insert(fid);
-                                    self.key_pressed_active = Some(fid);
-                                    self.request_redraw();
-                                    return; // don't fall through to text input path
+                                PhysicalKey::Code(KeyCode::Space)
+                                | PhysicalKey::Code(KeyCode::Enter) => {
+                                    if key_event.state == ElementState::Pressed && !key_event.repeat
+                                    {
+                                        self.pressed_ids.insert(fid);
+                                        self.key_pressed_active = Some(fid);
+                                        self.request_redraw();
+                                        return;
+                                    }
                                 }
                                 _ => {}
+                            }
+                        }
+                    }
+
+                    // Keyboard activation for focused widgets (Space/Enter)
+                    if key_event.state == ElementState::Pressed && !key_event.repeat {
+                        if let PhysicalKey::Code(KeyCode::Enter) = key_event.physical_key {
+                            if let Some(focused_id) = self.sched.focused {
+                                if let Some(f) = &self.frame_cache {
+                                    if let Some(hit) =
+                                        f.hit_regions.iter().find(|h| h.id == focused_id)
+                                    {
+                                        if let Some(on_submit) = &hit.on_text_submit {
+                                            if let Some(state) =
+                                                self.textfield_states.get(&focused_id)
+                                            {
+                                                let text = state.borrow().text.clone();
+                                                on_submit(text);
+                                                self.request_redraw();
+                                                return; // don’t continue as button activation
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -704,32 +733,35 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         }
                     } else if key_event.state == ElementState::Released {
                         // Finish keyboard activation on release (Space/Enter)
-                        if let Some(active) = self.key_pressed_active.take() {
-                            if matches!(
-                                key_event.physical_key,
-                                winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Space)
-                                    | winit::keyboard::PhysicalKey::Code(
-                                        winit::keyboard::KeyCode::Enter
-                                    )
-                            ) {
-                                self.pressed_ids.remove(&active);
-                                // Fire on_click if the focused item has it
-                                if let Some(f) = &self.frame_cache {
-                                    if let Some(h) = f.hit_regions.iter().find(|h| h.id == active) {
-                                        if let Some(cb) = &h.on_click {
-                                            cb();
-                                            // A11y: announce activation
-                                            if let Some(node) =
-                                                f.semantics_nodes.iter().find(|n| n.id == active)
-                                            {
-                                                let label = node.label.as_deref().unwrap_or("");
-                                                self.a11y.announce(&format!("Activated {}", label));
+                        if let Some(active_id) = self.key_pressed_active {
+                            match key_event.physical_key {
+                                PhysicalKey::Code(KeyCode::Space)
+                                | PhysicalKey::Code(KeyCode::Enter) => {
+                                    self.pressed_ids.remove(&active_id);
+                                    self.key_pressed_active = None;
+
+                                    if let Some(f) = &self.frame_cache {
+                                        if let Some(hit) =
+                                            f.hit_regions.iter().find(|h| h.id == active_id)
+                                        {
+                                            if let Some(cb) = &hit.on_click {
+                                                cb();
+                                                if let Some(node) = f
+                                                    .semantics_nodes
+                                                    .iter()
+                                                    .find(|n| n.id == active_id)
+                                                {
+                                                    let label = node.label.as_deref().unwrap_or("");
+                                                    self.a11y
+                                                        .announce(&format!("Activated {}", label));
+                                                }
                                             }
                                         }
                                     }
+                                    self.request_redraw();
+                                    return;
                                 }
-                                self.request_redraw();
-                                return;
+                                _ => {}
                             }
                         }
                     }
