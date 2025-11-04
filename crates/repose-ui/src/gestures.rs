@@ -1,5 +1,10 @@
+use repose_core::Vec2;
+
 use crate::input::*;
-use std::time::{Duration, Instant};
+use std::{
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
 pub struct GestureDetector {
     on_tap: Option<Rc<dyn Fn(Vec2)>>,

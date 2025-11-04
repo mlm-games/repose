@@ -4,7 +4,13 @@
 
 #![allow(non_snake_case)]
 pub mod anim;
+pub mod anim_ext;
+pub mod canvas;
+pub mod gestures;
 pub mod lazy;
+pub mod material3;
+pub mod navigation;
+pub mod scroll;
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -56,6 +62,7 @@ pub fn Scroll(modifier: Modifier) -> View {
         ViewKind::ScrollV {
             on_scroll: None,
             set_viewport_height: None,
+            set_content_height: None,
             get_scroll_offset: None,
         },
     )
@@ -449,13 +456,62 @@ pub fn layout_and_paint(
             };
         }
 
+        let mut width_set = false;
+        let mut height_set = false;
+
         if let Some(sz) = m.size {
             if sz.width.is_finite() {
                 s.size.width = length(sz.width);
+                width_set = true;
             }
             if sz.height.is_finite() {
                 s.size.height = length(sz.height);
+                height_set = true;
             }
+        }
+
+        // Per-axis overrides
+        if let Some(w) = m.width {
+            s.size.width = length(w);
+            width_set = true;
+        }
+        if let Some(h) = m.height {
+            s.size.height = length(h);
+            height_set = true;
+        }
+
+        // Fill max per-axis (don’t override explicit size on that axis)
+        if m.fill_max || m.fill_max_w {
+            if !width_set {
+                s.size.width = percent(1.0);
+                s.flex_grow = s.flex_grow.max(1.0);
+                s.flex_shrink = s.flex_shrink.max(1.0);
+            }
+        }
+        if m.fill_max || m.fill_max_h {
+            if !height_set {
+                s.size.height = percent(1.0);
+                s.flex_grow = s.flex_grow.max(1.0);
+                s.flex_shrink = s.flex_shrink.max(1.0);
+            }
+        }
+
+        // Padding
+        if let Some(pv) = m.padding_values {
+            s.padding = taffy::geometry::Rect {
+                left: length(pv.left),
+                right: length(pv.right),
+                top: length(pv.top),
+                bottom: length(pv.bottom),
+            };
+        } else if let Some(p) = m.padding {
+            let v = length(p);
+            s.padding = taffy::geometry::Rect {
+                left: v,
+                right: v,
+                top: v,
+                bottom: v,
+            };
         }
 
         if m.fill_max {
@@ -733,6 +789,12 @@ pub fn layout_and_paint(
             _ => v.clamp(min, max),
         }
     }
+    fn mul_alpha(c: Color, a: f32) -> Color {
+        let mut out = c;
+        let na = ((c.3 as f32) * a).clamp(0.0, 255.0) as u8;
+        out.3 = na;
+        out
+    }
 
     let mut scene = Scene {
         clear_color: locals::theme().background,
@@ -752,6 +814,7 @@ pub fn layout_and_paint(
         interactions: &Interactions,
         focused: Option<u64>,
         parent_offset: (f32, f32),
+        alpha_accum: f32,
     ) {
         let local = layout_of(nodes[&v.id], t);
         let rect = add_offset(local, parent_offset);
@@ -761,11 +824,11 @@ pub fn layout_and_paint(
         let is_pressed = interactions.pressed.contains(&v.id);
         let is_focused = focused == Some(v.id);
 
-        // Background/border (unchanged, but use 'rect')
+        // Background/border
         if let Some(bg) = v.modifier.background {
             scene.nodes.push(SceneNode::Rect {
                 rect,
-                color: bg,
+                color: mul_alpha(bg, alpha_accum),
                 radius: v.modifier.clip_rounded.unwrap_or(0.0),
             });
         }
@@ -774,10 +837,23 @@ pub fn layout_and_paint(
         if let Some(b) = &v.modifier.border {
             scene.nodes.push(SceneNode::Border {
                 rect,
-                color: b.color,
+                color: mul_alpha(b.color, alpha_accum),
                 width: b.width,
                 radius: b.radius.max(v.modifier.clip_rounded.unwrap_or(0.0)),
             });
+        }
+
+        // Transform and alpha
+        let this_alpha = v.modifier.alpha.unwrap_or(1.0);
+        let alpha_accum = (alpha_accum * this_alpha).clamp(0.0, 1.0);
+
+        if let Some(tf) = v.modifier.transform {
+            scene.nodes.push(SceneNode::PushTransform { transform: tf });
+        }
+
+        // Custom painter (Canvas)
+        if let Some(p) = &v.modifier.painter {
+            (p)(scene, rect);
         }
 
         let has_pointer = v.modifier.on_pointer_down.is_some()
@@ -815,7 +891,7 @@ pub fn layout_and_paint(
                 scene.nodes.push(SceneNode::Text {
                     rect,
                     text: text.clone(),
-                    color: *color,
+                    color: mul_alpha(*color, alpha_accum),
                     size: scaled_size,
                 });
                 sems.push(SemNode {
@@ -840,7 +916,7 @@ pub fn layout_and_paint(
                     };
                     scene.nodes.push(SceneNode::Rect {
                         rect,
-                        color: base,
+                        color: mul_alpha(base, alpha_accum),
                         radius: v.modifier.clip_rounded.unwrap_or(6.0),
                     });
                 }
@@ -857,7 +933,7 @@ pub fn layout_and_paint(
                         h: px,
                     },
                     text: text.clone(),
-                    color: Color::WHITE,
+                    color: mul_alpha(Color::WHITE, alpha_accum),
                     size: px,
                 });
 
@@ -890,7 +966,7 @@ pub fn layout_and_paint(
                 if is_focused {
                     scene.nodes.push(SceneNode::Border {
                         rect,
-                        color: Color::from_hex("#88CCFF"),
+                        color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
                         width: 2.0,
                         radius: v.modifier.clip_rounded.unwrap_or(6.0),
                     });
@@ -934,7 +1010,7 @@ pub fn layout_and_paint(
                 if is_focused {
                     scene.nodes.push(SceneNode::Border {
                         rect,
-                        color: Color::from_hex("#88CCFF"),
+                        color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
                         width: 2.0,
                         radius: v.modifier.clip_rounded.unwrap_or(6.0),
                     });
@@ -962,7 +1038,7 @@ pub fn layout_and_paint(
                                 w: sel_w,
                                 h: inner.h,
                             },
-                            color: Color::from_hex("#3B7BFF55"),
+                            color: mul_alpha(Color::from_hex("#3B7BFF55"), alpha_accum),
                             radius: 0.0,
                         });
                     }
@@ -985,7 +1061,7 @@ pub fn layout_and_paint(
                                     w: uw,
                                     h: 2.0,
                                 },
-                                color: Color::from_hex("#88CCFF"),
+                                color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
                                 radius: 0.0,
                             });
                         }
@@ -1005,9 +1081,9 @@ pub fn layout_and_paint(
                             text.clone()
                         },
                         color: if text.is_empty() {
-                            Color::from_hex("#666666")
+                            mul_alpha(Color::from_hex("#666666"), alpha_accum)
                         } else {
-                            Color::from_hex("#CCCCCC")
+                            mul_alpha(Color::from_hex("#CCCCCC"), alpha_accum)
                         },
                         size: TF_FONT_PX,
                     });
@@ -1024,7 +1100,7 @@ pub fn layout_and_paint(
                                 w: 1.0,
                                 h: inner.h,
                             },
-                            color: Color::WHITE,
+                            color: mul_alpha(Color::WHITE, alpha_accum),
                             radius: 0.0,
                         });
                     }
@@ -1049,7 +1125,7 @@ pub fn layout_and_paint(
                             h: inner.h,
                         },
                         text: hint.clone(),
-                        color: Color::from_hex("#666666"),
+                        color: mul_alpha(Color::from_hex("#666666"), alpha_accum),
                         size: TF_FONT_PX,
                     });
                     sems.push(SemNode {
@@ -1065,14 +1141,14 @@ pub fn layout_and_paint(
             ViewKind::ScrollV {
                 on_scroll,
                 set_viewport_height,
+                set_content_height,
                 get_scroll_offset,
             } => {
                 log::debug!("ScrollV: registering hit region at rect {:?}", rect);
 
-                // Register hit region (use local rect for hit testing)
                 hits.push(HitRegion {
                     id: v.id,
-                    rect, // viewport in global coords
+                    rect,
                     on_click: None,
                     on_scroll: on_scroll.clone(),
                     focusable: false,
@@ -1086,7 +1162,26 @@ pub fn layout_and_paint(
                     on_text_submit: None,
                 });
 
-                // Report viewport height
+                if let Some(set_vh) = set_viewport_height {
+                    set_vh(rect.h);
+                }
+
+                // Compute content height from children (max of y+h in local coords)
+                let mut content_h = 0.0f32;
+                for c in &v.children {
+                    let nid = nodes[&c.id];
+                    let l = t.layout(nid).unwrap();
+                    content_h = content_h.max(l.location.y + l.size.height);
+                }
+                if let Some(set_ch) = set_content_height {
+                    set_ch(content_h);
+                }
+
+                scene.nodes.push(SceneNode::PushClip {
+                    rect,
+                    radius: v.modifier.clip_rounded.unwrap_or(0.0),
+                });
+
                 let scroll_offset = if let Some(get) = get_scroll_offset {
                     let offset = get();
                     log::debug!("ScrollV walk: applying scroll offset = {}", offset);
@@ -1095,20 +1190,8 @@ pub fn layout_and_paint(
                     0.0
                 };
 
-                // Clip to viewport
-                scene.nodes.push(SceneNode::PushClip {
-                    rect,
-                    radius: v.modifier.clip_rounded.unwrap_or(0.0),
-                });
-
-                // Apply scroll offset to children
-                let child_offset = (base.0, base.1 - scroll_offset); // Subtract scroll from Y
-                log::debug!(
-                    "ScrollV walk: base={:?}, child_offset={:?}",
-                    base,
-                    child_offset
-                );
-
+                // Translate children by -scroll_offset in Y
+                let child_offset = (base.0, base.1 - scroll_offset);
                 for c in &v.children {
                     walk(
                         c,
@@ -1121,13 +1204,95 @@ pub fn layout_and_paint(
                         interactions,
                         focused,
                         child_offset,
+                        alpha_accum,
                     );
                 }
 
                 scene.nodes.push(SceneNode::PopClip);
                 return;
             }
+            ViewKind::ScrollXY {
+                on_scroll,
+                set_viewport_width,
+                set_viewport_height,
+                set_content_width,
+                set_content_height,
+                get_scroll_offset_xy,
+            } => {
+                hits.push(HitRegion {
+                    id: v.id,
+                    rect,
+                    on_click: None,
+                    on_scroll: on_scroll.clone(),
+                    focusable: false,
+                    on_pointer_down: v.modifier.on_pointer_down.clone(),
+                    on_pointer_move: v.modifier.on_pointer_move.clone(),
+                    on_pointer_up: v.modifier.on_pointer_up.clone(),
+                    on_pointer_enter: v.modifier.on_pointer_enter.clone(),
+                    on_pointer_leave: v.modifier.on_pointer_leave.clone(),
+                    z_index: v.modifier.z_index,
+                    on_text_change: None,
+                    on_text_submit: None,
+                });
 
+                if let Some(set_w) = set_viewport_width {
+                    set_w(rect.w);
+                }
+                if let Some(set_h) = set_viewport_height {
+                    set_h(rect.h);
+                }
+
+                // Content extents in local coords
+                let mut content_w = 0.0f32;
+                let mut content_h = 0.0f32;
+                for c in &v.children {
+                    let nid = nodes[&c.id];
+                    let l = t.layout(nid).unwrap();
+                    content_w = content_w.max(l.location.x + l.size.width);
+                    content_h = content_h.max(l.location.y + l.size.height);
+                }
+                if let Some(set_cw) = set_content_width {
+                    set_cw(content_w);
+                }
+                if let Some(set_ch) = set_content_height {
+                    set_ch(content_h);
+                }
+
+                // Clip to viewport
+                scene.nodes.push(SceneNode::PushClip {
+                    rect,
+                    radius: v.modifier.clip_rounded.unwrap_or(0.0),
+                });
+
+                // Offsets
+                let (ox, oy) = if let Some(get) = get_scroll_offset_xy {
+                    let (x, y) = get();
+                    (x, y)
+                } else {
+                    (0.0, 0.0)
+                };
+
+                // Translate children by (-ox, -oy)
+                let child_offset = (base.0 - ox, base.1 - oy);
+                for c in &v.children {
+                    walk(
+                        c,
+                        t,
+                        nodes,
+                        scene,
+                        hits,
+                        sems,
+                        textfield_states,
+                        interactions,
+                        focused,
+                        child_offset,
+                        alpha_accum,
+                    );
+                }
+
+                scene.nodes.push(SceneNode::PopClip);
+                return;
+            }
             ViewKind::Checkbox {
                 checked,
                 label,
@@ -1147,9 +1312,9 @@ pub fn layout_and_paint(
                         h: box_size,
                     },
                     color: if *checked {
-                        theme.primary
+                        mul_alpha(theme.primary, alpha_accum)
                     } else {
-                        theme.surface
+                        mul_alpha(theme.surface, alpha_accum)
                     },
                     radius: 3.0,
                 });
@@ -1160,7 +1325,7 @@ pub fn layout_and_paint(
                         w: box_size,
                         h: box_size,
                     },
-                    color: Color::from_hex("#555555"),
+                    color: mul_alpha(Color::from_hex("#555555"), alpha_accum),
                     width: 1.0,
                     radius: 3.0,
                 });
@@ -1174,7 +1339,7 @@ pub fn layout_and_paint(
                             h: box_size,
                         },
                         text: "✓".to_string(),
-                        color: theme.on_primary,
+                        color: mul_alpha(theme.on_primary, alpha_accum),
                         size: 16.0,
                     });
                 }
@@ -1187,7 +1352,7 @@ pub fn layout_and_paint(
                         h: rect.h,
                     },
                     text: label.clone(),
-                    color: theme.on_surface,
+                    color: mul_alpha(theme.on_surface, alpha_accum),
                     size: 16.0,
                 });
 
@@ -1223,7 +1388,7 @@ pub fn layout_and_paint(
                 if is_focused {
                     scene.nodes.push(SceneNode::Border {
                         rect,
-                        color: Color::from_hex("#88CCFF"),
+                        color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
                         width: 2.0,
                         radius: v.modifier.clip_rounded.unwrap_or(6.0),
                     });
@@ -1248,7 +1413,7 @@ pub fn layout_and_paint(
                         w: d,
                         h: d,
                     },
-                    color: Color::from_hex("#888888"),
+                    color: mul_alpha(Color::from_hex("#888888"), alpha_accum),
                     width: 1.5,
                     radius: d * 0.5,
                 });
@@ -1261,7 +1426,7 @@ pub fn layout_and_paint(
                             w: d - 8.0,
                             h: d - 8.0,
                         },
-                        color: theme.primary,
+                        color: mul_alpha(theme.primary, alpha_accum),
                         radius: (d - 8.0) * 0.5,
                     });
                 }
@@ -1273,7 +1438,7 @@ pub fn layout_and_paint(
                         h: rect.h,
                     },
                     text: label.clone(),
-                    color: theme.on_surface,
+                    color: mul_alpha(theme.on_surface, alpha_accum),
                     size: 16.0,
                 });
 
@@ -1303,7 +1468,7 @@ pub fn layout_and_paint(
                 if is_focused {
                     scene.nodes.push(SceneNode::Border {
                         rect,
-                        color: Color::from_hex("#88CCFF"),
+                        color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
                         width: 2.0,
                         radius: v.modifier.clip_rounded.unwrap_or(6.0),
                     });
@@ -1333,7 +1498,11 @@ pub fn layout_and_paint(
                         w: track_w,
                         h: track_h,
                     },
-                    color: if *checked { on_col } else { off_col },
+                    color: if *checked {
+                        mul_alpha(on_col, alpha_accum)
+                    } else {
+                        mul_alpha(off_col, alpha_accum)
+                    },
                     radius: track_h * 0.5,
                 });
                 // knob position
@@ -1350,7 +1519,7 @@ pub fn layout_and_paint(
                         w: knob,
                         h: knob,
                     },
-                    color: Color::from_hex("#EEEEEE"),
+                    color: mul_alpha(Color::from_hex("#EEEEEE"), alpha_accum),
                     radius: knob * 0.5,
                 });
 
@@ -1363,7 +1532,7 @@ pub fn layout_and_paint(
                         h: rect.h,
                     },
                     text: label.clone(),
-                    color: theme.on_surface,
+                    color: mul_alpha(theme.on_surface, alpha_accum),
                     size: 16.0,
                 });
 
@@ -1398,7 +1567,7 @@ pub fn layout_and_paint(
                 if is_focused {
                     scene.nodes.push(SceneNode::Border {
                         rect,
-                        color: Color::from_hex("#88CCFF"),
+                        color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
                         width: 2.0,
                         radius: v.modifier.clip_rounded.unwrap_or(6.0),
                     });
@@ -1430,7 +1599,7 @@ pub fn layout_and_paint(
                         w: track_w,
                         h: track_h,
                     },
-                    color: Color::from_hex("#333333"),
+                    color: mul_alpha(Color::from_hex("#333333"), alpha_accum),
                     radius: track_h * 0.5,
                 });
 
@@ -1444,7 +1613,7 @@ pub fn layout_and_paint(
                         w: knob_d,
                         h: knob_d,
                     },
-                    color: theme.surface,
+                    color: mul_alpha(theme.surface, alpha_accum),
                     radius: knob_d * 0.5,
                 });
                 scene.nodes.push(SceneNode::Border {
@@ -1454,7 +1623,7 @@ pub fn layout_and_paint(
                         w: knob_d,
                         h: knob_d,
                     },
-                    color: Color::from_hex("#888888"),
+                    color: mul_alpha(Color::from_hex("#888888"), alpha_accum),
                     width: 1.0,
                     radius: knob_d * 0.5,
                 });
@@ -1468,7 +1637,7 @@ pub fn layout_and_paint(
                         h: rect.h,
                     },
                     text: format!("{}: {:.2}", label, *value),
-                    color: theme.on_surface,
+                    color: mul_alpha(theme.on_surface, alpha_accum),
                     size: 16.0,
                 });
 
@@ -1518,17 +1687,17 @@ pub fn layout_and_paint(
                 let on_scroll = {
                     let on_change_cb = on_change_cb.clone();
                     let current = current.clone();
-                    Rc::new(move |dy: f32| -> f32 {
+                    Rc::new(move |d: Vec2| -> Vec2 {
                         let base = *current.borrow();
                         let delta = stepv.unwrap_or((maxv - minv) * 0.01);
-                        // winit: negative dy for wheel-up; treat as increase
-                        let dir = if dy.is_sign_negative() { 1.0 } else { -1.0 };
+                        // wheel-up (negative y) increases
+                        let dir = if d.y.is_sign_negative() { 1.0 } else { -1.0 };
                         let new_v = snap_step(base + dir * delta, stepv, minv, maxv);
                         *current.borrow_mut() = new_v;
                         if let Some(cb) = &on_change_cb {
                             cb(new_v);
                         }
-                        0.0
+                        Vec2 { x: d.x, y: 0.0 } // we consumed all y, pass x through
                     })
                 };
 
@@ -1560,7 +1729,7 @@ pub fn layout_and_paint(
                 if is_focused {
                     scene.nodes.push(SceneNode::Border {
                         rect,
-                        color: Color::from_hex("#88CCFF"),
+                        color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
                         width: 2.0,
                         radius: v.modifier.clip_rounded.unwrap_or(6.0),
                     });
@@ -1592,7 +1761,7 @@ pub fn layout_and_paint(
                         w: track_w,
                         h: track_h,
                     },
-                    color: Color::from_hex("#333333"),
+                    color: mul_alpha(Color::from_hex("#333333"), alpha_accum),
                     radius: track_h * 0.5,
                 });
 
@@ -1610,7 +1779,7 @@ pub fn layout_and_paint(
                         w: (k1x - k0x).abs(),
                         h: track_h,
                     },
-                    color: theme.primary,
+                    color: mul_alpha(theme.primary, alpha_accum),
                     radius: track_h * 0.5,
                 });
 
@@ -1623,7 +1792,7 @@ pub fn layout_and_paint(
                             w: knob_d,
                             h: knob_d,
                         },
-                        color: theme.surface,
+                        color: mul_alpha(theme.surface, alpha_accum),
                         radius: knob_d * 0.5,
                     });
                     scene.nodes.push(SceneNode::Border {
@@ -1633,7 +1802,7 @@ pub fn layout_and_paint(
                             w: knob_d,
                             h: knob_d,
                         },
-                        color: Color::from_hex("#888888"),
+                        color: mul_alpha(Color::from_hex("#888888"), alpha_accum),
                         width: 1.0,
                         radius: knob_d * 0.5,
                     });
@@ -1648,7 +1817,7 @@ pub fn layout_and_paint(
                         h: rect.h,
                     },
                     text: format!("{}: {:.2} – {:.2}", label, *start, *end),
-                    color: theme.on_surface,
+                    color: mul_alpha(theme.on_surface, alpha_accum),
                     size: 16.0,
                 });
 
@@ -1750,7 +1919,7 @@ pub fn layout_and_paint(
                 if is_focused {
                     scene.nodes.push(SceneNode::Border {
                         rect,
-                        color: Color::from_hex("#88CCFF"),
+                        color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
                         width: 2.0,
                         radius: v.modifier.clip_rounded.unwrap_or(6.0),
                     });
@@ -1778,7 +1947,7 @@ pub fn layout_and_paint(
                         w: track_w,
                         h: track_h,
                     },
-                    color: Color::from_hex("#333333"),
+                    color: mul_alpha(Color::from_hex("#333333"), alpha_accum),
                     radius: track_h * 0.5,
                 });
 
@@ -1790,7 +1959,7 @@ pub fn layout_and_paint(
                         w: track_w * t,
                         h: track_h,
                     },
-                    color: theme.primary,
+                    color: mul_alpha(theme.primary, alpha_accum),
                     radius: track_h * 0.5,
                 });
 
@@ -1802,7 +1971,7 @@ pub fn layout_and_paint(
                         h: rect.h,
                     },
                     text: format!("{}: {:.0}%", label, t * 100.0),
-                    color: theme.on_surface,
+                    color: mul_alpha(theme.on_surface, alpha_accum),
                     size: 16.0,
                 });
 
@@ -1832,7 +2001,12 @@ pub fn layout_and_paint(
                 interactions,
                 focused,
                 base,
+                alpha_accum,
             );
+        }
+
+        if v.modifier.transform.is_some() {
+            scene.nodes.push(SceneNode::PopTransform);
         }
     }
 
@@ -1848,10 +2022,25 @@ pub fn layout_and_paint(
         interactions,
         focused,
         (0.0, 0.0),
+        1.0,
     );
 
     // Ensure visual order: low z_index first. Topmost will be found by iter().rev().
     hits.sort_by(|a, b| a.z_index.partial_cmp(&b.z_index).unwrap_or(Ordering::Equal));
 
     (scene, hits, sems)
+}
+
+/// Method styling for m3-like components
+pub trait TextStyleExt {
+    fn color(self, c: Color) -> View;
+    fn size(self, px: f32) -> View;
+}
+impl TextStyleExt for View {
+    fn color(self, c: Color) -> View {
+        TextColor(self, c)
+    }
+    fn size(self, px: f32) -> View {
+        TextSize(self, px)
+    }
 }

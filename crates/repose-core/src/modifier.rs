@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use taffy::AlignSelf;
 
-use crate::{Color, PointerEvent, Size};
+use crate::{Color, PointerEvent, Size, Transform, Vec2};
 
 #[derive(Clone, Debug)]
 pub struct Border {
@@ -11,11 +11,24 @@ pub struct Border {
     pub radius: f32,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PaddingValues {
+    pub left: f32,
+    pub right: f32,
+    pub top: f32,
+    pub bottom: f32,
+}
+
 #[derive(Clone, Default)]
 pub struct Modifier {
     pub padding: Option<f32>,
+    pub padding_values: Option<PaddingValues>,
     pub size: Option<Size>,
     pub fill_max: bool,
+    pub fill_max_w: bool,
+    pub fill_max_h: bool,
+    pub width: Option<f32>,
+    pub height: Option<f32>,
     pub background: Option<Color>,
     pub border: Option<Border>,
     pub flex_grow: Option<f32>,
@@ -35,12 +48,19 @@ pub struct Modifier {
     pub semantics_label: Option<String>,
     pub z_index: f32,
     pub clip_rounded: Option<f32>,
-    // (desktop/mobile gestures build on top later)
+    pub on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>>,
+
+    // Pointer callbacks
     pub on_pointer_down: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_move: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_up: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_enter: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_leave: Option<Rc<dyn Fn(PointerEvent)>>,
+
+    pub alpha: Option<f32>,
+    pub transform: Option<Transform>,
+
+    pub painter: Option<Rc<dyn Fn(&mut crate::Scene, crate::Rect)>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -70,6 +90,7 @@ impl std::fmt::Debug for Modifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Modifier")
             .field("padding", &self.padding)
+            .field("padding_values", &self.padding_values)
             .field("size", &self.size)
             .field("fill_max", &self.fill_max)
             .field("background", &self.background)
@@ -78,6 +99,7 @@ impl std::fmt::Debug for Modifier {
             .field("semantics_label", &self.semantics_label)
             .field("z_index", &self.z_index)
             .field("clip_rounded", &self.clip_rounded)
+            .field("alpha", &self.alpha)
             .finish()
     }
 }
@@ -90,6 +112,10 @@ impl Modifier {
         self.padding = Some(px);
         self
     }
+    pub fn padding_values(mut self, pv: PaddingValues) -> Self {
+        self.padding_values = Some(pv);
+        self
+    }
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.size = Some(Size {
             width: w,
@@ -99,6 +125,22 @@ impl Modifier {
     }
     pub fn fill_max_size(mut self) -> Self {
         self.fill_max = true;
+        self
+    }
+    pub fn width(mut self, w: f32) -> Self {
+        self.width = Some(w);
+        self
+    }
+    pub fn height(mut self, h: f32) -> Self {
+        self.height = Some(h);
+        self
+    }
+    pub fn fill_max_width(mut self) -> Self {
+        self.fill_max_w = true;
+        self
+    }
+    pub fn fill_max_height(mut self) -> Self {
+        self.fill_max_h = true;
         self
     }
     pub fn background(mut self, color: Color) -> Self {
@@ -202,6 +244,41 @@ impl Modifier {
     pub fn grid_span(mut self, col_span: u16, row_span: u16) -> Self {
         self.grid_col_span = Some(col_span.max(1));
         self.grid_row_span = Some(row_span.max(1));
+        self
+    }
+
+    pub fn alpha(mut self, a: f32) -> Self {
+        self.alpha = Some(a.clamp(0.0, 1.0));
+        self
+    }
+    pub fn translate(mut self, x: f32, y: f32) -> Self {
+        let t = self.transform.unwrap_or_else(Transform::identity);
+        self.transform = Some(t.combine(&Transform::translate(x, y)));
+        self
+    }
+    pub fn scale(mut self, s: f32) -> Self {
+        self.scale2(s, s)
+    }
+    pub fn scale2(mut self, sx: f32, sy: f32) -> Self {
+        let mut t = self.transform.unwrap_or_else(Transform::identity);
+        t.scale_x *= sx;
+        t.scale_y *= sy;
+        self.transform = Some(t);
+        self
+    }
+    pub fn rotate(mut self, radians: f32) -> Self {
+        let mut t = self.transform.unwrap_or_else(Transform::identity);
+        t.rotate += radians;
+        self.transform = Some(t);
+        self
+    }
+    pub fn on_scroll(mut self, f: impl Fn(Vec2) -> Vec2 + 'static) -> Self {
+        self.on_scroll = Some(Rc::new(f));
+        self
+    }
+
+    pub fn painter(mut self, f: impl Fn(&mut crate::Scene, crate::Rect) + 'static) -> Self {
+        self.painter = Some(Rc::new(f));
         self
     }
 }

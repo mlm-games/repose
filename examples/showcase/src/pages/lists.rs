@@ -29,7 +29,7 @@ pub fn screen() -> View {
         items.get(),
         48.0,
         scroll,
-        Modifier::new().fill_max_size(),
+        Modifier::new().fill_max_width().height(600.0),
         |it, _| {
             Row(Modifier::new()
                 .padding(12.0)

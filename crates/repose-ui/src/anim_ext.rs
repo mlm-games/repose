@@ -1,9 +1,14 @@
+use std::cell::RefCell;
+
+use crate::{Box, ViewExt, navigation::Transition};
 use repose_core::*;
+
+use crate::anim::{self, animate_f32};
 
 pub fn AnimatedVisibility(
     visible: bool,
-    enter: EnterTransition,
-    exit: ExitTransition,
+    _enter: EnterTransition,
+    _exit: ExitTransition,
     content: View,
 ) -> View {
     let alpha = animate_f32(
@@ -43,7 +48,7 @@ pub fn Crossfade<T: PartialEq + Clone + 'static>(
     target: T,
     content: impl Fn(T) -> View + 'static,
 ) -> View {
-    let key = format!("crossfade_{:?}", std::ptr::addr_of!(&target));
+    let key = format!("crossfade_{:?}", std::ptr::addr_of!(target));
     let prev = remember_with_key(key.clone(), || RefCell::new(target.clone()));
 
     let alpha = if *prev.borrow() != target {
@@ -59,11 +64,11 @@ pub fn Crossfade<T: PartialEq + Clone + 'static>(
 pub fn AnimatedContent(key: String, transition: Option<Transition>, content: View) -> View {
     match transition {
         Some(Transition::Push { .. }) => {
-            let offset = animate_f32(format!("push_{}", key), 0.0, AnimationSpec::default());
+            let offset = animate_f32(format!("push_{key}"), 0.0, AnimationSpec::default());
             Box(Modifier::new().translate(offset, 0.0)).child(content)
         }
         Some(Transition::Pop { .. }) => {
-            let offset = animate_f32(format!("pop_{}", key), 0.0, AnimationSpec::default());
+            let offset = animate_f32(format!("pop_{key}"), 0.0, AnimationSpec::default());
             Box(Modifier::new().translate(-offset, 0.0)).child(content)
         }
         _ => content,

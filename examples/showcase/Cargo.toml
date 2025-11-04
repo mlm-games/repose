@@ -1,13 +1,13 @@
 [package]
 name = "showcase"
-version = "0.3.5"
+version = "0.4.0"
 edition = "2024"
 publish = false
 
 [dependencies]
-repose-core = { path = "../../crates/repose-core", version = "0.3.5" }
-repose-ui = { path = "../../crates/repose-ui", version = "0.3.5" }
-repose-platform = { path = "../../crates/repose-platform", version = "0.3.5", features = [
+repose-core = { path = "../../crates/repose-core", version = "0.4.0" }
+repose-ui = { path = "../../crates/repose-ui", version = "0.4.0" }
+repose-platform = { path = "../../crates/repose-platform", version = "0.4.0", features = [
     "desktop",
 ] }
 env_logger = { workspace = true }

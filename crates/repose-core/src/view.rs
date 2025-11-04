@@ -4,7 +4,7 @@ use std::rc::Rc;
 pub type ViewId = u64;
 
 pub type Callback = Rc<dyn Fn()>;
-pub type ScrollCallback = Rc<dyn Fn(f32) -> f32>;
+pub type ScrollCallback = Rc<dyn Fn(crate::Vec2) -> crate::Vec2>;
 
 #[derive(Clone)]
 pub enum ViewKind {
@@ -16,7 +16,16 @@ pub enum ViewKind {
     ScrollV {
         on_scroll: Option<ScrollCallback>,
         set_viewport_height: Option<Rc<dyn Fn(f32)>>,
+        set_content_height: Option<Rc<dyn Fn(f32)>>,
         get_scroll_offset: Option<Rc<dyn Fn() -> f32>>,
+    },
+    ScrollXY {
+        on_scroll: Option<ScrollCallback>,
+        set_viewport_width: Option<Rc<dyn Fn(f32)>>,
+        set_viewport_height: Option<Rc<dyn Fn(f32)>>,
+        set_content_width: Option<Rc<dyn Fn(f32)>>,
+        set_content_height: Option<Rc<dyn Fn(f32)>>,
+        get_scroll_offset_xy: Option<Rc<dyn Fn() -> (f32, f32)>>,
     },
     Text {
         text: String,
@@ -100,6 +109,7 @@ impl std::fmt::Debug for ViewKind {
             ViewKind::Column => write!(f, "Column"),
             ViewKind::Stack => write!(f, "Stack"),
             ViewKind::ScrollV { .. } => write!(f, "ScrollV"),
+            ViewKind::ScrollXY { .. } => write!(f, "ScrollXY"),
             ViewKind::Text {
                 text,
                 color,

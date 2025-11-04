@@ -427,12 +427,11 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     self.capture_id = None;
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
-                    let dy = match delta {
-                        MouseScrollDelta::LineDelta(_x, y) => -y * 40.0,
-                        MouseScrollDelta::PixelDelta(lp) => -(lp.y as f32),
+                    let (dx, dy) = match delta {
+                        MouseScrollDelta::LineDelta(x, y) => (-x * 40.0, -y * 40.0),
+                        MouseScrollDelta::PixelDelta(lp) => (-(lp.x as f32), -(lp.y as f32)),
                     };
-
-                    log::debug!("MouseWheel: dy={}", dy);
+                    log::debug!("MouseWheel: dx={}, dy={}", dx, dy);
 
                     if let Some(f) = &self.frame_cache {
                         let pos = Vec2 {
@@ -440,21 +439,16 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             y: self.mouse_pos.1,
                         };
 
-                        // Find scrollable regions
                         for hit in f.hit_regions.iter().rev().filter(|h| h.rect.contains(pos)) {
                             if let Some(cb) = &hit.on_scroll {
                                 log::debug!("Calling on_scroll for hit region id={}", hit.id);
-                                let before = dy;
-                                let leftover = cb(dy);
-                                log::debug!(
-                                    "on_scroll consumed {} (leftover={})",
-                                    before - leftover,
-                                    leftover
-                                );
-
-                                if (before - leftover).abs() > 0.001 {
+                                let before = Vec2 { x: dx, y: dy };
+                                let leftover = cb(before);
+                                let consumed_x = (before.x - leftover.x).abs() > 0.001;
+                                let consumed_y = (before.y - leftover.y).abs() > 0.001;
+                                if consumed_x || consumed_y {
                                     self.request_redraw();
-                                    break; // Stop after first handler consumes some
+                                    break; // stop after first consumer
                                 }
                             }
                         }
@@ -977,7 +971,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 //         impl ApplicationHandler<()> for A {
 //             fn resumed(&mut self, el: &winit::event_loop::ActiveEventLoop) {
 //                 if self.window.is_none() {
-//                     match el.create_window(WindowAttributes::default().with_title("Repose android")) {
+//                     match el.create_window(WindowAttributes::default().with_title("Repose android"))
+//                     {
 //                         Ok(win) => {
 //                             let w = Arc::new(win);
 //                             let size = w.inner_size();
@@ -1176,24 +1171,31 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 //                         }
 //                     }
 //                     WindowEvent::MouseWheel { delta, .. } => {
-//                         let mut dy = match delta {
-//                             MouseScrollDelta::LineDelta(_x, y) => -y * 40.0,
-//                             MouseScrollDelta::PixelDelta(lp) => -(lp.y as f32),
+//                         let (dx, dy) = match delta {
+//                             MouseScrollDelta::LineDelta(x, y) => (-x * 40.0, -y * 40.0),
+//                             MouseScrollDelta::PixelDelta(lp) => (-(lp.x as f32), -(lp.y as f32)),
 //                         };
+//                         log::debug!("MouseWheel: dx={}, dy={}", dx, dy);
+
 //                         if let Some(f) = &self.frame_cache {
 //                             let pos = Vec2 {
 //                                 x: self.mouse_pos.0,
 //                                 y: self.mouse_pos.1,
 //                             };
+
 //                             for hit in f.hit_regions.iter().rev().filter(|h| h.rect.contains(pos)) {
 //                                 if let Some(cb) = &hit.on_scroll {
-//                                     dy = cb(dy);
-//                                     if dy.abs() <= 0.001 {
-//                                         break;
+//                                     log::debug!("Calling on_scroll for hit region id={}", hit.id);
+//                                     let before = Vec2 { x: dx, y: dy };
+//                                     let leftover = cb(before);
+//                                     let consumed_x = (before.x - leftover.x).abs() > 0.001;
+//                                     let consumed_y = (before.y - leftover.y).abs() > 0.001;
+//                                     if consumed_x || consumed_y {
+//                                         self.request_redraw();
+//                                         break; // stop after first consumer
 //                                     }
 //                                 }
 //                             }
-//                             self.request_redraw();
 //                         }
 //                     }
 //                     WindowEvent::RedrawRequested => {

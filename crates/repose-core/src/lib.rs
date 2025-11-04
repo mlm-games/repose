@@ -5,12 +5,14 @@
 pub mod animation;
 pub mod color;
 pub mod effects;
+pub mod effects_ext;
 pub mod error;
 pub mod geometry;
 pub mod input;
 pub mod locals;
 pub mod modifier;
 pub mod prelude;
+pub mod reactive;
 pub mod render_api;
 pub mod runtime;
 pub mod scope;
@@ -22,10 +24,12 @@ pub mod view;
 
 pub use color::*;
 pub use effects::*;
+pub use effects_ext::*;
 pub use geometry::*;
 pub use locals::*;
 pub use modifier::*;
 pub use prelude::*;
+pub use reactive::*;
 pub use render_api::*;
 pub use runtime::*;
 pub use semantics::*;

@@ -136,8 +136,16 @@ where
 
     // Scroll callbacks
     let state_clone = state.clone();
-    let on_scroll =
-        Rc::new(move |dy: f32| -> f32 { state_clone.scroll_immediate(dy, content_height) });
+    let on_scroll = {
+        let state_clone = state.clone();
+        Rc::new(move |d: repose_core::Vec2| -> repose_core::Vec2 {
+            let leftover_y = state_clone.scroll_immediate(d.y, content_height);
+            repose_core::Vec2 {
+                x: d.x,
+                y: leftover_y,
+            }
+        })
+    };
 
     let state_clone = state.clone();
     let set_viewport = Rc::new(move |h: f32| {
@@ -155,7 +163,8 @@ where
         repose_core::ViewKind::ScrollV {
             on_scroll: Some(on_scroll),
             set_viewport_height: Some(set_viewport),
-            get_scroll_offset: Some(get_scroll), // NEW
+            set_content_height: None,
+            get_scroll_offset: Some(get_scroll),
         },
     )
     .modifier(modifier)

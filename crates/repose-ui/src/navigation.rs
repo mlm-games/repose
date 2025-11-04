@@ -1,19 +1,24 @@
+use crate::Box;
+use crate::anim_ext::AnimatedContent;
 use repose_core::*;
-use std::collections::VecDeque;
+use std::any::Any;
+use std::cell::RefCell;
+use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 
 pub struct NavController {
     stack: RefCell<VecDeque<NavEntry>>,
-    current: Signal<String>,
-    transitions: Signal<Option<Transition>>,
+    pub current: Signal<String>,
+    pub transitions: Signal<Option<Transition>>,
 }
 
 pub struct NavEntry {
-    route: String,
-    args: HashMap<String, String>,
-    state: Box<dyn Any>,
+    pub route: String,
+    pub args: HashMap<String, String>,
+    pub state: Box<dyn Any>,
 }
 
+#[derive(Clone)]
 pub enum Transition {
     Push { from: String, to: String },
     Pop { from: String, to: String },
@@ -21,6 +26,23 @@ pub enum Transition {
 }
 
 impl NavController {
+    pub fn new(initial: impl Into<String>) -> Rc<Self> {
+        let route = initial.into();
+        Rc::new(Self {
+            stack: RefCell::new({
+                let mut dq = VecDeque::new();
+                dq.push_back(NavEntry {
+                    route: route.clone(),
+                    args: HashMap::new(),
+                    state: Box::new(()),
+                });
+                dq
+            }),
+            current: signal(route),
+            transitions: signal(None),
+        })
+    }
+
     pub fn navigate(&self, route: impl Into<String>) {
         let route = route.into();
         let mut stack = self.stack.borrow_mut();
@@ -33,6 +55,27 @@ impl NavController {
         });
 
         self.transitions.set(Some(Transition::Push {
+            from,
+            to: route.clone(),
+        }));
+        self.current.set(route);
+    }
+
+    pub fn replace(&self, route: impl Into<String>) {
+        let route = route.into();
+        let mut stack = self.stack.borrow_mut();
+        let from = self.current.get();
+
+        if let Some(mut last) = stack.pop_back() {
+            // drop last
+            let _ = last;
+        }
+        stack.push_back(NavEntry {
+            route: route.clone(),
+            args: HashMap::new(),
+            state: Box::new(()),
+        });
+        self.transitions.set(Some(Transition::Replace {
             from,
             to: route.clone(),
         }));
@@ -55,6 +98,12 @@ impl NavController {
         }
         false
     }
+
+    pub fn take_transition(&self) -> Option<Transition> {
+        let t = self.transitions.get();
+        self.transitions.set(None);
+        t
+    }
 }
 
 pub fn NavHost(
@@ -62,9 +111,10 @@ pub fn NavHost(
     routes: HashMap<String, Box<dyn Fn() -> View>>,
 ) -> View {
     let current = controller.current.get();
+    let trans = controller.transitions.get();
 
     if let Some(builder) = routes.get(&current) {
-        AnimatedContent(current.clone(), controller.transitions.get(), builder())
+        AnimatedContent(current.clone(), trans, builder())
     } else {
         Box(Modifier::new()) // Empty fallback
     }
