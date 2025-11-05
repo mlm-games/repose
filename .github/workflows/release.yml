@@ -1,0 +1,103 @@
+name: Release crate (crates.io only)
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write 
+
+concurrency:
+  group: release-crate-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.meta.outputs.name }}
+      version: ${{ steps.meta.outputs.version }}
+      crate_filename: ${{ steps.pkg.outputs.crate_filename }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Read package metadata and validate tag
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          NAME=$(cargo metadata --no-deps --format-version=1 | jq -r '.packages[0].name')
+          VERSION=$(cargo metadata --no-deps --format-version=1 | jq -r '.packages[0].version')
+          echo "Tag: $TAG  Cargo: $VERSION ($NAME)"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "Version mismatch: tag v$TAG != Cargo.toml $VERSION"
+            exit 1
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Cargo package (dry-run archive)
+        id: pkg
+        run: |
+          set -euxo pipefail
+          cargo package --locked
+          NAME="${{ steps.meta.outputs.name }}"
+          VER="${{ steps.meta.outputs.version }}"
+          CRATE_FILENAME="${NAME}-${VER}.crate"
+          CRATE="target/package/$CRATE_FILENAME"
+          test -f "$CRATE"
+          echo "crate_filename=$CRATE_FILENAME" >> "$GITHUB_OUTPUT"
+
+      - name: Upload crate artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: crate
+          path: target/package/*.crate
+          retention-days: 1
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          for i in 1 2 3; do
+            if cargo publish --locked; then exit 0; fi
+            echo "Publish failed, retrying in $((i*10))s..."; sleep $((i*10))
+          done
+          exit 1
+
+  release:
+    name: Create GitHub Release
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download crate artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: crate
+          path: dist
+
+      - name: Prepare assets
+        run: |
+          cd dist
+          shasum -a 256 *.crate > SHA256SUMS.txt
+          ls -la
+
+      - name: Create/Update Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.publish.outputs.version }}
+          name: v${{ needs.publish.outputs.version }}
+          generate_release_notes: true
+          files: |
+            dist/*.crate
+            dist/SHA256SUMS.txt
