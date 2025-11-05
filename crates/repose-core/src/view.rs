@@ -18,6 +18,7 @@ pub enum ViewKind {
         set_viewport_height: Option<Rc<dyn Fn(f32)>>,
         set_content_height: Option<Rc<dyn Fn(f32)>>,
         get_scroll_offset: Option<Rc<dyn Fn() -> f32>>,
+        set_scroll_offset: Option<Rc<dyn Fn(f32)>>,
     },
     ScrollXY {
         on_scroll: Option<ScrollCallback>,
@@ -26,6 +27,7 @@ pub enum ViewKind {
         set_content_width: Option<Rc<dyn Fn(f32)>>,
         set_content_height: Option<Rc<dyn Fn(f32)>>,
         get_scroll_offset_xy: Option<Rc<dyn Fn() -> (f32, f32)>>,
+        set_scroll_offset_xy: Option<Rc<dyn Fn(f32, f32)>>,
     },
     Text {
         text: String,

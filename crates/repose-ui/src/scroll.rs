@@ -35,6 +35,12 @@ impl ScrollState {
         self.content_height.set(h.max(0.0));
         self.clamp_offset();
     }
+    pub fn set_offset(&self, off: f32) {
+        let vh = self.viewport_height.get();
+        let ch = self.content_height.get();
+        let max_off = (ch - vh).max(0.0);
+        self.scroll_offset.set(off.clamp(0.0, max_off));
+    }
 
     fn clamp_offset(&self) {
         let vh = self.viewport_height.get();
@@ -136,6 +142,10 @@ impl HorizontalScrollState {
         self.content_width.set(w.max(0.0));
         self.clamp();
     }
+    pub fn set_offset(&self, off: f32) {
+        let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
+        self.scroll_offset.set(off.clamp(0.0, max_off));
+    }
     fn clamp(&self) {
         let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
         self.scroll_offset.update(|o| {
@@ -216,6 +226,12 @@ impl ScrollStateXY {
         self.c_w.set(w.max(0.0));
         self.c_h.set(h.max(0.0));
         self.clamp();
+    }
+    pub fn set_offset_xy(&self, x: f32, y: f32) {
+        let max_x = (self.c_w.get() - self.vp_w.get()).max(0.0);
+        let max_y = (self.c_h.get() - self.vp_h.get()).max(0.0);
+        self.off_x.set(x.clamp(0.0, max_x));
+        self.off_y.set(y.clamp(0.0, max_y));
     }
     fn clamp(&self) {
         let max_x = (self.c_w.get() - self.vp_w.get()).max(0.0);
@@ -317,6 +333,10 @@ pub fn ScrollArea(modifier: Modifier, state: Rc<ScrollState>, content: View) -> 
             st.get()
         })
     };
+    let set_scroll = {
+        let st = state.clone();
+        Rc::new(move |off: f32| st.set_offset(off))
+    };
     View::new(
         0,
         ViewKind::ScrollV {
@@ -324,6 +344,7 @@ pub fn ScrollArea(modifier: Modifier, state: Rc<ScrollState>, content: View) -> 
             set_viewport_height: Some(set_viewport),
             set_content_height: Some(set_content),
             get_scroll_offset: Some(get_scroll),
+            set_scroll_offset: Some(set_scroll),
         },
     )
     .modifier(modifier)
@@ -360,6 +381,10 @@ pub fn HorizontalScrollArea(
             (st.get(), 0.0)
         })
     };
+    let set_xy = {
+        let st = state.clone();
+        Rc::new(move |x: f32, _y: f32| st.set_offset(x))
+    };
     // Use ScrollXY, but only X is active
     View::new(
         0,
@@ -370,6 +395,7 @@ pub fn HorizontalScrollArea(
             set_content_width: Some(set_content_w),
             set_content_height: None,
             get_scroll_offset_xy: Some(get_scroll_xy),
+            set_scroll_offset_xy: Some(set_xy),
         },
     )
     .modifier(modifier)
@@ -414,6 +440,10 @@ pub fn ScrollAreaXY(modifier: Modifier, state: Rc<ScrollStateXY>, content: View)
             st.get()
         })
     };
+    let set_xy = {
+        let st = state.clone();
+        Rc::new(move |x: f32, y: f32| st.set_offset_xy(x, y))
+    };
 
     View::new(
         0,
@@ -424,6 +454,7 @@ pub fn ScrollAreaXY(modifier: Modifier, state: Rc<ScrollStateXY>, content: View)
             set_content_width: Some(set_cw),
             set_content_height: Some(set_ch),
             get_scroll_offset_xy: Some(get_xy),
+            set_scroll_offset_xy: Some(set_xy),
         },
     )
     .modifier(modifier)

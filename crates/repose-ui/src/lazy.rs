@@ -22,6 +22,11 @@ impl LazyColumnState {
             animating: RefCell::new(false),
         }
     }
+    pub fn set_offset(&self, off: f32, content_height: f32) {
+        let vh = self.viewport_height.get();
+        let max_off = (content_height - vh).max(0.0);
+        self.scroll_offset.set(off.clamp(0.0, max_off));
+    }
 
     pub fn scroll_immediate(&self, delta: f32, content_height: f32) -> f32 {
         let current = self.scroll_offset.get();
@@ -30,7 +35,6 @@ impl LazyColumnState {
         let max_offset = (content_height - viewport).max(0.0);
         let new_offset = (current + delta).clamp(0.0, max_offset);
 
-        // THIS IS THE KEY: Setting the signal triggers recomposition!
         self.scroll_offset.set(new_offset);
 
         let consumed = new_offset - current;
@@ -154,6 +158,11 @@ where
     // Content inside scroll viewport (clip and translation happen in layout_and_paint)
     let content = crate::Column(Modifier::new()).with_children(children);
 
+    let set_scroll = {
+        let st = state.clone();
+        Rc::new(move |off: f32| st.set_offset(off, content_height))
+    };
+
     repose_core::View::new(
         0,
         repose_core::ViewKind::ScrollV {
@@ -161,6 +170,7 @@ where
             set_viewport_height: Some(set_viewport),
             set_content_height: None,
             get_scroll_offset: Some(get_scroll),
+            set_scroll_offset: Some(set_scroll),
         },
     )
     .modifier(modifier)
