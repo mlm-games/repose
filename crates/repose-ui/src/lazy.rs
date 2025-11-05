@@ -1,10 +1,7 @@
-use crate::{Box, ViewExt};
 use repose_core::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
-
-use crate::Stack;
 
 pub struct LazyColumnState {
     scroll_offset: Signal<f32>,
@@ -113,7 +110,7 @@ where
 
     let mut children = Vec::new();
 
-    // Top spacer = baseline start. After visual offset (-scroll_offset) this becomes -remainder.
+    // Top spacer
     if first_with_buffer > 0 {
         children.push(crate::Box(
             Modifier::new().size(1.0, first_with_buffer as f32 * item_height),
@@ -126,7 +123,7 @@ where
         }
     }
 
-    // Optional: bottom spacer (not strictly required for visual; harmless)
+    // bottom spacer
     if last_visible < items.len() {
         let remaining = items.len() - last_visible;
         children.push(crate::Box(
@@ -135,7 +132,6 @@ where
     }
 
     // Scroll callbacks
-    let state_clone = state.clone();
     let on_scroll = {
         let state_clone = state.clone();
         Rc::new(move |d: repose_core::Vec2| -> repose_core::Vec2 {
@@ -171,7 +167,7 @@ where
     .with_children(vec![content])
 }
 
-/// Simple list without virtualization (for small lists)
+/// List without virtualization (for small lists)
 #[allow(non_snake_case)]
 pub fn SimpleList<T: Clone + 'static>(
     items: Vec<T>,
@@ -185,4 +181,38 @@ pub fn SimpleList<T: Clone + 'static>(
         .collect();
 
     crate::Column(modifier).with_children(children)
+}
+
+#[test]
+fn scrollv_behaves_as_viewport() {
+    use crate::layout_and_paint;
+    use crate::{Box, Text};
+
+    // Build a big list
+    let items: Vec<i32> = (0..1000).collect();
+    let st = Rc::new(LazyColumnState::new());
+    let list = LazyColumn(items, 48.0, st, Modifier::new().fill_max_size(), |_, _| {
+        Text("row")
+    });
+
+    // Lay out in a window 1280x800
+    let (_scene, hits, _sem) = layout_and_paint(
+        &list,
+        (1280, 800),
+        &Default::default(),
+        &Default::default(),
+        None,
+    );
+
+    // Find the ScrollV hit region and assert sane viewport height
+    let scroll_hit = hits
+        .iter()
+        .find(|h| h.on_scroll.is_some())
+        .expect("scroll hit");
+    assert!(
+        scroll_hit.rect.h <= 800.0 + 0.1,
+        "ScrollV rect.h should be ~viewport height, got {}",
+        scroll_hit.rect.h
+    );
+    assert!(scroll_hit.rect.h >= 300.0, "ScrollV rect.h too small");
 }

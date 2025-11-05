@@ -903,9 +903,12 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
     Ok(())
 }
 
-// #[cfg(feature = "android")]
+// #[cfg(feature = "android")] //TODO: disable android by default?
+
 // pub mod android {
 //     use super::*;
+//     use repose_ui::TextFieldState;
+//     use std::collections::{HashMap, HashSet};
 //     use std::rc::Rc;
 //     use std::sync::Arc;
 //     use winit::application::ApplicationHandler;
