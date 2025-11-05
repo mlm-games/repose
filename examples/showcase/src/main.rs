@@ -32,70 +32,66 @@ fn app(_s: &mut Scheduler) -> View {
         on_primary: Color::WHITE,
     };
     let theme_dark_v = Theme::default();
-
-    let content = {
-        match page.get() {
-            Page::Layout => pages::layout::screen(),
-            Page::Widgets => pages::widgets::screen(),
-            Page::Text => pages::text::screen(),
-            Page::Lists => pages::lists::screen(),
-        }
+    let use_theme = if theme_dark.get() {
+        theme_dark_v
+    } else {
+        theme_light
+    };
+    let dir = if rtl.get() {
+        repose_core::locals::TextDirection::Rtl
+    } else {
+        repose_core::locals::TextDirection::Ltr
     };
 
-    let root = Surface(
-        Modifier::new()
-            .fill_max_size()
-            .background(theme().background),
-        Column(Modifier::new()).child((
-            // Top bar
-            ui::TopBar().child((
-                Text("Repose Showcase").modifier(Modifier::new().padding(8.0)),
-                Spacer(),
-                // Theme toggle
-                Row(Modifier::new()).child((
-                    Text("Theme").modifier(Modifier::new().padding(8.0)),
-                    Switch(theme_dark.get(), "Dark", {
-                        let theme_dark = theme_dark.clone();
-                        move |v| theme_dark.set(v)
-                    })
-                    .modifier(Modifier::new().padding(8.0)),
-                    Text("RTL").modifier(Modifier::new().padding(8.0)),
-                    Switch(rtl.get(), "RTL", {
-                        let rtl = rtl.clone();
-                        move |v| rtl.set(v)
-                    })
-                    .modifier(Modifier::new().padding(8.0)),
-                )),
-            )),
-            // Tabs
-            ui::Tabs(
-                &[
-                    ("Layout", Page::Layout),
-                    ("Widgets", Page::Widgets),
-                    ("Text", Page::Text),
-                    ("Lists", Page::Lists),
-                ],
-                page.as_ref().clone(),
-            ),
-            // Page content
-            Box(Modifier::new().fill_max_size().padding(16.0)).child(content),
-        )),
-    );
+    repose_core::with_text_direction(dir, || {
+        repose_core::with_theme(use_theme, || {
+            let content = match page.get() {
+                Page::Layout => pages::layout::screen(),
+                Page::Widgets => pages::widgets::screen(),
+                Page::Text => pages::text::screen(),
+                Page::Lists => pages::lists::screen(),
+            };
 
-    // Apply theme and direction
-    let themed = repose_core::with_theme(
-        if theme_dark.get() {
-            theme_dark_v
-        } else {
-            theme_light
-        },
-        || root,
-    );
-    if rtl.get() {
-        repose_core::with_text_direction(repose_core::locals::TextDirection::Rtl, || themed)
-    } else {
-        themed
-    }
+            Surface(
+                Modifier::new()
+                    .fill_max_size()
+                    .background(theme().background),
+                Column(Modifier::new()).child((
+                    // Top bar
+                    ui::TopBar().child((
+                        Text("Repose Showcase").modifier(Modifier::new().padding(8.0)),
+                        Spacer(),
+                        Row(Modifier::new()).child((
+                            Text("Theme").modifier(Modifier::new().padding(8.0)),
+                            Switch(theme_dark.get(), "Dark", {
+                                let theme_dark = theme_dark.clone();
+                                move |v| theme_dark.set(v)
+                            })
+                            .modifier(Modifier::new().padding(8.0)),
+                            Text("RTL").modifier(Modifier::new().padding(8.0)),
+                            Switch(rtl.get(), "RTL", {
+                                let rtl = rtl.clone();
+                                move |v| rtl.set(v)
+                            })
+                            .modifier(Modifier::new().padding(8.0)),
+                        )),
+                    )),
+                    // Tabs
+                    ui::Tabs(
+                        &[
+                            ("Layout", Page::Layout),
+                            ("Widgets", Page::Widgets),
+                            ("Text", Page::Text),
+                            ("Lists", Page::Lists),
+                        ],
+                        page.as_ref().clone(),
+                    ),
+                    // Page content
+                    Box(Modifier::new().fill_max_size().padding(16.0)).child(content),
+                )),
+            )
+        })
+    })
 }
 
 fn main() -> anyhow::Result<()> {
