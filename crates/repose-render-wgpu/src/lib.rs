@@ -1163,11 +1163,70 @@ impl RenderBackend for WgpuBackend {
                         }
                     }
                 }
-                SceneNode::Image { rect, handle, tint } => {
-                    let xywh = to_ndc(rect.x, rect.y, rect.w, rect.h, fb_w, fb_h);
+                SceneNode::Image {
+                    rect,
+                    handle,
+                    tint,
+                    fit,
+                } => {
+                    let tex = if let Some(t) = self.images.get(handle) {
+                        t
+                    } else {
+                        log::warn!("Image handle {} not found", handle);
+                        continue;
+                    };
+                    let src_w = tex.w as f32;
+                    let src_h = tex.h as f32;
+                    let dst_w = rect.w.max(0.0);
+                    let dst_h = rect.h.max(0.0);
+                    if dst_w <= 0.0 || dst_h <= 0.0 {
+                        continue;
+                    }
+                    // Compute fit
+                    let (xywh_ndc, uv_rect) = match fit {
+                        repose_core::view::ImageFit::Contain => {
+                            let scale = (dst_w / src_w).min(dst_h / src_h);
+                            let w = src_w * scale;
+                            let h = src_h * scale;
+                            let x = rect.x + (dst_w - w) * 0.5;
+                            let y = rect.y + (dst_h - h) * 0.5;
+                            (to_ndc(x, y, w, h, fb_w, fb_h), [0.0, 1.0, 1.0, 0.0])
+                        }
+                        repose_core::view::ImageFit::Cover => {
+                            let scale = (dst_w / src_w).max(dst_h / src_h);
+                            let content_w = src_w * scale;
+                            let content_h = src_h * scale;
+                            // Overflow in dst space
+                            let overflow_x = (content_w - dst_w) * 0.5;
+                            let overflow_y = (content_h - dst_h) * 0.5;
+                            // UV clamp to center crop
+                            let u0 = (overflow_x / content_w).clamp(0.0, 1.0);
+                            let v0 = (overflow_y / content_h).clamp(0.0, 1.0);
+                            let u1 = ((overflow_x + dst_w) / content_w).clamp(0.0, 1.0);
+                            let v1 = ((overflow_y + dst_h) / content_h).clamp(0.0, 1.0);
+                            (
+                                to_ndc(rect.x, rect.y, dst_w, dst_h, fb_w, fb_h),
+                                [u0, 1.0 - v1, u1, 1.0 - v0],
+                            )
+                        }
+                        repose_core::view::ImageFit::FitWidth => {
+                            let scale = dst_w / src_w;
+                            let w = dst_w;
+                            let h = src_h * scale;
+                            let y = rect.y + (dst_h - h) * 0.5;
+                            (to_ndc(rect.x, y, w, h, fb_w, fb_h), [0.0, 1.0, 1.0, 0.0])
+                        }
+                        repose_core::view::ImageFit::FitHeight => {
+                            let scale = dst_h / src_h;
+                            let w = src_w * scale;
+                            let h = dst_h;
+                            let x = rect.x + (dst_w - w) * 0.5;
+                            (to_ndc(x, rect.y, w, h, fb_w, fb_h), [0.0, 1.0, 1.0, 0.0])
+                        }
+                    };
                     let inst = GlyphInstance {
-                        xywh,
-                        uv: [0.0, 1.0, 1.0, 0.0], // v flipped to match the text quad convention
+                        xywh: xywh_ndc,
+                        uv: uv_rect,
                         color: tint.to_linear(),
                     };
                     let bytes = bytemuck::bytes_of(&inst);

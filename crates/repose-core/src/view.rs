@@ -4,6 +4,13 @@ use std::rc::Rc;
 pub type ViewId = u64;
 
 pub type ImageHandle = u64;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImageFit {
+    Contain,
+    Cover,
+    FitWidth,
+    FitHeight,
+}
 
 pub type Callback = Rc<dyn Fn()>;
 pub type ScrollCallback = Rc<dyn Fn(crate::Vec2) -> crate::Vec2>;
@@ -91,6 +98,7 @@ pub enum ViewKind {
     Image {
         handle: ImageHandle,
         tint: Color, // multiplicative (WHITE = no tint)
+        fit: ImageFit,
     },
 }
 
@@ -137,10 +145,11 @@ impl std::fmt::Debug for ViewKind {
                 .field("max_lines", max_lines)
                 .field("overflow", overflow)
                 .finish(),
-            ViewKind::Image { handle, tint } => f
+            ViewKind::Image { handle, tint, fit } => f
                 .debug_struct("Image")
                 .field("handle", handle)
                 .field("tint", tint)
+                .field("fit", fit)
                 .finish(),
             ViewKind::Button { text, .. } => f
                 .debug_struct("Button")
@@ -279,6 +288,7 @@ pub enum SceneNode {
         rect: Rect,
         handle: ImageHandle,
         tint: Color,
+        fit: ImageFit,
     },
 }
 

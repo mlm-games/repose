@@ -269,9 +269,29 @@ pub fn Image(modifier: Modifier, handle: ImageHandle) -> View {
         ViewKind::Image {
             handle,
             tint: Color::WHITE,
+            fit: ImageFit::Contain,
         },
     )
     .modifier(modifier)
+}
+
+pub trait ImageExt {
+    fn image_tint(self, c: Color) -> View;
+    fn image_fit(self, fit: ImageFit) -> View;
+}
+impl ImageExt for View {
+    fn image_tint(mut self, c: Color) -> View {
+        if let ViewKind::Image { tint, .. } = &mut self.kind {
+            *tint = c;
+        }
+        self
+    }
+    fn image_fit(mut self, fit: ImageFit) -> View {
+        if let ViewKind::Image { fit: f, .. } = &mut self.kind {
+            *f = fit;
+        }
+        self
+    }
 }
 
 fn flex_dir_for(kind: &ViewKind) -> Option<FlexDirection> {
@@ -1231,11 +1251,12 @@ pub fn layout_and_paint(
                     });
                 }
             }
-            ViewKind::Image { handle, tint } => {
+            ViewKind::Image { handle, tint, fit } => {
                 scene.nodes.push(SceneNode::Image {
                     rect,
                     handle: *handle,
                     tint: mul_alpha(*tint, alpha_accum),
+                    fit: *fit,
                 });
             }
 
