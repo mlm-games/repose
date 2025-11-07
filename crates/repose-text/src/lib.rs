@@ -117,7 +117,7 @@ fn engine() -> &'static Mutex<Engine> {
 
         let cache = SwashCache::new();
 
-        static FALLBACK_TTF: &[u8] = include_bytes!("assets/OpenSans-Regular.ttf");
+        static FALLBACK_TTF: &[u8] = include_bytes!("assets/OpenSans-Regular.ttf"); // GFonts, OFL licensed
         {
             // Register fallback font data into font DB
             let db = fs.db_mut();

@@ -11,7 +11,7 @@ fn app(_s: &mut Scheduler) -> View {
         Modifier::new()
             .fill_max_size()
             .background(Color::from_hex("#121212")),
-        Column(Modifier::new().padding(24.0)).with_children(vec![
+        Column(Modifier::new().padding(24.0).fill_max_size()).with_children(vec![
             Text(format!("Count: {}", count.get())).modifier(Modifier::new().padding(12.0)),
             Button("Increment", {
                 let count = count.clone();
