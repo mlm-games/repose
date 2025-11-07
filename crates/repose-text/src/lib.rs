@@ -1,13 +1,77 @@
-use ahash::AHasher;
+use ahash::{AHashMap, AHasher};
 use cosmic_text::{
     Attrs, Buffer, CacheKey, FontSystem, LayoutRunIter, Metrics, Shaping, SwashCache, SwashContent,
 };
 use once_cell::sync::OnceCell;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     hash::{Hash, Hasher},
     sync::Mutex,
 };
+use unicode_segmentation::UnicodeSegmentation;
+
+const WRAP_CACHE_CAP: usize = 1024;
+const ELLIP_CACHE_CAP: usize = 2048;
+
+struct Lru<K, V> {
+    map: AHashMap<K, V>,
+    order: VecDeque<K>,
+    cap: usize,
+}
+impl<K: std::hash::Hash + Eq + Clone, V> Lru<K, V> {
+    fn new(cap: usize) -> Self {
+        Self {
+            map: AHashMap::new(),
+            order: VecDeque::new(),
+            cap,
+        }
+    }
+    fn get(&mut self, k: &K) -> Option<&V> {
+        if self.map.contains_key(k) {
+            // move to back
+            if let Some(pos) = self.order.iter().position(|x| x == k) {
+                let key = self.order.remove(pos).unwrap();
+                self.order.push_back(key);
+            }
+        }
+        self.map.get(k)
+    }
+    fn put(&mut self, k: K, v: V) {
+        if self.map.contains_key(&k) {
+            self.map.insert(k.clone(), v);
+            if let Some(pos) = self.order.iter().position(|x| x == &k) {
+                let key = self.order.remove(pos).unwrap();
+                self.order.push_back(key);
+            }
+            return;
+        }
+        if self.map.len() >= self.cap {
+            if let Some(old) = self.order.pop_front() {
+                self.map.remove(&old);
+            }
+        }
+        self.order.push_back(k.clone());
+        self.map.insert(k, v);
+    }
+}
+
+static WRAP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32, u16, bool), (Vec<String>, bool)>>> =
+    OnceCell::new();
+static ELLIP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32), String>>> = OnceCell::new();
+
+fn wrap_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, bool), (Vec<String>, bool)>> {
+    WRAP_LRU.get_or_init(|| Mutex::new(Lru::new(WRAP_CACHE_CAP)))
+}
+fn ellip_cache() -> &'static Mutex<Lru<(u64, u32, u32), String>> {
+    ELLIP_LRU.get_or_init(|| Mutex::new(Lru::new(ELLIP_CACHE_CAP)))
+}
+
+fn fast_hash(s: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = AHasher::default();
+    s.hash(&mut h);
+    h.finish()
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct GlyphKey(pub u64);
@@ -50,6 +114,7 @@ static ENGINE: OnceCell<Mutex<Engine>> = OnceCell::new();
 fn engine() -> &'static Mutex<Engine> {
     ENGINE.get_or_init(|| {
         let fs = FontSystem::new();
+
         let cache = SwashCache::new();
         Mutex::new(Engine {
             fs,
@@ -168,4 +233,191 @@ pub fn metrics_for_textfield(text: &str, px: f32) -> TextMetrics {
         positions,
         byte_offsets,
     }
+}
+
+/// Greedy wrap into lines that fit max_width. Prefers breaking at whitespace,
+/// falls back to grapheme boundaries. If max_lines is Some and we truncate,
+/// caller can choose to ellipsize the last visible line.
+pub fn wrap_lines(
+    text: &str,
+    px: f32,
+    max_width: f32,
+    max_lines: Option<usize>,
+    soft_wrap: bool,
+) -> (Vec<String>, bool) {
+    if text.is_empty() || max_width <= 0.0 {
+        return (vec![String::new()], false);
+    }
+    if !soft_wrap {
+        return (vec![text.to_string()], false);
+    }
+
+    let key = (
+        fast_hash(text),
+        (px * 100.0) as u32,
+        (max_width * 100.0) as u32,
+        max_lines.unwrap_or(usize::MAX) as u16,
+        soft_wrap,
+    );
+    if let Some(h) = wrap_cache().lock().unwrap().get(&key).cloned() {
+        return h;
+    }
+
+    // Shape once and reuse positions/byte mapping.
+    let m = metrics_for_textfield(text, px);
+    // Fast path: fits
+    if let Some(&last) = m.positions.last() {
+        if last <= max_width + 0.5 {
+            return (vec![text.to_string()], false);
+        }
+    }
+
+    // Helper: width of substring [start..end] in bytes
+    let width_of = |start_b: usize, end_b: usize| -> f32 {
+        let i0 = match m.byte_offsets.binary_search(&start_b) {
+            Ok(i) | Err(i) => i,
+        };
+        let i1 = match m.byte_offsets.binary_search(&end_b) {
+            Ok(i) | Err(i) => i,
+        };
+        (m.positions.get(i1).copied().unwrap_or(0.0) - m.positions.get(i0).copied().unwrap_or(0.0))
+            .max(0.0)
+    };
+
+    let mut out: Vec<String> = Vec::new();
+    let mut truncated = false;
+
+    let mut line_start = 0usize; // byte index
+    let mut best_break = line_start;
+    let mut last_w = 0.0;
+
+    // Iterate word boundaries (keep whitespace tokens so they factor widths)
+    for tok in text.split_word_bounds() {
+        let tok_start = best_break;
+        let tok_end = tok_start + tok.len();
+        let w = width_of(line_start, tok_end);
+
+        if w <= max_width + 0.5 {
+            best_break = tok_end;
+            last_w = w;
+            continue;
+        }
+
+        // Need to break the line before tok_end.
+        if best_break > line_start {
+            // Break at last good boundary
+            out.push(text[line_start..best_break].trim_end().to_string());
+            line_start = best_break;
+        } else {
+            // Token itself too wide: force break inside token at grapheme boundaries
+            let mut cut = tok_start;
+            for g in tok.grapheme_indices(true) {
+                let next = tok_start + g.0 + g.1.len();
+                if width_of(line_start, next) <= max_width + 0.5 {
+                    cut = next;
+                } else {
+                    break;
+                }
+            }
+            if cut == line_start {
+                // nothing fits; fall back to single grapheme
+                if let Some((ofs, grapheme)) = tok.grapheme_indices(true).next() {
+                    cut = tok_start + ofs + grapheme.len();
+                }
+            }
+            out.push(text[line_start..cut].to_string());
+            line_start = cut;
+        }
+
+        // Check max_lines
+        if let Some(ml) = max_lines {
+            if out.len() >= ml {
+                truncated = true;
+                // Stop; caller may ellipsize the last line
+                line_start = line_start.min(text.len());
+                break;
+            }
+        }
+
+        // Reset best_break for new line
+        best_break = line_start;
+        last_w = 0.0;
+
+        // Re-consider current token if not fully consumed
+        if line_start < tok_end {
+            // recompute width with the remaining token portion
+            if width_of(line_start, tok_end) <= max_width + 0.5 {
+                best_break = tok_end;
+                last_w = width_of(line_start, best_break);
+            } else {
+                // will be handled in next iterations (or forced again)
+            }
+        }
+    }
+
+    // Push tail if allowed
+    if line_start < text.len() && max_lines.map_or(true, |ml| out.len() < ml) {
+        out.push(text[line_start..].trim_end().to_string());
+    }
+
+    let res = (out, truncated);
+
+    wrap_cache().lock().unwrap().put(key, res.clone());
+    res
+}
+
+/// Return a string truncated to fit max_width at the given px size, appending '…' if truncated.
+pub fn ellipsize_line(text: &str, px: f32, max_width: f32) -> String {
+    if text.is_empty() || max_width <= 0.0 {
+        return String::new();
+    }
+    let key = (
+        fast_hash(text),
+        (px * 100.0) as u32,
+        (max_width * 100.0) as u32,
+    );
+    if let Some(s) = ellip_cache().lock().unwrap().get(&key).cloned() {
+        return s;
+    }
+    let m = metrics_for_textfield(text, px);
+    if let Some(&last) = m.positions.last() {
+        if last <= max_width + 0.5 {
+            return text.to_string();
+        }
+    }
+    let el = "…";
+    let e_w = {
+        let shaped = crate::shape_line(el, px);
+        if let Some(g) = shaped.last() {
+            g.x + g.advance
+        } else {
+            0.0
+        }
+    };
+    if e_w >= max_width {
+        return String::new();
+    }
+    // Find last grapheme index whose width + ellipsis fits
+    let mut cut_i = 0usize;
+    for i in 0..m.positions.len() {
+        if m.positions[i] + e_w <= max_width {
+            cut_i = i;
+        } else {
+            break;
+        }
+    }
+    let byte = m
+        .byte_offsets
+        .get(cut_i)
+        .copied()
+        .unwrap_or(0)
+        .min(text.len());
+    let mut out = String::with_capacity(byte + 3);
+    out.push_str(&text[..byte]);
+    out.push('…');
+
+    let s = out;
+    ellip_cache().lock().unwrap().put(key, s.clone());
+
+    s
 }

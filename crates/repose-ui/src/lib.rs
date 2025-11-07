@@ -77,6 +77,9 @@ pub fn Text(text: impl Into<String>) -> View {
             text: text.into(),
             color: Color::WHITE,
             font_size: 16.0,
+            soft_wrap: false,
+            max_lines: None,
+            overflow: TextOverflow::Visible,
         },
     )
 }
@@ -352,8 +355,15 @@ pub fn layout_and_paint(
     use taffy::prelude::*;
     #[derive(Clone)]
     enum NodeCtx {
-        Text { text: String, font_px: f32 },
-        Button { label: String },
+        Text {
+            text: String,
+            font_px: f32,
+            soft_wrap: bool,
+            max_lines: Option<usize>,
+        },
+        Button {
+            label: String,
+        },
         TextField,
         Container,
         ScrollContainer,
@@ -555,13 +565,19 @@ pub fn layout_and_paint(
 
         let node = match &v.kind {
             ViewKind::Text {
-                text, font_size, ..
+                text,
+                font_size,
+                soft_wrap,
+                max_lines,
+                ..
             } => t
                 .new_leaf_with_context(
                     style,
                     NodeCtx::Text {
                         text: text.clone(),
                         font_px: *font_size,
+                        soft_wrap: *soft_wrap,
+                        max_lines: *max_lines,
                     },
                 )
                 .unwrap(),
@@ -657,12 +673,40 @@ pub fn layout_and_paint(
     taffy
         .compute_layout_with_measure(root_node, available, |known, avail, _node, ctx, _style| {
             match ctx {
-                Some(NodeCtx::Text { text, font_px }) => {
+                Some(NodeCtx::Text {
+                    text,
+                    font_px,
+                    soft_wrap,
+                    max_lines,
+                }) => {
+                    // Content-hugging width by default (unless caller set known.width).
                     let approx_w = text.len() as f32 * *font_px * 0.6;
-                    let w = known.width.unwrap_or(approx_w);
+                    let measured_w = known.width.unwrap_or(approx_w);
+
+                    // Height should reflect wrapping against the available box if soft_wrap is on.
+                    // Choose a wrap width hint from the available space (or approximate when unknown).
+                    let wrap_w = if *soft_wrap {
+                        match avail.width {
+                            AvailableSpace::Definite(w) => w,
+                            _ => measured_w,
+                        }
+                    } else {
+                        // single line, height of one line
+                        measured_w
+                    };
+
+                    let line_h = *font_px * 1.3;
+                    let lines = if *soft_wrap {
+                        let (ls, _trunc) =
+                            repose_text::wrap_lines(text, *font_px, wrap_w, *max_lines, true);
+                        ls.len().max(1)
+                    } else {
+                        1
+                    };
+
                     taffy::geometry::Size {
-                        width: w,
-                        height: *font_px * 1.3,
+                        width: measured_w,
+                        height: line_h * lines as f32,
                     }
                 }
                 Some(NodeCtx::Button { label }) => taffy::geometry::Size {
@@ -819,6 +863,28 @@ pub fn layout_and_paint(
     ) {
         let local = layout_of(nodes[&v.id], t);
         let rect = add_offset(local, parent_offset);
+
+        let content_rect = {
+            // padding_values beats uniform padding
+            if let Some(pv) = v.modifier.padding_values {
+                crate::Rect {
+                    x: rect.x + pv.left,
+                    y: rect.y + pv.top,
+                    w: (rect.w - pv.left - pv.right).max(0.0),
+                    h: (rect.h - pv.top - pv.bottom).max(0.0),
+                }
+            } else if let Some(p) = v.modifier.padding {
+                crate::Rect {
+                    x: rect.x + p,
+                    y: rect.y + p,
+                    w: (rect.w - 2.0 * p).max(0.0),
+                    h: (rect.h - 2.0 * p).max(0.0),
+                }
+            } else {
+                rect
+            }
+        };
+
         let base = (parent_offset.0 + local.x, parent_offset.1 + local.y);
 
         let is_hovered = interactions.hover == Some(v.id);
@@ -886,15 +952,95 @@ pub fn layout_and_paint(
                 text,
                 color,
                 font_size,
+                soft_wrap,
+                max_lines,
+                overflow,
             } => {
-                // Apply text scale from CompositionLocal
-                let scaled_size = *font_size * locals::text_scale().0;
-                scene.nodes.push(SceneNode::Text {
-                    rect,
-                    text: text.clone(),
-                    color: mul_alpha(*color, alpha_accum),
-                    size: scaled_size,
-                });
+                let size = *font_size * locals::text_scale().0;
+                let size = (size * 2.0).round() / 2.0;
+                let line_h = size * 1.3;
+
+                let single_line = !*soft_wrap || matches!(max_lines, Some(1));
+
+                // Work within the content box (padding removed)
+                let mut draw_box = content_rect;
+                let max_w = draw_box.w.max(0.0);
+                let max_h = draw_box.h.max(0.0);
+
+                // Vertical centering for single line within content box
+                if single_line {
+                    let dy = (draw_box.h - size) * 0.5;
+                    if dy.is_finite() {
+                        draw_box.y += dy.max(0.0);
+                        draw_box.h = size;
+                    }
+                }
+
+                // Resolve how many lines we’re allowed to draw
+                let (mut lines, truncated) = if *soft_wrap {
+                    // Wrap to rect width; if no width, fall back to single line
+                    if max_w > 0.5 {
+                        let (ls, tr) =
+                            repose_text::wrap_lines(&text, size, max_w, *max_lines, true);
+                        (ls, tr)
+                    } else {
+                        (vec![text.clone()], false)
+                    }
+                } else {
+                    if *overflow == TextOverflow::Ellipsis && max_w > 0.5 {
+                        (vec![repose_text::ellipsize_line(&text, size, max_w)], true)
+                    } else {
+                        (vec![text.clone()], false)
+                    }
+                };
+
+                // For if height is constrained by rect.h and lines overflow visually,
+                let max_visual_lines = if max_h > 0.5 {
+                    (max_h / line_h).floor().max(1.0) as usize
+                } else {
+                    usize::MAX
+                };
+
+                if lines.len() > max_visual_lines {
+                    lines.truncate(max_visual_lines);
+                    if *overflow == TextOverflow::Ellipsis && max_w > 0.5 {
+                        // Ellipsize the last visible line
+                        if let Some(last) = lines.last_mut() {
+                            *last = repose_text::ellipsize_line(last, size, max_w);
+                        }
+                    }
+                }
+
+                let need_clip = match overflow {
+                    TextOverflow::Visible => false,
+                    TextOverflow::Clip | TextOverflow::Ellipsis => true,
+                };
+
+                if need_clip {
+                    scene.nodes.push(SceneNode::PushClip {
+                        rect: draw_box,
+                        radius: 0.0,
+                    });
+                }
+
+                for (i, ln) in lines.iter().enumerate() {
+                    scene.nodes.push(SceneNode::Text {
+                        rect: crate::Rect {
+                            x: draw_box.x,
+                            y: draw_box.y + i as f32 * line_h,
+                            w: draw_box.w,
+                            h: line_h,
+                        },
+                        text: ln.clone(),
+                        color: mul_alpha(*color, alpha_accum),
+                        size: size,
+                    });
+                }
+
+                if need_clip {
+                    scene.nodes.push(SceneNode::PopClip);
+                }
+
                 sems.push(SemNode {
                     id: v.id,
                     role: Role::Text,
@@ -2341,6 +2487,11 @@ pub fn layout_and_paint(
 pub trait TextStyleExt {
     fn color(self, c: Color) -> View;
     fn size(self, px: f32) -> View;
+    fn max_lines(self, n: usize) -> View;
+    fn single_line(self) -> View;
+    fn overflow_ellipsize(self) -> View;
+    fn overflow_clip(self) -> View;
+    fn overflow_visible(self) -> View;
 }
 impl TextStyleExt for View {
     fn color(self, c: Color) -> View {
@@ -2348,5 +2499,47 @@ impl TextStyleExt for View {
     }
     fn size(self, px: f32) -> View {
         TextSize(self, px)
+    }
+    fn max_lines(mut self, n: usize) -> View {
+        if let ViewKind::Text {
+            max_lines,
+            soft_wrap,
+            ..
+        } = &mut self.kind
+        {
+            *max_lines = Some(n);
+            *soft_wrap = true;
+        }
+        self
+    }
+    fn single_line(mut self) -> View {
+        if let ViewKind::Text {
+            soft_wrap,
+            max_lines,
+            ..
+        } = &mut self.kind
+        {
+            *soft_wrap = false;
+            *max_lines = Some(1);
+        }
+        self
+    }
+    fn overflow_ellipsize(mut self) -> View {
+        if let ViewKind::Text { overflow, .. } = &mut self.kind {
+            *overflow = TextOverflow::Ellipsis;
+        }
+        self
+    }
+    fn overflow_clip(mut self) -> View {
+        if let ViewKind::Text { overflow, .. } = &mut self.kind {
+            *overflow = TextOverflow::Clip;
+        }
+        self
+    }
+    fn overflow_visible(mut self) -> View {
+        if let ViewKind::Text { overflow, .. } = &mut self.kind {
+            *overflow = TextOverflow::Visible;
+        }
+        self
     }
 }

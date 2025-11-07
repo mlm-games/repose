@@ -10,3 +10,4 @@ cosmic-text = { workspace = true }
 fontdb = { workspace = true }
 once_cell = "1"
 ahash = "0.8"
+unicode-segmentation = { workspace = true }

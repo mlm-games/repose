@@ -899,11 +899,44 @@ impl RenderBackend for WgpuBackend {
             sx.min(sy)
         }
         fn to_scissor(r: &repose_core::Rect, fb_w: u32, fb_h: u32) -> (u32, u32, u32, u32) {
-            let x = r.x.max(0.0).floor() as u32;
-            let y = r.y.max(0.0).floor() as u32;
-            let w = ((r.w.max(0.0).ceil() as u32).min(fb_w.saturating_sub(x))).max(1);
-            let h = ((r.h.max(0.0).ceil() as u32).min(fb_h.saturating_sub(y))).max(1);
-            (x, y, w, h)
+            // Early-out: empty or entirely outside -> zero-area safe scissor at (0,0)
+            if r.w <= 0.0 || r.h <= 0.0 {
+                return (0, 0, 0, 0);
+            }
+
+            let mut x = r.x.floor() as i64;
+            let mut y = r.y.floor() as i64;
+            let mut w = r.w.ceil() as i64;
+            let mut h = r.h.ceil() as i64;
+
+            // Clamp x,y to >= 0
+            if x < 0 {
+                w += x;
+                x = 0;
+            }
+            if y < 0 {
+                h += y;
+                y = 0;
+            }
+            if w <= 0 || h <= 0 {
+                return (0, 0, 0, 0);
+            }
+
+            let fb_w = fb_w as i64;
+            let fb_h = fb_h as i64;
+
+            // Clamp to framebuffer bounds
+            if x >= fb_w || y >= fb_h {
+                return (0, 0, 0, 0);
+            }
+            if x + w > fb_w {
+                w = fb_w - x;
+            }
+            if y + h > fb_h {
+                h = fb_h - y;
+            }
+
+            (x as u32, y as u32, w.max(0) as u32, h.max(0) as u32)
         }
 
         let fb_w = self.config.width as f32;
@@ -1110,18 +1143,18 @@ impl RenderBackend for WgpuBackend {
                     transform_stack.pop();
                 }
             }
-            // flush trailing batch
-            batch.flush(
-                (
-                    &mut self.ring_rect,
-                    &mut self.ring_border,
-                    &mut self.ring_glyph_mask,
-                    &mut self.ring_glyph_color,
-                ),
-                &self.queue,
-                &mut cmds,
-            );
         }
+
+        batch.flush(
+            (
+                &mut self.ring_rect,
+                &mut self.ring_border,
+                &mut self.ring_glyph_mask,
+                &mut self.ring_glyph_color,
+            ),
+            &self.queue,
+            &mut cmds,
+        );
 
         let mut encoder = self
             .device
@@ -1167,15 +1200,8 @@ impl RenderBackend for WgpuBackend {
                 match cmd {
                     Cmd::SetClipPush(r) => {
                         let top = clip_stack.last().copied().unwrap_or(root_clip);
-                        let next = intersect(top, r);
 
-                        // Validate clip rect
-                        let next = repose_core::Rect {
-                            x: next.x.max(0.0),
-                            y: next.y.max(0.0),
-                            w: next.w.max(1.0), // Minimum 1px to avoid GPU issues
-                            h: next.h.max(1.0),
-                        };
+                        let next = intersect(top, r);
 
                         clip_stack.push(next);
                         let (x, y, w, h) = to_scissor(&next, self.config.width, self.config.height);

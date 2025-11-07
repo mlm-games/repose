@@ -33,6 +33,9 @@ pub enum ViewKind {
         text: String,
         color: Color,
         font_size: f32,
+        soft_wrap: bool,
+        max_lines: Option<usize>,
+        overflow: TextOverflow,
     },
     Button {
         text: String,
@@ -116,11 +119,17 @@ impl std::fmt::Debug for ViewKind {
                 text,
                 color,
                 font_size,
+                soft_wrap,
+                max_lines,
+                overflow,
             } => f
                 .debug_struct("Text")
                 .field("text", text)
                 .field("color", color)
                 .field("font_size", font_size)
+                .field("soft_wrap", soft_wrap)
+                .field("max_lines", max_lines)
+                .field("overflow", overflow)
                 .finish(),
             ViewKind::Button { text, .. } => f
                 .debug_struct("Button")
@@ -259,3 +268,10 @@ pub enum SceneNode {
 
 pub type CallbackF32 = Rc<dyn Fn(f32)>;
 pub type CallbackRange = Rc<dyn Fn(f32, f32)>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextOverflow {
+    Visible,
+    Clip,
+    Ellipsis,
+}

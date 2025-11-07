@@ -1965,6 +1965,7 @@ dependencies = [
  "cosmic-text",
  "fontdb",
  "once_cell",
+ "unicode-segmentation",
 ]
 
 [[package]]
