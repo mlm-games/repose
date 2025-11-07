@@ -956,6 +956,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -1967,6 +1969,7 @@ dependencies = [
  "bytemuck",
  "cosmic-text",
  "fontdb",
+ "image",
  "log",
  "pollster",
  "repose-core",

@@ -263,6 +263,17 @@ pub fn ProgressBar(value: f32, range: (f32, f32), label: impl Into<String>) -> V
     })
 }
 
+pub fn Image(modifier: Modifier, handle: ImageHandle) -> View {
+    View::new(
+        0,
+        ViewKind::Image {
+            handle,
+            tint: Color::WHITE,
+        },
+    )
+    .modifier(modifier)
+}
+
 fn flex_dir_for(kind: &ViewKind) -> Option<FlexDirection> {
     match kind {
         ViewKind::Row => {
@@ -680,6 +691,7 @@ pub fn layout_and_paint(
             ViewKind::TextField { .. } => {
                 t.new_leaf_with_context(style, NodeCtx::TextField).unwrap()
             }
+            ViewKind::Image { .. } => t.new_leaf_with_context(style, NodeCtx::Container).unwrap(),
             ViewKind::Checkbox { label, .. } => t
                 .new_leaf_with_context(
                     style,
@@ -1218,6 +1230,13 @@ pub fn layout_and_paint(
                         radius: v.modifier.clip_rounded.unwrap_or(6.0),
                     });
                 }
+            }
+            ViewKind::Image { handle, tint } => {
+                scene.nodes.push(SceneNode::Image {
+                    rect,
+                    handle: *handle,
+                    tint: mul_alpha(*tint, alpha_accum),
+                });
             }
 
             ViewKind::TextField {

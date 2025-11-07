@@ -14,7 +14,7 @@ pub fn screen() -> View {
             )
         ),
         Section("Multiline note",
-            Text("This TextField demo supports:\n- Mouse selection/drag\n- IME preedit/commit\n- Clipboard (Ctrl/Cmd C/X/V)\n- Caret scroll keeping.")
+            Text("➤ This TextField demo supports:\n- Mouse selection/drag\n- IME preedit/commit\n- Clipboard (Ctrl/Cmd C/X/V)\n- Caret scroll keeping.")
         ),
     ))
 }

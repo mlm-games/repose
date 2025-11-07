@@ -3,6 +3,8 @@ use std::rc::Rc;
 
 pub type ViewId = u64;
 
+pub type ImageHandle = u64;
+
 pub type Callback = Rc<dyn Fn()>;
 pub type ScrollCallback = Rc<dyn Fn(crate::Vec2) -> crate::Vec2>;
 
@@ -86,6 +88,10 @@ pub enum ViewKind {
         label: String,
         circular: bool,
     },
+    Image {
+        handle: ImageHandle,
+        tint: Color, // multiplicative (WHITE = no tint)
+    },
 }
 
 impl std::fmt::Debug for ViewKind {
@@ -130,6 +136,11 @@ impl std::fmt::Debug for ViewKind {
                 .field("soft_wrap", soft_wrap)
                 .field("max_lines", max_lines)
                 .field("overflow", overflow)
+                .finish(),
+            ViewKind::Image { handle, tint } => f
+                .debug_struct("Image")
+                .field("handle", handle)
+                .field("tint", tint)
                 .finish(),
             ViewKind::Button { text, .. } => f
                 .debug_struct("Button")
@@ -264,6 +275,11 @@ pub enum SceneNode {
         transform: Transform,
     },
     PopTransform,
+    Image {
+        rect: Rect,
+        handle: ImageHandle,
+        tint: Color,
+    },
 }
 
 pub type CallbackF32 = Rc<dyn Fn(f32)>;

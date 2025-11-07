@@ -6,6 +6,7 @@ use std::sync::Arc;
 use ab_glyph::{Font, FontArc, Glyph, PxScale, ScaleFont, point};
 use cosmic_text;
 use fontdb::Database;
+use image::GenericImageView;
 use repose_core::{Color, GlyphRasterConfig, RenderBackend, Scene, SceneNode, Transform};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use wgpu::util::DeviceExt;
@@ -73,6 +74,16 @@ pub struct WgpuBackend {
     ring_border: UploadRing,
     ring_glyph_mask: UploadRing,
     ring_glyph_color: UploadRing,
+
+    next_image_handle: u64,
+    images: std::collections::HashMap<u64, ImageTex>,
+}
+
+struct ImageTex {
+    view: wgpu::TextureView,
+    bind: wgpu::BindGroup,
+    w: u32,
+    h: u32,
 }
 
 struct AtlasA8 {
@@ -488,7 +499,74 @@ impl WgpuBackend {
             ring_border,
             ring_glyph_color,
             ring_glyph_mask,
+            next_image_handle: 1,
+            images: HashMap::new(),
         })
+    }
+
+    pub fn register_image_from_bytes(&mut self, data: &[u8], srgb: bool) -> u64 {
+        // Decode via image crate
+        let img = image::load_from_memory(data).expect("decode image");
+        let rgba = img.to_rgba8();
+        let (w, h) = rgba.dimensions();
+        // Texture format
+        let format = if srgb {
+            wgpu::TextureFormat::Rgba8UnormSrgb
+        } else {
+            wgpu::TextureFormat::Rgba8Unorm
+        };
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("user image"),
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfoBase {
+                texture: &tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * w),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("image bind"),
+            layout: &self.text_bind_layout, // same as text color pipeline
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.atlas_color.sampler),
+                },
+            ],
+        });
+        let handle = self.next_image_handle;
+        self.next_image_handle += 1;
+        self.images.insert(handle, ImageTex { view, bind, w, h });
+        handle
     }
 
     fn init_atlas_mask(device: &wgpu::Device) -> anyhow::Result<AtlasA8> {
@@ -899,44 +977,19 @@ impl RenderBackend for WgpuBackend {
             sx.min(sy)
         }
         fn to_scissor(r: &repose_core::Rect, fb_w: u32, fb_h: u32) -> (u32, u32, u32, u32) {
-            // Early-out: empty or entirely outside -> zero-area safe scissor at (0,0)
-            if r.w <= 0.0 || r.h <= 0.0 {
-                return (0, 0, 0, 0);
-            }
-
+            // Clamp origin inside framebuffer
             let mut x = r.x.floor() as i64;
             let mut y = r.y.floor() as i64;
-            let mut w = r.w.ceil() as i64;
-            let mut h = r.h.ceil() as i64;
-
-            // Clamp x,y to >= 0
-            if x < 0 {
-                w += x;
-                x = 0;
-            }
-            if y < 0 {
-                h += y;
-                y = 0;
-            }
-            if w <= 0 || h <= 0 {
-                return (0, 0, 0, 0);
-            }
-
-            let fb_w = fb_w as i64;
-            let fb_h = fb_h as i64;
-
-            // Clamp to framebuffer bounds
-            if x >= fb_w || y >= fb_h {
-                return (0, 0, 0, 0);
-            }
-            if x + w > fb_w {
-                w = fb_w - x;
-            }
-            if y + h > fb_h {
-                h = fb_h - y;
-            }
-
-            (x as u32, y as u32, w.max(0) as u32, h.max(0) as u32)
+            let fb_wi = fb_w as i64;
+            let fb_hi = fb_h as i64;
+            x = x.clamp(0, fb_wi.saturating_sub(1));
+            y = y.clamp(0, fb_hi.saturating_sub(1));
+            // Compute width/height s.t. rect stays in-bounds and is at least 1x1
+            let w_req = r.w.ceil().max(1.0) as i64;
+            let h_req = r.h.ceil().max(1.0) as i64;
+            let w = (w_req).min(fb_wi - x).max(1);
+            let h = (h_req).min(fb_hi - y).max(1);
+            (x as u32, y as u32, w as u32, h as u32)
         }
 
         let fb_w = self.config.width as f32;
@@ -950,6 +1003,7 @@ impl RenderBackend for WgpuBackend {
             Border { off: u64, cnt: u32 },
             GlyphsMask { off: u64, cnt: u32 },
             GlyphsColor { off: u64, cnt: u32 },
+            Image { off: u64, cnt: u32, handle: u64 },
             PushTransform(Transform),
             PopTransform,
         }
@@ -1109,6 +1163,33 @@ impl RenderBackend for WgpuBackend {
                         }
                     }
                 }
+                SceneNode::Image { rect, handle, tint } => {
+                    let xywh = to_ndc(rect.x, rect.y, rect.w, rect.h, fb_w, fb_h);
+                    let inst = GlyphInstance {
+                        xywh,
+                        uv: [0.0, 1.0, 1.0, 0.0], // v flipped to match the text quad convention
+                        color: tint.to_linear(),
+                    };
+                    let bytes = bytemuck::bytes_of(&inst);
+                    let (off, wrote) = self.ring_glyph_color.alloc_write(&self.queue, bytes);
+                    debug_assert_eq!(wrote as usize, bytes.len());
+                    // Flush current batches so we can bind per-image texture, then queue single draw
+                    batch.flush(
+                        (
+                            &mut self.ring_rect,
+                            &mut self.ring_border,
+                            &mut self.ring_glyph_mask,
+                            &mut self.ring_glyph_color,
+                        ),
+                        &self.queue,
+                        &mut cmds,
+                    );
+                    cmds.push(Cmd::Image {
+                        off,
+                        cnt: 1,
+                        handle: *handle,
+                    });
+                }
                 SceneNode::PushClip { rect, .. } => {
                     batch.flush(
                         (
@@ -1248,6 +1329,25 @@ impl RenderBackend for WgpuBackend {
                             self.ring_glyph_color.buf.slice(off..off + bytes),
                         );
                         rpass.draw(0..6, 0..n);
+                    }
+                    Cmd::Image {
+                        off,
+                        cnt: n,
+                        handle,
+                    } => {
+                        // Use the same color text pipeline; bind the per-image texture
+                        if let Some(tex) = self.images.get(&handle) {
+                            rpass.set_pipeline(&self.text_pipeline_color);
+                            rpass.set_bind_group(0, &tex.bind, &[]);
+                            let bytes = (n as u64) * std::mem::size_of::<GlyphInstance>() as u64;
+                            rpass.set_vertex_buffer(
+                                0,
+                                self.ring_glyph_color.buf.slice(off..off + bytes),
+                            );
+                            rpass.draw(0..6, 0..n);
+                        } else {
+                            log::warn!("Image handle {} not found; skipping draw", handle);
+                        }
                     }
                     Cmd::PushTransform(transform) => {}
                     Cmd::PopTransform => {}
