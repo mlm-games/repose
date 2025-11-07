@@ -31,3 +31,4 @@ repose-platform = { path = "../../crates/repose-platform", version = "0.4.0", fe
 winit = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
+android_logger = { workspace = true }

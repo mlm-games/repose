@@ -3,11 +3,11 @@ name = "repose-platform"
 version = "0.4.0"
 edition = "2024"
 license = "GPL-3.0+"
-description = "Platform runners (desktop via winit; Android soon-to-be-in-alpha)"
+description = "Platform runners (desktop via winit; Android alpha)"
 
 [features]
 desktop = ["winit", "repose-render-wgpu", "arboard"]
-android = ["winit", "repose-render-wgpu"]
+android = ["winit/android-native-activity", "repose-render-wgpu"]
 
 [dependencies]
 repose-core = { path = "../repose-core", version = "0.4.0" }
