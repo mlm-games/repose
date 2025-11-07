@@ -806,19 +806,38 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         (self.backend.as_mut(), self.window.as_ref())
                     {
                         let t0 = Instant::now();
+                        let scale = self
+                            .window
+                            .as_ref()
+                            .map(|w| w.scale_factor() as f32)
+                            .unwrap_or(1.0);
                         // Compose
                         let focused = self.sched.focused;
                         let hover_id = self.hover_id;
                         let pressed_ids = self.pressed_ids.clone();
                         let tf_states = &self.textfield_states;
 
-                        let frame = self.sched.repose(&mut self.root, move |view, size| {
-                            let interactions = repose_ui::Interactions {
-                                hover: hover_id,
-                                pressed: pressed_ids.clone(),
-                            };
-
-                            layout_and_paint(view, size, tf_states, &interactions, focused)
+                        let frame = self.sched.repose(&mut self.root, {
+                            let hover_id = hover_id;
+                            let pressed_ids = pressed_ids.clone();
+                            move |view, size| {
+                                let interactions = repose_ui::Interactions {
+                                    hover: hover_id,
+                                    pressed: pressed_ids.clone(),
+                                };
+                                // Density + TextScale from window scale
+                                with_density(Density { scale }, || {
+                                    with_text_scale(TextScale(1.0), || {
+                                        layout_and_paint(
+                                            view,
+                                            size,
+                                            tf_states,
+                                            &interactions,
+                                            focused,
+                                        )
+                                    })
+                                })
+                            }
                         });
 
                         let build_layout_ms = (Instant::now() - t0).as_secs_f32() * 1000.0;
@@ -843,7 +862,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             scene_nodes: scene.nodes.len(),
                         });
                         self.inspector.frame(&mut scene);
-                        backend.frame(&scene, GlyphRasterConfig { px: 18.0 });
+                        backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
                         self.frame_cache = Some(frame);
                     }
                 }
@@ -1206,6 +1225,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 //                             (self.backend.as_mut(), self.window.as_ref())
 //                         {
 //                             let scale = win.scale_factor();
+//let scale = self.window.as_ref().map(|w| w.scale_factor() as f32).unwrap_or(1.0);
 //                             self.last_scale = scale;
 //                             let t0 = Instant::now();
 //                             let frame = self.sched.repose(&mut self.root, |view, size| {
@@ -1233,7 +1253,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 //                             let mut scene = frame.scene.clone();
 //                             // HUD (opt-in via inspector hotkey; on Android you can toggle via programmatic flag later)
 //                             super::App::new(Box::new(|_| View::new(0, ViewKind::Surface))); // no-op; placeholder to keep structure similar
-//                             backend.frame(&scene, GlyphRasterConfig { px: 18.0 });
+//                             backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
 //                             self.frame_cache = Some(frame);
 //                         }
 //                     }

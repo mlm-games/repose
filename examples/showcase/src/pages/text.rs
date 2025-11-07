@@ -8,7 +8,7 @@ pub fn screen() -> View {
         Section("TextField (IME, selection, caret scroll)",
             TextField("Type here",
                 Modifier::new()
-                    .size(360.0, 36.0)
+                    .height(36.0).fill_max_width()
                     .background(Color::from_hex("#1E1E1E"))
                     .border(1.0, Color::from_hex("#444"), 6.0), Some(|_| {}), Some(|_| {})
             )

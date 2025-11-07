@@ -29,6 +29,10 @@ pub struct Modifier {
     pub fill_max_h: bool,
     pub width: Option<f32>,
     pub height: Option<f32>,
+    pub min_width: Option<f32>,
+    pub min_height: Option<f32>,
+    pub max_width: Option<f32>,
+    pub max_height: Option<f32>,
     pub background: Option<Color>,
     pub border: Option<Border>,
     pub flex_grow: Option<f32>,
@@ -92,6 +96,10 @@ impl std::fmt::Debug for Modifier {
             .field("padding", &self.padding)
             .field("padding_values", &self.padding_values)
             .field("size", &self.size)
+            .field("max_height", &self.max_height)
+            .field("max_width", &self.max_width)
+            .field("min_height", &self.min_height)
+            .field("min_width", &self.min_width)
             .field("fill_max", &self.fill_max)
             .field("background", &self.background)
             .field("border", &self.border)
@@ -141,6 +149,32 @@ impl Modifier {
     }
     pub fn fill_max_height(mut self) -> Self {
         self.fill_max_h = true;
+        self
+    }
+    pub fn min_size(mut self, w: f32, h: f32) -> Self {
+        self.min_width = Some(w.max(0.0));
+        self.min_height = Some(h.max(0.0));
+        self
+    }
+    pub fn max_size(mut self, w: f32, h: f32) -> Self {
+        self.max_width = Some(w.max(0.0));
+        self.max_height = Some(h.max(0.0));
+        self
+    }
+    pub fn min_width(mut self, w: f32) -> Self {
+        self.min_width = Some(w.max(0.0));
+        self
+    }
+    pub fn min_height(mut self, h: f32) -> Self {
+        self.min_height = Some(h.max(0.0));
+        self
+    }
+    pub fn max_width(mut self, w: f32) -> Self {
+        self.max_width = Some(w.max(0.0));
+        self
+    }
+    pub fn max_height(mut self, h: f32) -> Self {
+        self.max_height = Some(h.max(0.0));
         self
     }
     pub fn background(mut self, color: Color) -> Self {

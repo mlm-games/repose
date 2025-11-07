@@ -17,8 +17,8 @@ use std::rc::Rc;
 use std::{cell::RefCell, cmp::Ordering};
 
 use repose_core::*;
-use taffy::Overflow;
 use taffy::style::{AlignItems, Dimension, Display, FlexDirection, JustifyContent, Style};
+use taffy::{Overflow, Point, ResolveOrZero};
 
 use taffy::prelude::{Position, Size, auto, length, percent};
 
@@ -360,6 +360,7 @@ pub fn layout_and_paint(
             font_px: f32,
             soft_wrap: bool,
             max_lines: Option<usize>,
+            overflow: TextOverflow,
         },
         Button {
             label: String,
@@ -367,43 +368,92 @@ pub fn layout_and_paint(
         TextField,
         Container,
         ScrollContainer,
-        Checkbox { label: String },
-        Radio { label: String },
-        Switch { label: String },
-        Slider { label: String },
-        Range { label: String },
-        Progress { label: String },
+        Checkbox {
+            label: String,
+        },
+        Radio {
+            label: String,
+        },
+        Switch {
+            label: String,
+        },
+        Slider {
+            label: String,
+        },
+        Range {
+            label: String,
+        },
+        Progress {
+            label: String,
+        },
     }
 
     let mut taffy: TaffyTree<NodeCtx> = TaffyTree::new();
     let mut nodes_map = HashMap::new();
 
+    #[derive(Clone)]
+    struct TextLayout {
+        lines: Vec<String>,
+        size_px: f32,
+        line_h: f32,
+    }
+    use std::collections::HashMap as StdHashMap;
+    let mut text_cache: StdHashMap<taffy::NodeId, TextLayout> = StdHashMap::new();
+
     fn style_from_modifier(m: &Modifier, kind: &ViewKind) -> Style {
+        use taffy::prelude::*;
         let mut s = Style::default();
+
+        // Display role
         s.display = match kind {
             ViewKind::Row => Display::Flex,
-            ViewKind::Column | ViewKind::Surface | ViewKind::ScrollV { .. } => Display::Flex,
-            ViewKind::Stack => Display::Grid, // stack is grid overlay
+            ViewKind::Column
+            | ViewKind::Surface
+            | ViewKind::ScrollV { .. }
+            | ViewKind::ScrollXY { .. } => Display::Flex,
+            ViewKind::Stack => Display::Grid,
             _ => Display::Flex,
         };
+
+        // Flex direction
         if matches!(kind, ViewKind::Row) {
-            s.flex_direction = FlexDirection::Row;
+            s.flex_direction =
+                if crate::locals::text_direction() == crate::locals::TextDirection::Rtl {
+                    FlexDirection::RowReverse
+                } else {
+                    FlexDirection::Row
+                };
         }
         if matches!(
             kind,
-            ViewKind::Column | ViewKind::Surface | ViewKind::ScrollV { .. }
+            ViewKind::Column
+                | ViewKind::Surface
+                | ViewKind::ScrollV { .. }
+                | ViewKind::ScrollXY { .. }
         ) {
-            s.align_items = Some(AlignItems::Stretch);
-        } else {
-            s.align_items = Some(AlignItems::FlexStart);
+            s.flex_direction = FlexDirection::Column;
         }
+
+        // Defaults
+        s.align_items = if matches!(
+            kind,
+            ViewKind::Column
+                | ViewKind::Surface
+                | ViewKind::ScrollV { .. }
+                | ViewKind::ScrollXY { .. }
+        ) {
+            Some(AlignItems::Stretch)
+        } else {
+            Some(AlignItems::FlexStart)
+        };
         s.justify_content = Some(JustifyContent::FlexStart);
 
+        // Aspect ratio
         if let Some(r) = m.aspect_ratio {
-            s.aspect_ratio = Some(r);
+            s.aspect_ratio = Some(r.max(0.0));
         }
 
-        // Flex
+        // Flex props
         if let Some(g) = m.flex_grow {
             s.flex_grow = g;
         }
@@ -411,16 +461,16 @@ pub fn layout_and_paint(
             s.flex_shrink = sh;
         }
         if let Some(b) = m.flex_basis {
-            s.flex_basis = length(b);
+            s.flex_basis = length(b.max(0.0));
         }
 
-        // Align self (including baseline)
+        // Align self
         if let Some(a) = m.align_self {
             s.align_self = Some(a);
         }
 
         // Absolute positioning
-        if let Some(repose_core::modifier::PositionType::Absolute) = m.position_type {
+        if let Some(crate::modifier::PositionType::Absolute) = m.position_type {
             s.position = Position::Absolute;
             s.inset = taffy::geometry::Rect {
                 left: m.offset_left.map(length).unwrap_or_else(auto),
@@ -430,84 +480,27 @@ pub fn layout_and_paint(
             };
         }
 
-        // Grid
+        // Grid config
         if let Some(cfg) = &m.grid {
             s.display = Display::Grid;
-
-            // Explicit N equal columns: repeat Single(flex(1.0)) N times
-            s.grid_template_columns = (0..cfg.columns)
-                .map(|_| GridTemplateComponent::Single(flex(1.0f32)))
+            s.grid_template_columns = (0..cfg.columns.max(1))
+                .map(|_| GridTemplateComponent::Single(flex(1.0)))
                 .collect();
-
-            // Set gaps
             s.gap = Size {
                 width: length(cfg.column_gap),
                 height: length(cfg.row_gap),
             };
         }
 
-        // Overflow for ScrollV
-        if matches!(kind, ViewKind::ScrollV { .. }) {
-            s.overflow = taffy::Point {
+        // Scrollables clip; sizing is decided by explicit/fill logic below
+        if matches!(kind, ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }) {
+            s.overflow = Point {
                 x: Overflow::Hidden,
                 y: Overflow::Hidden,
             };
         }
 
-        if let Some(dir) = flex_dir_for(kind) {
-            s.flex_direction = dir;
-        }
-        if let Some(p) = m.padding {
-            let v = length(p);
-            s.padding = taffy::geometry::Rect {
-                left: v,
-                right: v,
-                top: v,
-                bottom: v,
-            };
-        }
-
-        let mut width_set = false;
-        let mut height_set = false;
-
-        if let Some(sz) = m.size {
-            if sz.width.is_finite() {
-                s.size.width = length(sz.width);
-                width_set = true;
-            }
-            if sz.height.is_finite() {
-                s.size.height = length(sz.height);
-                height_set = true;
-            }
-        }
-
-        // Per-axis overrides
-        if let Some(w) = m.width {
-            s.size.width = length(w);
-            width_set = true;
-        }
-        if let Some(h) = m.height {
-            s.size.height = length(h);
-            height_set = true;
-        }
-
-        // Fill max per-axis (don’t override explicit size on that axis)
-        if m.fill_max || m.fill_max_w {
-            if !width_set {
-                s.size.width = percent(1.0);
-                s.flex_grow = s.flex_grow.max(1.0);
-                s.flex_shrink = s.flex_shrink.max(1.0);
-            }
-        }
-        if m.fill_max || m.fill_max_h {
-            if !height_set {
-                s.size.height = percent(1.0);
-                s.flex_grow = s.flex_grow.max(1.0);
-                s.flex_shrink = s.flex_shrink.max(1.0);
-            }
-        }
-
-        // Padding
+        // Padding (content box). With axis-aware fill below, padding stays inside the allocated box.
         if let Some(pv) = m.padding_values {
             s.padding = taffy::geometry::Rect {
                 left: length(pv.left),
@@ -525,12 +518,105 @@ pub fn layout_and_paint(
             };
         }
 
-        if m.fill_max {
-            s.size.width = percent(1.0);
-            s.size.height = percent(1.0);
-            s.flex_grow = 1.0;
-            s.flex_shrink = 1.0;
+        // Explicit size — highest priority
+        let mut width_set = false;
+        let mut height_set = false;
+        if let Some(sz) = m.size {
+            if sz.width.is_finite() {
+                s.size.width = length(sz.width.max(0.0));
+                width_set = true;
+            }
+            if sz.height.is_finite() {
+                s.size.height = length(sz.height.max(0.0));
+                height_set = true;
+            }
         }
+        if let Some(w) = m.width {
+            s.size.width = length(w.max(0.0));
+            width_set = true;
+        }
+        if let Some(h) = m.height {
+            s.size.height = length(h.max(0.0));
+            height_set = true;
+        }
+
+        // Axis-aware fill
+        let is_row = matches!(kind, ViewKind::Row);
+        let is_column = matches!(
+            kind,
+            ViewKind::Column
+                | ViewKind::Surface
+                | ViewKind::ScrollV { .. }
+                | ViewKind::ScrollXY { .. }
+        );
+
+        let want_fill_w = m.fill_max || m.fill_max_w;
+        let want_fill_h = m.fill_max || m.fill_max_h;
+
+        // Main axis fill -> weight (flex: 1 1 0%), Cross axis fill -> tight (min==max==100%)
+        if is_column {
+            // main axis = vertical
+            if want_fill_h && !height_set {
+                s.flex_grow = s.flex_grow.max(1.0);
+                s.flex_shrink = s.flex_shrink.max(1.0);
+                s.flex_basis = length(0.0);
+                s.min_size.height = length(0.0); // allow shrinking, avoid min-content expansion
+            }
+            if want_fill_w && !width_set {
+                s.min_size.width = percent(1.0);
+                s.max_size.width = percent(1.0);
+            }
+        } else if is_row {
+            // main axis = horizontal
+            if want_fill_w && !width_set {
+                s.flex_grow = s.flex_grow.max(1.0);
+                s.flex_shrink = s.flex_shrink.max(1.0);
+                s.flex_basis = length(0.0);
+                s.min_size.width = length(0.0);
+            }
+            if want_fill_h && !height_set {
+                s.min_size.height = percent(1.0);
+                s.max_size.height = percent(1.0);
+            }
+        } else {
+            // Fallback: treat like Column
+            if want_fill_h && !height_set {
+                s.flex_grow = s.flex_grow.max(1.0);
+                s.flex_shrink = s.flex_shrink.max(1.0);
+                s.flex_basis = length(0.0);
+                s.min_size.height = length(0.0);
+            }
+            if want_fill_w && !width_set {
+                s.min_size.width = percent(1.0);
+                s.max_size.width = percent(1.0);
+            }
+        }
+
+        if matches!(kind, ViewKind::Surface) {
+            if (m.fill_max || m.fill_max_w) && s.min_size.width.is_auto() && !width_set {
+                s.min_size.width = percent(1.0);
+                s.max_size.width = percent(1.0);
+            }
+            if (m.fill_max || m.fill_max_h) && s.min_size.height.is_auto() && !height_set {
+                s.min_size.height = percent(1.0);
+                s.max_size.height = percent(1.0);
+            }
+        }
+
+        // user min/max clamps
+        if let Some(v) = m.min_width {
+            s.min_size.width = length(v.max(0.0));
+        }
+        if let Some(v) = m.min_height {
+            s.min_size.height = length(v.max(0.0));
+        }
+        if let Some(v) = m.max_width {
+            s.max_size.width = length(v.max(0.0));
+        }
+        if let Some(v) = m.max_height {
+            s.max_size.height = length(v.max(0.0));
+        }
+
         s
     }
 
@@ -569,6 +655,7 @@ pub fn layout_and_paint(
                 font_size,
                 soft_wrap,
                 max_lines,
+                overflow,
                 ..
             } => t
                 .new_leaf_with_context(
@@ -578,6 +665,7 @@ pub fn layout_and_paint(
                         font_px: *font_size,
                         soft_wrap: *soft_wrap,
                         max_lines: *max_lines,
+                        overflow: *overflow,
                     },
                 )
                 .unwrap(),
@@ -664,6 +752,13 @@ pub fn layout_and_paint(
 
     let root_node = build_node(&root, &mut taffy, &mut nodes_map);
 
+    {
+        let mut rs = taffy.style(root_node).unwrap().clone();
+        rs.size.width = length(size.0 as f32);
+        rs.size.height = length(size.1 as f32);
+        taffy.set_style(root_node, rs).unwrap();
+    }
+
     let available = taffy::geometry::Size {
         width: AvailableSpace::Definite(size.0 as f32),
         height: AvailableSpace::Definite(size.1 as f32),
@@ -671,42 +766,60 @@ pub fn layout_and_paint(
 
     // Measure function for intrinsic content
     taffy
-        .compute_layout_with_measure(root_node, available, |known, avail, _node, ctx, _style| {
+        .compute_layout_with_measure(root_node, available, |known, avail, node, ctx, _style| {
             match ctx {
                 Some(NodeCtx::Text {
                     text,
                     font_px,
                     soft_wrap,
                     max_lines,
+                    overflow,
                 }) => {
+                    // Apply text scale in measure so paint matches exactly
+                    let scale = locals::text_scale().0;
+                    let size_px = *font_px * scale;
+                    let line_h = size_px * 1.3;
+
                     // Content-hugging width by default (unless caller set known.width).
                     let approx_w = text.len() as f32 * *font_px * 0.6;
                     let measured_w = known.width.unwrap_or(approx_w);
 
-                    // Height should reflect wrapping against the available box if soft_wrap is on.
-                    // Choose a wrap width hint from the available space (or approximate when unknown).
+                    // Content-hugging width by default (unless caller set known.width).
                     let wrap_w = if *soft_wrap {
                         match avail.width {
                             AvailableSpace::Definite(w) => w,
                             _ => measured_w,
                         }
                     } else {
-                        // single line, height of one line
                         measured_w
                     };
 
-                    let line_h = *font_px * 1.3;
-                    let lines = if *soft_wrap {
+                    // Produce final lines once and cache
+                    let lines_vec: Vec<String> = if *soft_wrap {
                         let (ls, _trunc) =
-                            repose_text::wrap_lines(text, *font_px, wrap_w, *max_lines, true);
-                        ls.len().max(1)
+                            repose_text::wrap_lines(text, size_px, wrap_w, *max_lines, true);
+                        ls
                     } else {
-                        1
+                        match overflow {
+                            TextOverflow::Ellipsis => {
+                                vec![repose_text::ellipsize_line(text, size_px, wrap_w)]
+                            }
+                            _ => vec![text.clone()],
+                        }
                     };
+                    text_cache.insert(
+                        node,
+                        TextLayout {
+                            lines: lines_vec.clone(),
+                            size_px,
+                            line_h,
+                        },
+                    );
+                    let n_lines = lines_vec.len().max(1);
 
                     taffy::geometry::Size {
                         width: measured_w,
-                        height: line_h * lines as f32,
+                        height: line_h * n_lines as f32,
                     }
                 }
                 Some(NodeCtx::Button { label }) => taffy::geometry::Size {
@@ -860,6 +973,7 @@ pub fn layout_and_paint(
         focused: Option<u64>,
         parent_offset: (f32, f32),
         alpha_accum: f32,
+        text_cache: &StdHashMap<taffy::NodeId, TextLayout>,
     ) {
         let local = layout_of(nodes[&v.id], t);
         let rect = add_offset(local, parent_offset);
@@ -956,43 +1070,29 @@ pub fn layout_and_paint(
                 max_lines,
                 overflow,
             } => {
-                let size = *font_size * locals::text_scale().0;
-                let size = (size * 2.0).round() / 2.0;
-                let line_h = size * 1.3;
+                let nid = nodes[&v.id];
+                let tl = text_cache.get(&nid);
 
-                let single_line = !*soft_wrap || matches!(max_lines, Some(1));
-
+                let (size, line_h, mut lines): (f32, f32, Vec<String>) = if let Some(tl) = tl {
+                    (tl.size_px, tl.line_h, tl.lines.clone())
+                } else {
+                    // Fallback (shouldn’t happen; cache is built in measure)
+                    let sz = *font_size * locals::text_scale().0;
+                    (sz, sz * 1.3, vec![text.clone()])
+                };
                 // Work within the content box (padding removed)
                 let mut draw_box = content_rect;
                 let max_w = draw_box.w.max(0.0);
                 let max_h = draw_box.h.max(0.0);
 
                 // Vertical centering for single line within content box
-                if single_line {
+                if lines.len() == 1 {
                     let dy = (draw_box.h - size) * 0.5;
                     if dy.is_finite() {
                         draw_box.y += dy.max(0.0);
                         draw_box.h = size;
                     }
                 }
-
-                // Resolve how many lines we’re allowed to draw
-                let (mut lines, truncated) = if *soft_wrap {
-                    // Wrap to rect width; if no width, fall back to single line
-                    if max_w > 0.5 {
-                        let (ls, tr) =
-                            repose_text::wrap_lines(&text, size, max_w, *max_lines, true);
-                        (ls, tr)
-                    } else {
-                        (vec![text.clone()], false)
-                    }
-                } else {
-                    if *overflow == TextOverflow::Ellipsis && max_w > 0.5 {
-                        (vec![repose_text::ellipsize_line(&text, size, max_w)], true)
-                    } else {
-                        (vec![text.clone()], false)
-                    }
-                };
 
                 // For if height is constrained by rect.h and lines overflow visually,
                 let max_visual_lines = if max_h > 0.5 {
@@ -1353,6 +1453,7 @@ pub fn layout_and_paint(
                         focused,
                         child_offset,
                         alpha_accum,
+                        text_cache,
                     );
                 }
 
@@ -1543,6 +1644,7 @@ pub fn layout_and_paint(
                         focused,
                         child_offset,
                         alpha_accum,
+                        text_cache,
                     );
                 }
 
@@ -2454,6 +2556,7 @@ pub fn layout_and_paint(
                 focused,
                 base,
                 alpha_accum,
+                text_cache,
             );
         }
 
@@ -2475,6 +2578,7 @@ pub fn layout_and_paint(
         focused,
         (0.0, 0.0),
         1.0,
+        &text_cache,
     );
 
     // Ensure visual order: low z_index first. Topmost will be found by iter().rev().
