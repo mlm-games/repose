@@ -1,6 +1,6 @@
 [package]
 name = "android_counter"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 publish = false
 
@@ -23,9 +23,9 @@ label = "Repose Counter"
 fullscreen = true
 
 [dependencies]
-repose-core = { path = "../../crates/repose-core", version = "0.4.0" }
-repose-ui = { path = "../../crates/repose-ui", version = "0.4.0" }
-repose-platform = { path = "../../crates/repose-platform", version = "0.4.0", features = [
+repose-core = { path = "../../crates/repose-core", version = "0.5.0" }
+repose-ui = { path = "../../crates/repose-ui", version = "0.5.0" }
+repose-platform = { path = "../../crates/repose-platform", version = "0.5.0", features = [
     "android",
 ] }
 winit = { workspace = true }
