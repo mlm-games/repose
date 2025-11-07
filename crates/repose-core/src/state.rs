@@ -50,29 +50,29 @@ pub trait StateHolder: 'static {
     fn reduce(state: &Self::State, event: Self::Event) -> Self::State;
 }
 
-// pub fn produce_state<T: Clone + 'static>(
-//     key: impl Into<String>,
-//     producer: impl Fn() -> T + 'static,
-// ) -> Rc<Rc<signal::Signal<_>>> {
-//     let key = key.into();
-//     remember_with_key(format!("produce:{key}"), || {
-//         let out = Rc::new(signal(producer()));
-//         let out_weak: Weak<Signal<T>> = Rc::downgrade(&out);
+/// Lazily produces a Signal<T> (remembered by key) and keeps it up to date
+/// by re-running `producer` under the reactive graph whenever its dependencies change.
+///
+/// - Runs an initial compute immediately to establish dependencies.
+pub fn produce_state<T: Clone + 'static>(
+    key: impl Into<String>,
+    producer: impl Fn() -> T + 'static + Clone,
+) -> Rc<Signal<T>> {
+    let key = key.into();
+    remember_with_key(format!("produce:{key}"), || {
+        let out: Signal<T> = signal(producer());
+        let out_clone = out.clone();
 
-//         let producer_rc = Rc::new(producer);
-//         let obs_id = reactive::new_observer({
-//             let producer_rc = producer_rc.clone();
-//             move || {
-//                 if let Some(out) = out_weak.upgrade() {
-//                     let v = producer_rc();
-//                     out.set(v);
-//                 }
-//             }
-//         });
+        let obs_id = reactive::new_observer({
+            let producer = producer.clone();
+            move || {
+                let v = producer();
+                out_clone.set(v);
+            }
+        });
 
-//         // Initial compute under tracking to establish dependencies
-//         reactive::run_observer_now(obs_id);
-
-//         out
-//     })
-// }
+        // Establish initial deps and value
+        reactive::run_observer_now(obs_id);
+        out
+    })
+}
