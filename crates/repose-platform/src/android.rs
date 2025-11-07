@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
+use winit::dpi::PhysicalPosition;
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::EventLoop;
@@ -17,7 +18,6 @@ pub fn run_android_app(
     app: AndroidApp,
     mut root: impl FnMut(&mut Scheduler) -> View + 'static,
 ) -> anyhow::Result<()> {
-    // Same clock as desktop
     repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
 
     let event_loop = winit::event_loop::EventLoopBuilder::new()
@@ -31,13 +31,19 @@ pub fn run_android_app(
         sched: Scheduler,
         inspector: repose_devtools::Inspector,
         frame_cache: Option<Frame>,
-        mouse_pos: (f32, f32),
+
+        // Input state
+        last_pos: (f32, f32),
         modifiers: Modifiers,
-        textfield_states: HashMap<u64, Rc<RefCell<repose_ui::TextFieldState>>>,
         hover_id: Option<u64>,
         capture_id: Option<u64>,
         pressed_ids: HashSet<u64>,
         key_pressed_active: Option<u64>,
+        ime_preedit: bool,
+
+        // TextFields
+        prev_touch: Option<(f32, f32)>,
+        textfield_states: HashMap<u64, Rc<RefCell<repose_ui::TextFieldState>>>,
         last_focus: Option<u64>,
     }
 
@@ -50,13 +56,17 @@ pub fn run_android_app(
                 sched: Scheduler::new(),
                 inspector: repose_devtools::Inspector::new(),
                 frame_cache: None,
-                mouse_pos: (0.0, 0.0),
+
+                last_pos: (0.0, 0.0),
                 modifiers: Modifiers::default(),
-                textfield_states: HashMap::new(),
                 hover_id: None,
                 capture_id: None,
                 pressed_ids: HashSet::new(),
                 key_pressed_active: None,
+                ime_preedit: false,
+
+                prev_touch: None,
+                textfield_states: HashMap::new(),
                 last_focus: None,
             }
         }
@@ -64,6 +74,31 @@ pub fn run_android_app(
             if let Some(w) = &self.window {
                 w.request_redraw();
             }
+        }
+        fn announce_focus_change(&mut self) {
+            if let Some(f) = &self.frame_cache {
+                let focused_node = self
+                    .sched
+                    .focused
+                    .and_then(|id| f.semantics_nodes.iter().find(|n| n.id == id));
+                self.inspector.hud.metrics = self.inspector.hud.metrics.take(); // no-op to silence mut borrow
+                // bridge to a11y stub (same as desktop)
+            }
+        }
+        fn notify_text_change(&self, id: u64, text: String) {
+            if let Some(f) = &self.frame_cache {
+                if let Some(h) = f.hit_regions.iter().find(|h| h.id == id) {
+                    if let Some(cb) = &h.on_text_change {
+                        cb(text);
+                    }
+                }
+            }
+        }
+        fn scale(&self) -> f32 {
+            self.window
+                .as_ref()
+                .map(|w| w.scale_factor() as f32)
+                .unwrap_or(1.0)
         }
     }
 
@@ -94,6 +129,7 @@ pub fn run_android_app(
                 }
             }
         }
+
         fn window_event(
             &mut self,
             el: &winit::event_loop::ActiveEventLoop,
@@ -109,6 +145,424 @@ pub fn run_android_app(
                     }
                     self.request_redraw();
                 }
+
+                // Touch → pointer (down/move/up/cancel) with capture and click-on-release
+                WindowEvent::Touch(t) => {
+                    // Map device-pixel position to logical f32
+                    let pos = (t.location.x as f32, t.location.y as f32);
+                    self.last_pos = pos;
+
+                    // Helper to deliver pointer events to a region id
+                    let make_pe = |mods: Modifiers| crate::input::PointerEvent {
+                        id: crate::input::PointerId(0),
+                        kind: crate::input::PointerKind::Touch,
+                        event: crate::input::PointerEventKind::Move, // will be replaced per call
+                        position: crate::Vec2 { x: pos.0, y: pos.1 },
+                        pressure: 1.0,
+                        modifiers: mods,
+                    };
+
+                    match t.phase {
+                        winit::event::TouchPhase::Started => {
+                            // Stage everything we need while immutably borrowing frame_cache
+                            let (hit_id, rect, on_pd, is_textfield) =
+                                if let Some(f) = &self.frame_cache {
+                                    if let Some(hit) = f.hit_regions.iter().rev().find(|h| {
+                                        h.rect.contains(crate::Vec2 { x: pos.0, y: pos.1 })
+                                    }) {
+                                        let is_tf = f
+                                            .semantics_nodes
+                                            .iter()
+                                            .any(|n| n.id == hit.id && n.role == Role::TextField);
+                                        (
+                                            Some(hit.id),
+                                            Some(hit.rect),
+                                            hit.on_pointer_down.clone(),
+                                            is_tf,
+                                        )
+                                    } else {
+                                        (None, None, None, false)
+                                    }
+                                } else {
+                                    (None, None, None, false)
+                                };
+
+                            if let Some(id) = hit_id {
+                                // Now mutate self (no immutable borrow alive)
+                                self.capture_id = Some(id);
+                                self.pressed_ids.insert(id);
+                                if let Some(r) = rect {
+                                    // focus & IME only for focusables (we don’t know focusable here cheaply; safe to set for TextField)
+                                    if is_textfield {
+                                        self.sched.focused = Some(id);
+                                        self.textfield_states.entry(id).or_insert_with(|| {
+                                            Rc::new(RefCell::new(repose_ui::TextFieldState::new()))
+                                        });
+                                        if let Some(win) = &self.window {
+                                            let sf = win.scale_factor();
+                                            win.set_ime_allowed(true);
+                                            win.set_ime_purpose(ImePurpose::Normal);
+                                            win.set_ime_cursor_area(
+                                                PhysicalPosition::new(
+                                                    (r.x * sf as f32) as i32,
+                                                    (r.y * sf as f32) as i32,
+                                                ),
+                                                winit::dpi::PhysicalSize::new(
+                                                    (r.w * sf as f32) as u32,
+                                                    (r.h * sf as f32) as u32,
+                                                ),
+                                            );
+                                        }
+                                    }
+                                    // Pointer down callback
+                                    if let Some(cb) = on_pd {
+                                        let mut pe = make_pe(self.modifiers);
+                                        pe.event = crate::input::PointerEventKind::Down(
+                                            crate::input::PointerButton::Primary,
+                                        );
+                                        cb(pe);
+                                    }
+                                    // TextField caret placement
+                                    if is_textfield {
+                                        if let Some(state_rc) = self.textfield_states.get(&id) {
+                                            let mut state = state_rc.borrow_mut();
+                                            let inner_x = r.x + TF_PADDING_X;
+                                            let content_x =
+                                                self.last_pos.0 - inner_x + state.scroll_offset;
+                                            let px = TF_FONT_PX as u32;
+                                            let idx = index_for_x_bytes(
+                                                &state.text,
+                                                px,
+                                                content_x.max(0.0),
+                                            );
+                                            state.begin_drag(idx, self.modifiers.shift);
+                                            let m = measure_text(&state.text, px);
+                                            let caret_x = m
+                                                .positions
+                                                .get(state.caret_index())
+                                                .copied()
+                                                .unwrap_or(0.0);
+                                            state.ensure_caret_visible(
+                                                caret_x,
+                                                r.w - 2.0 * TF_PADDING_X,
+                                            );
+                                        }
+                                    }
+                                }
+                                self.prev_touch = Some(pos);
+                                self.request_redraw();
+                            }
+                        }
+                        winit::event::TouchPhase::Moved => {
+                            // Move to capture (if any), else to hover target
+                            let (cid, on_pm, rect) = if let (Some(f), Some(cid)) =
+                                (&self.frame_cache, self.capture_id)
+                            {
+                                let cb = f
+                                    .hit_regions
+                                    .iter()
+                                    .find(|h| h.id == cid)
+                                    .and_then(|h| h.on_pointer_move.clone());
+                                let r = f.hit_regions.iter().find(|h| h.id == cid).map(|h| h.rect);
+                                (Some(cid), cb, r)
+                            } else {
+                                (None, None, None)
+                            };
+
+                            if let Some(id) = cid {
+                                // deliver move
+                                if let Some(cb) = on_pm {
+                                    let mut pe = make_pe(self.modifiers);
+                                    pe.event = crate::input::PointerEventKind::Move;
+                                    cb(pe);
+                                }
+                                // Optionally: drag to scroll using dy
+                                if let (Some(prev), Some(r)) = (self.prev_touch, rect) {
+                                    let dy = pos.1 - prev.1;
+                                    if dy.abs() > 0.0 {
+                                        if let Some(f) = &self.frame_cache {
+                                            if let Some(h) =
+                                                f.hit_regions.iter().find(|h| h.id == id)
+                                            {
+                                                if let Some(cb) = &h.on_scroll {
+                                                    let _ = cb(crate::Vec2 { x: 0.0, y: -dy }); // invert for natural scroll
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                self.prev_touch = Some(pos);
+                                self.request_redraw();
+                            }
+                        }
+                        winit::event::TouchPhase::Ended => {
+                            // Release capture, click-on-release if still inside
+                            let (cid, on_pu, on_click, rect, is_textfield) = if let (
+                                Some(f),
+                                Some(cid),
+                            ) =
+                                (&self.frame_cache, self.capture_id)
+                            {
+                                let pu = f
+                                    .hit_regions
+                                    .iter()
+                                    .find(|h| h.id == cid)
+                                    .and_then(|h| h.on_pointer_up.clone());
+                                let clk = f
+                                    .hit_regions
+                                    .iter()
+                                    .find(|h| h.id == cid)
+                                    .and_then(|h| h.on_click.clone());
+                                let r = f.hit_regions.iter().find(|h| h.id == cid).map(|h| h.rect);
+                                let tf = f
+                                    .semantics_nodes
+                                    .iter()
+                                    .any(|n| n.id == cid && n.role == Role::TextField);
+                                (Some(cid), pu, clk, r, tf)
+                            } else {
+                                (None, None, None, None, false)
+                            };
+
+                            if let Some(id) = cid {
+                                self.pressed_ids.remove(&id);
+                                if let Some(cb) = on_pu {
+                                    let mut pe = make_pe(self.modifiers);
+                                    pe.event = crate::input::PointerEventKind::Up(
+                                        crate::input::PointerButton::Primary,
+                                    );
+                                    cb(pe);
+                                }
+                                if let Some(r) = rect {
+                                    if r.contains(crate::Vec2 {
+                                        x: self.last_pos.0,
+                                        y: self.last_pos.1,
+                                    }) {
+                                        if let Some(cb) = on_click {
+                                            cb();
+                                        }
+                                    }
+                                }
+                                if is_textfield {
+                                    if let Some(state_rc) = self.textfield_states.get(&id) {
+                                        state_rc.borrow_mut().end_drag();
+                                    }
+                                }
+                            }
+                            self.capture_id = None;
+                            self.prev_touch = None;
+                            self.request_redraw();
+                        }
+                        winit::event::TouchPhase::Cancelled => {
+                            // Cancel capture
+                            if let Some(cid) = self.capture_id {
+                                self.pressed_ids.remove(&cid);
+                            }
+                            self.capture_id = None;
+                            self.prev_touch = None;
+                            self.request_redraw();
+                        }
+                    }
+                }
+
+                // Keyboard (hardware keyboards)
+                WindowEvent::KeyboardInput {
+                    event: key_event, ..
+                } => {
+                    // Focus traversal with Tab
+                    if matches!(key_event.physical_key, PhysicalKey::Code(KeyCode::Tab)) {
+                        if key_event.state == ElementState::Pressed && !key_event.repeat {
+                            if let Some(f) = &self.frame_cache {
+                                let chain = &f.focus_chain;
+                                if !chain.is_empty() {
+                                    if let Some(active) = self.key_pressed_active.take() {
+                                        self.pressed_ids.remove(&active);
+                                    }
+                                    let shift = self.modifiers.shift;
+                                    let current = self.sched.focused;
+                                    let next = if let Some(cur) = current {
+                                        if let Some(idx) = chain.iter().position(|&id| id == cur) {
+                                            if shift {
+                                                if idx == 0 {
+                                                    chain[chain.len() - 1]
+                                                } else {
+                                                    chain[idx - 1]
+                                                }
+                                            } else {
+                                                chain[(idx + 1) % chain.len()]
+                                            }
+                                        } else {
+                                            chain[0]
+                                        }
+                                    } else {
+                                        chain[0]
+                                    };
+                                    self.sched.focused = Some(next);
+                                    if let Some(win) = &self.window {
+                                        if f.semantics_nodes
+                                            .iter()
+                                            .any(|n| n.id == next && n.role == Role::TextField)
+                                        {
+                                            win.set_ime_allowed(true);
+                                            win.set_ime_purpose(ImePurpose::Normal);
+                                        } else {
+                                            win.set_ime_allowed(false);
+                                        }
+                                    }
+                                    self.announce_focus_change();
+                                    self.request_redraw();
+                                }
+                            }
+                        }
+                        return;
+                    }
+
+                    // Keyboard activation: Space/Enter on focus (not TextField)
+                    if let Some(fid) = self.sched.focused {
+                        let is_textfield = if let Some(f) = &self.frame_cache {
+                            f.semantics_nodes
+                                .iter()
+                                .any(|n| n.id == fid && n.role == Role::TextField)
+                        } else {
+                            false
+                        };
+
+                        if !is_textfield {
+                            match key_event.physical_key {
+                                PhysicalKey::Code(KeyCode::Space)
+                                | PhysicalKey::Code(KeyCode::Enter) => {
+                                    if key_event.state == ElementState::Pressed && !key_event.repeat
+                                    {
+                                        self.pressed_ids.insert(fid);
+                                        self.key_pressed_active = Some(fid);
+                                        self.request_redraw();
+                                        return;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+
+                    // Enter submits TextField
+                    if key_event.state == ElementState::Pressed && !key_event.repeat {
+                        if let PhysicalKey::Code(KeyCode::Enter) = key_event.physical_key {
+                            if let Some(focused_id) = self.sched.focused {
+                                if let Some(f) = &self.frame_cache {
+                                    if let Some(hit) =
+                                        f.hit_regions.iter().find(|h| h.id == focused_id)
+                                    {
+                                        if let Some(on_submit) = &hit.on_text_submit {
+                                            if let Some(state) =
+                                                self.textfield_states.get(&focused_id)
+                                            {
+                                                let text = state.borrow().text.clone();
+                                                on_submit(text);
+                                                self.request_redraw();
+                                                return;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // IME (Preedit/Commit)
+                WindowEvent::Ime(ime) => {
+                    if let Some(focused_id) = self.sched.focused {
+                        if let Some(state_rc) = self.textfield_states.get(&focused_id) {
+                            let mut state = state_rc.borrow_mut();
+                            match ime {
+                                winit::event::Ime::Enabled => {
+                                    self.ime_preedit = false;
+                                }
+                                winit::event::Ime::Preedit(text, cursor) => {
+                                    let cursor_usize =
+                                        cursor.map(|(a, b)| (a as usize, b as usize));
+                                    state.set_composition(text.clone(), cursor_usize);
+                                    self.ime_preedit = !text.is_empty();
+
+                                    // Ensure caret visible
+                                    let px = TF_FONT_PX as u32;
+                                    let m = measure_text(&state.text, px);
+                                    let caret_x = m
+                                        .positions
+                                        .get(state.caret_index())
+                                        .copied()
+                                        .unwrap_or(0.0);
+                                    // Need viewport width: find rect
+                                    if let Some(f) = &self.frame_cache {
+                                        if let Some(hit) =
+                                            f.hit_regions.iter().find(|h| h.id == focused_id)
+                                        {
+                                            state.ensure_caret_visible(
+                                                caret_x,
+                                                hit.rect.w - 2.0 * TF_PADDING_X,
+                                            );
+                                        }
+                                    }
+
+                                    // Notify change
+                                    self.notify_text_change(focused_id, state.text.clone());
+                                    self.request_redraw();
+                                }
+                                winit::event::Ime::Commit(text) => {
+                                    state.commit_composition(text);
+                                    self.ime_preedit = false;
+
+                                    let px = TF_FONT_PX as u32;
+                                    let m = measure_text(&state.text, px);
+                                    let caret_x = m
+                                        .positions
+                                        .get(state.caret_index())
+                                        .copied()
+                                        .unwrap_or(0.0);
+                                    if let Some(f) = &self.frame_cache {
+                                        if let Some(hit) =
+                                            f.hit_regions.iter().find(|h| h.id == focused_id)
+                                        {
+                                            state.ensure_caret_visible(
+                                                caret_x,
+                                                hit.rect.w - 2.0 * TF_PADDING_X,
+                                            );
+                                        }
+                                    }
+                                    self.notify_text_change(focused_id, state.text.clone());
+                                    self.request_redraw();
+                                }
+                                winit::event::Ime::Disabled => {
+                                    self.ime_preedit = false;
+                                    if state.composition.is_some() {
+                                        state.cancel_composition();
+
+                                        let px = TF_FONT_PX as u32;
+                                        let m = measure_text(&state.text, px);
+                                        let caret_x = m
+                                            .positions
+                                            .get(state.caret_index())
+                                            .copied()
+                                            .unwrap_or(0.0);
+                                        if let Some(f) = &self.frame_cache {
+                                            if let Some(hit) =
+                                                f.hit_regions.iter().find(|h| h.id == focused_id)
+                                            {
+                                                state.ensure_caret_visible(
+                                                    caret_x,
+                                                    hit.rect.w - 2.0 * TF_PADDING_X,
+                                                );
+                                            }
+                                        }
+
+                                        self.notify_text_change(focused_id, state.text.clone());
+                                    }
+                                    self.request_redraw();
+                                }
+                            }
+                        }
+                    }
+                }
+
                 WindowEvent::RedrawRequested => {
                     if let (Some(backend), Some(win)) =
                         (self.backend.as_mut(), self.window.as_ref())
@@ -121,24 +575,35 @@ pub fn run_android_app(
                         let pressed_ids = self.pressed_ids.clone();
                         let tf_states = &self.textfield_states;
 
-                        let frame = self.sched.repose(&mut self.root, move |view, size| {
-                            let interactions = repose_ui::Interactions {
-                                hover: hover_id,
-                                pressed: pressed_ids.clone(),
-                            };
-                            // Density + TextScale from device scale
-                            with_density(Density { scale }, || {
-                                with_text_scale(TextScale(1.0), || {
-                                    layout_and_paint(view, size, tf_states, &interactions, focused)
+                        let frame = self.sched.repose(&mut self.root, {
+                            let hover_id = hover_id;
+                            let pressed_ids = pressed_ids.clone();
+                            move |view, size| {
+                                let interactions = repose_ui::Interactions {
+                                    hover: hover_id,
+                                    pressed: pressed_ids.clone(),
+                                };
+                                with_density(Density { scale }, || {
+                                    with_text_scale(TextScale(1.0), || {
+                                        layout_and_paint(
+                                            view,
+                                            size,
+                                            tf_states,
+                                            &interactions,
+                                            focused,
+                                        )
+                                    })
                                 })
-                            })
+                            }
                         });
 
-                        let build_layout_ms =
-                            (std::time::Instant::now() - t0).as_secs_f32() * 1000.0;
+                        // A11y publish & focus announce (stub)
+                        // self.a11y.publish_tree(&frame.semantics_nodes); // you can add an Android stub similar to desktop
+
                         let mut scene = frame.scene.clone();
                         self.inspector.hud.metrics = Some(repose_devtools::Metrics {
-                            build_layout_ms,
+                            build_layout_ms: (std::time::Instant::now() - t0).as_secs_f32()
+                                * 1000.0,
                             scene_nodes: scene.nodes.len(),
                         });
                         self.inspector.frame(&mut scene);
@@ -149,6 +614,7 @@ pub fn run_android_app(
                 _ => {}
             }
         }
+
         fn about_to_wait(&mut self, _el: &winit::event_loop::ActiveEventLoop) {
             self.request_redraw();
         }
