@@ -4,12 +4,39 @@ version = "0.4.0"
 edition = "2024"
 publish = false
 
-[dependencies]
-repose-core = { path = "../../crates/repose-core", version = "0.4.0" }
-repose-ui = { path = "../../crates/repose-ui", version = "0.4.0" }
+[lib] # Run using: cargo apk run --package showcase --lib
+name = "showcase"
+crate-type = ["cdylib"]
+
+[package.metadata.android]
+package = "com.example.showcase"
+apk_name = "showcase"
+target_sdk_version = 34
+min_sdk_version = 26
+build_targets = ["aarch64-linux-android"]
+# runtime_libs = []
+split_per_abi = true
+
+[package.metadata.android.application]
+# icon = "@mipmap/ic_launcher"
+label = "Recase"
+fullscreen = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+repose-platform = { path = "../../crates/repose-platform", version = "0.4.0", features = [
+    "android",
+] }
+android_logger = { workspace = true }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
 repose-platform = { path = "../../crates/repose-platform", version = "0.4.0", features = [
     "desktop",
 ] }
+
+[dependencies]
+repose-core = { path = "../../crates/repose-core", version = "0.4.0" }
+repose-ui = { path = "../../crates/repose-ui", version = "0.4.0" }
+winit = { workspace = true }
 env_logger = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
