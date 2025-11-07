@@ -113,9 +113,17 @@ static ENGINE: OnceCell<Mutex<Engine>> = OnceCell::new();
 
 fn engine() -> &'static Mutex<Engine> {
     ENGINE.get_or_init(|| {
-        let fs = FontSystem::new();
+        let mut fs = FontSystem::new();
 
         let cache = SwashCache::new();
+
+        static FALLBACK_TTF: &[u8] = include_bytes!("assets/OpenSans-Regular.ttf");
+        {
+            // Register fallback font data into font DB
+            let db = fs.db_mut();
+            db.load_font_data(FALLBACK_TTF.to_vec());
+            db.set_sans_serif_family("Open Sans".to_string());
+        }
         Mutex::new(Engine {
             fs,
             cache,
