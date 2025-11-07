@@ -1,4 +1,4 @@
-use crate::ui::{Card, Section};
+use crate::ui::Section;
 use repose_core::prelude::*;
 use repose_ui::*;
 
