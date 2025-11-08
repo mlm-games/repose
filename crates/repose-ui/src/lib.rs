@@ -1942,9 +1942,9 @@ pub fn layout_and_paint(
                     scene.nodes.push(SceneNode::Text {
                         rect: repose_core::Rect {
                             x: bx + dp_to_px(3.0),
-                            y: by + dp_to_px(1.0),
-                            w: box_size_px,
-                            h: box_size_px,
+                            y: rect.y + rect.h * 0.5 - font_px(16.0) * 0.6,
+                            w: rect.w - (box_size_px + dp_to_px(8.0)),
+                            h: font_px(16.0),
                         },
                         text: "✓".to_string(),
                         color: mul_alpha(theme.on_primary, alpha_accum),
@@ -1955,9 +1955,9 @@ pub fn layout_and_paint(
                 scene.nodes.push(SceneNode::Text {
                     rect: repose_core::Rect {
                         x: bx + box_size_px + dp_to_px(8.0),
-                        y: rect.y,
+                        y: rect.y + rect.h * 0.5 - font_px(16.0) * 0.6,
                         w: rect.w - (box_size_px + dp_to_px(8.0)),
-                        h: rect.h,
+                        h: font_px(16.0),
                     },
                     text: label.clone(),
                     color: mul_alpha(theme.on_surface, alpha_accum),
@@ -2045,9 +2045,9 @@ pub fn layout_and_paint(
                 scene.nodes.push(SceneNode::Text {
                     rect: repose_core::Rect {
                         x: cx + d_px + dp_to_px(8.0),
-                        y: rect.y,
+                        y: rect.y + rect.h * 0.5 - font_px(16.0) * 0.6,
                         w: rect.w - (d_px + dp_to_px(8.0)),
-                        h: rect.h,
+                        h: font_px(16.0),
                     },
                     text: label.clone(),
                     color: mul_alpha(theme.on_surface, alpha_accum),
@@ -2154,9 +2154,9 @@ pub fn layout_and_paint(
                 scene.nodes.push(SceneNode::Text {
                     rect: repose_core::Rect {
                         x: tx + track_w_px + dp_to_px(8.0),
-                        y: rect.y,
+                        y: rect.y + rect.h * 0.5 - font_px(16.0) * 0.6,
                         w: rect.w - (track_w_px + dp_to_px(8.0)),
-                        h: rect.h,
+                        h: font_px(16.0),
                     },
                     text: label.clone(),
                     color: mul_alpha(theme.on_surface, alpha_accum),
@@ -2263,9 +2263,9 @@ pub fn layout_and_paint(
                 scene.nodes.push(SceneNode::Text {
                     rect: repose_core::Rect {
                         x: label_x + gap_px,
-                        y: rect.y,
+                        y: rect.y + rect.h * 0.5 - font_px(16.0) * 0.6,
                         w: rect.x + rect.w - (label_x + gap_px),
-                        h: rect.h,
+                        h: font_px(16.0),
                     },
                     text: format!("{}: {:.2}", label, *value),
                     color: mul_alpha(theme.on_surface, alpha_accum),
@@ -2447,9 +2447,9 @@ pub fn layout_and_paint(
                 scene.nodes.push(SceneNode::Text {
                     rect: repose_core::Rect {
                         x: label_x + gap_px,
-                        y: rect.y,
+                        y: rect.y + rect.h * 0.5 - font_px(16.0) * 0.6,
                         w: rect.x + rect.w - (label_x + gap_px),
-                        h: rect.h,
+                        h: font_px(16.0),
                     },
                     text: format!("{}: {:.2} – {:.2}", label, *start, *end),
                     color: mul_alpha(theme.on_surface, alpha_accum),
@@ -2605,9 +2605,9 @@ pub fn layout_and_paint(
                 scene.nodes.push(SceneNode::Text {
                     rect: repose_core::Rect {
                         x: rect.x + label_w_split_px + gap_px,
-                        y: rect.y,
+                        y: rect.y + rect.h * 0.5 - font_px(16.0) * 0.6,
                         w: rect.w - (label_w_split_px + gap_px),
-                        h: rect.h,
+                        h: font_px(16.0),
                     },
                     text: format!("{}: {:.0}%", label, t * 100.0),
                     color: mul_alpha(theme.on_surface, alpha_accum),
