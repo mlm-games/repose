@@ -32,6 +32,20 @@ impl UploadRing {
     fn reset(&mut self) {
         self.head = 0;
     }
+    fn grow_to_fit(&mut self, device: &wgpu::Device, needed: u64) {
+        if needed <= self.cap {
+            return;
+        }
+        let new_cap = needed.next_power_of_two();
+        self.buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("upload ring (grown)"),
+            size: new_cap,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.cap = new_cap;
+        self.head = 0;
+    }
     fn alloc_write(&mut self, queue: &wgpu::Queue, bytes: &[u8]) -> (u64, u64) {
         let len = bytes.len() as u64;
         let align = 4u64; // vertex buffer slice offset alignment
@@ -1034,6 +1048,7 @@ impl RenderBackend for WgpuBackend {
                     &mut UploadRing,
                     &mut UploadRing,
                 ),
+                device: &wgpu::Device,
                 queue: &wgpu::Queue,
                 cmds: &mut Vec<Cmd>,
             ) {
@@ -1041,6 +1056,7 @@ impl RenderBackend for WgpuBackend {
 
                 if !self.rects.is_empty() {
                     let bytes = bytemuck::cast_slice(&self.rects);
+                    ring_rect.grow_to_fit(device, bytes.len() as u64);
                     let (off, wrote) = ring_rect.alloc_write(queue, bytes);
                     debug_assert_eq!(wrote as usize, bytes.len());
                     cmds.push(Cmd::Rect {
@@ -1051,6 +1067,7 @@ impl RenderBackend for WgpuBackend {
                 }
                 if !self.borders.is_empty() {
                     let bytes = bytemuck::cast_slice(&self.borders);
+                    ring_border.grow_to_fit(device, bytes.len() as u64);
                     let (off, wrote) = ring_border.alloc_write(queue, bytes);
                     debug_assert_eq!(wrote as usize, bytes.len());
                     cmds.push(Cmd::Border {
@@ -1061,6 +1078,7 @@ impl RenderBackend for WgpuBackend {
                 }
                 if !self.masks.is_empty() {
                     let bytes = bytemuck::cast_slice(&self.masks);
+                    ring_mask.grow_to_fit(device, bytes.len() as u64);
                     let (off, wrote) = ring_mask.alloc_write(queue, bytes);
                     debug_assert_eq!(wrote as usize, bytes.len());
                     cmds.push(Cmd::GlyphsMask {
@@ -1071,6 +1089,7 @@ impl RenderBackend for WgpuBackend {
                 }
                 if !self.colors.is_empty() {
                     let bytes = bytemuck::cast_slice(&self.colors);
+                    ring_color.grow_to_fit(device, bytes.len() as u64);
                     let (off, wrote) = ring_color.alloc_write(queue, bytes);
                     debug_assert_eq!(wrote as usize, bytes.len());
                     cmds.push(Cmd::GlyphsColor {
@@ -1242,6 +1261,7 @@ impl RenderBackend for WgpuBackend {
                             &mut self.ring_glyph_mask,
                             &mut self.ring_glyph_color,
                         ),
+                        &self.device,
                         &self.queue,
                         &mut cmds,
                     );
@@ -1259,6 +1279,7 @@ impl RenderBackend for WgpuBackend {
                             &mut self.ring_glyph_mask,
                             &mut self.ring_glyph_color,
                         ),
+                        &self.device,
                         &self.queue,
                         &mut cmds,
                     );
@@ -1272,6 +1293,7 @@ impl RenderBackend for WgpuBackend {
                             &mut self.ring_glyph_mask,
                             &mut self.ring_glyph_color,
                         ),
+                        &self.device,
                         &self.queue,
                         &mut cmds,
                     );
@@ -1301,6 +1323,7 @@ impl RenderBackend for WgpuBackend {
                 &mut self.ring_glyph_mask,
                 &mut self.ring_glyph_color,
             ),
+            &self.device,
             &self.queue,
             &mut cmds,
         );

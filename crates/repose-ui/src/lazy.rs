@@ -166,6 +166,14 @@ where
         Rc::new(move |off_px: f32| st.set_offset(off_px, content_height_px))
     };
 
+    let measured_h_px = {
+        let st = state.clone();
+        Rc::new(move |h_px: f32| {
+            // keep clamp math exact when item count/size changes
+            st.set_offset(st.scroll_offset.get(), h_px);
+        })
+    };
+
     // Content inside scroll viewport (clip and translation handled by ScrollV)
     let content = crate::Column(Modifier::new()).with_children(children);
 
@@ -174,7 +182,7 @@ where
         repose_core::ViewKind::ScrollV {
             on_scroll: Some(on_scroll),
             set_viewport_height: Some(set_viewport),
-            set_content_height: None, // computed from children (spacers) already correct
+            set_content_height: Some(Rc::new(move |h| measured_h_px(h))),
             get_scroll_offset: Some(get_scroll),
             set_scroll_offset: Some(set_scroll),
         },

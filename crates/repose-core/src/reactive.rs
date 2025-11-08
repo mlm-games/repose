@@ -32,6 +32,15 @@ impl DepGraph {
             }
         }
     }
+    fn remove_observer(&mut self, obs: ObserverId) {
+        self.observers.remove(&obs);
+        self.remove_all_edges_for(obs);
+        // scrub forward maps just in case
+        for (_sig, set) in self.edges.iter_mut() {
+            set.remove(&obs);
+        }
+        self.running.remove(&obs);
+    }
 }
 
 pub fn register_signal_read(sig: SignalId) {
@@ -89,6 +98,14 @@ pub fn new_observer(f: impl Fn() + 'static) -> ObserverId {
         g.observers.insert(id, Rc::new(f));
         id
     })
+}
+
+/// Remove an observer and all of its dependency edges.
+pub fn remove_observer(id: ObserverId) {
+    GRAPH.with(|g| {
+        let mut g = g.borrow_mut();
+        g.remove_observer(id);
+    });
 }
 
 pub fn run_observer_now(id: ObserverId) {

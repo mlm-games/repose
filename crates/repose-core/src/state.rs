@@ -73,6 +73,13 @@ pub fn produce_state<T: Clone + 'static>(
 
         // Establish initial deps and value
         reactive::run_observer_now(obs_id);
+
+        scoped_effect(move || {
+            // cleanup
+            Box::new(move || {
+                reactive::remove_observer(obs_id);
+            })
+        });
         out
     })
 }
