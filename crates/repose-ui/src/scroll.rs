@@ -71,8 +71,9 @@ impl ScrollState {
         self.scroll_offset.set(new_off);
 
         // Update velocity for fling
-        *self.vel.borrow_mut() = (new_off - before) * 5.0;
-        *self.animating.borrow_mut() = true;
+        let consumed = new_off - before;
+        *self.vel.borrow_mut() = consumed; // px/frame baseline
+        *self.animating.borrow_mut() = consumed.abs() > 0.25;
 
         dy - (new_off - before)
     }
@@ -91,7 +92,7 @@ impl ScrollState {
         }
 
         let mut vel = *self.vel.borrow();
-        if vel.abs() < 0.5 {
+        if vel.abs() < 0.05 {
             *self.vel.borrow_mut() = 0.0;
             *self.animating.borrow_mut() = false;
             return false;
@@ -103,11 +104,11 @@ impl ScrollState {
         let max_off = (ch - vh).max(0.0);
 
         // Integrate and clamp
-        let new_off = (before + vel * dt * 60.0).clamp(0.0, max_off);
+        let new_off = (before + vel).clamp(0.0, max_off);
         self.scroll_offset.set(new_off);
 
         // Friction
-        vel *= 0.95;
+        vel *= 0.9;
         *self.vel.borrow_mut() = vel;
 
         true
@@ -160,8 +161,9 @@ impl HorizontalScrollState {
         let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
         let new_off = (before + dx).clamp(0.0, max_off);
         self.scroll_offset.set(new_off);
-        *self.vel.borrow_mut() = (new_off - before) * 5.0;
-        *self.animating.borrow_mut() = true;
+        let consumed = new_off - before;
+        *self.vel.borrow_mut() = consumed; // px/frame baseline
+        *self.animating.borrow_mut() = consumed.abs() > 0.25;
         dx - (new_off - before)
     }
     pub fn tick(&self) -> bool {
@@ -175,16 +177,16 @@ impl HorizontalScrollState {
             return false;
         }
         let mut vel = *self.vel.borrow();
-        if vel.abs() < 0.5 {
+        if vel.abs() < 0.05 {
             *self.animating.borrow_mut() = false;
             *self.vel.borrow_mut() = 0.0;
             return false;
         }
         let before = self.scroll_offset.get();
         let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
-        let new_off = (before + vel * dt * 60.0).clamp(0.0, max_off);
+        let new_off = (before + vel).clamp(0.0, max_off);
         self.scroll_offset.set(new_off);
-        *self.vel.borrow_mut() = vel * 0.95;
+        *self.vel.borrow_mut() = vel * 0.9;
         true
     }
 }

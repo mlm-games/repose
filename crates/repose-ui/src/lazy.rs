@@ -29,19 +29,19 @@ impl LazyColumnState {
     }
 
     pub fn scroll_immediate(&self, delta: f32, content_height: f32) -> f32 {
-        let current = self.scroll_offset.get();
+        let before = self.scroll_offset.get();
         let viewport = self.viewport_height.get();
 
         let max_offset = (content_height - viewport).max(0.0);
-        let new_offset = (current + delta).clamp(0.0, max_offset);
+        let new_offset = (before + delta).clamp(0.0, max_offset);
 
         self.scroll_offset.set(new_offset);
 
-        let consumed = new_offset - current;
+        let consumed = new_offset - before;
         let leftover = delta - consumed;
 
-        *self.vel.borrow_mut() = consumed * 5.0;
-        *self.animating.borrow_mut() = true;
+        *self.vel.borrow_mut() = consumed;
+        *self.animating.borrow_mut() = consumed.abs() > 0.25;
 
         leftover
     }
@@ -67,17 +67,17 @@ impl LazyColumnState {
         }
 
         // Update position
-        let current = self.scroll_offset.get();
+        let before = self.scroll_offset.get();
         let viewport = self.viewport_height.get();
         let max_offset = (content_height - viewport).max(0.0);
 
-        let new_offset = (current + vel * dt * 60.0).clamp(0.0, max_offset);
+        let new_off = (before + vel).clamp(0.0, max_offset);
 
         // Signal update triggers recomposition!
-        self.scroll_offset.set(new_offset);
+        self.scroll_offset.set(new_off);
 
         // Apply friction
-        *self.vel.borrow_mut() *= 0.95;
+        *self.vel.borrow_mut() *= 0.9;
 
         true
     }
