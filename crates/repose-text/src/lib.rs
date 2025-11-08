@@ -117,12 +117,21 @@ fn engine() -> &'static Mutex<Engine> {
 
         let cache = SwashCache::new();
 
-        static FALLBACK_TTF: &[u8] = include_bytes!("assets/OpenSans-Regular.ttf"); // GFonts, OFL licensed
+        #[cfg(target_os = "android")]
         {
-            // Register fallback font data into font DB
-            let db = fs.db_mut();
-            db.load_font_data(FALLBACK_TTF.to_vec());
-            db.set_sans_serif_family("Open Sans".to_string());
+            static FALLBACK_TTF: &[u8] = include_bytes!("assets/OpenSans-Regular.ttf"); // GFonts, OFL licensed
+            static FALLBACK_EMOJI_TTF: &[u8] = include_bytes!("assets/NotoColorEmoji-Regular.ttf"); // GFonts, OFL licensed
+            static FALLBACK_SYMBOLS_TTF: &[u8] =
+                include_bytes!("assets/NotoSansSymbols2-Regular.ttf"); // GFonts, OFL licensed
+            {
+                // Register fallback font data into font DB
+                let db = fs.db_mut();
+                db.load_font_data(FALLBACK_TTF.to_vec());
+                db.set_sans_serif_family("Open Sans".to_string());
+
+                db.load_font_data(FALLBACK_SYMBOLS_TTF.to_vec());
+                db.load_font_data(FALLBACK_EMOJI_TTF.to_vec());
+            }
         }
         Mutex::new(Engine {
             fs,
