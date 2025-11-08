@@ -6,19 +6,21 @@ use repose_core::*;
 use crate::anim::{self, animate_f32};
 
 pub fn AnimatedVisibility(
+    key: impl Into<String>,
     visible: bool,
     _enter: EnterTransition,
     _exit: ExitTransition,
     content: View,
 ) -> View {
+    let key = key.into();
     let alpha = animate_f32(
-        "visibility_alpha",
+        format!("visibility_alpha:{key}"),
         if visible { 1.0 } else { 0.0 },
         AnimationSpec::default(),
     );
 
     let scale = animate_f32(
-        "visibility_scale",
+        format!("visibility_scale:{key}"),
         if visible { 1.0 } else { 0.8 },
         AnimationSpec::default(),
     );
@@ -45,15 +47,19 @@ pub enum ExitTransition {
 }
 
 pub fn Crossfade<T: PartialEq + Clone + 'static>(
+    key: impl Into<String>,
     target: T,
     content: impl Fn(T) -> View + 'static,
 ) -> View {
-    let key = format!("crossfade_{:?}", std::ptr::addr_of!(target));
-    let prev = remember_with_key(key.clone(), || RefCell::new(target.clone()));
+    let key = key.into();
+    let prev = remember_with_key(format!("crossfade_prev:{key}"), || {
+        RefCell::new(target.clone())
+    });
 
     let alpha = if *prev.borrow() != target {
         prev.replace(target.clone());
-        animate_f32(key, 1.0, AnimationSpec::fast())
+        // restart animation to 1.0 each change (UI can layer content if desired)
+        animate_f32(format!("crossfade_alpha:{key}"), 1.0, AnimationSpec::fast())
     } else {
         1.0
     };

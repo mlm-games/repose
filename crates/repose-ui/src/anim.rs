@@ -13,7 +13,8 @@ pub fn animate_f32(key: impl Into<String>, target: f32, spec: AnimationSpec) -> 
     });
     {
         let mut a = anim.borrow_mut();
-        if *a.get() != target {
+        let cur = *a.get();
+        if (cur - target).abs() > 1e-3 {
             a.set_target(target);
         }
         a.update();

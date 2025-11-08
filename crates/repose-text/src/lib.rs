@@ -269,11 +269,18 @@ pub fn wrap_lines(
         return (vec![text.to_string()], false);
     }
 
+    let max_lines_key: u16 = match max_lines {
+        None => 0,
+        Some(n) => {
+            let n = n.min(u16::MAX as usize - 1) as u16;
+            n.saturating_add(1)
+        }
+    };
     let key = (
         fast_hash(text),
         (px * 100.0) as u32,
         (max_width * 100.0) as u32,
-        max_lines.unwrap_or(usize::MAX) as u16,
+        max_lines_key,
         soft_wrap,
     );
     if let Some(h) = wrap_cache().lock().unwrap().get(&key).cloned() {
