@@ -1,8 +1,8 @@
+#![allow(non_snake_case)]
 //! Widgets, layout (Taffy), painting into a platform-agnostic Scene, and text fields.
 //!
 //! repose-render-wgpu is responsible for GPU interaction
 
-#![allow(non_snake_case)]
 pub mod anim;
 pub mod anim_ext;
 pub mod canvas;
@@ -25,7 +25,9 @@ use taffy::prelude::{Position, Size, auto, length, percent};
 pub mod textfield;
 pub use textfield::{TextField, TextFieldState};
 
-use crate::textfield::{TF_FONT_PX, TF_PADDING_X, byte_to_char_index, measure_text, positions_for};
+use crate::textfield::{
+    TF_FONT_DP, TF_PADDING_X_DP, byte_to_char_index, measure_text, positions_for,
+};
 use repose_core::locals;
 
 #[derive(Default)]
@@ -76,7 +78,7 @@ pub fn Text(text: impl Into<String>) -> View {
         ViewKind::Text {
             text: text.into(),
             color: Color::WHITE,
-            font_size: 16.0,
+            font_size: 16.0, // dp (converted to px in layout/paint)
             soft_wrap: false,
             max_lines: None,
             overflow: TextOverflow::Visible,
@@ -104,13 +106,13 @@ pub fn TextColor(mut v: View, color: Color) -> View {
 }
 
 #[allow(non_snake_case)]
-pub fn TextSize(mut v: View, size: f32) -> View {
+pub fn TextSize(mut v: View, size_dp: f32) -> View {
     if let ViewKind::Text {
-        font_size: text_size,
+        font_size: text_size_dp,
         ..
     } = &mut v.kind
     {
-        *text_size = size;
+        *text_size_dp = size_dp;
     }
     v
 }
@@ -367,11 +369,17 @@ impl_into_children_tuple!(0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G, 7 H);
 /// Layout and paint with TextField state injection (Taffy 0.9 API)
 pub fn layout_and_paint(
     root: &View,
-    size: (u32, u32),
+    size_px_u32: (u32, u32),
     textfield_states: &HashMap<u64, Rc<RefCell<TextFieldState>>>,
     interactions: &Interactions,
     focused: Option<u64>,
 ) -> (Scene, Vec<HitRegion>, Vec<SemNode>) {
+    // Unit helpers
+    // dp -> px using current Density
+    let px = |dp_val: f32| dp_to_px(dp_val);
+    // font dp -> px with TextScale applied
+    let font_px = |dp_font: f32| dp_to_px(dp_font) * locals::text_scale().0;
+
     // Assign ids
     let mut id = 1u64;
     fn stamp(mut v: View, id: &mut u64) -> View {
@@ -388,7 +396,7 @@ pub fn layout_and_paint(
     enum NodeCtx {
         Text {
             text: String,
-            font_px: f32,
+            font_dp: f32, // logical size (dp)
             soft_wrap: bool,
             max_lines: Option<usize>,
             overflow: TextOverflow,
@@ -426,12 +434,12 @@ pub fn layout_and_paint(
     struct TextLayout {
         lines: Vec<String>,
         size_px: f32,
-        line_h: f32,
+        line_h_px: f32,
     }
     use std::collections::HashMap as StdHashMap;
     let mut text_cache: StdHashMap<taffy::NodeId, TextLayout> = StdHashMap::new();
 
-    fn style_from_modifier(m: &Modifier, kind: &ViewKind) -> Style {
+    fn style_from_modifier(m: &Modifier, kind: &ViewKind, px: &dyn Fn(f32) -> f32) -> Style {
         use taffy::prelude::*;
         let mut s = Style::default();
 
@@ -491,8 +499,8 @@ pub fn layout_and_paint(
         if let Some(sh) = m.flex_shrink {
             s.flex_shrink = sh;
         }
-        if let Some(b) = m.flex_basis {
-            s.flex_basis = length(b.max(0.0));
+        if let Some(b_dp) = m.flex_basis {
+            s.flex_basis = length(px(b_dp.max(0.0)));
         }
 
         // Align self
@@ -500,14 +508,14 @@ pub fn layout_and_paint(
             s.align_self = Some(a);
         }
 
-        // Absolute positioning
+        // Absolute positioning (convert insets from dp to px)
         if let Some(crate::modifier::PositionType::Absolute) = m.position_type {
             s.position = Position::Absolute;
             s.inset = taffy::geometry::Rect {
-                left: m.offset_left.map(length).unwrap_or_else(auto),
-                right: m.offset_right.map(length).unwrap_or_else(auto),
-                top: m.offset_top.map(length).unwrap_or_else(auto),
-                bottom: m.offset_bottom.map(length).unwrap_or_else(auto),
+                left: m.offset_left.map(|v| length(px(v))).unwrap_or_else(auto),
+                right: m.offset_right.map(|v| length(px(v))).unwrap_or_else(auto),
+                top: m.offset_top.map(|v| length(px(v))).unwrap_or_else(auto),
+                bottom: m.offset_bottom.map(|v| length(px(v))).unwrap_or_else(auto),
             };
         }
 
@@ -518,8 +526,8 @@ pub fn layout_and_paint(
                 .map(|_| GridTemplateComponent::Single(flex(1.0)))
                 .collect();
             s.gap = Size {
-                width: length(cfg.column_gap),
-                height: length(cfg.row_gap),
+                width: length(px(cfg.column_gap)),
+                height: length(px(cfg.row_gap)),
             };
         }
 
@@ -532,15 +540,15 @@ pub fn layout_and_paint(
         }
 
         // Padding (content box). With axis-aware fill below, padding stays inside the allocated box.
-        if let Some(pv) = m.padding_values {
+        if let Some(pv_dp) = m.padding_values {
             s.padding = taffy::geometry::Rect {
-                left: length(pv.left),
-                right: length(pv.right),
-                top: length(pv.top),
-                bottom: length(pv.bottom),
+                left: length(px(pv_dp.left)),
+                right: length(px(pv_dp.right)),
+                top: length(px(pv_dp.top)),
+                bottom: length(px(pv_dp.bottom)),
             };
-        } else if let Some(p) = m.padding {
-            let v = length(p);
+        } else if let Some(p_dp) = m.padding {
+            let v = length(px(p_dp));
             s.padding = taffy::geometry::Rect {
                 left: v,
                 right: v,
@@ -552,22 +560,22 @@ pub fn layout_and_paint(
         // Explicit size — highest priority
         let mut width_set = false;
         let mut height_set = false;
-        if let Some(sz) = m.size {
-            if sz.width.is_finite() {
-                s.size.width = length(sz.width.max(0.0));
+        if let Some(sz_dp) = m.size {
+            if sz_dp.width.is_finite() {
+                s.size.width = length(px(sz_dp.width.max(0.0)));
                 width_set = true;
             }
-            if sz.height.is_finite() {
-                s.size.height = length(sz.height.max(0.0));
+            if sz_dp.height.is_finite() {
+                s.size.height = length(px(sz_dp.height.max(0.0)));
                 height_set = true;
             }
         }
-        if let Some(w) = m.width {
-            s.size.width = length(w.max(0.0));
+        if let Some(w_dp) = m.width {
+            s.size.width = length(px(w_dp.max(0.0)));
             width_set = true;
         }
-        if let Some(h) = m.height {
-            s.size.height = length(h.max(0.0));
+        if let Some(h_dp) = m.height {
+            s.size.height = length(px(h_dp.max(0.0)));
             height_set = true;
         }
 
@@ -635,17 +643,17 @@ pub fn layout_and_paint(
         }
 
         // user min/max clamps
-        if let Some(v) = m.min_width {
-            s.min_size.width = length(v.max(0.0));
+        if let Some(v_dp) = m.min_width {
+            s.min_size.width = length(px(v_dp.max(0.0)));
         }
-        if let Some(v) = m.min_height {
-            s.min_size.height = length(v.max(0.0));
+        if let Some(v_dp) = m.min_height {
+            s.min_size.height = length(px(v_dp.max(0.0)));
         }
-        if let Some(v) = m.max_width {
-            s.max_size.width = length(v.max(0.0));
+        if let Some(v_dp) = m.max_width {
+            s.max_size.width = length(px(v_dp.max(0.0)));
         }
-        if let Some(v) = m.max_height {
-            s.max_size.height = length(v.max(0.0));
+        if let Some(v_dp) = m.max_height {
+            s.max_size.height = length(px(v_dp.max(0.0)));
         }
 
         s
@@ -656,7 +664,11 @@ pub fn layout_and_paint(
         t: &mut TaffyTree<NodeCtx>,
         nodes_map: &mut HashMap<ViewId, taffy::NodeId>,
     ) -> taffy::NodeId {
-        let mut style = style_from_modifier(&v.modifier, &v.kind);
+        // We'll inject px() at call-site (need locals access); this function
+        // is called from a scope that has the helper closure.
+        let px_helper = |dp_val: f32| dp_to_px(dp_val);
+
+        let mut style = style_from_modifier(&v.modifier, &v.kind, &px_helper);
 
         if v.modifier.grid_col_span.is_some() || v.modifier.grid_row_span.is_some() {
             use taffy::prelude::{GridPlacement, Line};
@@ -683,7 +695,7 @@ pub fn layout_and_paint(
         let node = match &v.kind {
             ViewKind::Text {
                 text,
-                font_size,
+                font_size: font_dp,
                 soft_wrap,
                 max_lines,
                 overflow,
@@ -693,7 +705,7 @@ pub fn layout_and_paint(
                     style,
                     NodeCtx::Text {
                         text: text.clone(),
-                        font_px: *font_size,
+                        font_dp: *font_dp,
                         soft_wrap: *soft_wrap,
                         max_lines: *max_lines,
                         overflow: *overflow,
@@ -786,14 +798,14 @@ pub fn layout_and_paint(
 
     {
         let mut rs = taffy.style(root_node).unwrap().clone();
-        rs.size.width = length(size.0 as f32);
-        rs.size.height = length(size.1 as f32);
+        rs.size.width = length(size_px_u32.0 as f32);
+        rs.size.height = length(size_px_u32.1 as f32);
         taffy.set_style(root_node, rs).unwrap();
     }
 
     let available = taffy::geometry::Size {
-        width: AvailableSpace::Definite(size.0 as f32),
-        height: AvailableSpace::Definite(size.1 as f32),
+        width: AvailableSpace::Definite(size_px_u32.0 as f32),
+        height: AvailableSpace::Definite(size_px_u32.1 as f32),
     };
 
     // Measure function for intrinsic content
@@ -802,39 +814,38 @@ pub fn layout_and_paint(
             match ctx {
                 Some(NodeCtx::Text {
                     text,
-                    font_px,
+                    font_dp,
                     soft_wrap,
                     max_lines,
                     overflow,
                 }) => {
-                    // Apply text scale in measure so paint matches exactly
-                    let scale = locals::text_scale().0;
-                    let size_px = *font_px * scale;
-                    let line_h = size_px * 1.3;
+                    // Apply density + text scale in measure so paint matches exactly
+                    let size_px_val = font_px(*font_dp);
+                    let line_h_px_val = size_px_val * 1.3;
 
                     // Content-hugging width by default (unless caller set known.width).
-                    let approx_w = text.len() as f32 * *font_px * 0.6;
-                    let measured_w = known.width.unwrap_or(approx_w);
+                    let approx_w_px = text.len() as f32 * size_px_val * 0.6; // rough estimate (glyph-width-ish)
+                    let measured_w_px = known.width.unwrap_or(approx_w_px);
 
-                    // Content-hugging width by default (unless caller set known.width).
-                    let wrap_w = if *soft_wrap {
+                    // Wrap width in px if soft wrap enabled
+                    let wrap_w_px = if *soft_wrap {
                         match avail.width {
                             AvailableSpace::Definite(w) => w,
-                            _ => measured_w,
+                            _ => measured_w_px,
                         }
                     } else {
-                        measured_w
+                        measured_w_px
                     };
 
                     // Produce final lines once and cache
                     let lines_vec: Vec<String> = if *soft_wrap {
                         let (ls, _trunc) =
-                            repose_text::wrap_lines(text, size_px, wrap_w, *max_lines, true);
+                            repose_text::wrap_lines(text, size_px_val, wrap_w_px, *max_lines, true);
                         ls
                     } else {
                         match overflow {
                             TextOverflow::Ellipsis => {
-                                vec![repose_text::ellipsize_line(text, size_px, wrap_w)]
+                                vec![repose_text::ellipsize_line(text, size_px_val, wrap_w_px)]
                             }
                             _ => vec![text.clone()],
                         }
@@ -843,88 +854,91 @@ pub fn layout_and_paint(
                         node,
                         TextLayout {
                             lines: lines_vec.clone(),
-                            size_px,
-                            line_h,
+                            size_px: size_px_val,
+                            line_h_px: line_h_px_val,
                         },
                     );
                     let n_lines = lines_vec.len().max(1);
 
                     taffy::geometry::Size {
-                        width: measured_w,
-                        height: line_h * n_lines as f32,
+                        width: measured_w_px,
+                        height: line_h_px_val * n_lines as f32,
                     }
                 }
                 Some(NodeCtx::Button { label }) => taffy::geometry::Size {
-                    width: (label.len() as f32 * 16.0 * 0.6) + 24.0,
-                    height: 36.0,
+                    width: (label.len() as f32 * font_px(16.0) * 0.6) + px(24.0),
+                    height: px(36.0),
                 },
                 Some(NodeCtx::TextField) => {
-                    let w = known.width.unwrap_or(220.0);
+                    let w_px = known.width.unwrap_or(px(220.0));
                     taffy::geometry::Size {
-                        width: w,
-                        height: 36.0,
+                        width: w_px,
+                        height: px(36.0),
                     }
                 }
                 Some(NodeCtx::Checkbox { label }) => {
-                    let label_w = (label.len() as f32) * 16.0 * 0.6;
-                    let w = 24.0 + 8.0 + label_w; // box + gap + text estimate
+                    let label_w_px = (label.len() as f32) * font_px(16.0) * 0.6;
+                    let w_px = px(24.0) + px(8.0) + label_w_px; // box + gap + text estimate
                     taffy::geometry::Size {
-                        width: known.width.unwrap_or(w),
-                        height: 24.0,
+                        width: known.width.unwrap_or(w_px),
+                        height: px(24.0),
                     }
                 }
                 Some(NodeCtx::Radio { label }) => {
-                    let label_w = (label.len() as f32) * 16.0 * 0.6;
-                    let w = 24.0 + 8.0 + label_w; // circle + gap + text estimate
+                    let label_w_px = (label.len() as f32) * font_px(16.0) * 0.6;
+                    let w_px = px(24.0) + px(8.0) + label_w_px; // circle + gap + text estimate
                     taffy::geometry::Size {
-                        width: known.width.unwrap_or(w),
-                        height: 24.0,
+                        width: known.width.unwrap_or(w_px),
+                        height: px(24.0),
                     }
                 }
                 Some(NodeCtx::Switch { label }) => {
-                    let label_w = (label.len() as f32) * 16.0 * 0.6;
-                    let w = 46.0 + 8.0 + label_w; // track + gap + text
+                    let label_w_px = (label.len() as f32) * font_px(16.0) * 0.6;
+                    let w_px = px(46.0) + px(8.0) + label_w_px; // track + gap + text
                     taffy::geometry::Size {
-                        width: known.width.unwrap_or(w),
-                        height: 28.0,
+                        width: known.width.unwrap_or(w_px),
+                        height: px(28.0),
                     }
                 }
                 Some(NodeCtx::Slider { label }) => {
-                    let label_w = (label.len() as f32) * 16.0 * 0.6;
-                    let w = (known.width).unwrap_or(200.0f32.max(46.0 + 8.0 + label_w));
+                    let label_w_px = (label.len() as f32) * font_px(16.0) * 0.6;
+                    let w_px =
+                        (known.width).unwrap_or(px(200.0).max(px(46.0) + px(8.0) + label_w_px));
                     taffy::geometry::Size {
-                        width: w,
-                        height: 28.0,
+                        width: w_px,
+                        height: px(28.0),
                     }
                 }
                 Some(NodeCtx::Range { label }) => {
-                    let label_w = (label.len() as f32) * 16.0 * 0.6;
-                    let w = (known.width).unwrap_or(220.0f32.max(46.0 + 8.0 + label_w));
+                    let label_w_px = (label.len() as f32) * font_px(16.0) * 0.6;
+                    let w_px =
+                        (known.width).unwrap_or(px(220.0).max(px(46.0) + px(8.0) + label_w_px));
                     taffy::geometry::Size {
-                        width: w,
-                        height: 28.0,
+                        width: w_px,
+                        height: px(28.0),
                     }
                 }
                 Some(NodeCtx::Progress { label }) => {
-                    let label_w = (label.len() as f32) * 16.0 * 0.6;
-                    let w = (known.width).unwrap_or(200.0f32.max(100.0 + 8.0 + label_w));
+                    let label_w_px = (label.len() as f32) * font_px(16.0) * 0.6;
+                    let w_px =
+                        (known.width).unwrap_or(px(200.0).max(px(100.0) + px(8.0) + label_w_px));
                     taffy::geometry::Size {
-                        width: w,
-                        height: 12.0 + 8.0,
-                    } // track + small padding
+                        width: w_px,
+                        height: px(12.0) + px(8.0),
+                    }
                 }
                 Some(NodeCtx::ScrollContainer) => {
                     taffy::geometry::Size {
                         width: known.width.unwrap_or_else(|| {
                             match avail.width {
                                 AvailableSpace::Definite(w) => w,
-                                _ => 300.0, // Fallback width
+                                _ => px(300.0), // Fallback width
                             }
                         }),
                         height: known.height.unwrap_or_else(|| {
                             match avail.height {
                                 AvailableSpace::Definite(h) => h,
-                                _ => 600.0, // Fallback height
+                                _ => px(600.0), // Fallback height
                             }
                         }),
                     }
@@ -936,8 +950,8 @@ pub fn layout_and_paint(
 
     // eprintln!(
     //     "win {:?}x{:?} root {:?}",
-    //     size.0,
-    //     size.1,
+    //     size_px_u32.0,
+    //     size_px_u32.1,
     //     taffy.layout(root_node).unwrap().size
     // );
 
@@ -1003,35 +1017,37 @@ pub fn layout_and_paint(
         textfield_states: &HashMap<u64, Rc<RefCell<TextFieldState>>>,
         interactions: &Interactions,
         focused: Option<u64>,
-        parent_offset: (f32, f32),
+        parent_offset_px: (f32, f32),
         alpha_accum: f32,
         text_cache: &StdHashMap<taffy::NodeId, TextLayout>,
+        font_px: &dyn Fn(f32) -> f32,
     ) {
         let local = layout_of(nodes[&v.id], t);
-        let rect = add_offset(local, parent_offset);
+        let rect = add_offset(local, parent_offset_px);
 
+        // Convert padding from dp to px for content rect
         let content_rect = {
-            // padding_values beats uniform padding
-            if let Some(pv) = v.modifier.padding_values {
+            if let Some(pv_dp) = v.modifier.padding_values {
                 crate::Rect {
-                    x: rect.x + pv.left,
-                    y: rect.y + pv.top,
-                    w: (rect.w - pv.left - pv.right).max(0.0),
-                    h: (rect.h - pv.top - pv.bottom).max(0.0),
+                    x: rect.x + dp_to_px(pv_dp.left),
+                    y: rect.y + dp_to_px(pv_dp.top),
+                    w: (rect.w - dp_to_px(pv_dp.left) - dp_to_px(pv_dp.right)).max(0.0),
+                    h: (rect.h - dp_to_px(pv_dp.top) - dp_to_px(pv_dp.bottom)).max(0.0),
                 }
-            } else if let Some(p) = v.modifier.padding {
+            } else if let Some(p_dp) = v.modifier.padding {
+                let p_px = dp_to_px(p_dp);
                 crate::Rect {
-                    x: rect.x + p,
-                    y: rect.y + p,
-                    w: (rect.w - 2.0 * p).max(0.0),
-                    h: (rect.h - 2.0 * p).max(0.0),
+                    x: rect.x + p_px,
+                    y: rect.y + p_px,
+                    w: (rect.w - 2.0 * p_px).max(0.0),
+                    h: (rect.h - 2.0 * p_px).max(0.0),
                 }
             } else {
                 rect
             }
         };
 
-        let base = (parent_offset.0 + local.x, parent_offset.1 + local.y);
+        let base_px = (parent_offset_px.0 + local.x, parent_offset_px.1 + local.y);
 
         let is_hovered = interactions.hover == Some(v.id);
         let is_pressed = interactions.pressed.contains(&v.id);
@@ -1042,7 +1058,7 @@ pub fn layout_and_paint(
             scene.nodes.push(SceneNode::Rect {
                 rect,
                 color: mul_alpha(bg, alpha_accum),
-                radius: v.modifier.clip_rounded.unwrap_or(0.0),
+                radius: v.modifier.clip_rounded.map(dp_to_px).unwrap_or(0.0),
             });
         }
 
@@ -1051,8 +1067,8 @@ pub fn layout_and_paint(
             scene.nodes.push(SceneNode::Border {
                 rect,
                 color: mul_alpha(b.color, alpha_accum),
-                width: b.width,
-                radius: b.radius.max(v.modifier.clip_rounded.unwrap_or(0.0)),
+                width: dp_to_px(b.width),
+                radius: dp_to_px(b.radius.max(v.modifier.clip_rounded.unwrap_or(0.0))),
             });
         }
 
@@ -1097,7 +1113,7 @@ pub fn layout_and_paint(
             ViewKind::Text {
                 text,
                 color,
-                font_size,
+                font_size: font_dp,
                 soft_wrap,
                 max_lines,
                 overflow,
@@ -1105,40 +1121,41 @@ pub fn layout_and_paint(
                 let nid = nodes[&v.id];
                 let tl = text_cache.get(&nid);
 
-                let (size, line_h, mut lines): (f32, f32, Vec<String>) = if let Some(tl) = tl {
-                    (tl.size_px, tl.line_h, tl.lines.clone())
-                } else {
-                    // Fallback (shouldn’t happen; cache is built in measure)
-                    let sz = *font_size * locals::text_scale().0;
-                    (sz, sz * 1.3, vec![text.clone()])
-                };
-                // Work within the content box (padding removed)
+                let (size_px_val, line_h_px_val, mut lines): (f32, f32, Vec<String>) =
+                    if let Some(tl) = tl {
+                        (tl.size_px, tl.line_h_px, tl.lines.clone())
+                    } else {
+                        // Fallback
+                        let sz_px = font_px(*font_dp);
+                        (sz_px, sz_px * 1.3, vec![text.clone()])
+                    };
+                // Work within the content box
                 let mut draw_box = content_rect;
-                let max_w = draw_box.w.max(0.0);
-                let max_h = draw_box.h.max(0.0);
+                let max_w_px = draw_box.w.max(0.0);
+                let max_h_px = draw_box.h.max(0.0);
 
                 // Vertical centering for single line within content box
                 if lines.len() == 1 {
-                    let dy = (draw_box.h - size) * 0.5;
-                    if dy.is_finite() {
-                        draw_box.y += dy.max(0.0);
-                        draw_box.h = size;
+                    let dy_px = (draw_box.h - size_px_val) * 0.5;
+                    if dy_px.is_finite() {
+                        draw_box.y += dy_px.max(0.0);
+                        draw_box.h = size_px_val;
                     }
                 }
 
                 // For if height is constrained by rect.h and lines overflow visually,
-                let max_visual_lines = if max_h > 0.5 {
-                    (max_h / line_h).floor().max(1.0) as usize
+                let max_visual_lines = if max_h_px > 0.5 {
+                    (max_h_px / line_h_px_val).floor().max(1.0) as usize
                 } else {
                     usize::MAX
                 };
 
                 if lines.len() > max_visual_lines {
                     lines.truncate(max_visual_lines);
-                    if *overflow == TextOverflow::Ellipsis && max_w > 0.5 {
+                    if *overflow == TextOverflow::Ellipsis && max_w_px > 0.5 {
                         // Ellipsize the last visible line
                         if let Some(last) = lines.last_mut() {
-                            *last = repose_text::ellipsize_line(last, size, max_w);
+                            *last = repose_text::ellipsize_line(last, size_px_val, max_w_px);
                         }
                     }
                 }
@@ -1159,13 +1176,13 @@ pub fn layout_and_paint(
                     scene.nodes.push(SceneNode::Text {
                         rect: crate::Rect {
                             x: draw_box.x,
-                            y: draw_box.y + i as f32 * line_h,
+                            y: draw_box.y + i as f32 * line_h_px_val,
                             w: draw_box.w,
-                            h: line_h,
+                            h: line_h_px_val,
                         },
                         text: ln.clone(),
                         color: mul_alpha(*color, alpha_accum),
-                        size: size,
+                        size: size_px_val,
                     });
                 }
 
@@ -1196,24 +1213,29 @@ pub fn layout_and_paint(
                     scene.nodes.push(SceneNode::Rect {
                         rect,
                         color: mul_alpha(base, alpha_accum),
-                        radius: v.modifier.clip_rounded.unwrap_or(6.0),
+                        radius: v
+                            .modifier
+                            .clip_rounded
+                            .map(dp_to_px)
+                            .unwrap_or(6.0_f32 /* dp */)
+                            .max(0.0),
                     });
                 }
                 // Label
-                let px = 16.0;
-                let approx_w = (text.len() as f32) * px * 0.6;
-                let tx = rect.x + (rect.w - approx_w).max(0.0) * 0.5;
-                let ty = rect.y + (rect.h - px).max(0.0) * 0.5;
+                let label_px = font_px(16.0);
+                let approx_w_px = (text.len() as f32) * label_px * 0.6;
+                let tx = rect.x + (rect.w - approx_w_px).max(0.0) * 0.5;
+                let ty = rect.y + (rect.h - label_px).max(0.0) * 0.5;
                 scene.nodes.push(SceneNode::Text {
                     rect: repose_core::Rect {
                         x: tx,
                         y: ty,
-                        w: approx_w,
-                        h: px,
+                        w: approx_w_px,
+                        h: label_px,
                     },
                     text: text.clone(),
                     color: mul_alpha(Color::WHITE, alpha_accum),
-                    size: px,
+                    size: label_px,
                 });
 
                 if v.modifier.click || on_click.is_some() {
@@ -1246,8 +1268,12 @@ pub fn layout_and_paint(
                     scene.nodes.push(SceneNode::Border {
                         rect,
                         color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
-                        width: 2.0,
-                        radius: v.modifier.clip_rounded.unwrap_or(6.0),
+                        width: dp_to_px(2.0),
+                        radius: v
+                            .modifier
+                            .clip_rounded
+                            .map(dp_to_px)
+                            .unwrap_or(dp_to_px(6.0)),
                     });
                 }
             }
@@ -1283,11 +1309,12 @@ pub fn layout_and_paint(
                 });
 
                 // Inner content rect (padding)
+                let pad_x_px = dp_to_px(TF_PADDING_X_DP);
                 let inner = repose_core::Rect {
-                    x: rect.x + TF_PADDING_X,
-                    y: rect.y + 8.0,
-                    w: rect.w - 2.0 * TF_PADDING_X,
-                    h: rect.h - 16.0,
+                    x: rect.x + pad_x_px,
+                    y: rect.y + dp_to_px(8.0),
+                    w: rect.w - 2.0 * pad_x_px,
+                    h: rect.h - dp_to_px(16.0),
                 };
                 scene.nodes.push(SceneNode::PushClip {
                     rect: inner,
@@ -1298,31 +1325,37 @@ pub fn layout_and_paint(
                     scene.nodes.push(SceneNode::Border {
                         rect,
                         color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
-                        width: 2.0,
-                        radius: v.modifier.clip_rounded.unwrap_or(6.0),
+                        width: dp_to_px(2.0),
+                        radius: v
+                            .modifier
+                            .clip_rounded
+                            .map(dp_to_px)
+                            .unwrap_or(dp_to_px(6.0)),
                     });
                 }
                 if let Some(state_rc) = textfield_states.get(&v.id) {
                     state_rc.borrow_mut().set_inner_width(inner.w);
 
                     let state = state_rc.borrow();
-                    let text = &state.text;
-                    let px = TF_FONT_PX as u32;
-                    let m = measure_text(text, px);
+                    let text_val = &state.text;
+                    let font_px_u32 = TF_FONT_DP as u32; // treated as dp inside measure_text
+                    let m = measure_text(text_val, font_px_u32);
 
                     // Selection highlight
                     if state.selection.start != state.selection.end {
                         let i0 = byte_to_char_index(&m, state.selection.start);
                         let i1 = byte_to_char_index(&m, state.selection.end);
-                        let sx = m.positions.get(i0).copied().unwrap_or(0.0) - state.scroll_offset;
-                        let ex = m.positions.get(i1).copied().unwrap_or(sx) - state.scroll_offset;
-                        let sel_x = inner.x + sx.max(0.0);
-                        let sel_w = (ex - sx).max(0.0);
+                        let sx_px =
+                            m.positions.get(i0).copied().unwrap_or(0.0) - state.scroll_offset;
+                        let ex_px =
+                            m.positions.get(i1).copied().unwrap_or(sx_px) - state.scroll_offset;
+                        let sel_x_px = inner.x + sx_px.max(0.0);
+                        let sel_w_px = (ex_px - sx_px).max(0.0);
                         scene.nodes.push(SceneNode::Rect {
                             rect: repose_core::Rect {
-                                x: sel_x,
+                                x: sel_x_px,
                                 y: inner.y,
-                                w: sel_w,
+                                w: sel_w_px,
                                 h: inner.h,
                             },
                             color: mul_alpha(Color::from_hex("#3B7BFF55"), alpha_accum),
@@ -1332,21 +1365,21 @@ pub fn layout_and_paint(
 
                     // Composition underline
                     if let Some(range) = &state.composition {
-                        if range.start < range.end && !text.is_empty() {
+                        if range.start < range.end && !text_val.is_empty() {
                             let i0 = byte_to_char_index(&m, range.start);
                             let i1 = byte_to_char_index(&m, range.end);
-                            let sx =
+                            let sx_px =
                                 m.positions.get(i0).copied().unwrap_or(0.0) - state.scroll_offset;
-                            let ex =
-                                m.positions.get(i1).copied().unwrap_or(sx) - state.scroll_offset;
-                            let ux = inner.x + sx.max(0.0);
-                            let uw = (ex - sx).max(0.0);
+                            let ex_px =
+                                m.positions.get(i1).copied().unwrap_or(sx_px) - state.scroll_offset;
+                            let ux = inner.x + sx_px.max(0.0);
+                            let uw = (ex_px - sx_px).max(0.0);
                             scene.nodes.push(SceneNode::Rect {
                                 rect: repose_core::Rect {
                                     x: ux,
-                                    y: inner.y + inner.h - 2.0,
+                                    y: inner.y + inner.h - dp_to_px(2.0),
                                     w: uw,
-                                    h: 2.0,
+                                    h: dp_to_px(2.0),
                                 },
                                 color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
                                 radius: 0.0,
@@ -1355,6 +1388,11 @@ pub fn layout_and_paint(
                     }
 
                     // Text (offset by scroll)
+                    let text_color = if text_val.is_empty() {
+                        mul_alpha(Color::from_hex("#666666"), alpha_accum)
+                    } else {
+                        mul_alpha(Color::from_hex("#CCCCCC"), alpha_accum)
+                    };
                     scene.nodes.push(SceneNode::Text {
                         rect: repose_core::Rect {
                             x: inner.x - state.scroll_offset,
@@ -1362,29 +1400,26 @@ pub fn layout_and_paint(
                             w: inner.w,
                             h: inner.h,
                         },
-                        text: if text.is_empty() {
+                        text: if text_val.is_empty() {
                             hint.clone()
                         } else {
-                            text.clone()
+                            text_val.clone()
                         },
-                        color: if text.is_empty() {
-                            mul_alpha(Color::from_hex("#666666"), alpha_accum)
-                        } else {
-                            mul_alpha(Color::from_hex("#CCCCCC"), alpha_accum)
-                        },
-                        size: TF_FONT_PX,
+                        color: text_color,
+                        size: font_px(TF_FONT_DP),
                     });
 
                     // Caret (blink)
                     if state.selection.start == state.selection.end && state.caret_visible() {
                         let i = byte_to_char_index(&m, state.selection.end);
-                        let cx = m.positions.get(i).copied().unwrap_or(0.0) - state.scroll_offset;
-                        let caret_x = inner.x + cx.max(0.0);
+                        let cx_px =
+                            m.positions.get(i).copied().unwrap_or(0.0) - state.scroll_offset;
+                        let caret_x_px = inner.x + cx_px.max(0.0);
                         scene.nodes.push(SceneNode::Rect {
                             rect: repose_core::Rect {
-                                x: caret_x,
+                                x: caret_x_px,
                                 y: inner.y,
-                                w: 1.0,
+                                w: dp_to_px(1.0),
                                 h: inner.h,
                             },
                             color: mul_alpha(Color::WHITE, alpha_accum),
@@ -1397,7 +1432,7 @@ pub fn layout_and_paint(
                     sems.push(SemNode {
                         id: v.id,
                         role: Role::TextField,
-                        label: Some(text.clone()),
+                        label: Some(text_val.clone()),
                         rect,
                         focused: is_focused,
                         enabled: true,
@@ -1413,7 +1448,7 @@ pub fn layout_and_paint(
                         },
                         text: hint.clone(),
                         color: mul_alpha(Color::from_hex("#666666"), alpha_accum),
-                        size: TF_FONT_PX,
+                        size: font_px(TF_FONT_DP),
                     });
                     sems.push(SemNode {
                         id: v.id,
@@ -1432,11 +1467,10 @@ pub fn layout_and_paint(
                 get_scroll_offset,
                 set_scroll_offset,
             } => {
-                log::debug!("ScrollV: registering hit region at rect {:?}", rect);
-
+                // Keep hit region as outer rect so scroll works even on padding
                 hits.push(HitRegion {
                     id: v.id,
-                    rect,
+                    rect, // outer
                     on_click: None,
                     on_scroll: on_scroll.clone(),
                     focusable: false,
@@ -1450,36 +1484,37 @@ pub fn layout_and_paint(
                     on_text_submit: None,
                 });
 
+                // Use the inner content box (after padding) as the true viewport
+                let vp = content_rect; // already computed above with padding converted to px
+
                 if let Some(set_vh) = set_viewport_height {
-                    set_vh(rect.h);
+                    set_vh(vp.h.max(0.0));
                 }
 
-                // Compute content height from children (local coords)
-                let mut content_h = 0.0f32;
+                // Content height in the parent's content space (what Taffy gives us)
+                let mut content_h_px = 0.0f32;
                 for c in &v.children {
                     let nid = nodes[&c.id];
                     let l = t.layout(nid).unwrap();
-                    content_h = content_h.max(l.location.y + l.size.height);
+                    content_h_px = content_h_px.max(l.location.y + l.size.height);
                 }
                 if let Some(set_ch) = set_content_height {
-                    set_ch(content_h);
+                    set_ch(content_h_px);
                 }
 
+                // Clip to the inner viewport
                 scene.nodes.push(SceneNode::PushClip {
-                    rect,
-                    radius: v.modifier.clip_rounded.unwrap_or(0.0),
+                    rect: vp,
+                    radius: 0.0, // inner clip; keep simple (outer border already drawn if any)
                 });
 
-                let scroll_offset = if let Some(get) = get_scroll_offset {
-                    let offset = get();
-                    log::debug!("ScrollV walk: applying scroll offset = {}", offset);
-                    offset
+                // Apply scroll offset (children are laid out in parent content coords)
+                let scroll_offset_px = if let Some(get) = get_scroll_offset {
+                    get()
                 } else {
                     0.0
                 };
-
-                // Translate children by -scroll_offset in Y
-                let child_offset = (base.0, base.1 - scroll_offset);
+                let child_offset_px = (base_px.0, base_px.1 - scroll_offset_px);
                 for c in &v.children {
                     walk(
                         c,
@@ -1491,85 +1526,77 @@ pub fn layout_and_paint(
                         textfield_states,
                         interactions,
                         focused,
-                        child_offset,
+                        child_offset_px,
                         alpha_accum,
                         text_cache,
+                        font_px,
                     );
                 }
 
-                // Scrollbar overlay (vertical)
-                if content_h > rect.h + 0.5 {
-                    let thickness = 6.0f32;
-                    let margin = 2.0f32;
-                    let min_thumb = 24.0f32;
+                // Scrollbar overlay computed against inner viewport
+                if content_h_px > vp.h + 0.5 {
+                    let thickness_px = dp_to_px(6.0);
+                    let margin_px = dp_to_px(2.0);
+                    let min_thumb_px = dp_to_px(24.0);
 
-                    // Track along right edge inside the viewport
-                    let track_x = rect.x + rect.w - margin - thickness;
-                    let track_y = rect.y + margin;
-                    let track_h = (rect.h - 2.0 * margin).max(0.0);
+                    // Track along right edge inside the inner viewport
+                    let track_x = vp.x + vp.w - margin_px - thickness_px;
+                    let track_y = vp.y + margin_px;
+                    let track_h = (vp.h - 2.0 * margin_px).max(0.0);
 
-                    // Thumb length proportional to viewport/content
-                    let ratio = (rect.h / content_h).clamp(0.0, 1.0);
-                    let mut thumb_h = (track_h * ratio).clamp(min_thumb, track_h);
+                    // Thumb size/position uses vp.h
+                    let ratio = (vp.h / content_h_px).clamp(0.0, 1.0);
+                    let mut thumb_h = (track_h * ratio).clamp(min_thumb_px, track_h);
 
-                    // Position: 0..1 along track
-                    let denom = (content_h - rect.h).max(1.0);
-                    let tpos = (scroll_offset / denom).clamp(0.0, 1.0);
+                    let denom = (content_h_px - vp.h).max(1.0);
+                    let tpos = (scroll_offset_px / denom).clamp(0.0, 1.0);
                     let max_pos = (track_h - thumb_h).max(0.0);
                     let thumb_y = track_y + tpos * max_pos;
 
-                    // Colors from theme, with lowered alpha
+                    // Theme-ish colors
                     let th = locals::theme();
                     let mut track_col = th.on_surface;
-                    track_col.3 = 32; // ~12% alpha
+                    track_col.3 = 32;
                     let mut thumb_col = th.on_surface;
-                    thumb_col.3 = 140; // ~55% alpha
+                    thumb_col.3 = 140;
 
                     scene.nodes.push(SceneNode::Rect {
                         rect: crate::Rect {
                             x: track_x,
                             y: track_y,
-                            w: thickness,
+                            w: thickness_px,
                             h: track_h,
                         },
                         color: track_col,
-                        radius: thickness * 0.5,
+                        radius: thickness_px * 0.5,
                     });
-
-                    // Thumb
                     scene.nodes.push(SceneNode::Rect {
                         rect: crate::Rect {
                             x: track_x,
                             y: thumb_y,
-                            w: thickness,
+                            w: thickness_px,
                             h: thumb_h,
                         },
                         color: thumb_col,
-                        radius: thickness * 0.5,
+                        radius: thickness_px * 0.5,
                     });
 
                     if let Some(setter) = set_scroll_offset.clone() {
+                        // Draggable thumb over inner track
                         let thumb_id: u64 = v.id ^ 0x8000_0001;
-
-                        // Map pointer y -> scroll offset (center thumb on pointer)
-                        let map_to_off = Rc::new(move |py: f32| -> f32 {
-                            let denom = (content_h - rect.h).max(1.0);
+                        let map_to_off = Rc::new(move |py_px: f32| -> f32 {
+                            let denom = (content_h_px - vp.h).max(1.0);
                             let max_pos = (track_h - thumb_h).max(0.0);
-                            let pos = ((py - track_y) - thumb_h * 0.5).clamp(0.0, max_pos);
+                            let pos = ((py_px - track_y) - thumb_h * 0.5).clamp(0.0, max_pos);
                             let t = if max_pos > 0.0 { pos / max_pos } else { 0.0 };
                             t * denom
                         });
 
-                        // Handlers
                         let on_pd: Rc<dyn Fn(repose_core::input::PointerEvent)> = {
                             let setter = setter.clone();
                             let map = map_to_off.clone();
-                            Rc::new(move |pe| {
-                                setter(map(pe.position.y)); // center-on-press
-                            })
+                            Rc::new(move |pe| setter(map(pe.position.y)))
                         };
-
-                        // Only install move while pressed to avoid hover-driven updates
                         let is_pressed = interactions.pressed.contains(&thumb_id);
                         let on_pm: Option<Rc<dyn Fn(repose_core::input::PointerEvent)>> =
                             if is_pressed {
@@ -1579,7 +1606,6 @@ pub fn layout_and_paint(
                             } else {
                                 None
                             };
-
                         let on_pu: Rc<dyn Fn(repose_core::input::PointerEvent)> =
                             Rc::new(move |_pe| {});
 
@@ -1588,7 +1614,7 @@ pub fn layout_and_paint(
                             rect: crate::Rect {
                                 x: track_x,
                                 y: thumb_y,
-                                w: thickness,
+                                w: thickness_px,
                                 h: thumb_h,
                             },
                             on_click: None,
@@ -1634,43 +1660,42 @@ pub fn layout_and_paint(
                     on_text_submit: None,
                 });
 
+                let vp = content_rect;
+
                 if let Some(set_w) = set_viewport_width {
-                    set_w(rect.w);
+                    set_w(vp.w.max(0.0));
                 }
                 if let Some(set_h) = set_viewport_height {
-                    set_h(rect.h);
+                    set_h(vp.h.max(0.0));
                 }
 
-                let mut content_w = 0.0f32;
-                let mut content_h = 0.0f32;
+                // Content extents (parent content coords)
+                let mut content_w_px = 0.0f32;
+                let mut content_h_px = 0.0f32;
                 for c in &v.children {
                     let nid = nodes[&c.id];
                     let l = t.layout(nid).unwrap();
-                    content_w = content_w.max(l.location.x + l.size.width);
-                    content_h = content_h.max(l.location.y + l.size.height);
+                    content_w_px = content_w_px.max(l.location.x + l.size.width);
+                    content_h_px = content_h_px.max(l.location.y + l.size.height);
                 }
                 if let Some(set_cw) = set_content_width {
-                    set_cw(content_w);
+                    set_cw(content_w_px);
                 }
                 if let Some(set_ch) = set_content_height {
-                    set_ch(content_h);
+                    set_ch(content_h_px);
                 }
 
-                // Clip to viewport
                 scene.nodes.push(SceneNode::PushClip {
-                    rect,
-                    radius: v.modifier.clip_rounded.unwrap_or(0.0),
+                    rect: vp,
+                    radius: 0.0,
                 });
 
-                // Offsets
-                let (ox, oy) = if let Some(get) = get_scroll_offset_xy {
+                let (ox_px, oy_px) = if let Some(get) = get_scroll_offset_xy {
                     get()
                 } else {
                     (0.0, 0.0)
                 };
-
-                // Children translated by (-ox, -oy)
-                let child_offset = (base.0 - ox, base.1 - oy);
+                let child_offset_px = (base_px.0 - ox_px, base_px.1 - oy_px);
                 for c in &v.children {
                     walk(
                         c,
@@ -1682,20 +1707,20 @@ pub fn layout_and_paint(
                         textfield_states,
                         interactions,
                         focused,
-                        child_offset,
+                        child_offset_px,
                         alpha_accum,
                         text_cache,
+                        font_px,
                     );
                 }
 
-                // Scrollbars overlay (XY)
-                let show_v = content_h > rect.h + 0.5;
-                let show_h = content_w > rect.w + 0.5;
-
+                // Scrollbars against inner viewport
+                let show_v = content_h_px > vp.h + 0.5;
+                let show_h = content_w_px > vp.w + 0.5;
                 if show_v || show_h {
-                    let thickness = 6.0f32;
-                    let margin = 2.0f32;
-                    let min_thumb = 24.0f32;
+                    let thickness_px = dp_to_px(6.0);
+                    let margin_px = dp_to_px(2.0);
+                    let min_thumb_px = dp_to_px(24.0);
 
                     let thm = locals::theme();
                     let mut track_col = thm.on_surface;
@@ -1705,17 +1730,17 @@ pub fn layout_and_paint(
 
                     // Vertical
                     if show_v {
-                        let track_x = rect.x + rect.w - margin - thickness;
-                        let track_y = rect.y + margin;
-                        let mut track_h = (rect.h - 2.0 * margin).max(0.0);
+                        let track_x = vp.x + vp.w - margin_px - thickness_px;
+                        let track_y = vp.y + margin_px;
+                        let mut track_h = (vp.h - 2.0 * margin_px).max(0.0);
                         if show_h {
-                            track_h = (track_h - (thickness + margin)).max(0.0);
+                            track_h = (track_h - (thickness_px + margin_px)).max(0.0);
                         }
 
-                        let ratio = (rect.h / content_h).clamp(0.0, 1.0);
-                        let mut thumb_h = (track_h * ratio).clamp(min_thumb, track_h);
-                        let denom = (content_h - rect.h).max(1.0);
-                        let tpos = (oy / denom).clamp(0.0, 1.0);
+                        let ratio = (vp.h / content_h_px).clamp(0.0, 1.0);
+                        let mut thumb_h = (track_h * ratio).clamp(min_thumb_px, track_h);
+                        let denom = (content_h_px - vp.h).max(1.0);
+                        let tpos = (oy_px / denom).clamp(0.0, 1.0);
                         let max_pos = (track_h - thumb_h).max(0.0);
                         let thumb_y = track_y + tpos * max_pos;
 
@@ -1723,59 +1748,54 @@ pub fn layout_and_paint(
                             rect: crate::Rect {
                                 x: track_x,
                                 y: track_y,
-                                w: thickness,
+                                w: thickness_px,
                                 h: track_h,
                             },
                             color: track_col,
-                            radius: thickness * 0.5,
+                            radius: thickness_px * 0.5,
                         });
                         scene.nodes.push(SceneNode::Rect {
                             rect: crate::Rect {
                                 x: track_x,
                                 y: thumb_y,
-                                w: thickness,
+                                w: thickness_px,
                                 h: thumb_h,
                             },
                             color: thumb_col,
-                            radius: thickness * 0.5,
+                            radius: thickness_px * 0.5,
                         });
 
                         if let Some(set_xy) = set_scroll_offset_xy.clone() {
                             let vthumb_id: u64 = v.id ^ 0x8000_0011;
-
-                            let map_to_off_y = Rc::new(move |py: f32| -> f32 {
-                                let denom = (content_h - rect.h).max(1.0);
+                            let map_to_off_y = Rc::new(move |py_px: f32| -> f32 {
+                                let denom = (content_h_px - vp.h).max(1.0);
                                 let max_pos = (track_h - thumb_h).max(0.0);
-                                let pos = ((py - track_y) - thumb_h * 0.5).clamp(0.0, max_pos);
+                                let pos = ((py_px - track_y) - thumb_h * 0.5).clamp(0.0, max_pos);
                                 let t = if max_pos > 0.0 { pos / max_pos } else { 0.0 };
                                 t * denom
                             });
-
                             let on_pd: Rc<dyn Fn(repose_core::input::PointerEvent)> = {
                                 let set_xy = set_xy.clone();
                                 let map = map_to_off_y.clone();
-                                Rc::new(move |pe| set_xy(ox, map(pe.position.y))) // center-on-press
+                                Rc::new(move |pe| set_xy(ox_px, map(pe.position.y)))
                             };
-
                             let is_pressed = interactions.pressed.contains(&vthumb_id);
                             let on_pm: Option<Rc<dyn Fn(repose_core::input::PointerEvent)>> =
                                 if is_pressed {
                                     let set_xy = set_xy.clone();
                                     let map = map_to_off_y.clone();
-                                    Some(Rc::new(move |pe| set_xy(ox, map(pe.position.y))))
+                                    Some(Rc::new(move |pe| set_xy(ox_px, map(pe.position.y))))
                                 } else {
                                     None
                                 };
-
                             let on_pu: Rc<dyn Fn(repose_core::input::PointerEvent)> =
                                 Rc::new(move |_pe| {});
-
                             hits.push(HitRegion {
                                 id: vthumb_id,
                                 rect: crate::Rect {
                                     x: track_x,
                                     y: thumb_y,
-                                    w: thickness,
+                                    w: thickness_px,
                                     h: thumb_h,
                                 },
                                 on_click: None,
@@ -1795,17 +1815,17 @@ pub fn layout_and_paint(
 
                     // Horizontal
                     if show_h {
-                        let track_x = rect.x + margin;
-                        let track_y = rect.y + rect.h - margin - thickness;
-                        let mut track_w = (rect.w - 2.0 * margin).max(0.0);
+                        let track_x = vp.x + margin_px;
+                        let track_y = vp.y + vp.h - margin_px - thickness_px;
+                        let mut track_w = (vp.w - 2.0 * margin_px).max(0.0);
                         if show_v {
-                            track_w = (track_w - (thickness + margin)).max(0.0);
+                            track_w = (track_w - (thickness_px + margin_px)).max(0.0);
                         }
 
-                        let ratio = (rect.w / content_w).clamp(0.0, 1.0);
-                        let mut thumb_w = (track_w * ratio).clamp(min_thumb, track_w);
-                        let denom = (content_w - rect.w).max(1.0);
-                        let tpos = (ox / denom).clamp(0.0, 1.0);
+                        let ratio = (vp.w / content_w_px).clamp(0.0, 1.0);
+                        let mut thumb_w = (track_w * ratio).clamp(min_thumb_px, track_w);
+                        let denom = (content_w_px - vp.w).max(1.0);
+                        let tpos = (ox_px / denom).clamp(0.0, 1.0);
                         let max_pos = (track_w - thumb_w).max(0.0);
                         let thumb_x = track_x + tpos * max_pos;
 
@@ -1814,59 +1834,54 @@ pub fn layout_and_paint(
                                 x: track_x,
                                 y: track_y,
                                 w: track_w,
-                                h: thickness,
+                                h: thickness_px,
                             },
                             color: track_col,
-                            radius: thickness * 0.5,
+                            radius: thickness_px * 0.5,
                         });
                         scene.nodes.push(SceneNode::Rect {
                             rect: crate::Rect {
                                 x: thumb_x,
                                 y: track_y,
                                 w: thumb_w,
-                                h: thickness,
+                                h: thickness_px,
                             },
                             color: thumb_col,
-                            radius: thickness * 0.5,
+                            radius: thickness_px * 0.5,
                         });
 
                         if let Some(set_xy) = set_scroll_offset_xy.clone() {
                             let hthumb_id: u64 = v.id ^ 0x8000_0012;
-
-                            let map_to_off_x = Rc::new(move |px: f32| -> f32 {
-                                let denom = (content_w - rect.w).max(1.0);
+                            let map_to_off_x = Rc::new(move |px_pos: f32| -> f32 {
+                                let denom = (content_w_px - vp.w).max(1.0);
                                 let max_pos = (track_w - thumb_w).max(0.0);
-                                let pos = ((px - track_x) - thumb_w * 0.5).clamp(0.0, max_pos);
+                                let pos = ((px_pos - track_x) - thumb_w * 0.5).clamp(0.0, max_pos);
                                 let t = if max_pos > 0.0 { pos / max_pos } else { 0.0 };
                                 t * denom
                             });
-
                             let on_pd: Rc<dyn Fn(repose_core::input::PointerEvent)> = {
                                 let set_xy = set_xy.clone();
                                 let map = map_to_off_x.clone();
-                                Rc::new(move |pe| set_xy(map(pe.position.x), oy)) // center-on-press
+                                Rc::new(move |pe| set_xy(map(pe.position.x), oy_px))
                             };
-
                             let is_pressed = interactions.pressed.contains(&hthumb_id);
                             let on_pm: Option<Rc<dyn Fn(repose_core::input::PointerEvent)>> =
                                 if is_pressed {
                                     let set_xy = set_xy.clone();
                                     let map = map_to_off_x.clone();
-                                    Some(Rc::new(move |pe| set_xy(map(pe.position.x), oy)))
+                                    Some(Rc::new(move |pe| set_xy(map(pe.position.x), oy_px)))
                                 } else {
                                     None
                                 };
-
                             let on_pu: Rc<dyn Fn(repose_core::input::PointerEvent)> =
                                 Rc::new(move |_pe| {});
-
                             hits.push(HitRegion {
                                 id: hthumb_id,
                                 rect: crate::Rect {
                                     x: thumb_x,
                                     y: track_y,
                                     w: thumb_w,
-                                    h: thickness,
+                                    h: thickness_px,
                                 },
                                 on_click: None,
                                 on_scroll: None,
@@ -1894,60 +1909,60 @@ pub fn layout_and_paint(
             } => {
                 let theme = locals::theme();
                 // Box at left (20x20 centered vertically)
-                let box_size = 18.0f32;
+                let box_size_px = dp_to_px(18.0);
                 let bx = rect.x;
-                let by = rect.y + (rect.h - box_size) * 0.5;
+                let by = rect.y + (rect.h - box_size_px) * 0.5;
                 // box bg/border
                 scene.nodes.push(SceneNode::Rect {
                     rect: repose_core::Rect {
                         x: bx,
                         y: by,
-                        w: box_size,
-                        h: box_size,
+                        w: box_size_px,
+                        h: box_size_px,
                     },
                     color: if *checked {
                         mul_alpha(theme.primary, alpha_accum)
                     } else {
                         mul_alpha(theme.surface, alpha_accum)
                     },
-                    radius: 3.0,
+                    radius: dp_to_px(3.0),
                 });
                 scene.nodes.push(SceneNode::Border {
                     rect: repose_core::Rect {
                         x: bx,
                         y: by,
-                        w: box_size,
-                        h: box_size,
+                        w: box_size_px,
+                        h: box_size_px,
                     },
                     color: mul_alpha(Color::from_hex("#555555"), alpha_accum),
-                    width: 1.0,
-                    radius: 3.0,
+                    width: dp_to_px(1.0),
+                    radius: dp_to_px(3.0),
                 });
                 // checkmark
                 if *checked {
                     scene.nodes.push(SceneNode::Text {
                         rect: repose_core::Rect {
-                            x: bx + 3.0,
-                            y: by + 1.0,
-                            w: box_size,
-                            h: box_size,
+                            x: bx + dp_to_px(3.0),
+                            y: by + dp_to_px(1.0),
+                            w: box_size_px,
+                            h: box_size_px,
                         },
                         text: "✓".to_string(),
                         color: mul_alpha(theme.on_primary, alpha_accum),
-                        size: 16.0,
+                        size: font_px(16.0),
                     });
                 }
                 // label
                 scene.nodes.push(SceneNode::Text {
                     rect: repose_core::Rect {
-                        x: bx + box_size + 8.0,
+                        x: bx + box_size_px + dp_to_px(8.0),
                         y: rect.y,
-                        w: rect.w - (box_size + 8.0),
+                        w: rect.w - (box_size_px + dp_to_px(8.0)),
                         h: rect.h,
                     },
                     text: label.clone(),
                     color: mul_alpha(theme.on_surface, alpha_accum),
-                    size: 16.0,
+                    size: font_px(16.0),
                 });
 
                 // Hit + semantics + focus ring
@@ -1983,8 +1998,12 @@ pub fn layout_and_paint(
                     scene.nodes.push(SceneNode::Border {
                         rect,
                         color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
-                        width: 2.0,
-                        radius: v.modifier.clip_rounded.unwrap_or(6.0),
+                        width: dp_to_px(2.0),
+                        radius: v
+                            .modifier
+                            .clip_rounded
+                            .map(dp_to_px)
+                            .unwrap_or(dp_to_px(6.0)),
                     });
                 }
             }
@@ -1995,45 +2014,45 @@ pub fn layout_and_paint(
                 on_select,
             } => {
                 let theme = locals::theme();
-                let d = 18.0f32;
+                let d_px = dp_to_px(18.0);
                 let cx = rect.x;
-                let cy = rect.y + (rect.h - d) * 0.5;
+                let cy = rect.y + (rect.h - d_px) * 0.5;
 
                 // outer circle (rounded rect as circle)
                 scene.nodes.push(SceneNode::Border {
                     rect: repose_core::Rect {
                         x: cx,
                         y: cy,
-                        w: d,
-                        h: d,
+                        w: d_px,
+                        h: d_px,
                     },
                     color: mul_alpha(Color::from_hex("#888888"), alpha_accum),
-                    width: 1.5,
-                    radius: d * 0.5,
+                    width: dp_to_px(1.5),
+                    radius: d_px * 0.5,
                 });
                 // inner dot if selected
                 if *selected {
                     scene.nodes.push(SceneNode::Rect {
                         rect: repose_core::Rect {
-                            x: cx + 4.0,
-                            y: cy + 4.0,
-                            w: d - 8.0,
-                            h: d - 8.0,
+                            x: cx + dp_to_px(4.0),
+                            y: cy + dp_to_px(4.0),
+                            w: d_px - dp_to_px(8.0),
+                            h: d_px - dp_to_px(8.0),
                         },
                         color: mul_alpha(theme.primary, alpha_accum),
-                        radius: (d - 8.0) * 0.5,
+                        radius: (d_px - dp_to_px(8.0)) * 0.5,
                     });
                 }
                 scene.nodes.push(SceneNode::Text {
                     rect: repose_core::Rect {
-                        x: cx + d + 8.0,
+                        x: cx + d_px + dp_to_px(8.0),
                         y: rect.y,
-                        w: rect.w - (d + 8.0),
+                        w: rect.w - (d_px + dp_to_px(8.0)),
                         h: rect.h,
                     },
                     text: label.clone(),
                     color: mul_alpha(theme.on_surface, alpha_accum),
-                    size: 16.0,
+                    size: font_px(16.0),
                 });
 
                 hits.push(HitRegion {
@@ -2063,8 +2082,12 @@ pub fn layout_and_paint(
                     scene.nodes.push(SceneNode::Border {
                         rect,
                         color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
-                        width: 2.0,
-                        radius: v.modifier.clip_rounded.unwrap_or(6.0),
+                        width: dp_to_px(2.0),
+                        radius: v
+                            .modifier
+                            .clip_rounded
+                            .map(dp_to_px)
+                            .unwrap_or(dp_to_px(6.0)),
                     });
                 }
             }
@@ -2076,11 +2099,11 @@ pub fn layout_and_paint(
             } => {
                 let theme = locals::theme();
                 // track 46x26, knob 22x22
-                let track_w = 46.0f32;
-                let track_h = 26.0f32;
+                let track_w_px = dp_to_px(46.0);
+                let track_h_px = dp_to_px(26.0);
                 let tx = rect.x;
-                let ty = rect.y + (rect.h - track_h) * 0.5;
-                let knob = 22.0f32;
+                let ty = rect.y + (rect.h - track_h_px) * 0.5;
+                let knob_px = dp_to_px(22.0);
                 let on_col = theme.primary;
                 let off_col = Color::from_hex("#333333");
 
@@ -2089,45 +2112,56 @@ pub fn layout_and_paint(
                     rect: repose_core::Rect {
                         x: tx,
                         y: ty,
-                        w: track_w,
-                        h: track_h,
+                        w: track_w_px,
+                        h: track_h_px,
                     },
                     color: if *checked {
                         mul_alpha(on_col, alpha_accum)
                     } else {
                         mul_alpha(off_col, alpha_accum)
                     },
-                    radius: track_h * 0.5,
+                    radius: track_h_px * 0.5,
                 });
                 // knob position
                 let kx = if *checked {
-                    tx + track_w - knob - 2.0
+                    tx + track_w_px - knob_px - dp_to_px(2.0)
                 } else {
-                    tx + 2.0
+                    tx + dp_to_px(2.0)
                 };
-                let ky = ty + (track_h - knob) * 0.5;
+                let ky = ty + (track_h_px - knob_px) * 0.5;
                 scene.nodes.push(SceneNode::Rect {
                     rect: repose_core::Rect {
                         x: kx,
                         y: ky,
-                        w: knob,
-                        h: knob,
+                        w: knob_px,
+                        h: knob_px,
                     },
                     color: mul_alpha(Color::from_hex("#EEEEEE"), alpha_accum),
-                    radius: knob * 0.5,
+                    radius: knob_px * 0.5,
+                });
+                scene.nodes.push(SceneNode::Border {
+                    rect: repose_core::Rect {
+                        x: kx,
+                        y: ky,
+                        w: knob_px,
+                        h: knob_px,
+                    },
+                    color: mul_alpha(Color::from_hex("#888888"), alpha_accum),
+                    width: dp_to_px(1.0),
+                    radius: knob_px * 0.5,
                 });
 
                 // label
                 scene.nodes.push(SceneNode::Text {
                     rect: repose_core::Rect {
-                        x: tx + track_w + 8.0,
+                        x: tx + track_w_px + dp_to_px(8.0),
                         y: rect.y,
-                        w: rect.w - (track_w + 8.0),
+                        w: rect.w - (track_w_px + dp_to_px(8.0)),
                         h: rect.h,
                     },
                     text: label.clone(),
                     color: mul_alpha(theme.on_surface, alpha_accum),
-                    size: 16.0,
+                    size: font_px(16.0),
                 });
 
                 let toggled = !*checked;
@@ -2162,8 +2196,12 @@ pub fn layout_and_paint(
                     scene.nodes.push(SceneNode::Border {
                         rect,
                         color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
-                        width: 2.0,
-                        radius: v.modifier.clip_rounded.unwrap_or(6.0),
+                        width: dp_to_px(2.0),
+                        radius: v
+                            .modifier
+                            .clip_rounded
+                            .map(dp_to_px)
+                            .unwrap_or(dp_to_px(6.0)),
                     });
                 }
             }
@@ -2177,62 +2215,62 @@ pub fn layout_and_paint(
             } => {
                 let theme = locals::theme();
                 // Layout: [track | label]
-                let track_h = 4.0f32;
-                let knob_d = 20.0f32;
-                let gap = 8.0f32;
+                let track_h_px = dp_to_px(4.0);
+                let knob_d_px = dp_to_px(20.0);
+                let gap_px = dp_to_px(8.0);
                 let label_x = rect.x + rect.w * 0.6; // simple split: 60% track, 40% label
                 let track_x = rect.x;
-                let track_w = (label_x - track_x).max(60.0);
+                let track_w_px = (label_x - track_x).max(dp_to_px(60.0));
                 let cy = rect.y + rect.h * 0.5;
 
                 // Track
                 scene.nodes.push(SceneNode::Rect {
                     rect: repose_core::Rect {
                         x: track_x,
-                        y: cy - track_h * 0.5,
-                        w: track_w,
-                        h: track_h,
+                        y: cy - track_h_px * 0.5,
+                        w: track_w_px,
+                        h: track_h_px,
                     },
                     color: mul_alpha(Color::from_hex("#333333"), alpha_accum),
-                    radius: track_h * 0.5,
+                    radius: track_h_px * 0.5,
                 });
 
                 // Knob position
                 let t = clamp01(norm(*value, *min, *max));
-                let kx = track_x + t * track_w;
+                let kx = track_x + t * track_w_px;
                 scene.nodes.push(SceneNode::Rect {
                     rect: repose_core::Rect {
-                        x: kx - knob_d * 0.5,
-                        y: cy - knob_d * 0.5,
-                        w: knob_d,
-                        h: knob_d,
+                        x: kx - knob_d_px * 0.5,
+                        y: cy - knob_d_px * 0.5,
+                        w: knob_d_px,
+                        h: knob_d_px,
                     },
                     color: mul_alpha(theme.surface, alpha_accum),
-                    radius: knob_d * 0.5,
+                    radius: knob_d_px * 0.5,
                 });
                 scene.nodes.push(SceneNode::Border {
                     rect: repose_core::Rect {
-                        x: kx - knob_d * 0.5,
-                        y: cy - knob_d * 0.5,
-                        w: knob_d,
-                        h: knob_d,
+                        x: kx - knob_d_px * 0.5,
+                        y: cy - knob_d_px * 0.5,
+                        w: knob_d_px,
+                        h: knob_d_px,
                     },
                     color: mul_alpha(Color::from_hex("#888888"), alpha_accum),
-                    width: 1.0,
-                    radius: knob_d * 0.5,
+                    width: dp_to_px(1.0),
+                    radius: knob_d_px * 0.5,
                 });
 
                 // Label
                 scene.nodes.push(SceneNode::Text {
                     rect: repose_core::Rect {
-                        x: label_x + gap,
+                        x: label_x + gap_px,
                         y: rect.y,
-                        w: rect.x + rect.w - (label_x + gap),
+                        w: rect.x + rect.w - (label_x + gap_px),
                         h: rect.h,
                     },
                     text: format!("{}: {:.2}", label, *value),
                     color: mul_alpha(theme.on_surface, alpha_accum),
-                    size: 16.0,
+                    size: font_px(16.0),
                 });
 
                 // Interactions
@@ -2244,12 +2282,12 @@ pub fn layout_and_paint(
                 // per-hit-region current value (wheel deltas accumulate within a frame)
                 let current = Rc::new(RefCell::new(*value));
 
-                // pointer mapping closure (in global coords)
+                // pointer mapping closure (in global coords, px)
                 let update_at = {
                     let on_change_cb = on_change_cb.clone();
                     let current = current.clone();
-                    Rc::new(move |px: f32| {
-                        let tt = clamp01((px - track_x) / track_w);
+                    Rc::new(move |px_pos: f32| {
+                        let tt = clamp01((px_pos - track_x) / track_w_px);
                         let v = snap_step(denorm(tt, minv, maxv), stepv, minv, maxv);
                         *current.borrow_mut() = v;
                         if let Some(cb) = &on_change_cb {
@@ -2266,7 +2304,7 @@ pub fn layout_and_paint(
                     })
                 };
 
-                // on_pointer_move: no gating inside; platform only delivers here while captured
+                // on_pointer_move: platform only delivers here while captured
                 let on_pm: Rc<dyn Fn(repose_core::input::PointerEvent)> = {
                     let f = update_at.clone();
                     Rc::new(move |pe| {
@@ -2324,8 +2362,12 @@ pub fn layout_and_paint(
                     scene.nodes.push(SceneNode::Border {
                         rect,
                         color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
-                        width: 2.0,
-                        radius: v.modifier.clip_rounded.unwrap_or(6.0),
+                        width: dp_to_px(2.0),
+                        radius: v
+                            .modifier
+                            .clip_rounded
+                            .map(dp_to_px)
+                            .unwrap_or(dp_to_px(6.0)),
                     });
                 }
             }
@@ -2339,80 +2381,80 @@ pub fn layout_and_paint(
                 on_change,
             } => {
                 let theme = locals::theme();
-                let track_h = 4.0f32;
-                let knob_d = 20.0f32;
-                let gap = 8.0f32;
+                let track_h_px = dp_to_px(4.0);
+                let knob_d_px = dp_to_px(20.0);
+                let gap_px = dp_to_px(8.0);
                 let label_x = rect.x + rect.w * 0.6;
                 let track_x = rect.x;
-                let track_w = (label_x - track_x).max(80.0);
+                let track_w_px = (label_x - track_x).max(dp_to_px(80.0));
                 let cy = rect.y + rect.h * 0.5;
 
                 // Track
                 scene.nodes.push(SceneNode::Rect {
                     rect: repose_core::Rect {
                         x: track_x,
-                        y: cy - track_h * 0.5,
-                        w: track_w,
-                        h: track_h,
+                        y: cy - track_h_px * 0.5,
+                        w: track_w_px,
+                        h: track_h_px,
                     },
                     color: mul_alpha(Color::from_hex("#333333"), alpha_accum),
-                    radius: track_h * 0.5,
+                    radius: track_h_px * 0.5,
                 });
 
                 // Positions
                 let t0 = clamp01(norm(*start, *min, *max));
                 let t1 = clamp01(norm(*end, *min, *max));
-                let k0x = track_x + t0 * track_w;
-                let k1x = track_x + t1 * track_w;
+                let k0x = track_x + t0 * track_w_px;
+                let k1x = track_x + t1 * track_w_px;
 
                 // Range fill
                 scene.nodes.push(SceneNode::Rect {
                     rect: repose_core::Rect {
                         x: k0x.min(k1x),
-                        y: cy - track_h * 0.5,
+                        y: cy - track_h_px * 0.5,
                         w: (k1x - k0x).abs(),
-                        h: track_h,
+                        h: track_h_px,
                     },
                     color: mul_alpha(theme.primary, alpha_accum),
-                    radius: track_h * 0.5,
+                    radius: track_h_px * 0.5,
                 });
 
                 // Knobs
                 for &kx in &[k0x, k1x] {
                     scene.nodes.push(SceneNode::Rect {
                         rect: repose_core::Rect {
-                            x: kx - knob_d * 0.5,
-                            y: cy - knob_d * 0.5,
-                            w: knob_d,
-                            h: knob_d,
+                            x: kx - knob_d_px * 0.5,
+                            y: cy - knob_d_px * 0.5,
+                            w: knob_d_px,
+                            h: knob_d_px,
                         },
                         color: mul_alpha(theme.surface, alpha_accum),
-                        radius: knob_d * 0.5,
+                        radius: knob_d_px * 0.5,
                     });
                     scene.nodes.push(SceneNode::Border {
                         rect: repose_core::Rect {
-                            x: kx - knob_d * 0.5,
-                            y: cy - knob_d * 0.5,
-                            w: knob_d,
-                            h: knob_d,
+                            x: kx - knob_d_px * 0.5,
+                            y: cy - knob_d_px * 0.5,
+                            w: knob_d_px,
+                            h: knob_d_px,
                         },
                         color: mul_alpha(Color::from_hex("#888888"), alpha_accum),
-                        width: 1.0,
-                        radius: knob_d * 0.5,
+                        width: dp_to_px(1.0),
+                        radius: knob_d_px * 0.5,
                     });
                 }
 
                 // Label
                 scene.nodes.push(SceneNode::Text {
                     rect: repose_core::Rect {
-                        x: label_x + gap,
+                        x: label_x + gap_px,
                         y: rect.y,
-                        w: rect.x + rect.w - (label_x + gap),
+                        w: rect.x + rect.w - (label_x + gap_px),
                         h: rect.h,
                     },
                     text: format!("{}: {:.2} – {:.2}", label, *start, *end),
                     color: mul_alpha(theme.on_surface, alpha_accum),
-                    size: 16.0,
+                    size: font_px(16.0),
                 });
 
                 // Interaction
@@ -2430,9 +2472,9 @@ pub fn layout_and_paint(
                 let update = {
                     let active = active.clone();
                     let on_change_cb = on_change_cb.clone();
-                    Rc::new(move |px: f32| {
+                    Rc::new(move |px_pos: f32| {
                         if let Some(thumb) = *active.borrow() {
-                            let tt = clamp01((px - track_x) / track_w);
+                            let tt = clamp01((px_pos - track_x) / track_w_px);
                             let v = snap_step(denorm(tt, minv, maxv), stepv, minv, maxv);
                             match thumb {
                                 0 => {
@@ -2460,11 +2502,11 @@ pub fn layout_and_paint(
                     let k0x0 = k0x;
                     let k1x0 = k1x;
                     Rc::new(move |pe| {
-                        let px = pe.position.x;
-                        let d0 = (px - k0x0).abs();
-                        let d1 = (px - k1x0).abs();
+                        let px_pos = pe.position.x;
+                        let d0 = (px_pos - k0x0).abs();
+                        let d1 = (px_pos - k1x0).abs();
                         *active.borrow_mut() = Some(if d0 <= d1 { 0 } else { 1 });
-                        update(px);
+                        update(px_pos);
                     })
                 };
 
@@ -2514,8 +2556,12 @@ pub fn layout_and_paint(
                     scene.nodes.push(SceneNode::Border {
                         rect,
                         color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
-                        width: 2.0,
-                        radius: v.modifier.clip_rounded.unwrap_or(6.0),
+                        width: dp_to_px(2.0),
+                        radius: v
+                            .modifier
+                            .clip_rounded
+                            .map(dp_to_px)
+                            .unwrap_or(dp_to_px(6.0)),
                     });
                 }
             }
@@ -2524,49 +2570,49 @@ pub fn layout_and_paint(
                 min,
                 max,
                 label,
-                circular,
+                circular: _,
             } => {
                 let theme = locals::theme();
-                let track_h = 6.0f32;
-                let gap = 8.0f32;
-                let label_w_split = rect.w * 0.6;
+                let track_h_px = dp_to_px(6.0);
+                let gap_px = dp_to_px(8.0);
+                let label_w_split_px = rect.w * 0.6;
                 let track_x = rect.x;
-                let track_w = (label_w_split - track_x).max(60.0);
+                let track_w_px = (label_w_split_px - track_x).max(dp_to_px(60.0));
                 let cy = rect.y + rect.h * 0.5;
 
                 scene.nodes.push(SceneNode::Rect {
                     rect: repose_core::Rect {
                         x: track_x,
-                        y: cy - track_h * 0.5,
-                        w: track_w,
-                        h: track_h,
+                        y: cy - track_h_px * 0.5,
+                        w: track_w_px,
+                        h: track_h_px,
                     },
                     color: mul_alpha(Color::from_hex("#333333"), alpha_accum),
-                    radius: track_h * 0.5,
+                    radius: track_h_px * 0.5,
                 });
 
                 let t = clamp01(norm(*value, *min, *max));
                 scene.nodes.push(SceneNode::Rect {
                     rect: repose_core::Rect {
                         x: track_x,
-                        y: cy - track_h * 0.5,
-                        w: track_w * t,
-                        h: track_h,
+                        y: cy - track_h_px * 0.5,
+                        w: track_w_px * t,
+                        h: track_h_px,
                     },
                     color: mul_alpha(theme.primary, alpha_accum),
-                    radius: track_h * 0.5,
+                    radius: track_h_px * 0.5,
                 });
 
                 scene.nodes.push(SceneNode::Text {
                     rect: repose_core::Rect {
-                        x: rect.x + label_w_split + gap,
+                        x: rect.x + label_w_split_px + gap_px,
                         y: rect.y,
-                        w: rect.w - (label_w_split + gap),
+                        w: rect.w - (label_w_split_px + gap_px),
                         h: rect.h,
                     },
                     text: format!("{}: {:.0}%", label, t * 100.0),
                     color: mul_alpha(theme.on_surface, alpha_accum),
-                    size: 16.0,
+                    size: font_px(16.0),
                 });
 
                 sems.push(SemNode {
@@ -2594,9 +2640,10 @@ pub fn layout_and_paint(
                 textfield_states,
                 interactions,
                 focused,
-                base,
+                base_px,
                 alpha_accum,
                 text_cache,
+                font_px,
             );
         }
 
@@ -2604,6 +2651,8 @@ pub fn layout_and_paint(
             scene.nodes.push(SceneNode::PopTransform);
         }
     }
+
+    let font_px = |dp_font: f32| dp_to_px(dp_font) * locals::text_scale().0;
 
     // Start with zero offset
     walk(
@@ -2619,6 +2668,7 @@ pub fn layout_and_paint(
         (0.0, 0.0),
         1.0,
         &text_cache,
+        &font_px,
     );
 
     // Ensure visual order: low z_index first. Topmost will be found by iter().rev().
@@ -2641,8 +2691,8 @@ impl TextStyleExt for View {
     fn color(self, c: Color) -> View {
         TextColor(self, c)
     }
-    fn size(self, px: f32) -> View {
-        TextSize(self, px)
+    fn size(self, dp_font: f32) -> View {
+        TextSize(self, dp_font)
     }
     fn max_lines(mut self, n: usize) -> View {
         if let ViewKind::Text {

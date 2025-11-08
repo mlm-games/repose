@@ -1,12 +1,12 @@
-//! Platform runners (desktop via winit; Android alpha)
-//!
-
+//! Platform runners
+use repose_core::locals::dp_to_px;
 use repose_core::*;
 use repose_ui::layout_and_paint;
 use repose_ui::textfield::{
-    TF_FONT_PX, TF_PADDING_X, byte_to_char_index, index_for_x_bytes, measure_text,
+    TF_FONT_DP, TF_PADDING_X_DP, byte_to_char_index, index_for_x_bytes, measure_text,
 };
 use std::time::Instant;
+
 #[cfg(all(feature = "android", target_os = "android"))]
 pub mod android;
 
@@ -33,7 +33,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
         sched: Scheduler,
         inspector: repose_devtools::Inspector,
         frame_cache: Option<Frame>,
-        mouse_pos: (f32, f32),
+        mouse_pos_px: (f32, f32),
         modifiers: Modifiers,
         textfield_states: HashMap<u64, Rc<RefCell<TextFieldState>>>,
         ime_preedit: bool,
@@ -55,7 +55,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                 sched: Scheduler::new(),
                 inspector: repose_devtools::Inspector::new(),
                 frame_cache: None,
-                mouse_pos: (0.0, 0.0),
+                mouse_pos_px: (0.0, 0.0),
                 modifiers: Modifiers::default(),
                 textfield_states: HashMap::new(),
                 ime_preedit: false,
@@ -83,13 +83,13 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                 w.request_redraw();
             }
         }
+
+        // Ensure caret is visible after edits/moves (all units in px)
         fn tf_ensure_caret_visible(st: &mut TextFieldState) {
-            let px = TF_FONT_PX as u32;
-            let m = measure_text(&st.text, px);
-            let i0 = byte_to_char_index(&m, st.selection.start);
-            let i1 = byte_to_char_index(&m, st.selection.end);
-            let caret_x = m.positions.get(st.caret_index()).copied().unwrap_or(0.0);
-            st.ensure_caret_visible(caret_x, st.inner_width);
+            let font_dp = TF_FONT_DP as u32;
+            let m = measure_text(&st.text, font_dp);
+            let caret_x_px = m.positions.get(st.caret_index()).copied().unwrap_or(0.0);
+            st.ensure_caret_visible(caret_x_px, st.inner_width);
         }
     }
 
@@ -147,7 +147,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     self.request_redraw();
                 }
                 WindowEvent::CursorMoved { position, .. } => {
-                    self.mouse_pos = (position.x as f32, position.y as f32);
+                    self.mouse_pos_px = (position.x as f32, position.y as f32);
 
                     // Inspector hover
                     if self.inspector.hud.inspector_enabled {
@@ -157,8 +157,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                 .iter()
                                 .find(|h| {
                                     h.rect.contains(Vec2 {
-                                        x: self.mouse_pos.0,
-                                        y: self.mouse_pos.1,
+                                        x: self.mouse_pos_px.0,
+                                        y: self.mouse_pos_px.1,
                                     })
                                 })
                                 .map(|h| h.rect);
@@ -175,29 +175,28 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         {
                             if let Some(state_rc) = self.textfield_states.get(&cid) {
                                 let mut state = state_rc.borrow_mut();
-                                let inner_x = f
+                                // inner content left edge in px
+                                let inner_x_px = f
                                     .hit_regions
                                     .iter()
                                     .find(|h| h.id == cid)
-                                    .map(|h| h.rect.x + TF_PADDING_X)
+                                    .map(|h| h.rect.x + dp_to_px(TF_PADDING_X_DP))
                                     .unwrap_or(0.0);
-                                let content_x = self.mouse_pos.0 - inner_x + state.scroll_offset;
-                                let px = TF_FONT_PX as u32;
-                                let idx = index_for_x_bytes(&state.text, px, content_x.max(0.0));
+                                let content_x_px =
+                                    self.mouse_pos_px.0 - inner_x_px + state.scroll_offset;
+                                let font_dp = TF_FONT_DP as u32;
+                                let idx =
+                                    index_for_x_bytes(&state.text, font_dp, content_x_px.max(0.0));
                                 state.drag_to(idx);
 
                                 // Scroll caret into view
-                                let px = TF_FONT_PX as u32;
-                                let m = measure_text(&state.text, px);
-                                let i0 = byte_to_char_index(&m, state.selection.start);
-                                let i1 = byte_to_char_index(&m, state.selection.end);
-                                let caret_x =
+                                let m = measure_text(&state.text, font_dp);
+                                let caret_x_px =
                                     m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
-                                // We also need inner width; get rect
                                 if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
                                     state.ensure_caret_visible(
-                                        caret_x,
-                                        hit.rect.w - 2.0 * TF_PADDING_X,
+                                        caret_x_px,
+                                        hit.rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
                                     );
                                 }
                                 self.request_redraw();
@@ -209,8 +208,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     if let Some(f) = &self.frame_cache {
                         // Determine topmost hit
                         let pos = Vec2 {
-                            x: self.mouse_pos.0,
-                            y: self.mouse_pos.1,
+                            x: self.mouse_pos_px.0,
+                            y: self.mouse_pos_px.1,
                         };
                         let top = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos));
                         let new_hover = top.map(|h| h.id);
@@ -272,6 +271,38 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         }
                     }
                 }
+                WindowEvent::MouseWheel { delta, .. } => {
+                    // Convert line deltas (logical) to px; pixel delta is already px
+                    let (dx_px, dy_px) = match delta {
+                        MouseScrollDelta::LineDelta(x, y) => {
+                            let unit_px = dp_to_px(60.0);
+                            (-(x * unit_px), -(y * unit_px))
+                        }
+                        MouseScrollDelta::PixelDelta(lp) => (-(lp.x as f32), -(lp.y as f32)),
+                    };
+                    log::debug!("MouseWheel: dx={}, dy={}", dx_px, dy_px);
+
+                    if let Some(f) = &self.frame_cache {
+                        let pos = Vec2 {
+                            x: self.mouse_pos_px.0,
+                            y: self.mouse_pos_px.1,
+                        };
+
+                        for hit in f.hit_regions.iter().rev().filter(|h| h.rect.contains(pos)) {
+                            if let Some(cb) = &hit.on_scroll {
+                                log::debug!("Calling on_scroll for hit region id={}", hit.id);
+                                let before = Vec2 { x: dx_px, y: dy_px };
+                                let leftover = cb(before);
+                                let consumed_x = (before.x - leftover.x).abs() > 0.001;
+                                let consumed_y = (before.y - leftover.y).abs() > 0.001;
+                                if consumed_x || consumed_y {
+                                    self.request_redraw();
+                                    break; // stop after first consumer
+                                }
+                            }
+                        }
+                    }
+                }
                 WindowEvent::MouseInput {
                     state: ElementState::Pressed,
                     button: MouseButton::Left,
@@ -280,8 +311,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     let mut need_announce = false;
                     if let Some(f) = &self.frame_cache {
                         let pos = Vec2 {
-                            x: self.mouse_pos.0,
-                            y: self.mouse_pos.1,
+                            x: self.mouse_pos_px.0,
+                            y: self.mouse_pos_px.1,
                         };
                         if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos))
                         {
@@ -305,6 +336,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     let sf = win.scale_factor();
                                     win.set_ime_allowed(true);
                                     win.set_ime_purpose(ImePurpose::Normal);
+                                    // Pass logical (winit expects logical here); desktop variants vary across platforms;
+                                    // Using previous behavior to avoid breaking changes.
                                     win.set_ime_cursor_area(
                                         LogicalPosition::new(
                                             hit.rect.x as f64 / sf,
@@ -341,27 +374,27 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             {
                                 if let Some(state_rc) = self.textfield_states.get(&hit.id) {
                                     let mut state = state_rc.borrow_mut();
-                                    let inner_x = hit.rect.x + TF_PADDING_X;
-                                    let content_x =
-                                        self.mouse_pos.0 - inner_x + state.scroll_offset;
-                                    let px = TF_FONT_PX as u32;
-                                    let idx =
-                                        index_for_x_bytes(&state.text, px, content_x.max(0.0));
+                                    let inner_x_px = hit.rect.x + dp_to_px(TF_PADDING_X_DP);
+                                    let content_x_px =
+                                        self.mouse_pos_px.0 - inner_x_px + state.scroll_offset;
+                                    let font_dp = TF_FONT_DP as u32;
+                                    let idx = index_for_x_bytes(
+                                        &state.text,
+                                        font_dp,
+                                        content_x_px.max(0.0),
+                                    );
                                     state.begin_drag(idx, self.modifiers.shift);
 
                                     // Scroll caret into view
-                                    let px = TF_FONT_PX as u32;
-                                    let m = measure_text(&state.text, px);
-                                    let i0 = byte_to_char_index(&m, state.selection.start);
-                                    let i1 = byte_to_char_index(&m, state.selection.end);
-                                    let caret_x = m
+                                    let m = measure_text(&state.text, font_dp);
+                                    let caret_x_px = m
                                         .positions
                                         .get(state.caret_index())
                                         .copied()
                                         .unwrap_or(0.0);
                                     state.ensure_caret_visible(
-                                        caret_x,
-                                        hit.rect.w - 2.0 * TF_PADDING_X,
+                                        caret_x_px,
+                                        hit.rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
                                     );
                                 }
                             }
@@ -396,8 +429,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     // Click on release if pointer is still over the captured hit region
                     if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
                         let pos = Vec2 {
-                            x: self.mouse_pos.0,
-                            y: self.mouse_pos.1,
+                            x: self.mouse_pos_px.0,
+                            y: self.mouse_pos_px.1,
                         };
                         if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
                             if hit.rect.contains(pos) {
@@ -427,34 +460,6 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         }
                     }
                     self.capture_id = None;
-                }
-                WindowEvent::MouseWheel { delta, .. } => {
-                    let (dx, dy) = match delta {
-                        MouseScrollDelta::LineDelta(x, y) => (-x * 40.0, -y * 40.0),
-                        MouseScrollDelta::PixelDelta(lp) => (-(lp.x as f32), -(lp.y as f32)),
-                    };
-                    log::debug!("MouseWheel: dx={}, dy={}", dx, dy);
-
-                    if let Some(f) = &self.frame_cache {
-                        let pos = Vec2 {
-                            x: self.mouse_pos.0,
-                            y: self.mouse_pos.1,
-                        };
-
-                        for hit in f.hit_regions.iter().rev().filter(|h| h.rect.contains(pos)) {
-                            if let Some(cb) = &hit.on_scroll {
-                                log::debug!("Calling on_scroll for hit region id={}", hit.id);
-                                let before = Vec2 { x: dx, y: dy };
-                                let leftover = cb(before);
-                                let consumed_x = (before.x - leftover.x).abs() > 0.001;
-                                let consumed_y = (before.y - leftover.y).abs() > 0.001;
-                                if consumed_x || consumed_y {
-                                    self.request_redraw();
-                                    break; // stop after first consumer
-                                }
-                            }
-                        }
-                    }
                 }
                 WindowEvent::ModifiersChanged(new_mods) => {
                     self.modifiers.shift = new_mods.state().shift_key();
@@ -545,7 +550,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         }
                     }
 
-                    // Keyboard activation for focused widgets (Space/Enter)
+                    // Keyboard activation for focused TextField submit on Enter
                     if key_event.state == ElementState::Pressed && !key_event.repeat {
                         if let PhysicalKey::Code(KeyCode::Enter) = key_event.physical_key {
                             if let Some(focused_id) = self.sched.focused {
@@ -581,8 +586,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 
                         // TextField navigation/edit
                         if let Some(focused_id) = self.sched.focused {
-                            if let Some(state) = self.textfield_states.get(&focused_id) {
-                                let mut state = state.borrow_mut();
+                            if let Some(state_rc) = self.textfield_states.get(&focused_id) {
+                                let mut state = state_rc.borrow_mut();
                                 match key_event.physical_key {
                                     PhysicalKey::Code(KeyCode::Backspace) => {
                                         state.delete_backward();
@@ -766,8 +771,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                 WindowEvent::Ime(ime) => {
                     use winit::event::Ime;
                     if let Some(focused_id) = self.sched.focused {
-                        if let Some(state) = self.textfield_states.get(&focused_id) {
-                            let mut state = state.borrow_mut();
+                        if let Some(state_rc) = self.textfield_states.get(&focused_id) {
+                            let mut state = state_rc.borrow_mut();
                             match ime {
                                 Ime::Enabled => {
                                     // IME allowed, but not necessarily composing
@@ -804,43 +809,52 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     }
                 }
                 WindowEvent::RedrawRequested => {
-                    if let (Some(backend), Some(_win)) =
+                    if let (Some(backend), Some(win)) =
                         (self.backend.as_mut(), self.window.as_ref())
                     {
                         let t0 = Instant::now();
-                        let scale = self
-                            .window
-                            .as_ref()
-                            .map(|w| w.scale_factor() as f32)
-                            .unwrap_or(1.0);
+                        let scale = win.scale_factor() as f32;
+
+                        let root_fn = &mut self.root;
+
                         // Compose
                         let focused = self.sched.focused;
                         let hover_id = self.hover_id;
                         let pressed_ids = self.pressed_ids.clone();
                         let tf_states = &self.textfield_states;
 
-                        let frame = self.sched.repose(&mut self.root, {
-                            let hover_id = hover_id;
-                            let pressed_ids = pressed_ids.clone();
-                            move |view, size| {
-                                let interactions = repose_ui::Interactions {
-                                    hover: hover_id,
-                                    pressed: pressed_ids.clone(),
-                                };
-                                // Density + TextScale from window scale
-                                with_density(Density { scale }, || {
-                                    with_text_scale(TextScale(1.0), || {
-                                        layout_and_paint(
-                                            view,
-                                            size,
-                                            tf_states,
-                                            &interactions,
-                                            focused,
-                                        )
+                        let frame = self.sched.repose(
+                            {
+                                let scale = scale;
+                                move |sched: &mut Scheduler| {
+                                    with_density(Density { scale }, || {
+                                        with_text_scale(TextScale(1.0), || (root_fn)(sched))
                                     })
-                                })
-                            }
-                        });
+                                }
+                            },
+                            {
+                                let hover_id = hover_id;
+                                let pressed_ids = pressed_ids.clone();
+                                move |view, size| {
+                                    let interactions = repose_ui::Interactions {
+                                        hover: hover_id,
+                                        pressed: pressed_ids.clone(),
+                                    };
+                                    // 2) Keep layout wrapped as it already is
+                                    with_density(Density { scale }, || {
+                                        with_text_scale(TextScale(1.0), || {
+                                            layout_and_paint(
+                                                view,
+                                                size,
+                                                tf_states,
+                                                &interactions,
+                                                focused,
+                                            )
+                                        })
+                                    })
+                                }
+                            },
+                        );
 
                         let build_layout_ms = (Instant::now() - t0).as_secs_f32() * 1000.0;
 

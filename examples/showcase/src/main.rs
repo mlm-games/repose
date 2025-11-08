@@ -1,6 +1,6 @@
 use repose_core::prelude::*;
 use repose_platform::run_desktop_app;
-use repose_ui::*;
+use repose_ui::{scroll::ScrollArea, *};
 mod ui;
 mod pages {
     pub mod layout;

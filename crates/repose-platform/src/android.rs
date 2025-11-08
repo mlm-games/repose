@@ -1,5 +1,9 @@
 use crate::*;
+use repose_core::locals::dp_to_px;
 use repose_ui::layout_and_paint;
+use repose_ui::textfield::{
+    TF_FONT_DP, TF_PADDING_X_DP, byte_to_char_index, index_for_x_bytes, measure_text,
+};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -33,7 +37,7 @@ pub fn run_android_app(
         frame_cache: Option<Frame>,
 
         // Input state
-        last_pos: (f32, f32),
+        last_pos_px: (f32, f32),
         modifiers: Modifiers,
         hover_id: Option<u64>,
         capture_id: Option<u64>,
@@ -42,7 +46,7 @@ pub fn run_android_app(
         ime_preedit: bool,
 
         // TextFields
-        prev_touch: Option<(f32, f32)>,
+        prev_touch_px: Option<(f32, f32)>,
         textfield_states: HashMap<u64, Rc<RefCell<repose_ui::TextFieldState>>>,
         last_focus: Option<u64>,
     }
@@ -57,7 +61,7 @@ pub fn run_android_app(
                 inspector: repose_devtools::Inspector::new(),
                 frame_cache: None,
 
-                last_pos: (0.0, 0.0),
+                last_pos_px: (0.0, 0.0),
                 modifiers: Modifiers::default(),
                 hover_id: None,
                 capture_id: None,
@@ -65,7 +69,7 @@ pub fn run_android_app(
                 key_pressed_active: None,
                 ime_preedit: false,
 
-                prev_touch: None,
+                prev_touch_px: None,
                 textfield_states: HashMap::new(),
                 last_focus: None,
             }
@@ -148,27 +152,32 @@ pub fn run_android_app(
 
                 // Touch → pointer (down/move/up/cancel) with capture and click-on-release
                 WindowEvent::Touch(t) => {
-                    // Map device-pixel position to logical f32
-                    let pos = (t.location.x as f32, t.location.y as f32);
-                    self.last_pos = pos;
+                    // Map device-pixel position to logical f32 (we treat them as px in our scene)
+                    let pos_px = (t.location.x as f32, t.location.y as f32);
+                    self.last_pos_px = pos_px;
 
                     // Helper to deliver pointer events to a region id
                     let make_pe = |mods: Modifiers| crate::input::PointerEvent {
                         id: crate::input::PointerId(0),
                         kind: crate::input::PointerKind::Touch,
                         event: crate::input::PointerEventKind::Move, // will be replaced per call
-                        position: crate::Vec2 { x: pos.0, y: pos.1 },
+                        position: crate::Vec2 {
+                            x: pos_px.0,
+                            y: pos_px.1,
+                        },
                         pressure: 1.0,
                         modifiers: mods,
                     };
 
                     match t.phase {
                         winit::event::TouchPhase::Started => {
-                            // Stage everything we need while immutably borrowing frame_cache
                             let (hit_id, rect, on_pd, is_textfield) =
                                 if let Some(f) = &self.frame_cache {
                                     if let Some(hit) = f.hit_regions.iter().rev().find(|h| {
-                                        h.rect.contains(crate::Vec2 { x: pos.0, y: pos.1 })
+                                        h.rect.contains(crate::Vec2 {
+                                            x: pos_px.0,
+                                            y: pos_px.1,
+                                        })
                                     }) {
                                         let is_tf = f
                                             .semantics_nodes
@@ -188,11 +197,10 @@ pub fn run_android_app(
                                 };
 
                             if let Some(id) = hit_id {
-                                // Now mutate self (no immutable borrow alive)
                                 self.capture_id = Some(id);
                                 self.pressed_ids.insert(id);
                                 if let Some(r) = rect {
-                                    // focus & IME only for focusables (we don’t know focusable here cheaply; safe to set for TextField)
+                                    // focus & IME only for focusables
                                     if is_textfield {
                                         self.sched.focused = Some(id);
                                         self.textfield_states.entry(id).or_insert_with(|| {
@@ -207,7 +215,7 @@ pub fn run_android_app(
                                                     (r.x * sf as f32) as i32,
                                                     (r.y * sf as f32) as i32,
                                                 ),
-                                                winit::dpi::PhysicalSize::new(
+                                                PhysicalSize::new(
                                                     (r.w * sf as f32) as u32,
                                                     (r.h * sf as f32) as u32,
                                                 ),
@@ -226,30 +234,30 @@ pub fn run_android_app(
                                     if is_textfield {
                                         if let Some(state_rc) = self.textfield_states.get(&id) {
                                             let mut state = state_rc.borrow_mut();
-                                            let inner_x = r.x + TF_PADDING_X;
-                                            let content_x =
-                                                self.last_pos.0 - inner_x + state.scroll_offset;
-                                            let px = TF_FONT_PX as u32;
+                                            let inner_x_px = r.x + dp_to_px(TF_PADDING_X_DP);
+                                            let content_x_px = self.last_pos_px.0 - inner_x_px
+                                                + state.scroll_offset;
+                                            let font_dp = TF_FONT_DP as u32;
                                             let idx = index_for_x_bytes(
                                                 &state.text,
-                                                px,
-                                                content_x.max(0.0),
+                                                font_dp,
+                                                content_x_px.max(0.0),
                                             );
                                             state.begin_drag(idx, self.modifiers.shift);
-                                            let m = measure_text(&state.text, px);
-                                            let caret_x = m
+                                            let m = measure_text(&state.text, font_dp);
+                                            let caret_x_px = m
                                                 .positions
                                                 .get(state.caret_index())
                                                 .copied()
                                                 .unwrap_or(0.0);
                                             state.ensure_caret_visible(
-                                                caret_x,
-                                                r.w - 2.0 * TF_PADDING_X,
+                                                caret_x_px,
+                                                r.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
                                             );
                                         }
                                     }
                                 }
-                                self.prev_touch = Some(pos);
+                                self.prev_touch_px = Some(pos_px);
                                 self.request_redraw();
                             }
                         }
@@ -276,22 +284,22 @@ pub fn run_android_app(
                                     pe.event = crate::input::PointerEventKind::Move;
                                     cb(pe);
                                 }
-                                // Optionally: drag to scroll using dy
-                                if let (Some(prev), Some(r)) = (self.prev_touch, rect) {
-                                    let dy = pos.1 - prev.1;
-                                    if dy.abs() > 0.0 {
+                                // drag to scroll using dy
+                                if let (Some(prev), Some(r)) = (self.prev_touch_px, rect) {
+                                    let dy_px = pos_px.1 - prev.1;
+                                    if dy_px.abs() > 0.0 {
                                         if let Some(f) = &self.frame_cache {
                                             if let Some(h) =
                                                 f.hit_regions.iter().find(|h| h.id == id)
                                             {
                                                 if let Some(cb) = &h.on_scroll {
-                                                    let _ = cb(crate::Vec2 { x: 0.0, y: -dy }); // invert for natural scroll
+                                                    let _ = cb(crate::Vec2 { x: 0.0, y: -dy_px }); // invert for natural scroll
                                                 }
                                             }
                                         }
                                     }
                                 }
-                                self.prev_touch = Some(pos);
+                                self.prev_touch_px = Some(pos_px);
                                 self.request_redraw();
                             }
                         }
@@ -334,8 +342,8 @@ pub fn run_android_app(
                                 }
                                 if let Some(r) = rect {
                                     if r.contains(crate::Vec2 {
-                                        x: self.last_pos.0,
-                                        y: self.last_pos.1,
+                                        x: self.last_pos_px.0,
+                                        y: self.last_pos_px.1,
                                     }) {
                                         if let Some(cb) = on_click {
                                             cb();
@@ -349,7 +357,7 @@ pub fn run_android_app(
                                 }
                             }
                             self.capture_id = None;
-                            self.prev_touch = None;
+                            self.prev_touch_px = None;
                             self.request_redraw();
                         }
                         winit::event::TouchPhase::Cancelled => {
@@ -358,7 +366,7 @@ pub fn run_android_app(
                                 self.pressed_ids.remove(&cid);
                             }
                             self.capture_id = None;
-                            self.prev_touch = None;
+                            self.prev_touch_px = None;
                             self.request_redraw();
                         }
                     }
@@ -484,9 +492,9 @@ pub fn run_android_app(
                                     self.ime_preedit = !text.is_empty();
 
                                     // Ensure caret visible
-                                    let px = TF_FONT_PX as u32;
-                                    let m = measure_text(&state.text, px);
-                                    let caret_x = m
+                                    let font_dp = TF_FONT_DP as u32;
+                                    let m = measure_text(&state.text, font_dp);
+                                    let caret_x_px = m
                                         .positions
                                         .get(state.caret_index())
                                         .copied()
@@ -497,8 +505,8 @@ pub fn run_android_app(
                                             f.hit_regions.iter().find(|h| h.id == focused_id)
                                         {
                                             state.ensure_caret_visible(
-                                                caret_x,
-                                                hit.rect.w - 2.0 * TF_PADDING_X,
+                                                caret_x_px,
+                                                hit.rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
                                             );
                                         }
                                     }
@@ -511,9 +519,9 @@ pub fn run_android_app(
                                     state.commit_composition(text);
                                     self.ime_preedit = false;
 
-                                    let px = TF_FONT_PX as u32;
-                                    let m = measure_text(&state.text, px);
-                                    let caret_x = m
+                                    let font_dp = TF_FONT_DP as u32;
+                                    let m = measure_text(&state.text, font_dp);
+                                    let caret_x_px = m
                                         .positions
                                         .get(state.caret_index())
                                         .copied()
@@ -523,8 +531,8 @@ pub fn run_android_app(
                                             f.hit_regions.iter().find(|h| h.id == focused_id)
                                         {
                                             state.ensure_caret_visible(
-                                                caret_x,
-                                                hit.rect.w - 2.0 * TF_PADDING_X,
+                                                caret_x_px,
+                                                hit.rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
                                             );
                                         }
                                     }
@@ -536,9 +544,9 @@ pub fn run_android_app(
                                     if state.composition.is_some() {
                                         state.cancel_composition();
 
-                                        let px = TF_FONT_PX as u32;
-                                        let m = measure_text(&state.text, px);
-                                        let caret_x = m
+                                        let font_dp = TF_FONT_DP as u32;
+                                        let m = measure_text(&state.text, font_dp);
+                                        let caret_x_px = m
                                             .positions
                                             .get(state.caret_index())
                                             .copied()
@@ -548,8 +556,8 @@ pub fn run_android_app(
                                                 f.hit_regions.iter().find(|h| h.id == focused_id)
                                             {
                                                 state.ensure_caret_visible(
-                                                    caret_x,
-                                                    hit.rect.w - 2.0 * TF_PADDING_X,
+                                                    caret_x_px,
+                                                    hit.rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
                                                 );
                                             }
                                         }
@@ -575,30 +583,41 @@ pub fn run_android_app(
                         let pressed_ids = self.pressed_ids.clone();
                         let tf_states = &self.textfield_states;
 
-                        let frame = self.sched.repose(&mut self.root, {
-                            let hover_id = hover_id;
-                            let pressed_ids = pressed_ids.clone();
-                            move |view, size| {
-                                let interactions = repose_ui::Interactions {
-                                    hover: hover_id,
-                                    pressed: pressed_ids.clone(),
-                                };
-                                with_density(Density { scale }, || {
-                                    with_text_scale(TextScale(1.0), || {
-                                        layout_and_paint(
-                                            view,
-                                            size,
-                                            tf_states,
-                                            &interactions,
-                                            focused,
-                                        )
-                                    })
-                                })
-                            }
-                        });
+                        let root_fn = &mut self.root;
 
-                        // A11y publish & focus announce (stub)
-                        // self.a11y.publish_tree(&frame.semantics_nodes); // you can add an Android stub similar to desktop
+                        let frame = self.sched.repose(
+                            {
+                                let scale = scale;
+                                move |sched: &mut Scheduler| {
+                                    with_density(Density { scale }, || {
+                                        with_text_scale(TextScale(1.0), || (root_fn)(sched))
+                                    })
+                                }
+                            },
+                            {
+                                let hover_id = hover_id;
+                                let pressed_ids = pressed_ids.clone();
+                                move |view, size| {
+                                    let interactions = repose_ui::Interactions {
+                                        hover: hover_id,
+                                        pressed: pressed_ids.clone(),
+                                    };
+                                    with_density(Density { scale }, || {
+                                        with_text_scale(TextScale(1.0), || {
+                                            layout_and_paint(
+                                                view,
+                                                size,
+                                                tf_states,
+                                                &interactions,
+                                                focused,
+                                            )
+                                        })
+                                    })
+                                }
+                            },
+                        );
+
+                        // self.a11y.publish_tree(&frame.semantics_nodes); // you can add an Android stub similar to desktop later
 
                         let mut scene = frame.scene.clone();
                         self.inspector.hud.metrics = Some(repose_devtools::Metrics {

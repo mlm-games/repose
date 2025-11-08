@@ -411,17 +411,11 @@ pub fn ScrollAreaXY(modifier: Modifier, state: Rc<ScrollStateXY>, content: View)
     };
     let set_vw = {
         let st = state.clone();
-        Rc::new(move |w: f32| {
-            let (_, h) = st.get();
-            st.set_viewport(w, st.vp_h.get());
-        })
+        Rc::new(move |w: f32| st.set_viewport(w, st.vp_h.get()))
     };
     let set_vh = {
         let st = state.clone();
-        Rc::new(move |h: f32| {
-            let (_, h0) = st.get();
-            st.set_viewport(st.vp_w.get(), h);
-        })
+        Rc::new(move |h: f32| st.set_viewport(st.vp_w.get(), h))
     };
     let set_cw = {
         let st = state.clone();

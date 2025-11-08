@@ -2,6 +2,7 @@
 use log::LevelFilter;
 use repose_core::prelude::*;
 use repose_platform::android::run_android_app;
+use repose_ui::scroll::ScrollArea;
 use repose_ui::*;
 use winit::platform::android::activity::AndroidApp;
 

@@ -17,6 +17,22 @@ thread_local! {
     static LOCALS_STACK: RefCell<Vec<HashMap<TypeId, Box<dyn Any>>>> = RefCell::new(Vec::new());
 }
 
+/// density‑independent pixels (dp)
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Dp(pub f32);
+
+impl Dp {
+    /// Converts this dp value into physical pixels using the current Density.
+    pub fn to_px(self) -> f32 {
+        self.0 * density().scale
+    }
+}
+
+/// Convenience: convert a raw dp scalar into px using current Density.
+pub fn dp_to_px(dp: f32) -> f32 {
+    Dp(dp).to_px()
+}
+
 pub fn with_text_direction<R>(dir: TextDirection, f: impl FnOnce() -> R) -> R {
     with_locals_frame(|| {
         set_local_boxed(std::any::TypeId::of::<TextDirection>(), Box::new(dir));
@@ -38,10 +54,18 @@ pub fn text_direction() -> TextDirection {
 }
 
 fn with_locals_frame<R>(f: impl FnOnce() -> R) -> R {
+    // Non-panicking frame guard (ensures pop on unwind)
+    struct Guard;
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            LOCALS_STACK.with(|st| {
+                st.borrow_mut().pop();
+            });
+        }
+    }
     LOCALS_STACK.with(|st| st.borrow_mut().push(HashMap::new()));
-    let out = f();
-    LOCALS_STACK.with(|st| st.borrow_mut().pop());
-    out
+    let _guard = Guard;
+    f()
 }
 
 fn set_local_boxed(t: TypeId, v: Box<dyn Any>) {
@@ -159,10 +183,4 @@ pub fn text_scale() -> TextScale {
         }
         TextScale::default()
     })
-}
-
-// Convenience
-
-pub fn dp(px: f32) -> f32 {
-    px * density().scale
 }

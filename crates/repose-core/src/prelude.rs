@@ -5,8 +5,8 @@ pub use crate::error::*;
 pub use crate::geometry::{Rect, Size, Vec2};
 pub use crate::input::*;
 pub use crate::locals::{
-    Density, TextScale, Theme, density, dp, text_scale, theme, with_density, with_text_scale,
-    with_theme,
+    Density, Dp, TextScale, Theme, density, dp_to_px, text_scale, theme, with_density,
+    with_text_scale, with_theme,
 };
 pub use crate::modifier::Modifier;
 pub use crate::render_api::{GlyphRasterConfig, RenderBackend};
