@@ -8,13 +8,18 @@ pub type SubId = usize;
 
 static NEXT_SIGNAL_ID: AtomicUsize = AtomicUsize::new(1);
 
-#[derive(Clone)]
 pub struct Signal<T: 'static>(Rc<RefCell<Inner<T>>>);
+
+impl<T> Clone for Signal<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 
 struct Inner<T> {
     id: usize,
     value: T,
-    subs: Vec<Box<dyn Fn(&T)>>,
+    subs: Vec<Option<Box<dyn Fn(&T)>>>,
 }
 
 impl<T> Signal<T> {
@@ -42,7 +47,9 @@ impl<T> Signal<T> {
         inner.value = v;
         let vref = &inner.value;
         for s in &inner.subs {
-            s(vref);
+            if let Some(cb) = s.as_ref() {
+                cb(vref);
+            }
         }
         // notify reactive graph
         reactive::signal_changed(inner.id);
@@ -52,16 +59,53 @@ impl<T> Signal<T> {
         f(&mut inner.value);
         let vref = &inner.value;
         for s in &inner.subs {
-            s(vref);
+            if let Some(cb) = s.as_ref() {
+                cb(vref);
+            }
         }
         reactive::signal_changed(inner.id);
     }
     pub fn subscribe(&self, f: impl Fn(&T) + 'static) -> SubId {
-        self.0.borrow_mut().subs.push(Box::new(f));
+        self.0.borrow_mut().subs.push(Some(Box::new(f)));
         self.0.borrow().subs.len() - 1
+    }
+    /// Remove a subscriber by id. Returns true if removed.
+    pub fn unsubscribe(&self, id: SubId) -> bool {
+        let mut inner = self.0.borrow_mut();
+        if id < inner.subs.len() {
+            inner.subs[id] = None;
+            true
+        } else {
+            false
+        }
+    }
+    /// Subscribe and get a guard that auto-unsubscribes on drop.
+    pub fn subscribe_guard(&self, f: impl Fn(&T) + 'static) -> SubGuard<T> {
+        let id = self.subscribe(f);
+        let sig = self.clone();
+        SubGuard {
+            sig,
+            id,
+            active: true,
+        }
     }
 }
 
 pub fn signal<T>(t: T) -> Signal<T> {
     Signal::new(t)
+}
+
+/// RAII guard for a Signal subscription; unsubscribes on drop.
+pub struct SubGuard<T: 'static> {
+    sig: crate::Signal<T>,
+    id: SubId,
+    active: bool,
+}
+impl<T> Drop for SubGuard<T> {
+    fn drop(&mut self) {
+        if self.active {
+            let _ = self.sig.unsubscribe(self.id);
+            self.active = false;
+        }
+    }
 }

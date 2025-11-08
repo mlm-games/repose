@@ -1,7 +1,7 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
+use std::{borrow::Cow, sync::Once};
 
 use ab_glyph::{Font, FontArc, Glyph, PxScale, ScaleFont, point};
 use cosmic_text;
@@ -10,6 +10,8 @@ use image::GenericImageView;
 use repose_core::{Color, GlyphRasterConfig, RenderBackend, Scene, SceneNode, Transform};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use wgpu::util::DeviceExt;
+
+static ROT_WARN_ONCE: Once = Once::new();
 
 #[derive(Clone)]
 struct UploadRing {
@@ -1277,6 +1279,13 @@ impl RenderBackend for WgpuBackend {
                 }
                 SceneNode::PushTransform { transform } => {
                     let combined = current_transform.combine(transform);
+                    if transform.rotate != 0.0 {
+                        ROT_WARN_ONCE.call_once(|| {
+                      log::warn!(
+                          "Transform rotation is not supported for Rect/Text/Image; rotation will be ignored."
+                      );
+                  });
+                    }
                     transform_stack.push(combined);
                 }
                 SceneNode::PopTransform => {

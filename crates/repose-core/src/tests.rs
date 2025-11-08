@@ -106,7 +106,6 @@ mod tests {
 
     #[test]
     fn test_animation_deterministic() {
-        // Install test clock at fixed start
         let t0 = Instant::now();
         set_clock(Box::new(TestClock { t: t0 }));
 
@@ -116,7 +115,6 @@ mod tests {
         );
         a.set_target(10.0);
         // advance 250ms
-        // safety: emulate time by swapping the clock
         set_clock(Box::new(TestClock {
             t: t0 + Duration::from_millis(250),
         }));
