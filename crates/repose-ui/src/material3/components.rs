@@ -55,7 +55,7 @@ pub fn BottomSheet(
     let offset = animate_f32(
         "sheet_offset",
         if visible { 0.0 } else { 800.0 },
-        AnimationSpec::spring(),
+        AnimationSpec::spring_gentle(),
     );
 
     Stack(Modifier::new().fill_max_size()).child((

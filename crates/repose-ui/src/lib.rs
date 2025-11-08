@@ -1203,12 +1203,13 @@ pub fn layout_and_paint(
             ViewKind::Button { text, on_click } => {
                 // Default background if none provided
                 if v.modifier.background.is_none() {
+                    let th = locals::theme();
                     let base = if is_pressed {
-                        Color::from_hex("#1f7556")
+                        th.button_bg_pressed
                     } else if is_hovered {
-                        Color::from_hex("#2a8f6a")
+                        th.button_bg_hover
                     } else {
-                        Color::from_hex("#34af82")
+                        th.button_bg
                     };
                     scene.nodes.push(SceneNode::Rect {
                         rect,
@@ -1267,7 +1268,7 @@ pub fn layout_and_paint(
                 if is_focused {
                     scene.nodes.push(SceneNode::Border {
                         rect,
-                        color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
+                        color: mul_alpha(locals::theme().focus, alpha_accum),
                         width: dp_to_px(2.0),
                         radius: v
                             .modifier
@@ -1324,7 +1325,7 @@ pub fn layout_and_paint(
                 if is_focused {
                     scene.nodes.push(SceneNode::Border {
                         rect,
-                        color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
+                        color: mul_alpha(locals::theme().focus, alpha_accum),
                         width: dp_to_px(2.0),
                         radius: v
                             .modifier
@@ -1381,7 +1382,7 @@ pub fn layout_and_paint(
                                     w: uw,
                                     h: dp_to_px(2.0),
                                 },
-                                color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
+                                color: mul_alpha(locals::theme().focus, alpha_accum),
                                 radius: 0.0,
                             });
                         }
@@ -1389,9 +1390,9 @@ pub fn layout_and_paint(
 
                     // Text (offset by scroll)
                     let text_color = if text_val.is_empty() {
-                        mul_alpha(Color::from_hex("#666666"), alpha_accum)
+                        mul_alpha(Color::from_hex("#666666"), alpha_accum) // Placeholder col
                     } else {
-                        mul_alpha(Color::from_hex("#CCCCCC"), alpha_accum)
+                        mul_alpha(locals::theme().on_surface, alpha_accum)
                     };
                     scene.nodes.push(SceneNode::Text {
                         rect: repose_core::Rect {
@@ -1555,10 +1556,8 @@ pub fn layout_and_paint(
 
                     // Theme-ish colors
                     let th = locals::theme();
-                    let mut track_col = th.on_surface;
-                    track_col.3 = 32;
-                    let mut thumb_col = th.on_surface;
-                    thumb_col.3 = 140;
+                    let track_col = th.scrollbar_track;
+                    let thumb_col = th.scrollbar_thumb;
 
                     scene.nodes.push(SceneNode::Rect {
                         rect: crate::Rect {
@@ -1934,7 +1933,7 @@ pub fn layout_and_paint(
                         w: box_size_px,
                         h: box_size_px,
                     },
-                    color: mul_alpha(Color::from_hex("#555555"), alpha_accum),
+                    color: mul_alpha(theme.outline, alpha_accum),
                     width: dp_to_px(1.0),
                     radius: dp_to_px(3.0),
                 });
@@ -1997,7 +1996,7 @@ pub fn layout_and_paint(
                 if is_focused {
                     scene.nodes.push(SceneNode::Border {
                         rect,
-                        color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
+                        color: mul_alpha(locals::theme().focus, alpha_accum),
                         width: dp_to_px(2.0),
                         radius: v
                             .modifier
@@ -2026,7 +2025,7 @@ pub fn layout_and_paint(
                         w: d_px,
                         h: d_px,
                     },
-                    color: mul_alpha(Color::from_hex("#888888"), alpha_accum),
+                    color: mul_alpha(theme.outline, alpha_accum),
                     width: dp_to_px(1.5),
                     radius: d_px * 0.5,
                 });
@@ -2081,7 +2080,7 @@ pub fn layout_and_paint(
                 if is_focused {
                     scene.nodes.push(SceneNode::Border {
                         rect,
-                        color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
+                        color: mul_alpha(locals::theme().focus, alpha_accum),
                         width: dp_to_px(2.0),
                         radius: v
                             .modifier
@@ -2146,7 +2145,7 @@ pub fn layout_and_paint(
                         w: knob_px,
                         h: knob_px,
                     },
-                    color: mul_alpha(Color::from_hex("#888888"), alpha_accum),
+                    color: mul_alpha(theme.outline, alpha_accum),
                     width: dp_to_px(1.0),
                     radius: knob_px * 0.5,
                 });
@@ -2195,7 +2194,7 @@ pub fn layout_and_paint(
                 if is_focused {
                     scene.nodes.push(SceneNode::Border {
                         rect,
-                        color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
+                        color: mul_alpha(locals::theme().focus, alpha_accum),
                         width: dp_to_px(2.0),
                         radius: v
                             .modifier
@@ -2255,7 +2254,7 @@ pub fn layout_and_paint(
                         w: knob_d_px,
                         h: knob_d_px,
                     },
-                    color: mul_alpha(Color::from_hex("#888888"), alpha_accum),
+                    color: mul_alpha(theme.outline, alpha_accum),
                     width: dp_to_px(1.0),
                     radius: knob_d_px * 0.5,
                 });
@@ -2361,7 +2360,7 @@ pub fn layout_and_paint(
                 if is_focused {
                     scene.nodes.push(SceneNode::Border {
                         rect,
-                        color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
+                        color: mul_alpha(locals::theme().focus, alpha_accum),
                         width: dp_to_px(2.0),
                         radius: v
                             .modifier
@@ -2438,7 +2437,7 @@ pub fn layout_and_paint(
                             w: knob_d_px,
                             h: knob_d_px,
                         },
-                        color: mul_alpha(Color::from_hex("#888888"), alpha_accum),
+                        color: mul_alpha(theme.outline, alpha_accum),
                         width: dp_to_px(1.0),
                         radius: knob_d_px * 0.5,
                     });
@@ -2555,7 +2554,7 @@ pub fn layout_and_paint(
                 if is_focused {
                     scene.nodes.push(SceneNode::Border {
                         rect,
-                        color: mul_alpha(Color::from_hex("#88CCFF"), alpha_accum),
+                        color: mul_alpha(locals::theme().focus, alpha_accum),
                         width: dp_to_px(2.0),
                         radius: v
                             .modifier

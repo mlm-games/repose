@@ -24,12 +24,14 @@ fn app(_s: &mut Scheduler) -> View {
     let theme_dark = remember(|| signal(true));
 
     // Theme switcher
-    let theme_light = Theme {
-        background: Color::from_hex("#FAFAFA"),
-        surface: Color::from_hex("#FFFFFF"),
-        on_surface: Color::from_hex("#222222"),
-        primary: Color::from_hex("#3B82F6"),
-        on_primary: Color::WHITE,
+    let theme_light = {
+        let mut t = Theme::default();
+        t.background = Color::from_hex("#FAFAFA");
+        t.surface = Color::from_hex("#FFFFFF");
+        t.on_surface = Color::from_hex("#222222");
+        t.primary = Color::from_hex("#3B82F6");
+        t.on_primary = Color::WHITE;
+        t
     };
     let theme_dark_v = Theme::default();
     let use_theme = if theme_dark.get() {

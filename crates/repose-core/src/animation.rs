@@ -11,7 +11,14 @@ pub enum Easing {
     EaseIn,
     EaseOut,
     EaseInOut,
-    Spring { damping: f32, stiffness: f32 },
+    /// Monotonic, critically-damped, y(t)=1-(1+ω t)e^{-ω t}, t∈[0,1].
+    SpringCrit {
+        omega: f32,
+    },
+    /// Underdamped, low-overshoot preset (ζ≈0.5, ω≈8)
+    SpringGentle,
+    /// Underdamped, bouncier preset (ζ≈0.2, ω≈12)
+    SpringBouncy,
 }
 
 impl Easing {
@@ -27,23 +34,30 @@ impl Easing {
                     -1.0 + (4.0 - 2.0 * t) * t
                 }
             }
-            Easing::Spring { damping, stiffness } => {
-                // Simplified spring physics
-                let omega = (stiffness / damping).sqrt();
-                let zeta = damping / (2.0 * (stiffness * damping).sqrt());
-
-                if zeta < 1.0 {
-                    // Underdamped
-                    let omega_d = omega * (1.0 - zeta * zeta).sqrt();
-                    let t = t * 2.0; // Adjust time scale
-                    1.0 - ((-zeta * omega * t).exp() * (omega_d * t).cos())
-                } else {
-                    // Overdamped or critically damped - fallback to ease out
-                    t * (2.0 - t)
-                }
+            Easing::SpringCrit { omega } => {
+                let w = (*omega).max(0.0);
+                let tt = t.max(0.0);
+                // y = 1 - (1 + w t) e^{-w t}
+                1.0 - (1.0 + w * tt) * (-(w * tt)).exp()
             }
+            Easing::SpringGentle => spring_underdamped_normalized(t, 0.5, 8.0),
+            Easing::SpringBouncy => spring_underdamped_normalized(t, 0.2, 12.0),
         }
     }
+}
+
+fn spring_underdamped_normalized(t: f32, zeta: f32, omega: f32) -> f32 {
+    let tt = t.max(0.0);
+    let z = zeta.clamp(0.0, 0.999);
+    let w = omega.max(0.0);
+    let wd = w * (1.0 - z * z).sqrt();
+    let exp_term = (-z * w * tt).exp();
+    let cos_term = (wd * tt).cos();
+    let sin_term = (wd * tt).sin();
+    // Standard second-order underdamped unit-step response
+    let c = z / (1.0 - z * z).sqrt();
+    let y = 1.0 - exp_term * (cos_term + c * sin_term);
+    y.clamp(0.0, 1.0)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -71,23 +85,31 @@ impl AnimationSpec {
             delay: Duration::ZERO,
         }
     }
-    pub fn spring() -> Self {
-        Self {
-            duration: Duration::from_millis(500),
-            easing: Easing::Spring {
-                damping: 0.8,
-                stiffness: 200.0,
-            },
-            delay: Duration::ZERO,
-        }
-    }
-    pub fn spring_phys(damping: f32, stiffness: f32, duration: Duration) -> Self {
+    /// Critically-damped monotonic spring (no overshoot).
+    pub fn spring_crit(omega: f32, duration: Duration) -> Self {
         Self {
             duration,
-            easing: Easing::Spring { damping, stiffness },
+            easing: Easing::SpringCrit { omega },
             delay: Duration::ZERO,
         }
     }
+    /// Gentle underdamped preset (small overshoot).
+    pub fn spring_gentle() -> Self {
+        Self {
+            duration: Duration::from_millis(450),
+            easing: Easing::SpringGentle,
+            delay: Duration::ZERO,
+        }
+    }
+    /// Bouncier underdamped preset.
+    pub fn spring_bouncy() -> Self {
+        Self {
+            duration: Duration::from_millis(700),
+            easing: Easing::SpringBouncy,
+            delay: Duration::ZERO,
+        }
+    }
+
     pub fn fast() -> Self {
         Self {
             duration: Duration::from_millis(150),

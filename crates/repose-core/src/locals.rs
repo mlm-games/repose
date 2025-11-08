@@ -90,6 +90,13 @@ pub struct Theme {
     pub on_surface: crate::Color,
     pub primary: crate::Color,
     pub on_primary: crate::Color,
+    pub outline: crate::Color,           // Extra: borders, dividers
+    pub focus: crate::Color,             // focus rings / a11y highlights
+    pub button_bg: crate::Color,         // default button background
+    pub button_bg_hover: crate::Color,   // hover state
+    pub button_bg_pressed: crate::Color, // pressed state
+    pub scrollbar_track: crate::Color,   // low-emphasis track
+    pub scrollbar_thumb: crate::Color,   // higher-emphasis thumb
 }
 impl Default for Theme {
     fn default() -> Self {
@@ -99,6 +106,13 @@ impl Default for Theme {
             on_surface: crate::Color::from_hex("#DDDDDD"),
             primary: crate::Color::from_hex("#34AF82"),
             on_primary: crate::Color::WHITE,
+            outline: crate::Color::from_hex("#555555"),
+            focus: crate::Color::from_hex("#88CCFF"),
+            button_bg: crate::Color::from_hex("#34AF82"),
+            button_bg_hover: crate::Color::from_hex("#2A8F6A"),
+            button_bg_pressed: crate::Color::from_hex("#1F7556"),
+            scrollbar_track: crate::Color(0xDD, 0xDD, 0xDD, 32),
+            scrollbar_thumb: crate::Color(0xDD, 0xDD, 0xDD, 140),
         }
     }
 }
