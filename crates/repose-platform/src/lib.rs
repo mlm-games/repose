@@ -5,10 +5,67 @@ use repose_ui::layout_and_paint;
 use repose_ui::textfield::{
     TF_FONT_DP, TF_PADDING_X_DP, byte_to_char_index, index_for_x_bytes, measure_text,
 };
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::time::Instant;
 
 #[cfg(all(feature = "android", target_os = "android"))]
 pub mod android;
+
+/// Compose a single frame with density and text-scale applied, returning Frame.
+pub fn compose_frame<F>(
+    sched: &mut Scheduler,
+    root_fn: &mut F,
+    scale: f32,
+    size_px_u32: (u32, u32),
+    hover_id: Option<u64>,
+    pressed_ids: &std::collections::HashSet<u64>,
+    tf_states: &std::collections::HashMap<u64, Rc<RefCell<repose_ui::TextFieldState>>>,
+    focused: Option<u64>,
+) -> Frame
+where
+    F: FnMut(&mut Scheduler) -> View,
+{
+    sched.repose(
+        {
+            let scale = scale;
+            move |s: &mut Scheduler| {
+                with_density(Density { scale }, || {
+                    with_text_scale(TextScale(1.0), || (root_fn)(s))
+                })
+            }
+        },
+        {
+            let hover_id = hover_id;
+            let pressed_ids = pressed_ids.clone();
+            move |view, _size| {
+                let interactions = repose_ui::Interactions {
+                    hover: hover_id,
+                    pressed: pressed_ids.clone(),
+                };
+                with_density(Density { scale }, || {
+                    with_text_scale(TextScale(1.0), || {
+                        repose_ui::layout_and_paint(
+                            view,
+                            size_px_u32,
+                            tf_states,
+                            &interactions,
+                            focused,
+                        )
+                    })
+                })
+            }
+        },
+    )
+}
+
+/// Helper: ensure caret visibility for a TextFieldState inside a given rect (px).
+pub fn tf_ensure_visible_in_rect(state: &mut repose_ui::TextFieldState, inner_rect: Rect) {
+    let font_dp = TF_FONT_DP as u32;
+    let m = measure_text(&state.text, font_dp);
+    let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
+    state.ensure_caret_visible(caret_x_px, inner_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP));
+}
 
 #[cfg(feature = "desktop")]
 pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> anyhow::Result<()> {
@@ -783,7 +840,19 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                         cursor.map(|(a, b)| (a as usize, b as usize));
                                     state.set_composition(text.clone(), cursor_usize);
                                     self.ime_preedit = !text.is_empty();
-                                    App::tf_ensure_caret_visible(&mut state);
+                                    if let Some(f) = &self.frame_cache {
+                                        if let Some(hit) =
+                                            f.hit_regions.iter().find(|h| h.id == focused_id)
+                                        {
+                                            let inner = Rect {
+                                                x: hit.rect.x + dp_to_px(TF_PADDING_X_DP),
+                                                y: hit.rect.y,
+                                                w: hit.rect.w,
+                                                h: hit.rect.h,
+                                            };
+                                            tf_ensure_visible_in_rect(&mut state, inner);
+                                        }
+                                    }
                                     // notify on-change if you wired it:
                                     self.notify_text_change(focused_id, state.text.clone());
                                     self.request_redraw();
@@ -791,7 +860,19 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                 Ime::Commit(text) => {
                                     state.commit_composition(text);
                                     self.ime_preedit = false;
-                                    App::tf_ensure_caret_visible(&mut state);
+                                    if let Some(f) = &self.frame_cache {
+                                        if let Some(hit) =
+                                            f.hit_regions.iter().find(|h| h.id == focused_id)
+                                        {
+                                            let inner = Rect {
+                                                x: hit.rect.x + dp_to_px(TF_PADDING_X_DP),
+                                                y: hit.rect.y,
+                                                w: hit.rect.w,
+                                                h: hit.rect.h,
+                                            };
+                                            tf_ensure_visible_in_rect(&mut state, inner);
+                                        }
+                                    }
                                     self.notify_text_change(focused_id, state.text.clone());
                                     self.request_redraw();
                                 }
@@ -799,7 +880,19 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     self.ime_preedit = false;
                                     if state.composition.is_some() {
                                         state.cancel_composition();
-                                        App::tf_ensure_caret_visible(&mut state);
+                                        if let Some(f) = &self.frame_cache {
+                                            if let Some(hit) =
+                                                f.hit_regions.iter().find(|h| h.id == focused_id)
+                                            {
+                                                let inner = Rect {
+                                                    x: hit.rect.x + dp_to_px(TF_PADDING_X_DP),
+                                                    y: hit.rect.y,
+                                                    w: hit.rect.w,
+                                                    h: hit.rect.h,
+                                                };
+                                                tf_ensure_visible_in_rect(&mut state, inner);
+                                            }
+                                        }
                                         self.notify_text_change(focused_id, state.text.clone());
                                     }
                                     self.request_redraw();
@@ -814,46 +907,18 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     {
                         let t0 = Instant::now();
                         let scale = win.scale_factor() as f32;
-
-                        let root_fn = &mut self.root;
-
-                        // Compose
+                        let size_px_u32 = self.sched.size;
                         let focused = self.sched.focused;
-                        let hover_id = self.hover_id;
-                        let pressed_ids = self.pressed_ids.clone();
-                        let tf_states = &self.textfield_states;
 
-                        let frame = self.sched.repose(
-                            {
-                                let scale = scale;
-                                move |sched: &mut Scheduler| {
-                                    with_density(Density { scale }, || {
-                                        with_text_scale(TextScale(1.0), || (root_fn)(sched))
-                                    })
-                                }
-                            },
-                            {
-                                let hover_id = hover_id;
-                                let pressed_ids = pressed_ids.clone();
-                                move |view, size| {
-                                    let interactions = repose_ui::Interactions {
-                                        hover: hover_id,
-                                        pressed: pressed_ids.clone(),
-                                    };
-                                    // 2) Keep layout wrapped as it already is
-                                    with_density(Density { scale }, || {
-                                        with_text_scale(TextScale(1.0), || {
-                                            layout_and_paint(
-                                                view,
-                                                size,
-                                                tf_states,
-                                                &interactions,
-                                                focused,
-                                            )
-                                        })
-                                    })
-                                }
-                            },
+                        let frame = compose_frame(
+                            &mut self.sched,
+                            &mut self.root,
+                            scale,
+                            size_px_u32,
+                            self.hover_id,
+                            &self.pressed_ids,
+                            &self.textfield_states,
+                            focused,
                         );
 
                         let build_layout_ms = (Instant::now() - t0).as_secs_f32() * 1000.0;
@@ -878,7 +943,9 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             scene_nodes: scene.nodes.len(),
                         });
                         self.inspector.frame(&mut scene);
-                        backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
+                        backend
+                            // .lock()
+                            .frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
                         self.frame_cache = Some(frame);
                     }
                 }

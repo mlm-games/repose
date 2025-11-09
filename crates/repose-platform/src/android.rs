@@ -491,23 +491,11 @@ pub fn run_android_app(
                                     state.set_composition(text.clone(), cursor_usize);
                                     self.ime_preedit = !text.is_empty();
 
-                                    // Ensure caret visible
-                                    let font_dp = TF_FONT_DP as u32;
-                                    let m = measure_text(&state.text, font_dp);
-                                    let caret_x_px = m
-                                        .positions
-                                        .get(state.caret_index())
-                                        .copied()
-                                        .unwrap_or(0.0);
-                                    // Need viewport width: find rect
                                     if let Some(f) = &self.frame_cache {
                                         if let Some(hit) =
                                             f.hit_regions.iter().find(|h| h.id == focused_id)
                                         {
-                                            state.ensure_caret_visible(
-                                                caret_x_px,
-                                                hit.rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
-                                            );
+                                            crate::tf_ensure_visible_in_rect(&mut state, hit.rect);
                                         }
                                     }
 
@@ -519,21 +507,11 @@ pub fn run_android_app(
                                     state.commit_composition(text);
                                     self.ime_preedit = false;
 
-                                    let font_dp = TF_FONT_DP as u32;
-                                    let m = measure_text(&state.text, font_dp);
-                                    let caret_x_px = m
-                                        .positions
-                                        .get(state.caret_index())
-                                        .copied()
-                                        .unwrap_or(0.0);
                                     if let Some(f) = &self.frame_cache {
                                         if let Some(hit) =
                                             f.hit_regions.iter().find(|h| h.id == focused_id)
                                         {
-                                            state.ensure_caret_visible(
-                                                caret_x_px,
-                                                hit.rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
-                                            );
+                                            crate::tf_ensure_visible_in_rect(&mut state, hit.rect);
                                         }
                                     }
                                     self.notify_text_change(focused_id, state.text.clone());
@@ -544,20 +522,12 @@ pub fn run_android_app(
                                     if state.composition.is_some() {
                                         state.cancel_composition();
 
-                                        let font_dp = TF_FONT_DP as u32;
-                                        let m = measure_text(&state.text, font_dp);
-                                        let caret_x_px = m
-                                            .positions
-                                            .get(state.caret_index())
-                                            .copied()
-                                            .unwrap_or(0.0);
                                         if let Some(f) = &self.frame_cache {
                                             if let Some(hit) =
                                                 f.hit_regions.iter().find(|h| h.id == focused_id)
                                             {
-                                                state.ensure_caret_visible(
-                                                    caret_x_px,
-                                                    hit.rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
+                                                crate::tf_ensure_visible_in_rect(
+                                                    &mut state, hit.rect,
                                                 );
                                             }
                                         }
@@ -577,44 +547,18 @@ pub fn run_android_app(
                     {
                         let scale = win.scale_factor() as f32;
                         let t0 = std::time::Instant::now();
-
+                        let size_px_u32 = self.sched.size;
                         let focused = self.sched.focused;
-                        let hover_id = self.hover_id;
-                        let pressed_ids = self.pressed_ids.clone();
-                        let tf_states = &self.textfield_states;
 
-                        let root_fn = &mut self.root;
-
-                        let frame = self.sched.repose(
-                            {
-                                let scale = scale;
-                                move |sched: &mut Scheduler| {
-                                    with_density(Density { scale }, || {
-                                        with_text_scale(TextScale(1.0), || (root_fn)(sched))
-                                    })
-                                }
-                            },
-                            {
-                                let hover_id = hover_id;
-                                let pressed_ids = pressed_ids.clone();
-                                move |view, size| {
-                                    let interactions = repose_ui::Interactions {
-                                        hover: hover_id,
-                                        pressed: pressed_ids.clone(),
-                                    };
-                                    with_density(Density { scale }, || {
-                                        with_text_scale(TextScale(1.0), || {
-                                            layout_and_paint(
-                                                view,
-                                                size,
-                                                tf_states,
-                                                &interactions,
-                                                focused,
-                                            )
-                                        })
-                                    })
-                                }
-                            },
+                        let frame = compose_frame(
+                            &mut self.sched,
+                            &mut self.root,
+                            scale,
+                            size_px_u32,
+                            self.hover_id,
+                            &self.pressed_ids,
+                            &self.textfield_states,
+                            focused,
                         );
 
                         // self.a11y.publish_tree(&frame.semantics_nodes); // you can add an Android stub similar to desktop later

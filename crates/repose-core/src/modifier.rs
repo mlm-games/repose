@@ -50,6 +50,7 @@ pub struct Modifier {
     pub grid_row_span: Option<u16>,
     pub click: bool,
     pub semantics_label: Option<String>,
+    /// Works for hit-testing only, draw order is not changed.
     pub z_index: f32,
     pub clip_rounded: Option<f32>,
     pub on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>>,
