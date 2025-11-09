@@ -1,13 +1,13 @@
 [package]
 name = "repose-render-wgpu"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "Repose wgpu handler"
 
 [dependencies]
-repose-core = { path = "../repose-core", version = "0.5.0" }
-repose-text = { path = "../repose-text", version = "0.5.0" }
+repose-core = { path = "../repose-core", version = "0.6.0" }
+repose-text = { path = "../repose-text", version = "0.6.0" }
 wgpu = { workspace = true }
 winit = { workspace = true }
 log = { workspace = true }
