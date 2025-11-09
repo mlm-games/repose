@@ -474,7 +474,9 @@ pub fn layout_and_paint(
         // Defaults
         s.align_items = if matches!(
             kind,
-            ViewKind::Column
+            ViewKind::Row
+                | ViewKind::Column
+                | ViewKind::Stack
                 | ViewKind::Surface
                 | ViewKind::ScrollV { .. }
                 | ViewKind::ScrollXY { .. }

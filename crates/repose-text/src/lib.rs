@@ -220,7 +220,7 @@ pub struct TextMetrics {
     pub byte_offsets: Vec<usize>, // byte index per boundary (len == n+1)
 }
 
-// Compute caret mapping using shaping (no wrapping).
+/// Computes caret mapping using shaping (no wrapping).
 pub fn metrics_for_textfield(text: &str, px: f32) -> TextMetrics {
     let mut eng = engine().lock().unwrap();
     let mut buf = Buffer::new(&mut eng.fs, Metrics::new(px, px * 1.3));
@@ -231,24 +231,62 @@ pub fn metrics_for_textfield(text: &str, px: f32) -> TextMetrics {
         b.shape_until_scroll(true);
     }
 
-    let mut positions = vec![0.0f32];
-    let mut byte_offsets = vec![0usize];
-    let mut x = 0.0f32;
-
+    // Build glyph-edge cumulative advance map: (byte_end -> x_right)
+    let mut edges: Vec<(usize, f32)> = Vec::new();
+    let mut last_x = 0.0f32;
     for run in buf.layout_runs() {
         for g in run.glyphs {
-            x = g.x + g.w; // right edge in LTR
-            positions.push(x);
-            byte_offsets.push(g.end);
+            let right = g.x + g.w;
+            last_x = right.max(last_x);
+            edges.push((g.end, right));
         }
     }
+    // Ensure we can always look up text.len()
+    if edges.last().map(|e| e.0) != Some(text.len()) {
+        edges.push((text.len(), last_x));
+    }
+
+    // Grapheme boundaries
+    let mut positions = Vec::with_capacity(text.graphemes(true).count() + 1);
+    let mut byte_offsets = Vec::with_capacity(positions.capacity());
+    positions.push(0.0);
+    byte_offsets.push(0);
+
+    let mut last_byte = 0usize;
+    for (b, _g) in text.grapheme_indices(true) {
+        // accumulate by difference: width(last_byte..b)
+        let w = width_between(&edges, last_byte, b);
+        positions.push(positions.last().copied().unwrap_or(0.0) + w);
+        byte_offsets.push(b);
+        last_byte = b;
+    }
     if *byte_offsets.last().unwrap_or(&0) != text.len() {
-        positions.push(x);
+        let w = width_between(&edges, last_byte, text.len());
+        positions.push(positions.last().copied().unwrap_or(0.0) + w);
         byte_offsets.push(text.len());
     }
+
     TextMetrics {
         positions,
         byte_offsets,
+    }
+}
+
+fn width_between(edges: &[(usize, f32)], start_b: usize, end_b: usize) -> f32 {
+    let x0 = lookup_right(edges, start_b);
+    let x1 = lookup_right(edges, end_b);
+    (x1 - x0).max(0.0)
+}
+fn lookup_right(edges: &[(usize, f32)], b: usize) -> f32 {
+    match edges.binary_search_by_key(&b, |e| e.0) {
+        Ok(i) => edges[i].1,
+        Err(i) => {
+            if i == 0 {
+                0.0
+            } else {
+                edges[i - 1].1
+            }
+        }
     }
 }
 
