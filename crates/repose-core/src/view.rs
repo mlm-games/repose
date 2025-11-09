@@ -100,6 +100,15 @@ pub enum ViewKind {
         tint: Color, // multiplicative (WHITE = no tint)
         fit: ImageFit,
     },
+    Ellipse {
+        rect: Rect,
+        color: Color,
+    },
+    EllipseBorder {
+        rect: Rect,
+        color: Color,
+        width: f32, // screen-space width (px)
+    },
 }
 
 impl std::fmt::Debug for ViewKind {
@@ -212,6 +221,17 @@ impl std::fmt::Debug for ViewKind {
                 .field("label", label)
                 .field("circular", circular)
                 .finish(),
+            ViewKind::Ellipse { rect, color } => f
+                .debug_struct("Ellipse")
+                .field("rect", rect)
+                .field("color", color)
+                .finish(),
+            ViewKind::EllipseBorder { rect, color, width } => f
+                .debug_struct("EllipseBorder")
+                .field("rect", rect)
+                .field("color", color)
+                .field("width", width)
+                .finish(),
         }
     }
 }
@@ -274,6 +294,15 @@ pub enum SceneNode {
         text: String,
         color: Color,
         size: f32,
+    },
+    Ellipse {
+        rect: Rect,
+        color: Color,
+    },
+    EllipseBorder {
+        rect: Rect,
+        color: Color,
+        width: f32, // screen-space width (px)
     },
     PushClip {
         rect: Rect,

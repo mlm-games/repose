@@ -13,9 +13,10 @@ pub enum DrawCommand {
         radius: f32,
         stroke: Option<(f32, Color)>,
     },
-    Circle {
+    Ellipse {
         center: Vec2,
-        radius: f32,
+        rx: f32,
+        ry: f32,
         color: Color,
         stroke: Option<(f32, Color)>,
     },
@@ -67,21 +68,36 @@ impl DrawScope {
             stroke: Some((width, color)),
         });
     }
-    pub fn draw_circle(&mut self, center: Vec2, radius: f32, color: Color) {
-        self.commands.push(DrawCommand::Circle {
+    pub fn draw_ellipse(&mut self, center: Vec2, rx: f32, ry: f32, color: Color) {
+        self.commands.push(DrawCommand::Ellipse {
             center,
-            radius,
+            rx: rx.max(0.0),
+            ry: ry.max(0.0),
             color,
             stroke: None,
         });
     }
-    pub fn draw_circle_stroke(&mut self, center: Vec2, radius: f32, color: Color, width: f32) {
-        self.commands.push(DrawCommand::Circle {
+    pub fn draw_ellipse_stroke(
+        &mut self,
+        center: Vec2,
+        rx: f32,
+        ry: f32,
+        color: Color,
+        width: f32,
+    ) {
+        self.commands.push(DrawCommand::Ellipse {
             center,
-            radius,
+            rx: rx.max(0.0),
+            ry: ry.max(0.0),
             color,
-            stroke: Some((width, color)),
+            stroke: Some((width.max(0.0), color)),
         });
+    }
+    pub fn draw_circle(&mut self, center: Vec2, radius: f32, color: Color) {
+        self.draw_ellipse(center, radius, radius, color);
+    }
+    pub fn draw_circle_stroke(&mut self, center: Vec2, radius: f32, color: Color, width: f32) {
+        self.draw_ellipse_stroke(center, radius, radius, color, width);
     }
     pub fn draw_text(&mut self, text: impl Into<String>, pos: Vec2, color: Color, size: f32) {
         self.commands.push(DrawCommand::Text {
@@ -135,29 +151,28 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                         });
                     }
                 }
-                DrawCommand::Circle {
+                DrawCommand::Ellipse {
                     center,
-                    radius,
+                    rx,
+                    ry,
                     color,
                     stroke,
                 } => {
                     let r = Rect {
-                        x: center.x - *radius,
-                        y: center.y - *radius,
-                        w: 2.0 * *radius,
-                        h: 2.0 * *radius,
+                        x: center.x - *rx,
+                        y: center.y - *ry,
+                        w: 2.0 * *rx,
+                        h: 2.0 * *ry,
                     };
-                    scene.nodes.push(SceneNode::Rect {
+                    scene.nodes.push(SceneNode::Ellipse {
                         rect: to_global(r),
                         color: *color,
-                        radius: *radius,
                     });
                     if let Some((w, c)) = stroke {
-                        scene.nodes.push(SceneNode::Border {
+                        scene.nodes.push(SceneNode::EllipseBorder {
                             rect: to_global(r),
                             color: *c,
                             width: *w,
-                            radius: *radius,
                         });
                     }
                 }

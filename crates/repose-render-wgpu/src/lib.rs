@@ -77,6 +77,8 @@ pub struct WgpuBackend {
     // rect_bind_layout: wgpu::BindGroupLayout,
     border_pipeline: wgpu::RenderPipeline,
     // border_bind_layout: wgpu::BindGroupLayout,
+    ellipse_pipeline: wgpu::RenderPipeline,
+    ellipse_border_pipeline: wgpu::RenderPipeline,
     text_pipeline_mask: wgpu::RenderPipeline,
     text_pipeline_color: wgpu::RenderPipeline,
     text_bind_layout: wgpu::BindGroupLayout,
@@ -88,6 +90,8 @@ pub struct WgpuBackend {
     // per-frame upload rings
     ring_rect: UploadRing,
     ring_border: UploadRing,
+    ring_ellipse: UploadRing,
+    ring_ellipse_border: UploadRing,
     ring_glyph_mask: UploadRing,
     ring_glyph_color: UploadRing,
 
@@ -153,8 +157,28 @@ struct RectInstance {
 struct BorderInstance {
     // outer rect in NDC
     xywh: [f32; 4],
-    // outer radius in NDC
-    radius_outer: f32,
+    // corner radius in NDC (for rounded-rects)
+    radius: f32,
+    // stroke width in NDC (screen-space thickness)
+    stroke: f32,
+    // rgba (linear)
+    color: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct EllipseInstance {
+    // bounding rect in NDC
+    xywh: [f32; 4],
+    // rgba (linear)
+    color: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct EllipseBorderInstance {
+    // bounding rect in NDC
+    xywh: [f32; 4],
     // stroke width in NDC
     stroke: f32,
     // rgba (linear)
@@ -359,6 +383,117 @@ impl WgpuBackend {
             cache: None,
         });
 
+        let ellipse_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("ellipse.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/ellipse.wgsl"))),
+        });
+        let ellipse_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("ellipse pipeline layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            });
+        let ellipse_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("ellipse pipeline"),
+            layout: Some(&ellipse_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &ellipse_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<EllipseInstance>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            shader_location: 0,
+                            offset: 0,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 1,
+                            offset: 16,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                    ],
+                }],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &ellipse_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        // Pipelines: Ellipse border (ring)
+        let ellipse_border_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("ellipse_border.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                "shaders/ellipse_border.wgsl"
+            ))),
+        });
+        let ellipse_border_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("ellipse border layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            });
+        let ellipse_border_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("ellipse border pipeline"),
+                layout: Some(&ellipse_border_layout),
+                vertex: wgpu::VertexState {
+                    module: &ellipse_border_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<EllipseBorderInstance>() as u64,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &[
+                            wgpu::VertexAttribute {
+                                shader_location: 0,
+                                offset: 0,
+                                format: wgpu::VertexFormat::Float32x4,
+                            },
+                            wgpu::VertexAttribute {
+                                shader_location: 1,
+                                offset: 16,
+                                format: wgpu::VertexFormat::Float32,
+                            },
+                            wgpu::VertexAttribute {
+                                shader_location: 2,
+                                offset: 20,
+                                format: wgpu::VertexFormat::Float32x4,
+                            },
+                        ],
+                    }],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &ellipse_border_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: config.format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
+
         // Pipelines: Text
         let text_mask_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("text.wgsl"),
@@ -494,6 +629,8 @@ impl WgpuBackend {
         // Upload rings (starts off small, grows in-place by recreating if needed — future work)
         let ring_rect = UploadRing::new(&device, "ring rect", 1 << 20); // 1 MiB
         let ring_border = UploadRing::new(&device, "ring border", 1 << 20);
+        let ring_ellipse = UploadRing::new(&device, "ring ellipse", 1 << 20);
+        let ring_ellipse_border = UploadRing::new(&device, "ring ellipse border", 1 << 20);
         let ring_glyph_mask = UploadRing::new(&device, "ring glyph mask", 1 << 20);
         let ring_glyph_color = UploadRing::new(&device, "ring glyph color", 1 << 20);
 
@@ -509,10 +646,14 @@ impl WgpuBackend {
             text_pipeline_mask,
             text_pipeline_color,
             text_bind_layout,
+            ellipse_pipeline,
+            ellipse_border_pipeline,
             atlas_mask,
             atlas_color,
             ring_rect,
             ring_border,
+            ring_ellipse,
+            ring_ellipse_border,
             ring_glyph_color,
             ring_glyph_mask,
             next_image_handle: 1,
@@ -1014,6 +1155,8 @@ impl RenderBackend for WgpuBackend {
             SetClipPop,
             Rect { off: u64, cnt: u32 },
             Border { off: u64, cnt: u32 },
+            Ellipse { off: u64, cnt: u32 },
+            EllipseBorder { off: u64, cnt: u32 },
             GlyphsMask { off: u64, cnt: u32 },
             GlyphsColor { off: u64, cnt: u32 },
             Image { off: u64, cnt: u32, handle: u64 },
@@ -1024,6 +1167,8 @@ impl RenderBackend for WgpuBackend {
         struct Batch {
             rects: Vec<RectInstance>,
             borders: Vec<BorderInstance>,
+            ellipses: Vec<EllipseInstance>,
+            e_borders: Vec<EllipseBorderInstance>,
             masks: Vec<GlyphInstance>,
             colors: Vec<GlyphInstance>,
         }
@@ -1032,6 +1177,8 @@ impl RenderBackend for WgpuBackend {
                 Self {
                     rects: vec![],
                     borders: vec![],
+                    ellipses: vec![],
+                    e_borders: vec![],
                     masks: vec![],
                     colors: vec![],
                 }
@@ -1044,12 +1191,21 @@ impl RenderBackend for WgpuBackend {
                     &mut UploadRing,
                     &mut UploadRing,
                     &mut UploadRing,
+                    &mut UploadRing,
+                    &mut UploadRing,
                 ),
                 device: &wgpu::Device,
                 queue: &wgpu::Queue,
                 cmds: &mut Vec<Cmd>,
             ) {
-                let (ring_rect, ring_border, ring_mask, ring_color) = rings;
+                let (
+                    ring_rect,
+                    ring_border,
+                    ring_ellipse,
+                    ring_ellipse_border,
+                    ring_mask,
+                    ring_color,
+                ) = rings;
 
                 if !self.rects.is_empty() {
                     let bytes = bytemuck::cast_slice(&self.rects);
@@ -1072,6 +1228,28 @@ impl RenderBackend for WgpuBackend {
                         cnt: self.borders.len() as u32,
                     });
                     self.borders.clear();
+                }
+                if !self.ellipses.is_empty() {
+                    let bytes = bytemuck::cast_slice(&self.ellipses);
+                    ring_ellipse.grow_to_fit(device, bytes.len() as u64);
+                    let (off, wrote) = ring_ellipse.alloc_write(queue, bytes);
+                    debug_assert_eq!(wrote as usize, bytes.len());
+                    cmds.push(Cmd::Ellipse {
+                        off,
+                        cnt: self.ellipses.len() as u32,
+                    });
+                    self.ellipses.clear();
+                }
+                if !self.e_borders.is_empty() {
+                    let bytes = bytemuck::cast_slice(&self.e_borders);
+                    ring_ellipse_border.grow_to_fit(device, bytes.len() as u64);
+                    let (off, wrote) = ring_ellipse_border.alloc_write(queue, bytes);
+                    debug_assert_eq!(wrote as usize, bytes.len());
+                    cmds.push(Cmd::EllipseBorder {
+                        off,
+                        cnt: self.e_borders.len() as u32,
+                    });
+                    self.e_borders.clear();
                 }
                 if !self.masks.is_empty() {
                     let bytes = bytemuck::cast_slice(&self.masks);
@@ -1100,6 +1278,8 @@ impl RenderBackend for WgpuBackend {
         // per frame
         self.ring_rect.reset();
         self.ring_border.reset();
+        self.ring_ellipse.reset();
+        self.ring_ellipse_border.reset();
         self.ring_glyph_mask.reset();
         self.ring_glyph_color.reset();
         let mut batch = Batch::new();
@@ -1147,7 +1327,36 @@ impl RenderBackend for WgpuBackend {
                             fb_w,
                             fb_h,
                         ),
-                        radius_outer: to_ndc_radius(*radius, fb_w, fb_h),
+                        radius: to_ndc_radius(*radius, fb_w, fb_h),
+                        stroke: to_ndc_stroke(*width, fb_w, fb_h),
+                        color: color.to_linear(),
+                    });
+                }
+                SceneNode::Ellipse { rect, color } => {
+                    let transformed = current_transform.apply_to_rect(*rect);
+                    batch.ellipses.push(EllipseInstance {
+                        xywh: to_ndc(
+                            transformed.x,
+                            transformed.y,
+                            transformed.w,
+                            transformed.h,
+                            fb_w,
+                            fb_h,
+                        ),
+                        color: color.to_linear(),
+                    });
+                }
+                SceneNode::EllipseBorder { rect, color, width } => {
+                    let transformed = current_transform.apply_to_rect(*rect);
+                    batch.e_borders.push(EllipseBorderInstance {
+                        xywh: to_ndc(
+                            transformed.x,
+                            transformed.y,
+                            transformed.w,
+                            transformed.h,
+                            fb_w,
+                            fb_h,
+                        ),
                         stroke: to_ndc_stroke(*width, fb_w, fb_h),
                         color: color.to_linear(),
                     });
@@ -1255,6 +1464,8 @@ impl RenderBackend for WgpuBackend {
                         (
                             &mut self.ring_rect,
                             &mut self.ring_border,
+                            &mut self.ring_ellipse,
+                            &mut self.ring_ellipse_border,
                             &mut self.ring_glyph_mask,
                             &mut self.ring_glyph_color,
                         ),
@@ -1273,6 +1484,8 @@ impl RenderBackend for WgpuBackend {
                         (
                             &mut self.ring_rect,
                             &mut self.ring_border,
+                            &mut self.ring_ellipse,
+                            &mut self.ring_ellipse_border,
                             &mut self.ring_glyph_mask,
                             &mut self.ring_glyph_color,
                         ),
@@ -1290,6 +1503,8 @@ impl RenderBackend for WgpuBackend {
                         (
                             &mut self.ring_rect,
                             &mut self.ring_border,
+                            &mut self.ring_ellipse,
+                            &mut self.ring_ellipse_border,
                             &mut self.ring_glyph_mask,
                             &mut self.ring_glyph_color,
                         ),
@@ -1320,6 +1535,8 @@ impl RenderBackend for WgpuBackend {
             (
                 &mut self.ring_rect,
                 &mut self.ring_border,
+                &mut self.ring_ellipse,
+                &mut self.ring_ellipse_border,
                 &mut self.ring_glyph_mask,
                 &mut self.ring_glyph_color,
             ),
@@ -1439,6 +1656,22 @@ impl RenderBackend for WgpuBackend {
                         } else {
                             log::warn!("Image handle {} not found; skipping draw", handle);
                         }
+                    }
+                    Cmd::Ellipse { off, cnt: n } => {
+                        rpass.set_pipeline(&self.ellipse_pipeline);
+                        let bytes = (n as u64) * std::mem::size_of::<EllipseInstance>() as u64;
+                        rpass.set_vertex_buffer(0, self.ring_ellipse.buf.slice(off..off + bytes));
+                        rpass.draw(0..6, 0..n);
+                    }
+                    Cmd::EllipseBorder { off, cnt: n } => {
+                        rpass.set_pipeline(&self.ellipse_border_pipeline);
+                        let bytes =
+                            (n as u64) * std::mem::size_of::<EllipseBorderInstance>() as u64;
+                        rpass.set_vertex_buffer(
+                            0,
+                            self.ring_ellipse_border.buf.slice(off..off + bytes),
+                        );
+                        rpass.draw(0..6, 0..n);
                     }
                     Cmd::PushTransform(transform) => {}
                     Cmd::PopTransform => {}

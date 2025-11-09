@@ -1,7 +1,5 @@
 #![allow(non_snake_case)]
-//! Widgets, layout (Taffy), painting into a platform-agnostic Scene, and text fields.
-//!
-//! repose-render-wgpu is responsible for GPU interaction
+//! Widgets, layout and text fields.
 
 pub mod anim;
 pub mod anim_ext;
