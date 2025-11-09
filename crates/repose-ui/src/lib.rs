@@ -926,23 +926,9 @@ pub fn layout_and_paint(
                         height: px(12.0) + px(8.0),
                     }
                 }
-                Some(NodeCtx::ScrollContainer) => {
-                    taffy::geometry::Size {
-                        width: known.width.unwrap_or_else(|| {
-                            match avail.width {
-                                AvailableSpace::Definite(w) => w,
-                                _ => px(300.0), // Fallback width
-                            }
-                        }),
-                        height: known.height.unwrap_or_else(|| {
-                            match avail.height {
-                                AvailableSpace::Definite(h) => h,
-                                _ => px(600.0), // Fallback height
-                            }
-                        }),
-                    }
+                Some(NodeCtx::ScrollContainer) | Some(NodeCtx::Container) | None => {
+                    taffy::geometry::Size::ZERO
                 }
-                Some(NodeCtx::Container) | None => taffy::geometry::Size::ZERO,
             }
         })
         .unwrap();

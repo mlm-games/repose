@@ -1,8 +1,10 @@
+use parking_lot::RwLock;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 pub(crate) fn now() -> Instant {
-    CLOCK.get().map(|c| c.now()).unwrap_or_else(Instant::now)
+    let lock = CLOCK.get_or_init(|| RwLock::new(Box::new(SystemClock) as Box<dyn Clock>));
+    lock.read().now()
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -160,15 +162,16 @@ impl Clock for SystemClock {
     }
 }
 
-static CLOCK: OnceLock<Box<dyn Clock>> = OnceLock::new();
+static CLOCK: OnceLock<RwLock<Box<dyn Clock>>> = OnceLock::new();
 
 /// Install a global animation clock. Platform sets this to SystemClock; tests can set TestClock.
 pub fn set_clock(clock: Box<dyn Clock>) {
-    let _ = CLOCK.set(clock);
+    let lock = CLOCK.get_or_init(|| RwLock::new(Box::new(SystemClock) as Box<dyn Clock>));
+    *lock.write() = clock;
 }
 /// Install default system clock if none present (idempotent).
 pub(crate) fn ensure_system_clock() {
-    let _ = CLOCK.set(Box::new(SystemClock));
+    let lock = CLOCK.get_or_init(|| RwLock::new(Box::new(SystemClock) as Box<dyn Clock>));
 }
 
 /// A test clock you can drive deterministically.
