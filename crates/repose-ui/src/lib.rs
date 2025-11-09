@@ -999,6 +999,201 @@ pub fn layout_and_paint(
         out.3 = na;
         out
     }
+    // draws scrollbar and registers their drag hit regions (both)
+    fn push_scrollbar_v(
+        scene: &mut Scene,
+        hits: &mut Vec<HitRegion>,
+        interactions: &Interactions,
+        view_id: u64,
+        vp: crate::Rect,
+        content_h_px: f32,
+        off_y_px: f32,
+        z: f32,
+        set_scroll_offset: Option<Rc<dyn Fn(f32)>>,
+    ) {
+        if content_h_px <= vp.h + 0.5 {
+            return;
+        }
+        let thickness_px = dp_to_px(6.0);
+        let margin_px = dp_to_px(2.0);
+        let min_thumb_px = dp_to_px(24.0);
+        let th = locals::theme();
+
+        // Track geometry (inset inside viewport)
+        let track_x = vp.x + vp.w - margin_px - thickness_px;
+        let track_y = vp.y + margin_px;
+        let track_h = (vp.h - 2.0 * margin_px).max(0.0);
+
+        // Thumb geometry from content ratio
+        let ratio = (vp.h / content_h_px).clamp(0.0, 1.0);
+        let mut thumb_h = (track_h * ratio).clamp(min_thumb_px, track_h);
+        let denom = (content_h_px - vp.h).max(1.0);
+        let tpos = (off_y_px / denom).clamp(0.0, 1.0);
+        let max_pos = (track_h - thumb_h).max(0.0);
+        let thumb_y = track_y + tpos * max_pos;
+
+        scene.nodes.push(SceneNode::Rect {
+            rect: crate::Rect {
+                x: track_x,
+                y: track_y,
+                w: thickness_px,
+                h: track_h,
+            },
+            color: th.scrollbar_track,
+            radius: thickness_px * 0.5,
+        });
+        scene.nodes.push(SceneNode::Rect {
+            rect: crate::Rect {
+                x: track_x,
+                y: thumb_y,
+                w: thickness_px,
+                h: thumb_h,
+            },
+            color: th.scrollbar_thumb,
+            radius: thickness_px * 0.5,
+        });
+        if let Some(setter) = set_scroll_offset {
+            let thumb_id: u64 = view_id ^ 0x8000_0001;
+            let map_to_off = Rc::new(move |py_px: f32| -> f32 {
+                let denom = (content_h_px - vp.h).max(1.0);
+                let max_pos = (track_h - thumb_h).max(0.0);
+                let pos = ((py_px - track_y) - thumb_h * 0.5).clamp(0.0, max_pos);
+                let t = if max_pos > 0.0 { pos / max_pos } else { 0.0 };
+                t * denom
+            });
+            let on_pd: Rc<dyn Fn(repose_core::input::PointerEvent)> = {
+                let setter = setter.clone();
+                let map = map_to_off.clone();
+                Rc::new(move |pe| setter(map(pe.position.y)))
+            };
+            let on_pm: Option<Rc<dyn Fn(repose_core::input::PointerEvent)>> =
+                if interactions.pressed.contains(&thumb_id) {
+                    let setter = setter.clone();
+                    let map = map_to_off.clone();
+                    Some(Rc::new(move |pe| setter(map(pe.position.y))))
+                } else {
+                    None
+                };
+            let on_pu: Rc<dyn Fn(repose_core::input::PointerEvent)> = Rc::new(move |_pe| {});
+            hits.push(HitRegion {
+                id: thumb_id,
+                rect: crate::Rect {
+                    x: track_x,
+                    y: thumb_y,
+                    w: thickness_px,
+                    h: thumb_h,
+                },
+                on_click: None,
+                on_scroll: None,
+                focusable: false,
+                on_pointer_down: Some(on_pd),
+                on_pointer_move: on_pm,
+                on_pointer_up: Some(on_pu),
+                on_pointer_enter: None,
+                on_pointer_leave: None,
+                z_index: z + 1000.0,
+                on_text_change: None,
+                on_text_submit: None,
+            });
+        }
+    }
+
+    fn push_scrollbar_h(
+        scene: &mut Scene,
+        hits: &mut Vec<HitRegion>,
+        interactions: &Interactions,
+        view_id: u64,
+        vp: crate::Rect,
+        content_w_px: f32,
+        off_x_px: f32,
+        z: f32,
+        set_scroll_offset_xy: Option<Rc<dyn Fn(f32, f32)>>,
+        keep_y: f32,
+    ) {
+        if content_w_px <= vp.w + 0.5 {
+            return;
+        }
+        let thickness_px = dp_to_px(6.0);
+        let margin_px = dp_to_px(2.0);
+        let min_thumb_px = dp_to_px(24.0);
+        let th = locals::theme();
+
+        let track_x = vp.x + margin_px;
+        let track_y = vp.y + vp.h - margin_px - thickness_px;
+        let track_w = (vp.w - 2.0 * margin_px).max(0.0);
+
+        let ratio = (vp.w / content_w_px).clamp(0.0, 1.0);
+        let mut thumb_w = (track_w * ratio).clamp(min_thumb_px, track_w);
+        let denom = (content_w_px - vp.w).max(1.0);
+        let tpos = (off_x_px / denom).clamp(0.0, 1.0);
+        let max_pos = (track_w - thumb_w).max(0.0);
+        let thumb_x = track_x + tpos * max_pos;
+
+        scene.nodes.push(SceneNode::Rect {
+            rect: crate::Rect {
+                x: track_x,
+                y: track_y,
+                w: track_w,
+                h: thickness_px,
+            },
+            color: th.scrollbar_track,
+            radius: thickness_px * 0.5,
+        });
+        scene.nodes.push(SceneNode::Rect {
+            rect: crate::Rect {
+                x: thumb_x,
+                y: track_y,
+                w: thumb_w,
+                h: thickness_px,
+            },
+            color: th.scrollbar_thumb,
+            radius: thickness_px * 0.5,
+        });
+        if let Some(set_xy) = set_scroll_offset_xy {
+            let hthumb_id: u64 = view_id ^ 0x8000_0012;
+            let map_to_off_x = Rc::new(move |px_pos: f32| -> f32 {
+                let denom = (content_w_px - vp.w).max(1.0);
+                let max_pos = (track_w - thumb_w).max(0.0);
+                let pos = ((px_pos - track_x) - thumb_w * 0.5).clamp(0.0, max_pos);
+                let t = if max_pos > 0.0 { pos / max_pos } else { 0.0 };
+                t * denom
+            });
+            let on_pd: Rc<dyn Fn(repose_core::input::PointerEvent)> = {
+                let set_xy = set_xy.clone();
+                let map = map_to_off_x.clone();
+                Rc::new(move |pe| set_xy(map(pe.position.x), keep_y))
+            };
+            let on_pm: Option<Rc<dyn Fn(repose_core::input::PointerEvent)>> =
+                if interactions.pressed.contains(&hthumb_id) {
+                    let set_xy = set_xy.clone();
+                    let map = map_to_off_x.clone();
+                    Some(Rc::new(move |pe| set_xy(map(pe.position.x), keep_y)))
+                } else {
+                    None
+                };
+            let on_pu: Rc<dyn Fn(repose_core::input::PointerEvent)> = Rc::new(move |_pe| {});
+            hits.push(HitRegion {
+                id: hthumb_id,
+                rect: crate::Rect {
+                    x: thumb_x,
+                    y: track_y,
+                    w: thumb_w,
+                    h: thickness_px,
+                },
+                on_click: None,
+                on_scroll: None,
+                focusable: false,
+                on_pointer_down: Some(on_pd),
+                on_pointer_move: on_pm,
+                on_pointer_up: Some(on_pu),
+                on_pointer_enter: None,
+                on_pointer_leave: None,
+                z_index: z + 1000.0,
+                on_text_change: None,
+                on_text_submit: None,
+            });
+        }
+    }
 
     let mut scene = Scene {
         clear_color: locals::theme().background,
@@ -1564,102 +1759,18 @@ pub fn layout_and_paint(
                     }
                 }
 
-                // Scrollbar overlay computed against inner viewport
-                if content_h_px > vp.h + 0.5 {
-                    let thickness_px = dp_to_px(6.0);
-                    let margin_px = dp_to_px(2.0);
-                    let min_thumb_px = dp_to_px(24.0);
-
-                    // Track along right edge inside the inner viewport
-                    let track_x = vp.x + vp.w - margin_px - thickness_px;
-                    let track_y = vp.y + margin_px;
-                    let track_h = (vp.h - 2.0 * margin_px).max(0.0);
-
-                    // Thumb size/position uses vp.h
-                    let ratio = (vp.h / content_h_px).clamp(0.0, 1.0);
-                    let mut thumb_h = (track_h * ratio).clamp(min_thumb_px, track_h);
-
-                    let denom = (content_h_px - vp.h).max(1.0);
-                    let tpos = (scroll_offset_px / denom).clamp(0.0, 1.0);
-                    let max_pos = (track_h - thumb_h).max(0.0);
-                    let thumb_y = track_y + tpos * max_pos;
-
-                    // Theme-ish colors
-                    let th = locals::theme();
-                    let track_col = th.scrollbar_track;
-                    let thumb_col = th.scrollbar_thumb;
-
-                    scene.nodes.push(SceneNode::Rect {
-                        rect: crate::Rect {
-                            x: track_x,
-                            y: track_y,
-                            w: thickness_px,
-                            h: track_h,
-                        },
-                        color: th.scrollbar_track,
-                        radius: thickness_px * 0.5,
-                    });
-                    scene.nodes.push(SceneNode::Rect {
-                        rect: crate::Rect {
-                            x: track_x,
-                            y: thumb_y,
-                            w: thickness_px,
-                            h: thumb_h,
-                        },
-                        color: th.scrollbar_thumb,
-                        radius: thickness_px * 0.5,
-                    });
-
-                    if let Some(setter) = set_scroll_offset.clone() {
-                        // Draggable thumb over inner track
-                        let thumb_id: u64 = v.id ^ 0x8000_0001;
-                        let map_to_off = Rc::new(move |py_px: f32| -> f32 {
-                            let denom = (content_h_px - vp.h).max(1.0);
-                            let max_pos = (track_h - thumb_h).max(0.0);
-                            let pos = ((py_px - track_y) - thumb_h * 0.5).clamp(0.0, max_pos);
-                            let t = if max_pos > 0.0 { pos / max_pos } else { 0.0 };
-                            t * denom
-                        });
-
-                        let on_pd: Rc<dyn Fn(repose_core::input::PointerEvent)> = {
-                            let setter = setter.clone();
-                            let map = map_to_off.clone();
-                            Rc::new(move |pe| setter(map(pe.position.y)))
-                        };
-                        let is_pressed = interactions.pressed.contains(&thumb_id);
-                        let on_pm: Option<Rc<dyn Fn(repose_core::input::PointerEvent)>> =
-                            if is_pressed {
-                                let setter = setter.clone();
-                                let map = map_to_off.clone();
-                                Some(Rc::new(move |pe| setter(map(pe.position.y))))
-                            } else {
-                                None
-                            };
-                        let on_pu: Rc<dyn Fn(repose_core::input::PointerEvent)> =
-                            Rc::new(move |_pe| {});
-
-                        hits.push(HitRegion {
-                            id: thumb_id,
-                            rect: crate::Rect {
-                                x: track_x,
-                                y: thumb_y,
-                                w: thickness_px,
-                                h: thumb_h,
-                            },
-                            on_click: None,
-                            on_scroll: None,
-                            focusable: false,
-                            on_pointer_down: Some(on_pd),
-                            on_pointer_move: on_pm,
-                            on_pointer_up: Some(on_pu),
-                            on_pointer_enter: None,
-                            on_pointer_leave: None,
-                            z_index: v.modifier.z_index + 1000.0,
-                            on_text_change: None,
-                            on_text_submit: None,
-                        });
-                    }
-                }
+                // Scrollbar overlay
+                push_scrollbar_v(
+                    scene,
+                    hits,
+                    interactions,
+                    v.id,
+                    vp,
+                    content_h_px,
+                    scroll_offset_px,
+                    v.modifier.z_index,
+                    set_scroll_offset.clone(),
+                );
 
                 scene.nodes.push(SceneNode::PopClip);
                 return;
@@ -1768,190 +1879,36 @@ pub fn layout_and_paint(
                     }
                 }
 
+                let set_scroll_y: Option<Rc<dyn Fn(f32)>> =
+                    set_scroll_offset_xy.clone().map(|set_xy| {
+                        let ox = ox_px; // keep x, move only y
+                        Rc::new(move |y| set_xy(ox, y)) as Rc<dyn Fn(f32)>
+                    });
+
                 // Scrollbars against inner viewport
-                let show_v = content_h_px > vp.h + 0.5;
-                let show_h = content_w_px > vp.w + 0.5;
-                if show_v || show_h {
-                    let thickness_px = dp_to_px(6.0);
-                    let margin_px = dp_to_px(2.0);
-                    let min_thumb_px = dp_to_px(24.0);
-
-                    let thm = locals::theme();
-                    let mut track_col = thm.on_surface;
-                    track_col.3 = 32;
-                    let mut thumb_col = thm.on_surface;
-                    thumb_col.3 = 140;
-
-                    // Vertical
-                    if show_v {
-                        let track_x = vp.x + vp.w - margin_px - thickness_px;
-                        let track_y = vp.y + margin_px;
-                        let mut track_h = (vp.h - 2.0 * margin_px).max(0.0);
-                        if show_h {
-                            track_h = (track_h - (thickness_px + margin_px)).max(0.0);
-                        }
-
-                        let ratio = (vp.h / content_h_px).clamp(0.0, 1.0);
-                        let mut thumb_h = (track_h * ratio).clamp(min_thumb_px, track_h);
-                        let denom = (content_h_px - vp.h).max(1.0);
-                        let tpos = (oy_px / denom).clamp(0.0, 1.0);
-                        let max_pos = (track_h - thumb_h).max(0.0);
-                        let thumb_y = track_y + tpos * max_pos;
-
-                        scene.nodes.push(SceneNode::Rect {
-                            rect: crate::Rect {
-                                x: track_x,
-                                y: track_y,
-                                w: thickness_px,
-                                h: track_h,
-                            },
-                            color: track_col,
-                            radius: thickness_px * 0.5,
-                        });
-                        scene.nodes.push(SceneNode::Rect {
-                            rect: crate::Rect {
-                                x: track_x,
-                                y: thumb_y,
-                                w: thickness_px,
-                                h: thumb_h,
-                            },
-                            color: thumb_col,
-                            radius: thickness_px * 0.5,
-                        });
-
-                        if let Some(set_xy) = set_scroll_offset_xy.clone() {
-                            let vthumb_id: u64 = v.id ^ 0x8000_0011;
-                            let map_to_off_y = Rc::new(move |py_px: f32| -> f32 {
-                                let denom = (content_h_px - vp.h).max(1.0);
-                                let max_pos = (track_h - thumb_h).max(0.0);
-                                let pos = ((py_px - track_y) - thumb_h * 0.5).clamp(0.0, max_pos);
-                                let t = if max_pos > 0.0 { pos / max_pos } else { 0.0 };
-                                t * denom
-                            });
-                            let on_pd: Rc<dyn Fn(repose_core::input::PointerEvent)> = {
-                                let set_xy = set_xy.clone();
-                                let map = map_to_off_y.clone();
-                                Rc::new(move |pe| set_xy(ox_px, map(pe.position.y)))
-                            };
-                            let is_pressed = interactions.pressed.contains(&vthumb_id);
-                            let on_pm: Option<Rc<dyn Fn(repose_core::input::PointerEvent)>> =
-                                if is_pressed {
-                                    let set_xy = set_xy.clone();
-                                    let map = map_to_off_y.clone();
-                                    Some(Rc::new(move |pe| set_xy(ox_px, map(pe.position.y))))
-                                } else {
-                                    None
-                                };
-                            let on_pu: Rc<dyn Fn(repose_core::input::PointerEvent)> =
-                                Rc::new(move |_pe| {});
-                            hits.push(HitRegion {
-                                id: vthumb_id,
-                                rect: crate::Rect {
-                                    x: track_x,
-                                    y: thumb_y,
-                                    w: thickness_px,
-                                    h: thumb_h,
-                                },
-                                on_click: None,
-                                on_scroll: None,
-                                focusable: false,
-                                on_pointer_down: Some(on_pd),
-                                on_pointer_move: on_pm,
-                                on_pointer_up: Some(on_pu),
-                                on_pointer_enter: None,
-                                on_pointer_leave: None,
-                                z_index: v.modifier.z_index + 1000.0,
-                                on_text_change: None,
-                                on_text_submit: None,
-                            });
-                        }
-                    }
-
-                    // Horizontal
-                    if show_h {
-                        let track_x = vp.x + margin_px;
-                        let track_y = vp.y + vp.h - margin_px - thickness_px;
-                        let mut track_w = (vp.w - 2.0 * margin_px).max(0.0);
-                        if show_v {
-                            track_w = (track_w - (thickness_px + margin_px)).max(0.0);
-                        }
-
-                        let ratio = (vp.w / content_w_px).clamp(0.0, 1.0);
-                        let mut thumb_w = (track_w * ratio).clamp(min_thumb_px, track_w);
-                        let denom = (content_w_px - vp.w).max(1.0);
-                        let tpos = (ox_px / denom).clamp(0.0, 1.0);
-                        let max_pos = (track_w - thumb_w).max(0.0);
-                        let thumb_x = track_x + tpos * max_pos;
-
-                        scene.nodes.push(SceneNode::Rect {
-                            rect: crate::Rect {
-                                x: track_x,
-                                y: track_y,
-                                w: track_w,
-                                h: thickness_px,
-                            },
-                            color: track_col,
-                            radius: thickness_px * 0.5,
-                        });
-                        scene.nodes.push(SceneNode::Rect {
-                            rect: crate::Rect {
-                                x: thumb_x,
-                                y: track_y,
-                                w: thumb_w,
-                                h: thickness_px,
-                            },
-                            color: thumb_col,
-                            radius: thickness_px * 0.5,
-                        });
-
-                        if let Some(set_xy) = set_scroll_offset_xy.clone() {
-                            let hthumb_id: u64 = v.id ^ 0x8000_0012;
-                            let map_to_off_x = Rc::new(move |px_pos: f32| -> f32 {
-                                let denom = (content_w_px - vp.w).max(1.0);
-                                let max_pos = (track_w - thumb_w).max(0.0);
-                                let pos = ((px_pos - track_x) - thumb_w * 0.5).clamp(0.0, max_pos);
-                                let t = if max_pos > 0.0 { pos / max_pos } else { 0.0 };
-                                t * denom
-                            });
-                            let on_pd: Rc<dyn Fn(repose_core::input::PointerEvent)> = {
-                                let set_xy = set_xy.clone();
-                                let map = map_to_off_x.clone();
-                                Rc::new(move |pe| set_xy(map(pe.position.x), oy_px))
-                            };
-                            let is_pressed = interactions.pressed.contains(&hthumb_id);
-                            let on_pm: Option<Rc<dyn Fn(repose_core::input::PointerEvent)>> =
-                                if is_pressed {
-                                    let set_xy = set_xy.clone();
-                                    let map = map_to_off_x.clone();
-                                    Some(Rc::new(move |pe| set_xy(map(pe.position.x), oy_px)))
-                                } else {
-                                    None
-                                };
-                            let on_pu: Rc<dyn Fn(repose_core::input::PointerEvent)> =
-                                Rc::new(move |_pe| {});
-                            hits.push(HitRegion {
-                                id: hthumb_id,
-                                rect: crate::Rect {
-                                    x: thumb_x,
-                                    y: track_y,
-                                    w: thumb_w,
-                                    h: thickness_px,
-                                },
-                                on_click: None,
-                                on_scroll: None,
-                                focusable: false,
-                                on_pointer_down: Some(on_pd),
-                                on_pointer_move: on_pm,
-                                on_pointer_up: Some(on_pu),
-                                on_pointer_enter: None,
-                                on_pointer_leave: None,
-                                z_index: v.modifier.z_index + 1000.0,
-                                on_text_change: None,
-                                on_text_submit: None,
-                            });
-                        }
-                    }
-                }
+                push_scrollbar_v(
+                    scene,
+                    hits,
+                    interactions,
+                    v.id,
+                    vp,
+                    content_h_px,
+                    oy_px,
+                    v.modifier.z_index,
+                    set_scroll_y,
+                );
+                push_scrollbar_h(
+                    scene,
+                    hits,
+                    interactions,
+                    v.id,
+                    vp,
+                    content_w_px,
+                    ox_px,
+                    v.modifier.z_index,
+                    set_scroll_offset_xy.clone(),
+                    oy_px,
+                );
 
                 scene.nodes.push(SceneNode::PopClip);
                 return;
