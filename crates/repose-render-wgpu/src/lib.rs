@@ -715,14 +715,11 @@ impl WgpuBackend {
         }
         let w = gb.w.max(1);
         let h = gb.h.max(1);
-        // Packing
-        if self.atlas_mask.next_x + w + 1 >= self.atlas_mask.size {
-            self.atlas_mask.next_x = 1;
-            self.atlas_mask.next_y += self.atlas_mask.row_h + 1;
-            self.atlas_mask.row_h = 0;
+        // Packing with growth (similar to RGBA atlas)
+        if !self.alloc_space_mask(w, h) {
+            self.grow_mask_and_rebuild();
         }
-        if self.atlas_mask.next_y + h + 1 >= self.atlas_mask.size {
-            // atlas_mask full
+        if !self.alloc_space_mask(w, h) {
             return None;
         }
         let x = self.atlas_mask.next_x;
@@ -1283,7 +1280,10 @@ impl RenderBackend for WgpuBackend {
                         &self.queue,
                         &mut cmds,
                     );
-                    cmds.push(Cmd::SetClipPush(*rect));
+                    let t_identity = Transform::identity();
+                    let current_transform = transform_stack.last().unwrap_or(&t_identity);
+                    let transformed = current_transform.apply_to_rect(*rect);
+                    cmds.push(Cmd::SetClipPush(transformed));
                 }
                 SceneNode::PopClip => {
                     batch.flush(
