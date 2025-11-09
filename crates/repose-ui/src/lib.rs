@@ -659,27 +659,6 @@ pub fn layout_and_paint(
         s
     }
 
-    fn subtree_extents(node: taffy::NodeId, t: &TaffyTree<NodeCtx>) -> (f32, f32) {
-        let l = t.layout(node).unwrap();
-        let mut max_w = l.size.width;
-        let mut max_h = l.size.height;
-        if let Ok(children) = t.children(node) {
-            for &ch in children.iter() {
-                let cl = t.layout(ch).unwrap();
-                let (cw, chh) = subtree_extents(ch, t);
-                let right = cl.location.x + cw;
-                let bottom = cl.location.y + chh;
-                if right > max_w {
-                    max_w = right;
-                }
-                if bottom > max_h {
-                    max_h = bottom;
-                }
-            }
-        }
-        (max_w, max_h)
-    }
-
     fn build_node(
         v: &View,
         t: &mut TaffyTree<NodeCtx>,
@@ -890,13 +869,10 @@ pub fn layout_and_paint(
                     width: (label.len() as f32 * font_px(16.0) * 0.6) + px(24.0),
                     height: px(36.0),
                 },
-                Some(NodeCtx::TextField) => {
-                    let w_px = known.width.unwrap_or(px(220.0));
-                    taffy::geometry::Size {
-                        width: w_px,
-                        height: px(36.0),
-                    }
-                }
+                Some(NodeCtx::TextField) => taffy::geometry::Size {
+                    width: known.width.unwrap_or(px(220.0)),
+                    height: px(36.0),
+                },
                 Some(NodeCtx::Checkbox { label }) => {
                     let label_w_px = (label.len() as f32) * font_px(16.0) * 0.6;
                     let w_px = px(24.0) + px(8.0) + label_w_px; // box + gap + text estimate
@@ -915,9 +891,11 @@ pub fn layout_and_paint(
                 }
                 Some(NodeCtx::Switch { label }) => {
                     let label_w_px = (label.len() as f32) * font_px(16.0) * 0.6;
-                    let w_px = px(46.0) + px(8.0) + label_w_px; // track + gap + text
+                    let w_px = (known.width)
+                        .unwrap_or(px(46.0) + px(8.0) + label_w_px)
+                        .max(px(80.0));
                     taffy::geometry::Size {
-                        width: known.width.unwrap_or(w_px),
+                        width: w_px,
                         height: px(28.0),
                     }
                 }
@@ -990,6 +968,21 @@ pub fn layout_and_paint(
         r.x += off.0;
         r.y += off.1;
         r
+    }
+
+    // Rect intersection helper for hit clipping
+    fn intersect(a: repose_core::Rect, b: repose_core::Rect) -> Option<repose_core::Rect> {
+        let x0 = a.x.max(b.x);
+        let y0 = a.y.max(b.y);
+        let x1 = (a.x + a.w).min(b.x + b.w);
+        let y1 = (a.y + a.h).min(b.y + b.h);
+        let w = (x1 - x0).max(0.0);
+        let h = (y1 - y0).max(0.0);
+        if w <= 0.0 || h <= 0.0 {
+            None
+        } else {
+            Some(repose_core::Rect { x: x0, y: y0, w, h })
+        }
     }
 
     fn clamp01(x: f32) -> f32 {
@@ -1067,6 +1060,9 @@ pub fn layout_and_paint(
                 rect
             }
         };
+
+        let pad_dx = content_rect.x - rect.x;
+        let pad_dy = content_rect.y - rect.y;
 
         let base_px = (parent_offset_px.0 + local.x, parent_offset_px.1 + local.y);
 
@@ -1513,12 +1509,26 @@ pub fn layout_and_paint(
                     set_vh(vp.h.max(0.0));
                 }
 
-                // Content height in the parent's content space (what Taffy gives us)
+                // True content height (use subtree extents per child)
+                fn subtree_extents(node: taffy::NodeId, t: &TaffyTree<NodeCtx>) -> (f32, f32) {
+                    let l = t.layout(node).unwrap();
+                    let mut w = l.size.width;
+                    let mut h = l.size.height;
+                    if let Ok(children) = t.children(node) {
+                        for &ch in children.iter() {
+                            let cl = t.layout(ch).unwrap();
+                            let (cw, chh) = subtree_extents(ch, t);
+                            w = w.max(cl.location.x + cw);
+                            h = h.max(cl.location.y + chh);
+                        }
+                    }
+                    (w, h)
+                }
                 let mut content_h_px = 0.0f32;
                 for c in &v.children {
                     let nid = nodes[&c.id];
                     let l = t.layout(nid).unwrap();
-                    let (cw, chh) = subtree_extents(nid, t);
+                    let (_cw, chh) = subtree_extents(nid, t);
                     content_h_px = content_h_px.max(l.location.y + chh);
                 }
                 if let Some(set_ch) = set_content_height {
@@ -1531,13 +1541,14 @@ pub fn layout_and_paint(
                     radius: 0.0, // inner clip; keep simple (outer border already drawn if any)
                 });
 
-                // Apply scroll offset (children are laid out in parent content coords)
+                // Walk children
+                let hit_start = hits.len();
                 let scroll_offset_px = if let Some(get) = get_scroll_offset {
                     get()
                 } else {
                     0.0
                 };
-                let child_offset_px = (base_px.0, base_px.1 - scroll_offset_px);
+                let child_offset_px = (base_px.0 + pad_dx, base_px.1 + pad_dy - scroll_offset_px);
                 for c in &v.children {
                     walk(
                         c,
@@ -1554,6 +1565,17 @@ pub fn layout_and_paint(
                         text_cache,
                         font_px,
                     );
+                }
+
+                // Clip descendant hit regions to the viewport
+                let mut i = hit_start;
+                while i < hits.len() {
+                    if let Some(r) = intersect(hits[i].rect, vp) {
+                        hits[i].rect = r;
+                        i += 1;
+                    } else {
+                        hits.remove(i);
+                    }
                 }
 
                 // Scrollbar overlay computed against inner viewport
@@ -1588,7 +1610,7 @@ pub fn layout_and_paint(
                             w: thickness_px,
                             h: track_h,
                         },
-                        color: track_col,
+                        color: th.scrollbar_track,
                         radius: thickness_px * 0.5,
                     });
                     scene.nodes.push(SceneNode::Rect {
@@ -1598,7 +1620,7 @@ pub fn layout_and_paint(
                             w: thickness_px,
                             h: thumb_h,
                         },
-                        color: thumb_col,
+                        color: th.scrollbar_thumb,
                         radius: thickness_px * 0.5,
                     });
 
@@ -1690,7 +1712,20 @@ pub fn layout_and_paint(
                     set_h(vp.h.max(0.0));
                 }
 
-                // Content extents (parent content coords)
+                fn subtree_extents(node: taffy::NodeId, t: &TaffyTree<NodeCtx>) -> (f32, f32) {
+                    let l = t.layout(node).unwrap();
+                    let mut w = l.size.width;
+                    let mut h = l.size.height;
+                    if let Ok(children) = t.children(node) {
+                        for &ch in children.iter() {
+                            let cl = t.layout(ch).unwrap();
+                            let (cw, chh) = subtree_extents(ch, t);
+                            w = w.max(cl.location.x + cw);
+                            h = h.max(cl.location.y + chh);
+                        }
+                    }
+                    (w, h)
+                }
                 let mut content_w_px = 0.0f32;
                 let mut content_h_px = 0.0f32;
                 for c in &v.children {
@@ -1712,12 +1747,13 @@ pub fn layout_and_paint(
                     radius: 0.0,
                 });
 
+                let hit_start = hits.len();
                 let (ox_px, oy_px) = if let Some(get) = get_scroll_offset_xy {
                     get()
                 } else {
                     (0.0, 0.0)
                 };
-                let child_offset_px = (base_px.0 - ox_px, base_px.1 - oy_px);
+                let child_offset_px = (base_px.0 + pad_dx - ox_px, base_px.1 + pad_dy - oy_px);
                 for c in &v.children {
                     walk(
                         c,
@@ -1734,6 +1770,16 @@ pub fn layout_and_paint(
                         text_cache,
                         font_px,
                     );
+                }
+                // Clip descendant hits to viewport
+                let mut i = hit_start;
+                while i < hits.len() {
+                    if let Some(r) = intersect(hits[i].rect, vp) {
+                        hits[i].rect = r;
+                        i += 1;
+                    } else {
+                        hits.remove(i);
+                    }
                 }
 
                 // Scrollbars against inner viewport
