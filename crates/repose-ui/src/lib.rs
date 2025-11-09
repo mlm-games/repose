@@ -659,6 +659,27 @@ pub fn layout_and_paint(
         s
     }
 
+    fn subtree_extents(node: taffy::NodeId, t: &TaffyTree<NodeCtx>) -> (f32, f32) {
+        let l = t.layout(node).unwrap();
+        let mut max_w = l.size.width;
+        let mut max_h = l.size.height;
+        if let Ok(children) = t.children(node) {
+            for &ch in children.iter() {
+                let cl = t.layout(ch).unwrap();
+                let (cw, chh) = subtree_extents(ch, t);
+                let right = cl.location.x + cw;
+                let bottom = cl.location.y + chh;
+                if right > max_w {
+                    max_w = right;
+                }
+                if bottom > max_h {
+                    max_h = bottom;
+                }
+            }
+        }
+        (max_w, max_h)
+    }
+
     fn build_node(
         v: &View,
         t: &mut TaffyTree<NodeCtx>,
@@ -1497,7 +1518,8 @@ pub fn layout_and_paint(
                 for c in &v.children {
                     let nid = nodes[&c.id];
                     let l = t.layout(nid).unwrap();
-                    content_h_px = content_h_px.max(l.location.y + l.size.height);
+                    let (cw, chh) = subtree_extents(nid, t);
+                    content_h_px = content_h_px.max(l.location.y + chh);
                 }
                 if let Some(set_ch) = set_content_height {
                     set_ch(content_h_px);
@@ -1674,8 +1696,9 @@ pub fn layout_and_paint(
                 for c in &v.children {
                     let nid = nodes[&c.id];
                     let l = t.layout(nid).unwrap();
-                    content_w_px = content_w_px.max(l.location.x + l.size.width);
-                    content_h_px = content_h_px.max(l.location.y + l.size.height);
+                    let (cw, chh) = subtree_extents(nid, t);
+                    content_w_px = content_w_px.max(l.location.x + cw);
+                    content_h_px = content_h_px.max(l.location.y + chh);
                 }
                 if let Some(set_cw) = set_content_width {
                     set_cw(content_w_px);
