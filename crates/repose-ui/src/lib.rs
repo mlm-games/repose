@@ -1094,6 +1094,7 @@ pub fn layout_and_paint(
                 z_index: z + 1000.0,
                 on_text_change: None,
                 on_text_submit: None,
+                tf_state_key: None,
             });
         }
     }
@@ -1191,6 +1192,7 @@ pub fn layout_and_paint(
                 z_index: z + 1000.0,
                 on_text_change: None,
                 on_text_submit: None,
+                tf_state_key: None,
             });
         }
     }
@@ -1304,6 +1306,7 @@ pub fn layout_and_paint(
                 z_index: v.modifier.z_index,
                 on_text_change: None,
                 on_text_submit: None,
+                tf_state_key: None,
             });
         }
 
@@ -1452,6 +1455,7 @@ pub fn layout_and_paint(
                         z_index: v.modifier.z_index,
                         on_text_change: None,
                         on_text_submit: None,
+                        tf_state_key: None,
                     });
                 }
                 sems.push(SemNode {
@@ -1486,11 +1490,15 @@ pub fn layout_and_paint(
             }
 
             ViewKind::TextField {
+                state_key,
                 hint,
                 on_change,
                 on_submit,
                 ..
             } => {
+                // Persistent key for platform-managed state
+                let tf_key = if *state_key != 0 { *state_key } else { v.id };
+
                 hits.push(HitRegion {
                     id: v.id,
                     rect,
@@ -1505,6 +1513,7 @@ pub fn layout_and_paint(
                     z_index: v.modifier.z_index,
                     on_text_change: on_change.clone(),
                     on_text_submit: on_submit.clone(),
+                    tf_state_key: Some(tf_key),
                 });
 
                 // Inner content rect (padding)
@@ -1681,6 +1690,7 @@ pub fn layout_and_paint(
                     z_index: v.modifier.z_index,
                     on_text_change: None,
                     on_text_submit: None,
+                    tf_state_key: None,
                 });
 
                 // Use the inner content box (after padding) as the true viewport
@@ -1798,6 +1808,7 @@ pub fn layout_and_paint(
                     z_index: v.modifier.z_index,
                     on_text_change: None,
                     on_text_submit: None,
+                    tf_state_key: None,
                 });
 
                 let vp = content_rect;
@@ -1996,6 +2007,7 @@ pub fn layout_and_paint(
                     z_index: v.modifier.z_index,
                     on_text_change: None,
                     on_text_submit: None,
+                    tf_state_key: None,
                 });
                 sems.push(SemNode {
                     id: v.id,
@@ -2080,6 +2092,7 @@ pub fn layout_and_paint(
                     z_index: v.modifier.z_index,
                     on_text_change: None,
                     on_text_submit: None,
+                    tf_state_key: None,
                 });
                 sems.push(SemNode {
                     id: v.id,
@@ -2194,6 +2207,7 @@ pub fn layout_and_paint(
                     z_index: v.modifier.z_index,
                     on_text_change: None,
                     on_text_submit: None,
+                    tf_state_key: None,
                 });
                 sems.push(SemNode {
                     id: v.id,
@@ -2359,6 +2373,7 @@ pub fn layout_and_paint(
                     z_index: v.modifier.z_index,
                     on_text_change: None,
                     on_text_submit: None,
+                    tf_state_key: None,
                 });
 
                 sems.push(SemNode {
@@ -2554,6 +2569,7 @@ pub fn layout_and_paint(
                     z_index: v.modifier.z_index,
                     on_text_change: None,
                     on_text_submit: None,
+                    tf_state_key: None,
                 });
                 sems.push(SemNode {
                     id: v.id,

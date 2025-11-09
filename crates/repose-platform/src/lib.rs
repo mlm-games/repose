@@ -230,7 +230,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             .iter()
                             .find(|n| n.id == cid && n.role == Role::TextField)
                         {
-                            if let Some(state_rc) = self.textfield_states.get(&cid) {
+                            let key = self.tf_key_of(cid);
+                            if let Some(state_rc) = self.textfield_states.get(&key) {
                                 let mut state = state_rc.borrow_mut();
                                 // inner content left edge in px
                                 let inner_x_px = f
@@ -384,7 +385,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             if hit.focusable {
                                 self.sched.focused = Some(hit.id);
                                 need_announce = true;
-                                self.textfield_states.entry(hit.id).or_insert_with(|| {
+                                let key = self.tf_key_of(hit.id);
+                                self.textfield_states.entry(key).or_insert_with(|| {
                                     Rc::new(RefCell::new(
                                         repose_ui::textfield::TextFieldState::new(),
                                     ))
@@ -393,8 +395,6 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     let sf = win.scale_factor();
                                     win.set_ime_allowed(true);
                                     win.set_ime_purpose(ImePurpose::Normal);
-                                    // Pass logical (winit expects logical here); desktop variants vary across platforms;
-                                    // Using previous behavior to avoid breaking changes.
                                     win.set_ime_cursor_area(
                                         LogicalPosition::new(
                                             hit.rect.x as f64 / sf,
@@ -429,7 +429,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                 .iter()
                                 .find(|n| n.id == hit.id && n.role == Role::TextField)
                             {
-                                if let Some(state_rc) = self.textfield_states.get(&hit.id) {
+                                let key = self.tf_key_of(hit.id);
+                                if let Some(state_rc) = self.textfield_states.get(&key) {
                                     let mut state = state_rc.borrow_mut();
                                     let inner_x_px = hit.rect.x + dp_to_px(TF_PADDING_X_DP);
                                     let content_x_px =
@@ -441,8 +442,6 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                         content_x_px.max(0.0),
                                     );
                                     state.begin_drag(idx, self.modifiers.shift);
-
-                                    // Scroll caret into view
                                     let m = measure_text(&state.text, font_dp);
                                     let caret_x_px = m
                                         .positions
@@ -511,7 +510,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             .iter()
                             .find(|n| n.id == cid && n.role == Role::TextField)
                         {
-                            if let Some(state_rc) = self.textfield_states.get(&cid) {
+                            let key = self.tf_key_of(cid);
+                            if let Some(state_rc) = self.textfield_states.get(&key) {
                                 state_rc.borrow_mut().end_drag();
                             }
                         }
@@ -616,9 +616,9 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                         f.hit_regions.iter().find(|h| h.id == focused_id)
                                     {
                                         if let Some(on_submit) = &hit.on_text_submit {
-                                            if let Some(state) =
-                                                self.textfield_states.get(&focused_id)
-                                            {
+                                            let key = self.tf_key_of(focused_id);
+
+                                            if let Some(state) = self.textfield_states.get(&key) {
                                                 let text = state.borrow().text.clone();
                                                 on_submit(text);
                                                 self.request_redraw();
@@ -643,7 +643,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 
                         // TextField navigation/edit
                         if let Some(focused_id) = self.sched.focused {
-                            if let Some(state_rc) = self.textfield_states.get(&focused_id) {
+                            let key = self.tf_key_of(focused_id);
+                            if let Some(state_rc) = self.textfield_states.get(&key) {
                                 let mut state = state_rc.borrow_mut();
                                 match key_event.physical_key {
                                     PhysicalKey::Code(KeyCode::Backspace) => {
@@ -695,7 +696,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                 match key_event.physical_key {
                                     PhysicalKey::Code(KeyCode::KeyC) => {
                                         if let Some(fid) = self.sched.focused {
-                                            if let Some(state) = self.textfield_states.get(&fid) {
+                                            let key = self.tf_key_of(fid);
+                                            if let Some(state) = self.textfield_states.get(&key) {
                                                 let txt = state.borrow().selected_text();
                                                 if !txt.is_empty() {
                                                     if let Some(cb) = self.clipboard.as_mut() {
@@ -708,7 +710,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     }
                                     PhysicalKey::Code(KeyCode::KeyX) => {
                                         if let Some(fid) = self.sched.focused {
-                                            if let Some(state_rc) = self.textfield_states.get(&fid)
+                                            let key = self.tf_key_of(fid);
+                                            if let Some(state_rc) = self.textfield_states.get(&key)
                                             {
                                                 // Copy
                                                 let txt = state_rc.borrow().selected_text();
@@ -734,7 +737,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     }
                                     PhysicalKey::Code(KeyCode::KeyV) => {
                                         if let Some(fid) = self.sched.focused {
-                                            if let Some(state_rc) = self.textfield_states.get(&fid)
+                                            let key = self.tf_key_of(fid);
+                                            if let Some(state_rc) = self.textfield_states.get(&key)
                                             {
                                                 if let Some(cb) = self.clipboard.as_mut() {
                                                     if let Ok(mut txt) = cb.get_text() {
@@ -778,7 +782,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     .collect();
                                 if !text.is_empty() {
                                     if let Some(fid) = self.sched.focused {
-                                        if let Some(state_rc) = self.textfield_states.get(&fid) {
+                                        let key = self.tf_key_of(fid);
+                                        if let Some(state_rc) = self.textfield_states.get(&key) {
                                             let mut st = state_rc.borrow_mut();
                                             st.insert_text(&text);
                                             self.notify_text_change(fid, text.clone());
@@ -828,7 +833,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                 WindowEvent::Ime(ime) => {
                     use winit::event::Ime;
                     if let Some(focused_id) = self.sched.focused {
-                        if let Some(state_rc) = self.textfield_states.get(&focused_id) {
+                        let key = self.tf_key_of(focused_id);
+                        if let Some(state_rc) = self.textfield_states.get(&key) {
                             let mut state = state_rc.borrow_mut();
                             match ime {
                                 Ime::Enabled => {
@@ -994,6 +1000,14 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     }
                 }
             }
+        }
+        fn tf_key_of(&self, visual_id: u64) -> u64 {
+            if let Some(f) = &self.frame_cache {
+                if let Some(hr) = f.hit_regions.iter().find(|h| h.id == visual_id) {
+                    return hr.tf_state_key.unwrap_or(hr.id);
+                }
+            }
+            visual_id
         }
     }
 

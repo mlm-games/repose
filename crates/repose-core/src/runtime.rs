@@ -118,6 +118,9 @@ pub struct HitRegion {
     pub z_index: f32,
     pub on_text_change: Option<Rc<dyn Fn(String)>>,
     pub on_text_submit: Option<Rc<dyn Fn(String)>>,
+    /// If this hit region belongs to a TextField, this persistent key is used
+    /// for looking up platform-managed TextFieldState. Falls back to `id` if None.
+    pub tf_state_key: Option<u64>,
 }
 
 #[derive(Clone)]
