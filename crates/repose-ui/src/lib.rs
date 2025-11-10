@@ -1541,12 +1541,17 @@ pub fn layout_and_paint(
                             .unwrap_or(dp_to_px(6.0)),
                     });
                 }
-                if let Some(state_rc) = textfield_states.get(&v.id) {
+
+                if let Some(state_rc) = textfield_states
+                    .get(&tf_key)
+                    .or_else(|| textfield_states.get(&v.id))
+                // fallback for older platforms
+                {
                     state_rc.borrow_mut().set_inner_width(inner.w);
 
                     let state = state_rc.borrow();
                     let text_val = &state.text;
-                    let font_px_u32 = TF_FONT_DP as u32; // treated as dp inside measure_text
+                    let font_px_u32 = TF_FONT_DP as u32;
                     let m = measure_text(text_val, font_px_u32);
 
                     // Selection highlight
@@ -1597,7 +1602,7 @@ pub fn layout_and_paint(
 
                     // Text (offset by scroll)
                     let text_color = if text_val.is_empty() {
-                        mul_alpha(Color::from_hex("#666666"), alpha_accum) // Placeholder col
+                        mul_alpha(Color::from_hex("#666666"), alpha_accum)
                     } else {
                         mul_alpha(locals::theme().on_surface, alpha_accum)
                     };
@@ -1658,6 +1663,8 @@ pub fn layout_and_paint(
                         color: mul_alpha(Color::from_hex("#666666"), alpha_accum),
                         size: font_px(TF_FONT_DP),
                     });
+                    scene.nodes.push(SceneNode::PopClip);
+
                     sems.push(SemNode {
                         id: v.id,
                         role: Role::TextField,
