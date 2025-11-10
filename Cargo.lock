@@ -48,7 +48,7 @@ dependencies = [
 
 [[package]]
 name = "android-activity"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef6978589202a00cd7e118380c448a08b6ed394c3a8df3a430d0898e3a42d046"
 dependencies = [
@@ -75,7 +75,7 @@ checksum = "fc7eb209b1518d6bb87b283c20095f5228ecda460da70b44f0802523dea6da04"
 
 [[package]]
 name = "android_counter"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "android_logger",
  "anyhow",
@@ -114,7 +114,7 @@ dependencies = [
 
 [[package]]
 name = "animation_demo"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "env_logger",
@@ -835,7 +835,7 @@ dependencies = [
 
 [[package]]
 name = "gpu-alloc"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fbcd2dba93594b227a1f57ee09b8b9da8892c34d55aa332e034a228d0fe6a171"
 dependencies = [
@@ -1918,7 +1918,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "repose-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "bitflags 2.9.4",
  "log",
@@ -1931,7 +1931,7 @@ dependencies = [
 
 [[package]]
 name = "repose-devtools"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "log",
  "repose-core",
@@ -1948,7 +1948,7 @@ dependencies = [
 
 [[package]]
 name = "repose-platform"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1962,7 +1962,7 @@ dependencies = [
 
 [[package]]
 name = "repose-render-wgpu"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "ab_glyph",
  "anyhow",
@@ -1980,7 +1980,7 @@ dependencies = [
 
 [[package]]
 name = "repose-text"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "ahash",
  "cosmic-text",
@@ -1991,7 +1991,7 @@ dependencies = [
 
 [[package]]
 name = "repose-ui"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "ab_glyph",
  "fontdb",
@@ -2146,7 +2146,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "showcase"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "android_logger",
  "anyhow",
