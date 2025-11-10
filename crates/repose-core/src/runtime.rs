@@ -55,32 +55,51 @@ impl Drop for ComposeGuard {
 pub fn remember<T: 'static>(init: impl FnOnce() -> T) -> Rc<T> {
     COMPOSER.with(|c| {
         let mut c = c.borrow_mut();
-        if c.cursor >= c.slots.len() {
-            c.slots.push(Box::new(Rc::new(init())));
-        }
         let cursor = c.cursor;
         c.cursor += 1;
-        let boxed = &c.slots[cursor];
-        boxed.downcast_ref::<Rc<T>>().unwrap().clone()
+
+        if cursor >= c.slots.len() {
+            let rc: Rc<T> = Rc::new(init());
+            c.slots.push(Box::new(rc.clone()));
+            return rc;
+        }
+
+        if let Some(rc) = c.slots[cursor].downcast_ref::<Rc<T>>() {
+            rc.clone()
+        } else {
+            // replace (else panics)
+            log::warn!(
+                "remember: slot {} type changed; replacing. \
+                 If this is due to conditional composition, prefer remember_with_key.",
+                cursor
+            );
+            let rc: Rc<T> = Rc::new(init());
+            c.slots[cursor] = Box::new(rc.clone());
+            rc
+        }
     })
 }
 
-/// Key-based remember (safe with conditionals!)
+/// Key-based remember
 pub fn remember_with_key<T: 'static>(key: impl Into<String>, init: impl FnOnce() -> T) -> Rc<T> {
     COMPOSER.with(|c| {
         let mut c = c.borrow_mut();
         let key = key.into();
 
-        if !c.keyed_slots.contains_key(&key) {
-            c.keyed_slots.insert(key.clone(), Box::new(Rc::new(init())));
+        if let Some(existing) = c.keyed_slots.get(&key) {
+            if let Some(rc) = existing.downcast_ref::<Rc<T>>() {
+                return rc.clone();
+            } else {
+                log::warn!(
+                    "remember_with_key: key '{}' reused with a different type; replacing.",
+                    key
+                );
+            }
         }
 
-        c.keyed_slots
-            .get(&key)
-            .unwrap()
-            .downcast_ref::<Rc<T>>()
-            .unwrap()
-            .clone()
+        let rc: Rc<T> = Rc::new(init());
+        c.keyed_slots.insert(key, Box::new(rc.clone()));
+        rc
     })
 }
 
