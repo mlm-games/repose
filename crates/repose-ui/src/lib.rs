@@ -1337,10 +1337,10 @@ pub fn layout_and_paint(
 
                 // Vertical centering for single line within content box
                 if lines.len() == 1 {
-                    let dy_px = (draw_box.h - size_px_val) * 0.5;
+                    let dy_px = (draw_box.h - line_h_px_val) * 0.5;
                     if dy_px.is_finite() {
                         draw_box.y += dy_px.max(0.0);
-                        draw_box.h = size_px_val;
+                        draw_box.h = line_h_px_val;
                     }
                 }
 
