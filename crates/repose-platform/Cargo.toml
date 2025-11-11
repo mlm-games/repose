@@ -1,6 +1,6 @@
 [package]
 name = "repose-platform"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "Platform runners (desktop via winit; Android alpha)"
@@ -10,10 +10,10 @@ desktop = ["winit", "repose-render-wgpu", "arboard"]
 android = ["winit/android-native-activity", "repose-render-wgpu"]
 
 [dependencies]
-repose-core = { path = "../repose-core", version = "0.6.2" }
-repose-ui = { path = "../repose-ui", version = "0.6.2" }
-repose-render-wgpu = { path = "../repose-render-wgpu", version = "0.6.2", optional = true }
-repose-devtools = { path = "../repose-devtools", version = "0.6.2" }
+repose-core = { path = "../repose-core", version = "0.6.3" }
+repose-ui = { path = "../repose-ui", version = "0.6.3" }
+repose-render-wgpu = { path = "../repose-render-wgpu", version = "0.6.3", optional = true }
+repose-devtools = { path = "../repose-devtools", version = "0.6.3" }
 winit = { workspace = true, optional = true }
 log = { workspace = true }
 anyhow = { workspace = true }

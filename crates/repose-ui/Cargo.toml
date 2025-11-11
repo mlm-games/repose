@@ -1,13 +1,13 @@
 [package]
 name = "repose-ui"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "UI widgets and libs for Repose"
 
 [dependencies]
-repose-core = { path = "../repose-core", version = "0.6.2" }
-repose-text = { path = "../repose-text", version = "0.6.2" }
+repose-core = { path = "../repose-core", version = "0.6.3" }
+repose-text = { path = "../repose-text", version = "0.6.3" }
 taffy = { workspace = true }
 fontdb = { workspace = true }
 ab_glyph = { workspace = true }
