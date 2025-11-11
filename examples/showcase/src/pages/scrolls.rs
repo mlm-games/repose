@@ -71,7 +71,7 @@ pub fn screen() -> View {
                                 .background(theme().surface)
                                 .border(1.0, theme().outline, 6.0)
                                 .size(120.0, 60.0))
-                            .child(Text(format!("Cell {i}")))
+                            .child(Text(format!("{i}")))
                         })
                         .collect(),
                 ),
