@@ -240,11 +240,15 @@ impl Modifier {
         self
     }
     pub fn align_self_baseline(mut self) -> Self {
-        self.align_self = Some(taffy::style::AlignSelf::Baseline);
+        self.align_self = Some(AlignSelf::Baseline);
         self
     }
     pub fn align_self_center(mut self) -> Self {
-        self.align_self = Some(taffy::style::AlignSelf::Center);
+        self.align_self = Some(AlignSelf::Center);
+        self
+    }
+    pub fn align_self(mut self, align: AlignSelf) -> Self {
+        self.align_self = Some(align);
         self
     }
     pub fn aspect_ratio(mut self, ratio: f32) -> Self {
@@ -286,6 +290,7 @@ impl Modifier {
         self.alpha = Some(a.clamp(0.0, 1.0));
         self
     }
+    /// Broken currently?
     pub fn translate(mut self, x: f32, y: f32) -> Self {
         let t = self.transform.unwrap_or_else(Transform::identity);
         self.transform = Some(t.combine(&Transform::translate(x, y)));
