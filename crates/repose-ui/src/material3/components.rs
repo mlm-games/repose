@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::{Box, Column, Row, Spacer, Text, TextStyleExt, ViewExt, anim::animate_f32};
+use crate::{Box, Column, Row, Spacer, Text, TextStyle, ViewExt, anim::animate_f32};
 use repose_core::*;
 
 use crate::{Stack, Surface};

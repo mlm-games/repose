@@ -1,5 +1,5 @@
-use crate::Box;
 use crate::anim_ext::AnimatedContent;
+use crate::{Box, ViewExt};
 use repose_core::*;
 use std::any::Any;
 use std::cell::RefCell;
@@ -66,9 +66,8 @@ impl NavController {
         let mut stack = self.stack.borrow_mut();
         let from = self.current.get();
 
-        if let Some(mut last) = stack.pop_back() {
+        if let Some(_last) = stack.pop_back() {
             // drop last
-            let _ = last;
         }
         stack.push_back(NavEntry {
             route: route.clone(),
@@ -114,8 +113,10 @@ pub fn NavHost(
     let trans = controller.transitions.get();
 
     if let Some(builder) = routes.get(&current) {
-        AnimatedContent(current.clone(), trans, builder())
+        let page = Box(Modifier::new().fill_max_size()).child((builder)());
+        AnimatedContent(current.clone(), trans, page)
     } else {
-        Box(Modifier::new()) // Empty fallback
+        // Empty fallback still fills so layouts/scrolls get a definite size
+        Box(Modifier::new().fill_max_size())
     }
 }

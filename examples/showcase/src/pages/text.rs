@@ -4,16 +4,30 @@ use repose_ui::*;
 
 pub fn screen() -> View {
     Column(Modifier::new().padding(8.0)).child((
-        Section("TextField (IME, selection, caret scroll)",
-            TextField("Type here",
+        Section(
+            "TextField (IME, selection, caret scroll)",
+            TextField(
+                "Type here",
                 Modifier::new()
-                    .height(36.0).fill_max_width()
-                    .background(Color::from_hex("#1E1E1E"))
-                    .border(1.0, Color::from_hex("#444"), 6.0), Some(|_| {}), Some(|_| {})
-            )
+                    .height(36.0)
+                    .fill_max_width()
+                    .background(theme().surface)
+                    .border(1.0, theme().outline, 6.0),
+                Some(|_s| {}),
+                Some(|_s| {}),
+            ),
         ),
-        Section("Multiline note",
-            Text("➤ This TextField demo supports:\n- Mouse selection/drag\n- IME preedit/commit\n- Clipboard (Ctrl/Cmd C/X/V)\n- Caret scroll keeping.")
+        Section(
+            "Text wrapping / ellipsis",
+            Column(Modifier::new().padding(8.0)).child((
+                Text("This is a single-line ellipsized label that won’t overflow")
+                    .single_line()
+                    .overflow_ellipsize()
+                    .modifier(Modifier::new().fill_max_width()),
+                Text("This paragraph demonstrates wrapping in a constrained box. Lorem ipsum dolor sit amet, consectetur adipiscing elit.")
+                    .size(16.0)
+                    .modifier(Modifier::new().width(360.0)),
+            )),
         ),
     ))
 }

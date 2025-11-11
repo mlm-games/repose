@@ -14,7 +14,7 @@ struct Item {
 pub fn screen() -> View {
     let items = remember_with_key("items", || {
         signal(
-            (0..500)
+            (0..1_000)
                 .map(|i| Item {
                     id: i,
                     title: format!("Task #{}", i + 1),
@@ -29,16 +29,14 @@ pub fn screen() -> View {
         items.get(),
         48.0,
         scroll,
-        Modifier::new().fill_max_width().height(600.0),
+        Modifier::new().max_width(1200.0).max_height(500.0),
         |it, _| {
+            let th = theme();
+            let done_tint = Color(th.primary.0, th.primary.1, th.primary.2, 48);
             Row(Modifier::new()
                 .padding(12.0)
-                .background(if it.done {
-                    Color::from_hex("#1A3A1A")
-                } else {
-                    Color::from_hex("#1E1E1E")
-                })
-                .border(1.0, Color::from_hex("#333333"), 0.0))
+                .background(if it.done { done_tint } else { th.surface })
+                .border(1.0, th.outline, 0.0))
             .child((
                 Text(if it.done { "✓" } else { "○" }).modifier(Modifier::new().padding(8.0)),
                 Text(it.title).modifier(Modifier::new().padding(4.0)),

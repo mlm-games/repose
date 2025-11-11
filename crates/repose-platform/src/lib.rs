@@ -201,6 +201,19 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     if let Some(b) = &mut self.backend {
                         b.configure_surface(size.width, size.height);
                     }
+                    if let Some(w) = &self.window {
+                        let sf = w.scale_factor() as f32;
+                        let dp_w = size.width as f32 / sf;
+                        let dp_h = size.height as f32 / sf;
+                        log::info!(
+                            "Resized: fb={}x{} px, scale_factor={}, ~{}x{} dp",
+                            size.width,
+                            size.height,
+                            sf,
+                            dp_w as i32,
+                            dp_h as i32
+                        );
+                    }
                     self.request_redraw();
                 }
                 WindowEvent::CursorMoved { position, .. } => {
