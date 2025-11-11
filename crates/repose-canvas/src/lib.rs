@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use repose_core::*;
 use repose_ui::*;
 
