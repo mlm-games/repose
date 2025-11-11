@@ -118,12 +118,10 @@ static ENGINE: OnceCell<Mutex<Engine>> = OnceCell::new();
 
 fn engine() -> &'static Mutex<Engine> {
     ENGINE.get_or_init(|| {
-        #[allow(unused_mut)]
         let mut fs = FontSystem::new();
 
         let cache = SwashCache::new();
 
-        #[cfg(target_os = "android")]
         {
             static FALLBACK_TTF: &[u8] = include_bytes!("assets/OpenSans-Regular.ttf"); // GFonts, OFL licensed
             static FALLBACK_EMOJI_TTF: &[u8] = include_bytes!("assets/NotoColorEmoji-Regular.ttf"); // GFonts, OFL licensed
