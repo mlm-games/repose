@@ -1,4 +1,5 @@
 use repose_core::*;
+use repose_ui::*;
 
 pub struct DrawScope {
     pub commands: Vec<DrawCommand>,
@@ -198,9 +199,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
         }
     };
 
-    crate::Box(
-        modifier
-            .painter(painter)
-            .size(scope.size.width, scope.size.height),
-    )
+    Box(modifier
+        .painter(painter)
+        .size(scope.size.width, scope.size.height))
 }

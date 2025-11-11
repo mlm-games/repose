@@ -3,10 +3,8 @@
 
 pub mod anim;
 pub mod anim_ext;
-pub mod canvas;
 pub mod gestures;
 pub mod lazy;
-pub mod material3;
 pub mod navigation;
 pub mod scroll;
 
@@ -54,6 +52,7 @@ pub fn Stack(modifier: Modifier) -> View {
     View::new(0, ViewKind::Stack).modifier(modifier)
 }
 
+#[deprecated = "Use ScollArea instead"]
 pub fn Scroll(modifier: Modifier) -> View {
     View::new(
         0,
@@ -1001,7 +1000,7 @@ pub fn layout_and_paint(
 
         // Thumb geometry from content ratio
         let ratio = (vp.h / content_h_px).clamp(0.0, 1.0);
-        let mut thumb_h = (track_h * ratio).clamp(min_thumb_px, track_h);
+        let thumb_h = (track_h * ratio).clamp(min_thumb_px, track_h);
         let denom = (content_h_px - vp.h).max(1.0);
         let tpos = (off_y_px / denom).clamp(0.0, 1.0);
         let max_pos = (track_h - thumb_h).max(0.0);
@@ -1099,7 +1098,7 @@ pub fn layout_and_paint(
         let track_w = (vp.w - 2.0 * margin_px).max(0.0);
 
         let ratio = (vp.w / content_w_px).clamp(0.0, 1.0);
-        let mut thumb_w = (track_w * ratio).clamp(min_thumb_px, track_w);
+        let thumb_w = (track_w * ratio).clamp(min_thumb_px, track_w);
         let denom = (content_w_px - vp.w).max(1.0);
         let tpos = (off_x_px / denom).clamp(0.0, 1.0);
         let max_pos = (track_w - thumb_w).max(0.0);

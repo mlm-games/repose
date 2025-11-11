@@ -7,6 +7,8 @@ members = [
   "crates/repose-devtools",
   "crates/repose-macros",
   "crates/repose-text",
+  "crates/repose-canvas",
+  "crates/repose-material",
   "examples/showcase",
   "examples/animation_demo",
   "examples/android_counter",

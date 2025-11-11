@@ -1,6 +1,6 @@
 use crate::ui::Section;
+use repose_canvas::Canvas;
 use repose_core::prelude::*;
-use repose_ui::canvas::*;
 
 pub fn screen() -> View {
     Section(

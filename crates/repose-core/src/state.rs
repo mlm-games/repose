@@ -14,31 +14,12 @@ pub trait StateSaver<T>: 'static {
     fn restore(&self, saved: &dyn Any) -> Option<T>;
 }
 
-pub struct DerivedState<T: Clone + 'static> {
-    compute: Rc<dyn Fn() -> T>,
-    cached: RefCell<Option<T>>,
-}
-
-impl<T: Clone + 'static> DerivedState<T> {
-    pub fn new(compute: impl Fn() -> T + 'static) -> Self {
-        Self {
-            compute: Rc::new(compute),
-            cached: RefCell::new(None),
-        }
-    }
-
-    pub fn invalidate(&self) {
-        *self.cached.borrow_mut() = None;
-    }
-
-    pub fn get(&self) -> T {
-        if let Some(v) = self.cached.borrow().as_ref() {
-            return v.clone();
-        }
-        let v = (self.compute)();
-        *self.cached.borrow_mut() = Some(v.clone());
-        v
-    }
+pub fn remember_derived<T: Clone + 'static>(
+    key: impl Into<String>,
+    producer: impl Fn() -> T + 'static + Clone,
+) -> std::rc::Rc<crate::Signal<T>> {
+    let key: String = key.into();
+    produce_state(format!("derived:{key}"), producer)
 }
 
 // State holder pattern

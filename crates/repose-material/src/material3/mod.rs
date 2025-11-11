@@ -1,9 +1,11 @@
+#![allow(non_snake_case)]
+
 use std::rc::Rc;
 
-use crate::{Box, Column, Row, Spacer, Text, TextStyle, ViewExt, anim::animate_f32};
 use repose_core::*;
-
-use crate::{Stack, Surface};
+use repose_ui::{
+    Box, Column, Row, Spacer, Stack, Surface, Text, TextStyle, ViewExt, anim::animate_f32,
+};
 
 pub fn AlertDialog(
     visible: bool,

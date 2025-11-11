@@ -176,7 +176,7 @@ impl HorizontalScrollState {
         if dt <= 0.0 {
             return false;
         }
-        let mut vel = *self.vel.borrow();
+        let vel = *self.vel.borrow();
         if vel.abs() < 0.05 {
             *self.animating.borrow_mut() = false;
             *self.vel.borrow_mut() = 0.0;
@@ -275,8 +275,8 @@ impl ScrollStateXY {
         if dt <= 0.0 {
             return false;
         }
-        let mut vx = *self.vel_x.borrow();
-        let mut vy = *self.vel_y.borrow();
+        let vx = *self.vel_x.borrow();
+        let vy = *self.vel_y.borrow();
         if vx.abs() < 0.5 && vy.abs() < 0.5 {
             *self.animating.borrow_mut() = false;
             *self.vel_x.borrow_mut() = 0.0;

@@ -118,6 +118,7 @@ static ENGINE: OnceCell<Mutex<Engine>> = OnceCell::new();
 
 fn engine() -> &'static Mutex<Engine> {
     ENGINE.get_or_init(|| {
+        #[allow(unused_mut)]
         let mut fs = FontSystem::new();
 
         let cache = SwashCache::new();

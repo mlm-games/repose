@@ -36,6 +36,8 @@ repose-platform = { path = "../../crates/repose-platform", version = "0.6.1", fe
 [dependencies]
 repose-core = { path = "../../crates/repose-core", version = "0.6.1" }
 repose-ui = { path = "../../crates/repose-ui", version = "0.6.1" }
+repose-material = { path = "../../crates/repose-material", version = "0.6.1" }
+repose-canvas = { path = "../../crates/repose-canvas", version = "0.6.1" }
 winit = { workspace = true }
 env_logger = { workspace = true }
 anyhow = { workspace = true }

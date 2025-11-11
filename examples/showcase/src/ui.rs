@@ -1,7 +1,8 @@
 #![allow(non_snake_case)]
 
 use repose_core::prelude::*;
-use repose_ui::{material3::components::Card, *};
+use repose_material::material3::Card;
+use repose_ui::*;
 
 /// A titled section with consistent spacing.
 pub fn Section(title: &str, body: View) -> View {
