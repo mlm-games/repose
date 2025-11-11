@@ -13,6 +13,11 @@ use unicode_segmentation::UnicodeSegmentation;
 const WRAP_CACHE_CAP: usize = 1024;
 const ELLIP_CACHE_CAP: usize = 2048;
 
+static METRICS_LRU: OnceCell<Mutex<Lru<(u64, u32), TextMetrics>>> = OnceCell::new();
+fn metrics_cache() -> &'static Mutex<Lru<(u64, u32), TextMetrics>> {
+    METRICS_LRU.get_or_init(|| Mutex::new(Lru::new(4096)))
+}
+
 struct Lru<K, V> {
     map: AHashMap<K, V>,
     order: VecDeque<K>,
@@ -215,6 +220,7 @@ pub fn rasterize(key: GlyphKey, _px: f32) -> Option<GlyphBitmap> {
 }
 
 // Text metrics for TextField: positions per grapheme boundary and byte offsets.
+#[derive(Clone)]
 pub struct TextMetrics {
     pub positions: Vec<f32>,      // cumulative advance per boundary (len == n+1)
     pub byte_offsets: Vec<usize>, // byte index per boundary (len == n+1)
@@ -222,6 +228,10 @@ pub struct TextMetrics {
 
 /// Computes caret mapping using shaping (no wrapping).
 pub fn metrics_for_textfield(text: &str, px: f32) -> TextMetrics {
+    let key = (fast_hash(text), (px * 100.0) as u32);
+    if let Some(m) = metrics_cache().lock().unwrap().get(&key).cloned() {
+        return m;
+    }
     let mut eng = engine().lock().unwrap();
     let mut buf = Buffer::new(&mut eng.fs, Metrics::new(px, px * 1.3));
     {
@@ -230,8 +240,6 @@ pub fn metrics_for_textfield(text: &str, px: f32) -> TextMetrics {
         b.set_text(text, &Attrs::new(), Shaping::Advanced, None);
         b.shape_until_scroll(true);
     }
-
-    // Build glyph-edge cumulative advance map: (byte_end -> x_right)
     let mut edges: Vec<(usize, f32)> = Vec::new();
     let mut last_x = 0.0f32;
     for run in buf.layout_runs() {
@@ -241,35 +249,32 @@ pub fn metrics_for_textfield(text: &str, px: f32) -> TextMetrics {
             edges.push((g.end, right));
         }
     }
-    // Ensure we can always look up text.len()
     if edges.last().map(|e| e.0) != Some(text.len()) {
         edges.push((text.len(), last_x));
     }
-
-    // Grapheme boundaries
     let mut positions = Vec::with_capacity(text.graphemes(true).count() + 1);
     let mut byte_offsets = Vec::with_capacity(positions.capacity());
     positions.push(0.0);
     byte_offsets.push(0);
-
     let mut last_byte = 0usize;
-    for (b, _g) in text.grapheme_indices(true) {
-        // accumulate by difference: width(last_byte..b)
-        let w = width_between(&edges, last_byte, b);
-        positions.push(positions.last().copied().unwrap_or(0.0) + w);
+    for (b, _) in text.grapheme_indices(true) {
+        positions
+            .push(positions.last().copied().unwrap_or(0.0) + width_between(&edges, last_byte, b));
         byte_offsets.push(b);
         last_byte = b;
     }
     if *byte_offsets.last().unwrap_or(&0) != text.len() {
-        let w = width_between(&edges, last_byte, text.len());
-        positions.push(positions.last().copied().unwrap_or(0.0) + w);
+        positions.push(
+            positions.last().copied().unwrap_or(0.0) + width_between(&edges, last_byte, text.len()),
+        );
         byte_offsets.push(text.len());
     }
-
-    TextMetrics {
+    let m = TextMetrics {
         positions,
         byte_offsets,
-    }
+    };
+    metrics_cache().lock().unwrap().put(key, m.clone());
+    m
 }
 
 fn width_between(edges: &[(usize, f32)], start_b: usize, end_b: usize) -> f32 {
@@ -448,14 +453,7 @@ pub fn ellipsize_line(text: &str, px: f32, max_width: f32) -> String {
         }
     }
     let el = "…";
-    let e_w = {
-        let shaped = crate::shape_line(el, px);
-        if let Some(g) = shaped.last() {
-            g.x + g.advance
-        } else {
-            0.0
-        }
-    };
+    let e_w = ellipsis_width(px);
     if e_w >= max_width {
         return String::new();
     }
@@ -482,4 +480,20 @@ pub fn ellipsize_line(text: &str, px: f32, max_width: f32) -> String {
     ellip_cache().lock().unwrap().put(key, s.clone());
 
     s
+}
+
+fn ellipsis_width(px: f32) -> f32 {
+    static ELLIP_W_LRU: OnceCell<Mutex<Lru<u32, f32>>> = OnceCell::new();
+    let cache = ELLIP_W_LRU.get_or_init(|| Mutex::new(Lru::new(64)));
+    let key = (px * 100.0) as u32;
+    if let Some(w) = cache.lock().unwrap().get(&key).copied() {
+        return w;
+    }
+    let w = if let Some(g) = crate::shape_line("…", px).last() {
+        g.x + g.advance
+    } else {
+        0.0
+    };
+    cache.lock().unwrap().put(key, w);
+    w
 }

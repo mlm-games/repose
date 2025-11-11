@@ -74,9 +74,7 @@ pub struct WgpuBackend {
     config: wgpu::SurfaceConfiguration,
 
     rect_pipeline: wgpu::RenderPipeline,
-    // rect_bind_layout: wgpu::BindGroupLayout,
     border_pipeline: wgpu::RenderPipeline,
-    // border_bind_layout: wgpu::BindGroupLayout,
     ellipse_pipeline: wgpu::RenderPipeline,
     ellipse_border_pipeline: wgpu::RenderPipeline,
     text_pipeline_mask: wgpu::RenderPipeline,
@@ -254,13 +252,9 @@ impl WgpuBackend {
             label: Some("rect.wgsl"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/rect.wgsl"))),
         });
-        let rect_bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("rect bind layout"),
-            entries: &[],
-        });
         let rect_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rect pipeline layout"),
-            bind_group_layouts: &[], //&[&rect_bind_layout],
+            bind_group_layouts: &[],
             push_constant_ranges: &[],
         });
         let rect_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -640,9 +634,7 @@ impl WgpuBackend {
             queue,
             config,
             rect_pipeline,
-            // rect_bind_layout,
             border_pipeline,
-            // border_bind_layout,
             text_pipeline_mask,
             text_pipeline_color,
             text_bind_layout,

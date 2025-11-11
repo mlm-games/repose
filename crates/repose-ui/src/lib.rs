@@ -23,9 +23,7 @@ use taffy::prelude::{Position, Size, auto, length, percent};
 pub mod textfield;
 pub use textfield::{TextField, TextFieldState};
 
-use crate::textfield::{
-    TF_FONT_DP, TF_PADDING_X_DP, byte_to_char_index, measure_text, positions_for,
-};
+use crate::textfield::{TF_FONT_DP, TF_PADDING_X_DP, byte_to_char_index, measure_text};
 use repose_core::locals;
 
 #[derive(Default)]
@@ -1338,9 +1336,10 @@ pub fn layout_and_paint(
                     }
                 }
 
+                let approx_w_px = (text.len() as f32) * size_px_val * 0.6;
                 let need_clip = match overflow {
                     TextOverflow::Visible | TextOverflow::Ellipsis => false,
-                    TextOverflow::Clip => true,
+                    TextOverflow::Clip => approx_w_px > max_w_px + 0.5,
                 };
 
                 if need_clip {

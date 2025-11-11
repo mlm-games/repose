@@ -73,29 +73,6 @@ fn next_grapheme_boundary(text: &str, byte: usize) -> usize {
     text.len()
 }
 
-// Returns cumulative X positions per codepoint boundary (len+1; pos[0] = 0, pos[i] = advance up to char i)
-pub fn positions_for(text: &str, font_dp_as_u32: u32) -> Vec<f32> {
-    let font_px = dp_to_px(font_dp_as_u32 as f32);
-    let m = repose_text::metrics_for_textfield(text, font_px);
-    m.positions
-}
-
-// Clamp to [0..=len], nearest insertion point for a given x (content coords, px)
-pub fn index_for_x(text: &str, font_dp_as_u32: u32, x_px: f32) -> usize {
-    let m = repose_text::metrics_for_textfield(text, dp_to_px(font_dp_as_u32 as f32));
-    // nearest boundary
-    let mut best = 0usize;
-    let mut dmin = f32::INFINITY;
-    for (i, &xx_px) in m.positions.iter().enumerate() {
-        let d = (xx_px - x_px).abs();
-        if d < dmin {
-            dmin = d;
-            best = i;
-        }
-    }
-    best
-}
-
 #[derive(Clone, Debug)]
 pub struct TextFieldState {
     pub text: String,
