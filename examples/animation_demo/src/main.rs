@@ -82,21 +82,15 @@ fn app(_s: &mut Scheduler) -> View {
                     }
                 }),
             )),
-            TextColor(
-                TextSize(
-                    Text(
-                        if animated_color.borrow().is_animating()
-                            || animated_size.borrow().is_animating()
-                        {
-                            "🎬 Animating..."
-                        } else {
-                            "✓ Idle"
-                        },
-                    ),
-                    64.0,
-                ),
-                Color::from_hex("#888888"),
+            Text(
+                if animated_color.borrow().is_animating() || animated_size.borrow().is_animating() {
+                    "🎬 Animating..."
+                } else {
+                    "✓ Idle"
+                },
             )
+            .size(64.0)
+            .color(Color::from_hex("#888888"))
             .modifier(Modifier::new().padding(12.0)),
         )),
     )

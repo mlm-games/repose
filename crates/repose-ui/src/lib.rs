@@ -92,29 +92,6 @@ pub fn Grid(columns: usize, modifier: Modifier, children: Vec<View>) -> View {
     Column(modifier.grid(columns, 0.0, 0.0)).with_children(children)
 }
 
-#[allow(non_snake_case)]
-pub fn TextColor(mut v: View, color: Color) -> View {
-    if let ViewKind::Text {
-        color: text_color, ..
-    } = &mut v.kind
-    {
-        *text_color = color;
-    }
-    v
-}
-
-#[allow(non_snake_case)]
-pub fn TextSize(mut v: View, size_dp: f32) -> View {
-    if let ViewKind::Text {
-        font_size: text_size_dp,
-        ..
-    } = &mut v.kind
-    {
-        *text_size_dp = size_dp;
-    }
-    v
-}
-
 pub fn Button(text: impl Into<String>, on_click: impl Fn() + 'static) -> View {
     View::new(
         0,
@@ -1362,8 +1339,8 @@ pub fn layout_and_paint(
                 }
 
                 let need_clip = match overflow {
-                    TextOverflow::Visible => false,
-                    TextOverflow::Clip | TextOverflow::Ellipsis => true,
+                    TextOverflow::Visible | TextOverflow::Ellipsis => false,
+                    TextOverflow::Clip => true,
                 };
 
                 if need_clip {
@@ -2711,8 +2688,8 @@ pub fn layout_and_paint(
     (scene, hits, sems)
 }
 
-/// Method styling for m3-like components
-pub trait TextStyleExt {
+/// Method styling
+pub trait TextStyle {
     fn color(self, c: Color) -> View;
     fn size(self, px: f32) -> View;
     fn max_lines(self, n: usize) -> View;
@@ -2721,12 +2698,25 @@ pub trait TextStyleExt {
     fn overflow_clip(self) -> View;
     fn overflow_visible(self) -> View;
 }
-impl TextStyleExt for View {
-    fn color(self, c: Color) -> View {
-        TextColor(self, c)
+impl TextStyle for View {
+    fn color(mut self, c: Color) -> View {
+        if let ViewKind::Text {
+            color: text_color, ..
+        } = &mut self.kind
+        {
+            *text_color = c;
+        }
+        self
     }
-    fn size(self, dp_font: f32) -> View {
-        TextSize(self, dp_font)
+    fn size(mut self, dp_font: f32) -> View {
+        if let ViewKind::Text {
+            font_size: text_size_dp,
+            ..
+        } = &mut self.kind
+        {
+            *text_size_dp = dp_font;
+        }
+        self
     }
     fn max_lines(mut self, n: usize) -> View {
         if let ViewKind::Text {
