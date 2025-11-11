@@ -1,14 +1,14 @@
 [package]
 name = "repose-render-wgpu"
-version = "0.6.3"
+version = "0.6.4"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "Repose wgpu handler"
 
 [dependencies]
-repose-core = { path = "../repose-core", version = "0.6.3" }
-repose-text = { path = "../repose-text", version = "0.6.3" }
-wgpu = { workspace = true }
+repose-core = { path = "../repose-core", version = "0.6.4" }
+repose-text = { path = "../repose-text", version = "0.6.4" }
+wgpu = { workspace = true, features = ["gles"] }
 winit = { workspace = true }
 log = { workspace = true }
 anyhow = { workspace = true }

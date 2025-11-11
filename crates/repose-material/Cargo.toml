@@ -1,9 +1,9 @@
 [package]
 name = "repose-material"
-version = "0.6.3"
+version = "0.6.4"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "Material components for Repose"
 [dependencies]
-repose-core = { path = "../repose-core", version = "0.6.3" }
-repose-ui = { path = "../repose-ui", version = "0.6.3" }
+repose-core = { path = "../repose-core", version = "0.6.4" }
+repose-ui = { path = "../repose-ui", version = "0.6.4" }
