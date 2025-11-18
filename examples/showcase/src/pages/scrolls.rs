@@ -74,6 +74,8 @@ pub fn screen() -> View {
                             .child(Text(format!("{i}")))
                         })
                         .collect(),
+                    0.0,
+                    0.0,
                 ),
             ),
         ),

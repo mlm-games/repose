@@ -85,8 +85,14 @@ pub fn Spacer() -> View {
     Box(Modifier::new().flex_grow(1.0))
 }
 
-pub fn Grid(columns: usize, modifier: Modifier, children: Vec<View>) -> View {
-    Column(modifier.grid(columns, 0.0, 0.0)).with_children(children)
+pub fn Grid(
+    columns: usize,
+    modifier: Modifier,
+    children: Vec<View>,
+    row_gap: f32,
+    column_gap: f32,
+) -> View {
+    Column(modifier.grid(columns, row_gap, column_gap)).with_children(children)
 }
 
 pub fn Button(text: impl Into<String>, on_click: impl Fn() + 'static) -> View {

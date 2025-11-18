@@ -22,6 +22,8 @@ pub fn screen() -> View {
                             )
                         })
                         .collect(),
+                    0.0,
+                    0.0,
                 ),
             ),
             Section(
