@@ -14,16 +14,16 @@ fn app(_s: &mut Scheduler) -> View {
         Column(Modifier::new().padding(24.0).fill_max_size()).with_children(vec![
             Spacer(),
             Text(format!("Count: {}", count.get())).modifier(Modifier::new().padding(12.0)),
-            Button("Increment", {
+            Button(Text("Increment"), {
                 let count = count.clone();
                 move || count.update(|c| *c += 1)
             })
-            .modifier(Modifier::new().padding(4.0)),
-            Button("Decrement", {
+            .modifier(Modifier::new().padding(16.0)),
+            Button(Text("Decrement"), {
                 let count = count.clone();
                 move || count.update(|c| *c -= 1)
             })
-            .modifier(Modifier::new().padding(4.0)),
+            .modifier(Modifier::new().padding(16.0)),
             Spacer(),
         ]),
     )

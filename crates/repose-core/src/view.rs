@@ -47,7 +47,6 @@ pub enum ViewKind {
         overflow: TextOverflow,
     },
     Button {
-        text: String,
         on_click: Option<Callback>,
     },
     TextField {
@@ -160,9 +159,8 @@ impl std::fmt::Debug for ViewKind {
                 .field("tint", tint)
                 .field("fit", fit)
                 .finish(),
-            ViewKind::Button { text, .. } => f
+            ViewKind::Button { .. } => f
                 .debug_struct("Button")
-                .field("text", text)
                 .field("on_click", &"<callback>")
                 .finish(),
             ViewKind::TextField {

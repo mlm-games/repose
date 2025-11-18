@@ -25,12 +25,12 @@ pub fn screen() -> View {
             move || {
                 Column(Modifier::new()).child((
                     err_view(),
-                    Button("Throw", {
+                    Button(Text("Throw"), {
                         let boom = boom.clone();
                         move || boom.set(true)
                     })
                     .modifier(Modifier::new().padding(8.0)),
-                    Button("Reset", {
+                    Button(Text("Reset"), {
                         let boom = boom.clone();
                         move || boom.set(false)
                     }),

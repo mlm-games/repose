@@ -12,20 +12,20 @@ pub fn screen() -> View {
             "Springs (gentle / bouncy / crit)",
             Column(Modifier::new().padding(8.0)).child((
                 Row(Modifier::new().padding(4.0)).child((
-                    Button("Gentle", {
+                    Button(Text("Gentle"), {
                         let m = spring_mode.clone();
                         move || m.set("gentle".into())
                     }),
-                    Button("Bouncy", {
+                    Button(Text("Bouncy"), {
                         let m = spring_mode.clone();
                         move || m.set("bouncy".into())
                     }),
-                    Button("Crit", {
+                    Button(Text("Crit"), {
                         let m = spring_mode.clone();
                         move || m.set("crit".into())
                     }),
                     Spacer(),
-                    Button("Toggle", {
+                    Button(Text("Toggle"), {
                         let v = visible.clone();
                         move || v.update(|x| *x = !*x)
                     }),
@@ -68,7 +68,7 @@ pub fn screen() -> View {
                     )
                 },
                 Spacer(),
-                Button("Crossfade", {
+                Button(Text("Crossfade"), {
                     let cross = cross.clone();
                     move || cross.update(|c| *c = (*c + 1) % 3)
                 }),

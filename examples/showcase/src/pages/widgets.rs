@@ -59,11 +59,11 @@ pub fn screen() -> View {
                 ProgressBar(prog.get(), (0.0, 1.0), "Progress")
                     .modifier(Modifier::new().padding(6.0)),
                 Row(Modifier::new().padding(8.0)).child((
-                    Button("↥", {
+                    Button(Text("⬆️"), {
                         let p = prog.clone();
                         move || p.update(|x| *x = (*x + 0.05).min(1.0))
                     }),
-                    Button("↧", {
+                    Button(Text("⬇️"), {
                         let p = prog.clone();
                         move || p.update(|x| *x = (*x - 0.05).max(0.0))
                     }),

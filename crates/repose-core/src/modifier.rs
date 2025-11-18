@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use taffy::AlignSelf;
+use taffy::{AlignContent, AlignItems, AlignSelf, JustifyContent};
 
 use crate::{Color, PointerEvent, Size, Transform, Vec2};
 
@@ -39,7 +39,9 @@ pub struct Modifier {
     pub flex_shrink: Option<f32>,
     pub flex_basis: Option<f32>,
     pub align_self: Option<AlignSelf>,
-    pub aspect_ratio: Option<f32>, // width/height
+    pub justify_content: Option<JustifyContent>, // main-axis
+    pub align_items_container: Option<AlignItems>, // cross-axis
+    pub aspect_ratio: Option<f32>,               // width/height
     pub position_type: Option<PositionType>,
     pub offset_left: Option<f32>,
     pub offset_right: Option<f32>,
@@ -249,6 +251,14 @@ impl Modifier {
     }
     pub fn align_self(mut self, align: AlignSelf) -> Self {
         self.align_self = Some(align);
+        self
+    }
+    pub fn justify_content(mut self, justify_content: AlignContent) -> Self {
+        self.justify_content = Some(justify_content);
+        self
+    }
+    pub fn align_items(mut self, align_items: AlignItems) -> Self {
+        self.align_items_container = Some(align_items);
         self
     }
     pub fn aspect_ratio(mut self, ratio: f32) -> Self {

@@ -43,44 +43,62 @@ fn app(_s: &mut Scheduler) -> View {
                 .border(2.0, Color::WHITE, 8.0)),
             // Controls
             Row(Modifier::new().padding(16.0)).child((
-                Button("🔵 Blue", {
-                    let anim = animated_color.clone();
-                    move || {
-                        anim.borrow_mut().set_target(Color::from_hex("#2196F3"));
-                    }
-                }),
-                Button("🟢 Green", {
-                    let anim = animated_color.clone();
-                    move || {
-                        anim.borrow_mut().set_target(Color::from_hex("#4CAF50"));
-                    }
-                }),
-                Button("🔴 Red", {
-                    let anim = animated_color.clone();
-                    move || {
-                        anim.borrow_mut().set_target(Color::from_hex("#FF5252"));
-                    }
-                }),
+                Button(
+                    Text("🔵 Blue").modifier(Modifier::new().padding(8.0).align_self_center()),
+                    {
+                        let anim = animated_color.clone();
+                        move || {
+                            anim.borrow_mut().set_target(Color::from_hex("#2196F3"));
+                        }
+                    },
+                ),
+                Button(
+                    Text("🟢 Green").modifier(Modifier::new().padding(8.0).align_self_center()),
+                    {
+                        let anim = animated_color.clone();
+                        move || {
+                            anim.borrow_mut().set_target(Color::from_hex("#4CAF50"));
+                        }
+                    },
+                ),
+                Button(
+                    Text("🔴 Red").modifier(Modifier::new().padding(8.0).align_self_center()),
+                    {
+                        let anim = animated_color.clone();
+                        move || {
+                            anim.borrow_mut().set_target(Color::from_hex("#FF5252"));
+                        }
+                    },
+                ),
             )),
             Row(Modifier::new().padding(8.0)).child((
-                Button("Small", {
-                    let anim = animated_size.clone();
-                    move || {
-                        anim.borrow_mut().set_target(80.0);
-                    }
-                }),
-                Button("Medium", {
-                    let anim = animated_size.clone();
-                    move || {
-                        anim.borrow_mut().set_target(150.0);
-                    }
-                }),
-                Button("Large", {
-                    let anim = animated_size.clone();
-                    move || {
-                        anim.borrow_mut().set_target(220.0);
-                    }
-                }),
+                Button(
+                    Text("Small").modifier(Modifier::new().padding(8.0).align_self_center()),
+                    {
+                        let anim = animated_size.clone();
+                        move || {
+                            anim.borrow_mut().set_target(80.0);
+                        }
+                    },
+                ),
+                Button(
+                    Text("Medium").modifier(Modifier::new().padding(8.0).align_self_center()),
+                    {
+                        let anim = animated_size.clone();
+                        move || {
+                            anim.borrow_mut().set_target(150.0);
+                        }
+                    },
+                ),
+                Button(
+                    Text("Large").modifier(Modifier::new().padding(8.0).align_self_center()),
+                    {
+                        let anim = animated_size.clone();
+                        move || {
+                            anim.borrow_mut().set_target(220.0);
+                        }
+                    },
+                ),
             )),
             Text(
                 if animated_color.borrow().is_animating() || animated_size.borrow().is_animating() {

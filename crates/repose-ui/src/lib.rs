@@ -95,17 +95,17 @@ pub fn Grid(
     Column(modifier.grid(columns, row_gap, column_gap)).with_children(children)
 }
 
-pub fn Button(text: impl Into<String>, on_click: impl Fn() + 'static) -> View {
+pub fn Button(content: impl IntoChildren, on_click: impl Fn() + 'static) -> View {
     View::new(
         0,
         ViewKind::Button {
-            text: text.into(),
             on_click: Some(Rc::new(on_click)),
         },
     )
+    .with_children(content.into_children())
     .semantics(Semantics {
         role: Role::Button,
-        label: None,
+        label: None, // optional: we could derive from first Text child later
         focused: false,
         enabled: true,
     })
@@ -483,9 +483,14 @@ pub fn layout_and_paint(
             s.flex_basis = length(px(b_dp.max(0.0)));
         }
 
-        // Align self
         if let Some(a) = m.align_self {
             s.align_self = Some(a);
+        }
+        if let Some(j) = m.justify_content {
+            s.justify_content = Some(j);
+        }
+        if let Some(ai) = m.align_items_container {
+            s.align_items = Some(ai);
         }
 
         // Absolute positioning (convert insets from dp to px)
@@ -622,6 +627,38 @@ pub fn layout_and_paint(
             }
         }
 
+        if matches!(kind, ViewKind::Button { .. }) {
+            s.display = Display::Flex;
+            s.flex_direction =
+                if crate::locals::text_direction() == crate::locals::TextDirection::Rtl {
+                    FlexDirection::RowReverse
+                } else {
+                    FlexDirection::Row
+                };
+
+            if m.justify_content.is_none() {
+                s.justify_content = Some(JustifyContent::Center);
+            }
+            if m.align_items_container.is_none() {
+                s.align_items = Some(AlignItems::Center);
+            }
+
+            // similar to Material
+            if m.padding.is_none() && m.padding_values.is_none() {
+                let ph = px(16.0);
+                let pv = px(8.0);
+                s.padding = taffy::geometry::Rect {
+                    left: length(ph),
+                    right: length(ph),
+                    top: length(pv),
+                    bottom: length(pv),
+                };
+            }
+            if m.min_height.is_none() && s.min_size.height.is_auto() {
+                s.min_size.height = length(px(40.0));
+            }
+        }
+
         // user min/max clamps
         if let Some(v_dp) = m.min_width {
             s.min_size.width = length(px(v_dp.max(0.0)));
@@ -692,14 +729,16 @@ pub fn layout_and_paint(
                     },
                 )
                 .unwrap(),
-            ViewKind::Button { text, .. } => t
-                .new_leaf_with_context(
-                    style,
-                    NodeCtx::Button {
-                        label: text.clone(),
-                    },
-                )
-                .unwrap(),
+            ViewKind::Button { .. } => {
+                let children: Vec<_> = v
+                    .children
+                    .iter()
+                    .map(|c| build_node(c, t, nodes_map))
+                    .collect();
+                let n = t.new_with_children(style, &children).unwrap();
+                t.set_node_context(n, Some(NodeCtx::Container)).ok();
+                n
+            }
             ViewKind::TextField { .. } => {
                 t.new_leaf_with_context(style, NodeCtx::TextField).unwrap()
             }
@@ -1382,7 +1421,7 @@ pub fn layout_and_paint(
                 });
             }
 
-            ViewKind::Button { text, on_click } => {
+            ViewKind::Button { on_click } => {
                 // Default background if none provided
                 if v.modifier.background.is_none() {
                     let th = locals::theme();
@@ -1396,30 +1435,9 @@ pub fn layout_and_paint(
                     scene.nodes.push(SceneNode::Rect {
                         rect,
                         color: mul_alpha(base, alpha_accum),
-                        radius: v
-                            .modifier
-                            .clip_rounded
-                            .map(dp_to_px)
-                            .unwrap_or(6.0_f32 /* dp */)
-                            .max(0.0),
+                        radius: v.modifier.clip_rounded.map(dp_to_px).unwrap_or(6.0),
                     });
                 }
-                // Label
-                let label_px = font_px(16.0);
-                let approx_w_px = (text.len() as f32) * label_px * 0.6;
-                let tx = rect.x + (rect.w - approx_w_px).max(0.0) * 0.5;
-                let ty = rect.y + (rect.h - label_px).max(0.0) * 0.5;
-                scene.nodes.push(SceneNode::Text {
-                    rect: repose_core::Rect {
-                        x: tx,
-                        y: ty,
-                        w: approx_w_px,
-                        h: label_px,
-                    },
-                    text: text.clone(),
-                    color: mul_alpha(Color::WHITE, alpha_accum),
-                    size: label_px,
-                });
 
                 if v.modifier.click || on_click.is_some() {
                     hits.push(HitRegion {
@@ -1439,15 +1457,16 @@ pub fn layout_and_paint(
                         tf_state_key: None,
                     });
                 }
+
                 sems.push(SemNode {
                     id: v.id,
                     role: Role::Button,
-                    label: Some(text.clone()),
+                    label: None,
                     rect,
                     focused: is_focused,
                     enabled: true,
                 });
-                // Focus ring
+
                 if is_focused {
                     scene.nodes.push(SceneNode::Border {
                         rect,

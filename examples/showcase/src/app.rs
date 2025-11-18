@@ -107,7 +107,7 @@ pub fn app(_s: &mut Scheduler) -> View {
                                                 } else {
                                                     theme().surface
                                                 };
-                                                Button(*label, {
+                                                Button(Text(*label), {
                                                     let nav = nav.clone();
                                                     let r = (*route).to_string();
                                                     move || nav.navigate(r.clone())
