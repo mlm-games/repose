@@ -5,7 +5,10 @@ use repose_ui::{
 };
 use std::collections::HashMap;
 
-use crate::{pages, ui::Page};
+use crate::{
+    pages,
+    ui::{LabeledSwitch, Page},
+};
 
 pub fn app(_s: &mut Scheduler) -> View {
     // App state
@@ -82,13 +85,13 @@ pub fn app(_s: &mut Scheduler) -> View {
                                     Spacer(),
                                     Row(Modifier::new()).child((
                                         Text("Theme").modifier(Modifier::new().padding(8.0)),
-                                        Switch(theme_dark.get(), "Dark", {
+                                        LabeledSwitch(theme_dark.get(), "Dark", {
                                             let theme_dark = theme_dark.clone();
                                             move |v| theme_dark.set(v)
                                         })
                                         .modifier(Modifier::new().padding(8.0)),
                                         Text("RTL").modifier(Modifier::new().padding(8.0)),
-                                        Switch(rtl.get(), "RTL", {
+                                        LabeledSwitch(rtl.get(), "RTL", {
                                             let rtl = rtl.clone();
                                             move |v| rtl.set(v)
                                         })

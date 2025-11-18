@@ -1,4 +1,7 @@
-use crate::ui::Section;
+use crate::ui::{
+    LabeledCheckbox, LabeledLinearProgress, LabeledRadioButton, LabeledRangeSlider, LabeledSlider,
+    LabeledSwitch, Section,
+};
 use repose_core::prelude::*;
 use repose_ui::*;
 
@@ -15,23 +18,23 @@ pub fn screen() -> View {
         Section(
             "Switch / Checkbox / Radio",
             Column(Modifier::new().padding(8.0)).child((
-                Switch(sw.get(), "Master switch", {
+                LabeledSwitch(sw.get(), "Master switch", {
                     let sw = sw.clone();
                     move |v| sw.set(v)
                 })
                 .modifier(Modifier::new().padding(6.0)),
-                Checkbox(cb.get(), "Enable feature X", {
+                LabeledCheckbox(cb.get(), "Enable feature X", {
                     let cb = cb.clone();
                     move |v| cb.set(v)
                 })
                 .modifier(Modifier::new().padding(6.0)),
                 Row(Modifier::new()).child((
-                    RadioButton(radio.get() == "A", "Option A", {
+                    LabeledRadioButton(radio.get() == "A", "Option A", {
                         let radio = radio.clone();
                         move || radio.set("A".into())
                     })
                     .modifier(Modifier::new().padding(6.0)),
-                    RadioButton(radio.get() == "B", "Option B", {
+                    LabeledRadioButton(radio.get() == "B", "Option B", {
                         let radio = radio.clone();
                         move || radio.set("B".into())
                     })
@@ -42,12 +45,12 @@ pub fn screen() -> View {
         Section(
             "Slider / RangeSlider / Progress",
             Column(Modifier::new().padding(8.0)).child((
-                Slider(s_val.get(), (0.0, 1.0), Some(0.01), "Volume", {
+                LabeledSlider(s_val.get(), (0.0, 1.0), Some(0.01), "Volume", {
                     let s_val = s_val.clone();
                     move |v| s_val.set(v)
                 })
                 .modifier(Modifier::new().padding(6.0)),
-                RangeSlider(r_a.get(), r_b.get(), (0.0, 1.0), Some(0.01), "Window", {
+                LabeledRangeSlider(r_a.get(), r_b.get(), (0.0, 1.0), Some(0.01), "Window", {
                     let a = r_a.clone();
                     let b = r_b.clone();
                     move |x0, x1| {
@@ -56,7 +59,7 @@ pub fn screen() -> View {
                     }
                 })
                 .modifier(Modifier::new().padding(6.0)),
-                ProgressBar(prog.get(), (0.0, 1.0), "Progress")
+                LabeledLinearProgress(Some(prog.get()), "Progress")
                     .modifier(Modifier::new().padding(6.0)),
                 Row(Modifier::new().padding(8.0)).child((
                     Button(Text("⬆️"), {

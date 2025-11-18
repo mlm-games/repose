@@ -111,16 +111,11 @@ pub fn Button(content: impl IntoChildren, on_click: impl Fn() + 'static) -> View
     })
 }
 
-pub fn Checkbox(
-    checked: bool,
-    label: impl Into<String>,
-    on_change: impl Fn(bool) + 'static,
-) -> View {
+pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
     View::new(
         0,
         ViewKind::Checkbox {
             checked,
-            label: label.into(),
             on_change: Some(Rc::new(on_change)),
         },
     )
@@ -132,16 +127,11 @@ pub fn Checkbox(
     })
 }
 
-pub fn RadioButton(
-    selected: bool,
-    label: impl Into<String>,
-    on_select: impl Fn() + 'static,
-) -> View {
+pub fn RadioButton(selected: bool, on_select: impl Fn() + 'static) -> View {
     View::new(
         0,
         ViewKind::RadioButton {
             selected,
-            label: label.into(),
             on_select: Some(Rc::new(on_select)),
         },
     )
@@ -153,12 +143,11 @@ pub fn RadioButton(
     })
 }
 
-pub fn Switch(checked: bool, label: impl Into<String>, on_change: impl Fn(bool) + 'static) -> View {
+pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
     View::new(
         0,
         ViewKind::Switch {
             checked,
-            label: label.into(),
             on_change: Some(Rc::new(on_change)),
         },
     )
@@ -169,12 +158,10 @@ pub fn Switch(checked: bool, label: impl Into<String>, on_change: impl Fn(bool) 
         enabled: true,
     })
 }
-
 pub fn Slider(
     value: f32,
     range: (f32, f32),
     step: Option<f32>,
-    label: impl Into<String>,
     on_change: impl Fn(f32) + 'static,
 ) -> View {
     View::new(
@@ -184,7 +171,6 @@ pub fn Slider(
             min: range.0,
             max: range.1,
             step,
-            label: label.into(),
             on_change: Some(Rc::new(on_change)),
         },
     )
@@ -201,7 +187,6 @@ pub fn RangeSlider(
     end: f32,
     range: (f32, f32),
     step: Option<f32>,
-    label: impl Into<String>,
     on_change: impl Fn(f32, f32) + 'static,
 ) -> View {
     View::new(
@@ -212,7 +197,6 @@ pub fn RangeSlider(
             min: range.0,
             max: range.1,
             step,
-            label: label.into(),
             on_change: Some(Rc::new(on_change)),
         },
     )
@@ -224,14 +208,31 @@ pub fn RangeSlider(
     })
 }
 
-pub fn ProgressBar(value: f32, range: (f32, f32), label: impl Into<String>) -> View {
+pub fn LinearProgress(value: Option<f32>) -> View {
+    View::new(
+        0,
+        ViewKind::ProgressBar {
+            value: value.unwrap_or(0.0),
+            min: 0.0,
+            max: 1.0,
+            circular: false,
+        },
+    )
+    .semantics(Semantics {
+        role: Role::ProgressBar,
+        label: None,
+        focused: false,
+        enabled: true,
+    })
+}
+
+pub fn ProgressBar(value: f32, range: (f32, f32)) -> View {
     View::new(
         0,
         ViewKind::ProgressBar {
             value,
             min: range.0,
             max: range.1,
-            label: label.into(),
             circular: false,
         },
     )
@@ -385,24 +386,12 @@ pub fn layout_and_paint(
         TextField,
         Container,
         ScrollContainer,
-        Checkbox {
-            label: String,
-        },
-        Radio {
-            label: String,
-        },
-        Switch {
-            label: String,
-        },
-        Slider {
-            label: String,
-        },
-        Range {
-            label: String,
-        },
-        Progress {
-            label: String,
-        },
+        Checkbox,
+        Radio,
+        Switch,
+        Slider,
+        Range,
+        Progress,
     }
 
     let mut taffy: TaffyTree<NodeCtx> = TaffyTree::new();
@@ -743,54 +732,18 @@ pub fn layout_and_paint(
                 t.new_leaf_with_context(style, NodeCtx::TextField).unwrap()
             }
             ViewKind::Image { .. } => t.new_leaf_with_context(style, NodeCtx::Container).unwrap(),
-            ViewKind::Checkbox { label, .. } => t
-                .new_leaf_with_context(
-                    style,
-                    NodeCtx::Checkbox {
-                        label: label.clone(),
-                    },
-                )
+            ViewKind::Checkbox { .. } => t
+                .new_leaf_with_context(style, NodeCtx::Checkbox {})
                 .unwrap(),
-            ViewKind::RadioButton { label, .. } => t
-                .new_leaf_with_context(
-                    style,
-                    NodeCtx::Radio {
-                        label: label.clone(),
-                    },
-                )
-                .unwrap(),
-            ViewKind::Switch { label, .. } => t
-                .new_leaf_with_context(
-                    style,
-                    NodeCtx::Switch {
-                        label: label.clone(),
-                    },
-                )
-                .unwrap(),
-            ViewKind::Slider { label, .. } => t
-                .new_leaf_with_context(
-                    style,
-                    NodeCtx::Slider {
-                        label: label.clone(),
-                    },
-                )
-                .unwrap(),
-            ViewKind::RangeSlider { label, .. } => t
-                .new_leaf_with_context(
-                    style,
-                    NodeCtx::Range {
-                        label: label.clone(),
-                    },
-                )
-                .unwrap(),
-            ViewKind::ProgressBar { label, .. } => t
-                .new_leaf_with_context(
-                    style,
-                    NodeCtx::Progress {
-                        label: label.clone(),
-                    },
-                )
-                .unwrap(),
+            ViewKind::RadioButton { .. } => {
+                t.new_leaf_with_context(style, NodeCtx::Radio {}).unwrap()
+            }
+            ViewKind::Switch { .. } => t.new_leaf_with_context(style, NodeCtx::Switch {}).unwrap(),
+            ViewKind::Slider { .. } => t.new_leaf_with_context(style, NodeCtx::Slider).unwrap(),
+            ViewKind::RangeSlider { .. } => t.new_leaf_with_context(style, NodeCtx::Range).unwrap(),
+            ViewKind::ProgressBar { .. } => {
+                t.new_leaf_with_context(style, NodeCtx::Progress).unwrap()
+            }
             ViewKind::ScrollV { .. } => {
                 let children: Vec<_> = v
                     .children
@@ -892,59 +845,30 @@ pub fn layout_and_paint(
                     width: known.width.unwrap_or(px(220.0)),
                     height: px(36.0),
                 },
-                Some(NodeCtx::Checkbox { label }) => {
-                    let label_w_px = (label.len() as f32) * font_px(16.0) * 0.6;
-                    let w_px = px(24.0) + px(8.0) + label_w_px; // box + gap + text estimate
-                    taffy::geometry::Size {
-                        width: known.width.unwrap_or(w_px),
-                        height: px(24.0),
-                    }
-                }
-                Some(NodeCtx::Radio { label }) => {
-                    let label_w_px = (label.len() as f32) * font_px(16.0) * 0.6;
-                    let w_px = px(24.0) + px(8.0) + label_w_px; // circle + gap + text estimate
-                    taffy::geometry::Size {
-                        width: known.width.unwrap_or(w_px),
-                        height: px(24.0),
-                    }
-                }
-                Some(NodeCtx::Switch { label }) => {
-                    let label_w_px = (label.len() as f32) * font_px(16.0) * 0.6;
-                    let w_px = (known.width)
-                        .unwrap_or(px(46.0) + px(8.0) + label_w_px)
-                        .max(px(80.0));
-                    taffy::geometry::Size {
-                        width: w_px,
-                        height: px(28.0),
-                    }
-                }
-                Some(NodeCtx::Slider { label }) => {
-                    let label_w_px = (label.len() as f32) * font_px(16.0) * 0.6;
-                    let w_px =
-                        (known.width).unwrap_or(px(200.0).max(px(46.0) + px(8.0) + label_w_px));
-                    taffy::geometry::Size {
-                        width: w_px,
-                        height: px(28.0),
-                    }
-                }
-                Some(NodeCtx::Range { label }) => {
-                    let label_w_px = (label.len() as f32) * font_px(16.0) * 0.6;
-                    let w_px =
-                        (known.width).unwrap_or(px(220.0).max(px(46.0) + px(8.0) + label_w_px));
-                    taffy::geometry::Size {
-                        width: w_px,
-                        height: px(28.0),
-                    }
-                }
-                Some(NodeCtx::Progress { label }) => {
-                    let label_w_px = (label.len() as f32) * font_px(16.0) * 0.6;
-                    let w_px =
-                        (known.width).unwrap_or(px(200.0).max(px(100.0) + px(8.0) + label_w_px));
-                    taffy::geometry::Size {
-                        width: w_px,
-                        height: px(12.0) + px(8.0),
-                    }
-                }
+                Some(NodeCtx::Checkbox { .. }) => taffy::geometry::Size {
+                    width: known.width.unwrap_or(px(24.0)),
+                    height: px(24.0),
+                },
+                Some(NodeCtx::Radio { .. }) => taffy::geometry::Size {
+                    width: known.width.unwrap_or(px(18.0)),
+                    height: px(18.0),
+                },
+                Some(NodeCtx::Switch { .. }) => taffy::geometry::Size {
+                    width: known.width.unwrap_or(px(46.0)),
+                    height: px(28.0),
+                },
+                Some(NodeCtx::Slider { .. }) => taffy::geometry::Size {
+                    width: known.width.unwrap_or(px(200.0)),
+                    height: px(28.0),
+                },
+                Some(NodeCtx::Range { .. }) => taffy::geometry::Size {
+                    width: known.width.unwrap_or(px(220.0)),
+                    height: px(28.0),
+                },
+                Some(NodeCtx::Progress { .. }) => taffy::geometry::Size {
+                    width: known.width.unwrap_or(px(200.0)),
+                    height: px(12.0),
+                },
                 Some(NodeCtx::ScrollContainer) | Some(NodeCtx::Container) | None => {
                     taffy::geometry::Size::ZERO
                 }
@@ -1931,11 +1855,7 @@ pub fn layout_and_paint(
                 scene.nodes.push(SceneNode::PopClip);
                 return;
             }
-            ViewKind::Checkbox {
-                checked,
-                label,
-                on_change,
-            } => {
+            ViewKind::Checkbox { checked, on_change } => {
                 let theme = locals::theme();
                 // Box at left (20x20 centered vertically)
                 let box_size_px = dp_to_px(18.0);
@@ -1981,19 +1901,6 @@ pub fn layout_and_paint(
                         size: font_px(16.0),
                     });
                 }
-                // label
-                scene.nodes.push(SceneNode::Text {
-                    rect: repose_core::Rect {
-                        x: bx + box_size_px + dp_to_px(8.0),
-                        y: rect.y + rect.h * 0.5 - font_px(16.0) * 0.6,
-                        w: rect.w - (box_size_px + dp_to_px(8.0)),
-                        h: font_px(16.0),
-                    },
-                    text: label.clone(),
-                    color: mul_alpha(theme.on_surface, alpha_accum),
-                    size: font_px(16.0),
-                });
-
                 // Hit + semantics + focus ring
                 let toggled = !*checked;
                 let on_click = on_change.as_ref().map(|cb| {
@@ -2019,7 +1926,7 @@ pub fn layout_and_paint(
                 sems.push(SemNode {
                     id: v.id,
                     role: Role::Checkbox,
-                    label: Some(label.clone()),
+                    label: None,
                     rect,
                     focused: is_focused,
                     enabled: true,
@@ -2040,7 +1947,7 @@ pub fn layout_and_paint(
 
             ViewKind::RadioButton {
                 selected,
-                label,
+
                 on_select,
             } => {
                 let theme = locals::theme();
@@ -2073,17 +1980,6 @@ pub fn layout_and_paint(
                         radius: (d_px - dp_to_px(8.0)) * 0.5,
                     });
                 }
-                scene.nodes.push(SceneNode::Text {
-                    rect: repose_core::Rect {
-                        x: cx + d_px + dp_to_px(8.0),
-                        y: rect.y + rect.h * 0.5 - font_px(16.0) * 0.6,
-                        w: rect.w - (d_px + dp_to_px(8.0)),
-                        h: font_px(16.0),
-                    },
-                    text: label.clone(),
-                    color: mul_alpha(theme.on_surface, alpha_accum),
-                    size: font_px(16.0),
-                });
 
                 hits.push(HitRegion {
                     id: v.id,
@@ -2104,7 +2000,7 @@ pub fn layout_and_paint(
                 sems.push(SemNode {
                     id: v.id,
                     role: Role::RadioButton,
-                    label: Some(label.clone()),
+                    label: None,
                     rect,
                     focused: is_focused,
                     enabled: true,
@@ -2123,11 +2019,7 @@ pub fn layout_and_paint(
                 }
             }
 
-            ViewKind::Switch {
-                checked,
-                label,
-                on_change,
-            } => {
+            ViewKind::Switch { checked, on_change } => {
                 let theme = locals::theme();
                 // track 46x26, knob 22x22
                 let track_w_px = dp_to_px(46.0);
@@ -2182,19 +2074,6 @@ pub fn layout_and_paint(
                     radius: knob_px * 0.5,
                 });
 
-                // label
-                scene.nodes.push(SceneNode::Text {
-                    rect: repose_core::Rect {
-                        x: tx + track_w_px + dp_to_px(8.0),
-                        y: rect.y + rect.h * 0.5 - font_px(16.0) * 0.6,
-                        w: rect.w - (track_w_px + dp_to_px(8.0)),
-                        h: font_px(16.0),
-                    },
-                    text: label.clone(),
-                    color: mul_alpha(theme.on_surface, alpha_accum),
-                    size: font_px(16.0),
-                });
-
                 let toggled = !*checked;
                 let on_click = on_change.as_ref().map(|cb| {
                     let cb = cb.clone();
@@ -2219,7 +2098,7 @@ pub fn layout_and_paint(
                 sems.push(SemNode {
                     id: v.id,
                     role: Role::Switch,
-                    label: Some(label.clone()),
+                    label: None,
                     rect,
                     focused: is_focused,
                     enabled: true,
@@ -2242,7 +2121,6 @@ pub fn layout_and_paint(
                 min,
                 max,
                 step,
-                label,
                 on_change,
             } => {
                 let theme = locals::theme();
@@ -2290,19 +2168,6 @@ pub fn layout_and_paint(
                     color: mul_alpha(theme.outline, alpha_accum),
                     width: dp_to_px(1.0),
                     radius: knob_d_px * 0.5,
-                });
-
-                // Label
-                scene.nodes.push(SceneNode::Text {
-                    rect: repose_core::Rect {
-                        x: label_x + gap_px,
-                        y: rect.y + rect.h * 0.5 - font_px(16.0) * 0.6,
-                        w: rect.x + rect.w - (label_x + gap_px),
-                        h: font_px(16.0),
-                    },
-                    text: format!("{}: {:.2}", label, *value),
-                    color: mul_alpha(theme.on_surface, alpha_accum),
-                    size: font_px(16.0),
                 });
 
                 // Interactions
@@ -2386,7 +2251,7 @@ pub fn layout_and_paint(
                 sems.push(SemNode {
                     id: v.id,
                     role: Role::Slider,
-                    label: Some(label.clone()),
+                    label: None,
                     rect,
                     focused: is_focused,
                     enabled: true,
@@ -2410,7 +2275,6 @@ pub fn layout_and_paint(
                 min,
                 max,
                 step,
-                label,
                 on_change,
             } => {
                 let theme = locals::theme();
@@ -2476,19 +2340,6 @@ pub fn layout_and_paint(
                         radius: knob_d_px * 0.5,
                     });
                 }
-
-                // Label
-                scene.nodes.push(SceneNode::Text {
-                    rect: repose_core::Rect {
-                        x: label_x + gap_px,
-                        y: rect.y + rect.h * 0.5 - font_px(16.0) * 0.6,
-                        w: rect.x + rect.w - (label_x + gap_px),
-                        h: font_px(16.0),
-                    },
-                    text: format!("{}: {:.2} – {:.2}", label, *start, *end),
-                    color: mul_alpha(theme.on_surface, alpha_accum),
-                    size: font_px(16.0),
-                });
 
                 // Interaction
                 let on_change_cb = on_change.as_ref().cloned();
@@ -2581,7 +2432,7 @@ pub fn layout_and_paint(
                 sems.push(SemNode {
                     id: v.id,
                     role: Role::Slider,
-                    label: Some(label.clone()),
+                    label: None,
                     rect,
                     focused: is_focused,
                     enabled: true,
@@ -2603,7 +2454,6 @@ pub fn layout_and_paint(
                 value,
                 min,
                 max,
-                label,
                 circular: _,
             } => {
                 let theme = locals::theme();
@@ -2644,7 +2494,7 @@ pub fn layout_and_paint(
                         w: rect.w - (label_w_split_px + gap_px),
                         h: font_px(16.0),
                     },
-                    text: format!("{}: {:.0}%", label, t * 100.0),
+                    text: format!("{:.0}%", t * 100.0),
                     color: mul_alpha(theme.on_surface, alpha_accum),
                     size: font_px(16.0),
                 });
@@ -2652,7 +2502,7 @@ pub fn layout_and_paint(
                 sems.push(SemNode {
                     id: v.id,
                     role: Role::ProgressBar,
-                    label: Some(label.clone()),
+                    label: None,
                     rect,
                     focused: is_focused,
                     enabled: true,

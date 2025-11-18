@@ -57,17 +57,14 @@ pub enum ViewKind {
     },
     Checkbox {
         checked: bool,
-        label: String,
         on_change: Option<Rc<dyn Fn(bool)>>,
     },
     RadioButton {
         selected: bool,
-        label: String,
         on_select: Option<Callback>,
     },
     Switch {
         checked: bool,
-        label: String,
         on_change: Option<Rc<dyn Fn(bool)>>,
     },
     Slider {
@@ -75,7 +72,6 @@ pub enum ViewKind {
         min: f32,
         max: f32,
         step: Option<f32>,
-        label: String,
         on_change: Option<CallbackF32>,
     },
     RangeSlider {
@@ -84,14 +80,12 @@ pub enum ViewKind {
         min: f32,
         max: f32,
         step: Option<f32>,
-        label: String,
         on_change: Option<CallbackRange>,
     },
     ProgressBar {
         value: f32,
         min: f32,
         max: f32,
-        label: String,
         circular: bool,
     },
     Image {
@@ -113,23 +107,17 @@ pub enum ViewKind {
 impl std::fmt::Debug for ViewKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ViewKind::Checkbox { checked, label, .. } => f
+            ViewKind::Checkbox { checked, .. } => f
                 .debug_struct("Checkbox")
                 .field("checked", checked)
-                .field("label", label)
                 .finish(),
-            ViewKind::RadioButton {
-                selected, label, ..
-            } => f
+            ViewKind::RadioButton { selected, .. } => f
                 .debug_struct("RadioButton")
                 .field("selected", selected)
-                .field("label", label)
                 .finish(),
-            ViewKind::Switch { checked, label, .. } => f
-                .debug_struct("Switch")
-                .field("checked", checked)
-                .field("label", label)
-                .finish(),
+            ViewKind::Switch { checked, .. } => {
+                f.debug_struct("Switch").field("checked", checked).finish()
+            }
             ViewKind::Surface => write!(f, "Surface"),
             ViewKind::Box => write!(f, "Box"),
             ViewKind::Row => write!(f, "Row"),
@@ -178,7 +166,6 @@ impl std::fmt::Debug for ViewKind {
                 min,
                 max,
                 step,
-                label,
                 ..
             } => f
                 .debug_struct("Slider")
@@ -186,7 +173,6 @@ impl std::fmt::Debug for ViewKind {
                 .field("min", min)
                 .field("max", max)
                 .field("step", step)
-                .field("label", label)
                 .finish(),
             ViewKind::RangeSlider {
                 start,
@@ -194,7 +180,6 @@ impl std::fmt::Debug for ViewKind {
                 min,
                 max,
                 step,
-                label,
                 ..
             } => f
                 .debug_struct("RangeSlider")
@@ -203,20 +188,17 @@ impl std::fmt::Debug for ViewKind {
                 .field("min", min)
                 .field("max", max)
                 .field("step", step)
-                .field("label", label)
                 .finish(),
             ViewKind::ProgressBar {
                 value,
                 min,
                 max,
-                label,
                 circular,
             } => f
                 .debug_struct("ProgressBar")
                 .field("value", value)
                 .field("min", min)
                 .field("max", max)
-                .field("label", label)
                 .field("circular", circular)
                 .finish(),
             ViewKind::Ellipse { rect, color } => f
