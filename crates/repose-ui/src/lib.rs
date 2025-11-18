@@ -74,7 +74,7 @@ pub fn Text(text: impl Into<String>) -> View {
             text: text.into(),
             color: Color::WHITE,
             font_size: 16.0, // dp (converted to px in layout/paint)
-            soft_wrap: false,
+            soft_wrap: true,
             max_lines: None,
             overflow: TextOverflow::Visible,
         },
@@ -662,6 +662,10 @@ pub fn layout_and_paint(
             s.max_size.height = length(px(v_dp.max(0.0)));
         }
 
+        if matches!(kind, ViewKind::Text { .. }) && s.min_size.width.is_auto() {
+            s.min_size.width = length(0.0);
+        }
+
         s
     }
 
@@ -791,37 +795,62 @@ pub fn layout_and_paint(
                     max_lines,
                     overflow,
                 }) => {
-                    // Apply density + text scale in measure so paint matches exactly
                     let size_px_val = font_px(*font_dp);
                     let line_h_px_val = size_px_val * 1.3;
 
-                    // Content-hugging width by default (unless caller set known.width).
-                    let approx_w_px = text.len() as f32 * size_px_val * 0.6; // rough estimate (glyph-width-ish)
-                    let measured_w_px = known.width.unwrap_or(approx_w_px);
+                    // Rough guess (used only as fallback)
+                    let approx_w_px = text.len() as f32 * size_px_val * 0.6;
 
-                    // Wrap width in px if soft wrap enabled
-                    let wrap_w_px = if *soft_wrap {
-                        match avail.width {
-                            AvailableSpace::Definite(w) => w,
-                            _ => measured_w_px,
-                        }
-                    } else {
-                        measured_w_px
+                    // Determine the effective width to layout against
+                    let target_w_px = match avail.width {
+                        AvailableSpace::Definite(w) => w,
+                        _ => known.width.unwrap_or(approx_w_px),
                     };
 
-                    // Produce final lines once and cache
-                    let lines_vec: Vec<String> = if *soft_wrap {
-                        let (ls, _trunc) =
-                            repose_text::wrap_lines(text, size_px_val, wrap_w_px, *max_lines, true);
-                        ls
+                    // For wrapping or ellipsis we want to measure against the target width
+                    let wrap_w_px = if *soft_wrap || matches!(overflow, TextOverflow::Ellipsis) {
+                        target_w_px
                     } else {
-                        match overflow {
-                            TextOverflow::Ellipsis => {
-                                vec![repose_text::ellipsize_line(text, size_px_val, wrap_w_px)]
-                            }
-                            _ => vec![text.clone()],
-                        }
+                        known.width.unwrap_or(approx_w_px)
                     };
+
+                    // Build lines (wraps by def.)
+                    let mut lines_vec: Vec<String>;
+                    let mut truncated = false;
+
+                    if *soft_wrap {
+                        let (ls, trunc) = repose_text::wrap_lines(
+                            &text,
+                            size_px_val,
+                            wrap_w_px,
+                            *max_lines,
+                            true,
+                        );
+                        lines_vec = ls;
+                        truncated = trunc;
+                        if matches!(overflow, TextOverflow::Ellipsis)
+                            && truncated
+                            && !lines_vec.is_empty()
+                        {
+                            let last = lines_vec.len() - 1;
+                            lines_vec[last] = repose_text::ellipsize_line(
+                                &lines_vec[last],
+                                size_px_val,
+                                wrap_w_px,
+                            );
+                        }
+                    } else if matches!(overflow, TextOverflow::Ellipsis) {
+                        if approx_w_px > wrap_w_px + 0.5 {
+                            lines_vec =
+                                vec![repose_text::ellipsize_line(text, size_px_val, wrap_w_px)];
+                        } else {
+                            lines_vec = vec![text.clone()];
+                        }
+                    } else {
+                        lines_vec = vec![text.clone()];
+                    }
+
+                    // Cache for paint (much better perf.)
                     text_cache.insert(
                         node,
                         TextLayout {
@@ -830,11 +859,12 @@ pub fn layout_and_paint(
                             line_h_px: line_h_px_val,
                         },
                     );
-                    let n_lines = lines_vec.len().max(1);
 
+                    // Height = no. of measured lines
+                    let line_count = lines_vec.len().max(1);
                     taffy::geometry::Size {
-                        width: measured_w_px,
-                        height: line_h_px_val * n_lines as f32,
+                        width: wrap_w_px,
+                        height: line_h_px_val * line_count as f32,
                     }
                 }
                 Some(NodeCtx::Button { label }) => taffy::geometry::Size {
@@ -1273,30 +1303,36 @@ pub fn layout_and_paint(
                         let sz_px = font_px(*font_dp);
                         (sz_px, sz_px * 1.3, vec![text.clone()])
                     };
+
                 // Work within the content box
                 let mut draw_box = content_rect;
                 let max_w_px = draw_box.w.max(0.0);
                 let max_h_px = draw_box.h.max(0.0);
 
-                // Vertical centering for single line within content box
-                if lines.len() == 1 {
+                // Vertical centering
+                if lines.len() == 1 && !*soft_wrap {
                     let dy_px = (draw_box.h - line_h_px_val) * 0.5;
-                    if dy_px.is_finite() {
-                        draw_box.y += dy_px.max(0.0);
+                    if dy_px.is_finite() && dy_px > 0.0 {
+                        draw_box.y += dy_px;
                         draw_box.h = line_h_px_val;
                     }
                 }
 
-                // For if height is constrained by rect.h and lines overflow visually,
-                let max_visual_lines = if max_h_px > 0.5 {
+                // Calculate total text height
+                let total_text_height = lines.len() as f32 * line_h_px_val;
+
+                let need_v_clip =
+                    total_text_height > max_h_px + 0.5 && *overflow != TextOverflow::Visible;
+
+                let max_visual_lines = if max_h_px > 0.5 && need_v_clip {
                     (max_h_px / line_h_px_val).floor().max(1.0) as usize
                 } else {
-                    usize::MAX
+                    lines.len()
                 };
 
                 if lines.len() > max_visual_lines {
                     lines.truncate(max_visual_lines);
-                    if *overflow == TextOverflow::Ellipsis && max_w_px > 0.5 {
+                    if *overflow == TextOverflow::Ellipsis && max_w_px > 0.5 && !lines.is_empty() {
                         // Ellipsize the last visible line
                         if let Some(last) = lines.last_mut() {
                             *last = repose_text::ellipsize_line(last, size_px_val, max_w_px);
@@ -1305,24 +1341,34 @@ pub fn layout_and_paint(
                 }
 
                 let approx_w_px = (text.len() as f32) * size_px_val * 0.6;
-                let need_clip = match overflow {
-                    TextOverflow::Visible | TextOverflow::Ellipsis => false,
-                    TextOverflow::Clip => approx_w_px > max_w_px + 0.5,
+                let need_h_clip = match overflow {
+                    TextOverflow::Visible => false,
+                    TextOverflow::Ellipsis => false, // Ellipsis handled above
+                    TextOverflow::Clip => approx_w_px > max_w_px + 0.5 || need_v_clip,
                 };
+
+                let need_clip = need_h_clip || need_v_clip;
 
                 if need_clip {
                     scene.nodes.push(SceneNode::PushClip {
-                        rect: draw_box,
+                        rect: content_rect,
                         radius: 0.0,
                     });
+                }
+
+                // Horizontal ellipsis for non-wrapped text
+                if !*soft_wrap && matches!(overflow, TextOverflow::Ellipsis) {
+                    if approx_w_px > max_w_px + 0.5 {
+                        lines = vec![repose_text::ellipsize_line(text, size_px_val, max_w_px)];
+                    }
                 }
 
                 for (i, ln) in lines.iter().enumerate() {
                     scene.nodes.push(SceneNode::Text {
                         rect: crate::Rect {
-                            x: draw_box.x,
-                            y: draw_box.y + i as f32 * line_h_px_val,
-                            w: draw_box.w,
+                            x: content_rect.x,
+                            y: content_rect.y + i as f32 * line_h_px_val,
+                            w: content_rect.w,
                             h: line_h_px_val,
                         },
                         text: ln.clone(),
