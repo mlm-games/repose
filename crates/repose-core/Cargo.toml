@@ -1,6 +1,6 @@
 [package]
 name = "repose-core"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "Repose's core runtime, view model, signals, composition locals, and animation clock."
