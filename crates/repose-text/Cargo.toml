@@ -1,7 +1,7 @@
 [package]
 name = "repose-text"
-version = "0.7.1"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 license = "GPL-3.0-or-later"
 description = "Text handling (wrappers around cosmic-text apis)"
 

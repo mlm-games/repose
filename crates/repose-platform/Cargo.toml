@@ -1,7 +1,7 @@
 [package]
 name = "repose-platform"
-version = "0.7.1"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 license = "GPL-3.0-or-later"
 description = "Platform runners (desktop via winit; Android alpha)"
 
