@@ -1,14 +1,25 @@
 use repose_core::{TextDirection, prelude::*, with_text_direction};
-use repose_ui::{
-    navigation::{NavController, NavHost},
-    *,
+use repose_navigation::{
+    EntryScope, InstallBackHandler, NavDisplay, Navigator, remember_back_stack, renderer,
 };
-use std::collections::HashMap;
+use repose_ui::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     pages,
     ui::{LabeledSwitch, Page},
 };
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+enum Key {
+    Layout,
+    Widgets,
+    Text,
+    Animation,
+    Canvas,
+    Scrolls,
+    Errors,
+}
 
 pub fn app(_s: &mut Scheduler) -> View {
     // App state
@@ -40,31 +51,41 @@ pub fn app(_s: &mut Scheduler) -> View {
         TextDirection::Ltr
     };
 
-    // Navigation
-    let nav = remember_with_key("nav", || NavController::new("layout"));
-    let nav = nav.as_ref().clone();
+    let stack = remember_back_stack(Key::Layout);
 
-    let mut routes: HashMap<String, Box<dyn Fn() -> View>> = HashMap::new();
-    routes.insert("layout".into(), Box::new(|| pages::layout::screen()));
-    routes.insert("widgets".into(), Box::new(|| pages::widgets::screen()));
-    routes.insert("text".into(), Box::new(|| pages::text::screen()));
-    // routes.insert("lists".into(), Box::new(|| pages::lists::screen()));
-    routes.insert("animation".into(), Box::new(|| pages::animation::screen()));
-    routes.insert("canvas".into(), Box::new(|| pages::canvas::screen()));
-    routes.insert("scrolls".into(), Box::new(|| pages::scrolls::screen()));
-    routes.insert("errors".into(), Box::new(|| pages::errors::screen()));
+    let _bk = {
+        let stack = stack.clone();
+        effect(move || {
+            InstallBackHandler((*stack).clone());
+            on_unmount(|| {})
+        })
+    };
+
+    // renderer: Key -> View
+    let render = renderer(move |scope: &EntryScope<Key>| match scope.key() {
+        Key::Layout => pages::layout::screen(),
+        Key::Widgets => pages::widgets::screen(),
+        Key::Text => pages::text::screen(),
+        Key::Animation => pages::animation::screen(),
+        Key::Canvas => pages::canvas::screen(),
+        Key::Scrolls => pages::scrolls::screen(),
+        Key::Errors => pages::errors::screen(),
+    });
 
     // Tab spec: label -> route
-    let tabs: [(&str, &str); 7] = [
-        ("Layout", "layout"),
-        ("Widgets", "widgets"),
-        ("Text", "text"),
-        // ("Lists", "lists"),
-        ("Animation", "animation"),
-        ("Canvas", "canvas"),
-        ("Scrolls", "scrolls"),
-        ("Errors", "errors"),
+    let tabs: [(&str, Key); 7] = [
+        ("Layout", Key::Layout),
+        ("Widgets", Key::Widgets),
+        ("Text", Key::Text),
+        ("Animation", Key::Animation),
+        ("Canvas", Key::Canvas),
+        ("Scrolls", Key::Scrolls),
+        ("Errors", Key::Errors),
     ];
+    let navigator = Navigator {
+        stack: (*stack).clone(),
+    };
+    let current_key = stack.top().map(|(_, k, _)| k).unwrap_or(Key::Layout);
 
     with_text_direction(dir, || {
         with_theme(use_theme, || {
@@ -98,38 +119,39 @@ pub fn app(_s: &mut Scheduler) -> View {
                                         .modifier(Modifier::new().padding(8.0)),
                                     )),
                                 )),
-                                // tab row. Selected uses nav.current.
-                                {
-                                    let current = nav.current.get();
-                                    Row(Modifier::new().align_self_center().padding(8.0)).child(
-                                        tabs.iter()
-                                            .map(|(label, route)| {
-                                                let is_selected = &current == *route;
-                                                let bg = if is_selected {
-                                                    theme().button_bg
-                                                } else {
-                                                    theme().surface
-                                                };
-                                                Button(Text(*label), {
-                                                    let nav = nav.clone();
-                                                    let r = (*route).to_string();
-                                                    move || nav.navigate(r.clone())
-                                                })
-                                                .modifier(
-                                                    Modifier::new()
-                                                        .padding(4.0)
-                                                        .background(bg)
-                                                        .clip_rounded(6.0),
-                                                )
+                                // tab row. Selected uses current key from stack.
+                                Row(Modifier::new().align_self_center().padding(8.0)).child(
+                                    tabs.iter()
+                                        .map(|(label, key)| {
+                                            let is_selected = &current_key == key;
+                                            let bg = if is_selected {
+                                                theme().button_bg
+                                            } else {
+                                                theme().surface
+                                            };
+                                            let key_clone = key.clone();
+                                            Button(Text(*label), {
+                                                let nav = navigator.clone();
+                                                move || nav.push(key_clone.clone())
                                             })
-                                            .collect::<Vec<_>>(),
-                                    )
-                                },
-                                // Page content via NavHost
-                                Page(
-                                    Box(Modifier::new().fill_max_size().padding(16.0))
-                                        .child(NavHost(nav.clone(), routes)),
+                                            .modifier(
+                                                Modifier::new()
+                                                    .padding(4.0)
+                                                    .background(bg)
+                                                    .clip_rounded(6.0),
+                                            )
+                                        })
+                                        .collect::<Vec<_>>(),
                                 ),
+                                // Page content via NavDisplay
+                                Page(Box(Modifier::new().fill_max_size().padding(16.0)).child(
+                                    NavDisplay(
+                                        stack.clone(),
+                                        render.clone(),
+                                        None, // back handled globally via InstallBackHandler
+                                        Default::default(),
+                                    ),
+                                )),
                             )),
                         )
                     })

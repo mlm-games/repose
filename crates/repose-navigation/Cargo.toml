@@ -1,0 +1,13 @@
+[package]
+name = "repose-navigation"
+version.workspace = true
+edition.workspace = true
+license = "GPL-3.0-or-later"
+description = "Navigation (Nav3-like) for Repose"
+
+[dependencies]
+repose-core.workspace = true
+repose-ui.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log.workspace = true

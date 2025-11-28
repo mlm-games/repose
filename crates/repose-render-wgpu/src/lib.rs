@@ -1361,19 +1361,22 @@ impl RenderBackend for WgpuBackend {
                 } => {
                     let px = (*size).clamp(8.0, 96.0);
                     let shaped = repose_text::shape_line(text, px);
+
+                    let transformed_rect = current_transform.apply_to_rect(*rect);
+
                     for sg in shaped {
                         // Try color first; if not color, try mask
                         if let Some(info) = self.upload_glyph_color(sg.key, px as u32) {
-                            let x = rect.x + sg.x + sg.bearing_x;
-                            let y = rect.y + sg.y - sg.bearing_y;
+                            let x = transformed_rect.x + sg.x + sg.bearing_x;
+                            let y = transformed_rect.y + sg.y - sg.bearing_y;
                             batch.colors.push(GlyphInstance {
                                 xywh: to_ndc(x, y, info.w, info.h, fb_w, fb_h),
                                 uv: [info.u0, info.v1, info.u1, info.v0],
                                 color: [1.0, 1.0, 1.0, 1.0], // do not tint color glyphs
                             });
                         } else if let Some(info) = self.upload_glyph_mask(sg.key, px as u32) {
-                            let x = rect.x + sg.x + sg.bearing_x;
-                            let y = rect.y + sg.y - sg.bearing_y;
+                            let x = transformed_rect.x + sg.x + sg.bearing_x;
+                            let y = transformed_rect.y + sg.y - sg.bearing_y;
                             batch.masks.push(GlyphInstance {
                                 xywh: to_ndc(x, y, info.w, info.h, fb_w, fb_h),
                                 uv: [info.u0, info.v1, info.u1, info.v0],

@@ -6,9 +6,9 @@ publish = false
 description = "Animation demo for repose"
 
 [dependencies]
-repose-core = { path = "../../crates/repose-core", version = "0.7.1" }
-repose-ui = { path = "../../crates/repose-ui", version = "0.7.1" }
-repose-platform = { path = "../../crates/repose-platform", version = "0.7.1", features = [
+repose-core.workspace = true
+repose-ui.workspace = true
+repose-platform = { path = "../../crates/repose-platform", version = "0.8.0", features = [
     "desktop",
 ] }
 env_logger = { workspace = true }

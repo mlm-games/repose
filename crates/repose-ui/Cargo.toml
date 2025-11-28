@@ -6,8 +6,8 @@ license = "GPL-3.0-or-later"
 description = "UI widgets and libs for Repose"
 
 [dependencies]
-repose-core = { path = "../repose-core", version = "0.7.1" }
-repose-text = { path = "../repose-text", version = "0.7.1" }
+repose-core.workspace = true
+repose-text.workspace = true
 taffy = { workspace = true }
 fontdb = { workspace = true }
 ab_glyph = { workspace = true }

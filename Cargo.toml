@@ -9,6 +9,7 @@ members = [
   "crates/repose-text",
   "crates/repose-canvas",
   "crates/repose-material",
+  "crates/repose-navigation",
   "examples/showcase",
   "examples/animation_demo",
   "examples/android_counter",
@@ -16,7 +17,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.7.1"
+version = "0.8.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/mlm-games/repose"
@@ -50,3 +51,12 @@ cosmic-text = { version = "0.15.0", default-features = true, features = [
   "swash",
 ] }
 android_logger = "0.15"
+
+
+repose-core = { path = "crates/repose-core", version = "0.8.0" }
+repose-ui = { path = "crates/repose-ui", version = "0.8.0" }
+repose-material = { path = "crates/repose-material", version = "0.8.0" }
+repose-canvas = { path = "crates/repose-canvas", version = "0.8.0" }
+repose-navigation = { path = "crates/repose-navigation", version = "0.8.0" }
+repose-devtools = { path = "crates/repose-devtools", version = "0.8.0" }
+repose-text = { path = "crates/repose-text", version = "0.8.0" }

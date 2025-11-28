@@ -6,5 +6,5 @@ license = "GPL-3.0-or-later"
 description = "Repose developer tools for debugging."
 
 [dependencies]
-repose-core = { path = "../repose-core", version = "0.7.1" }
+repose-core.workspace = true
 log = { workspace = true }

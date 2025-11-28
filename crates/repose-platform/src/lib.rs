@@ -193,8 +193,12 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
         ) {
             match event {
                 WindowEvent::CloseRequested => {
+                    use repose_navigation::back;
+
                     log::info!("Window close requested");
-                    el.exit();
+                    if !back::handle() {
+                        el.exit();
+                    }
                 }
                 WindowEvent::Resized(size) => {
                     self.sched.size = (size.width, size.height);
@@ -540,6 +544,20 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                 WindowEvent::KeyboardInput {
                     event: key_event, ..
                 } => {
+                    if key_event.state == ElementState::Pressed && !key_event.repeat {
+                        match key_event.physical_key {
+                            PhysicalKey::Code(KeyCode::BrowserBack)
+                            | PhysicalKey::Code(KeyCode::Escape) => {
+                                use repose_navigation::back;
+
+                                if !back::handle() {
+                                    // el.exit();
+                                }
+                                return;
+                            }
+                            _ => {}
+                        }
+                    }
                     // Focus traversal: Tab / Shift+Tab
                     if matches!(key_event.physical_key, PhysicalKey::Code(KeyCode::Tab)) {
                         // Only act on initial press, ignore repeats
