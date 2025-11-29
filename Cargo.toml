@@ -37,7 +37,7 @@ arboard = { version = "3.6", features = ["wayland-data-control"] }
 
 
 # Layout
-taffy = { version = "0.9.1", default-features = true }
+taffy = { version = "0.9.2", default-features = true }
 
 # Platform + GPU
 winit = { version = "0.30.12", default-features = true }
@@ -45,12 +45,13 @@ wgpu = "27.0.1"
 pollster = "0.4.0"
 
 # Text
-ab_glyph = "0.2.31"
+ab_glyph = "0.2.32"
 fontdb = "0.23.0"
 cosmic-text = { version = "0.15.0", default-features = true, features = [
   "swash",
 ] }
 android_logger = "0.15"
+serde = { version = "1", features = ["derive"] }
 
 
 repose-core = { path = "crates/repose-core", version = "0.8.0" }

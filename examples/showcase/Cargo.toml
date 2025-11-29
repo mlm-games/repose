@@ -43,4 +43,4 @@ winit = { workspace = true }
 env_logger = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true }

@@ -157,7 +157,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
             if self.window.is_none() {
                 match el.create_window(
                     WindowAttributes::default()
-                        .with_title("Repose Example")
+                        .with_title("Repose")
                         .with_inner_size(PhysicalSize::new(1280, 800)),
                 ) {
                     Ok(win) => {
