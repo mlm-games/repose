@@ -1,6 +1,6 @@
 ## Repose
 
-Native Rust UI for mobile and desktop. No VM, no WebView, no garbage collector. One codebase, GPU-accelerated everywhere.
+Compose-like UI in rust (only the important 30%. might switch widgets to another repo later, trying to keep it minimal in code for easy maintenance)
 
 Currently has no documentation, can view the examples or my rust app soredowe for reference to start building. (pre-release stage but apis might not change drastically due to it being based off the stable compose api)
 
