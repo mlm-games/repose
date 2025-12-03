@@ -8,7 +8,7 @@ description = "Animation demo for repose"
 [dependencies]
 repose-core.workspace = true
 repose-ui.workspace = true
-repose-platform = { path = "../../crates/repose-platform", version = "0.8.0", features = [
+repose-platform = { path = "../../crates/repose-platform", version = "0.8.1", features = [
     "desktop",
 ] }
 env_logger = { workspace = true }

@@ -23,13 +23,13 @@ label = "Recase"
 fullscreen = true
 
 [target.'cfg(target_os = "android")'.dependencies]
-repose-platform = { path = "../../crates/repose-platform", version = "0.8.0", features = [
+repose-platform = { path = "../../crates/repose-platform", version = "0.8.1", features = [
     "android",
 ] }
 android_logger = { workspace = true }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
-repose-platform = { path = "../../crates/repose-platform", version = "0.8.0", features = [
+repose-platform = { path = "../../crates/repose-platform", version = "0.8.1", features = [
     "desktop",
 ] }
 
