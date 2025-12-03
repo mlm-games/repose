@@ -142,8 +142,16 @@ pub struct HitRegion {
     pub tf_state_key: Option<u64>,
 }
 
+/// Flattened semantics node produced by `layout_and_paint`.
+///
+/// This is the source of truth for accessibility backends: it contains the
+/// resolved screen rect, role, label, and focus/enabled state.
+///
+/// The platform runner should convert this into OS‑specific accessibility trees (when implemented)
+/// (AT‑SPI on Linux, TalkBack on Android, etc.).
 #[derive(Clone)]
 pub struct SemNode {
+    /// Stable id, shared with the associated `HitRegion` / `ViewId`.
     pub id: u64,
     pub role: Role,
     pub label: Option<String>,

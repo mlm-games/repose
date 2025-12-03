@@ -1,3 +1,35 @@
+//! # Theming and locals
+//!
+//! Repose uses thread‑local “composition locals” for global UI parameters:
+//!
+//! - `Theme` — colors for surfaces, text, controls, etc.
+//! - `Density` — dp→px scale factor.
+//! - `TextScale` — user text scaling.
+//! - `TextDirection` — LTR or RTL.
+//!
+//! You can override these for a subtree using `with_theme`, `with_density`,
+//! `with_text_scale`, and `with_text_direction`:
+//!
+//! ```rust
+//! use repose_core::*;
+//!
+//! let light = Theme {
+//!     background: Color::WHITE,
+//!     surface: Color::from_hex("#F5F5F5"),
+//!     on_surface: Color::from_hex("#222222"),
+//!     primary: Color::from_hex("#0061A4"),
+//!     on_primary: Color::WHITE,
+//!     ..Theme::default()
+//! };
+//!
+//! with_theme(light, || {
+//!     // all views composed here will see the light theme
+//! });
+//! ```
+//!
+//! Widgets in `repose-ui` and `repose-material` read from `theme()` and
+//! should avoid hard‑coding colors where possible.
+
 use std::any::{Any, TypeId};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -83,21 +115,43 @@ fn set_local_boxed(t: TypeId, v: Box<dyn Any>) {
 
 // Typed API
 
+/// High‑level color theme used by widgets and layout.
+///
+/// This is intentionally small and semantic rather than a full Material 3
+/// spec. Higher‑level libraries (e.g. `repose-material`) can build richer
+/// schemes on top.
 #[derive(Clone, Copy, Debug)]
 pub struct Theme {
+    /// Window background / app root.
     pub background: crate::Color,
+    /// Default container surface (cards, sheets, panels).
     pub surface: crate::Color,
+    /// Primary foreground color on top of `surface`/`background`.
     pub on_surface: crate::Color,
+
+    /// Primary accent color for buttons, sliders, progress, etc.
     pub primary: crate::Color,
+    /// Foreground color used on top of `primary`.
     pub on_primary: crate::Color,
-    pub outline: crate::Color,           // Extra: borders, dividers
-    pub focus: crate::Color,             // focus rings / a11y highlights
-    pub button_bg: crate::Color,         // default button background
-    pub button_bg_hover: crate::Color,   // hover state
-    pub button_bg_pressed: crate::Color, // pressed state
-    pub scrollbar_track: crate::Color,   // low-emphasis track
-    pub scrollbar_thumb: crate::Color,   // higher-emphasis thumb
+
+    /// Low‑emphasis outline/border color.
+    pub outline: crate::Color,
+    /// Color for focus rings and accessibility highlights.
+    pub focus: crate::Color,
+
+    /// Default button background.
+    pub button_bg: crate::Color,
+    /// Button background on hover.
+    pub button_bg_hover: crate::Color,
+    /// Button background on pressed.
+    pub button_bg_pressed: crate::Color,
+
+    /// Scrollbar track background (low emphasis).
+    pub scrollbar_track: crate::Color,
+    /// Scrollbar thumb (higher emphasis).
+    pub scrollbar_thumb: crate::Color,
 }
+
 impl Default for Theme {
     fn default() -> Self {
         Self {

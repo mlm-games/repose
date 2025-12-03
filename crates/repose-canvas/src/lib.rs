@@ -141,7 +141,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                 } => {
                     scene.nodes.push(SceneNode::Rect {
                         rect: to_global(*r),
-                        color: *color,
+                        brush: Brush::Solid(*color),
                         radius: *radius,
                     });
                     if let Some((w, c)) = stroke {
@@ -168,7 +168,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                     };
                     scene.nodes.push(SceneNode::Ellipse {
                         rect: to_global(r),
-                        color: *color,
+                        brush: Brush::Solid(*color),
                     });
                     if let Some((w, c)) = stroke {
                         scene.nodes.push(SceneNode::EllipseBorder {

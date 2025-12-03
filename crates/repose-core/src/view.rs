@@ -1,4 +1,4 @@
-use crate::{Color, Modifier, Rect, Transform};
+use crate::{Brush, Color, Modifier, Rect, Transform};
 use std::rc::Rc;
 
 pub type ViewId = u64;
@@ -260,7 +260,7 @@ pub struct Scene {
 pub enum SceneNode {
     Rect {
         rect: Rect,
-        color: Color,
+        brush: Brush,
         radius: f32,
     },
     Border {
@@ -269,6 +269,7 @@ pub enum SceneNode {
         width: f32,
         radius: f32,
     },
+
     Text {
         rect: Rect,
         text: String,
@@ -277,7 +278,7 @@ pub enum SceneNode {
     },
     Ellipse {
         rect: Rect,
-        color: Color,
+        brush: Brush,
     },
     EllipseBorder {
         rect: Rect,

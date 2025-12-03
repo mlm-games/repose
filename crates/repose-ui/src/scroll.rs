@@ -1,3 +1,51 @@
+//! # Scroll model
+//!
+//! Repose separates *visual scroll containers* from *scroll state* that can
+//! include inertia and programmatic control.
+//!
+//! There are three scrolling primitives:
+//!
+//! - `ScrollState` — vertical (Y) inertia.
+//! - `HorizontalScrollState` — horizontal (X) inertia.
+//! - `ScrollStateXY` — 2D scroll with independent X/Y offsets.
+//!
+//! Each state stores viewport size, content size, offset, and velocity. The
+//! `scroll_immediate` methods consume a requested delta and return leftover
+//! motion that parent scroll views can use for nested scrolling.
+//!
+//! Example: vertical `ScrollArea`
+//!
+//! ```rust
+//! use repose_core::*;
+//! use repose_ui::*;
+//!
+//! fn LongList() -> View {
+//!     let state = scroll::remember_scroll_state("list");
+//!
+//!     let content = Column(Modifier::new()).child(
+//!         (0..100).map(|i| Text(format!("Row {i}"))).collect::<Vec<_>>()
+//!     );
+//!
+//!     scroll::ScrollArea(Modifier::new().fill_max_size(), state, content)
+//! }
+//! ```
+//!
+//! Internally, `ScrollArea` builds a `ViewKind::ScrollV` node with:
+//!
+//! - `on_scroll: Rc<dyn Fn(Vec2) -> Vec2>` that calls `state.scroll_immediate`.
+//! - `set_viewport_height` / `set_content_height` callbacks that keep the
+//!   scroll state clamped when sizes change.
+//! - `get_scroll_offset` / `set_scroll_offset` used by the layout pass and
+//!   scrollbars.
+//!
+//! `layout_and_paint`:
+//!
+//! - Uses the inner content rect (after padding) as the *viewport*.
+//! - Clips children into that rect.
+//! - Applies the current scroll offsets as a translation.
+//! - Clamps child `HitRegion`s into the viewport.
+//! - Draws vertical/horizontal scrollbars that can be dragged by pointer.
+
 use repose_core::*;
 use std::cell::RefCell;
 use std::rc::Rc;

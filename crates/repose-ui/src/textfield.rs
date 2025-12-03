@@ -1,3 +1,42 @@
+//! # TextField model
+//!
+//! Repose TextFields are fully controlled widgets. The visual `View` only
+//! describes *where* the field is and what its hint is; the *state* lives in
+//! `TextFieldState`, which the platform runner owns.
+//!
+//! ```rust
+//! pub struct TextFieldState {
+//!     pub text: String,
+//!     pub selection: Range<usize>,      // byte offsets
+//!     pub composition: Option<Range<usize>>, // IME preedit range
+//!     pub scroll_offset: f32,           // px, left edge of visible text
+//!     pub drag_anchor: Option<usize>,   // selection start for drag
+//!     pub blink_start: Instant,         // caret blink timer
+//!     pub inner_width: f32,             // px, content box width
+//! }
+//! ```
+//!
+//! Key properties:
+//!
+//! - Grapheme‑safe editing: cursor movement, deletion, and selection operate
+//!   on extended grapheme clusters (via `unicode-segmentation`), not raw bytes.
+//! - IME support: `set_composition`, `commit_composition`, and
+//!   `cancel_composition` integrate with platform IME events.
+//! - Horizontal scrolling: `scroll_offset` plus `ensure_caret_visible` keep
+//!   the caret within the visible inner rect.
+//!
+//! Platform runners (`repose-platform`) keep a `HashMap<u64, Rc<RefCell<TextFieldState>>>`
+//! indexed by a stable `tf_state_key`. During layout/paint, this map is passed
+//! into `layout_and_paint`, which renders:
+//!
+//! - Selection highlight
+//! - Composition underline
+//! - Text (value or hint)
+//! - Caret (with blink)
+//!
+//! And exposes `on_text_change` / `on_text_submit` callbacks via `HitRegion`
+//! so your app can react to edits.
+
 use repose_core::*;
 use std::ops::Range;
 use std::rc::Rc;

@@ -1051,9 +1051,20 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 }
 
 // Accessibility bridge stub (Noop by default; logs on Linux for now)
+/// Bridge from Repose's semantics tree to platform accessibility APIs.
+///
+/// Implementations are responsible for:
+/// - Exposing nodes to the OS (AT‑SPI, Android accessibility, etc.).
+/// - Updating focus when `focus_changed` is called.
+/// - Announcing transient messages (e.g. button activation) via screen readers.
 pub trait A11yBridge: Send {
+    /// Publish (or update) the full semantics tree for the current frame.
     fn publish_tree(&mut self, nodes: &[repose_core::runtime::SemNode]);
+
+    /// Notify that the focused node has changed. `None` means focus cleared.
     fn focus_changed(&mut self, node: Option<&repose_core::runtime::SemNode>);
+
+    /// Announce a one‑off message via the platform's accessibility channel.
     fn announce(&mut self, msg: &str);
 }
 

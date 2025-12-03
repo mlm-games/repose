@@ -7,9 +7,8 @@ use ab_glyph::{Font, FontArc, Glyph, PxScale, ScaleFont, point};
 use cosmic_text;
 use fontdb::Database;
 use image::GenericImageView;
-use repose_core::{Color, GlyphRasterConfig, RenderBackend, Scene, SceneNode, Transform};
+use repose_core::{Brush, Color, GlyphRasterConfig, RenderBackend, Scene, SceneNode, Transform};
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use wgpu::util::DeviceExt;
 
 static ROT_WARN_ONCE: Once = Once::new();
 
@@ -146,8 +145,14 @@ struct RectInstance {
     xywh: [f32; 4],
     // radius in NDC units
     radius: f32,
-    // rgba (linear)
-    color: [f32; 4],
+    // brush_type: 0 = solid, 1 = linear
+    brush_type: u32,
+    // solid_color or gradient endpoints in linear RGBA
+    color0: [f32; 4],
+    color1: [f32; 4],
+    // gradient vector in local space (use rect size to scale)
+    grad_start: [f32; 2], // normalized (0..1) in rect local coords
+    grad_end: [f32; 2],
 }
 
 #[repr(C)]
@@ -279,11 +284,35 @@ impl WgpuBackend {
                             offset: 16,
                             format: wgpu::VertexFormat::Float32,
                         },
-                        // color: vec4<f32>
+                        // brush_type: u32
                         wgpu::VertexAttribute {
                             shader_location: 2,
                             offset: 20,
+                            format: wgpu::VertexFormat::Uint32,
+                        },
+                        // color0: vec4<f32>
+                        wgpu::VertexAttribute {
+                            shader_location: 3,
+                            offset: 24,
                             format: wgpu::VertexFormat::Float32x4,
+                        },
+                        // color1: vec4<f32>
+                        wgpu::VertexAttribute {
+                            shader_location: 4,
+                            offset: 40,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        // grad_start: vec2<f32>
+                        wgpu::VertexAttribute {
+                            shader_location: 5,
+                            offset: 56,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        // grad_end: vec2<f32>
+                        wgpu::VertexAttribute {
+                            shader_location: 6,
+                            offset: 64,
+                            format: wgpu::VertexFormat::Float32x2,
                         },
                     ],
                 }],
@@ -1054,6 +1083,39 @@ impl WgpuBackend {
     }
 }
 
+/// Helper to convert a Brush to RectInstance fields
+fn brush_to_instance_fields(brush: &Brush) -> (u32, [f32; 4], [f32; 4], [f32; 2], [f32; 2]) {
+    match brush {
+        Brush::Solid(c) => (
+            0u32,
+            c.to_linear(),
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0],
+            [0.0, 1.0],
+        ),
+        Brush::Linear {
+            start,
+            end,
+            start_color,
+            end_color,
+        } => (
+            1u32,
+            start_color.to_linear(),
+            end_color.to_linear(),
+            [start.x, start.y],
+            [end.x, end.y],
+        ),
+    }
+}
+
+/// Helper to extract a solid color from a Brush (for primitives that don't support gradients yet)
+fn brush_to_solid_color(brush: &Brush) -> [f32; 4] {
+    match brush {
+        Brush::Solid(c) => c.to_linear(),
+        Brush::Linear { start_color, .. } => start_color.to_linear(),
+    }
+}
+
 impl RenderBackend for WgpuBackend {
     fn configure_surface(&mut self, width: u32, height: u32) {
         if width == 0 || height == 0 {
@@ -1285,10 +1347,12 @@ impl RenderBackend for WgpuBackend {
             match node {
                 SceneNode::Rect {
                     rect,
-                    color,
+                    brush,
                     radius,
                 } => {
                     let transformed_rect = current_transform.apply_to_rect(*rect);
+                    let (brush_type, color0, color1, grad_start, grad_end) =
+                        brush_to_instance_fields(brush);
                     batch.rects.push(RectInstance {
                         xywh: to_ndc(
                             transformed_rect.x,
@@ -1299,7 +1363,11 @@ impl RenderBackend for WgpuBackend {
                             fb_h,
                         ),
                         radius: to_ndc_radius(*radius, fb_w, fb_h),
-                        color: color.to_linear(),
+                        brush_type,
+                        color0,
+                        color1,
+                        grad_start,
+                        grad_end,
                     });
                 }
                 SceneNode::Border {
@@ -1324,8 +1392,9 @@ impl RenderBackend for WgpuBackend {
                         color: color.to_linear(),
                     });
                 }
-                SceneNode::Ellipse { rect, color } => {
+                SceneNode::Ellipse { rect, brush } => {
                     let transformed = current_transform.apply_to_rect(*rect);
+                    let color = brush_to_solid_color(brush);
                     batch.ellipses.push(EllipseInstance {
                         xywh: to_ndc(
                             transformed.x,
@@ -1335,7 +1404,7 @@ impl RenderBackend for WgpuBackend {
                             fb_w,
                             fb_h,
                         ),
-                        color: color.to_linear(),
+                        color,
                     });
                 }
                 SceneNode::EllipseBorder { rect, color, width } => {
@@ -1513,10 +1582,10 @@ impl RenderBackend for WgpuBackend {
                     let combined = current_transform.combine(transform);
                     if transform.rotate != 0.0 {
                         ROT_WARN_ONCE.call_once(|| {
-                      log::warn!(
-                          "Transform rotation is not supported for Rect/Text/Image; rotation will be ignored."
-                      );
-                  });
+                            log::warn!(
+                                "Transform rotation is not supported for Rect/Text/Image; rotation will be ignored."
+                            );
+                        });
                     }
                     transform_stack.push(combined);
                 }
@@ -1668,7 +1737,7 @@ impl RenderBackend for WgpuBackend {
                         );
                         rpass.draw(0..6, 0..n);
                     }
-                    Cmd::PushTransform(transform) => {}
+                    Cmd::PushTransform(_transform) => {}
                     Cmd::PopTransform => {}
                 }
             }

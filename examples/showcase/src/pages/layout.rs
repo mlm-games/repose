@@ -55,9 +55,11 @@ pub fn screen() -> View {
                     Text("Top")
                         .size(24.0)
                         .modifier(Modifier::new().padding(4.0)),
-                    Text("Baseline aligned")
-                        .size(16.0)
-                        .modifier(Modifier::new().padding(4.0).align_self_baseline()),
+                    Text("Baseline aligned").size(16.0).modifier(
+                        Modifier::new()
+                            .padding(4.0)
+                            .align_self(AlignItems::Baseline),
+                    ),
                     Text("Big")
                         .size(32.0)
                         .modifier(Modifier::new().padding(4.0)),
