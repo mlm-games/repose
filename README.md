@@ -6,4 +6,4 @@ Currently has no documentation, can view the examples or my rust app soredowe fo
 
 ## License
 
-GPLv3.0 currently (can dual license it if anyone wants to build proprietory apps with it...)
+GPLv3.0 currently (can dual license it if needed...)
