@@ -3,7 +3,6 @@ use repose_core::{
     animation::{AnimatedValue, AnimationSpec},
     remember_state_with_key,
 };
-use std::cell::RefCell;
 
 /// Animate f32 to the given target; returns the current value each frame.
 pub fn animate_f32(key: impl Into<String>, target: f32, spec: AnimationSpec) -> f32 {

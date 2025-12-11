@@ -405,7 +405,7 @@ mod tests {
         state.insert_text("Hello");
         state.selection = 0..5; // Select "Hello"
         state.insert_text("Hi");
-        assert_eq!(state.text, "Hi World".replacen("World", "", 1)); // maintain original intent
+        assert_eq!(state.text, "Hi World".replacen(" World", "", 1)); // maintain original intent
         assert_eq!(state.selection, 2..2);
     }
 

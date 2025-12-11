@@ -110,7 +110,7 @@ pub fn NavHost(
     routes: HashMap<String, Box<dyn Fn() -> View>>,
 ) -> View {
     let current = controller.current.get();
-    let trans = controller.transitions.get();
+    let trans = controller.take_transition();
 
     if let Some(builder) = routes.get(&current) {
         let page = Box(Modifier::new().fill_max_size()).child((builder)());

@@ -360,7 +360,6 @@ pub fn remember_scroll_state_xy(key: impl Into<String>) -> Rc<ScrollStateXY> {
 pub fn ScrollArea(modifier: Modifier, state: Rc<ScrollState>, content: View) -> View {
     let st_clone = state.clone();
     let on_scroll = {
-        let st = state.clone();
         Rc::new(move |d: Vec2| -> Vec2 {
             Vec2 {
                 x: d.x,
