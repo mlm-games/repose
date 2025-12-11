@@ -77,7 +77,7 @@
 //! use repose_core::*;
 //!
 //! fn Example() -> View {
-//!     effect(|| {
+//!     scoped_effect(|| {
 //!         log::info!("Mounted Example");
 //!         on_unmount(|| log::info!("Unmounted Example"))
 //!     });

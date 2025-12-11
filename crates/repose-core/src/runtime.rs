@@ -97,6 +97,13 @@ pub fn remember_with_key<T: 'static>(key: impl Into<String>, init: impl FnOnce()
             }
         }
 
+        if cfg!(debug_assertions) && c.keyed_slots.len() > 10_000 {
+            log::warn!(
+                "remember_with_key: more than 10k keys stored; \
+                are you generating unbounded dynamic keys (e.g., using timestamps)?"
+            );
+        }
+
         let rc: Rc<T> = Rc::new(init());
         c.keyed_slots.insert(key, Box::new(rc.clone()));
         rc

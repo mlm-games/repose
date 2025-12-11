@@ -9,7 +9,9 @@ impl Dispose {
     }
 }
 
-/// Mimic Compose side-effect. You call effect(|| { ...; on_unmount(...) })
+/// Runs `f()` immediately and returns its `Dispose`.
+/// NOTE: This does *not* currently tie the cleanup into `Scope`.
+/// If you want cleanup on unmount, use `scoped_effect` or `disposable_effect`.
 pub fn effect<F>(f: F) -> Dispose
 where
     F: FnOnce() -> Dispose + 'static,
