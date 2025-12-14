@@ -34,7 +34,7 @@ impl Color {
         Color(r, g, b, a)
     }
     pub fn with_alpha(self, a: u8) -> Self {
-        Color(self.0, self.1, self.2, (self.3 * a) / 255)
+        Color(self.0, self.1, self.2, a)
     }
 
     pub fn to_linear(self) -> [f32; 4] {
