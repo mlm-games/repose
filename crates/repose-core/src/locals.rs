@@ -34,6 +34,8 @@ use std::any::{Any, TypeId};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+use crate::Color;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextDirection {
     Ltr,
@@ -123,50 +125,55 @@ fn set_local_boxed(t: TypeId, v: Box<dyn Any>) {
 #[derive(Clone, Copy, Debug)]
 pub struct Theme {
     /// Window background / app root.
-    pub background: crate::Color,
+    pub background: Color,
     /// Default container surface (cards, sheets, panels).
-    pub surface: crate::Color,
+    pub surface: Color,
     /// Primary foreground color on top of `surface`/`background`.
-    pub on_surface: crate::Color,
+    pub on_surface: Color,
 
     /// Primary accent color for buttons, sliders, progress, etc.
-    pub primary: crate::Color,
+    pub primary: Color,
     /// Foreground color used on top of `primary`.
-    pub on_primary: crate::Color,
+    pub on_primary: Color,
 
     /// Low‑emphasis outline/border color.
-    pub outline: crate::Color,
+    pub outline: Color,
     /// Color for focus rings and accessibility highlights.
-    pub focus: crate::Color,
+    pub focus: Color,
 
     /// Default button background.
-    pub button_bg: crate::Color,
+    pub button_bg: Color,
     /// Button background on hover.
-    pub button_bg_hover: crate::Color,
+    pub button_bg_hover: Color,
     /// Button background on pressed.
-    pub button_bg_pressed: crate::Color,
+    pub button_bg_pressed: Color,
 
     /// Scrollbar track background (low emphasis).
-    pub scrollbar_track: crate::Color,
+    pub scrollbar_track: Color,
     /// Scrollbar thumb (higher emphasis).
-    pub scrollbar_thumb: crate::Color,
+    pub scrollbar_thumb: Color,
+
+    ///Error
+    pub error: Color,
 }
 
 impl Default for Theme {
     fn default() -> Self {
         Self {
-            background: crate::Color::from_hex("#121212"),
-            surface: crate::Color::from_hex("#1E1E1E"),
-            on_surface: crate::Color::from_hex("#DDDDDD"),
-            primary: crate::Color::from_hex("#34AF82"),
-            on_primary: crate::Color::WHITE,
-            outline: crate::Color::from_hex("#555555"),
-            focus: crate::Color::from_hex("#88CCFF"),
-            button_bg: crate::Color::from_hex("#34AF82"),
-            button_bg_hover: crate::Color::from_hex("#2A8F6A"),
-            button_bg_pressed: crate::Color::from_hex("#1F7556"),
-            scrollbar_track: crate::Color(0xDD, 0xDD, 0xDD, 32),
-            scrollbar_thumb: crate::Color(0xDD, 0xDD, 0xDD, 140),
+            background: Color::from_hex("#121212"),
+            surface: Color::from_hex("#1E1E1E"),
+            on_surface: Color::from_hex("#DDDDDD"),
+            primary: Color::from_hex("#34AF82"),
+            on_primary: Color::WHITE,
+            outline: Color::from_hex("#555555"),
+            focus: Color::from_hex("#88CCFF"),
+            button_bg: Color::from_hex("#34AF82"),
+            button_bg_hover: Color::from_hex("#2A8F6A"),
+            button_bg_pressed: Color::from_hex("#1F7556"),
+            scrollbar_track: Color(0xDD, 0xDD, 0xDD, 32),
+            scrollbar_thumb: Color(0xDD, 0xDD, 0xDD, 140),
+
+            error: Color::from_hex("#ae3636"),
         }
     }
 }

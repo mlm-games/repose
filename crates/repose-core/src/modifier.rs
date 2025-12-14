@@ -76,6 +76,10 @@ pub struct Modifier {
     pub offset_right: Option<f32>,
     pub offset_top: Option<f32>,
     pub offset_bottom: Option<f32>,
+    pub margin_left: Option<f32>,
+    pub margin_right: Option<f32>,
+    pub margin_top: Option<f32>,
+    pub margin_bottom: Option<f32>,
     pub aspect_ratio: Option<f32>,
     pub painter: Option<Rc<dyn Fn(&mut crate::Scene, crate::Rect)>>,
 }
@@ -349,6 +353,26 @@ impl Modifier {
     }
     pub fn offset_bottom(mut self, v: f32) -> Self {
         self.offset_bottom = Some(v);
+        self
+    }
+
+    pub fn margin(mut self, v: f32) -> Self {
+        self.margin_left = Some(v);
+        self.margin_right = Some(v);
+        self.margin_top = Some(v);
+        self.margin_bottom = Some(v);
+        self
+    }
+
+    pub fn margin_horizontal(mut self, v: f32) -> Self {
+        self.margin_left = Some(v);
+        self.margin_right = Some(v);
+        self
+    }
+
+    pub fn margin_vertical(mut self, v: f32) -> Self {
+        self.margin_top = Some(v);
+        self.margin_bottom = Some(v);
         self
     }
     pub fn aspect_ratio(mut self, ratio: f32) -> Self {

@@ -582,9 +582,21 @@ pub fn layout_and_paint(
         if let Some(ai) = m.align_items_container {
             s.align_items = Some(ai);
         }
+        if let Some(mg_top) = m.margin_top {
+            s.margin.top = length(mg_top)
+        }
+        if let Some(mg_left) = m.margin_left {
+            s.margin.left = length(mg_left)
+        }
+        if let Some(mg_right) = m.margin_right {
+            s.margin.right = length(mg_right)
+        }
+        if let Some(mg_bottom) = m.margin_bottom {
+            s.margin.bottom = length(mg_bottom)
+        }
 
         // Absolute positioning (convert insets from dp to px)
-        if let Some(crate::modifier::PositionType::Absolute) = m.position_type {
+        if let Some(PositionType::Absolute) = m.position_type {
             s.position = Position::Absolute;
             s.inset = taffy::geometry::Rect {
                 left: m.offset_left.map(|v| length(px(v))).unwrap_or_else(auto),

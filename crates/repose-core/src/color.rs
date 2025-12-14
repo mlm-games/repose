@@ -8,6 +8,9 @@ impl Color {
     pub const BLACK: Color = Color(0, 0, 0, 255);
     pub const WHITE: Color = Color(255, 255, 255, 255);
 
+    pub fn from_rgb(r: u8, g: u8, b: u8) -> Self {
+        Color(r, g, b, 255)
+    }
     pub fn from_rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
         Color(r, g, b, a)
     }
@@ -29,6 +32,9 @@ impl Color {
             _ => (0, 0, 0, 255),
         };
         Color(r, g, b, a)
+    }
+    pub fn with_alpha(self, a: u8) -> Self {
+        Color(self.0, self.1, self.2, (self.3 * a) / 255)
     }
 
     pub fn to_linear(self) -> [f32; 4] {
