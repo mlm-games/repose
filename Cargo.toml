@@ -17,7 +17,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.8.2"
+version = "0.8.3"
 edition = "2024"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/mlm-games/repose"
@@ -54,10 +54,10 @@ android_logger = "0.15"
 serde = { version = "1", features = ["derive"] }
 
 
-repose-core = { path = "crates/repose-core", version = "0.8.2" }
-repose-ui = { path = "crates/repose-ui", version = "0.8.2" }
-repose-material = { path = "crates/repose-material", version = "0.8.2" }
-repose-canvas = { path = "crates/repose-canvas", version = "0.8.2" }
-repose-navigation = { path = "crates/repose-navigation", version = "0.8.2" }
-repose-devtools = { path = "crates/repose-devtools", version = "0.8.2" }
-repose-text = { path = "crates/repose-text", version = "0.8.2" }
+repose-core = { path = "crates/repose-core", version = "0.8.3" }
+repose-ui = { path = "crates/repose-ui", version = "0.8.3" }
+repose-material = { path = "crates/repose-material", version = "0.8.3" }
+repose-canvas = { path = "crates/repose-canvas", version = "0.8.3" }
+repose-navigation = { path = "crates/repose-navigation", version = "0.8.3" }
+repose-devtools = { path = "crates/repose-devtools", version = "0.8.3" }
+repose-text = { path = "crates/repose-text", version = "0.8.3" }
