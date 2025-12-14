@@ -20,4 +20,4 @@ pub use crate::signal::{Signal, signal};
 pub use crate::view::{
     ImageFit, ImageHandle, Scene, SceneNode, TextOverflow, View, ViewId, ViewKind,
 };
-pub use taffy::{AlignContent, AlignItems, AlignSelf};
+pub use taffy::{AlignContent, AlignItems, AlignSelf, JustifyContent, JustifyItems, JustifySelf};
