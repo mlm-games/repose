@@ -63,6 +63,12 @@ pub struct ScrollState {
     animating: RefCell<bool>,
 }
 
+impl Default for ScrollState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ScrollState {
     pub fn new() -> Self {
         Self {
@@ -172,6 +178,12 @@ pub struct HorizontalScrollState {
     last_t: RefCell<Instant>,
     animating: RefCell<bool>,
 }
+impl Default for HorizontalScrollState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HorizontalScrollState {
     pub fn new() -> Self {
         Self {
@@ -252,6 +264,12 @@ pub struct ScrollStateXY {
     last_t: RefCell<Instant>,
     animating: RefCell<bool>,
 }
+impl Default for ScrollStateXY {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ScrollStateXY {
     pub fn new() -> Self {
         Self {
@@ -346,7 +364,7 @@ impl ScrollStateXY {
 
 /// Remembered ScrollState (requires unique key).
 pub fn remember_scroll_state(key: impl Into<String>) -> Rc<ScrollState> {
-    repose_core::remember_with_key(key.into(), || ScrollState::new())
+    repose_core::remember_with_key(key.into(), ScrollState::new)
 }
 
 pub fn remember_horizontal_scroll_state(key: impl Into<String>) -> Rc<HorizontalScrollState> {

@@ -27,7 +27,7 @@ fn app(_s: &mut Scheduler) -> View {
         size.update();
     }
 
-    let current_color = animated_color.borrow().get().clone();
+    let current_color = *animated_color.borrow().get();
     let current_size = *animated_size.borrow().get();
 
     Surface(

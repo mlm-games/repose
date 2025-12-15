@@ -26,11 +26,10 @@ impl SavedState {
         key: &'static str,
         init: impl FnOnce() -> T,
     ) -> Rc<RefCell<T>> {
-        if let Some(b) = self.map.borrow().get(key) {
-            if let Some(rc) = b.downcast_ref::<Rc<RefCell<T>>>() {
+        if let Some(b) = self.map.borrow().get(key)
+            && let Some(rc) = b.downcast_ref::<Rc<RefCell<T>>>() {
                 return rc.clone();
             }
-        }
         let rc = Rc::new(RefCell::new(init()));
         self.map.borrow_mut().insert(key, Box::new(rc.clone()));
         rc

@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
 thread_local! {
-    static CURRENT_SCOPE: RefCell<Option<Weak<ScopeInner>>> = RefCell::new(None);
+    static CURRENT_SCOPE: RefCell<Option<Weak<ScopeInner>>> = const { RefCell::new(None) };
 }
 
 pub struct Scope {
@@ -14,6 +14,12 @@ struct ScopeInner {
     disposers: RefCell<Vec<Box<dyn FnOnce()>>>,
     children: RefCell<Vec<Scope>>,
     memo_cache: RefCell<std::collections::HashMap<String, Box<dyn Any>>>,
+}
+
+impl Default for Scope {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Scope {

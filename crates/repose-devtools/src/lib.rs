@@ -11,6 +11,12 @@ pub struct Hud {
     pub metrics: Option<Metrics>,
 }
 
+impl Default for Hud {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Hud {
     pub fn new() -> Self {
         Self {
@@ -87,6 +93,12 @@ pub struct Metrics {
 pub struct Inspector {
     pub hud: Hud,
 }
+impl Default for Inspector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Inspector {
     pub fn new() -> Self {
         Self { hud: Hud::new() }

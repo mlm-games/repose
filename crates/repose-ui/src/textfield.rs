@@ -39,9 +39,8 @@
 
 use repose_core::*;
 use std::ops::Range;
-use std::rc::Rc;
 use std::time::Duration;
-use std::{cell::RefCell, time::Instant};
+use std::time::Instant;
 
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -121,6 +120,12 @@ pub struct TextFieldState {
     pub drag_anchor: Option<usize>, // caret index where drag began
     pub blink_start: Instant,       // for caret blink
     pub inner_width: f32,
+}
+
+impl Default for TextFieldState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TextFieldState {
@@ -345,7 +350,7 @@ impl TextFieldState {
     }
     pub fn caret_visible(&self) -> bool {
         const PERIOD: Duration = Duration::from_millis(500);
-        ((Instant::now() - self.blink_start).as_millis() / PERIOD.as_millis() as u128) % 2 == 0
+        ((Instant::now() - self.blink_start).as_millis() / PERIOD.as_millis()).is_multiple_of(2)
     }
 
     pub fn set_inner_width(&mut self, w_px: f32) {

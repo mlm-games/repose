@@ -23,7 +23,7 @@ pub fn screen() -> View {
                 .collect::<Vec<_>>(),
         )
     });
-    let scroll = remember_with_key("lazy", || LazyColumnState::new());
+    let scroll = remember_with_key("lazy", LazyColumnState::new);
 
     LazyColumn(
         items.get(),

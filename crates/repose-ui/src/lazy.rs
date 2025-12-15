@@ -3,7 +3,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 
-use crate::ViewExt;
 
 pub struct LazyColumnState {
     scroll_offset: Signal<f32>,
@@ -12,6 +11,12 @@ pub struct LazyColumnState {
     vel: RefCell<f32>,
     last_t: RefCell<Instant>,
     animating: RefCell<bool>,
+}
+
+impl Default for LazyColumnState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LazyColumnState {

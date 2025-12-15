@@ -6,7 +6,7 @@ pub type SignalId = usize;
 pub type ObserverId = usize;
 
 thread_local! {
-    static CURRENT_OBSERVER: RefCell<Option<ObserverId>> = RefCell::new(None);
+    static CURRENT_OBSERVER: RefCell<Option<ObserverId>> = const { RefCell::new(None) };
     static GRAPH: RefCell<DepGraph> = RefCell::new(DepGraph::default());
 }
 
@@ -75,7 +75,7 @@ pub fn signal_changed(sig: SignalId) {
             drop(g);
             // run under tracking
             CURRENT_OBSERVER.with(|co| {
-                let prev = co.borrow().clone();
+                let prev = *co.borrow();
                 *co.borrow_mut() = Some(obs);
                 GRAPH.with(|g2| {
                     if let Some(f) = g2.borrow().observers.get(&obs).cloned() {
@@ -114,7 +114,7 @@ pub fn run_observer_now(id: ObserverId) {
         g.remove_all_edges_for(id);
         drop(g);
         CURRENT_OBSERVER.with(|co| {
-            let prev = co.borrow().clone();
+            let prev = *co.borrow();
             *co.borrow_mut() = Some(id);
             GRAPH.with(|g2| {
                 if let Some(f) = g2.borrow().observers.get(&id).cloned() {

@@ -37,14 +37,11 @@ use std::collections::HashMap;
 use crate::Color;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum TextDirection {
+    #[default]
     Ltr,
     Rtl,
-}
-impl Default for TextDirection {
-    fn default() -> Self {
-        TextDirection::Ltr
-    }
 }
 
 thread_local! {
@@ -77,11 +74,10 @@ pub fn with_text_direction<R>(dir: TextDirection, f: impl FnOnce() -> R) -> R {
 pub fn text_direction() -> TextDirection {
     LOCALS_STACK.with(|st| {
         for frame in st.borrow().iter().rev() {
-            if let Some(v) = frame.get(&std::any::TypeId::of::<TextDirection>()) {
-                if let Some(d) = v.downcast_ref::<TextDirection>() {
+            if let Some(v) = frame.get(&std::any::TypeId::of::<TextDirection>())
+                && let Some(d) = v.downcast_ref::<TextDirection>() {
                     return *d;
                 }
-            }
         }
         TextDirection::default()
     })
@@ -224,11 +220,10 @@ pub fn with_text_scale<R>(ts: TextScale, f: impl FnOnce() -> R) -> R {
 pub fn theme() -> Theme {
     LOCALS_STACK.with(|st| {
         for frame in st.borrow().iter().rev() {
-            if let Some(v) = frame.get(&TypeId::of::<Theme>()) {
-                if let Some(t) = v.downcast_ref::<Theme>() {
+            if let Some(v) = frame.get(&TypeId::of::<Theme>())
+                && let Some(t) = v.downcast_ref::<Theme>() {
                     return *t;
                 }
-            }
         }
         Theme::default()
     })
@@ -237,11 +232,10 @@ pub fn theme() -> Theme {
 pub fn density() -> Density {
     LOCALS_STACK.with(|st| {
         for frame in st.borrow().iter().rev() {
-            if let Some(v) = frame.get(&TypeId::of::<Density>()) {
-                if let Some(d) = v.downcast_ref::<Density>() {
+            if let Some(v) = frame.get(&TypeId::of::<Density>())
+                && let Some(d) = v.downcast_ref::<Density>() {
                     return *d;
                 }
-            }
         }
         Density::default()
     })
@@ -250,11 +244,10 @@ pub fn density() -> Density {
 pub fn text_scale() -> TextScale {
     LOCALS_STACK.with(|st| {
         for frame in st.borrow().iter().rev() {
-            if let Some(v) = frame.get(&TypeId::of::<TextScale>()) {
-                if let Some(ts) = v.downcast_ref::<TextScale>() {
+            if let Some(v) = frame.get(&TypeId::of::<TextScale>())
+                && let Some(ts) = v.downcast_ref::<TextScale>() {
                     return *ts;
                 }
-            }
         }
         TextScale::default()
     })

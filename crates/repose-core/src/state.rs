@@ -1,6 +1,5 @@
 use std::any::Any;
-use std::cell::RefCell;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 
 use crate::{Signal, reactive, remember_with_key, scoped_effect, signal};
 

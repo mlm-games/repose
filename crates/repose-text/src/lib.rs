@@ -1,6 +1,6 @@
 use ahash::{AHashMap, AHasher};
 use cosmic_text::{
-    Attrs, Buffer, CacheKey, FontSystem, LayoutRunIter, Metrics, Shaping, SwashCache, SwashContent,
+    Attrs, Buffer, CacheKey, FontSystem, Metrics, Shaping, SwashCache, SwashContent,
 };
 use once_cell::sync::OnceCell;
 use std::{
@@ -50,11 +50,10 @@ impl<K: std::hash::Hash + Eq + Clone, V> Lru<K, V> {
             }
             return;
         }
-        if self.map.len() >= self.cap {
-            if let Some(old) = self.order.pop_front() {
+        if self.map.len() >= self.cap
+            && let Some(old) = self.order.pop_front() {
                 self.map.remove(&old);
             }
-        }
         self.order.push_back(k.clone());
         self.map.insert(k, v);
     }
@@ -334,11 +333,10 @@ pub fn wrap_lines(
     // Shape once and reuse positions/byte mapping.
     let m = metrics_for_textfield(text, px);
     // Fast path: fits
-    if let Some(&last) = m.positions.last() {
-        if last <= max_width + 0.5 {
+    if let Some(&last) = m.positions.last()
+        && last <= max_width + 0.5 {
             return (vec![text.to_string()], false);
         }
-    }
 
     // Helper: width of substring [start..end] in bytes
     let width_of = |start_b: usize, end_b: usize| -> f32 {
@@ -398,14 +396,13 @@ pub fn wrap_lines(
         }
 
         // Check max_lines
-        if let Some(ml) = max_lines {
-            if out.len() >= ml {
+        if let Some(ml) = max_lines
+            && out.len() >= ml {
                 truncated = true;
                 // Stop; caller may ellipsize the last line
                 line_start = line_start.min(text.len());
                 break;
             }
-        }
 
         // Reset best_break for new line
         best_break = line_start;
@@ -424,7 +421,7 @@ pub fn wrap_lines(
     }
 
     // Push tail if allowed
-    if line_start < text.len() && max_lines.map_or(true, |ml| out.len() < ml) {
+    if line_start < text.len() && max_lines.is_none_or(|ml| out.len() < ml) {
         out.push(text[line_start..].trim_end().to_string());
     }
 
@@ -448,11 +445,10 @@ pub fn ellipsize_line(text: &str, px: f32, max_width: f32) -> String {
         return s;
     }
     let m = metrics_for_textfield(text, px);
-    if let Some(&last) = m.positions.last() {
-        if last <= max_width + 0.5 {
+    if let Some(&last) = m.positions.last()
+        && last <= max_width + 0.5 {
             return text.to_string();
         }
-    }
     let el = "…";
     let e_w = ellipsis_width(px);
     if e_w >= max_width {

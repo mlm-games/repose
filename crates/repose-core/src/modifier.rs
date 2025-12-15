@@ -383,7 +383,7 @@ impl Modifier {
         self.painter = Some(Rc::new(f));
         self
     }
-    pub fn scale(mut self, s: f32) -> Self {
+    pub fn scale(self, s: f32) -> Self {
         self.scale2(s, s)
     }
     pub fn scale2(mut self, sx: f32, sy: f32) -> Self {

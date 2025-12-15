@@ -931,7 +931,7 @@ pub fn layout_and_paint(
 
                     if *soft_wrap {
                         let (ls, trunc) = repose_text::wrap_lines(
-                            &text,
+                            text,
                             size_px_val,
                             wrap_w_px,
                             *max_lines,
@@ -986,27 +986,27 @@ pub fn layout_and_paint(
                     width: known.width.unwrap_or(px(220.0)),
                     height: px(36.0),
                 },
-                Some(NodeCtx::Checkbox { .. }) => taffy::geometry::Size {
+                Some(NodeCtx::Checkbox) => taffy::geometry::Size {
                     width: known.width.unwrap_or(px(24.0)),
                     height: px(24.0),
                 },
-                Some(NodeCtx::Radio { .. }) => taffy::geometry::Size {
+                Some(NodeCtx::Radio) => taffy::geometry::Size {
                     width: known.width.unwrap_or(px(18.0)),
                     height: px(18.0),
                 },
-                Some(NodeCtx::Switch { .. }) => taffy::geometry::Size {
+                Some(NodeCtx::Switch) => taffy::geometry::Size {
                     width: known.width.unwrap_or(px(46.0)),
                     height: px(28.0),
                 },
-                Some(NodeCtx::Slider { .. }) => taffy::geometry::Size {
+                Some(NodeCtx::Slider) => taffy::geometry::Size {
                     width: known.width.unwrap_or(px(200.0)),
                     height: px(28.0),
                 },
-                Some(NodeCtx::Range { .. }) => taffy::geometry::Size {
+                Some(NodeCtx::Range) => taffy::geometry::Size {
                     width: known.width.unwrap_or(px(220.0)),
                     height: px(28.0),
                 },
-                Some(NodeCtx::Progress { .. }) => taffy::geometry::Size {
+                Some(NodeCtx::Progress) => taffy::geometry::Size {
                     width: known.width.unwrap_or(px(200.0)),
                     height: px(12.0),
                 },
@@ -1349,7 +1349,7 @@ pub fn layout_and_paint(
         let is_focused = focused == Some(v.id);
 
         // Background
-        if let Some(bg_brush) = v.modifier.background.clone() {
+        if let Some(bg_brush) = v.modifier.background {
             scene.nodes.push(SceneNode::Rect {
                 rect,
                 brush: mul_alpha_brush(bg_brush, alpha_accum),
@@ -1479,11 +1479,10 @@ pub fn layout_and_paint(
                 }
 
                 // Horizontal ellipsis for non-wrapped text
-                if !*soft_wrap && matches!(overflow, TextOverflow::Ellipsis) {
-                    if approx_w_px > max_w_px + 0.5 {
+                if !*soft_wrap && matches!(overflow, TextOverflow::Ellipsis)
+                    && approx_w_px > max_w_px + 0.5 {
                         lines = vec![repose_text::ellipsize_line(text, size_px_val, max_w_px)];
                     }
-                }
 
                 for (i, ln) in lines.iter().enumerate() {
                     scene.nodes.push(SceneNode::Text {
@@ -1672,8 +1671,8 @@ pub fn layout_and_paint(
                     }
 
                     // Composition underline
-                    if let Some(range) = &state.composition {
-                        if range.start < range.end && !text_val.is_empty() {
+                    if let Some(range) = &state.composition
+                        && range.start < range.end && !text_val.is_empty() {
                             let i0 = byte_to_char_index(&m, range.start);
                             let i1 = byte_to_char_index(&m, range.end);
                             let sx_px =
@@ -1696,7 +1695,6 @@ pub fn layout_and_paint(
                                 radius: 0.0,
                             });
                         }
-                    }
 
                     // Text (offset by scroll)
                     let text_color = if text_val.is_empty() {

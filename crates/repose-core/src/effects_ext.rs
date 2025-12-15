@@ -7,8 +7,8 @@ pub fn disposable_effect<K: PartialEq + Clone + 'static>(
     effect: impl FnOnce() -> Box<dyn FnOnce()> + 'static,
 ) {
     scoped_effect(|| {
-        let cleanup = effect();
-        cleanup
+        
+        (effect()) as _
     });
 }
 

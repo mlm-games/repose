@@ -33,6 +33,12 @@ pub enum SwipeDirection {
     Right,
 }
 
+impl Default for GestureDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GestureDetector {
     pub fn new() -> Self {
         Self {
@@ -54,15 +60,13 @@ impl GestureDetector {
                 self.drag_start = Some(event.position);
 
                 // Check for double tap
-                if let Some(last) = self.last_tap {
-                    if last.elapsed() < Duration::from_millis(300) {
+                if let Some(last) = self.last_tap
+                    && last.elapsed() < Duration::from_millis(300) {
                         if let Some(cb) = &self.on_double_tap {
                             cb(event.position);
                         }
                         self.last_tap = None;
-                        return;
                     }
-                }
             }
             PointerEventKind::Up(_) => {
                 if let Some((start_time, start_pos)) = self.press_start {
@@ -89,12 +93,10 @@ impl GestureDetector {
                                 } else {
                                     SwipeDirection::Left
                                 }
+                            } else if dy > 0.0 {
+                                SwipeDirection::Down
                             } else {
-                                if dy > 0.0 {
-                                    SwipeDirection::Down
-                                } else {
-                                    SwipeDirection::Up
-                                }
+                                SwipeDirection::Up
                             };
                             cb(dir);
                         }
@@ -104,8 +106,8 @@ impl GestureDetector {
                 self.drag_start = None;
             }
             PointerEventKind::Move => {
-                if let Some(start) = self.drag_start {
-                    if let Some(cb) = &self.on_drag {
+                if let Some(start) = self.drag_start
+                    && let Some(cb) = &self.on_drag {
                         cb(DragEvent {
                             start,
                             current: event.position,
@@ -116,17 +118,15 @@ impl GestureDetector {
                             velocity: Vec2::default(), // Calculate from history
                         });
                     }
-                }
 
                 // Long press detection
-                if let Some((start_time, pos)) = self.press_start {
-                    if start_time.elapsed() > Duration::from_millis(500) {
+                if let Some((start_time, pos)) = self.press_start
+                    && start_time.elapsed() > Duration::from_millis(500) {
                         if let Some(cb) = &self.on_long_press {
                             cb(pos);
                         }
                         self.press_start = None; // Fire once
                     }
-                }
             }
             _ => {}
         }

@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use crate::{Box, ViewExt, navigation::Transition};
 use repose_core::*;
 
-use crate::anim::{self, animate_f32};
+use crate::anim::animate_f32;
 
 pub fn AnimatedVisibility(
     key: impl Into<String>,

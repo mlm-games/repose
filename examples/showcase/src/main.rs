@@ -1,4 +1,3 @@
-use repose_core::prelude::*;
 use repose_platform::run_desktop_app;
 
 mod app;

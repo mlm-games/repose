@@ -8,7 +8,7 @@ use crate::{Rect, Scene, View, semantics::Role};
 
 thread_local! {
     pub static COMPOSER: RefCell<Composer> = RefCell::new(Composer::default());
-    static ROOT_SCOPE: RefCell<Option<Scope>> = RefCell::new(None);
+    static ROOT_SCOPE: RefCell<Option<Scope>> = const { RefCell::new(None) };
 }
 
 #[derive(Default)]
@@ -171,6 +171,12 @@ pub struct Scheduler {
     next_id: u64,
     pub focused: Option<u64>,
     pub size: (u32, u32),
+}
+
+impl Default for Scheduler {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Scheduler {

@@ -1,13 +1,10 @@
 use std::collections::HashMap;
-use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::{borrow::Cow, sync::Once};
 
-use ab_glyph::{Font, FontArc, Glyph, PxScale, ScaleFont, point};
-use cosmic_text;
-use fontdb::Database;
+use ab_glyph::ScaleFont;
 use image::GenericImageView;
-use repose_core::{Brush, Color, GlyphRasterConfig, RenderBackend, Scene, SceneNode, Transform};
+use repose_core::{Brush, GlyphRasterConfig, RenderBackend, Scene, SceneNode, Transform};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 static ROT_WARN_ONCE: Once = Once::new();
