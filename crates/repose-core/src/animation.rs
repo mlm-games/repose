@@ -170,8 +170,8 @@ pub fn set_clock(clock: Box<dyn Clock>) {
     *lock.write() = clock;
 }
 /// Install default system clock if none present (idempotent).
-pub(crate) fn ensure_system_clock() {
-    let lock = CLOCK.get_or_init(|| RwLock::new(Box::new(SystemClock) as Box<dyn Clock>));
+pub fn ensure_system_clock() {
+    let _ = CLOCK.get_or_init(|| RwLock::new(Box::new(SystemClock) as Box<dyn Clock>));
 }
 
 /// A test clock you can drive deterministically.

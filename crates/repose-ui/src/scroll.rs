@@ -425,7 +425,6 @@ pub fn HorizontalScrollArea(
 ) -> View {
     let st_clone = state.clone();
     let on_scroll = {
-        let st = state.clone();
         Rc::new(move |d: Vec2| -> Vec2 {
             Vec2 {
                 x: st_clone.scroll_immediate(d.x),

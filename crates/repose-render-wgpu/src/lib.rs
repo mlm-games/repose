@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::{borrow::Cow, sync::Once};
 
-use ab_glyph::ScaleFont;
-use image::GenericImageView;
 use repose_core::{Brush, GlyphRasterConfig, RenderBackend, Scene, SceneNode, Transform};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
