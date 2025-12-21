@@ -98,7 +98,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
         capture_id: Option<u64>,
         pressed_ids: HashSet<u64>,
         key_pressed_active: Option<u64>, // for Space/Enter press/release activation
-        clipboard: Option<arboard::Clipboard>,
+        clipboard: Option<clipawl::Clipboard>,
         a11y: Box<dyn A11yBridge>,
         last_focus: Option<u64>,
     }
@@ -148,11 +148,32 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
             let caret_x_px = m.positions.get(st.caret_index()).copied().unwrap_or(0.0);
             st.ensure_caret_visible(caret_x_px, st.inner_width);
         }
+
+        fn copy_to_clipboard(&mut self, text: String) {
+            if let Some(cb) = &mut self.clipboard {
+                // pollster::block_on executes synchronously (since CAwl is async)
+                let _ = pollster::block_on(cb.set_text(&text));
+            }
+        }
+
+        fn paste_from_clipboard(&mut self) -> Option<String> {
+            if let Some(cb) = &mut self.clipboard {
+                match pollster::block_on(cb.get_text()) {
+                    Ok(t) => Some(t),
+                    Err(e) => {
+                        eprintln!("Paste error: {}", e);
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        }
     }
 
     impl ApplicationHandler<()> for App {
         fn resumed(&mut self, el: &winit::event_loop::ActiveEventLoop) {
-            self.clipboard = arboard::Clipboard::new().ok();
+            self.clipboard = clipawl::Clipboard::new().ok();
             // Create the window once when app resumes.
             if self.window.is_none() {
                 match el.create_window(
@@ -721,10 +742,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                             let key = self.tf_key_of(fid);
                                             if let Some(state) = self.textfield_states.get(&key) {
                                                 let txt = state.borrow().selected_text();
-                                                if !txt.is_empty()
-                                                    && let Some(cb) = self.clipboard.as_mut()
-                                                {
-                                                    let _ = cb.set_text(txt);
+                                                if !txt.is_empty() {
+                                                    let _ = self.copy_to_clipboard(txt);
                                                 }
                                             }
                                         }
@@ -733,13 +752,14 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     PhysicalKey::Code(KeyCode::KeyX) => {
                                         if let Some(fid) = self.sched.focused {
                                             let key = self.tf_key_of(fid);
-                                            if let Some(state_rc) = self.textfield_states.get(&key)
+                                            if let Some(state_rc) =
+                                                self.textfield_states.get(&key).cloned()
                                             {
                                                 // Copy
                                                 let txt = state_rc.borrow().selected_text();
                                                 if !txt.is_empty() {
-                                                    if let Some(cb) = self.clipboard.as_mut() {
-                                                        let _ = cb.set_text(txt.clone());
+                                                    {
+                                                        let _ = self.copy_to_clipboard(txt.clone());
                                                     }
                                                     // Cut (delete selection)
                                                     {
@@ -760,9 +780,9 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     PhysicalKey::Code(KeyCode::KeyV) => {
                                         if let Some(fid) = self.sched.focused {
                                             let key = self.tf_key_of(fid);
-                                            if let Some(state_rc) = self.textfield_states.get(&key)
-                                                && let Some(cb) = self.clipboard.as_mut()
-                                                && let Ok(mut txt) = cb.get_text()
+                                            if let Some(state_rc) =
+                                                self.textfield_states.get(&key).cloned()
+                                                && let Some(mut txt) = self.paste_from_clipboard()
                                             {
                                                 // Single-line TextField: strip control/newlines
                                                 txt.retain(|c| {

@@ -6,7 +6,7 @@ license = "GPL-3.0-or-later"
 description = "Platform runners (desktop via winit; Android alpha)"
 
 [features]
-desktop = ["winit", "repose-render-wgpu", "arboard"]
+desktop = ["winit", "repose-render-wgpu"]
 android = ["winit/android-native-activity", "repose-render-wgpu"]
 
 [dependencies]
@@ -18,7 +18,8 @@ repose-devtools.workspace = true
 winit = { workspace = true, optional = true }
 log = { workspace = true }
 anyhow = { workspace = true }
-arboard = { workspace = true, optional = true }
+clipawl = { workspace = true, features = ["linux-wayland"] }
+pollster = "0.4.0"                                                                          # trying to avoid tokio but might have to add later...
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

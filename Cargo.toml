@@ -33,7 +33,7 @@ smallvec = "1"
 slotmap = "1"
 bitflags = "2"
 unicode-segmentation = "1.12"
-arboard = { version = "3.6", features = ["wayland-data-control"] }
+clipawl = { version = "0.2.1" }
 
 
 # Layout
