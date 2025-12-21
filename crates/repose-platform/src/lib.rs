@@ -1,15 +1,16 @@
 //! Platform runners
 use repose_core::locals::dp_to_px;
 use repose_core::*;
-use repose_ui::textfield::{
-    TF_FONT_DP, TF_PADDING_X_DP, index_for_x_bytes, measure_text,
-};
+use repose_ui::textfield::{TF_FONT_DP, TF_PADDING_X_DP, index_for_x_bytes, measure_text};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 
 #[cfg(all(feature = "android", target_os = "android"))]
 pub mod android;
+
+#[cfg(all(target_arch = "wasm32"))]
+pub mod web;
 
 /// Compose a single frame with density and text-scale applied, returning Frame.
 pub fn compose_frame<F>(
@@ -224,57 +225,58 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 
                     // Inspector hover
                     if self.inspector.hud.inspector_enabled
-                        && let Some(f) = &self.frame_cache {
-                            let hover_rect = f
-                                .hit_regions
-                                .iter()
-                                .find(|h| {
-                                    h.rect.contains(Vec2 {
-                                        x: self.mouse_pos_px.0,
-                                        y: self.mouse_pos_px.1,
-                                    })
+                        && let Some(f) = &self.frame_cache
+                    {
+                        let hover_rect = f
+                            .hit_regions
+                            .iter()
+                            .find(|h| {
+                                h.rect.contains(Vec2 {
+                                    x: self.mouse_pos_px.0,
+                                    y: self.mouse_pos_px.1,
                                 })
-                                .map(|h| h.rect);
-                            self.inspector.hud.set_hovered(hover_rect);
-                            self.request_redraw();
-                        }
+                            })
+                            .map(|h| h.rect);
+                        self.inspector.hud.set_hovered(hover_rect);
+                        self.request_redraw();
+                    }
 
                     if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id)
                         && let Some(_sem) = f
                             .semantics_nodes
                             .iter()
                             .find(|n| n.id == cid && n.role == Role::TextField)
-                        {
-                            let key = self.tf_key_of(cid);
-                            if let Some(state_rc) = self.textfield_states.get(&key) {
-                                let mut state = state_rc.borrow_mut();
-                                // inner content left edge in px
-                                let inner_x_px = f
-                                    .hit_regions
-                                    .iter()
-                                    .find(|h| h.id == cid)
-                                    .map(|h| h.rect.x + dp_to_px(TF_PADDING_X_DP))
-                                    .unwrap_or(0.0);
-                                let content_x_px =
-                                    self.mouse_pos_px.0 - inner_x_px + state.scroll_offset;
-                                let font_dp = TF_FONT_DP as u32;
-                                let idx =
-                                    index_for_x_bytes(&state.text, font_dp, content_x_px.max(0.0));
-                                state.drag_to(idx);
+                    {
+                        let key = self.tf_key_of(cid);
+                        if let Some(state_rc) = self.textfield_states.get(&key) {
+                            let mut state = state_rc.borrow_mut();
+                            // inner content left edge in px
+                            let inner_x_px = f
+                                .hit_regions
+                                .iter()
+                                .find(|h| h.id == cid)
+                                .map(|h| h.rect.x + dp_to_px(TF_PADDING_X_DP))
+                                .unwrap_or(0.0);
+                            let content_x_px =
+                                self.mouse_pos_px.0 - inner_x_px + state.scroll_offset;
+                            let font_dp = TF_FONT_DP as u32;
+                            let idx =
+                                index_for_x_bytes(&state.text, font_dp, content_x_px.max(0.0));
+                            state.drag_to(idx);
 
-                                // Scroll caret into view
-                                let m = measure_text(&state.text, font_dp);
-                                let caret_x_px =
-                                    m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
-                                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
-                                    state.ensure_caret_visible(
-                                        caret_x_px,
-                                        hit.rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
-                                    );
-                                }
-                                self.request_redraw();
+                            // Scroll caret into view
+                            let m = measure_text(&state.text, font_dp);
+                            let caret_x_px =
+                                m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
+                            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
+                                state.ensure_caret_visible(
+                                    caret_x_px,
+                                    hit.rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
+                                );
                             }
+                            self.request_redraw();
                         }
+                    }
 
                     // Pointer routing: hover + move/capture
                     if let Some(f) = &self.frame_cache {
@@ -290,29 +292,31 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         if new_hover != self.hover_id {
                             if let Some(prev_id) = self.hover_id
                                 && let Some(prev) = f.hit_regions.iter().find(|h| h.id == prev_id)
-                                    && let Some(cb) = &prev.on_pointer_leave {
-                                        let pe = repose_core::input::PointerEvent {
-                                            id: repose_core::input::PointerId(0),
-                                            kind: repose_core::input::PointerKind::Mouse,
-                                            event: repose_core::input::PointerEventKind::Leave,
-                                            position: pos,
-                                            pressure: 1.0,
-                                            modifiers: self.modifiers,
-                                        };
-                                        cb(pe);
-                                    }
+                                && let Some(cb) = &prev.on_pointer_leave
+                            {
+                                let pe = repose_core::input::PointerEvent {
+                                    id: repose_core::input::PointerId(0),
+                                    kind: repose_core::input::PointerKind::Mouse,
+                                    event: repose_core::input::PointerEventKind::Leave,
+                                    position: pos,
+                                    pressure: 1.0,
+                                    modifiers: self.modifiers,
+                                };
+                                cb(pe);
+                            }
                             if let Some(h) = top
-                                && let Some(cb) = &h.on_pointer_enter {
-                                    let pe = repose_core::input::PointerEvent {
-                                        id: repose_core::input::PointerId(0),
-                                        kind: repose_core::input::PointerKind::Mouse,
-                                        event: repose_core::input::PointerEventKind::Enter,
-                                        position: pos,
-                                        pressure: 1.0,
-                                        modifiers: self.modifiers,
-                                    };
-                                    cb(pe);
-                                }
+                                && let Some(cb) = &h.on_pointer_enter
+                            {
+                                let pe = repose_core::input::PointerEvent {
+                                    id: repose_core::input::PointerId(0),
+                                    kind: repose_core::input::PointerKind::Mouse,
+                                    event: repose_core::input::PointerEventKind::Enter,
+                                    position: pos,
+                                    pressure: 1.0,
+                                    modifiers: self.modifiers,
+                                };
+                                cb(pe);
+                            }
                             self.hover_id = new_hover;
                         }
 
@@ -329,13 +333,15 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         // Move delivery (captured first)
                         if let Some(cid) = self.capture_id {
                             if let Some(h) = f.hit_regions.iter().find(|h| h.id == cid)
-                                && let Some(cb) = &h.on_pointer_move {
-                                    cb(pe.clone());
-                                }
-                        } else if let Some(h) = &top
-                            && let Some(cb) = &h.on_pointer_move {
-                                cb(pe);
+                                && let Some(cb) = &h.on_pointer_move
+                            {
+                                cb(pe.clone());
                             }
+                        } else if let Some(h) = &top
+                            && let Some(cb) = &h.on_pointer_move
+                        {
+                            cb(pe);
+                        }
                     }
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
@@ -499,16 +505,15 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         };
                         if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
                             && hit.rect.contains(pos)
-                                && let Some(cb) = &hit.on_click {
-                                    cb();
-                                    // A11y: announce activation (mouse)
-                                    if let Some(node) =
-                                        f.semantics_nodes.iter().find(|n| n.id == cid)
-                                    {
-                                        let label = node.label.as_deref().unwrap_or("");
-                                        self.a11y.announce(&format!("Activated {}", label));
-                                    }
-                                }
+                            && let Some(cb) = &hit.on_click
+                        {
+                            cb();
+                            // A11y: announce activation (mouse)
+                            if let Some(node) = f.semantics_nodes.iter().find(|n| n.id == cid) {
+                                let label = node.label.as_deref().unwrap_or("");
+                                self.a11y.announce(&format!("Activated {}", label));
+                            }
+                        }
                     }
                     // TextField drag end
                     if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id)
@@ -516,12 +521,12 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             .semantics_nodes
                             .iter()
                             .find(|n| n.id == cid && n.role == Role::TextField)
-                        {
-                            let key = self.tf_key_of(cid);
-                            if let Some(state_rc) = self.textfield_states.get(&key) {
-                                state_rc.borrow_mut().end_drag();
-                            }
+                    {
+                        let key = self.tf_key_of(cid);
+                        if let Some(state_rc) = self.textfield_states.get(&key) {
+                            state_rc.borrow_mut().end_drag();
                         }
+                    }
                     self.capture_id = None;
                 }
                 WindowEvent::ModifiersChanged(new_mods) => {
@@ -550,52 +555,54 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     // Focus traversal: Tab / Shift+Tab
                     if matches!(key_event.physical_key, PhysicalKey::Code(KeyCode::Tab)) {
                         // Only act on initial press, ignore repeats
-                        if key_event.state == ElementState::Pressed && !key_event.repeat
-                            && let Some(f) = &self.frame_cache {
-                                let chain = &f.focus_chain;
-                                if !chain.is_empty() {
-                                    // If a button was “pressed” via keyboard, clear it when we move focus
-                                    if let Some(active) = self.key_pressed_active.take() {
-                                        self.pressed_ids.remove(&active);
-                                    }
+                        if key_event.state == ElementState::Pressed
+                            && !key_event.repeat
+                            && let Some(f) = &self.frame_cache
+                        {
+                            let chain = &f.focus_chain;
+                            if !chain.is_empty() {
+                                // If a button was “pressed” via keyboard, clear it when we move focus
+                                if let Some(active) = self.key_pressed_active.take() {
+                                    self.pressed_ids.remove(&active);
+                                }
 
-                                    let shift = self.modifiers.shift;
-                                    let current = self.sched.focused;
-                                    let next = if let Some(cur) = current {
-                                        if let Some(idx) = chain.iter().position(|&id| id == cur) {
-                                            if shift {
-                                                if idx == 0 {
-                                                    chain[chain.len() - 1]
-                                                } else {
-                                                    chain[idx - 1]
-                                                }
+                                let shift = self.modifiers.shift;
+                                let current = self.sched.focused;
+                                let next = if let Some(cur) = current {
+                                    if let Some(idx) = chain.iter().position(|&id| id == cur) {
+                                        if shift {
+                                            if idx == 0 {
+                                                chain[chain.len() - 1]
                                             } else {
-                                                chain[(idx + 1) % chain.len()]
+                                                chain[idx - 1]
                                             }
                                         } else {
-                                            chain[0]
+                                            chain[(idx + 1) % chain.len()]
                                         }
                                     } else {
                                         chain[0]
-                                    };
-                                    self.sched.focused = Some(next);
-
-                                    // IME only for TextField
-                                    if let Some(win) = &self.window {
-                                        if f.semantics_nodes
-                                            .iter()
-                                            .any(|n| n.id == next && n.role == Role::TextField)
-                                        {
-                                            win.set_ime_allowed(true);
-                                            win.set_ime_purpose(ImePurpose::Normal);
-                                        } else {
-                                            win.set_ime_allowed(false);
-                                        }
                                     }
-                                    self.announce_focus_change();
-                                    self.request_redraw();
+                                } else {
+                                    chain[0]
+                                };
+                                self.sched.focused = Some(next);
+
+                                // IME only for TextField
+                                if let Some(win) = &self.window {
+                                    if f.semantics_nodes
+                                        .iter()
+                                        .any(|n| n.id == next && n.role == Role::TextField)
+                                    {
+                                        win.set_ime_allowed(true);
+                                        win.set_ime_purpose(ImePurpose::Normal);
+                                    } else {
+                                        win.set_ime_allowed(false);
+                                    }
                                 }
+                                self.announce_focus_change();
+                                self.request_redraw();
                             }
+                        }
                         return; // swallow Tab
                     }
 
@@ -627,31 +634,34 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     }
 
                     // Keyboard activation for focused TextField submit on Enter
-                    if key_event.state == ElementState::Pressed && !key_event.repeat
+                    if key_event.state == ElementState::Pressed
+                        && !key_event.repeat
                         && let PhysicalKey::Code(KeyCode::Enter) = key_event.physical_key
-                            && let Some(focused_id) = self.sched.focused
-                                && let Some(f) = &self.frame_cache
-                                    && let Some(hit) =
-                                        f.hit_regions.iter().find(|h| h.id == focused_id)
-                                        && let Some(on_submit) = &hit.on_text_submit {
-                                            let key = self.tf_key_of(focused_id);
+                        && let Some(focused_id) = self.sched.focused
+                        && let Some(f) = &self.frame_cache
+                        && let Some(hit) = f.hit_regions.iter().find(|h| h.id == focused_id)
+                        && let Some(on_submit) = &hit.on_text_submit
+                    {
+                        let key = self.tf_key_of(focused_id);
 
-                                            if let Some(state) = self.textfield_states.get(&key) {
-                                                let text = state.borrow().text.clone();
-                                                on_submit(text);
-                                                self.request_redraw();
-                                                return; // don’t continue as button activation
-                                            }
-                                        }
+                        if let Some(state) = self.textfield_states.get(&key) {
+                            let text = state.borrow().text.clone();
+                            on_submit(text);
+                            self.request_redraw();
+                            return; // don’t continue as button activation
+                        }
+                    }
 
                     if key_event.state == ElementState::Pressed {
                         // Inspector hotkey: Ctrl+Shift+I
-                        if self.modifiers.ctrl && self.modifiers.shift
-                            && let PhysicalKey::Code(KeyCode::KeyI) = key_event.physical_key {
-                                self.inspector.hud.toggle_inspector();
-                                self.request_redraw();
-                                return;
-                            }
+                        if self.modifiers.ctrl
+                            && self.modifiers.shift
+                            && let PhysicalKey::Code(KeyCode::KeyI) = key_event.physical_key
+                        {
+                            self.inspector.hud.toggle_inspector();
+                            self.request_redraw();
+                            return;
+                        }
 
                         // TextField navigation/edit
                         if let Some(focused_id) = self.sched.focused {
@@ -712,9 +722,10 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                             if let Some(state) = self.textfield_states.get(&key) {
                                                 let txt = state.borrow().selected_text();
                                                 if !txt.is_empty()
-                                                    && let Some(cb) = self.clipboard.as_mut() {
-                                                        let _ = cb.set_text(txt);
-                                                    }
+                                                    && let Some(cb) = self.clipboard.as_mut()
+                                                {
+                                                    let _ = cb.set_text(txt);
+                                                }
                                             }
                                         }
                                         return;
@@ -751,24 +762,21 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                             let key = self.tf_key_of(fid);
                                             if let Some(state_rc) = self.textfield_states.get(&key)
                                                 && let Some(cb) = self.clipboard.as_mut()
-                                                    && let Ok(mut txt) = cb.get_text() {
-                                                        // Single-line TextField: strip control/newlines
-                                                        txt.retain(|c| {
-                                                            !c.is_control()
-                                                                && c != '\n'
-                                                                && c != '\r'
-                                                        });
-                                                        if !txt.is_empty() {
-                                                            let mut st = state_rc.borrow_mut();
-                                                            st.insert_text(&txt);
-                                                            let new_text = st.text.clone();
-                                                            self.notify_text_change(
-                                                                focused_id, new_text,
-                                                            );
-                                                            App::tf_ensure_caret_visible(&mut st);
-                                                            self.request_redraw();
-                                                        }
-                                                    }
+                                                && let Ok(mut txt) = cb.get_text()
+                                            {
+                                                // Single-line TextField: strip control/newlines
+                                                txt.retain(|c| {
+                                                    !c.is_control() && c != '\n' && c != '\r'
+                                                });
+                                                if !txt.is_empty() {
+                                                    let mut st = state_rc.borrow_mut();
+                                                    st.insert_text(&txt);
+                                                    let new_text = st.text.clone();
+                                                    self.notify_text_change(focused_id, new_text);
+                                                    App::tf_ensure_caret_visible(&mut st);
+                                                    self.request_redraw();
+                                                }
+                                            }
                                         }
                                         return;
                                     }
@@ -782,23 +790,25 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             && !self.modifiers.ctrl
                             && !self.modifiers.alt
                             && !self.modifiers.meta
-                            && let Some(raw) = key_event.text.as_deref() {
-                                let text: String = raw
-                                    .chars()
-                                    .filter(|c| !c.is_control() && *c != '\n' && *c != '\r')
-                                    .collect();
-                                if !text.is_empty()
-                                    && let Some(fid) = self.sched.focused {
-                                        let key = self.tf_key_of(fid);
-                                        if let Some(state_rc) = self.textfield_states.get(&key) {
-                                            let mut st = state_rc.borrow_mut();
-                                            st.insert_text(&text);
-                                            self.notify_text_change(fid, text.clone());
-                                            App::tf_ensure_caret_visible(&mut st);
-                                            self.request_redraw();
-                                        }
-                                    }
+                            && let Some(raw) = key_event.text.as_deref()
+                        {
+                            let text: String = raw
+                                .chars()
+                                .filter(|c| !c.is_control() && *c != '\n' && *c != '\r')
+                                .collect();
+                            if !text.is_empty()
+                                && let Some(fid) = self.sched.focused
+                            {
+                                let key = self.tf_key_of(fid);
+                                if let Some(state_rc) = self.textfield_states.get(&key) {
+                                    let mut st = state_rc.borrow_mut();
+                                    st.insert_text(&text);
+                                    self.notify_text_change(fid, text.clone());
+                                    App::tf_ensure_caret_visible(&mut st);
+                                    self.request_redraw();
+                                }
                             }
+                        }
                     } else if key_event.state == ElementState::Released {
                         // Finish keyboard activation on release (Space/Enter)
                         if let Some(active_id) = self.key_pressed_active {
@@ -811,18 +821,16 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     if let Some(f) = &self.frame_cache
                                         && let Some(hit) =
                                             f.hit_regions.iter().find(|h| h.id == active_id)
-                                            && let Some(cb) = &hit.on_click {
-                                                cb();
-                                                if let Some(node) = f
-                                                    .semantics_nodes
-                                                    .iter()
-                                                    .find(|n| n.id == active_id)
-                                                {
-                                                    let label = node.label.as_deref().unwrap_or("");
-                                                    self.a11y
-                                                        .announce(&format!("Activated {}", label));
-                                                }
-                                            }
+                                        && let Some(cb) = &hit.on_click
+                                    {
+                                        cb();
+                                        if let Some(node) =
+                                            f.semantics_nodes.iter().find(|n| n.id == active_id)
+                                        {
+                                            let label = node.label.as_deref().unwrap_or("");
+                                            self.a11y.announce(&format!("Activated {}", label));
+                                        }
+                                    }
                                     self.request_redraw();
                                 }
                                 _ => {}
@@ -843,22 +851,21 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     self.ime_preedit = false;
                                 }
                                 Ime::Preedit(text, cursor) => {
-                                    let cursor_usize =
-                                        cursor.map(|(a, b)| (a, b));
+                                    let cursor_usize = cursor.map(|(a, b)| (a, b));
                                     state.set_composition(text.clone(), cursor_usize);
                                     self.ime_preedit = !text.is_empty();
                                     if let Some(f) = &self.frame_cache
                                         && let Some(hit) =
                                             f.hit_regions.iter().find(|h| h.id == focused_id)
-                                        {
-                                            let inner = Rect {
-                                                x: hit.rect.x + dp_to_px(TF_PADDING_X_DP),
-                                                y: hit.rect.y,
-                                                w: hit.rect.w,
-                                                h: hit.rect.h,
-                                            };
-                                            tf_ensure_visible_in_rect(&mut state, inner);
-                                        }
+                                    {
+                                        let inner = Rect {
+                                            x: hit.rect.x + dp_to_px(TF_PADDING_X_DP),
+                                            y: hit.rect.y,
+                                            w: hit.rect.w,
+                                            h: hit.rect.h,
+                                        };
+                                        tf_ensure_visible_in_rect(&mut state, inner);
+                                    }
                                     // notify on-change if you wired it:
                                     self.notify_text_change(focused_id, state.text.clone());
                                     self.request_redraw();
@@ -869,15 +876,15 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     if let Some(f) = &self.frame_cache
                                         && let Some(hit) =
                                             f.hit_regions.iter().find(|h| h.id == focused_id)
-                                        {
-                                            let inner = Rect {
-                                                x: hit.rect.x + dp_to_px(TF_PADDING_X_DP),
-                                                y: hit.rect.y,
-                                                w: hit.rect.w,
-                                                h: hit.rect.h,
-                                            };
-                                            tf_ensure_visible_in_rect(&mut state, inner);
-                                        }
+                                    {
+                                        let inner = Rect {
+                                            x: hit.rect.x + dp_to_px(TF_PADDING_X_DP),
+                                            y: hit.rect.y,
+                                            w: hit.rect.w,
+                                            h: hit.rect.h,
+                                        };
+                                        tf_ensure_visible_in_rect(&mut state, inner);
+                                    }
                                     self.notify_text_change(focused_id, state.text.clone());
                                     self.request_redraw();
                                 }
@@ -888,15 +895,15 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                         if let Some(f) = &self.frame_cache
                                             && let Some(hit) =
                                                 f.hit_regions.iter().find(|h| h.id == focused_id)
-                                            {
-                                                let inner = Rect {
-                                                    x: hit.rect.x + dp_to_px(TF_PADDING_X_DP),
-                                                    y: hit.rect.y,
-                                                    w: hit.rect.w,
-                                                    h: hit.rect.h,
-                                                };
-                                                tf_ensure_visible_in_rect(&mut state, inner);
-                                            }
+                                        {
+                                            let inner = Rect {
+                                                x: hit.rect.x + dp_to_px(TF_PADDING_X_DP),
+                                                y: hit.rect.y,
+                                                w: hit.rect.w,
+                                                h: hit.rect.h,
+                                            };
+                                            tf_ensure_visible_in_rect(&mut state, inner);
+                                        }
                                         self.notify_text_change(focused_id, state.text.clone());
                                     }
                                     self.request_redraw();
@@ -993,15 +1000,17 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
         fn notify_text_change(&self, id: u64, text: String) {
             if let Some(f) = &self.frame_cache
                 && let Some(h) = f.hit_regions.iter().find(|h| h.id == id)
-                    && let Some(cb) = &h.on_text_change {
-                        cb(text);
-                    }
+                && let Some(cb) = &h.on_text_change
+            {
+                cb(text);
+            }
         }
         fn tf_key_of(&self, visual_id: u64) -> u64 {
             if let Some(f) = &self.frame_cache
-                && let Some(hr) = f.hit_regions.iter().find(|h| h.id == visual_id) {
-                    return hr.tf_state_key.unwrap_or(hr.id);
-                }
+                && let Some(hr) = f.hit_regions.iter().find(|h| h.id == visual_id)
+            {
+                return hr.tf_state_key.unwrap_or(hr.id);
+            }
             visual_id
         }
     }
