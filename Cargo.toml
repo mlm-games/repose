@@ -41,7 +41,7 @@ taffy = { version = "0.9.2", default-features = true }
 
 # Platform + GPU
 winit = { version = "0.30.12", default-features = true }
-wgpu = "27.0.1"
+wgpu = "28"
 pollster = "0.4.0"
 
 # Text

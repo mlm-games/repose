@@ -1,6 +1,6 @@
 struct VSOut {
     @builtin(position) pos: vec4<f32>,
-    @location(0) brush_type: u32,
+    @location(0) @interpolate(flat) brush_type: u32,
     @location(1) color0: vec4<f32>,
     @location(2) color1: vec4<f32>,
     @location(3) xywh: vec4<f32>,      // NDC rect
@@ -14,7 +14,7 @@ struct VSOut {
 fn vs_main(
     @location(0) xywh: vec4<f32>,
     @location(1) radius: f32,
-    @location(2) brush_type: u32,
+    @location(2) @interpolate(flat) brush_type: u32,
     @location(3) color0: vec4<f32>,
     @location(4) color1: vec4<f32>,
     @location(5) grad_start: vec2<f32>,

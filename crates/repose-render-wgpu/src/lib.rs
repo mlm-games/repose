@@ -255,7 +255,7 @@ impl WgpuBackend {
         let rect_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rect pipeline layout"),
             bind_group_layouts: &[],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
         let rect_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("rect pipeline"),
@@ -326,7 +326,7 @@ impl WgpuBackend {
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -344,7 +344,7 @@ impl WgpuBackend {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("border pipeline layout"),
                 bind_group_layouts: &[], //&[&border_bind_layout],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
         let border_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("border pipeline"),
@@ -397,7 +397,7 @@ impl WgpuBackend {
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -409,7 +409,7 @@ impl WgpuBackend {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("ellipse pipeline layout"),
                 bind_group_layouts: &[],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
         let ellipse_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("ellipse pipeline"),
@@ -448,7 +448,7 @@ impl WgpuBackend {
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -463,7 +463,7 @@ impl WgpuBackend {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("ellipse border layout"),
                 bind_group_layouts: &[],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
         let ellipse_border_pipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -508,7 +508,7 @@ impl WgpuBackend {
                 primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -547,7 +547,7 @@ impl WgpuBackend {
         let text_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("text pipeline layout"),
             bind_group_layouts: &[&text_bind_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
         let text_pipeline_mask = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("text pipeline (mask)"),
@@ -591,7 +591,7 @@ impl WgpuBackend {
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
         let text_pipeline_color = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -636,7 +636,7 @@ impl WgpuBackend {
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -766,7 +766,7 @@ impl WgpuBackend {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
 
@@ -806,7 +806,7 @@ impl WgpuBackend {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
         Ok(AtlasRGBA {
@@ -1630,6 +1630,7 @@ impl RenderBackend for WgpuBackend {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
 
             // initial full scissor
