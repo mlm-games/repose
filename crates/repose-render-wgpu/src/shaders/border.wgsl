@@ -45,12 +45,29 @@ fn sdf_round_box(pos_ndc: vec2<f32>, xywh: vec4<f32>, r: f32) -> f32 {
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
-    // Signed distance to rounded rectangle
-    let d = sdf_round_box(in.pos_ndc, in.xywh, in.radius);
-    // Screen-space antialias (NDC derivatives)
+
+    // Outer/inner SDFs with smooth AA
     let aa = length(fwidth(in.pos_ndc)) + 1e-6;
-    // Centered ring: |d| < stroke/2
-    let half = 0.5 * in.stroke_ndc;
-    let alpha = clamp(0.5 - (abs(d) - half) / aa, 0.0, 1.0);
+
+    let d_outer = sdf_round_box(in.pos_ndc, in.xywh, in.radius);
+
+    // Inner rect: shrink by stroke on all edges, reduce radius accordingly
+    let inner_xywh = vec4<f32>(
+        in.xywh.x + in.stroke_ndc,
+        in.xywh.y + in.stroke_ndc,
+        in.xywh.z - 2.0 * in.stroke_ndc,
+        in.xywh.w - 2.0 * in.stroke_ndc
+    );
+    // Clamp inner radius to non-negative
+    let r_inner = max(in.radius - in.stroke_ndc, 0.0);
+    let d_inner = sdf_round_box(in.pos_ndc, inner_xywh, r_inner);
+
+    // Ring coverage: outer filled minus inner filled
+    let cov_outer = clamp(0.5 - d_outer / aa, 0.0, 1.0);
+    let cov_inner = clamp(0.5 - d_inner / aa, 0.0, 1.0);
+
+    let alpha = max(cov_outer - cov_inner, 0.0);
+
     return vec4(in.color.rgb, in.color.a * alpha);
+
 }
