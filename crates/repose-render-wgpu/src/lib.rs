@@ -4,6 +4,7 @@ use std::{borrow::Cow, sync::Once};
 
 use repose_core::{Brush, GlyphRasterConfig, RenderBackend, Scene, SceneNode, Transform};
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use wgpu::Instance;
 
 static ROT_WARN_ONCE: Once = Once::new();
 
@@ -195,28 +196,48 @@ struct GlyphInstance {
 }
 
 impl WgpuBackend {
-    pub fn new(window: Arc<winit::window::Window>) -> anyhow::Result<Self> {
-        // Instance/Surface (latest API with backend options from env)
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::from_env_or_default());
+    /// Async init for Web (and optionally usable on native too).
+    pub async fn new_async(window: Arc<winit::window::Window>) -> anyhow::Result<Self> {
+        let mut desc = wgpu::InstanceDescriptor::from_env_or_default();
+        let instance: Instance;
+
+        if cfg!(target_arch = "wasm32") {
+            desc.backends = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
+
+            instance = wgpu::util::new_instance_with_webgpu_detection(&desc).await;
+        } else {
+            instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::from_env_or_default());
+        };
+
         let surface = instance.create_surface(window.clone())?;
 
-        // Adapter/Device
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: Some(&surface),
-            force_fallback_adapter: false,
-        }))
-        .map_err(|_e| anyhow::anyhow!("No adapter"))?;
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("No suitable adapter: {e:?}"))?;
 
-        let (device, queue) =
-            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        // Limits: WebGL2 fallback needs tighter limits
+        let limits = if cfg!(target_arch = "wasm32") {
+            wgpu::Limits::downlevel_webgl2_defaults()
+        } else {
+            wgpu::Limits::default()
+        };
+
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
                 label: Some("repose-rs device"),
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
+                required_limits: limits,
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
                 memory_hints: wgpu::MemoryHints::default(),
                 trace: wgpu::Trace::Off,
-            }))?;
+            })
+            .await
+            .map_err(|e| anyhow::anyhow!("request_device failed: {e:?}"))?;
 
         let size = window.inner_size();
 
@@ -225,7 +246,7 @@ impl WgpuBackend {
             .formats
             .iter()
             .copied()
-            .find(|f| f.is_srgb()) // pick sRGB if available
+            .find(|f| f.is_srgb())
             .unwrap_or(caps.formats[0]);
         let present_mode = caps
             .present_modes
@@ -343,7 +364,7 @@ impl WgpuBackend {
         let border_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("border pipeline layout"),
-                bind_group_layouts: &[], //&[&border_bind_layout],
+                bind_group_layouts: &[],
                 immediate_size: 0,
             });
         let border_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -675,6 +696,18 @@ impl WgpuBackend {
             next_image_handle: 1,
             images: HashMap::new(),
         })
+    }
+
+    /// Native/blocking convenience.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn new(window: Arc<winit::window::Window>) -> anyhow::Result<Self> {
+        pollster::block_on(Self::new_async(window))
+    }
+
+    /// On wasm, force callers onto the async path (don't block the browser thread).
+    #[cfg(target_arch = "wasm32")]
+    pub fn new(_window: Arc<winit::window::Window>) -> anyhow::Result<Self> {
+        anyhow::bail!("Use WgpuBackend::new_async(window).await on wasm32")
     }
 
     pub fn register_image_from_bytes(&mut self, data: &[u8], srgb: bool) -> u64 {

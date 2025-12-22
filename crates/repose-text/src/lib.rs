@@ -51,9 +51,10 @@ impl<K: std::hash::Hash + Eq + Clone, V> Lru<K, V> {
             return;
         }
         if self.map.len() >= self.cap
-            && let Some(old) = self.order.pop_front() {
-                self.map.remove(&old);
-            }
+            && let Some(old) = self.order.pop_front()
+        {
+            self.map.remove(&old);
+        }
         self.order.push_back(k.clone());
         self.map.insert(k, v);
     }
@@ -122,7 +123,8 @@ fn engine() -> &'static Mutex<Engine> {
 
         let cache = SwashCache::new();
 
-        #[cfg(target_os = "android")] // Until cosmic-text has android font loading support
+        #[cfg(any(target_os = "android", target_arch = "wasm32"))]
+        // Until cosmic-text has android/web font loading support
         {
             static FALLBACK_TTF: &[u8] = include_bytes!("assets/OpenSans-Regular.ttf"); // GFonts, OFL licensed
             static FALLBACK_EMOJI_TTF: &[u8] = include_bytes!("assets/NotoColorEmoji-Regular.ttf"); // GFonts, OFL licensed
@@ -334,9 +336,10 @@ pub fn wrap_lines(
     let m = metrics_for_textfield(text, px);
     // Fast path: fits
     if let Some(&last) = m.positions.last()
-        && last <= max_width + 0.5 {
-            return (vec![text.to_string()], false);
-        }
+        && last <= max_width + 0.5
+    {
+        return (vec![text.to_string()], false);
+    }
 
     // Helper: width of substring [start..end] in bytes
     let width_of = |start_b: usize, end_b: usize| -> f32 {
@@ -397,12 +400,13 @@ pub fn wrap_lines(
 
         // Check max_lines
         if let Some(ml) = max_lines
-            && out.len() >= ml {
-                truncated = true;
-                // Stop; caller may ellipsize the last line
-                line_start = line_start.min(text.len());
-                break;
-            }
+            && out.len() >= ml
+        {
+            truncated = true;
+            // Stop; caller may ellipsize the last line
+            line_start = line_start.min(text.len());
+            break;
+        }
 
         // Reset best_break for new line
         best_break = line_start;
@@ -446,9 +450,10 @@ pub fn ellipsize_line(text: &str, px: f32, max_width: f32) -> String {
     }
     let m = metrics_for_textfield(text, px);
     if let Some(&last) = m.positions.last()
-        && last <= max_width + 0.5 {
-            return text.to_string();
-        }
+        && last <= max_width + 0.5
+    {
+        return text.to_string();
+    }
     let el = "…";
     let e_w = ellipsis_width(px);
     if e_w >= max_width {

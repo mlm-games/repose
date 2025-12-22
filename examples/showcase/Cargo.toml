@@ -8,6 +8,15 @@ publish = false
 name = "showcase"
 crate-type = ["cdylib"]
 
+[features]
+default = []
+desktop-bin = []
+
+[[bin]] # --features desktop-bin
+name = "showcase-desktop"
+path = "src/main.rs"
+required-features = ["desktop-bin"]
+
 [package.metadata.android]
 package = "com.example.showcase"
 apk_name = "showcase"
@@ -28,7 +37,7 @@ repose-platform = { path = "../../crates/repose-platform", version = "0.8.3", fe
 ] }
 android_logger = { workspace = true }
 
-[target.'cfg(not(target_os = "android"))'.dependencies]
+[target.'cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))'.dependencies]
 repose-platform = { path = "../../crates/repose-platform", version = "0.8.3", features = [
     "desktop",
 ] }
@@ -44,3 +53,23 @@ env_logger = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Window",
+    "Element",
+    "HtmlCanvasElement",
+    "CssStyleDeclaration",
+    "Performance",
+] }
+winit = { workspace = true, features = ["rwh_05"] }
+console_error_panic_hook = "0.1"
+console_log = "1.0"
+log.workspace = true
+getrandom = { version = "0.3.4", features = ["wasm_js"] }
+wgpu = { workspace = true, features = ["webgpu", "webgl"] }
+repose-platform = { workspace = true, features = ["web"] }
+repose-render-wgpu.workspace = true

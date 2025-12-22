@@ -61,3 +61,5 @@ repose-canvas = { path = "crates/repose-canvas", version = "0.8.3" }
 repose-navigation = { path = "crates/repose-navigation", version = "0.8.3" }
 repose-devtools = { path = "crates/repose-devtools", version = "0.8.3" }
 repose-text = { path = "crates/repose-text", version = "0.8.3" }
+repose-render-wgpu = { path = "crates/repose-render-wgpu", version = "0.8.3" }
+repose-platform = { path = "crates/repose-platform", version = "0.8.3" }

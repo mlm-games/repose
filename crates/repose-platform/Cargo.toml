@@ -8,6 +8,7 @@ description = "Platform runners (desktop via winit; Android alpha)"
 [features]
 desktop = ["winit", "repose-render-wgpu"]
 android = ["winit/android-native-activity", "repose-render-wgpu"]
+web = ["repose-render-wgpu"]
 
 [dependencies]
 repose-core.workspace = true
