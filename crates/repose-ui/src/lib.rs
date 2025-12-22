@@ -560,6 +560,23 @@ pub fn layout_and_paint(
             s.aspect_ratio = Some(r.max(0.0));
         }
 
+        if matches!(
+            kind,
+            ViewKind::Box
+                | ViewKind::Text { .. }
+                | ViewKind::Button { .. }
+                | ViewKind::TextField { .. }
+                | ViewKind::Image { .. }
+                | ViewKind::Checkbox { .. }
+                | ViewKind::RadioButton { .. }
+                | ViewKind::Switch { .. }
+                | ViewKind::Slider { .. }
+                | ViewKind::RangeSlider { .. }
+                | ViewKind::ProgressBar { .. }
+        ) {
+            s.flex_shrink = 1.0; // Allow shrinking by default
+        }
+
         // Flex props
         if let Some(g) = m.flex_grow {
             s.flex_grow = g;
@@ -640,6 +657,18 @@ pub fn layout_and_paint(
                 top: v,
                 bottom: v,
             };
+        }
+
+        if matches!(
+            kind,
+            ViewKind::Box
+                | ViewKind::TextField { .. }
+                | ViewKind::Text { .. }
+                | ViewKind::Button { .. }
+        ) {
+            if m.min_width.is_none() && s.min_size.width.is_auto() {
+                s.min_size.width = length(0.0);
+            }
         }
 
         // Explicit size — highest priority
@@ -930,13 +959,8 @@ pub fn layout_and_paint(
                     let mut truncated = false;
 
                     if *soft_wrap {
-                        let (ls, trunc) = repose_text::wrap_lines(
-                            text,
-                            size_px_val,
-                            wrap_w_px,
-                            *max_lines,
-                            true,
-                        );
+                        let (ls, trunc) =
+                            repose_text::wrap_lines(text, size_px_val, wrap_w_px, *max_lines, true);
                         lines_vec = ls;
                         truncated = trunc;
                         if matches!(overflow, TextOverflow::Ellipsis)
@@ -983,7 +1007,7 @@ pub fn layout_and_paint(
                     height: px(36.0),
                 },
                 Some(NodeCtx::TextField) => taffy::geometry::Size {
-                    width: known.width.unwrap_or(px(220.0)),
+                    width: known.width.unwrap_or(px(120.0)),
                     height: px(36.0),
                 },
                 Some(NodeCtx::Checkbox) => taffy::geometry::Size {
@@ -1479,10 +1503,12 @@ pub fn layout_and_paint(
                 }
 
                 // Horizontal ellipsis for non-wrapped text
-                if !*soft_wrap && matches!(overflow, TextOverflow::Ellipsis)
-                    && approx_w_px > max_w_px + 0.5 {
-                        lines = vec![repose_text::ellipsize_line(text, size_px_val, max_w_px)];
-                    }
+                if !*soft_wrap
+                    && matches!(overflow, TextOverflow::Ellipsis)
+                    && approx_w_px > max_w_px + 0.5
+                {
+                    lines = vec![repose_text::ellipsize_line(text, size_px_val, max_w_px)];
+                }
 
                 for (i, ln) in lines.iter().enumerate() {
                     scene.nodes.push(SceneNode::Text {
@@ -1672,29 +1698,31 @@ pub fn layout_and_paint(
 
                     // Composition underline
                     if let Some(range) = &state.composition
-                        && range.start < range.end && !text_val.is_empty() {
-                            let i0 = byte_to_char_index(&m, range.start);
-                            let i1 = byte_to_char_index(&m, range.end);
-                            let sx_px =
-                                m.positions.get(i0).copied().unwrap_or(0.0) - state.scroll_offset;
-                            let ex_px =
-                                m.positions.get(i1).copied().unwrap_or(sx_px) - state.scroll_offset;
-                            let ux = inner.x + sx_px.max(0.0);
-                            let uw = (ex_px - sx_px).max(0.0);
-                            scene.nodes.push(SceneNode::Rect {
-                                rect: repose_core::Rect {
-                                    x: ux,
-                                    y: inner.y + inner.h - dp_to_px(2.0),
-                                    w: uw,
-                                    h: dp_to_px(2.0),
-                                },
-                                brush: Brush::Solid(mul_alpha_color(
-                                    locals::theme().focus,
-                                    alpha_accum,
-                                )),
-                                radius: 0.0,
-                            });
-                        }
+                        && range.start < range.end
+                        && !text_val.is_empty()
+                    {
+                        let i0 = byte_to_char_index(&m, range.start);
+                        let i1 = byte_to_char_index(&m, range.end);
+                        let sx_px =
+                            m.positions.get(i0).copied().unwrap_or(0.0) - state.scroll_offset;
+                        let ex_px =
+                            m.positions.get(i1).copied().unwrap_or(sx_px) - state.scroll_offset;
+                        let ux = inner.x + sx_px.max(0.0);
+                        let uw = (ex_px - sx_px).max(0.0);
+                        scene.nodes.push(SceneNode::Rect {
+                            rect: repose_core::Rect {
+                                x: ux,
+                                y: inner.y + inner.h - dp_to_px(2.0),
+                                w: uw,
+                                h: dp_to_px(2.0),
+                            },
+                            brush: Brush::Solid(mul_alpha_color(
+                                locals::theme().focus,
+                                alpha_accum,
+                            )),
+                            radius: 0.0,
+                        });
+                    }
 
                     // Text (offset by scroll)
                     let text_color = if text_val.is_empty() {
