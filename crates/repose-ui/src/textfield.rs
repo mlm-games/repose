@@ -39,8 +39,8 @@
 
 use repose_core::*;
 use std::ops::Range;
-use std::time::Duration;
-use std::time::Instant;
+use web_time::Duration;
+use web_time::Instant;
 
 use unicode_segmentation::UnicodeSegmentation;
 

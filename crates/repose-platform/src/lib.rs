@@ -4,7 +4,7 @@ use repose_core::*;
 use repose_ui::textfield::{TF_FONT_DP, TF_PADDING_X_DP, index_for_x_bytes, measure_text};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Instant;
+use web_time::Instant;
 
 #[cfg(all(feature = "android", target_os = "android"))]
 pub mod android;

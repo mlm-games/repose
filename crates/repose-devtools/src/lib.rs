@@ -1,4 +1,4 @@
-use std::time::Instant;
+use web_time::Instant;
 
 use repose_core::{Color, Rect, Scene, SceneNode};
 

@@ -18,3 +18,4 @@ bitflags = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
 taffy.workspace = true
+web-time.workspace = true

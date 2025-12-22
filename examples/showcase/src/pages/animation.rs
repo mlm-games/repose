@@ -35,7 +35,7 @@ pub fn screen() -> View {
                         "bouncy" => repose_core::animation::AnimationSpec::spring_bouncy(),
                         "crit" => repose_core::animation::AnimationSpec::spring_crit(
                             8.0,
-                            std::time::Duration::from_millis(500),
+                            web_time::Duration::from_millis(500),
                         ),
                         _ => repose_core::animation::AnimationSpec::spring_gentle(),
                     };

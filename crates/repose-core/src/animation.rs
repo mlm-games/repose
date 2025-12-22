@@ -1,6 +1,6 @@
 use parking_lot::RwLock;
 use std::sync::OnceLock;
-use std::time::{Duration, Instant};
+use web_time::{Duration, Instant};
 
 pub(crate) fn now() -> Instant {
     let lock = CLOCK.get_or_init(|| RwLock::new(Box::new(SystemClock) as Box<dyn Clock>));

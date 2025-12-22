@@ -21,6 +21,7 @@ log = { workspace = true }
 anyhow = { workspace = true }
 clipawl = { workspace = true, features = ["linux-wayland"] }
 pollster = "0.4.0"                                                                          # trying to avoid tokio but might have to add later...
+web-time.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

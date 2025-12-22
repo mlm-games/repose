@@ -8,7 +8,7 @@ mod tests {
     use crate::remember_with_key;
     use crate::scope::*;
     use crate::signal::*;
-    use std::time::{Duration, Instant};
+    use web_time::{Duration, Instant};
 
     #[test]
     fn test_signal_basic() {

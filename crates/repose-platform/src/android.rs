@@ -546,7 +546,7 @@ pub fn run_android_app(
                         (self.backend.as_mut(), self.window.as_ref())
                     {
                         let scale = win.scale_factor() as f32;
-                        let t0 = std::time::Instant::now();
+                        let t0 = web_time::Instant::now();
                         let size_px_u32 = self.sched.size;
                         let focused = self.sched.focused;
 
@@ -565,8 +565,7 @@ pub fn run_android_app(
 
                         let mut scene = frame.scene.clone();
                         self.inspector.hud.metrics = Some(repose_devtools::Metrics {
-                            build_layout_ms: (std::time::Instant::now() - t0).as_secs_f32()
-                                * 1000.0,
+                            build_layout_ms: (web_time::Instant::now() - t0).as_secs_f32() * 1000.0,
                             scene_nodes: scene.nodes.len(),
                         });
                         self.inspector.frame(&mut scene);

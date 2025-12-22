@@ -53,6 +53,7 @@ env_logger = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
+web-time.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

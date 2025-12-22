@@ -13,6 +13,7 @@ fontdb = { workspace = true }
 ab_glyph = { workspace = true }
 unicode-segmentation = { workspace = true }
 log.workspace = true
+web-time.workspace = true
 
 [dev-dependencies]
 insta = "1.43"

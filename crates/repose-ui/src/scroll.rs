@@ -49,7 +49,7 @@
 use repose_core::*;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Instant;
+use web_time::Instant;
 
 /// Inertial scroll state (single axis Y for now).
 pub struct ScrollState {

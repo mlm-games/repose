@@ -52,7 +52,7 @@ cosmic-text = { version = "0.15.0", default-features = true, features = [
 ] }
 android_logger = "0.15"
 serde = { version = "1", features = ["derive"] }
-
+web-time = "1"
 
 repose-core = { path = "crates/repose-core", version = "0.8.3" }
 repose-ui = { path = "crates/repose-ui", version = "0.8.3" }
