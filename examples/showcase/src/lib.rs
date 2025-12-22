@@ -3,16 +3,15 @@ mod pages;
 mod ui;
 
 #[cfg(target_arch = "wasm32")]
-mod web;
-
-#[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
-pub fn wasm_start() {
-    // If this doesn't show in the browser console, the wasm entrypoint isn't being run.
-    web::start();
+pub fn wasm_start() -> Result<(), JsValue> {
+    repose_platform::web::run_web_app(
+        app::app as fn(&mut repose_core::Scheduler) -> repose_core::View,
+        repose_platform::web::WebOptions::new(None),
+    )
 }
 
 #[cfg(target_os = "android")]

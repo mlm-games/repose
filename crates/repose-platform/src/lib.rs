@@ -12,6 +12,8 @@ pub mod android;
 #[cfg(all(target_arch = "wasm32"))]
 pub mod web;
 
+mod common;
+
 /// Compose a single frame with density and text-scale applied, returning Frame.
 pub fn compose_frame<F>(
     sched: &mut Scheduler,
