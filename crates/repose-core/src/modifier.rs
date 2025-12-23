@@ -52,7 +52,7 @@ pub struct Modifier {
     pub flex_shrink: Option<f32>,
     pub flex_basis: Option<f32>,
     pub flex_wrap: Option<FlexWrap>,
-    pub flex_dir: Option<FlexDirection>
+    pub flex_dir: Option<FlexDirection>,
     pub align_self: Option<AlignSelf>,
     pub justify_content: Option<JustifyContent>,
     pub align_items_container: Option<AlignItems>,
