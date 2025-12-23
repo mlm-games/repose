@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use taffy::{AlignContent, AlignItems, AlignSelf, JustifyContent};
+use taffy::{AlignContent, AlignItems, AlignSelf, FlexDirection, FlexWrap, JustifyContent};
 
 use crate::{Brush, Color, PointerEvent, Size, Transform, Vec2};
 
@@ -51,6 +51,8 @@ pub struct Modifier {
     pub flex_grow: Option<f32>,
     pub flex_shrink: Option<f32>,
     pub flex_basis: Option<f32>,
+    pub flex_wrap: Option<FlexWrap>,
+    pub flex_dir: Option<FlexDirection>
     pub align_self: Option<AlignSelf>,
     pub justify_content: Option<JustifyContent>,
     pub align_items_container: Option<AlignItems>,
@@ -239,6 +241,14 @@ impl Modifier {
     }
     pub fn flex_basis(mut self, v: f32) -> Self {
         self.flex_basis = Some(v);
+        self
+    }
+    pub fn flex_wrap(mut self, w: FlexWrap) -> Self {
+        self.flex_wrap = Some(w);
+        self
+    }
+    pub fn flex_dir(mut self, d: FlexDirection) -> Self {
+        self.flex_dir = Some(d);
         self
     }
     pub fn align_self(mut self, a: AlignSelf) -> Self {

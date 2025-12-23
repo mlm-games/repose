@@ -587,6 +587,12 @@ pub fn layout_and_paint(
         if let Some(b_dp) = m.flex_basis {
             s.flex_basis = length(px(b_dp.max(0.0)));
         }
+        if let Some(w) = m.flex_wrap {
+            s.flex_wrap = w;
+        }
+        if let Some(d) = m.flex_dir {
+            s.flex_direction = d;
+        }
 
         if let Some(a) = m.align_self {
             s.align_self = Some(a);
@@ -716,8 +722,7 @@ pub fn layout_and_paint(
                 s.min_size.height = length(0.0); // allow shrinking, avoid min-content expansion
             }
             if want_fill_w && !width_set {
-                s.min_size.width = percent(1.0);
-                s.max_size.width = percent(1.0);
+                s.align_self = Some(AlignSelf::Stretch);
             }
         } else if is_row {
             // main axis = horizontal
@@ -740,19 +745,16 @@ pub fn layout_and_paint(
                 s.min_size.height = length(0.0);
             }
             if want_fill_w && !width_set {
-                s.min_size.width = percent(1.0);
-                s.max_size.width = percent(1.0);
+                s.align_self = Some(AlignSelf::Stretch);
             }
         }
 
         if matches!(kind, ViewKind::Surface) {
             if (m.fill_max || m.fill_max_w) && s.min_size.width.is_auto() && !width_set {
-                s.min_size.width = percent(1.0);
-                s.max_size.width = percent(1.0);
+                s.align_self = Some(AlignSelf::Stretch);
             }
             if (m.fill_max || m.fill_max_h) && s.min_size.height.is_auto() && !height_set {
-                s.min_size.height = percent(1.0);
-                s.max_size.height = percent(1.0);
+                s.align_self = Some(AlignSelf::Stretch);
             }
         }
 
