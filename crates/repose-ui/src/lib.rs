@@ -943,18 +943,21 @@ pub fn layout_and_paint(
                     // Rough guess (used only as fallback)
                     let approx_w_px = text.len() as f32 * size_px_val * 0.6;
 
-                    // Determine the effective width to layout against
                     let target_w_px = match avail.width {
-                        AvailableSpace::Definite(w) => w,
+                        AvailableSpace::Definite(w) if w > 0.5 => w,
                         _ => known.width.unwrap_or(approx_w_px),
                     };
 
-                    // For wrapping or ellipsis we want to measure against the target width
-                    let wrap_w_px = if *soft_wrap || matches!(overflow, TextOverflow::Ellipsis) {
+                    let mut wrap_w_px = if *soft_wrap || matches!(overflow, TextOverflow::Ellipsis)
+                    {
                         target_w_px
                     } else {
                         known.width.unwrap_or(approx_w_px)
                     };
+
+                    if wrap_w_px <= 0.5 && !text.is_empty() {
+                        wrap_w_px = approx_w_px.max(1.0);
+                    }
 
                     // Build lines (wraps by def.)
                     let mut lines_vec: Vec<String>;
@@ -1141,13 +1144,27 @@ pub fn layout_and_paint(
         let th = locals::theme();
 
         // Track geometry (inset inside viewport)
+        // Track geometry (inset inside viewport)
         let track_x = vp.x + vp.w - margin_px - thickness_px;
         let track_y = vp.y + margin_px;
         let track_h = (vp.h - 2.0 * margin_px).max(0.0);
 
+        // If the track is too small, don't draw / interact
+        if track_h <= 0.5 {
+            return;
+        }
+
         // Thumb geometry from content ratio
         let ratio = (vp.h / content_h_px).clamp(0.0, 1.0);
-        let thumb_h = (track_h * ratio).clamp(min_thumb_px, track_h);
+
+        let thumb_h = (track_h * ratio)
+            .max(min_thumb_px.min(track_h))
+            .min(track_h);
+
+        if thumb_h <= 0.5 {
+            return;
+        }
+
         let denom = (content_h_px - vp.h).max(1.0);
         let tpos = (off_y_px / denom).clamp(0.0, 1.0);
         let max_pos = (track_h - thumb_h).max(0.0);
@@ -1239,13 +1256,24 @@ pub fn layout_and_paint(
         let margin_px = dp_to_px(2.0);
         let min_thumb_px = dp_to_px(24.0);
         let th = locals::theme();
-
         let track_x = vp.x + margin_px;
         let track_y = vp.y + vp.h - margin_px - thickness_px;
         let track_w = (vp.w - 2.0 * margin_px).max(0.0);
 
+        if track_w <= 0.5 {
+            return;
+        }
+
         let ratio = (vp.w / content_w_px).clamp(0.0, 1.0);
-        let thumb_w = (track_w * ratio).clamp(min_thumb_px, track_w);
+
+        let thumb_w = (track_w * ratio)
+            .max(min_thumb_px.min(track_w))
+            .min(track_w);
+
+        if thumb_w <= 0.5 {
+            return;
+        }
+
         let denom = (content_w_px - vp.w).max(1.0);
         let tpos = (off_x_px / denom).clamp(0.0, 1.0);
         let max_pos = (track_w - thumb_w).max(0.0);
