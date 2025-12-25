@@ -2,7 +2,10 @@
 use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc};
 
 use repose_core::*;
-use repose_ui::{Box as VBox, Stack, ViewExt, anim::animate_f32};
+use repose_ui::{
+    Box as VBox, Stack, ViewExt,
+    anim::{animate_f32, animate_f32_from},
+};
 use serde::{Deserialize, Serialize};
 
 pub trait NavKey: Clone + Debug + 'static + Serialize + for<'de> Deserialize<'de> {}
@@ -315,11 +318,13 @@ pub fn NavDisplay<K: NavKey>(
         return maybe_intercept_back(v, on_back);
     }
 
-    let t = animate_f32(
-        format!("nav3:{id}"),
-        if dir == TransitionDir::Push { 1.0 } else { 0.0 },
-        transition.spec,
-    );
+    let (initial, target) = if dir == TransitionDir::Push {
+        (0.0, 1.0)
+    } else {
+        (1.0, 0.0)
+    };
+    let t = animate_f32_from(format!("nav3:{id}"), initial, target, transition.spec);
+
     let slide = if dir == TransitionDir::Push {
         1.0 - t
     } else {
