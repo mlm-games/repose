@@ -1,5 +1,5 @@
 use crate::ui::Section;
-use repose_core::prelude::*;
+use repose_core::{prelude::*, signal};
 use repose_ui::*;
 
 pub fn screen() -> View {

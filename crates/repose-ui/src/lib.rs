@@ -458,15 +458,47 @@ pub fn layout_and_paint(
     // font dp -> px with TextScale applied
     let font_px = |dp_font: f32| dp_to_px(dp_font) * locals::text_scale().0;
 
-    // Assign ids
-    let mut id = 1u64;
-    fn stamp(mut v: View, id: &mut u64) -> View {
-        v.id = *id;
-        *id += 1;
-        v.children = v.children.into_iter().map(|c| stamp(c, id)).collect();
+    // Rule:
+    // - If `Modifier.key` is set, use it as the per-node identity salt.
+    // - Otherwise use the child index (stable for static trees; dynamic trees should supply keys).
+    // - IDs are derived from parent id + salt via a simple 64-bit mixer.
+    //
+    // This keeps code short (no explicit ID allocation during build) while enabling stability
+    // for dynamic lists via `.key(...)`.
+    fn splitmix64(mut x: u64) -> u64 {
+        x = x.wrapping_add(0x9E3779B97F4A7C15);
+        let mut z = x;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+        z ^ (z >> 31)
+    }
+
+    fn hash2(a: u64, b: u64) -> u64 {
+        splitmix64(a ^ splitmix64(b))
+    }
+
+    fn assign_ids(mut v: View, parent: u64, index: u64) -> View {
+        // Prefer explicit keys; otherwise fall back to structural position.
+        let salt = v.modifier.key.unwrap_or(index);
+
+        // Include a domain separator so root/child hashing stays well-distributed.
+        let raw = hash2(parent ^ 0xD6E8FEB86659FD93, salt ^ 0xA5A5_A5A5_A5A5_A5A5);
+
+        // Avoid 0 as a sentinel.
+        v.id = if raw == 0 { 1 } else { raw };
+
+        v.children = v
+            .children
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| assign_ids(c, v.id, i as u64))
+            .collect();
+
         v
     }
-    let root = stamp(root.clone(), &mut id);
+
+    let root = assign_ids(root.clone(), 0, 0);
+    // ---- end stable IDs ----
 
     // Build Taffy tree (with per-node contexts for measurement)
     use taffy::prelude::*;
@@ -2740,7 +2772,6 @@ pub fn layout_and_paint(
             _ => {}
         }
 
-        // Recurse (no extra clip by default)
         for c in &v.children {
             walk(
                 c,

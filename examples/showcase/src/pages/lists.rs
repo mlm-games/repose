@@ -1,4 +1,4 @@
-use repose_core::prelude::*;
+use repose_core::{prelude::*, signal};
 use repose_ui::{
     lazy::{LazyColumn, LazyColumnState},
     *,

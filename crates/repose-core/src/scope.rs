@@ -2,6 +2,8 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
+use crate::effects::Dispose;
+
 thread_local! {
     static CURRENT_SCOPE: RefCell<Option<Weak<ScopeInner>>> = const { RefCell::new(None) };
 }
@@ -85,17 +87,20 @@ pub fn current_scope() -> Option<Scope> {
     })
 }
 
-/// Scoped effect that auto-cleans up
+/// Scoped effect that auto-cleans up.
+///
+/// Runs `f()` immediately and registers the returned `Dispose` to run when the
+/// current scope is disposed.
 pub fn scoped_effect<F>(f: F)
 where
-    F: FnOnce() -> Box<dyn FnOnce()> + 'static,
+    F: FnOnce() -> Dispose + 'static,
 {
     if let Some(scope) = current_scope() {
         let cleanup = f();
-        scope.add_disposer(cleanup);
+        scope.add_disposer(move || cleanup.run());
     } else {
-        // No scope, run immediately and leak (old behavior)
-        let _ = f();
+        // No scope, run setup now, but drop cleanup (legacy "leak" behavior).
+        let _cleanup = f();
     }
 }
 

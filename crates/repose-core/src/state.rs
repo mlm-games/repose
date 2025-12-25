@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::rc::Rc;
 
-use crate::{Signal, reactive, remember_with_key, scoped_effect, signal};
+use crate::{Signal, on_unmount, reactive, remember_with_key, scoped_effect, signal};
 
 pub struct MutableState<T: Clone + 'static> {
     inner: Signal<T>,
@@ -55,11 +55,11 @@ pub fn produce_state<T: Clone + 'static>(
         reactive::run_observer_now(obs_id);
 
         scoped_effect(move || {
-            // cleanup
-            Box::new(move || {
+            on_unmount(move || {
                 reactive::remove_observer(obs_id);
             })
         });
+
         out
     })
 }

@@ -34,6 +34,13 @@ pub enum PositionType {
 
 #[derive(Clone, Default)]
 pub struct Modifier {
+    /// Optional stable identity key for this view node.
+    ///
+    /// If set, `layout_and_paint` will prefer this over child index when assigning stable ViewIds.
+    /// This is the “escape hatch” for dynamic lists / conditional UI where index-based identity
+    /// would otherwise shift.
+    pub key: Option<u64>,
+
     pub size: Option<Size>,
     pub width: Option<f32>,
     pub height: Option<f32>,
@@ -89,6 +96,7 @@ pub struct Modifier {
 impl std::fmt::Debug for Modifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Modifier")
+            .field("key", &self.key)
             .field("size", &self.size)
             .field("width", &self.width)
             .field("height", &self.height)
@@ -152,6 +160,14 @@ impl Modifier {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Attaches a stable identity key to this view node.
+    /// Use for dynamic lists / conditional UI where index-based identity can shift.
+    pub fn key(mut self, key: u64) -> Self {
+        self.key = Some(key);
+        self
+    }
+
     pub fn size(mut self, w: f32, h: f32) -> Self {
         self.size = Some(Size {
             width: w,

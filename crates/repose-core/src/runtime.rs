@@ -24,15 +24,16 @@ pub struct ComposeGuard {
 
 impl ComposeGuard {
     pub fn begin() -> Self {
-        let scope = Scope::new();
+        COMPOSER.with(|c| c.borrow_mut().cursor = 0);
 
-        COMPOSER.with(|c| {
-            let mut c = c.borrow_mut();
-            c.cursor = 0;
-        });
-
-        ROOT_SCOPE.with(|rs| {
-            *rs.borrow_mut() = Some(scope.clone());
+        let scope = ROOT_SCOPE.with(|rs| {
+            if let Some(existing) = rs.borrow().clone() {
+                existing
+            } else {
+                let s = Scope::new();
+                *rs.borrow_mut() = Some(s.clone());
+                s
+            }
         });
 
         ComposeGuard { scope }
@@ -45,9 +46,9 @@ impl ComposeGuard {
 
 impl Drop for ComposeGuard {
     fn drop(&mut self) {
-        ROOT_SCOPE.with(|rs| {
-            *rs.borrow_mut() = None;
-        });
+        // ROOT_SCOPE.with(|rs| { Do not clear every frame
+        //     *rs.borrow_mut() = None;
+        // });
     }
 }
 

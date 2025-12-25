@@ -1,4 +1,4 @@
-use repose_core::{TextDirection, prelude::*, with_text_direction};
+use repose_core::{TextDirection, prelude::*, signal, with_text_direction};
 use repose_navigation::{
     EntryScope, InstallBackHandler, NavDisplay, Navigator, remember_back_stack, renderer,
 };
@@ -85,7 +85,7 @@ pub fn app(_s: &mut Scheduler) -> View {
     let navigator = Navigator {
         stack: (*stack).clone(),
     };
-    let current_key = stack.top().map(|(_, k, _)| k).unwrap_or(Key::Layout);
+    let current_key = stack.top().map(|(_, k, _, _)| k).unwrap_or(Key::Layout);
 
     with_text_direction(dir, || {
         with_theme(use_theme, || {

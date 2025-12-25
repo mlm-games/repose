@@ -27,9 +27,10 @@ impl SavedState {
         init: impl FnOnce() -> T,
     ) -> Rc<RefCell<T>> {
         if let Some(b) = self.map.borrow().get(key)
-            && let Some(rc) = b.downcast_ref::<Rc<RefCell<T>>>() {
-                return rc.clone();
-            }
+            && let Some(rc) = b.downcast_ref::<Rc<RefCell<T>>>()
+        {
+            return rc.clone();
+        }
         let rc = Rc::new(RefCell::new(init()));
         self.map.borrow_mut().insert(key, Box::new(rc.clone()));
         rc
@@ -51,6 +52,9 @@ struct Entry<K: NavKey> {
     id: u64,
     key: K,
     saved: Rc<SavedState>,
+    /// Scope owned by this navigation entry.
+    /// Disposed when the entry is popped, so `scoped_effect` cleanups run on unmount.
+    scope: Scope,
 }
 
 struct BackState<K: NavKey> {
@@ -65,11 +69,11 @@ pub struct NavBackStack<K: NavKey> {
     version: Rc<Signal<u64>>,
 }
 impl<K: NavKey> NavBackStack<K> {
-    pub fn top(&self) -> Option<(u64, K, Rc<SavedState>)> {
+    pub fn top(&self) -> Option<(u64, K, Rc<SavedState>, Scope)> {
         let s = self.inner.borrow();
         s.entries
             .last()
-            .map(|e| (e.id, e.key.clone(), e.saved.clone()))
+            .map(|e| (e.id, e.key.clone(), e.saved.clone(), e.scope.clone()))
     }
     pub fn size(&self) -> usize {
         self.inner.borrow().entries.len()
@@ -90,14 +94,27 @@ impl<K: NavKey> NavBackStack<K> {
             id,
             key,
             saved: Rc::new(SavedState::default()),
+            scope: Scope::new(),
         });
         s.last_dir = TransitionDir::Push;
     }
-    fn pop_inner(&self) -> Option<Entry<K>> {
-        let mut s = self.inner.borrow_mut();
-        s.last_dir = TransitionDir::Pop;
-        s.entries.pop()
+
+    /// Pop the top entry (if any) and dispose its scope.
+    fn pop_inner(&self) -> bool {
+        let entry = {
+            let mut s = self.inner.borrow_mut();
+            s.last_dir = TransitionDir::Pop;
+            s.entries.pop()
+        };
+
+        if let Some(e) = entry {
+            e.scope.dispose();
+            true
+        } else {
+            false
+        }
     }
+
     fn replace_inner(&self, key: K) {
         let mut s = self.inner.borrow_mut();
         if let Some(last) = s.entries.last_mut() {
@@ -109,6 +126,7 @@ impl<K: NavKey> NavBackStack<K> {
                 id,
                 key,
                 saved: Rc::new(SavedState::default()),
+                scope: Scope::new(),
             });
         }
         s.last_dir = TransitionDir::Push;
@@ -122,13 +140,23 @@ impl<K: NavKey> NavBackStack<K> {
         let keys: Vec<&K> = s.entries.iter().map(|e| &e.key).collect();
         serde_json::to_string(&keys).unwrap_or("[]".into())
     }
+
     pub fn from_json(&self, json: &str)
     where
         K: for<'de> Deserialize<'de>,
     {
         if let Ok(keys) = serde_json::from_str::<Vec<K>>(json) {
+            // Dispose all existing scopes before clearing.
+            let old_entries = {
+                let mut s = self.inner.borrow_mut();
+                std::mem::take(&mut s.entries)
+            };
+            for e in old_entries {
+                e.scope.dispose();
+            }
+
             let mut s = self.inner.borrow_mut();
-            s.entries.clear();
+            s.entries = Vec::new();
             for k in keys {
                 let id = s.next_id;
                 s.next_id += 1;
@@ -136,6 +164,7 @@ impl<K: NavKey> NavBackStack<K> {
                     id,
                     key: k,
                     saved: Rc::new(SavedState::default()),
+                    scope: Scope::new(),
                 });
             }
             s.last_dir = TransitionDir::None;
@@ -163,14 +192,14 @@ impl<K: NavKey> Navigator<K> {
         if self.stack.size() <= 1 {
             return false;
         }
-        let ok = self.stack.pop_inner().is_some();
+        let ok = self.stack.pop_inner();
         if ok {
             self.stack.bump();
         }
         ok
     }
     pub fn clear_and_push(&self, k: K) {
-        while self.stack.pop_inner().is_some() {}
+        while self.stack.pop_inner() {}
         self.stack.push_inner(k);
         self.stack.bump();
     }
@@ -184,7 +213,7 @@ impl<K: NavKey> Navigator<K> {
             }
         };
         for _ in 0..count {
-            self.stack.pop_inner();
+            let _ = self.stack.pop_inner();
         }
         if count > 0 {
             self.stack.bump();
@@ -199,6 +228,7 @@ pub fn remember_back_stack<K: NavKey>(start: K) -> std::rc::Rc<NavBackStack<K>> 
                 id: 1,
                 key: start,
                 saved: std::rc::Rc::new(SavedState::default()),
+                scope: Scope::new(),
             }],
             next_id: 2,
             last_dir: TransitionDir::None,
@@ -266,7 +296,7 @@ pub fn NavDisplay<K: NavKey>(
     transition: NavTransition,
 ) -> View {
     let _v = stack.version.get(); // join reactive graph
-    let (id, key, saved) = match stack.top() {
+    let (id, key, saved, entry_scope) = match stack.top() {
         Some(t) => t,
         None => return VBox(Modifier::new()),
     };
@@ -281,7 +311,7 @@ pub fn NavDisplay<K: NavKey>(
 
     let dir = stack.last_dir();
     if dir == TransitionDir::None {
-        let v = (make_view)(&scope);
+        let v = entry_scope.run(|| (make_view)(&scope));
         return maybe_intercept_back(v, on_back);
     }
 
@@ -308,7 +338,7 @@ pub fn NavDisplay<K: NavKey>(
         1.0
     };
 
-    let v = (make_view)(&scope);
+    let v = entry_scope.run(|| (make_view)(&scope));
     let framed = Stack(Modifier::new().fill_max_size())
         .child(VBox(Modifier::new().translate(dx, 0.0).alpha(alpha)).child(v));
     maybe_intercept_back(framed, on_back)
