@@ -1,10 +1,8 @@
 use repose_core::Vec2;
 
 use crate::input::*;
-use std::{
-    rc::Rc,
-    time::{Duration, Instant},
-};
+use std::rc::Rc;
+use web_time::{Duration, Instant};
 
 pub struct GestureDetector {
     on_tap: Option<Rc<dyn Fn(Vec2)>>,
@@ -61,16 +59,17 @@ impl GestureDetector {
 
                 // Check for double tap
                 if let Some(last) = self.last_tap
-                    && last.elapsed() < Duration::from_millis(300) {
-                        if let Some(cb) = &self.on_double_tap {
-                            cb(event.position);
-                        }
-                        self.last_tap = None;
+                    && (Instant::now() - last) < Duration::from_millis(300)
+                {
+                    if let Some(cb) = &self.on_double_tap {
+                        cb(event.position);
                     }
+                    self.last_tap = None;
+                }
             }
             PointerEventKind::Up(_) => {
                 if let Some((start_time, start_pos)) = self.press_start {
-                    let elapsed = start_time.elapsed();
+                    let elapsed = Instant::now() - start_time;
                     let distance = ((event.position.x - start_pos.x).powi(2)
                         + (event.position.y - start_pos.y).powi(2))
                     .sqrt();
@@ -107,26 +106,28 @@ impl GestureDetector {
             }
             PointerEventKind::Move => {
                 if let Some(start) = self.drag_start
-                    && let Some(cb) = &self.on_drag {
-                        cb(DragEvent {
-                            start,
-                            current: event.position,
-                            delta: Vec2 {
-                                x: event.position.x - start.x,
-                                y: event.position.y - start.y,
-                            },
-                            velocity: Vec2::default(), // Calculate from history
-                        });
-                    }
+                    && let Some(cb) = &self.on_drag
+                {
+                    cb(DragEvent {
+                        start,
+                        current: event.position,
+                        delta: Vec2 {
+                            x: event.position.x - start.x,
+                            y: event.position.y - start.y,
+                        },
+                        velocity: Vec2::default(), // TODO: calculate from history
+                    });
+                }
 
                 // Long press detection
                 if let Some((start_time, pos)) = self.press_start
-                    && start_time.elapsed() > Duration::from_millis(500) {
-                        if let Some(cb) = &self.on_long_press {
-                            cb(pos);
-                        }
-                        self.press_start = None; // Fire once
+                    && (Instant::now() - start_time) > Duration::from_millis(500)
+                {
+                    if let Some(cb) = &self.on_long_press {
+                        cb(pos);
                     }
+                    self.press_start = None; // Fire once
+                }
             }
             _ => {}
         }
