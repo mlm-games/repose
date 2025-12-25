@@ -216,12 +216,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
         ) {
             match event {
                 WindowEvent::CloseRequested => {
-                    use repose_navigation::back;
-
-                    log::info!("Window close requested");
-                    if !back::handle() {
-                        el.exit();
-                    }
+                    el.exit();
                 }
                 WindowEvent::Resized(size) => {
                     self.sched.size = (size.width, size.height);
