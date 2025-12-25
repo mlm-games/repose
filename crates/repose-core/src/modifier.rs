@@ -430,4 +430,12 @@ impl Modifier {
         self.transform = Some(t);
         self
     }
+    pub fn weight(mut self, w: f32) -> Self {
+        let w = w.max(0.0);
+        self.flex_grow = Some(w);
+        self.flex_shrink = Some(1.0);
+        // dp units; 0 is fine.
+        self.flex_basis = Some(0.0);
+        self
+    }
 }

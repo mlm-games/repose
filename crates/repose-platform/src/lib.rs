@@ -31,11 +31,7 @@ where
     sched.repose(
         {
             let scale = scale;
-            move |s: &mut Scheduler| {
-                with_density(Density { scale }, || {
-                    with_text_scale(TextScale(1.0), || (root_fn)(s))
-                })
-            }
+            move |s: &mut Scheduler| with_density(Density { scale }, || (root_fn)(s))
         },
         {
             let hover_id = hover_id;
@@ -46,15 +42,13 @@ where
                     pressed: pressed_ids.clone(),
                 };
                 with_density(Density { scale }, || {
-                    with_text_scale(TextScale(1.0), || {
-                        repose_ui::layout_and_paint(
-                            view,
-                            size_px_u32,
-                            tf_states,
-                            &interactions,
-                            focused,
-                        )
-                    })
+                    repose_ui::layout_and_paint(
+                        view,
+                        size_px_u32,
+                        tf_states,
+                        &interactions,
+                        focused,
+                    )
                 })
             }
         },

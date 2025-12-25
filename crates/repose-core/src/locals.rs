@@ -3,41 +3,24 @@
 //! Repose uses thread‑local “composition locals” for global UI parameters:
 //!
 //! - `Theme` — colors for surfaces, text, controls, etc.
-//! - `Density` — dp→px scale factor.
-//! - `TextScale` — user text scaling.
-//! - `TextDirection` — LTR or RTL.
+//! - `Density` — dp→px device scale factor (platform sets this).
+//! - `UiScale` — app-controlled UI scale multiplier (defaults to 1.0).
+//! - `TextScale` — user text scaling (defaults to 1.0).
+//! - `TextDirection` — LTR or RTL (defaults to LTR).
 //!
-//! You can override these for a subtree using `with_theme`, `with_density`,
-//! `with_text_scale`, and `with_text_direction`:
-//!
-//! ```rust
-//! use repose_core::*;
-//!
-//! let light = Theme {
-//!     background: Color::WHITE,
-//!     surface: Color::from_hex("#F5F5F5"),
-//!     on_surface: Color::from_hex("#222222"),
-//!     primary: Color::from_hex("#0061A4"),
-//!     on_primary: Color::WHITE,
-//!     ..Theme::default()
-//! };
-//!
-//! with_theme(light, || {
-//!     // all views composed here will see the light theme
-//! });
-//! ```
-//!
-//! Widgets in `repose-ui` and `repose-material` read from `theme()` and
-//! should avoid hard‑coding colors where possible.
+//! Locals can be overridden for a subtree with `with_*`. If no local is set,
+//! getters fall back to global defaults (which an app can set each frame).
 
 use std::any::{Any, TypeId};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::OnceLock;
+
+use parking_lot::RwLock;
 
 use crate::Color;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum TextDirection {
     #[default]
     Ltr,
@@ -48,43 +31,74 @@ thread_local! {
     static LOCALS_STACK: RefCell<Vec<HashMap<TypeId, Box<dyn Any>>>> = RefCell::new(Vec::new());
 }
 
+// ---- Global defaults (NEW) ----
+
+#[derive(Clone, Copy, Debug)]
+struct Defaults {
+    theme: Theme,
+    text_direction: TextDirection,
+    ui_scale: UiScale,
+    text_scale: TextScale,
+}
+
+impl Default for Defaults {
+    fn default() -> Self {
+        Self {
+            theme: Theme::default(),
+            text_direction: TextDirection::default(),
+            ui_scale: UiScale::default(),
+            text_scale: TextScale::default(),
+        }
+    }
+}
+
+static DEFAULTS: OnceLock<RwLock<Defaults>> = OnceLock::new();
+
+fn defaults() -> &'static RwLock<Defaults> {
+    DEFAULTS.get_or_init(|| RwLock::new(Defaults::default()))
+}
+
+/// Set the global default theme used when no local Theme is active.
+pub fn set_theme_default(t: Theme) {
+    defaults().write().theme = t;
+}
+
+/// Set the global default text direction used when no local TextDirection is active.
+pub fn set_text_direction_default(d: TextDirection) {
+    defaults().write().text_direction = d;
+}
+
+/// Set the global default UI scale used when no local UiScale is active.
+pub fn set_ui_scale_default(s: UiScale) {
+    defaults().write().ui_scale = UiScale(s.0.max(0.0));
+}
+
+/// Set the global default text scale used when no local TextScale is active.
+pub fn set_text_scale_default(s: TextScale) {
+    defaults().write().text_scale = TextScale(s.0.max(0.0));
+}
+
+// ---- Units ----
+
 /// density‑independent pixels (dp)
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Dp(pub f32);
 
 impl Dp {
-    /// Converts this dp value into physical pixels using the current Density.
+    /// Converts this dp value into physical pixels using current Density * UiScale.
     pub fn to_px(self) -> f32 {
-        self.0 * density().scale
+        self.0 * density().scale * ui_scale().0
     }
 }
 
-/// Convenience: convert a raw dp scalar into px using current Density.
+/// Convenience: convert a raw dp scalar into px using current Density * UiScale.
 pub fn dp_to_px(dp: f32) -> f32 {
     Dp(dp).to_px()
 }
 
-pub fn with_text_direction<R>(dir: TextDirection, f: impl FnOnce() -> R) -> R {
-    with_locals_frame(|| {
-        set_local_boxed(std::any::TypeId::of::<TextDirection>(), Box::new(dir));
-        f()
-    })
-}
-
-pub fn text_direction() -> TextDirection {
-    LOCALS_STACK.with(|st| {
-        for frame in st.borrow().iter().rev() {
-            if let Some(v) = frame.get(&std::any::TypeId::of::<TextDirection>())
-                && let Some(d) = v.downcast_ref::<TextDirection>() {
-                    return *d;
-                }
-        }
-        TextDirection::default()
-    })
-}
+// ---- Locals frames ----
 
 fn with_locals_frame<R>(f: impl FnOnce() -> R) -> R {
-    // Non-panicking frame guard (ensures pop on unwind)
     struct Guard;
     impl Drop for Guard {
         fn drop(&mut self) {
@@ -111,45 +125,40 @@ fn set_local_boxed(t: TypeId, v: Box<dyn Any>) {
     });
 }
 
-// Typed API
+fn get_local<T: 'static + Copy>() -> Option<T> {
+    LOCALS_STACK.with(|st| {
+        for frame in st.borrow().iter().rev() {
+            if let Some(v) = frame.get(&TypeId::of::<T>())
+                && let Some(t) = v.downcast_ref::<T>()
+            {
+                return Some(*t);
+            }
+        }
+        None
+    })
+}
 
-/// High‑level color theme used by widgets and layout.
-///
-/// This is intentionally small and semantic rather than a full Material 3
-/// spec. Higher‑level libraries (e.g. `repose-material`) can build richer
-/// schemes on top.
+// ---- Typed API ----
+
 #[derive(Clone, Copy, Debug)]
 pub struct Theme {
-    /// Window background / app root.
     pub background: Color,
-    /// Default container surface (cards, sheets, panels).
     pub surface: Color,
-    /// Primary foreground color on top of `surface`/`background`.
     pub on_surface: Color,
 
-    /// Primary accent color for buttons, sliders, progress, etc.
     pub primary: Color,
-    /// Foreground color used on top of `primary`.
     pub on_primary: Color,
 
-    /// Low‑emphasis outline/border color.
     pub outline: Color,
-    /// Color for focus rings and accessibility highlights.
     pub focus: Color,
 
-    /// Default button background.
     pub button_bg: Color,
-    /// Button background on hover.
     pub button_bg_hover: Color,
-    /// Button background on pressed.
     pub button_bg_pressed: Color,
 
-    /// Scrollbar track background (low emphasis).
     pub scrollbar_track: Color,
-    /// Scrollbar thumb (higher emphasis).
     pub scrollbar_thumb: Color,
 
-    ///Error
     pub error: Color,
 }
 
@@ -168,19 +177,28 @@ impl Default for Theme {
             button_bg_pressed: Color::from_hex("#1F7556"),
             scrollbar_track: Color(0xDD, 0xDD, 0xDD, 32),
             scrollbar_thumb: Color(0xDD, 0xDD, 0xDD, 140),
-
             error: Color::from_hex("#ae3636"),
         }
     }
 }
 
+/// Platform/device scale (dp→px multiplier). Platform runner should set this.
 #[derive(Clone, Copy, Debug)]
 pub struct Density {
-    pub scale: f32, // dp→px multiplier
+    pub scale: f32,
 }
 impl Default for Density {
     fn default() -> Self {
         Self { scale: 1.0 }
+    }
+}
+
+/// Additional UI scale multiplier (app-controlled).
+#[derive(Clone, Copy, Debug)]
+pub struct UiScale(pub f32);
+impl Default for UiScale {
+    fn default() -> Self {
+        Self(1.0)
     }
 }
 
@@ -191,8 +209,6 @@ impl Default for TextScale {
         Self(1.0)
     }
 }
-
-// Provide helpers (push a new frame, set the local, run closure, pop frame)
 
 pub fn with_theme<R>(theme: Theme, f: impl FnOnce() -> R) -> R {
     with_locals_frame(|| {
@@ -208,6 +224,13 @@ pub fn with_density<R>(density: Density, f: impl FnOnce() -> R) -> R {
     })
 }
 
+pub fn with_ui_scale<R>(s: UiScale, f: impl FnOnce() -> R) -> R {
+    with_locals_frame(|| {
+        set_local_boxed(TypeId::of::<UiScale>(), Box::new(s));
+        f()
+    })
+}
+
 pub fn with_text_scale<R>(ts: TextScale, f: impl FnOnce() -> R) -> R {
     with_locals_frame(|| {
         set_local_boxed(TypeId::of::<TextScale>(), Box::new(ts));
@@ -215,40 +238,29 @@ pub fn with_text_scale<R>(ts: TextScale, f: impl FnOnce() -> R) -> R {
     })
 }
 
-// Getters with defaults if not set
+pub fn with_text_direction<R>(dir: TextDirection, f: impl FnOnce() -> R) -> R {
+    with_locals_frame(|| {
+        set_local_boxed(TypeId::of::<TextDirection>(), Box::new(dir));
+        f()
+    })
+}
 
 pub fn theme() -> Theme {
-    LOCALS_STACK.with(|st| {
-        for frame in st.borrow().iter().rev() {
-            if let Some(v) = frame.get(&TypeId::of::<Theme>())
-                && let Some(t) = v.downcast_ref::<Theme>() {
-                    return *t;
-                }
-        }
-        Theme::default()
-    })
+    get_local::<Theme>().unwrap_or_else(|| defaults().read().theme)
 }
 
 pub fn density() -> Density {
-    LOCALS_STACK.with(|st| {
-        for frame in st.borrow().iter().rev() {
-            if let Some(v) = frame.get(&TypeId::of::<Density>())
-                && let Some(d) = v.downcast_ref::<Density>() {
-                    return *d;
-                }
-        }
-        Density::default()
-    })
+    get_local::<Density>().unwrap_or_default()
+}
+
+pub fn ui_scale() -> UiScale {
+    get_local::<UiScale>().unwrap_or_else(|| defaults().read().ui_scale)
 }
 
 pub fn text_scale() -> TextScale {
-    LOCALS_STACK.with(|st| {
-        for frame in st.borrow().iter().rev() {
-            if let Some(v) = frame.get(&TypeId::of::<TextScale>())
-                && let Some(ts) = v.downcast_ref::<TextScale>() {
-                    return *ts;
-                }
-        }
-        TextScale::default()
-    })
+    get_local::<TextScale>().unwrap_or_else(|| defaults().read().text_scale)
+}
+
+pub fn text_direction() -> TextDirection {
+    get_local::<TextDirection>().unwrap_or_else(|| defaults().read().text_direction)
 }

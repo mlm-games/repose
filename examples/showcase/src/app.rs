@@ -1,6 +1,9 @@
 use std::rc::Rc;
 
-use repose_core::{TextDirection, prelude::*, signal, with_text_direction};
+use repose_core::{
+    TextDirection, prelude::*, set_text_direction_default, set_text_scale_default,
+    set_theme_default, set_ui_scale_default, signal, with_text_direction,
+};
 use repose_navigation::{
     NavDisplay, NavTransition, Navigator, back, remember_back_stack, renderer,
 };
@@ -35,7 +38,6 @@ impl Route {
             Route::Errors => "Errors",
         }
     }
-
     pub fn id(self) -> u64 {
         match self {
             Route::Home => 1,
@@ -55,8 +57,9 @@ pub fn app(_s: &mut Scheduler) -> View {
     // App state
     let dark = remember(|| signal(true));
     let rtl = remember(|| signal(false));
-    let density = remember(|| signal(1.0f32));
-    let text_scale = remember(|| signal(1.0f32));
+
+    let ui_scale = remember(|| signal(1.0f32)); // extra scale multiplier
+    let text_scale = remember(|| signal(1.0f32)); // font multiplier
 
     // Theme presets
     let theme_light = {
@@ -82,7 +85,7 @@ pub fn app(_s: &mut Scheduler) -> View {
         stack: (*stack).clone(),
     };
 
-    // Back handler: keep it simple and robust; set each frame.
+    // Back handler: set each frame (simple + robust).
     back::set(Some(Rc::new({
         let nav = navigator.clone();
         move || nav.pop()
@@ -114,46 +117,39 @@ pub fn app(_s: &mut Scheduler) -> View {
 
     let chosen_theme = if dark.get() { theme_dark } else { theme_light };
 
-    with_text_direction(dir, || {
-        with_theme(chosen_theme, || {
-            with_density(
-                Density {
-                    scale: density.get(),
-                },
-                || {
-                    with_text_scale(TextScale(text_scale.get()), || {
-                        ui::AppShell(
-                            current,
-                            navigator.clone(),
-                            dark.get(),
-                            {
-                                let dark = dark.clone();
-                                move |v| dark.set(v)
-                            },
-                            rtl.get(),
-                            {
-                                let rtl = rtl.clone();
-                                move |v| rtl.set(v)
-                            },
-                            density.get(),
-                            {
-                                let density = density.clone();
-                                move |v| density.set(v.clamp(0.75, 2.0))
-                            },
-                            text_scale.get(),
-                            {
-                                let text_scale = text_scale.clone();
-                                move |v| text_scale.set(v.clamp(0.75, 2.0))
-                            },
-                            {
-                                // Content
-                                let transition = NavTransition::default();
-                                NavDisplay(stack.clone(), render.clone(), None, transition)
-                            },
-                        )
-                    })
-                },
-            )
-        })
-    })
+    set_theme_default(chosen_theme);
+    set_text_direction_default(dir);
+    set_ui_scale_default(UiScale(ui_scale.get()));
+    set_text_scale_default(TextScale(text_scale.get()));
+
+    ui::AppShell(
+        current,
+        navigator.clone(),
+        dark.get(),
+        {
+            let dark = dark.clone();
+            move |v| dark.set(v)
+        },
+        rtl.get(),
+        {
+            let rtl = rtl.clone();
+            move |v| rtl.set(v)
+        },
+        ui_scale.get(),
+        {
+            let ui_scale = ui_scale.clone();
+            move |v| ui_scale.set(v.clamp(0.75, 2.0))
+        },
+        text_scale.get(),
+        {
+            let text_scale = text_scale.clone();
+            move |v| text_scale.set(v.clamp(0.75, 2.0))
+        },
+        NavDisplay(
+            stack.clone(),
+            render.clone(),
+            None,
+            NavTransition::default(),
+        ),
+    )
 }
