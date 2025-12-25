@@ -30,29 +30,6 @@ pub enum DrawCommand {
     },
 }
 
-pub struct Paint {
-    pub color: Color,
-    pub stroke_width: Option<f32>,
-    pub style: PaintStyle,
-}
-
-pub enum PaintStyle {
-    Fill,
-    Stroke,
-}
-
-pub struct Path {
-    segments: Vec<PathSegment>,
-}
-
-pub enum PathSegment {
-    MoveTo(Vec2),
-    LineTo(Vec2),
-    QuadTo(Vec2, Vec2),
-    CubicTo(Vec2, Vec2, Vec2),
-    Close,
-}
-
 impl DrawScope {
     pub fn draw_rect(&mut self, rect: Rect, color: Color, radius: f32) {
         self.commands.push(DrawCommand::Rect {
@@ -112,18 +89,17 @@ impl DrawScope {
 }
 
 pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) -> View {
-    // Record commands upfront; they are replayed during paint for the node's rect
-    let mut scope = DrawScope {
-        commands: Vec::new(),
-        size: Size {
-            width: 100.0,
-            height: 100.0,
-        },
-    };
-    on_draw(&mut scope);
-
-    let painter_cmds = scope.commands.clone();
+    // Painter replays drawing each frame, so Canvas can react to signals/animation.
     let painter = move |scene: &mut Scene, rect: Rect| {
+        let mut scope = DrawScope {
+            commands: Vec::new(),
+            size: Size {
+                width: rect.w.max(0.0),
+                height: rect.h.max(0.0),
+            },
+        };
+        on_draw(&mut scope);
+
         // local->global helper
         let to_global = |r: Rect| Rect {
             x: rect.x + r.x,
@@ -131,7 +107,8 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
             w: r.w,
             h: r.h,
         };
-        for cmd in &painter_cmds {
+
+        for cmd in &scope.commands {
             match cmd {
                 DrawCommand::Rect {
                     rect: r,
@@ -200,7 +177,17 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
         }
     };
 
-    Box(modifier
-        .painter(painter)
-        .size(scope.size.width, scope.size.height))
+    // Respect caller sizing. Only apply a default if they didn't specify any size behavior.
+    let mut m = modifier.painter(painter);
+    let has_size = m.size.is_some()
+        || m.width.is_some()
+        || m.height.is_some()
+        || m.fill_max
+        || m.fill_max_w
+        || m.fill_max_h;
+    if !has_size {
+        m = m.size(100.0, 100.0);
+    }
+
+    Box(m)
 }
