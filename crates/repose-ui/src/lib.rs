@@ -536,8 +536,9 @@ pub fn layout_and_paint(
     use std::collections::HashMap as StdHashMap;
     let mut text_cache: StdHashMap<taffy::NodeId, TextLayout> = StdHashMap::new();
 
-    fn style_from_modifier(m: &Modifier, kind: &ViewKind, px: &dyn Fn(f32) -> f32) -> Style {
+    fn style_from_modifier(m: &Modifier, kind: &ViewKind, px: &dyn Fn(f32) -> f32) -> taffy::Style {
         use taffy::prelude::*;
+
         let mut s = Style::default();
 
         // Display role
@@ -547,7 +548,7 @@ pub fn layout_and_paint(
             | ViewKind::Surface
             | ViewKind::ScrollV { .. }
             | ViewKind::ScrollXY { .. } => Display::Flex,
-            ViewKind::Stack => Display::Grid,
+            ViewKind::Stack => Display::Grid, // you model Stack as a grid overlay
             _ => Display::Flex,
         };
 
@@ -570,7 +571,7 @@ pub fn layout_and_paint(
             s.flex_direction = FlexDirection::Column;
         }
 
-        // Defaults
+        // Default alignment for container-y nodes
         s.align_items = if matches!(
             kind,
             ViewKind::Row
@@ -607,15 +608,15 @@ pub fn layout_and_paint(
                 | ViewKind::ScrollV { .. }
                 | ViewKind::ScrollXY { .. }
         ) {
-            s.flex_shrink = 1.0; // Allow shrinking by default
+            s.flex_shrink = 1.0;
         }
 
         // Flex props
         if let Some(g) = m.flex_grow {
-            s.flex_grow = g;
+            s.flex_grow = g.max(0.0);
         }
         if let Some(sh) = m.flex_shrink {
-            s.flex_shrink = sh;
+            s.flex_shrink = sh.max(0.0);
         }
         if let Some(b_dp) = m.flex_basis {
             s.flex_basis = length(px(b_dp.max(0.0)));
@@ -636,20 +637,24 @@ pub fn layout_and_paint(
         if let Some(ai) = m.align_items_container {
             s.align_items = Some(ai);
         }
-        if let Some(mg_top) = m.margin_top {
-            s.margin.top = length(mg_top)
-        }
-        if let Some(mg_left) = m.margin_left {
-            s.margin.left = length(mg_left)
-        }
-        if let Some(mg_right) = m.margin_right {
-            s.margin.right = length(mg_right)
-        }
-        if let Some(mg_bottom) = m.margin_bottom {
-            s.margin.bottom = length(mg_bottom)
+        if let Some(ac) = m.align_content {
+            s.align_content = Some(ac);
         }
 
-        // Absolute positioning (convert insets from dp to px)
+        if let Some(v) = m.margin_top {
+            s.margin.top = length(px(v));
+        }
+        if let Some(v) = m.margin_left {
+            s.margin.left = length(px(v));
+        }
+        if let Some(v) = m.margin_right {
+            s.margin.right = length(px(v));
+        }
+        if let Some(v) = m.margin_bottom {
+            s.margin.bottom = length(px(v));
+        }
+
+        // Absolute positioning
         if let Some(PositionType::Absolute) = m.position_type {
             s.position = Position::Absolute;
             s.inset = taffy::geometry::Rect {
@@ -672,7 +677,7 @@ pub fn layout_and_paint(
             };
         }
 
-        // Scrollables clip; sizing is decided by explicit/fill logic below
+        // Scroll containers clip their children; actual clip is drawn in paint pass too
         if matches!(kind, ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }) {
             s.overflow = Point {
                 x: Overflow::Hidden,
@@ -680,9 +685,9 @@ pub fn layout_and_paint(
             };
         }
 
-        // Padding (content box). With axis-aware fill below, padding stays inside the allocated box.
+        // Padding
         if let Some(pv_dp) = m.padding_values {
-            s.padding = taffy::geometry::Rect {
+            s.padding = Rect {
                 left: length(px(pv_dp.left)),
                 right: length(px(pv_dp.right)),
                 top: length(px(pv_dp.top)),
@@ -690,7 +695,7 @@ pub fn layout_and_paint(
             };
         } else if let Some(p_dp) = m.padding {
             let v = length(px(p_dp));
-            s.padding = taffy::geometry::Rect {
+            s.padding = Rect {
                 left: v,
                 right: v,
                 top: v,
@@ -698,21 +703,10 @@ pub fn layout_and_paint(
             };
         }
 
-        if matches!(
-            kind,
-            ViewKind::Box
-                | ViewKind::TextField { .. }
-                | ViewKind::Text { .. }
-                | ViewKind::Button { .. }
-        ) {
-            if m.min_width.is_none() && s.min_size.width.is_auto() {
-                s.min_size.width = length(0.0);
-            }
-        }
-
-        // Explicit size — highest priority
+        // Explicit size (highest priority)
         let mut width_set = false;
         let mut height_set = false;
+
         if let Some(sz_dp) = m.size {
             if sz_dp.width.is_finite() {
                 s.size.width = length(px(sz_dp.width.max(0.0)));
@@ -732,73 +726,39 @@ pub fn layout_and_paint(
             height_set = true;
         }
 
-        // Axis-aware fill
-        let is_row = matches!(kind, ViewKind::Row);
-        let is_column = matches!(
-            kind,
-            ViewKind::Column
-                | ViewKind::Surface
-                | ViewKind::ScrollV { .. }
-                | ViewKind::ScrollXY { .. }
-        );
-
+        // Fill semantics (kind-independent)
+        //
+        // This is the only consistent definition you can implement without knowing the parent axis:
+        // - fill_max_width  => width: 100%
+        // - fill_max_height => height: 100%
+        //
+        // For proportional splits in a Row/Column main axis, use `.weight()` / flex_grow.
         let want_fill_w = m.fill_max || m.fill_max_w;
         let want_fill_h = m.fill_max || m.fill_max_h;
 
-        // Main axis fill -> weight (flex: 1 1 0%), Cross axis fill -> tight (min==max==100%)
-        if is_column {
-            // main axis = vertical
-            if want_fill_h && !height_set {
-                s.flex_grow = s.flex_grow.max(1.0);
-                s.flex_shrink = s.flex_shrink.max(1.0);
-                s.flex_basis = length(0.0);
-                s.min_size.height = length(0.0); // allow shrinking, avoid min-content expansion
-            }
-            if want_fill_w && !width_set {
-                if s.align_self.is_none() {
-                    s.align_self = Some(AlignSelf::Stretch);
-                }
-            }
-        } else if is_row {
-            // main axis = horizontal
-            if want_fill_w && !width_set {
-                s.flex_grow = s.flex_grow.max(1.0);
-                s.flex_shrink = s.flex_shrink.max(1.0);
-                s.flex_basis = length(0.0);
+        if want_fill_w && !width_set {
+            s.size.width = percent(1.0);
+            // allow shrinking inside flex containers (CSS min-width:0)
+            if s.min_size.width.is_auto() {
                 s.min_size.width = length(0.0);
             }
-            if want_fill_h && !height_set {
-                s.min_size.height = percent(1.0);
-                s.max_size.height = percent(1.0);
-            }
-        } else {
-            // Fallback: treat like Column
-            if want_fill_h && !height_set {
-                s.flex_grow = s.flex_grow.max(1.0);
-                s.flex_shrink = s.flex_shrink.max(1.0);
-                s.flex_basis = length(0.0);
+        }
+        if want_fill_h && !height_set {
+            s.size.height = percent(1.0);
+            // Avoid making every text/button shrink vertically and paint outside.
+            if matches!(kind, ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. })
+                && s.min_size.height.is_auto()
+            {
                 s.min_size.height = length(0.0);
             }
-            if want_fill_w && !width_set {
-                if s.align_self.is_none() {
-                    s.align_self = Some(AlignSelf::Stretch);
-                }
-            }
         }
 
-        if matches!(kind, ViewKind::Surface) {
-            if (m.fill_max || m.fill_max_w) && s.min_size.width.is_auto() && !width_set {
-                if s.align_self.is_none() {
-                    s.align_self = Some(AlignSelf::Stretch);
-                }
-            }
-            if (m.fill_max || m.fill_max_h) && s.min_size.height.is_auto() && !height_set {
-                if s.align_self.is_none() {
-                    s.align_self = Some(AlignSelf::Stretch);
-                }
-            }
+        // Default min-width fix for flex overflow (CSS min-width:0)
+        if s.min_size.width.is_auto() {
+            s.min_size.width = length(0.0);
         }
 
+        // Button-specific defaults
         if matches!(kind, ViewKind::Button { .. }) {
             s.display = Display::Flex;
             s.flex_direction =
@@ -815,23 +775,25 @@ pub fn layout_and_paint(
                 s.align_items = Some(AlignItems::Center);
             }
 
-            // similar to Material
+            // Default padding unless user provided padding
             if m.padding.is_none() && m.padding_values.is_none() {
-                let ph = px(16.0);
-                let pv = px(8.0);
-                s.padding = taffy::geometry::Rect {
+                let ph = px(14.0);
+                let pv = px(10.0);
+                s.padding = Rect {
                     left: length(ph),
                     right: length(ph),
                     top: length(pv),
                     bottom: length(pv),
                 };
             }
+
+            // Default min height unless user provided one
             if m.min_height.is_none() && s.min_size.height.is_auto() {
                 s.min_size.height = length(px(40.0));
             }
         }
 
-        // user min/max clamps
+        // User min/max clamps (treat as dp)
         if let Some(v_dp) = m.min_width {
             s.min_size.width = length(px(v_dp.max(0.0)));
         }
@@ -845,7 +807,8 @@ pub fn layout_and_paint(
             s.max_size.height = length(px(v_dp.max(0.0)));
         }
 
-        if s.min_size.width.is_auto() {
+        // Text nodes: never force a min-content width
+        if matches!(kind, ViewKind::Text { .. }) && s.min_size.width.is_auto() {
             s.min_size.width = length(0.0);
         }
         // if s.min_size.height.is_auto() {
