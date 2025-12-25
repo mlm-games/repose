@@ -28,6 +28,8 @@ pub fn compose_frame<F>(
 where
     F: FnMut(&mut Scheduler) -> View,
 {
+    set_density_default(Density { scale });
+
     sched.repose(
         {
             let scale = scale;

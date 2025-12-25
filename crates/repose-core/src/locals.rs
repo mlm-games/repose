@@ -37,6 +37,7 @@ struct Defaults {
     text_direction: TextDirection,
     ui_scale: UiScale,
     text_scale: TextScale,
+    density: Density,
 }
 
 impl Default for Defaults {
@@ -46,6 +47,7 @@ impl Default for Defaults {
             text_direction: TextDirection::default(),
             ui_scale: UiScale::default(),
             text_scale: TextScale::default(),
+            density: Density::default(),
         }
     }
 }
@@ -74,6 +76,14 @@ pub fn set_ui_scale_default(s: UiScale) {
 /// Set the global default text scale used when no local TextScale is active.
 pub fn set_text_scale_default(s: TextScale) {
     defaults().write().text_scale = TextScale(s.0.max(0.0));
+}
+
+/// Set the global default device density (dp→px) used when no local Density is active.
+/// Platform runners should call this whenever the window scale factor changes.
+pub fn set_density_default(d: Density) {
+    defaults().write().density = Density {
+        scale: d.scale.max(0.0),
+    };
 }
 
 // ---- Units ----
@@ -244,7 +254,7 @@ pub fn theme() -> Theme {
 }
 
 pub fn density() -> Density {
-    get_local::<Density>().unwrap_or_default()
+    get_local::<Density>().unwrap_or_else(|| defaults().read().density)
 }
 
 pub fn ui_scale() -> UiScale {
