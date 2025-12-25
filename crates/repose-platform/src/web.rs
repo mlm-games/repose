@@ -216,10 +216,11 @@ impl App {
         state: &mut TextFieldState,
         hit_rect: Rect,
     ) {
-        let m = measure_text(&state.text, TF_FONT_DP as u32);
+        let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+        let m = measure_text(&state.text, font_px);
         let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
         let pad = self.padding_px(window);
-        state.ensure_caret_visible(caret_x_px, hit_rect.w - 2.0 * pad);
+        state.ensure_caret_visible(caret_x_px, hit_rect.w - 2.0 * pad, dp_to_px(2.0));
     }
 
     fn inject_fullscreen_css_if_needed(&self, window: &Window) {
@@ -385,11 +386,8 @@ impl ApplicationHandler<()> for App {
                             .unwrap_or(0.0);
 
                         let content_x_px = self.mouse_pos_px.0 - inner_x_px + state.scroll_offset;
-                        let idx = index_for_x_bytes(
-                            &state.text,
-                            TF_FONT_DP as u32,
-                            content_x_px.max(0.0),
-                        );
+                        let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+                        let idx = index_for_x_bytes(&state.text, font_px, content_x_px.max(0.0));
                         state.drag_to(idx);
 
                         if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
@@ -523,10 +521,12 @@ impl ApplicationHandler<()> for App {
                                         let inner_x_px = hit.rect.x + pad;
                                         let content_x_px =
                                             self.mouse_pos_px.0 - inner_x_px + st.scroll_offset;
+                                        let font_px = dp_to_px(TF_FONT_DP)
+                                            * repose_core::locals::text_scale().0;
 
                                         let idx = index_for_x_bytes(
                                             &st.text,
-                                            TF_FONT_DP as u32,
+                                            font_px,
                                             content_x_px.max(0.0),
                                         );
                                         st.begin_drag(idx, self.modifiers.shift);

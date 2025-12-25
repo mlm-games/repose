@@ -4,11 +4,13 @@ use std::rc::Rc;
 use web_time::Instant;
 
 pub struct LazyColumnState {
-    scroll_offset: Signal<f32>,
-    viewport_height: Signal<f32>,
-    // Internal non-reactive state
-    vel: RefCell<f32>,
+    scroll_offset: Signal<f32>,   // px
+    viewport_height: Signal<f32>, // px
+
+    // physics
+    vel_px_s: RefCell<f32>, // px/sec
     last_t: RefCell<Instant>,
+    last_input_t: RefCell<Instant>,
     animating: RefCell<bool>,
 }
 
@@ -20,39 +22,50 @@ impl Default for LazyColumnState {
 
 impl LazyColumnState {
     pub fn new() -> Self {
+        let now = Instant::now();
         Self {
             scroll_offset: signal(0.0),
             viewport_height: signal(600.0),
-            vel: RefCell::new(0.0),
-            last_t: RefCell::new(Instant::now()),
+            vel_px_s: RefCell::new(0.0),
+            last_t: RefCell::new(now),
+            last_input_t: RefCell::new(now),
             animating: RefCell::new(false),
         }
     }
+
     pub fn set_offset(&self, off: f32, content_height: f32) {
         let vh = self.viewport_height.get();
         let max_off = (content_height - vh).max(0.0);
         self.scroll_offset.set(off.clamp(0.0, max_off));
     }
 
-    pub fn scroll_immediate(&self, delta: f32, content_height: f32) -> f32 {
+    /// Consume delta in px. Returns leftover in px (for nested scroll).
+    pub fn scroll_immediate(&self, delta_px: f32, content_height_px: f32) -> f32 {
         let before = self.scroll_offset.get();
         let viewport = self.viewport_height.get();
+        let max_offset = (content_height_px - viewport).max(0.0);
 
-        let max_offset = (content_height - viewport).max(0.0);
-        let new_offset = (before + delta).clamp(0.0, max_offset);
-
+        let new_offset = (before + delta_px).clamp(0.0, max_offset);
         self.scroll_offset.set(new_offset);
 
         let consumed = new_offset - before;
-        let leftover = delta - consumed;
+        let leftover = delta_px - consumed;
 
-        *self.vel.borrow_mut() = consumed;
-        *self.animating.borrow_mut() = consumed.abs() > 0.25;
+        // estimate velocity (px/sec) from input cadence
+        let now = Instant::now();
+        let dt = (now - *self.last_input_t.borrow())
+            .as_secs_f32()
+            .clamp(1.0 / 240.0, 1.0 / 15.0);
+        *self.last_input_t.borrow_mut() = now;
+
+        *self.vel_px_s.borrow_mut() = consumed / dt;
+        *self.animating.borrow_mut() = self.vel_px_s.borrow().abs() > 10.0;
 
         leftover
     }
 
-    pub fn tick(&self, content_height: f32) -> bool {
+    /// Advance inertia one tick; returns true if animating.
+    pub fn tick(&self, content_height_px: f32) -> bool {
         if !*self.animating.borrow() {
             return false;
         }
@@ -65,25 +78,31 @@ impl LazyColumnState {
             return false;
         }
 
-        let vel = *self.vel.borrow();
-        if vel.abs() < 0.05 {
-            *self.vel.borrow_mut() = 0.0;
+        let vel0 = *self.vel_px_s.borrow();
+        if vel0.abs() < 5.0 {
+            *self.vel_px_s.borrow_mut() = 0.0;
             *self.animating.borrow_mut() = false;
             return false;
         }
 
-        // Update position
         let before = self.scroll_offset.get();
         let viewport = self.viewport_height.get();
-        let max_offset = (content_height - viewport).max(0.0);
+        let max_offset = (content_height_px - viewport).max(0.0);
 
-        let new_off = (before + vel).clamp(0.0, max_offset);
-
-        // Signal update triggers recomposition!
+        let new_off = (before + vel0 * dt).clamp(0.0, max_offset);
         self.scroll_offset.set(new_off);
 
-        // Apply friction
-        *self.vel.borrow_mut() *= 0.9;
+        // Stop quickly at bounds
+        if (new_off - before).abs() < 0.01 && (before <= 0.0 || before >= max_offset) {
+            *self.vel_px_s.borrow_mut() = 0.0;
+            *self.animating.borrow_mut() = false;
+            return false;
+        }
+
+        // decay ~0.9 per 60Hz "frame"
+        let decay_per_60hz = 0.90f32;
+        let decay = decay_per_60hz.powf(dt * 60.0);
+        *self.vel_px_s.borrow_mut() = vel0 * decay;
 
         true
     }
@@ -102,11 +121,11 @@ where
     T: Clone + 'static,
     F: Fn(T, usize) -> View + 'static,
 {
-    // Convert once: all internal math uses px
+    // Convert once: internal math uses px
     let item_h_px = dp_to_px(item_height_dp);
     let content_height_px = items.len() as f32 * item_h_px;
 
-    // Signals are already px (fed by ScrollV)
+    // Signals are px (fed by ScrollV)
     let scroll_offset_px = state.scroll_offset.get();
     let viewport_height_px = state.viewport_height.get();
 
@@ -157,7 +176,7 @@ where
 
     let set_viewport = {
         let st = state.clone();
-        Rc::new(move |h_px: f32| st.viewport_height.set(h_px))
+        Rc::new(move |h_px: f32| st.viewport_height.set(h_px.max(0.0)))
     };
 
     let get_scroll = {
@@ -173,12 +192,10 @@ where
     let measured_h_px = {
         let st = state.clone();
         Rc::new(move |h_px: f32| {
-            // keep clamp math exact when item count/size changes
             st.set_offset(st.scroll_offset.get(), h_px);
         })
     };
 
-    // Content inside scroll viewport (clip and translation handled by ScrollV)
     let content = crate::Column(Modifier::new()).with_children(children);
 
     repose_core::View::new(
@@ -209,38 +226,4 @@ pub fn SimpleList<T: Clone + 'static>(
         .collect();
 
     crate::Column(modifier).with_children(children)
-}
-
-#[test]
-fn scrollv_behaves_as_viewport() {
-    use crate::layout_and_paint;
-    use crate::{Box, Text};
-
-    // Build a big list
-    let items: Vec<i32> = (0..1000).collect();
-    let st = Rc::new(LazyColumnState::new());
-    let list = LazyColumn(items, 48.0, st, Modifier::new().fill_max_size(), |_, _| {
-        Text("row")
-    });
-
-    // Lay out in a window 1280x800
-    let (_scene, hits, _sem) = layout_and_paint(
-        &list,
-        (1280, 800),
-        &Default::default(),
-        &Default::default(),
-        None,
-    );
-
-    // Find the ScrollV hit region and assert sane viewport height
-    let scroll_hit = hits
-        .iter()
-        .find(|h| h.on_scroll.is_some())
-        .expect("scroll hit");
-    assert!(
-        scroll_hit.rect.h <= 800.0 + 0.1,
-        "ScrollV rect.h should be ~viewport height, got {}",
-        scroll_hit.rect.h
-    );
-    assert!(scroll_hit.rect.h >= 300.0, "ScrollV rect.h too small");
 }

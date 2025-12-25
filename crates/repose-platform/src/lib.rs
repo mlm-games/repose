@@ -59,10 +59,14 @@ where
 
 /// Helper: ensure caret visibility for a TextFieldState inside a given rect (px).
 pub fn tf_ensure_visible_in_rect(state: &mut repose_ui::TextFieldState, inner_rect: Rect) {
-    let font_dp = TF_FONT_DP as u32;
-    let m = measure_text(&state.text, font_dp);
+    let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+    let m = measure_text(&state.text, font_px);
     let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
-    state.ensure_caret_visible(caret_x_px, inner_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP));
+    state.ensure_caret_visible(
+        caret_x_px,
+        inner_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
+        dp_to_px(2.0),
+    );
 }
 
 #[cfg(feature = "desktop")]
@@ -141,10 +145,10 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 
         // Ensure caret is visible after edits/moves (all units in px)
         fn tf_ensure_caret_visible(st: &mut TextFieldState) {
-            let font_dp = TF_FONT_DP as u32;
-            let m = measure_text(&st.text, font_dp);
+            let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+            let m = measure_text(&st.text, font_px);
             let caret_x_px = m.positions.get(st.caret_index()).copied().unwrap_or(0.0);
-            st.ensure_caret_visible(caret_x_px, st.inner_width);
+            st.ensure_caret_visible(caret_x_px, st.inner_width, dp_to_px(2.0));
         }
 
         fn copy_to_clipboard(&mut self, text: String) {
@@ -273,19 +277,21 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                 .unwrap_or(0.0);
                             let content_x_px =
                                 self.mouse_pos_px.0 - inner_x_px + state.scroll_offset;
-                            let font_dp = TF_FONT_DP as u32;
+                            let font_px =
+                                dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
                             let idx =
-                                index_for_x_bytes(&state.text, font_dp, content_x_px.max(0.0));
+                                index_for_x_bytes(&state.text, font_px, content_x_px.max(0.0));
                             state.drag_to(idx);
 
                             // Scroll caret into view
-                            let m = measure_text(&state.text, font_dp);
+                            let m = measure_text(&state.text, font_px);
                             let caret_x_px =
                                 m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
                             if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
                                 state.ensure_caret_visible(
                                     caret_x_px,
                                     hit.rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
+                                    dp_to_px(2.0),
                                 );
                             }
                             self.request_redraw();
@@ -464,14 +470,15 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     let inner_x_px = hit.rect.x + dp_to_px(TF_PADDING_X_DP);
                                     let content_x_px =
                                         self.mouse_pos_px.0 - inner_x_px + state.scroll_offset;
-                                    let font_dp = TF_FONT_DP as u32;
+                                    let font_px =
+                                        dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
                                     let idx = index_for_x_bytes(
                                         &state.text,
-                                        font_dp,
+                                        font_px,
                                         content_x_px.max(0.0),
                                     );
                                     state.begin_drag(idx, self.modifiers.shift);
-                                    let m = measure_text(&state.text, font_dp);
+                                    let m = measure_text(&state.text, font_px);
                                     let caret_x_px = m
                                         .positions
                                         .get(state.caret_index())
@@ -480,6 +487,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                     state.ensure_caret_visible(
                                         caret_x_px,
                                         hit.rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
+                                        dp_to_px(2.0),
                                     );
                                 }
                             }

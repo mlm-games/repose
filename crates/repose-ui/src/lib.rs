@@ -1734,8 +1734,8 @@ pub fn layout_and_paint(
 
                     let state = state_rc.borrow();
                     let text_val = &state.text;
-                    let font_px_u32 = TF_FONT_DP as u32;
-                    let m = measure_text(text_val, font_px_u32);
+                    let font_px_val = font_px(TF_FONT_DP);
+                    let m = measure_text(text_val, font_px_val);
 
                     // Selection highlight
                     if state.selection.start != state.selection.end {
@@ -1809,7 +1809,7 @@ pub fn layout_and_paint(
                             text_val.clone()
                         },
                         color: text_color,
-                        size: font_px(TF_FONT_DP),
+                        size: font_px_val,
                     });
 
                     // Caret (blink)
@@ -1841,6 +1841,8 @@ pub fn layout_and_paint(
                         enabled: true,
                     });
                 } else {
+                    let font_px_val = font_px(TF_FONT_DP);
+
                     // No state yet: show hint only
                     scene.nodes.push(SceneNode::Text {
                         rect: repose_core::Rect {
@@ -1851,7 +1853,7 @@ pub fn layout_and_paint(
                         },
                         text: hint.clone(),
                         color: mul_alpha_color(Color::from_hex("#666666"), alpha_accum),
-                        size: font_px(TF_FONT_DP),
+                        size: font_px_val,
                     });
                     scene.nodes.push(SceneNode::PopClip);
 

@@ -170,9 +170,14 @@ pub fn run_android_app_with_options(
         }
 
         fn ensure_caret_visible_in_hit(&self, st: &mut TextFieldState, hit_rect: Rect) {
-            let m = measure_text(&st.text, TF_FONT_DP as u32);
+            let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+            let m = measure_text(&st.text, font_px);
             let caret_x_px = m.positions.get(st.caret_index()).copied().unwrap_or(0.0);
-            st.ensure_caret_visible(caret_x_px, hit_rect.w - 2.0 * self.padding_px());
+            st.ensure_caret_visible(
+                caret_x_px,
+                hit_rect.w - 2.0 * self.padding_px(),
+                dp_to_px(2.0),
+            );
         }
 
         fn sync_window_size(&mut self, size: PhysicalSize<u32>) {
@@ -282,9 +287,11 @@ pub fn run_android_app_with_options(
                                             let inner_x_px = hit.rect.x + self.padding_px();
                                             let content_x_px =
                                                 pos_px.0 - inner_x_px + st.scroll_offset;
+                                            let font_px = dp_to_px(TF_FONT_DP)
+                                                * repose_core::locals::text_scale().0;
                                             let idx = index_for_x_bytes(
                                                 &st.text,
-                                                TF_FONT_DP as u32,
+                                                font_px,
                                                 content_x_px.max(0.0),
                                             );
                                             st.begin_drag(idx, self.modifiers.shift);

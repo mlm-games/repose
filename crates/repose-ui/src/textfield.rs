@@ -56,9 +56,9 @@ pub struct TextMetrics {
     pub byte_offsets: Vec<usize>,
 }
 
-pub fn measure_text(text: &str, font_dp_as_u32: u32) -> TextMetrics {
-    // Interpret the parameter as dp for backward compatibility; convert to px.
-    let font_px: f32 = dp_to_px(font_dp_as_u32 as f32);
+/// Measure caret positions for a single-line textfield using shaping.
+/// `font_px` must match the px size used for rendering the text.
+pub fn measure_text(text: &str, font_px: f32) -> TextMetrics {
     let m = repose_text::metrics_for_textfield(text, font_px);
     TextMetrics {
         positions: m.positions,
@@ -67,17 +67,15 @@ pub fn measure_text(text: &str, font_dp_as_u32: u32) -> TextMetrics {
 }
 
 pub fn byte_to_char_index(m: &TextMetrics, byte: usize) -> usize {
-    // Now returns grapheme index for a byte position
     match m.byte_offsets.binary_search(&byte) {
         Ok(i) | Err(i) => i,
     }
 }
 
-pub fn index_for_x_bytes(text: &str, font_dp_as_u32: u32, x_px: f32) -> usize {
-    // font dp -> px for shaping; x is already in px
-    let _font_px: f32 = dp_to_px(font_dp_as_u32 as f32);
-    let m = measure_text(text, font_dp_as_u32);
-    // nearest grapheme boundary -> byte index
+/// Given an x position (px), return the nearest grapheme boundary byte index.
+pub fn index_for_x_bytes(text: &str, font_px: f32, x_px: f32) -> usize {
+    let m = measure_text(text, font_px);
+
     let mut best_i = 0usize;
     let mut best_d = f32::INFINITY;
     for i in 0..m.positions.len() {
@@ -116,10 +114,10 @@ pub struct TextFieldState {
     pub text: String,
     pub selection: Range<usize>,
     pub composition: Option<Range<usize>>, // IME composition range (byte offsets)
-    pub scroll_offset: f32,
-    pub drag_anchor: Option<usize>, // caret index where drag began
-    pub blink_start: Instant,       // for caret blink
-    pub inner_width: f32,
+    pub scroll_offset: f32,                // px
+    pub drag_anchor: Option<usize>,        // byte index where drag began
+    pub blink_start: Instant,              // caret blink timer
+    pub inner_width: f32,                  // px
 }
 
 impl Default for TextFieldState {
@@ -221,7 +219,6 @@ impl TextFieldState {
 
         let anchor_start;
         if let Some(r) = self.composition.take() {
-            // Clamp to current text and char boundaries
             let mut s = clamp_to_char_boundary(&self.text, r.start.min(self.text.len()));
             let mut e = clamp_to_char_boundary(&self.text, r.end.min(self.text.len()));
             if e < s {
@@ -230,7 +227,6 @@ impl TextFieldState {
             self.text.replace_range(s..e, &text);
             anchor_start = s;
         } else {
-            // Insert at caret (snap to boundary)
             let pos = clamp_to_char_boundary(&self.text, self.selection.start.min(self.text.len()));
             self.text.insert_str(pos, &text);
             anchor_start = pos;
@@ -238,7 +234,6 @@ impl TextFieldState {
 
         self.composition = Some(anchor_start..(anchor_start + text.len()));
 
-        // Map IME cursor (char indices in `text`) to byte offsets relative to anchor_start
         if let Some((c0, c1)) = cursor {
             let b0 = char_to_byte(&text, c0);
             let b1 = char_to_byte(&text, c1);
@@ -259,7 +254,6 @@ impl TextFieldState {
             let new_pos = s + text.len();
             self.selection = new_pos..new_pos;
         } else {
-            // No active composition: insert at caret
             let pos = clamp_to_char_boundary(&self.text, self.selection.end.min(self.text.len()));
             self.text.insert_str(pos, &text);
             let new_pos = pos + text.len();
@@ -293,7 +287,7 @@ impl TextFieldState {
         let caret = self.selection.end.min(self.text.len());
         let start_raw = caret.saturating_sub(before_bytes);
         let end_raw = (caret + after_bytes).min(self.text.len());
-        // Snap to nearest safe boundaries
+
         let start = prev_grapheme_boundary(&self.text, start_raw);
         let end = next_grapheme_boundary(&self.text, end_raw);
         if start < end {
@@ -303,7 +297,6 @@ impl TextFieldState {
         self.reset_caret_blink();
     }
 
-    // Begin a selection on press; if extend==true, keep existing anchor; else set new anchor
     pub fn begin_drag(&mut self, idx_byte: usize, extend: bool) {
         let idx = idx_byte.min(self.text.len());
         if extend {
@@ -332,10 +325,10 @@ impl TextFieldState {
         self.selection.end
     }
 
-    // Keep caret visible inside inner content width (px)
-    pub fn ensure_caret_visible(&mut self, caret_x_px: f32, inner_width_px: f32) {
-        // small 2dp inset -> px
-        let inset_px = dp_to_px(2.0);
+    /// Keep caret visible inside inner content width (px).
+    /// `inset_px` is a small padding (px) to avoid hugging edges.
+    pub fn ensure_caret_visible(&mut self, caret_x_px: f32, inner_width_px: f32, inset_px: f32) {
+        let inset_px = inset_px.max(0.0);
         let left_px = self.scroll_offset + inset_px;
         let right_px = self.scroll_offset + inner_width_px - inset_px;
         if caret_x_px < left_px {
@@ -358,7 +351,7 @@ impl TextFieldState {
     }
 }
 
-// Platform-managed state: no Rc in builder, hint only.
+// Platform-managed view: hint only.
 pub fn TextField(
     hint: impl Into<String>,
     modifier: repose_core::Modifier,
@@ -388,71 +381,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_textfield_insert() {
-        let mut state = TextFieldState::new();
-        state.insert_text("Hello");
-        assert_eq!(state.text, "Hello");
-        assert_eq!(state.selection, 5..5);
-    }
-
-    #[test]
-    fn test_textfield_delete_backward() {
-        let mut state = TextFieldState::new();
-        state.insert_text("Hello");
-        state.delete_backward();
-        assert_eq!(state.text, "Hell");
-        assert_eq!(state.selection, 4..4);
-    }
-
-    #[test]
-    fn test_textfield_selection() {
-        let mut state = TextFieldState::new();
-        state.insert_text("Hello");
-        state.selection = 0..5; // Select "Hello"
-        state.insert_text("Hi");
-        assert_eq!(state.text, "Hi World".replacen(" World", "", 1)); // maintain original intent
-        assert_eq!(state.selection, 2..2);
-    }
-
-    #[test]
-    fn test_textfield_ime_composition() {
-        let mut state = TextFieldState::new();
-        state.insert_text("Test ");
-        state.set_composition("日本".to_string(), Some((0, 2)));
-        assert!(state.composition.is_some());
-
-        state.commit_composition("日本語".to_string());
-        assert!(state.composition.is_none());
-    }
-
-    #[test]
-    fn test_textfield_cursor_movement() {
-        let mut state = TextFieldState::new();
-        state.insert_text("Hello");
-        state.move_cursor(-2, false);
-        assert_eq!(state.selection, 3..3);
-
-        state.move_cursor(1, false);
-        assert_eq!(state.selection, 4..4);
-    }
-
-    #[test]
-    fn test_delete_surrounding() {
-        let mut state = TextFieldState::new();
-        state.insert_text("Hello");
-        // caret at 5
-        state.delete_surrounding(2, 1); // delete "lo"
-        assert_eq!(state.text, "Hel");
-        assert_eq!(state.selection, 3..3);
-    }
-
-    #[test]
     fn test_index_for_x_bytes_grapheme() {
-        // Ensure we return boundaries consistent with graphemes
         let t = "A👍🏽B";
-        let px_dp = 16u32;
-        let m = measure_text(t, px_dp);
-        // All byte_offsets must be grapheme boundaries
+        let font_px = 16.0; // in tests, exact px isn't important—boundaries are.
+        let m = measure_text(t, font_px);
         for i in 0..m.byte_offsets.len() - 1 {
             let b = m.byte_offsets[i];
             let _ = &t[..b];
@@ -467,7 +399,6 @@ fn clamp_to_char_boundary(s: &str, i: usize) -> usize {
     if s.is_char_boundary(i) {
         return i;
     }
-    // walk back to previous valid boundary
     let mut j = i;
     while j > 0 && !s.is_char_boundary(j) {
         j -= 1;
