@@ -1,34 +1,64 @@
+use std::rc::Rc;
+
 use repose_core::{TextDirection, prelude::*, signal, with_text_direction};
 use repose_navigation::{
-    EntryScope, InstallBackHandler, NavDisplay, Navigator, remember_back_stack, renderer,
+    NavDisplay, NavTransition, Navigator, back, remember_back_stack, renderer,
 };
-use repose_ui::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    pages,
-    ui::{LabeledSwitch, Page},
-};
+use crate::{pages, ui};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-enum Key {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Route {
+    Home,
     Layout,
     Widgets,
     Text,
-    Animation,
+    Scroll,
     Canvas,
-    Scrolls,
+    Animation,
+    Lists,
     Errors,
+}
+
+impl Route {
+    pub fn title(self) -> &'static str {
+        match self {
+            Route::Home => "Home",
+            Route::Layout => "Layout",
+            Route::Widgets => "Widgets",
+            Route::Text => "Text",
+            Route::Scroll => "Scroll",
+            Route::Canvas => "Canvas",
+            Route::Lists => "Lists",
+            Route::Animation => "Animation",
+            Route::Errors => "Errors",
+        }
+    }
+
+    pub fn id(self) -> u64 {
+        match self {
+            Route::Home => 1,
+            Route::Layout => 2,
+            Route::Widgets => 3,
+            Route::Text => 4,
+            Route::Scroll => 5,
+            Route::Canvas => 6,
+            Route::Lists => 7,
+            Route::Animation => 8,
+            Route::Errors => 9,
+        }
+    }
 }
 
 pub fn app(_s: &mut Scheduler) -> View {
     // App state
-    let theme_dark = remember(|| signal(true));
+    let dark = remember(|| signal(true));
     let rtl = remember(|| signal(false));
-    let density = remember(|| signal(1.0f32)); // dp scale
-    let text_scale = remember(|| signal(1.0f32)); // font scale
+    let density = remember(|| signal(1.0f32));
+    let text_scale = remember(|| signal(1.0f32));
 
-    // Themes
+    // Theme presets
     let theme_light = {
         let mut t = Theme::default();
         t.background = Color::from_hex("#FAFAFA");
@@ -36,14 +66,45 @@ pub fn app(_s: &mut Scheduler) -> View {
         t.on_surface = Color::from_hex("#222222");
         t.primary = Color::from_hex("#3B82F6");
         t.on_primary = Color::WHITE;
+        t.outline = Color::from_hex("#DDDDDD");
+        t.focus = Color::from_hex("#2563EB");
+        t.button_bg = Color::from_hex("#3B82F6");
+        t.button_bg_hover = Color::from_hex("#2563EB");
+        t.button_bg_pressed = Color::from_hex("#1D4ED8");
+        t.scrollbar_track = Color(0, 0, 0, 20);
+        t.scrollbar_thumb = Color(0, 0, 0, 80);
         t
     };
-    let theme_dark_v = Theme::default();
-    let use_theme = if theme_dark.get() {
-        theme_dark_v
-    } else {
-        theme_light
+    let theme_dark = Theme::default();
+
+    let stack = remember_back_stack(Route::Home);
+    let navigator = Navigator {
+        stack: (*stack).clone(),
     };
+
+    // Back handler: keep it simple and robust; set each frame.
+    back::set(Some(Rc::new({
+        let nav = navigator.clone();
+        move || nav.pop()
+    })));
+
+    let current = stack
+        .top()
+        .map(|(_, k, _saved, _scope)| k)
+        .unwrap_or(Route::Home);
+
+    // Typed route -> page renderer
+    let render = renderer(move |scope| match *scope.key() {
+        Route::Home => pages::home::screen(),
+        Route::Layout => pages::layout::screen(),
+        Route::Widgets => pages::widgets::screen(),
+        Route::Text => pages::text::screen(),
+        Route::Scroll => pages::scroll::screen(),
+        Route::Lists => pages::lists::screen(),
+        Route::Canvas => pages::canvas::screen(),
+        Route::Animation => pages::animation::screen(),
+        Route::Errors => pages::errors::screen(),
+    });
 
     let dir = if rtl.get() {
         TextDirection::Rtl
@@ -51,108 +112,44 @@ pub fn app(_s: &mut Scheduler) -> View {
         TextDirection::Ltr
     };
 
-    let stack = remember_back_stack(Key::Layout);
-
-    let _bk = {
-        let stack = stack.clone();
-        effect(move || {
-            InstallBackHandler((*stack).clone());
-            on_unmount(|| {})
-        })
-    };
-
-    // renderer: Key -> View
-    let render = renderer(move |scope: &EntryScope<Key>| match scope.key() {
-        Key::Layout => pages::layout::screen(),
-        Key::Widgets => pages::widgets::screen(),
-        Key::Text => pages::text::screen(),
-        Key::Animation => pages::animation::screen(),
-        Key::Canvas => pages::canvas::screen(),
-        Key::Scrolls => pages::scrolls::screen(),
-        Key::Errors => pages::errors::screen(),
-    });
-
-    // Tab spec: label -> route
-    let tabs: [(&str, Key); 7] = [
-        ("Layout", Key::Layout),
-        ("Widgets", Key::Widgets),
-        ("Text", Key::Text),
-        ("Animation", Key::Animation),
-        ("Canvas", Key::Canvas),
-        ("Scrolls", Key::Scrolls),
-        ("Errors", Key::Errors),
-    ];
-    let navigator = Navigator {
-        stack: (*stack).clone(),
-    };
-    let current_key = stack.top().map(|(_, k, _, _)| k).unwrap_or(Key::Layout);
+    let chosen_theme = if dark.get() { theme_dark } else { theme_light };
 
     with_text_direction(dir, || {
-        with_theme(use_theme, || {
+        with_theme(chosen_theme, || {
             with_density(
                 Density {
                     scale: density.get(),
                 },
                 || {
                     with_text_scale(TextScale(text_scale.get()), || {
-                        Surface(
-                            Modifier::new()
-                                .fill_max_size()
-                                .background(theme().background),
-                            Column(Modifier::new().fill_max_size()).child((
-                                // Top bar + toggles
-                                crate::ui::TopBar().child((
-                                    Text("Repose Showcase").modifier(Modifier::new().padding(8.0)),
-                                    Spacer(),
-                                    Row(Modifier::new()).child((
-                                        Text("Theme").modifier(Modifier::new().padding(8.0)),
-                                        LabeledSwitch(theme_dark.get(), "Dark", {
-                                            let theme_dark = theme_dark.clone();
-                                            move |v| theme_dark.set(v)
-                                        })
-                                        .modifier(Modifier::new().padding(8.0)),
-                                        Text("RTL").modifier(Modifier::new().padding(8.0)),
-                                        LabeledSwitch(rtl.get(), "RTL", {
-                                            let rtl = rtl.clone();
-                                            move |v| rtl.set(v)
-                                        })
-                                        .modifier(Modifier::new().padding(8.0)),
-                                    )),
-                                )),
-                                // tab row. Selected uses current key from stack.
-                                Row(Modifier::new().align_self_center().padding(8.0)).child(
-                                    tabs.iter()
-                                        .map(|(label, key)| {
-                                            let is_selected = &current_key == key;
-                                            let bg = if is_selected {
-                                                theme().button_bg
-                                            } else {
-                                                theme().surface
-                                            };
-                                            let key_clone = key.clone();
-                                            Button(Text(*label), {
-                                                let nav = navigator.clone();
-                                                move || nav.push(key_clone.clone())
-                                            })
-                                            .modifier(
-                                                Modifier::new()
-                                                    .padding(4.0)
-                                                    .background(bg)
-                                                    .clip_rounded(6.0),
-                                            )
-                                        })
-                                        .collect::<Vec<_>>(),
-                                ),
-                                // Page content via NavDisplay
-                                Page(Box(Modifier::new().fill_max_size().padding(16.0)).child(
-                                    NavDisplay(
-                                        stack.clone(),
-                                        render.clone(),
-                                        None, // back handled globally via InstallBackHandler
-                                        Default::default(),
-                                    ),
-                                )),
-                            )),
+                        ui::AppShell(
+                            current,
+                            navigator.clone(),
+                            dark.get(),
+                            {
+                                let dark = dark.clone();
+                                move |v| dark.set(v)
+                            },
+                            rtl.get(),
+                            {
+                                let rtl = rtl.clone();
+                                move |v| rtl.set(v)
+                            },
+                            density.get(),
+                            {
+                                let density = density.clone();
+                                move |v| density.set(v.clamp(0.75, 2.0))
+                            },
+                            text_scale.get(),
+                            {
+                                let text_scale = text_scale.clone();
+                                move |v| text_scale.set(v.clamp(0.75, 2.0))
+                            },
+                            {
+                                // Content
+                                let transition = NavTransition::default();
+                                NavDisplay(stack.clone(), render.clone(), None, transition)
+                            },
                         )
                     })
                 },

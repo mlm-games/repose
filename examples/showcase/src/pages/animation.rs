@@ -1,90 +1,61 @@
-use crate::ui::Section;
 use repose_core::{prelude::*, signal};
 use repose_ui::{anim::animate_f32, *};
 
-pub fn screen() -> View {
-    let spring_mode = remember(|| signal("gentle".to_string()));
-    let visible = remember(|| signal(true));
-    let cross = remember(|| signal(0u32));
+use crate::ui::Section;
 
-    Column(Modifier::new().padding(8.0)).child((
-        Section(
-            "Springs (gentle / bouncy / crit)",
-            Column(Modifier::new().padding(8.0)).child((
-                Row(Modifier::new().padding(4.0)).child((
-                    Button(Text("Gentle"), {
-                        let m = spring_mode.clone();
-                        move || m.set("gentle".into())
-                    }),
-                    Button(Text("Bouncy"), {
-                        let m = spring_mode.clone();
-                        move || m.set("bouncy".into())
-                    }),
-                    Button(Text("Crit"), {
-                        let m = spring_mode.clone();
-                        move || m.set("crit".into())
-                    }),
-                    Spacer(),
-                    Button(Text("Toggle"), {
-                        let v = visible.clone();
-                        move || v.update(|x| *x = !*x)
-                    }),
-                )),
-                {
-                    let spec = match spring_mode.get().as_str() {
-                        "bouncy" => repose_core::animation::AnimationSpec::spring_bouncy(),
-                        "crit" => repose_core::animation::AnimationSpec::spring_crit(
-                            8.0,
-                            web_time::Duration::from_millis(500),
-                        ),
-                        _ => repose_core::animation::AnimationSpec::spring_gentle(),
-                    };
-                    let s = if visible.get() {
-                        animate_f32("spring_demo_scale", 1.0, spec)
-                    } else {
-                        animate_f32("spring_demo_scale", 0.6, spec)
-                    };
-                    Box(Modifier::new().padding(12.0)).child(Box(Modifier::new()
-                        .size(120.0, 80.0)
-                        .scale(s)
-                        .alpha(s)
-                        .background(theme().primary)
-                        .clip_rounded(12.0)))
-                },
-            )),
-        ),
-        Section(
-            "AnimatedVisibility + Crossfade",
-            Row(Modifier::new().padding(8.0)).child((
-                {
-                    let show = visible.get();
-                    // key-safe AnimatedVisibility
-                    repose_ui::anim_ext::AnimatedVisibility(
-                        "demo_visibility",
-                        show,
-                        repose_ui::anim_ext::EnterTransition::FadeIn,
-                        repose_ui::anim_ext::ExitTransition::FadeOut,
-                        Text("Peek-a-boo!").size(20.0),
-                    )
-                },
-                Spacer(),
-                Button(Text("Crossfade"), {
-                    let cross = cross.clone();
-                    move || cross.update(|c| *c = (*c + 1) % 3)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SpringMode {
+    Gentle,
+    Bouncy,
+    Crit,
+}
+
+pub fn screen() -> View {
+    let mode = remember(|| signal(SpringMode::Gentle));
+    let visible = remember(|| signal(true));
+
+    Section(
+        "Animations",
+        Column(Modifier::new().padding(12.0)).child((
+            Row(Modifier::new().align_items(AlignItems::Center)).child((
+                Button(Text("Gentle"), {
+                    let m = mode.clone();
+                    move || m.set(SpringMode::Gentle)
                 }),
-                {
-                    let idx = cross.get();
-                    // key-safe Crossfade
-                    repose_ui::anim_ext::Crossfade("cf_key", idx, |i| {
-                        Text(match i {
-                            0 => "One",
-                            1 => "Two",
-                            _ => "Three",
-                        })
-                        .size(24.0)
-                    })
-                },
+                Box(Modifier::new().width(8.0).height(1.0)),
+                Button(Text("Bouncy"), {
+                    let m = mode.clone();
+                    move || m.set(SpringMode::Bouncy)
+                }),
+                Box(Modifier::new().width(8.0).height(1.0)),
+                Button(Text("Crit"), {
+                    let m = mode.clone();
+                    move || m.set(SpringMode::Crit)
+                }),
+                Spacer(),
+                Button(Text("Toggle"), {
+                    let v = visible.clone();
+                    move || v.update(|x| *x = !*x)
+                }),
             )),
-        ),
-    ))
+            Box(Modifier::new().height(16.0).width(1.0)),
+            {
+                let spec = match mode.get() {
+                    SpringMode::Gentle => AnimationSpec::spring_gentle(),
+                    SpringMode::Bouncy => AnimationSpec::spring_bouncy(),
+                    SpringMode::Crit => {
+                        AnimationSpec::spring_crit(8.0, web_time::Duration::from_millis(500))
+                    }
+                };
+
+                let t = animate_f32("demo_scale", if visible.get() { 1.0 } else { 0.75 }, spec);
+                Box(Modifier::new().padding(8.0)).child(Box(Modifier::new()
+                    .size(220.0, 120.0)
+                    .scale(t)
+                    .alpha(t)
+                    .background(theme().primary)
+                    .clip_rounded(16.0)))
+            },
+        )),
+    )
 }

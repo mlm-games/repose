@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 publish = false
 
-[lib] # Run using: cargo apk run --package showcase --lib
+[lib]
 name = "showcase"
 crate-type = ["cdylib"]
 
@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 default = []
 desktop-bin = []
 
-[[bin]] # --features desktop-bin
+[[bin]]
 name = "showcase-desktop"
 path = "src/main.rs"
 required-features = ["desktop-bin"]
@@ -23,12 +23,10 @@ apk_name = "showcase"
 target_sdk_version = 34
 min_sdk_version = 26
 build_targets = ["aarch64-linux-android"]
-# runtime_libs = []
 split_per_abi = true
 
 [package.metadata.android.application]
-# icon = "@mipmap/ic_launcher"
-label = "Recase"
+label = "Repose Showcase"
 fullscreen = true
 
 [target.'cfg(target_os = "android")'.dependencies]
@@ -48,6 +46,7 @@ repose-ui.workspace = true
 repose-material.workspace = true
 repose-canvas.workspace = true
 repose-navigation.workspace = true
+
 winit = { workspace = true }
 env_logger = { workspace = true }
 anyhow = { workspace = true }

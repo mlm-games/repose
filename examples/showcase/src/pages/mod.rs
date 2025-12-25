@@ -1,8 +1,9 @@
 pub mod animation;
 pub mod canvas;
 pub mod errors;
+pub mod home;
 pub mod layout;
 pub mod lists;
-pub mod scrolls;
+pub mod scroll;
 pub mod text;
 pub mod widgets;

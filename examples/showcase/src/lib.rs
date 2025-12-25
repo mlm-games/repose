@@ -16,16 +16,19 @@ pub fn wasm_start() -> Result<(), JsValue> {
 
 #[cfg(target_os = "android")]
 use log::LevelFilter;
+
 #[cfg(target_os = "android")]
 use repose_core::prelude::*;
+
 #[cfg(target_os = "android")]
 use repose_platform::android::run_android_app;
+
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "C" fn android_main(android_app: AndroidApp) {
-    android_logger::init_once(android_logger::Config::default().with_max_level(LevelFilter::Trace));
+    android_logger::init_once(android_logger::Config::default().with_max_level(LevelFilter::Info));
     let _ = run_android_app(android_app, app::app as fn(&mut Scheduler) -> View);
 }
