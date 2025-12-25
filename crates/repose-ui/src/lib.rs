@@ -498,7 +498,6 @@ pub fn layout_and_paint(
     }
 
     let root = assign_ids(root.clone(), 0, 0);
-    // ---- end stable IDs ----
 
     // Build Taffy tree (with per-node contexts for measurement)
     use taffy::prelude::*;

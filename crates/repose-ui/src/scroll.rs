@@ -1,65 +1,27 @@
 //! # Scroll model
 //!
-//! Repose separates *visual scroll containers* from *scroll state* that can
-//! include inertia and programmatic control.
+//! Repose separates visual scroll containers from scroll state.
 //!
-//! There are three scrolling primitives:
+//! This file implements inertial scroll states.
 //!
-//! - `ScrollState` — vertical (Y) inertia.
-//! - `HorizontalScrollState` — horizontal (X) inertia.
-//! - `ScrollStateXY` — 2D scroll with independent X/Y offsets.
-//!
-//! Each state stores viewport size, content size, offset, and velocity. The
-//! `scroll_immediate` methods consume a requested delta and return leftover
-//! motion that parent scroll views can use for nested scrolling.
-//!
-//! Example: vertical `ScrollArea`
-//!
-//! ```rust
-//! use repose_core::*;
-//! use repose_ui::*;
-//!
-//! fn LongList() -> View {
-//!     let state = scroll::remember_scroll_state("list");
-//!
-//!     let content = Column(Modifier::new()).child(
-//!         (0..100).map(|i| Text(format!("Row {i}"))).collect::<Vec<_>>()
-//!     );
-//!
-//!     scroll::ScrollArea(Modifier::new().fill_max_size(), state, content)
-//! }
-//! ```
-//!
-//! Internally, `ScrollArea` builds a `ViewKind::ScrollV` node with:
-//!
-//! - `on_scroll: Rc<dyn Fn(Vec2) -> Vec2>` that calls `state.scroll_immediate`.
-//! - `set_viewport_height` / `set_content_height` callbacks that keep the
-//!   scroll state clamped when sizes change.
-//! - `get_scroll_offset` / `set_scroll_offset` used by the layout pass and
-//!   scrollbars.
-//!
-//! `layout_and_paint`:
-//!
-//! - Uses the inner content rect (after padding) as the *viewport*.
-//! - Clips children into that rect.
-//! - Applies the current scroll offsets as a translation.
-//! - Clamps child `HitRegion`s into the viewport.
-//! - Draws vertical/horizontal scrollbars that can be dragged by pointer.
+//! Velocities are expressed in px/sec and integrated with dt,
+//! so behavior is frame-rate independent.
 
 use repose_core::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 use web_time::Instant;
 
-/// Inertial scroll state (single axis Y for now).
+/// Inertial scroll state (single axis Y).
 pub struct ScrollState {
     scroll_offset: Signal<f32>,
     viewport_height: Signal<f32>,
     content_height: Signal<f32>,
 
-    // physics
+    // physics (px/sec)
     vel: RefCell<f32>,
     last_t: RefCell<Instant>,
+    last_input_t: RefCell<Instant>,
     animating: RefCell<bool>,
 }
 
@@ -71,12 +33,14 @@ impl Default for ScrollState {
 
 impl ScrollState {
     pub fn new() -> Self {
+        let now = Instant::now();
         Self {
             scroll_offset: signal(0.0),
             viewport_height: signal(0.0),
             content_height: signal(0.0),
             vel: RefCell::new(0.0),
-            last_t: RefCell::new(Instant::now()),
+            last_t: RefCell::new(now),
+            last_input_t: RefCell::new(now),
             animating: RefCell::new(false),
         }
     }
@@ -124,12 +88,20 @@ impl ScrollState {
         let new_off = (before + dy).clamp(0.0, max_off);
         self.scroll_offset.set(new_off);
 
-        // Update velocity for fling
         let consumed = new_off - before;
-        *self.vel.borrow_mut() = consumed; // px/frame baseline
-        *self.animating.borrow_mut() = consumed.abs() > 0.25;
+        let leftover = dy - consumed;
 
-        dy - (new_off - before)
+        // Estimate input velocity (px/sec) based on time since last input.
+        let now = Instant::now();
+        let dt = (now - *self.last_input_t.borrow())
+            .as_secs_f32()
+            .clamp(1.0 / 240.0, 1.0 / 15.0);
+        *self.last_input_t.borrow_mut() = now;
+
+        *self.vel.borrow_mut() = consumed / dt;
+        *self.animating.borrow_mut() = self.vel.borrow().abs() > 10.0;
+
+        leftover
     }
 
     /// Advance physics one tick; returns true if animating.
@@ -145,8 +117,8 @@ impl ScrollState {
             return false;
         }
 
-        let mut vel = *self.vel.borrow();
-        if vel.abs() < 0.05 {
+        let vel0 = *self.vel.borrow();
+        if vel0.abs() < 5.0 {
             *self.vel.borrow_mut() = 0.0;
             *self.animating.borrow_mut() = false;
             return false;
@@ -157,13 +129,21 @@ impl ScrollState {
         let ch = self.content_height.get();
         let max_off = (ch - vh).max(0.0);
 
-        // Integrate and clamp
-        let new_off = (before + vel).clamp(0.0, max_off);
+        // Integrate
+        let new_off = (before + vel0 * dt).clamp(0.0, max_off);
         self.scroll_offset.set(new_off);
 
-        // Friction
-        vel *= 0.9;
-        *self.vel.borrow_mut() = vel;
+        // If we hit an edge, stop quickly.
+        if (new_off - before).abs() < 0.01 && (before <= 0.0 || before >= max_off) {
+            *self.vel.borrow_mut() = 0.0;
+            *self.animating.borrow_mut() = false;
+            return false;
+        }
+
+        // Frame-rate independent decay; matches ~0.9 per 60Hz “frame”.
+        let decay_per_60hz = 0.90f32;
+        let decay = decay_per_60hz.powf(dt * 60.0);
+        *self.vel.borrow_mut() = vel0 * decay;
 
         true
     }
@@ -174,8 +154,9 @@ pub struct HorizontalScrollState {
     scroll_offset: Signal<f32>,
     viewport_width: Signal<f32>,
     content_width: Signal<f32>,
-    vel: RefCell<f32>,
+    vel: RefCell<f32>, // px/sec
     last_t: RefCell<Instant>,
+    last_input_t: RefCell<Instant>,
     animating: RefCell<bool>,
 }
 impl Default for HorizontalScrollState {
@@ -186,12 +167,14 @@ impl Default for HorizontalScrollState {
 
 impl HorizontalScrollState {
     pub fn new() -> Self {
+        let now = Instant::now();
         Self {
             scroll_offset: signal(0.0),
             viewport_width: signal(0.0),
             content_width: signal(0.0),
             vel: RefCell::new(0.0),
-            last_t: RefCell::new(Instant::now()),
+            last_t: RefCell::new(now),
+            last_input_t: RefCell::new(now),
             animating: RefCell::new(false),
         }
     }
@@ -221,32 +204,55 @@ impl HorizontalScrollState {
         let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
         let new_off = (before + dx).clamp(0.0, max_off);
         self.scroll_offset.set(new_off);
+
         let consumed = new_off - before;
-        *self.vel.borrow_mut() = consumed; // px/frame baseline
-        *self.animating.borrow_mut() = consumed.abs() > 0.25;
-        dx - (new_off - before)
+        let leftover = dx - consumed;
+
+        let now = Instant::now();
+        let dt = (now - *self.last_input_t.borrow())
+            .as_secs_f32()
+            .clamp(1.0 / 240.0, 1.0 / 15.0);
+        *self.last_input_t.borrow_mut() = now;
+
+        *self.vel.borrow_mut() = consumed / dt;
+        *self.animating.borrow_mut() = self.vel.borrow().abs() > 10.0;
+
+        leftover
     }
     pub fn tick(&self) -> bool {
         if !*self.animating.borrow() {
             return false;
         }
+
         let now = Instant::now();
         let dt = (now - *self.last_t.borrow()).as_secs_f32().min(0.1);
         *self.last_t.borrow_mut() = now;
         if dt <= 0.0 {
             return false;
         }
-        let vel = *self.vel.borrow();
-        if vel.abs() < 0.05 {
+
+        let vel0 = *self.vel.borrow();
+        if vel0.abs() < 5.0 {
             *self.animating.borrow_mut() = false;
             *self.vel.borrow_mut() = 0.0;
             return false;
         }
+
         let before = self.scroll_offset.get();
         let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
-        let new_off = (before + vel).clamp(0.0, max_off);
+        let new_off = (before + vel0 * dt).clamp(0.0, max_off);
         self.scroll_offset.set(new_off);
-        *self.vel.borrow_mut() = vel * 0.9;
+
+        if (new_off - before).abs() < 0.01 && (before <= 0.0 || before >= max_off) {
+            *self.vel.borrow_mut() = 0.0;
+            *self.animating.borrow_mut() = false;
+            return false;
+        }
+
+        let decay_per_60hz = 0.90f32;
+        let decay = decay_per_60hz.powf(dt * 60.0);
+        *self.vel.borrow_mut() = vel0 * decay;
+
         true
     }
 }
@@ -259,9 +265,10 @@ pub struct ScrollStateXY {
     vp_h: Signal<f32>,
     c_w: Signal<f32>,
     c_h: Signal<f32>,
-    vel_x: RefCell<f32>,
-    vel_y: RefCell<f32>,
+    vel_x: RefCell<f32>, // px/sec
+    vel_y: RefCell<f32>, // px/sec
     last_t: RefCell<Instant>,
+    last_input_t: RefCell<Instant>,
     animating: RefCell<bool>,
 }
 impl Default for ScrollStateXY {
@@ -272,6 +279,7 @@ impl Default for ScrollStateXY {
 
 impl ScrollStateXY {
     pub fn new() -> Self {
+        let now = Instant::now();
         Self {
             off_x: signal(0.0),
             off_y: signal(0.0),
@@ -281,7 +289,8 @@ impl ScrollStateXY {
             c_h: signal(0.0),
             vel_x: RefCell::new(0.0),
             vel_y: RefCell::new(0.0),
-            last_t: RefCell::new(Instant::now()),
+            last_t: RefCell::new(now),
+            last_input_t: RefCell::new(now),
             animating: RefCell::new(false),
         }
     }
@@ -304,12 +313,8 @@ impl ScrollStateXY {
     fn clamp(&self) {
         let max_x = (self.c_w.get() - self.vp_w.get()).max(0.0);
         let max_y = (self.c_h.get() - self.vp_h.get()).max(0.0);
-        self.off_x.update(|x| {
-            *x = x.clamp(0.0, max_x);
-        });
-        self.off_y.update(|y| {
-            *y = y.clamp(0.0, max_y);
-        });
+        self.off_x.update(|x| *x = x.clamp(0.0, max_x));
+        self.off_y.update(|y| *y = y.clamp(0.0, max_y));
     }
     pub fn get(&self) -> (f32, f32) {
         (self.off_x.get(), self.off_y.get())
@@ -317,47 +322,82 @@ impl ScrollStateXY {
     pub fn scroll_immediate(&self, d: Vec2) -> Vec2 {
         let bx = self.off_x.get();
         let by = self.off_y.get();
+
         let max_x = (self.c_w.get() - self.vp_w.get()).max(0.0);
         let max_y = (self.c_h.get() - self.vp_h.get()).max(0.0);
+
         let nx = (bx + d.x).clamp(0.0, max_x);
         let ny = (by + d.y).clamp(0.0, max_y);
+
         self.off_x.set(nx);
         self.off_y.set(ny);
-        *self.vel_x.borrow_mut() = (nx - bx) * 5.0;
-        *self.vel_y.borrow_mut() = (ny - by) * 5.0;
-        *self.animating.borrow_mut() = true;
+
+        let consumed_x = nx - bx;
+        let consumed_y = ny - by;
+
+        let now = Instant::now();
+        let dt = (now - *self.last_input_t.borrow())
+            .as_secs_f32()
+            .clamp(1.0 / 240.0, 1.0 / 15.0);
+        *self.last_input_t.borrow_mut() = now;
+
+        *self.vel_x.borrow_mut() = consumed_x / dt;
+        *self.vel_y.borrow_mut() = consumed_y / dt;
+        *self.animating.borrow_mut() =
+            self.vel_x.borrow().abs() > 10.0 || self.vel_y.borrow().abs() > 10.0;
+
         Vec2 {
-            x: d.x - (nx - bx),
-            y: d.y - (ny - by),
+            x: d.x - consumed_x,
+            y: d.y - consumed_y,
         }
     }
     pub fn tick(&self) -> bool {
         if !*self.animating.borrow() {
             return false;
         }
+
         let now = Instant::now();
         let dt = (now - *self.last_t.borrow()).as_secs_f32().min(0.1);
         *self.last_t.borrow_mut() = now;
         if dt <= 0.0 {
             return false;
         }
-        let vx = *self.vel_x.borrow();
-        let vy = *self.vel_y.borrow();
-        if vx.abs() < 0.5 && vy.abs() < 0.5 {
+
+        let vx0 = *self.vel_x.borrow();
+        let vy0 = *self.vel_y.borrow();
+        if vx0.abs() < 5.0 && vy0.abs() < 5.0 {
             *self.animating.borrow_mut() = false;
             *self.vel_x.borrow_mut() = 0.0;
             *self.vel_y.borrow_mut() = 0.0;
             return false;
         }
+
         let (bx, by) = (self.off_x.get(), self.off_y.get());
         let max_x = (self.c_w.get() - self.vp_w.get()).max(0.0);
         let max_y = (self.c_h.get() - self.vp_h.get()).max(0.0);
-        let nx = (bx + vx * dt * 60.0).clamp(0.0, max_x);
-        let ny = (by + vy * dt * 60.0).clamp(0.0, max_y);
+
+        let nx = (bx + vx0 * dt).clamp(0.0, max_x);
+        let ny = (by + vy0 * dt).clamp(0.0, max_y);
+
         self.off_x.set(nx);
         self.off_y.set(ny);
-        *self.vel_x.borrow_mut() = vx * 0.95;
-        *self.vel_y.borrow_mut() = vy * 0.95;
+
+        // stop quickly at edges
+        if (nx - bx).abs() < 0.01 && (bx <= 0.0 || bx >= max_x) {
+            *self.vel_x.borrow_mut() = 0.0;
+        }
+        if (ny - by).abs() < 0.01 && (by <= 0.0 || by >= max_y) {
+            *self.vel_y.borrow_mut() = 0.0;
+        }
+
+        let decay_per_60hz = 0.95f32;
+        let decay = decay_per_60hz.powf(dt * 60.0);
+        *self.vel_x.borrow_mut() *= decay;
+        *self.vel_y.borrow_mut() *= decay;
+
+        *self.animating.borrow_mut() =
+            self.vel_x.borrow().abs() > 5.0 || self.vel_y.borrow().abs() > 5.0;
+
         true
     }
 }
@@ -426,9 +466,13 @@ pub fn HorizontalScrollArea(
     let st_clone = state.clone();
     let on_scroll = {
         Rc::new(move |d: Vec2| -> Vec2 {
+            // Most mice only generate vertical wheel. If dx is zero, treat dy as horizontal scroll.
+            // Do also consume that vertical delta so parent vertical scrollers don't steal it.
+            let use_dx = if d.x.abs() > 0.001 { d.x } else { d.y };
+            let leftover_x = st_clone.scroll_immediate(use_dx);
             Vec2 {
-                x: st_clone.scroll_immediate(d.x),
-                y: d.y,
+                x: leftover_x,
+                y: if d.x.abs() > 0.001 { d.y } else { 0.0 },
             }
         })
     };
@@ -451,7 +495,6 @@ pub fn HorizontalScrollArea(
         let st = state.clone();
         Rc::new(move |x: f32, _y: f32| st.set_offset(x))
     };
-    // Use ScrollXY, but only X is active
     View::new(
         0,
         ViewKind::ScrollXY {

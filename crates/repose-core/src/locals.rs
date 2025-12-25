@@ -31,8 +31,6 @@ thread_local! {
     static LOCALS_STACK: RefCell<Vec<HashMap<TypeId, Box<dyn Any>>>> = RefCell::new(Vec::new());
 }
 
-// ---- Global defaults (NEW) ----
-
 #[derive(Clone, Copy, Debug)]
 struct Defaults {
     theme: Theme,
@@ -96,8 +94,6 @@ pub fn dp_to_px(dp: f32) -> f32 {
     Dp(dp).to_px()
 }
 
-// ---- Locals frames ----
-
 fn with_locals_frame<R>(f: impl FnOnce() -> R) -> R {
     struct Guard;
     impl Drop for Guard {
@@ -137,8 +133,6 @@ fn get_local<T: 'static + Copy>() -> Option<T> {
         None
     })
 }
-
-// ---- Typed API ----
 
 #[derive(Clone, Copy, Debug)]
 pub struct Theme {
