@@ -605,6 +605,8 @@ pub fn layout_and_paint(
                 | ViewKind::Slider { .. }
                 | ViewKind::RangeSlider { .. }
                 | ViewKind::ProgressBar { .. }
+                | ViewKind::ScrollV { .. }
+                | ViewKind::ScrollXY { .. }
         ) {
             s.flex_shrink = 1.0; // Allow shrinking by default
         }
@@ -836,9 +838,12 @@ pub fn layout_and_paint(
             s.max_size.height = length(px(v_dp.max(0.0)));
         }
 
-        if matches!(kind, ViewKind::Text { .. }) && s.min_size.width.is_auto() {
+        if s.min_size.width.is_auto() {
             s.min_size.width = length(0.0);
         }
+        // if s.min_size.height.is_auto() {
+        //     s.min_size.height = length(0.0);
+        // } // Causes aggressive contraints in nested containers, should probably use a screen scroll like jetpack compose
 
         s
     }

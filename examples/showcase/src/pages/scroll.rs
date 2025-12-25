@@ -22,10 +22,11 @@ pub fn screen() -> View {
                     .border(1.0, theme().outline, 12.0)
                     .clip_rounded(12.0),
                 v_state,
-                Column(Modifier::new()).child(
+                Column(Modifier::new().fill_max_width()).child(
                     (0..40)
                         .map(|i| {
                             Box(Modifier::new()
+                                .fill_max_width()
                                 .padding(10.0)
                                 .background(theme().surface)
                                 .border(1.0, theme().outline, 10.0)
@@ -62,10 +63,11 @@ pub fn screen() -> View {
             ),
         ),
         Section(
-            "2D ScrollAreaXY",
+            "2D ScrollAreaXY (responsive width)", // Only works well with min size 0 for height, which breaks other containers...
             ScrollAreaXY(
                 Modifier::new()
-                    .size(520.0, 220.0)
+                    .height(220.0)
+                    .fill_max_width()
                     .border(1.0, theme().outline, 12.0)
                     .clip_rounded(12.0),
                 xy_state,
