@@ -948,49 +948,48 @@ pub fn layout_and_paint(
                     let size_px_val = font_px(*font_dp);
                     let line_h_px_val = size_px_val * 1.3;
 
-                    // Rough guess (used only as fallback)
-                    let approx_w_px = text.len() as f32 * size_px_val * 0.6;
-
+                    // If available width is Definite, we must respect it (wrap).
+                    // If Indefinite (e.g. inside a center-aligned Button), we allow INFINITY
+                    // to prevent premature wrapping of short words like "Home".
                     let target_w_px = match avail.width {
                         AvailableSpace::Definite(w) if w > 0.5 => w,
-                        _ => known.width.unwrap_or(approx_w_px),
+                        _ => f32::INFINITY,
                     };
 
-                    let mut wrap_w_px = if *soft_wrap || matches!(overflow, TextOverflow::Ellipsis)
-                    {
-                        target_w_px
-                    } else {
-                        known.width.unwrap_or(approx_w_px)
-                    };
-
-                    if wrap_w_px <= 0.5 && !text.is_empty() {
-                        wrap_w_px = approx_w_px.max(1.0);
-                    }
-
-                    // Build lines (wraps by def.)
                     let mut lines_vec: Vec<String>;
-                    let mut truncated = false;
 
                     if *soft_wrap {
-                        let (ls, trunc) =
-                            repose_text::wrap_lines(text, size_px_val, wrap_w_px, *max_lines, true);
+                        // Pass target_w_px. If it's INFINITY, wrap_lines won't wrap.
+                        let (ls, trunc) = repose_text::wrap_lines(
+                            text,
+                            size_px_val,
+                            target_w_px,
+                            *max_lines,
+                            true,
+                        );
                         lines_vec = ls;
-                        truncated = trunc;
                         if matches!(overflow, TextOverflow::Ellipsis)
-                            && truncated
+                            && trunc
                             && !lines_vec.is_empty()
                         {
                             let last = lines_vec.len() - 1;
-                            lines_vec[last] = repose_text::ellipsize_line(
-                                &lines_vec[last],
-                                size_px_val,
-                                wrap_w_px,
-                            );
+                            // Ensure we don't pass INFINITY to ellipsize_line if we somehow truncated
+                            let limit = if target_w_px.is_finite() {
+                                target_w_px
+                            } else {
+                                f32::MAX
+                            };
+                            lines_vec[last] =
+                                repose_text::ellipsize_line(&lines_vec[last], size_px_val, limit);
                         }
                     } else if matches!(overflow, TextOverflow::Ellipsis) {
-                        if approx_w_px > wrap_w_px + 0.5 {
+                        // Check exact width before ellipsizing
+                        let m = measure_text(text, size_px_val);
+                        let true_w = m.positions.last().copied().unwrap_or(0.0);
+
+                        if target_w_px.is_finite() && true_w > target_w_px + 0.5 {
                             lines_vec =
-                                vec![repose_text::ellipsize_line(text, size_px_val, wrap_w_px)];
+                                vec![repose_text::ellipsize_line(text, size_px_val, target_w_px)];
                         } else {
                             lines_vec = vec![text.clone()];
                         }
@@ -1008,11 +1007,18 @@ pub fn layout_and_paint(
                         },
                     );
 
-                    // Height = no. of measured lines
-                    let line_count = lines_vec.len().max(1);
+                    // If `target_w_px` is returned (which might be the full Button width), the text node becomes huge, and since text is drawn at x=0, it looks left-aligned.
+                    let max_line_w = lines_vec
+                        .iter()
+                        .map(|line| {
+                            let m = measure_text(line, size_px_val);
+                            m.positions.last().copied().unwrap_or(0.0)
+                        })
+                        .fold(0.0f32, f32::max);
+
                     taffy::geometry::Size {
-                        width: wrap_w_px,
-                        height: line_h_px_val * line_count as f32,
+                        width: known.width.unwrap_or(max_line_w),
+                        height: line_h_px_val * lines_vec.len().max(1) as f32,
                     }
                 }
                 Some(NodeCtx::Button { label }) => taffy::geometry::Size {
