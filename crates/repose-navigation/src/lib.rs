@@ -344,8 +344,15 @@ pub fn NavDisplay<K: NavKey>(
     };
 
     let v = entry_scope.run(|| (make_view)(&scope));
-    let framed = Stack(Modifier::new().fill_max_size())
-        .child(VBox(Modifier::new().translate(dx, 0.0).alpha(alpha)).child(v));
+    let framed = Stack(Modifier::new().fill_max_size()).child(
+        VBox(
+            Modifier::new()
+                .fill_max_size()
+                .translate(dx, 0.0)
+                .alpha(alpha),
+        )
+        .child(v),
+    );
     maybe_intercept_back(framed, on_back)
 }
 
