@@ -824,7 +824,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                 if let Some(state_rc) = self.textfield_states.get(&key) {
                                     let mut st = state_rc.borrow_mut();
                                     st.insert_text(&text);
-                                    self.notify_text_change(fid, text.clone());
+                                    self.notify_text_change(fid, st.text.clone());
                                     App::tf_ensure_caret_visible(&mut st);
                                     self.request_redraw();
                                 }
