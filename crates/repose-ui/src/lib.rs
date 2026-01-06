@@ -593,22 +593,45 @@ pub fn layout_and_paint(
             s.aspect_ratio = Some(r.max(0.0));
         }
 
+        // if matches!(
+        //     kind,
+        //     ViewKind::Box
+        //         | ViewKind::Text { .. }
+        //         | ViewKind::Button { .. }
+        //         | ViewKind::TextField { .. }
+        //         | ViewKind::Image { .. }
+        //         | ViewKind::Checkbox { .. }
+        //         | ViewKind::RadioButton { .. }
+        //         | ViewKind::Switch { .. }
+        //         | ViewKind::Slider { .. }
+        //         | ViewKind::RangeSlider { .. }
+        //         | ViewKind::ProgressBar { .. }
+        //         | ViewKind::ScrollV { .. }
+        //         | ViewKind::ScrollXY { .. }
+        // ) {
+        //     s.flex_shrink = 1.0;
+        // }
+
         if matches!(
             kind,
-            ViewKind::Box
-                | ViewKind::Text { .. }
-                | ViewKind::Button { .. }
-                | ViewKind::TextField { .. }
-                | ViewKind::Image { .. }
-                | ViewKind::Checkbox { .. }
+            ViewKind::Checkbox { .. }
                 | ViewKind::RadioButton { .. }
                 | ViewKind::Switch { .. }
                 | ViewKind::Slider { .. }
                 | ViewKind::RangeSlider { .. }
-                | ViewKind::ProgressBar { .. }
-                | ViewKind::ScrollV { .. }
-                | ViewKind::ScrollXY { .. }
+                | ViewKind::Image { .. }
         ) {
+            s.flex_shrink = 0.0;
+        } else if matches!(kind, ViewKind::Box) {
+            let has_fixed_width = m.width.is_some();
+            let has_fixed_size = m.size.map(|sz| sz.width.is_finite()).unwrap_or(false);
+
+            if has_fixed_width || has_fixed_size {
+                s.flex_shrink = 0.0;
+            } else {
+                s.flex_shrink = 1.0;
+            }
+        } else {
             s.flex_shrink = 1.0;
         }
 
