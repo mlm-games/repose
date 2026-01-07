@@ -184,6 +184,10 @@ pub fn Spacer() -> View {
     Box(Modifier::new().flex_grow(1.0))
 }
 
+pub fn Space(modifier: Modifier) -> View {
+    Box(modifier)
+}
+
 pub fn Grid(
     columns: usize,
     modifier: Modifier,
