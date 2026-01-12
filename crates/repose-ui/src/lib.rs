@@ -975,36 +975,49 @@ pub fn layout_and_paint(
                     let size_px_val = font_px(*font_dp);
                     let line_h_px_val = size_px_val * 1.3;
 
-                    // Rough guess (used only as fallback)
-                    let approx_w_px = text.len() as f32 * size_px_val * 0.6;
+                    let max_content_w = measure_text(text, size_px_val)
+                        .positions
+                        .last()
+                        .copied()
+                        .unwrap_or(0.0)
+                        .max(0.0);
 
-                    let target_w_px = match avail.width {
-                        AvailableSpace::Definite(w) if w > 0.5 => w,
-                        _ => known.width.unwrap_or(approx_w_px),
-                    };
-
-                    let mut wrap_w_px = if *soft_wrap || matches!(overflow, TextOverflow::Ellipsis)
-                    {
-                        target_w_px
-                    } else {
-                        known.width.unwrap_or(approx_w_px)
-                    };
-
-                    if wrap_w_px <= 0.5 && !text.is_empty() {
-                        wrap_w_px = approx_w_px.max(1.0);
+                    // flexbox uses this to decide how much it can shrink.
+                    let mut min_content_w = 0.0f32;
+                    for w in text.split_whitespace() {
+                        let ww = measure_text(w, size_px_val)
+                            .positions
+                            .last()
+                            .copied()
+                            .unwrap_or(0.0);
+                        min_content_w = min_content_w.max(ww);
+                    }
+                    // If there are no whitespace breaks (CJK, long identifiers, etc),
+                    // min-content == max-content.
+                    if min_content_w <= 0.0 {
+                        min_content_w = max_content_w;
                     }
 
-                    // Build lines (wraps by def.)
+                    let wrap_w_px = if let Some(w) = known.width.filter(|w| *w > 0.5) {
+                        w
+                    } else {
+                        match avail.width {
+                            AvailableSpace::Definite(w) if w > 0.5 => w,
+                            AvailableSpace::MinContent => min_content_w,
+                            AvailableSpace::MaxContent => max_content_w,
+                            _ => max_content_w,
+                        }
+                    };
+
                     let mut lines_vec: Vec<String>;
-                    let mut truncated = false;
 
                     if *soft_wrap {
                         let (ls, trunc) =
                             repose_text::wrap_lines(text, size_px_val, wrap_w_px, *max_lines, true);
                         lines_vec = ls;
-                        truncated = trunc;
+
                         if matches!(overflow, TextOverflow::Ellipsis)
-                            && truncated
+                            && trunc
                             && !lines_vec.is_empty()
                         {
                             let last = lines_vec.len() - 1;
@@ -1015,7 +1028,7 @@ pub fn layout_and_paint(
                             );
                         }
                     } else if matches!(overflow, TextOverflow::Ellipsis) {
-                        if approx_w_px > wrap_w_px + 0.5 {
+                        if max_content_w > wrap_w_px + 0.5 {
                             lines_vec =
                                 vec![repose_text::ellipsize_line(text, size_px_val, wrap_w_px)];
                         } else {
@@ -1024,6 +1037,18 @@ pub fn layout_and_paint(
                     } else {
                         lines_vec = vec![text.clone()];
                     }
+
+                    // Width should be tight to the produced lines (so Button centering works)
+                    let max_line_w = lines_vec
+                        .iter()
+                        .map(|line| {
+                            measure_text(line, size_px_val)
+                                .positions
+                                .last()
+                                .copied()
+                                .unwrap_or(0.0)
+                        })
+                        .fold(0.0f32, f32::max);
 
                     // Cache for paint (much better perf.)
                     text_cache.insert(
@@ -1035,11 +1060,9 @@ pub fn layout_and_paint(
                         },
                     );
 
-                    // Height = no. of measured lines
-                    let line_count = lines_vec.len().max(1);
                     taffy::geometry::Size {
-                        width: wrap_w_px,
-                        height: line_h_px_val * line_count as f32,
+                        width: max_line_w,
+                        height: line_h_px_val * lines_vec.len().max(1) as f32,
                     }
                 }
                 Some(NodeCtx::Button { label }) => taffy::geometry::Size {
