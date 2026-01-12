@@ -1,8 +1,8 @@
 struct VSOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) color: vec4<f32>,
-    @location(1) xywh: vec4<f32>, // NDC bounding rect
-    @location(2) stroke_ndc: f32, // stroke width (screen-space) in NDC
+    @location(1) xywh: vec4<f32>,
+    @location(2) stroke_ndc: f32,
     @location(3) pos_ndc: vec2<f32>,
 };
 
@@ -39,12 +39,11 @@ fn sdf_ellipse(pos_ndc: vec2<f32>, xywh: vec4<f32>) -> f32 {
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let d = sdf_ellipse(in.pos_ndc, in.xywh);
-    // AA based on ellipse-space derivatives
-    let center = in.xywh.xy + 0.5 * in.xywh.zw;
-    let radii = 0.5 * in.xywh.zw;
-    let p = (in.pos_ndc - center) / radii;
-    let aa = length(fwidth(p)) + 1e-6;
+    let w = max(fwidth(d), 1e-5);
+
     let half = 0.5 * in.stroke_ndc;
-    let alpha = clamp(0.5 - (abs(d) - half) / aa, 0.0, 1.0);
-    return vec4(in.color.rgb, in.color.a * alpha);
+    let alpha_cov = 1.0 - smoothstep(-w, w, abs(d) - half);
+
+    let a = in.color.a * alpha_cov;
+    return vec4(in.color.rgb * a, a);
 }

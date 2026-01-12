@@ -1,9 +1,15 @@
+struct Globals {
+    ndc_to_px: vec2<f32>,
+    _pad: vec2<f32>,
+};
+@group(0) @binding(0) var<uniform> G: Globals;
+
 struct VSOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) @interpolate(flat) brush_type: u32,
     @location(1) color0: vec4<f32>,
     @location(2) color1: vec4<f32>,
-    @location(3) xywh: vec4<f32>,      // NDC rect
+    @location(3) xywh: vec4<f32>,
     @location(4) radius: f32,
     @location(5) grad_start: vec2<f32>,
     @location(6) grad_end: vec2<f32>,
@@ -41,14 +47,10 @@ fn vs_main(
     return out;
 }
 
-
-// Signed distance to rounded rectangle in NDC, using iq's round-box SDF.
-// We treat xywh in NDC; radius is in NDC too.
-fn sdf_round_box(pos_ndc: vec2<f32>, xywh: vec4<f32>, r: f32) -> f32 {
-    let half = 0.5 * xywh.zw;
-    let center = xywh.xy + half;
-    let p = pos_ndc - center;
-    let q = abs(p) - (half - vec2<f32>(r, r));
+// Pixel-space SDF for true circular corners
+fn sdf_round_box_px(p_px: vec2<f32>, half_px: vec2<f32>, r_px: f32) -> f32 {
+    let r = max(r_px, 0.0);
+    let q = abs(p_px) - (half_px - vec2<f32>(r, r));
     let outside = max(q, vec2<f32>(0.0, 0.0));
     let inside = min(max(q.x, q.y), 0.0);
     return length(outside) + inside - r;
@@ -59,10 +61,9 @@ fn eval_brush(in: VSOut) -> vec4<f32> {
         return in.color0;
     }
 
-    // Map pos_ndc back into [0,1] local rect space
     let rect_min = in.xywh.xy;
     let rect_size = in.xywh.zw;
-    let local = (in.pos_ndc - rect_min) / rect_size; // 0..1 in both axes
+    let local = (in.pos_ndc - rect_min) / rect_size;
 
     let dir = in.grad_end - in.grad_start;
     let len2 = max(dot(dir, dir), 1e-6);
@@ -72,9 +73,18 @@ fn eval_brush(in: VSOut) -> vec4<f32> {
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
-    let d = sdf_round_box(in.pos_ndc, in.xywh, in.radius);
-    let aa = length(fwidth(in.pos_ndc));
-    let alpha = clamp(0.5 - d / aa, 0.0, 1.0);
+    let center_ndc = in.xywh.xy + 0.5 * in.xywh.zw;
+
+    let p_px = (in.pos_ndc - center_ndc) * G.ndc_to_px;
+    let half_px = 0.5 * in.xywh.zw * G.ndc_to_px;
+
+    let d = sdf_round_box_px(p_px, half_px, in.radius);
+
+    // d is in pixels, so fwidth(d) ≈ 1 at edges
+    let w = max(fwidth(d), 1e-4);
+    let alpha_cov = 1.0 - smoothstep(-w, w, d);
+
     let base = eval_brush(in);
-    return vec4(base.rgb, base.a * alpha);
+    let a = base.a * alpha_cov;
+    return vec4(base.rgb * a, a);
 }

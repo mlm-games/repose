@@ -1,7 +1,7 @@
 struct VSOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) color: vec4<f32>,
-    @location(1) xywh: vec4<f32>, // NDC bounding rect
+    @location(1) xywh: vec4<f32>,
     @location(2) pos_ndc: vec2<f32>,
 };
 
@@ -26,7 +26,6 @@ fn vs_main(
     return out;
 }
 
-// SDF for ellipse: transform into unit circle space and measure radius-1
 fn sdf_ellipse(pos_ndc: vec2<f32>, xywh: vec4<f32>) -> f32 {
     let center = xywh.xy + 0.5 * xywh.zw;
     let radii = 0.5 * xywh.zw;
@@ -37,11 +36,9 @@ fn sdf_ellipse(pos_ndc: vec2<f32>, xywh: vec4<f32>) -> f32 {
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let d = sdf_ellipse(in.pos_ndc, in.xywh);
-    // derivative in ellipse-space (approx): scale fwidth with reciprocal radii
-    let center = in.xywh.xy + 0.5 * in.xywh.zw;
-    let radii = 0.5 * in.xywh.zw;
-    let p = (in.pos_ndc - center) / radii;
-    let aa = length(fwidth(p)) + 1e-6;
-    let alpha = clamp(0.5 - d / aa, 0.0, 1.0);
-    return vec4(in.color.rgb, in.color.a * alpha);
+    let w = max(fwidth(d), 1e-5);
+    let alpha_cov = 1.0 - smoothstep(-w, w, d);
+
+    let a = in.color.a * alpha_cov;
+    return vec4(in.color.rgb * a, a);
 }

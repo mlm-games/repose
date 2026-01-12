@@ -502,6 +502,10 @@ pub fn layout_and_paint(
         v
     }
 
+    fn clamp_radius(r: f32, w: f32, h: f32) -> f32 {
+        r.max(0.0).min(0.5 * w.max(0.0)).min(0.5 * h.max(0.0))
+    }
+
     let root = assign_ids(root.clone(), 0, 0);
 
     // Build Taffy tree (with per-node contexts for measurement)
@@ -1460,12 +1464,24 @@ pub fn layout_and_paint(
         let is_pressed = interactions.pressed.contains(&v.id);
         let is_focused = focused == Some(v.id);
 
+        let has_transform = v.modifier.transform.is_some();
+        let round_clip_px = clamp_radius(
+            v.modifier.clip_rounded.map(dp_to_px).unwrap_or(0.0),
+            rect.w,
+            rect.h,
+        );
+        let push_round_clip = round_clip_px > 0.5 && rect.w > 0.5 && rect.h > 0.5;
+
         // Background
         if let Some(bg_brush) = v.modifier.background {
             scene.nodes.push(SceneNode::Rect {
                 rect,
                 brush: mul_alpha_brush(bg_brush, alpha_accum),
-                radius: v.modifier.clip_rounded.map(dp_to_px).unwrap_or(0.0),
+                radius: clamp_radius(
+                    v.modifier.clip_rounded.map(dp_to_px).unwrap_or(0.0),
+                    rect.w,
+                    rect.h,
+                ),
             });
         }
 
@@ -1475,7 +1491,11 @@ pub fn layout_and_paint(
                 rect,
                 color: mul_alpha_color(b.color, alpha_accum),
                 width: dp_to_px(b.width),
-                radius: dp_to_px(b.radius.max(v.modifier.clip_rounded.unwrap_or(0.0))),
+                radius: clamp_radius(
+                    dp_to_px(b.radius.max(v.modifier.clip_rounded.unwrap_or(0.0))),
+                    rect.w,
+                    rect.h,
+                ),
             });
         }
 
@@ -1485,6 +1505,14 @@ pub fn layout_and_paint(
 
         if let Some(tf) = v.modifier.transform {
             scene.nodes.push(SceneNode::PushTransform { transform: tf });
+        }
+
+        // Push rounded clip AFTER transform so clip is in transformed space
+        if push_round_clip {
+            scene.nodes.push(SceneNode::PushClip {
+                rect,
+                radius: round_clip_px,
+            });
         }
 
         // Custom painter (Canvas)
@@ -2004,6 +2032,13 @@ pub fn layout_and_paint(
                 );
 
                 scene.nodes.push(SceneNode::PopClip);
+
+                if push_round_clip {
+                    scene.nodes.push(SceneNode::PopClip);
+                }
+                if has_transform {
+                    scene.nodes.push(SceneNode::PopTransform);
+                }
                 return;
             }
             ViewKind::ScrollXY {
@@ -2143,6 +2178,13 @@ pub fn layout_and_paint(
                 );
 
                 scene.nodes.push(SceneNode::PopClip);
+
+                if push_round_clip {
+                    scene.nodes.push(SceneNode::PopClip);
+                }
+                if has_transform {
+                    scene.nodes.push(SceneNode::PopTransform);
+                }
                 return;
             }
             ViewKind::Checkbox { checked, on_change } => {
@@ -2818,7 +2860,11 @@ pub fn layout_and_paint(
             );
         }
 
-        if v.modifier.transform.is_some() {
+        if push_round_clip {
+            scene.nodes.push(SceneNode::PopClip);
+        }
+
+        if has_transform {
             scene.nodes.push(SceneNode::PopTransform);
         }
     }

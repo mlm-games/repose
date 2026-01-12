@@ -1,3 +1,9 @@
+struct Globals {
+    ndc_to_px: vec2<f32>,
+    _pad: vec2<f32>,
+};
+@group(0) @binding(0) var<uniform> G: Globals;
+
 struct VSOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) color: vec4<f32>,
@@ -22,7 +28,6 @@ fn vs_main(
 
     let p = positions[v];
     let uv_lerp = uvs[v];
-
     let pos_ndc = xywh.xy + p * xywh.zw;
 
     var out: VSOut;
@@ -32,12 +37,12 @@ fn vs_main(
     return out;
 }
 
-@group(0) @binding(0) var glyph_tex: texture_2d<f32>;
-@group(0) @binding(1) var glyph_sampler: sampler;
+@group(1) @binding(0) var glyph_tex: texture_2d<f32>;
+@group(1) @binding(1) var glyph_sampler: sampler;
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
-    let a = textureSample(glyph_tex, glyph_sampler, in.uv).r;
-    return vec4(in.color.rgb, a * in.color.a);
+    let cov = textureSample(glyph_tex, glyph_sampler, in.uv).r;
+    let a = cov * in.color.a;
+    return vec4(in.color.rgb * a, a);
 }
-
