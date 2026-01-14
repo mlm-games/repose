@@ -1,0 +1,66 @@
+name: Deploy Showcase to GH Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/showcase
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Install Rust (stable) + wasm target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Trunk
+        run: cargo install --locked trunk
+
+      - name: Build (Trunk)
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REPOSITORY}" == "${GITHUB_REPOSITORY_OWNER}/${GITHUB_REPOSITORY_OWNER}.github.io" ]]; then
+            PUBLIC_URL="/"
+          else
+            PUBLIC_URL="/${{ github.event.repository.name }}/"
+          fi
+          trunk build --release --public-url "${PUBLIC_URL}"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: examples/showcase/dist
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
