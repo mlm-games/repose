@@ -89,6 +89,11 @@ Issues and PRs are welcome, especially for:
 - perf regressions (include a small repro)
 - platform gaps (ignore external ones like Android IME/keyboard.)
 
+## Screenshot
+
+<img width="2083" height="1326" alt="image" src="https://github.com/user-attachments/assets/1f143ebd-5f24-47c8-9a95-3a09e762db0b" />
+
+
 ## License
 
 GPL-3.0-or-later (see `LICENSE`).
