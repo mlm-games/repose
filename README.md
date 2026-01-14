@@ -37,7 +37,7 @@ cargo run -p showcase --features desktop-bin
 ```
 
 ### Web (WASM)
-A hosted demo (Showcase, check the github pages link)
+A hosted demo (Showcase, check the github pages [link](https://mlm-games.github.io/repose/))
 
 (or)
 
