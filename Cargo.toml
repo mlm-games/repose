@@ -1,9 +1,10 @@
 [workspace]
 members = [
-  "crates/repose-core",
-  "crates/repose-ui",
-  "crates/repose-render-wgpu",
-  "crates/repose-platform",
+ "crates/repose-core",
+ "crates/repose-tree",
+ "crates/repose-ui",
+ "crates/repose-render-wgpu",
+ "crates/repose-platform",
   "crates/repose-devtools",
   "crates/repose-macros",
   "crates/repose-text",
@@ -54,6 +55,9 @@ android_logger = "0.15"
 serde = { version = "1", features = ["derive"] }
 web-time = "1"
 
+rustc-hash = "2"
+ahash = "0.8"
+
 repose-core = { path = "crates/repose-core", version = "0.10.0" }
 repose-ui = { path = "crates/repose-ui", version = "0.10.0" }
 repose-material = { path = "crates/repose-material", version = "0.10.0" }
@@ -63,3 +67,4 @@ repose-devtools = { path = "crates/repose-devtools", version = "0.10.0" }
 repose-text = { path = "crates/repose-text", version = "0.10.0" }
 repose-render-wgpu = { path = "crates/repose-render-wgpu", version = "0.10.0" }
 repose-platform = { path = "crates/repose-platform", version = "0.10.0" }
+repose-tree = { path = "crates/repose-tree", version = "0.10.0" }

@@ -71,6 +71,8 @@ impl<T> Signal<T> {
 
         // Notify reactive graph after all borrows are dropped.
         reactive::signal_changed(id);
+
+        crate::request_frame();
     }
 
     pub fn update<F: FnOnce(&mut T)>(&self, f: F) {
@@ -91,6 +93,8 @@ impl<T> Signal<T> {
         }
 
         reactive::signal_changed(id);
+
+        crate::request_frame();
     }
 
     pub fn subscribe(&self, f: impl Fn(&T) + 'static) -> SubId {

@@ -956,7 +956,8 @@ impl ApplicationHandler<()> for App {
     }
 
     fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
-        // Do not request redraw unconditionally.
-        // For animations, should set WebOptions.continuous_redraw = true. (currently true for resize issues)
+        if !self.options.continuous_redraw && take_frame_request() {
+            self.request_redraw();
+        }
     }
 }

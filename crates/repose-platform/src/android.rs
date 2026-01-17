@@ -588,14 +588,12 @@ pub fn run_android_app_with_options(
                         win.request_redraw();
                     }
                 }
-
                 _ => {}
             }
         }
 
         fn about_to_wait(&mut self, _el: &winit::event_loop::ActiveEventLoop) {
-            // Only redraw if needed (unless continuous_redraw is enabled).
-            if self.options.continuous_redraw || self.dirty {
+            if self.options.continuous_redraw || self.dirty || take_frame_request() {
                 self.request_redraw();
             }
         }

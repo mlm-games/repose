@@ -161,6 +161,10 @@ pub struct HitRegion {
 pub struct SemNode {
     /// Stable id, shared with the associated `HitRegion` / `ViewId`.
     pub id: u64,
+
+    /// `None` means direct child of the window root.
+    pub parent: Option<u64>,
+
     pub role: Role,
     pub label: Option<String>,
     pub rect: Rect,

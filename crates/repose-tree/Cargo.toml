@@ -1,0 +1,14 @@
+[package]
+name = "repose-tree"
+version.workspace = true
+edition.workspace = true
+license = "GPL-3.0-or-later"
+description = "Persistent view tree with incremental updates for Repose"
+
+[dependencies]
+repose-core.workspace = true
+rustc-hash = { workspace = true }
+smallvec = { workspace = true }
+slotmap = { workspace = true }
+log = { workspace = true }
+ahash = { workspace = true }

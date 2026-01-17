@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use web_time::Instant;
 
 use repose_core::{Color, Rect, Scene, SceneNode};
@@ -68,7 +70,7 @@ impl Hud {
                 w: 200.0,
                 h: 16.0,
             },
-            text,
+            text: Arc::<str>::from(text),
             color: Color::from_hex("#AAAAAA"),
             size: 14.0,
         });

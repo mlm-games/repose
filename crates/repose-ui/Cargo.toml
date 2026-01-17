@@ -8,12 +8,15 @@ description = "UI widgets and libs for Repose"
 [dependencies]
 repose-core.workspace = true
 repose-text.workspace = true
+repose-tree.workspace = true # NEW
 taffy = { workspace = true }
 fontdb = { workspace = true }
 ab_glyph = { workspace = true }
 unicode-segmentation = { workspace = true }
 log.workspace = true
 web-time.workspace = true
+rustc-hash = { workspace = true }
+smallvec = { workspace = true }
 
 [dev-dependencies]
 insta = "1.43"

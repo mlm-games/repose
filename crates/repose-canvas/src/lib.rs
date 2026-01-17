@@ -1,4 +1,6 @@
 #![allow(non_snake_case)]
+use std::sync::Arc;
+
 use repose_core::*;
 use repose_ui::*;
 
@@ -168,7 +170,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                             w: 0.0,
                             h: *size,
                         },
-                        text: text.clone(),
+                        text: Arc::<str>::from(text.clone()),
                         color: *color,
                         size: *size,
                     });

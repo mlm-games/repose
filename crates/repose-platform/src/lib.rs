@@ -1,9 +1,14 @@
 //! Platform runners
+use crate::a11y::ReposeActionHandler;
+use accesskit_winit::Adapter;
 use repose_core::locals::dp_to_px;
 use repose_core::*;
-use repose_ui::textfield::{TF_FONT_DP, TF_PADDING_X_DP, index_for_x_bytes, measure_text};
+use repose_ui::textfield::{
+    self, TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, byte_to_char_index, measure_text,
+};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use web_time::Instant;
 
 #[cfg(all(feature = "android", target_os = "android"))]
@@ -12,6 +17,7 @@ pub mod android;
 #[cfg(all(target_arch = "wasm32"))]
 pub mod web;
 
+pub mod a11y;
 mod common;
 
 /// Compose a single frame with density and text-scale applied, returning Frame.
@@ -43,6 +49,7 @@ where
                     hover: hover_id,
                     pressed: pressed_ids.clone(),
                 };
+
                 with_density(Density { scale }, || {
                     repose_ui::layout_and_paint(
                         view,
@@ -71,12 +78,7 @@ pub fn tf_ensure_visible_in_rect(state: &mut repose_ui::TextFieldState, inner_re
 
 #[cfg(feature = "desktop")]
 pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> anyhow::Result<()> {
-    use std::cell::RefCell;
     use std::collections::{HashMap, HashSet};
-    use std::rc::Rc;
-    use std::sync::Arc;
-
-    use repose_ui::TextFieldState;
     use winit::application::ApplicationHandler;
     use winit::dpi::{LogicalPosition, LogicalSize, PhysicalSize};
     use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
@@ -84,8 +86,27 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
     use winit::keyboard::{KeyCode, PhysicalKey};
     use winit::window::{ImePurpose, Window, WindowAttributes};
 
+    use crate::a11y::A11yTree;
+
+    struct ReposeActivationHandler {
+        initial_tree: Option<accesskit::TreeUpdate>,
+    }
+
+    impl accesskit::ActivationHandler for ReposeActivationHandler {
+        fn request_initial_tree(&mut self) -> Option<accesskit::TreeUpdate> {
+            self.initial_tree.take()
+        }
+    }
+
+    struct ReposeDeactivationHandler;
+
+    impl accesskit::DeactivationHandler for ReposeDeactivationHandler {
+        fn deactivate_accessibility(&mut self) {
+            // Nothing to clean up for now
+        }
+    }
+
     struct App {
-        // App state
         root: Box<dyn FnMut(&mut Scheduler) -> View>,
         window: Option<Arc<Window>>,
         backend: Option<repose_render_wgpu::WgpuBackend>,
@@ -99,13 +120,49 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
         hover_id: Option<u64>,
         capture_id: Option<u64>,
         pressed_ids: HashSet<u64>,
-        key_pressed_active: Option<u64>, // for Space/Enter press/release activation
+        key_pressed_active: Option<u64>,
         clipboard: Option<clipawl::Clipboard>,
         a11y: Box<dyn A11yBridge>,
         last_focus: Option<u64>,
+
+        accesskit_adapter: Option<Adapter>,
+        a11y_actions: Arc<Mutex<Vec<accesskit::ActionRequest>>>,
+        a11y_tree: A11yTree,
     }
 
     impl App {
+        fn process_a11y_actions(&mut self) {
+            let mut actions = self.a11y_actions.lock().unwrap();
+            if actions.is_empty() {
+                return;
+            }
+            let pending = actions.drain(..).collect::<Vec<_>>();
+            drop(actions);
+
+            let Some(f) = &self.frame_cache else {
+                return;
+            };
+
+            for req in pending {
+                let target_id = req.target.0;
+                match req.action {
+                    accesskit::Action::Click => {
+                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == target_id) {
+                            if let Some(cb) = &hit.on_click {
+                                cb();
+                                self.request_redraw();
+                            }
+                        }
+                    }
+                    accesskit::Action::Focus => {
+                        self.sched.focused = Some(target_id);
+                        self.request_redraw();
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         fn new(root: Box<dyn FnMut(&mut Scheduler) -> View>) -> Self {
             Self {
                 root,
@@ -134,6 +191,10 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     }
                 },
                 last_focus: None,
+
+                accesskit_adapter: None,
+                a11y_actions: Arc::new(Mutex::new(Vec::new())),
+                a11y_tree: A11yTree::default(),
             }
         }
 
@@ -176,18 +237,42 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
     impl ApplicationHandler<()> for App {
         fn resumed(&mut self, el: &winit::event_loop::ActiveEventLoop) {
             self.clipboard = clipawl::Clipboard::new().ok();
-            // Create the window once when app resumes.
+
             if self.window.is_none() {
                 match el.create_window(
                     WindowAttributes::default()
                         .with_title("Repose")
-                        .with_inner_size(PhysicalSize::new(1280, 800)),
+                        .with_inner_size(PhysicalSize::new(1280, 800))
+                        .with_visible(false),
                 ) {
                     Ok(win) => {
                         let w = Arc::new(win);
+
+                        let activation_handler = ReposeActivationHandler {
+                            initial_tree: Some(A11yTree::initial_tree()),
+                        };
+
+                        let action_handler = ReposeActionHandler {
+                            pending_actions: self.a11y_actions.clone(),
+                        };
+
+                        let deactivation_handler = ReposeDeactivationHandler;
+
+                        let adapter = Adapter::with_direct_handlers(
+                            el,
+                            &w,
+                            activation_handler,
+                            action_handler,
+                            deactivation_handler,
+                        );
+
+                        self.accesskit_adapter = Some(adapter);
+
+                        w.set_visible(true);
+
                         let size = w.inner_size();
                         self.sched.size = (size.width, size.height);
-                        // Create WGPU backend
+
                         match repose_render_wgpu::WgpuBackend::new(w.clone()) {
                             Ok(b) => {
                                 self.backend = Some(b);
@@ -214,6 +299,11 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
             _id: winit::window::WindowId,
             event: WindowEvent,
         ) {
+            // Process AccessKit events first!
+            if let Some(adapter) = &mut self.accesskit_adapter {
+                adapter.process_event(self.window.as_ref().unwrap(), &event);
+            }
+
             match event {
                 WindowEvent::CloseRequested => {
                     el.exit();
@@ -267,6 +357,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     {
                         let key = self.tf_key_of(cid);
                         if let Some(state_rc) = self.textfield_states.get(&key) {
+                            use repose_ui::textfield::index_for_x_bytes;
+
                             let mut state = state_rc.borrow_mut();
                             // inner content left edge in px
                             let inner_x_px = f
@@ -422,9 +514,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                                 need_announce = true;
                                 let key = self.tf_key_of(hit.id);
                                 self.textfield_states.entry(key).or_insert_with(|| {
-                                    Rc::new(RefCell::new(
-                                        repose_ui::textfield::TextFieldState::new(),
-                                    ))
+                                    Rc::new(RefCell::new(TextFieldState::new()))
                                 });
                                 if let Some(win) = &self.window {
                                     let sf = win.scale_factor();
@@ -466,6 +556,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             {
                                 let key = self.tf_key_of(hit.id);
                                 if let Some(state_rc) = self.textfield_states.get(&key) {
+                                    use repose_ui::textfield::index_for_x_bytes;
+
                                     let mut state = state_rc.borrow_mut();
                                     let inner_x_px = hit.rect.x + dp_to_px(TF_PADDING_X_DP);
                                     let content_x_px =
@@ -519,6 +611,28 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         self.request_redraw();
                     }
 
+                    if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
+                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
+                            if let Some(cb) = &hit.on_pointer_up {
+                                let pos = Vec2 {
+                                    x: self.mouse_pos_px.0,
+                                    y: self.mouse_pos_px.1,
+                                };
+                                let pe = repose_core::input::PointerEvent {
+                                    id: repose_core::input::PointerId(0),
+                                    kind: repose_core::input::PointerKind::Mouse,
+                                    event: repose_core::input::PointerEventKind::Up(
+                                        repose_core::input::PointerButton::Primary,
+                                    ),
+                                    position: pos,
+                                    pressure: 1.0,
+                                    modifiers: self.modifiers,
+                                };
+                                cb(pe);
+                            }
+                        }
+                    }
+
                     // Click on release if pointer is still over the captured hit region
                     if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
                         let pos = Vec2 {
@@ -550,6 +664,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         }
                     }
                     self.capture_id = None;
+
+                    repose_core::request_frame();
                 }
                 WindowEvent::ModifiersChanged(new_mods) => {
                     self.modifiers.shift = new_mods.state().shift_key();
@@ -583,7 +699,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         {
                             let chain = &f.focus_chain;
                             if !chain.is_empty() {
-                                // If a button was “pressed” via keyboard, clear it when we move focus
+                                // If a button was "pressed" via keyboard, clear it when we move focus
                                 if let Some(active) = self.key_pressed_active.take() {
                                     self.pressed_ids.remove(&active);
                                 }
@@ -670,7 +786,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             let text = state.borrow().text.clone();
                             on_submit(text);
                             self.request_redraw();
-                            return; // don’t continue as button activation
+                            return; // don't continue as button activation
                         }
                     }
 
@@ -934,6 +1050,9 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     }
                 }
                 WindowEvent::RedrawRequested => {
+                    // 1. Process any pending A11y actions (clicks from screen reader)
+                    self.process_a11y_actions();
+
                     if let (Some(backend), Some(win)) =
                         (self.backend.as_mut(), self.window.as_ref())
                     {
@@ -955,16 +1074,16 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 
                         let build_layout_ms = (Instant::now() - t0).as_secs_f32() * 1000.0;
 
-                        // A11y: publish semantics tree each frame (cheap for now)
-                        self.a11y.publish_tree(&frame.semantics_nodes);
-                        // If focus id changed since last publish, send focused node
-                        if self.last_focus != self.sched.focused {
-                            let focused_node = self
-                                .sched
-                                .focused
-                                .and_then(|id| frame.semantics_nodes.iter().find(|n| n.id == id));
-                            self.a11y.focus_changed(focused_node);
-                            self.last_focus = self.sched.focused;
+                        // UPDATE ACCESSIBILITY TREE
+                        if let Some(adapter) = &mut self.accesskit_adapter {
+                            let scale = win.scale_factor();
+                            if let Some(update) = self.a11y_tree.update(
+                                &frame.semantics_nodes,
+                                scale,
+                                self.sched.focused,
+                            ) {
+                                adapter.update_if_active(|| update);
+                            }
                         }
 
                         // Render
@@ -986,7 +1105,9 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
         }
 
         fn about_to_wait(&mut self, _el: &winit::event_loop::ActiveEventLoop) {
-            self.request_redraw();
+            if take_frame_request() {
+                self.request_redraw();
+            }
         }
 
         fn new_events(

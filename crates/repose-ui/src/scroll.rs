@@ -145,6 +145,8 @@ impl ScrollState {
         let decay = decay_per_60hz.powf(dt * 60.0);
         *self.vel.borrow_mut() = vel0 * decay;
 
+        request_frame();
+
         true
     }
 }
@@ -252,6 +254,8 @@ impl HorizontalScrollState {
         let decay_per_60hz = 0.90f32;
         let decay = decay_per_60hz.powf(dt * 60.0);
         *self.vel.borrow_mut() = vel0 * decay;
+
+        request_frame();
 
         true
     }
@@ -398,7 +402,11 @@ impl ScrollStateXY {
         *self.animating.borrow_mut() =
             self.vel_x.borrow().abs() > 5.0 || self.vel_y.borrow().abs() > 5.0;
 
-        true
+        if *self.animating.borrow() {
+            request_frame();
+            return true;
+        }
+        false
     }
 }
 

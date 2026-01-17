@@ -1,7 +1,7 @@
 use repose_core::Color;
 use repose_core::{
     animation::{AnimatedValue, AnimationSpec},
-    remember_state_with_key,
+    remember_state_with_key, request_frame,
 };
 
 /// Animate f32 from an explicit initial value to a target.
@@ -23,7 +23,12 @@ pub fn animate_f32_from(
     if (cur - target).abs() > 1e-3 {
         a.set_target(target);
     }
-    a.update();
+
+    let still_animating = a.update();
+    if still_animating {
+        request_frame();
+    }
+
     *a.get()
 }
 
@@ -48,7 +53,12 @@ pub fn animate_color_from(
     if *a.get() != target {
         a.set_target(target);
     }
-    a.update();
+
+    let still_animating = a.update();
+    if still_animating {
+        request_frame();
+    }
+
     *a.get()
 }
 

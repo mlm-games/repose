@@ -3,12 +3,25 @@ use cosmic_text::{
     Attrs, Buffer, CacheKey, FontSystem, Metrics, Shaping, SwashCache, SwashContent,
 };
 use once_cell::sync::OnceCell;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
     collections::{HashMap, VecDeque},
     hash::{Hash, Hasher},
     sync::Mutex,
 };
 use unicode_segmentation::UnicodeSegmentation;
+
+/// Frame counter for cache invalidation strategies.
+static FRAME_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Call this at the start of each frame to enable frame-aware caching.
+pub fn begin_frame() {
+    FRAME_COUNTER.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn current_frame() -> u64 {
+    FRAME_COUNTER.load(Ordering::Relaxed)
+}
 
 const WRAP_CACHE_CAP: usize = 1024;
 const ELLIP_CACHE_CAP: usize = 2048;

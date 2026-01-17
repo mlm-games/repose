@@ -1,5 +1,5 @@
 use crate::{Brush, Color, Modifier, Rect, Transform};
-use std::rc::Rc;
+use std::{rc::Rc, sync::Arc};
 
 pub type ViewId = u64;
 
@@ -269,10 +269,9 @@ pub enum SceneNode {
         width: f32,
         radius: f32,
     },
-
     Text {
         rect: Rect,
-        text: String,
+        text: Arc<str>,
         color: Color,
         size: f32,
     },

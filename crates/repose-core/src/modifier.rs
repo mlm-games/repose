@@ -67,6 +67,7 @@ pub struct Modifier {
     pub clip_rounded: Option<f32>,
     /// Works for hit-testing only, draw order is not changed.
     pub z_index: f32,
+    pub repaint_boundary: bool,
     pub click: bool,
     pub on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>>,
     pub on_pointer_down: Option<Rc<dyn Fn(PointerEvent)>>,
@@ -120,6 +121,7 @@ impl std::fmt::Debug for Modifier {
             .field("align_content", &self.align_content)
             .field("clip_rounded", &self.clip_rounded)
             .field("z_index", &self.z_index)
+            .field("repaint_boundary", &self.repaint_boundary)
             .field("click", &self.click)
             .field("on_scroll", &self.on_scroll.as_ref().map(|_| "..."))
             .field(
@@ -436,6 +438,13 @@ impl Modifier {
         self.flex_shrink = Some(1.0);
         // dp units; 0 is fine.
         self.flex_basis = Some(0.0);
+        self
+    }
+    /// Marks this view as a repaint boundary candidate.
+    ///
+    /// The engine may cache its painted output.
+    pub fn repaint_boundary(mut self) -> Self {
+        self.repaint_boundary = true;
         self
     }
 }
