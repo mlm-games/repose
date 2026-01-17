@@ -234,6 +234,7 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
 
     // Clickable
     m.click.hash(hasher);
+    (m.on_action.is_some()).hash(hasher);
 }
 
 fn hash_color(c: &Color, hasher: &mut impl Hasher) {

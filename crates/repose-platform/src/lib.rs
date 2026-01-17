@@ -672,6 +672,11 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     self.modifiers.ctrl = new_mods.state().control_key();
                     self.modifiers.alt = new_mods.state().alt_key();
                     self.modifiers.meta = new_mods.state().super_key();
+                    self.modifiers.command = if cfg!(target_os = "macos") {
+                        self.modifiers.meta
+                    } else {
+                        self.modifiers.ctrl
+                    };
                 }
                 WindowEvent::KeyboardInput {
                     event: key_event, ..
@@ -742,6 +747,39 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             }
                         }
                         return; // swallow Tab
+                    }
+
+                    if key_event.state == ElementState::Pressed
+                        && !key_event.repeat
+                        && self.modifiers.command
+                    {
+                        use repose_core::shortcuts::Action;
+
+                        let handled = match key_event.physical_key {
+                            PhysicalKey::Code(KeyCode::KeyC) => self.dispatch_action(Action::Copy),
+                            PhysicalKey::Code(KeyCode::KeyX) => self.dispatch_action(Action::Cut),
+                            PhysicalKey::Code(KeyCode::KeyV) => self.dispatch_action(Action::Paste),
+                            PhysicalKey::Code(KeyCode::KeyA) => {
+                                use repose_core::shortcuts::Action;
+
+                                self.dispatch_action(Action::SelectAll)
+                            }
+                            PhysicalKey::Code(KeyCode::KeyZ) => {
+                                self.dispatch_action(if self.modifiers.shift {
+                                    Action::Redo
+                                } else {
+                                    Action::Undo
+                                })
+                            }
+                            PhysicalKey::Code(KeyCode::KeyF) => self.dispatch_action(Action::Find),
+                            PhysicalKey::Code(KeyCode::KeyS) => self.dispatch_action(Action::Save),
+                            _ => false,
+                        };
+
+                        if handled {
+                            self.request_redraw();
+                            return;
+                        }
                     }
 
                     if let Some(fid) = self.sched.focused {
@@ -976,6 +1014,13 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                     }
                 }
 
+                // After a touchpad action is added => {
+                //     use repose_core::shortcuts::{Action, Gesture};
+                //     let ds = (1.0 + delta as f32).clamp(0.5, 2.0);
+                //     if self.dispatch_action(Action::Gesture(Gesture::Pinch { delta_scale: ds })) {
+                //         self.request_redraw();
+                //     }
+                // }
                 WindowEvent::Ime(ime) => {
                     use winit::event::Ime;
                     if let Some(focused_id) = self.sched.focused {
@@ -1154,6 +1199,87 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                 return hr.tf_state_key.unwrap_or(hr.id);
             }
             visual_id
+        }
+        fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
+            use repose_core::shortcuts;
+
+            if let (Some(f), Some(fid)) = (&self.frame_cache, self.sched.focused) {
+                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
+                    if let Some(cb) = &hit.on_action {
+                        if cb(action.clone()) {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            if shortcuts::handle(action.clone()) {
+                return true;
+            }
+
+            self.dispatch_default_action(action)
+        }
+
+        fn dispatch_default_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
+            use repose_core::shortcuts::Action;
+
+            let Some(fid) = self.sched.focused else {
+                return false;
+            };
+            let key = self.tf_key_of(fid);
+            let Some(state_rc) = self.textfield_states.get(&key).cloned() else {
+                return false;
+            };
+
+            match action {
+                Action::Copy => {
+                    let txt = state_rc.borrow().selected_text();
+                    if txt.is_empty() {
+                        return false;
+                    }
+                    self.copy_to_clipboard(txt);
+                    true
+                }
+                Action::Cut => {
+                    let txt = state_rc.borrow().selected_text();
+                    if txt.is_empty() {
+                        return false;
+                    }
+                    self.copy_to_clipboard(txt);
+                    {
+                        let mut st = state_rc.borrow_mut();
+                        st.insert_text("");
+                        self.notify_text_change(fid, st.text.clone());
+                        App::tf_ensure_caret_visible(&mut st);
+                    }
+                    true
+                }
+                Action::Paste => {
+                    let Some(mut txt) = self.paste_from_clipboard() else {
+                        return false;
+                    };
+                    txt.retain(|c| !c.is_control() && c != '\n' && c != '\r');
+                    if txt.is_empty() {
+                        return false;
+                    }
+                    {
+                        let mut st = state_rc.borrow_mut();
+                        st.insert_text(&txt);
+                        self.notify_text_change(fid, st.text.clone());
+                        App::tf_ensure_caret_visible(&mut st);
+                    }
+                    true
+                }
+                Action::SelectAll => {
+                    {
+                        let mut st = state_rc.borrow_mut();
+                        st.selection = 0..st.text.len();
+                        App::tf_ensure_caret_visible(&mut st);
+                    }
+                    true
+                }
+                _ => false,
+            }
         }
     }
 

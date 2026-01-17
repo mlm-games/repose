@@ -148,6 +148,7 @@ pub struct HitRegion {
     /// If this hit region belongs to a TextField, this persistent key is used
     /// for looking up platform-managed TextFieldState. Falls back to `id` if None.
     pub tf_state_key: Option<u64>,
+    pub on_action: Option<Rc<dyn Fn(crate::shortcuts::Action) -> bool>>,
 }
 
 /// Flattened semantics node produced by `layout_and_paint`.

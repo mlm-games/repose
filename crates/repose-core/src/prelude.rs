@@ -18,6 +18,7 @@ pub use crate::runtime::{
 };
 pub use crate::scope::{Scope, current_scope, scoped_effect};
 pub use crate::semantics::{Role, Semantics};
+pub use crate::shortcuts;
 pub use crate::signal::{Signal, signal};
 pub use crate::view::{
     ImageFit, ImageHandle, Scene, SceneNode, TextOverflow, View, ViewId, ViewKind,

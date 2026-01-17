@@ -112,6 +112,7 @@ pub mod render_api;
 pub mod runtime;
 pub mod scope;
 pub mod semantics;
+pub mod shortcuts;
 pub mod signal;
 pub mod state;
 pub mod tests;

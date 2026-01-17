@@ -21,6 +21,10 @@ use winit::window::{ImePurpose, Window};
 use repose_ui::TextFieldState;
 use repose_ui::textfield::{TF_FONT_DP, TF_PADDING_X_DP, index_for_x_bytes, measure_text};
 
+enum ClipboardAction {
+    PasteText(String),
+}
+
 #[wasm_bindgen]
 pub struct WebOptions {
     canvas_id: Option<String>,
@@ -105,10 +109,6 @@ pub fn run_web_app(
     Ok(())
 }
 
-enum ClipboardAction {
-    PasteText(String),
-}
-
 struct App {
     root: Box<dyn FnMut(&mut Scheduler) -> View>,
     options: WebOptions,
@@ -138,8 +138,16 @@ struct App {
     // runner-provided root scroll
     root_scroll: Rc<RefCell<rc::RootScrollState>>,
 
-    // clipboard
+    // clipboard async results
     clipboard_actions: Rc<RefCell<Vec<ClipboardAction>>>,
+
+    // multi-touch for pinch
+    active_touches: HashMap<u64, (f32, f32)>,
+    primary_touch_id: Option<u64>,
+    pinch_last_dist: Option<f32>,
+
+    // swipe tracking
+    touch_start: Option<(web_time::Instant, (f32, f32))>,
 }
 
 impl App {
@@ -168,6 +176,11 @@ impl App {
             root_scroll: Rc::new(RefCell::new(rc::RootScrollState::default())),
 
             clipboard_actions: Rc::new(RefCell::new(Vec::new())),
+
+            active_touches: HashMap::new(),
+            primary_touch_id: None,
+            pinch_last_dist: None,
+            touch_start: None,
         }
     }
 
@@ -320,6 +333,125 @@ impl App {
             }
         });
     }
+
+    fn apply_clipboard_actions(&mut self, window: &Window) {
+        if self.clipboard_actions.borrow().is_empty() {
+            return;
+        }
+        let actions = std::mem::take(&mut *self.clipboard_actions.borrow_mut());
+
+        for a in actions {
+            match a {
+                ClipboardAction::PasteText(mut txt) => {
+                    txt.retain(|c| !c.is_control() && c != '\n' && c != '\r');
+                    if txt.is_empty() {
+                        continue;
+                    }
+
+                    if let Some(fid) = self.sched.focused {
+                        let key = self.tf_key_of(fid);
+                        if let Some(st_rc) = self.textfield_states.get(&key).cloned() {
+                            let mut st = st_rc.borrow_mut();
+                            st.insert_text(&txt);
+                            self.notify_text_change(fid, st.text.clone());
+
+                            if let Some(f) = &self.frame_cache
+                                && let Some(i) = rc::hit_index_by_id(f, fid)
+                            {
+                                self.tf_ensure_caret_visible_in_hit(
+                                    window,
+                                    &mut st,
+                                    f.hit_regions[i].rect,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn dispatch_action(&mut self, window: &Window, action: repose_core::shortcuts::Action) -> bool {
+        use repose_core::shortcuts;
+
+        if let (Some(f), Some(fid)) = (&self.frame_cache, self.sched.focused) {
+            if let Some(i) = rc::hit_index_by_id(f, fid) {
+                if let Some(cb) = &f.hit_regions[i].on_action {
+                    if cb(action.clone()) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        if shortcuts::handle(action.clone()) {
+            return true;
+        }
+
+        self.dispatch_default_action(window, action)
+    }
+
+    fn dispatch_default_action(
+        &mut self,
+        window: &Window,
+        action: repose_core::shortcuts::Action,
+    ) -> bool {
+        use repose_core::shortcuts::Action;
+
+        let Some(fid) = self.sched.focused else {
+            return false;
+        };
+        let key = self.tf_key_of(fid);
+        let Some(state_rc) = self.textfield_states.get(&key).cloned() else {
+            return false;
+        };
+
+        match action {
+            Action::Copy => {
+                let txt = state_rc.borrow().selected_text();
+                if txt.is_empty() {
+                    return false;
+                }
+                self.copy_to_clipboard_async(txt);
+                true
+            }
+            Action::Cut => {
+                let txt = state_rc.borrow().selected_text();
+                if txt.is_empty() {
+                    return false;
+                }
+                self.copy_to_clipboard_async(txt);
+                {
+                    let mut st = state_rc.borrow_mut();
+                    st.insert_text("");
+                    self.notify_text_change(fid, st.text.clone());
+                    if let Some(f) = &self.frame_cache
+                        && let Some(i) = rc::hit_index_by_id(f, fid)
+                    {
+                        self.tf_ensure_caret_visible_in_hit(window, &mut st, f.hit_regions[i].rect);
+                    }
+                }
+                true
+            }
+            Action::Paste => {
+                self.request_paste_async();
+                true
+            }
+            Action::SelectAll => {
+                {
+                    let mut st = state_rc.borrow_mut();
+                    st.selection = 0..st.text.len();
+                    if let Some(f) = &self.frame_cache
+                        && let Some(i) = rc::hit_index_by_id(f, fid)
+                    {
+                        self.tf_ensure_caret_visible_in_hit(window, &mut st, f.hit_regions[i].rect);
+                    }
+                }
+                true
+            }
+            _ => false,
+        }
+    }
 }
 
 impl ApplicationHandler<()> for App {
@@ -391,41 +523,7 @@ impl ApplicationHandler<()> for App {
         };
 
         // Apply any async clipboard results (paste)
-        if !self.clipboard_actions.borrow().is_empty() {
-            let actions = std::mem::take(&mut *self.clipboard_actions.borrow_mut());
-            for a in actions {
-                match a {
-                    ClipboardAction::PasteText(mut txt) => {
-                        txt.retain(|c| !c.is_control() && c != '\n' && c != '\r');
-
-                        if txt.is_empty() {
-                            continue;
-                        }
-
-                        if let Some(fid) = self.sched.focused {
-                            let key = self.tf_key_of(fid);
-                            if let Some(st_rc) = self.textfield_states.get(&key).cloned() {
-                                let mut st = st_rc.borrow_mut();
-                                st.insert_text(&txt);
-                                self.notify_text_change(fid, st.text.clone());
-
-                                if let Some(f) = &self.frame_cache
-                                    && let Some(i) = rc::hit_index_by_id(f, fid)
-                                {
-                                    self.tf_ensure_caret_visible_in_hit(
-                                        &window,
-                                        &mut st,
-                                        f.hit_regions[i].rect,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            self.request_redraw();
-        }
+        self.apply_clipboard_actions(&window);
 
         match event {
             WindowEvent::CloseRequested => el.exit(),
@@ -434,6 +532,18 @@ impl ApplicationHandler<()> for App {
                 self.ensure_fullscreen_size(&window);
                 self.sync_size_from_window(&window);
                 self.request_redraw();
+            }
+
+            WindowEvent::ModifiersChanged(new_mods) => {
+                self.modifiers.shift = new_mods.state().shift_key();
+                self.modifiers.ctrl = new_mods.state().control_key();
+                self.modifiers.alt = new_mods.state().alt_key();
+                self.modifiers.meta = new_mods.state().super_key();
+                self.modifiers.command = if cfg!(target_os = "macos") {
+                    self.modifiers.meta
+                } else {
+                    self.modifiers.ctrl
+                };
             }
 
             WindowEvent::CursorMoved { position, .. } => {
@@ -650,6 +760,8 @@ impl ApplicationHandler<()> for App {
             }
 
             WindowEvent::Touch(t) => {
+                use repose_core::shortcuts::{Action, Gesture};
+
                 let pos_px = (t.location.x as f32, t.location.y as f32);
                 self.mouse_pos_px = pos_px;
                 let pos = Vec2 {
@@ -657,10 +769,18 @@ impl ApplicationHandler<()> for App {
                     y: pos_px.1,
                 };
 
+                let tid = t.id;
+                self.active_touches.insert(tid, pos_px);
+
                 match t.phase {
                     TouchPhase::Started => {
                         self.touch_scrolled = false;
                         self.touch_scroll_accum_y_px = 0.0;
+
+                        if self.primary_touch_id.is_none() {
+                            self.primary_touch_id = Some(tid);
+                            self.touch_start = Some((web_time::Instant::now(), pos_px));
+                        }
 
                         if let Some(f) = &self.frame_cache {
                             if let Some(i) = rc::top_hit_index(f, pos) {
@@ -693,6 +813,32 @@ impl ApplicationHandler<()> for App {
                     }
 
                     TouchPhase::Moved => {
+                        // Handle pinch gesture with two touches
+                        if self.active_touches.len() == 2 {
+                            let mut it = self.active_touches.values();
+                            let a = it.next().copied().unwrap();
+                            let b = it.next().copied().unwrap();
+                            let dx = a.0 - b.0;
+                            let dy = a.1 - b.1;
+                            let dist = (dx * dx + dy * dy).sqrt().max(1.0);
+
+                            if let Some(prev) = self.pinch_last_dist.replace(dist) {
+                                let delta_scale = (dist / prev).clamp(0.5, 2.0);
+                                if self.dispatch_action(
+                                    &window,
+                                    Action::Gesture(Gesture::Pinch { delta_scale }),
+                                ) {
+                                    self.request_redraw();
+                                }
+                            }
+                        }
+
+                        // Skip scroll handling for non-primary touch
+                        if self.primary_touch_id != Some(tid) {
+                            self.prev_touch_px = Some(pos_px);
+                            return;
+                        }
+
                         if let (Some(prev), Some(f)) = (self.prev_touch_px, &self.frame_cache) {
                             let dy_px = pos_px.1 - prev.1;
                             if dy_px.abs() > 0.0 {
@@ -727,6 +873,45 @@ impl ApplicationHandler<()> for App {
                     }
 
                     TouchPhase::Ended | TouchPhase::Cancelled => {
+                        self.active_touches.remove(&tid);
+                        if self.active_touches.len() < 2 {
+                            self.pinch_last_dist = None;
+                        }
+
+                        // Handle swipe gesture for primary touch
+                        if self.primary_touch_id == Some(tid) {
+                            self.primary_touch_id = None;
+
+                            if let Some((t0, p0)) = self.touch_start.take() {
+                                let dt = (web_time::Instant::now() - t0).as_secs_f32();
+                                let dx = pos_px.0 - p0.0;
+                                let dy = pos_px.1 - p0.1;
+
+                                if dt < 0.35
+                                    && dy.abs() < 40.0
+                                    && dx.abs() > 80.0
+                                    && !self.touch_scrolled
+                                {
+                                    let g = if dx > 0.0 {
+                                        Gesture::SwipeRight
+                                    } else {
+                                        Gesture::SwipeLeft
+                                    };
+
+                                    // try gesture first, then common "swipe right = back"
+                                    if self.dispatch_action(&window, Action::Gesture(g.clone()))
+                                        || (dx > 0.0 && self.dispatch_action(&window, Action::Back))
+                                    {
+                                        self.capture_id = None;
+                                        self.prev_touch_px = None;
+                                        self.pressed_ids.clear();
+                                        self.request_redraw();
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+
                         if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
                             if let Some(i) = rc::hit_index_by_id(f, cid) {
                                 let hit = &f.hit_regions[i];
@@ -758,66 +943,49 @@ impl ApplicationHandler<()> for App {
                 }
             }
 
-            WindowEvent::ModifiersChanged(new_mods) => {
-                self.modifiers.shift = new_mods.state().shift_key();
-                self.modifiers.ctrl = new_mods.state().control_key();
-                self.modifiers.alt = new_mods.state().alt_key();
-                self.modifiers.meta = new_mods.state().super_key();
-            }
-
             WindowEvent::KeyboardInput {
                 event: key_event, ..
             } => {
-                // Clipboard shortcuts (Ctrl/Cmd + C/X/V)
-                let accel = self.modifiers.ctrl || self.modifiers.meta;
+                use repose_core::shortcuts::Action;
 
-                if key_event.state == ElementState::Pressed && !key_event.repeat && accel {
-                    match key_event.physical_key {
+                // Clipboard shortcuts via dispatch_action (Ctrl/Cmd + C/X/V/A/Z)
+                if key_event.state == ElementState::Pressed
+                    && !key_event.repeat
+                    && self.modifiers.command
+                {
+                    let handled = match key_event.physical_key {
                         PhysicalKey::Code(KeyCode::KeyC) => {
-                            if let Some(fid) = self.sched.focused {
-                                let key = self.tf_key_of(fid);
-                                if let Some(st) = self.textfield_states.get(&key) {
-                                    let txt = st.borrow().selected_text();
-                                    if !txt.is_empty() {
-                                        self.copy_to_clipboard_async(txt);
-                                    }
-                                }
-                            }
-                            return;
+                            self.dispatch_action(&window, Action::Copy)
                         }
                         PhysicalKey::Code(KeyCode::KeyX) => {
-                            if let Some(fid) = self.sched.focused {
-                                let key = self.tf_key_of(fid);
-                                if let Some(st_rc) = self.textfield_states.get(&key).cloned() {
-                                    let txt = st_rc.borrow().selected_text();
-                                    if !txt.is_empty() {
-                                        self.copy_to_clipboard_async(txt.clone());
-                                        // delete selection
-                                        {
-                                            let mut st = st_rc.borrow_mut();
-                                            st.insert_text("");
-                                            self.notify_text_change(fid, st.text.clone());
-                                            if let Some(f) = &self.frame_cache
-                                                && let Some(i) = rc::hit_index_by_id(f, fid)
-                                            {
-                                                self.tf_ensure_caret_visible_in_hit(
-                                                    &window,
-                                                    &mut st,
-                                                    f.hit_regions[i].rect,
-                                                );
-                                            }
-                                        }
-                                        self.request_redraw();
-                                    }
-                                }
-                            }
-                            return;
+                            self.dispatch_action(&window, Action::Cut)
                         }
                         PhysicalKey::Code(KeyCode::KeyV) => {
-                            self.request_paste_async();
-                            return;
+                            self.dispatch_action(&window, Action::Paste)
                         }
-                        _ => {}
+                        PhysicalKey::Code(KeyCode::KeyA) => {
+                            self.dispatch_action(&window, Action::SelectAll)
+                        }
+                        PhysicalKey::Code(KeyCode::KeyZ) => self.dispatch_action(
+                            &window,
+                            if self.modifiers.shift {
+                                Action::Redo
+                            } else {
+                                Action::Undo
+                            },
+                        ),
+                        PhysicalKey::Code(KeyCode::KeyF) => {
+                            self.dispatch_action(&window, Action::Find)
+                        }
+                        PhysicalKey::Code(KeyCode::KeyS) => {
+                            self.dispatch_action(&window, Action::Save)
+                        }
+                        _ => false,
+                    };
+
+                    if handled {
+                        self.request_redraw();
+                        return;
                     }
                 }
 

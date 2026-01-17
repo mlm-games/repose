@@ -42,7 +42,8 @@ pub struct Modifiers {
     pub shift: bool,
     pub ctrl: bool,
     pub alt: bool,
-    pub meta: bool, // Cmd on Mac, Win key on Windows
+    pub meta: bool,    // Cmd on Mac, Win key on Windows
+    pub command: bool, // egui like (Cmd on macOS, Ctrl elsewhere)
 }
 
 #[derive(Clone, Debug)]

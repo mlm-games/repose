@@ -92,6 +92,7 @@ pub struct Modifier {
     pub margin_bottom: Option<f32>,
     pub aspect_ratio: Option<f32>,
     pub painter: Option<Rc<dyn Fn(&mut crate::Scene, crate::Rect)>>,
+    pub on_action: Option<Rc<dyn Fn(crate::shortcuts::Action) -> bool>>,
 }
 
 impl std::fmt::Debug for Modifier {
@@ -154,6 +155,7 @@ impl std::fmt::Debug for Modifier {
             .field("offset_bottom", &self.offset_bottom)
             .field("aspect_ratio", &self.aspect_ratio)
             .field("painter", &self.painter.as_ref().map(|_| "..."))
+            .field("on_action", &self.on_action.as_ref().map(|_| "..."))
             .finish()
     }
 }
@@ -445,6 +447,10 @@ impl Modifier {
     /// The engine may cache its painted output.
     pub fn repaint_boundary(mut self) -> Self {
         self.repaint_boundary = true;
+        self
+    }
+    pub fn on_action(mut self, f: impl Fn(crate::shortcuts::Action) -> bool + 'static) -> Self {
+        self.on_action = Some(Rc::new(f));
         self
     }
 }
