@@ -105,6 +105,10 @@ pub fn run_web_app(
     Ok(())
 }
 
+enum ClipboardAction {
+    PasteText(String),
+}
+
 struct App {
     root: Box<dyn FnMut(&mut Scheduler) -> View>,
     options: WebOptions,
@@ -133,6 +137,9 @@ struct App {
 
     // runner-provided root scroll
     root_scroll: Rc<RefCell<rc::RootScrollState>>,
+
+    // clipboard
+    clipboard_actions: Rc<RefCell<Vec<ClipboardAction>>>,
 }
 
 impl App {
@@ -159,6 +166,8 @@ impl App {
             textfield_states: HashMap::new(),
 
             root_scroll: Rc::new(RefCell::new(rc::RootScrollState::default())),
+
+            clipboard_actions: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
@@ -287,6 +296,30 @@ impl App {
             }
         }
     }
+
+    fn copy_to_clipboard_async(&self, text: String) {
+        spawn_local(async move {
+            if let Ok(mut cb) = clipawl::Clipboard::new() {
+                let _ = cb.set_text(&text).await;
+            }
+        });
+    }
+
+    fn request_paste_async(&self) {
+        let actions = self.clipboard_actions.clone();
+        let win = self.window.clone();
+
+        spawn_local(async move {
+            if let Ok(mut cb) = clipawl::Clipboard::new() {
+                if let Ok(t) = cb.get_text().await {
+                    actions.borrow_mut().push(ClipboardAction::PasteText(t));
+                    if let Some(w) = win.as_ref() {
+                        w.request_redraw();
+                    }
+                }
+            }
+        });
+    }
 }
 
 impl ApplicationHandler<()> for App {
@@ -356,6 +389,43 @@ impl ApplicationHandler<()> for App {
         let Some(window) = self.window.clone() else {
             return;
         };
+
+        // Apply any async clipboard results (paste)
+        if !self.clipboard_actions.borrow().is_empty() {
+            let actions = std::mem::take(&mut *self.clipboard_actions.borrow_mut());
+            for a in actions {
+                match a {
+                    ClipboardAction::PasteText(mut txt) => {
+                        txt.retain(|c| !c.is_control() && c != '\n' && c != '\r');
+
+                        if txt.is_empty() {
+                            continue;
+                        }
+
+                        if let Some(fid) = self.sched.focused {
+                            let key = self.tf_key_of(fid);
+                            if let Some(st_rc) = self.textfield_states.get(&key).cloned() {
+                                let mut st = st_rc.borrow_mut();
+                                st.insert_text(&txt);
+                                self.notify_text_change(fid, st.text.clone());
+
+                                if let Some(f) = &self.frame_cache
+                                    && let Some(i) = rc::hit_index_by_id(f, fid)
+                                {
+                                    self.tf_ensure_caret_visible_in_hit(
+                                        &window,
+                                        &mut st,
+                                        f.hit_regions[i].rect,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            self.request_redraw();
+        }
 
         match event {
             WindowEvent::CloseRequested => el.exit(),
@@ -698,6 +768,59 @@ impl ApplicationHandler<()> for App {
             WindowEvent::KeyboardInput {
                 event: key_event, ..
             } => {
+                // Clipboard shortcuts (Ctrl/Cmd + C/X/V)
+                let accel = self.modifiers.ctrl || self.modifiers.meta;
+
+                if key_event.state == ElementState::Pressed && !key_event.repeat && accel {
+                    match key_event.physical_key {
+                        PhysicalKey::Code(KeyCode::KeyC) => {
+                            if let Some(fid) = self.sched.focused {
+                                let key = self.tf_key_of(fid);
+                                if let Some(st) = self.textfield_states.get(&key) {
+                                    let txt = st.borrow().selected_text();
+                                    if !txt.is_empty() {
+                                        self.copy_to_clipboard_async(txt);
+                                    }
+                                }
+                            }
+                            return;
+                        }
+                        PhysicalKey::Code(KeyCode::KeyX) => {
+                            if let Some(fid) = self.sched.focused {
+                                let key = self.tf_key_of(fid);
+                                if let Some(st_rc) = self.textfield_states.get(&key).cloned() {
+                                    let txt = st_rc.borrow().selected_text();
+                                    if !txt.is_empty() {
+                                        self.copy_to_clipboard_async(txt.clone());
+                                        // delete selection
+                                        {
+                                            let mut st = st_rc.borrow_mut();
+                                            st.insert_text("");
+                                            self.notify_text_change(fid, st.text.clone());
+                                            if let Some(f) = &self.frame_cache
+                                                && let Some(i) = rc::hit_index_by_id(f, fid)
+                                            {
+                                                self.tf_ensure_caret_visible_in_hit(
+                                                    &window,
+                                                    &mut st,
+                                                    f.hit_regions[i].rect,
+                                                );
+                                            }
+                                        }
+                                        self.request_redraw();
+                                    }
+                                }
+                            }
+                            return;
+                        }
+                        PhysicalKey::Code(KeyCode::KeyV) => {
+                            self.request_paste_async();
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
+
                 // focus traversal: Tab / Shift+Tab
                 if matches!(key_event.physical_key, PhysicalKey::Code(KeyCode::Tab)) {
                     if key_event.state == ElementState::Pressed && !key_event.repeat {

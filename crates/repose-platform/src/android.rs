@@ -85,6 +85,9 @@ pub fn run_android_app_with_options(
 
         // redraw control
         dirty: bool,
+
+        // clipboard
+        clipboard: Option<clipawl::Clipboard>,
     }
 
     impl AppState {
@@ -111,6 +114,8 @@ pub fn run_android_app_with_options(
 
                 root_scroll: Rc::new(RefCell::new(rc::RootScrollState::default())),
                 dirty: true,
+
+                clipboard: None,
             }
         }
 
@@ -186,6 +191,20 @@ pub fn run_android_app_with_options(
                 b.configure_surface(size.width, size.height);
             }
         }
+
+        fn copy_to_clipboard(&mut self, text: &str) {
+            if let Some(cb) = &mut self.clipboard {
+                let _ = pollster::block_on(cb.set_text(text));
+            }
+        }
+
+        fn paste_from_clipboard(&mut self) -> Option<String> {
+            if let Some(cb) = &mut self.clipboard {
+                pollster::block_on(cb.get_text()).ok()
+            } else {
+                None
+            }
+        }
     }
 
     impl ApplicationHandler<()> for AppState {
@@ -204,6 +223,7 @@ pub fn run_android_app_with_options(
                         Ok(b) => {
                             self.backend = Some(b);
                             self.window = Some(w);
+                            self.clipboard = clipawl::Clipboard::new().ok();
                             self.dirty = true;
                             self.request_redraw();
                         }
@@ -407,6 +427,87 @@ pub fn run_android_app_with_options(
                                 return;
                             }
                             _ => {}
+                        }
+                    }
+
+                    // Clipboard shortcuts for keyboards (bluetooth or OTG) (Ctrl/Cmd + C/X/V)
+                    if key_event.state == ElementState::Pressed && !key_event.repeat {
+                        let accel = self.modifiers.ctrl || self.modifiers.meta;
+
+                        if accel {
+                            match key_event.physical_key {
+                                PhysicalKey::Code(KeyCode::KeyC) => {
+                                    if let Some(fid) = self.sched.focused {
+                                        let key = self.tf_key_of(fid);
+                                        if let Some(st) = self.textfield_states.get(&key) {
+                                            let txt = st.borrow().selected_text();
+                                            if !txt.is_empty() {
+                                                self.copy_to_clipboard(&txt);
+                                            }
+                                        }
+                                    }
+                                    return;
+                                }
+                                PhysicalKey::Code(KeyCode::KeyX) => {
+                                    if let Some(fid) = self.sched.focused {
+                                        let key = self.tf_key_of(fid);
+                                        if let Some(st_rc) =
+                                            self.textfield_states.get(&key).cloned()
+                                        {
+                                            let txt = st_rc.borrow().selected_text();
+                                            if !txt.is_empty() {
+                                                self.copy_to_clipboard(&txt);
+                                                // delete selection
+                                                let mut st = st_rc.borrow_mut();
+                                                st.insert_text("");
+                                                self.notify_text_change(fid, st.text.clone());
+                                                if let Some(f) = &self.frame_cache
+                                                    && let Some(i) = rc::hit_index_by_id(f, fid)
+                                                {
+                                                    self.ensure_caret_visible_in_hit(
+                                                        &mut st,
+                                                        f.hit_regions[i].rect,
+                                                    );
+                                                }
+                                                self.dirty = true;
+                                                self.request_redraw();
+                                            }
+                                        }
+                                    }
+                                    return;
+                                }
+                                PhysicalKey::Code(KeyCode::KeyV) => {
+                                    if let Some(fid) = self.sched.focused {
+                                        let key = self.tf_key_of(fid);
+                                        if let Some(st_rc) =
+                                            self.textfield_states.get(&key).cloned()
+                                        {
+                                            if let Some(mut txt) = self.paste_from_clipboard() {
+                                                txt.retain(|c| {
+                                                    !c.is_control() && c != '\n' && c != '\r'
+                                                });
+                                                if !txt.is_empty() {
+                                                    let mut st = st_rc.borrow_mut();
+                                                    st.insert_text(&txt);
+                                                    self.notify_text_change(fid, st.text.clone());
+                                                    if let Some(f) = &self.frame_cache
+                                                        && let Some(i) = rc::hit_index_by_id(f, fid)
+                                                    {
+                                                        self.ensure_caret_visible_in_hit(
+                                                            &mut st,
+                                                            f.hit_regions[i].rect,
+                                                        );
+                                                    }
+                                                    self.dirty = true;
+                                                    self.request_redraw();
+                                                }
+                                            }
+                                        }
+                                    }
+                                    return;
+                                }
+                                _ => {}
+                            }
                         }
                     }
 
