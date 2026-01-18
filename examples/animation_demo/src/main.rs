@@ -1,10 +1,10 @@
 use repose_core::*;
-use repose_platform::run_desktop_app;
+use repose_platform::{RenderContext, run_desktop_app};
 use repose_ui::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-fn app(_s: &mut Scheduler) -> View {
+fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
     let animated_color = remember_with_key("color", || {
         Rc::new(RefCell::new(repose_core::animation::AnimatedValue::new(
             Color::from_hex("#2196F3"),
@@ -21,10 +21,13 @@ fn app(_s: &mut Scheduler) -> View {
 
     // Update animations
     {
-        let mut color = animated_color.borrow_mut();
-        let mut size = animated_size.borrow_mut();
-        color.update();
-        size.update();
+        let cont_color = animated_color.borrow_mut().update();
+        let cont_size = animated_size.borrow_mut().update();
+
+        // Keep ticking for anim
+        if cont_color || cont_size {
+            repose_core::request_frame();
+        }
     }
 
     let current_color = *animated_color.borrow().get();

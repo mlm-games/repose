@@ -1,4 +1,5 @@
 use crate::common as rc;
+use crate::render::{RenderCommand, RenderContext};
 use crate::*;
 
 use repose_ui::TextFieldState;
@@ -41,14 +42,14 @@ impl Default for AndroidOptions {
 
 pub fn run_android_app(
     app: AndroidApp,
-    root: impl FnMut(&mut Scheduler) -> View + 'static,
+    root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
 ) -> anyhow::Result<()> {
     run_android_app_with_options(app, root, AndroidOptions::default())
 }
 
 pub fn run_android_app_with_options(
     app: AndroidApp,
-    root: impl FnMut(&mut Scheduler) -> View + 'static,
+    root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
     options: AndroidOptions,
 ) -> anyhow::Result<()> {
     repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
@@ -58,7 +59,8 @@ pub fn run_android_app_with_options(
         .build()?;
 
     struct AppState {
-        root: Box<dyn FnMut(&mut Scheduler) -> View>,
+        root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>,
+        render: RenderContext,
         options: AndroidOptions,
 
         window: Option<Arc<Window>>,
@@ -99,9 +101,13 @@ pub fn run_android_app_with_options(
     }
 
     impl AppState {
-        fn new(root: Box<dyn FnMut(&mut Scheduler) -> View>, options: AndroidOptions) -> Self {
+        fn new(
+            root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>,
+            options: AndroidOptions,
+        ) -> Self {
             Self {
                 root,
+                render: RenderContext::new(),
                 options,
                 window: None,
                 backend: None,
@@ -215,6 +221,46 @@ pub fn run_android_app_with_options(
                 pollster::block_on(cb.get_text()).ok()
             } else {
                 None
+            }
+        }
+
+        fn process_render_commands(&mut self) {
+            let Some(backend) = &mut self.backend else {
+                return;
+            };
+
+            for cmd in self.render.drain() {
+                match cmd {
+                    RenderCommand::SetImageEncoded {
+                        handle,
+                        bytes,
+                        srgb,
+                    } => {
+                        let _ = backend.set_image_from_bytes(handle, &bytes, srgb);
+                    }
+                    RenderCommand::SetImageRgba8 {
+                        handle,
+                        w,
+                        h,
+                        rgba,
+                        srgb,
+                    } => {
+                        let _ = backend.set_image_rgba8(handle, w, h, &rgba, srgb);
+                    }
+                    RenderCommand::SetImageNv12 {
+                        handle,
+                        w,
+                        h,
+                        y,
+                        uv,
+                        full_range,
+                    } => {
+                        let _ = backend.set_image_nv12(handle, w, h, &y, &uv, full_range);
+                    }
+                    RenderCommand::RemoveImage { handle } => {
+                        backend.remove_image(handle);
+                    }
+                }
             }
         }
 
@@ -787,6 +833,8 @@ pub fn run_android_app_with_options(
                 }
 
                 WindowEvent::RedrawRequested => {
+                    self.process_render_commands();
+
                     let (Some(backend), Some(win)) = (self.backend.as_mut(), self.window.as_ref())
                     else {
                         return;
@@ -798,10 +846,11 @@ pub fn run_android_app_with_options(
 
                     let auto_root_scroll = self.options.auto_root_scroll;
                     let root_scroll = self.root_scroll.clone();
+                    let rc = self.render.clone();
                     let root_fn = &mut self.root;
 
                     let mut composed_root = move |s: &mut Scheduler| {
-                        let v = (root_fn)(s);
+                        let v = (root_fn)(s, &rc);
                         if auto_root_scroll {
                             rc::wrap_root_scroll(v, root_scroll.clone())
                         } else {

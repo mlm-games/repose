@@ -84,6 +84,14 @@ pub struct WgpuBackend {
     ellipse_border_pipeline: wgpu::RenderPipeline,
     text_pipeline_mask: wgpu::RenderPipeline,
     text_pipeline_color: wgpu::RenderPipeline,
+
+    // Images
+    image_pipeline_rgba: wgpu::RenderPipeline,
+    image_pipeline_nv12: wgpu::RenderPipeline,
+    image_bind_layout_rgba: wgpu::BindGroupLayout,
+    image_bind_layout_nv12: wgpu::BindGroupLayout,
+    image_sampler: wgpu::Sampler,
+
     text_bind_layout: wgpu::BindGroupLayout,
 
     // Stencil clip pipelines
@@ -115,16 +123,42 @@ pub struct WgpuBackend {
     ring_glyph_mask: UploadRing,
     ring_glyph_color: UploadRing,
     ring_clip: UploadRing,
+    ring_nv12: UploadRing,
 
+    // Image management
     next_image_handle: u64,
-    images: std::collections::HashMap<u64, ImageTex>,
+    images: HashMap<u64, ImageTex>,
+
+    // Eviction stats
+    frame_index: u64,
+    image_bytes_total: u64,
+    image_evict_after_frames: u64,
+    image_budget_bytes: u64,
 }
 
-struct ImageTex {
-    view: wgpu::TextureView,
-    bind: wgpu::BindGroup,
-    w: u32,
-    h: u32,
+enum ImageTex {
+    Rgba {
+        tex: wgpu::Texture,
+        view: wgpu::TextureView,
+        bind: wgpu::BindGroup,
+        w: u32,
+        h: u32,
+        format: wgpu::TextureFormat,
+        last_used_frame: u64,
+        bytes: u64,
+    },
+    Nv12 {
+        tex_y: wgpu::Texture,
+        view_y: wgpu::TextureView,
+        tex_uv: wgpu::Texture,
+        view_uv: wgpu::TextureView,
+        bind: wgpu::BindGroup,
+        w: u32,
+        h: u32,
+        full_range: bool,
+        last_used_frame: u64,
+        bytes: u64,
+    },
 }
 
 struct AtlasA8 {
@@ -165,9 +199,7 @@ struct GlyphInfo {
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct RectInstance {
-    // xy in NDC, wh in NDC extents
     xywh: [f32; 4],
-    // radius in NDC units
     radius: f32,
     brush_type: u32,
     color0: [f32; 4],
@@ -206,6 +238,16 @@ struct GlyphInstance {
     xywh: [f32; 4],
     uv: [f32; 4],
     color: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct Nv12Instance {
+    xywh: [f32; 4],
+    uv: [f32; 4],
+    color: [f32; 4], // tint
+    full_range: f32,
+    _pad: [f32; 3],
 }
 
 #[repr(C)]
@@ -399,7 +441,9 @@ impl WgpuBackend {
             alpha_to_coverage_enabled: false,
         };
 
-        // Rect pipeline
+        // PIPELINES
+
+        // Rect
         let rect_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rect.wgsl"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/rect.wgsl"))),
@@ -475,7 +519,7 @@ impl WgpuBackend {
             cache: None,
         });
 
-        // Border pipeline
+        // Border
         let border_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("border.wgsl"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/border.wgsl"))),
@@ -537,7 +581,7 @@ impl WgpuBackend {
             cache: None,
         });
 
-        // Ellipse pipeline
+        // Ellipse
         let ellipse_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ellipse.wgsl"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/ellipse.wgsl"))),
@@ -589,7 +633,7 @@ impl WgpuBackend {
             cache: None,
         });
 
-        // Ellipse border pipeline
+        // Ellipse Border
         let ellipse_border_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("ellipse_border.wgsl"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
@@ -649,7 +693,8 @@ impl WgpuBackend {
                 cache: None,
             });
 
-        // Text pipelines
+        // TEXT & IMAGES
+
         let text_mask_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("text.wgsl"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/text.wgsl"))),
@@ -660,8 +705,21 @@ impl WgpuBackend {
                 "shaders/text_color.wgsl"
             ))),
         });
+
+        // Single shared sampler for images/text
+        let image_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("image/text sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            ..Default::default()
+        });
+
+        // Layout for Text / RGBA Images (Texture + Sampler)
         let text_bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("text bind layout"),
+            label: Some("text/rgba bind layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -681,11 +739,52 @@ impl WgpuBackend {
                 },
             ],
         });
+        // We reuse this for RGBA images for simplicity, or create a distinct one
+        let image_bind_layout_rgba = text_bind_layout.clone();
+
+        // Layout for NV12 Images (TextureY + TextureUV + Sampler)
+        let image_bind_layout_nv12 =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("image bind layout nv12"),
+                entries: &[
+                    // Y plane
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    // UV plane
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    // Sampler
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
         let text_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("text pipeline layout"),
             bind_group_layouts: &[&globals_layout, &text_bind_layout],
             immediate_size: 0,
         });
+
         let text_pipeline_mask = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("text pipeline (mask)"),
             layout: Some(&text_pipeline_layout),
@@ -731,6 +830,7 @@ impl WgpuBackend {
             multiview_mask: None,
             cache: None,
         });
+
         let text_pipeline_color = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("text pipeline (color)"),
             layout: Some(&text_pipeline_layout),
@@ -777,7 +877,76 @@ impl WgpuBackend {
             cache: None,
         });
 
-        // Clip pipelines
+        // Reuse text color pipeline for RGBA images (same vertex struct and bindings)
+        let image_pipeline_rgba = text_pipeline_color.clone(); // In real wgpu handle clone is cheap
+
+        // NV12 Image Pipeline
+        let image_nv12_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("image_nv12.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                "shaders/image_nv12.wgsl"
+            ))),
+        });
+
+        let image_nv12_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("image nv12 pipeline layout"),
+            bind_group_layouts: &[&globals_layout, &image_bind_layout_nv12],
+            immediate_size: 0,
+        });
+
+        let image_pipeline_nv12 = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("image nv12 pipeline"),
+            layout: Some(&image_nv12_layout),
+            vertex: wgpu::VertexState {
+                module: &image_nv12_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Nv12Instance>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            shader_location: 0,
+                            offset: 0,
+                            format: wgpu::VertexFormat::Float32x4,
+                        }, // xywh
+                        wgpu::VertexAttribute {
+                            shader_location: 1,
+                            offset: 16,
+                            format: wgpu::VertexFormat::Float32x4,
+                        }, // uv
+                        wgpu::VertexAttribute {
+                            shader_location: 2,
+                            offset: 32,
+                            format: wgpu::VertexFormat::Float32x4,
+                        }, // tint
+                        wgpu::VertexAttribute {
+                            shader_location: 3,
+                            offset: 48,
+                            format: wgpu::VertexFormat::Float32,
+                        }, // full_range
+                    ],
+                }],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &image_nv12_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(stencil_for_content.clone()),
+            multisample: multisample_state,
+            multiview_mask: None,
+            cache: None,
+        });
+
+        // CLIPPING
+
         let clip_shader_a2c = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("clip_round_rect_a2c.wgsl"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
@@ -884,6 +1053,7 @@ impl WgpuBackend {
         let ring_glyph_mask = UploadRing::new(&device, "ring glyph mask", 1 << 20);
         let ring_glyph_color = UploadRing::new(&device, "ring glyph color", 1 << 20);
         let ring_clip = UploadRing::new(&device, "ring clip", 1 << 16);
+        let ring_nv12 = UploadRing::new(&device, "ring nv12", 1 << 20);
 
         // Placeholder textures
         let depth_stencil_tex = device.create_texture(&wgpu::TextureDescriptor {
@@ -913,6 +1083,13 @@ impl WgpuBackend {
             text_pipeline_mask,
             text_pipeline_color,
             text_bind_layout,
+
+            image_pipeline_rgba,
+            image_pipeline_nv12,
+            image_bind_layout_rgba,
+            image_bind_layout_nv12,
+            image_sampler,
+
             ellipse_pipeline,
             ellipse_border_pipeline,
             atlas_mask,
@@ -924,6 +1101,8 @@ impl WgpuBackend {
             ring_glyph_color,
             ring_glyph_mask,
             ring_clip,
+            ring_nv12,
+
             next_image_handle: 1,
             images: HashMap::new(),
             clip_pipeline_a2c,
@@ -936,6 +1115,11 @@ impl WgpuBackend {
             globals_bind,
             globals_buf,
             globals_layout,
+
+            frame_index: 0,
+            image_bytes_total: 0,
+            image_evict_after_frames: 600,         // ~10s @ 60fps
+            image_budget_bytes: 512 * 1024 * 1024, // 512 MB
         };
 
         backend.recreate_msaa_and_depth_stencil();
@@ -950,6 +1134,378 @@ impl WgpuBackend {
     #[cfg(target_arch = "wasm32")]
     pub fn new(_window: Arc<winit::window::Window>) -> anyhow::Result<Self> {
         anyhow::bail!("Use WgpuBackend::new_async(window).await on wasm32")
+    }
+
+    // Image API
+
+    pub fn set_image_from_bytes(
+        &mut self,
+        handle: u64,
+        data: &[u8],
+        srgb: bool,
+    ) -> anyhow::Result<()> {
+        let img = image::load_from_memory(data)?;
+        let rgba = img.to_rgba8();
+        let (w, h) = rgba.dimensions();
+        self.set_image_rgba8(handle, w, h, &rgba, srgb)
+    }
+
+    pub fn set_image_rgba8(
+        &mut self,
+        handle: u64,
+        w: u32,
+        h: u32,
+        rgba: &[u8],
+        srgb: bool,
+    ) -> anyhow::Result<()> {
+        let expected = (w as usize) * (h as usize) * 4;
+        if rgba.len() < expected {
+            return Err(anyhow::anyhow!(
+                "RGBA buffer too small: {} < {}",
+                rgba.len(),
+                expected
+            ));
+        }
+
+        let format = if srgb {
+            wgpu::TextureFormat::Rgba8UnormSrgb
+        } else {
+            wgpu::TextureFormat::Rgba8Unorm
+        };
+
+        let needs_recreate = match self.images.get(&handle) {
+            Some(ImageTex::Rgba {
+                w: cw,
+                h: ch,
+                format: cf,
+                ..
+            }) => *cw != w || *ch != h || *cf != format,
+            _ => true,
+        };
+
+        if needs_recreate {
+            // Remove old to track budget correctly
+            self.remove_image(handle);
+
+            let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("user image rgba"),
+                size: wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+            let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("image bind rgba"),
+                layout: &self.image_bind_layout_rgba,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.image_sampler),
+                    },
+                ],
+            });
+
+            let bytes = (w as u64) * (h as u64) * 4;
+            self.image_bytes_total += bytes;
+
+            self.images.insert(
+                handle,
+                ImageTex::Rgba {
+                    tex,
+                    view,
+                    bind,
+                    w,
+                    h,
+                    format,
+                    last_used_frame: self.frame_index,
+                    bytes,
+                },
+            );
+        }
+
+        let tex = match self.images.get(&handle) {
+            Some(ImageTex::Rgba { tex, .. }) => tex,
+            _ => unreachable!(),
+        };
+
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &rgba[..expected],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * w),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        // Ensure budget limits
+        self.evict_budget_excess();
+
+        Ok(())
+    }
+
+    pub fn set_image_nv12(
+        &mut self,
+        handle: u64,
+        w: u32,
+        h: u32,
+        y: &[u8],
+        uv: &[u8],
+        full_range: bool,
+    ) -> anyhow::Result<()> {
+        let y_expected = (w as usize) * (h as usize);
+        let uv_w = (w / 2).max(1);
+        let uv_h = (h / 2).max(1);
+        let uv_expected = (uv_w as usize) * (uv_h as usize) * 2;
+
+        if y.len() < y_expected {
+            return Err(anyhow::anyhow!("Y plane too small"));
+        }
+        if uv.len() < uv_expected {
+            return Err(anyhow::anyhow!("UV plane too small"));
+        }
+
+        let needs_recreate = match self.images.get(&handle) {
+            Some(ImageTex::Nv12 { w: ww, h: hh, .. }) => *ww != w || *hh != h,
+            _ => true,
+        };
+
+        if needs_recreate {
+            self.remove_image(handle);
+
+            let tex_y = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("nv12 Y"),
+                size: wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::R8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view_y = tex_y.create_view(&wgpu::TextureViewDescriptor::default());
+
+            let tex_uv = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("nv12 UV"),
+                size: wgpu::Extent3d {
+                    width: uv_w,
+                    height: uv_h,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rg8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view_uv = tex_uv.create_view(&wgpu::TextureViewDescriptor::default());
+
+            let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("nv12 bind"),
+                layout: &self.image_bind_layout_nv12,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view_y),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&view_uv),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&self.image_sampler),
+                    },
+                ],
+            });
+
+            let bytes = (w as u64) * (h as u64) + (uv_w as u64) * (uv_h as u64) * 2;
+            self.image_bytes_total += bytes;
+
+            self.images.insert(
+                handle,
+                ImageTex::Nv12 {
+                    tex_y,
+                    view_y,
+                    tex_uv,
+                    view_uv,
+                    bind,
+                    w,
+                    h,
+                    full_range,
+                    last_used_frame: self.frame_index,
+                    bytes,
+                },
+            );
+        }
+
+        let (tex_y, tex_uv, _bind) = match self.images.get(&handle) {
+            Some(ImageTex::Nv12 {
+                tex_y,
+                tex_uv,
+                bind,
+                ..
+            }) => (tex_y, tex_uv, bind),
+            _ => return Err(anyhow::anyhow!("Handle is not NV12")),
+        };
+
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: tex_y,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &y[..y_expected],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(w),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: tex_uv,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &uv[..uv_expected],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(2 * uv_w),
+                rows_per_image: Some(uv_h),
+            },
+            wgpu::Extent3d {
+                width: uv_w,
+                height: uv_h,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        self.evict_budget_excess();
+        Ok(())
+    }
+
+    pub fn remove_image(&mut self, handle: u64) {
+        if let Some(img) = self.images.remove(&handle) {
+            let b = match img {
+                ImageTex::Rgba { bytes, .. } => bytes,
+                ImageTex::Nv12 { bytes, .. } => bytes,
+            };
+            self.image_bytes_total = self.image_bytes_total.saturating_sub(b);
+        }
+    }
+
+    // Legacy support from Step 1 instructions (temporary until platform render logic is fully swapped)
+    pub fn register_image_from_bytes(&mut self, data: &[u8], srgb: bool) -> u64 {
+        let handle = self.next_image_handle;
+        self.next_image_handle += 1;
+        if let Err(e) = self.set_image_from_bytes(handle, data, srgb) {
+            log::error!("Failed to register image: {e}");
+        }
+        handle
+    }
+
+    fn evict_unused_images(&mut self) {
+        let now = self.frame_index;
+        let evict_after = self.image_evict_after_frames;
+
+        // Time based eviction
+        let mut to_remove = Vec::new();
+        for (h, t) in self.images.iter() {
+            let last = match t {
+                ImageTex::Rgba {
+                    last_used_frame, ..
+                } => *last_used_frame,
+                ImageTex::Nv12 {
+                    last_used_frame, ..
+                } => *last_used_frame,
+            };
+            if now.saturating_sub(last) > evict_after {
+                to_remove.push(*h);
+            }
+        }
+        for h in to_remove {
+            self.remove_image(h);
+        }
+
+        self.evict_budget_excess();
+    }
+
+    fn evict_budget_excess(&mut self) {
+        if self.image_bytes_total <= self.image_budget_bytes {
+            return;
+        }
+        // Collect (handle, last_used, bytes)
+        let mut candidates: Vec<(u64, u64, u64)> = self
+            .images
+            .iter()
+            .map(|(h, t)| {
+                let (last, bytes) = match t {
+                    ImageTex::Rgba {
+                        last_used_frame,
+                        bytes,
+                        ..
+                    } => (*last_used_frame, *bytes),
+                    ImageTex::Nv12 {
+                        last_used_frame,
+                        bytes,
+                        ..
+                    } => (*last_used_frame, *bytes),
+                };
+                (*h, last, bytes)
+            })
+            .collect();
+
+        // Sort by last_used ascending (LRU first)
+        candidates.sort_by_key(|k| k.1);
+
+        let now = self.frame_index;
+        for (h, last, _bytes) in candidates {
+            if self.image_bytes_total <= self.image_budget_bytes {
+                break;
+            }
+            // Don't evict something used this frame
+            if last == now {
+                continue;
+            }
+            self.remove_image(h);
+        }
     }
 
     fn recreate_msaa_and_depth_stencil(&mut self) {
@@ -993,69 +1549,6 @@ impl WgpuBackend {
         self.depth_stencil_view = self
             .depth_stencil_tex
             .create_view(&wgpu::TextureViewDescriptor::default());
-    }
-
-    pub fn register_image_from_bytes(&mut self, data: &[u8], srgb: bool) -> u64 {
-        let img = image::load_from_memory(data).expect("decode image");
-        let rgba = img.to_rgba8();
-        let (w, h) = rgba.dimensions();
-        let format = if srgb {
-            wgpu::TextureFormat::Rgba8UnormSrgb
-        } else {
-            wgpu::TextureFormat::Rgba8Unorm
-        };
-        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("user image"),
-            size: wgpu::Extent3d {
-                width: w,
-                height: h,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        self.queue.write_texture(
-            wgpu::TexelCopyTextureInfoBase {
-                texture: &tex,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &rgba,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * w),
-                rows_per_image: Some(h),
-            },
-            wgpu::Extent3d {
-                width: w,
-                height: h,
-                depth_or_array_layers: 1,
-            },
-        );
-        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("image bind"),
-            layout: &self.text_bind_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.atlas_color.sampler),
-                },
-            ],
-        });
-        let handle = self.next_image_handle;
-        self.next_image_handle += 1;
-        self.images.insert(handle, ImageTex { view, bind, w, h });
-        handle
     }
 
     fn init_atlas_mask(device: &wgpu::Device) -> anyhow::Result<AtlasA8> {
@@ -1435,6 +1928,9 @@ impl RenderBackend for WgpuBackend {
     }
 
     fn frame(&mut self, scene: &Scene, _glyph_cfg: GlyphRasterConfig) {
+        // Frame start maintenance
+        self.frame_index = self.frame_index.wrapping_add(1);
+
         if self.config.width == 0 || self.config.height == 0 {
             return;
         }
@@ -1474,10 +1970,6 @@ impl RenderBackend for WgpuBackend {
             let w_ndc = (x1 - x0).abs();
             let h_ndc = (y1 - y0).abs();
             [min_x, min_y, w_ndc, h_ndc]
-        }
-
-        fn to_ndc_scalar(px: f32, fb_dim: f32) -> f32 {
-            (px / fb_dim) * 2.0
         }
 
         fn to_scissor(r: &repose_core::Rect, fb_w: u32, fb_h: u32) -> (u32, u32, u32, u32) {
@@ -1537,7 +2029,12 @@ impl RenderBackend for WgpuBackend {
                 off: u64,
                 cnt: u32,
             },
-            Image {
+            ImageRgba {
+                off: u64,
+                cnt: u32,
+                handle: u64,
+            },
+            ImageNv12 {
                 off: u64,
                 cnt: u32,
                 handle: u64,
@@ -1555,6 +2052,7 @@ impl RenderBackend for WgpuBackend {
             e_borders: Vec<EllipseBorderInstance>,
             masks: Vec<GlyphInstance>,
             colors: Vec<GlyphInstance>,
+            nv12s: Vec<Nv12Instance>,
         }
 
         impl Batch {
@@ -1566,12 +2064,14 @@ impl RenderBackend for WgpuBackend {
                     e_borders: vec![],
                     masks: vec![],
                     colors: vec![],
+                    nv12s: vec![],
                 }
             }
 
             fn flush(
                 &mut self,
                 rings: (
+                    &mut UploadRing,
                     &mut UploadRing,
                     &mut UploadRing,
                     &mut UploadRing,
@@ -1590,6 +2090,7 @@ impl RenderBackend for WgpuBackend {
                     ring_ellipse_border,
                     ring_mask,
                     ring_color,
+                    ring_nv12,
                 ) = rings;
 
                 if !self.rects.is_empty() {
@@ -1658,6 +2159,14 @@ impl RenderBackend for WgpuBackend {
                     });
                     self.colors.clear();
                 }
+                if !self.nv12s.is_empty() {
+                    let bytes = bytemuck::cast_slice(&self.nv12s);
+                    ring_nv12.grow_to_fit(device, bytes.len() as u64);
+                    let (_off, wrote) = ring_nv12.alloc_write(queue, bytes);
+                    debug_assert_eq!(wrote as usize, bytes.len());
+                    // NV12 instances are unused via this batch path currently
+                    self.nv12s.clear();
+                }
             }
         }
 
@@ -1668,6 +2177,7 @@ impl RenderBackend for WgpuBackend {
         self.ring_glyph_mask.reset();
         self.ring_glyph_color.reset();
         self.ring_clip.reset();
+        self.ring_nv12.reset();
 
         let mut batch = Batch::new();
         let mut transform_stack: Vec<Transform> = vec![Transform::identity()];
@@ -1678,6 +2188,25 @@ impl RenderBackend for WgpuBackend {
             w: fb_w,
             h: fb_h,
         };
+
+        macro_rules! flush_batch {
+            () => {
+                batch.flush(
+                    (
+                        &mut self.ring_rect,
+                        &mut self.ring_border,
+                        &mut self.ring_ellipse,
+                        &mut self.ring_ellipse_border,
+                        &mut self.ring_glyph_mask,
+                        &mut self.ring_glyph_color,
+                        &mut self.ring_nv12,
+                    ),
+                    &self.device,
+                    &self.queue,
+                    &mut cmds,
+                )
+            };
+        }
 
         for node in &scene.nodes {
             let t_identity = Transform::identity();
@@ -1796,19 +2325,41 @@ impl RenderBackend for WgpuBackend {
                     tint,
                     fit,
                 } => {
-                    let tex = if let Some(t) = self.images.get(handle) {
-                        t
+                    // Update usage timestamp for eviction
+                    let (img_w, img_h, is_nv12) = if let Some(t) = self.images.get_mut(handle) {
+                        match t {
+                            ImageTex::Rgba {
+                                w,
+                                h,
+                                last_used_frame,
+                                ..
+                            } => {
+                                *last_used_frame = self.frame_index;
+                                (*w, *h, false)
+                            }
+                            ImageTex::Nv12 {
+                                w,
+                                h,
+                                last_used_frame,
+                                ..
+                            } => {
+                                *last_used_frame = self.frame_index;
+                                (*w, *h, true)
+                            }
+                        }
                     } else {
                         log::warn!("Image handle {} not found", handle);
                         continue;
                     };
-                    let src_w = tex.w as f32;
-                    let src_h = tex.h as f32;
+
+                    let src_w = img_w as f32;
+                    let src_h = img_h as f32;
                     let dst_w = rect.w.max(0.0);
                     let dst_h = rect.h.max(0.0);
                     if dst_w <= 0.0 || dst_h <= 0.0 {
                         continue;
                     }
+
                     let (xywh_ndc, uv_rect) = match fit {
                         repose_core::view::ImageFit::Contain => {
                             let scale = (dst_w / src_w).min(dst_h / src_h);
@@ -1848,49 +2399,56 @@ impl RenderBackend for WgpuBackend {
                             (to_ndc(x, rect.y, w, h, fb_w, fb_h), [0.0, 1.0, 1.0, 0.0])
                         }
                     };
-                    let inst = GlyphInstance {
-                        xywh: xywh_ndc,
-                        uv: uv_rect,
-                        color: tint.to_linear(),
-                    };
-                    let bytes = bytemuck::bytes_of(&inst);
-                    self.ring_glyph_color
-                        .grow_to_fit(&self.device, bytes.len() as u64);
-                    let (off, wrote) = self.ring_glyph_color.alloc_write(&self.queue, bytes);
-                    debug_assert_eq!(wrote as usize, bytes.len());
-                    batch.flush(
-                        (
-                            &mut self.ring_rect,
-                            &mut self.ring_border,
-                            &mut self.ring_ellipse,
-                            &mut self.ring_ellipse_border,
-                            &mut self.ring_glyph_mask,
-                            &mut self.ring_glyph_color,
-                        ),
-                        &self.device,
-                        &self.queue,
-                        &mut cmds,
-                    );
-                    cmds.push(Cmd::Image {
-                        off,
-                        cnt: 1,
-                        handle: *handle,
-                    });
+
+                    // Flush batch before drawing image (since image changes bind group)
+                    flush_batch!();
+
+                    if is_nv12 {
+                        let full_range = if let Some(ImageTex::Nv12 { full_range, .. }) =
+                            self.images.get(handle)
+                        {
+                            if *full_range { 1.0 } else { 0.0 }
+                        } else {
+                            0.0
+                        };
+
+                        let inst = Nv12Instance {
+                            xywh: xywh_ndc,
+                            uv: uv_rect,
+                            color: tint.to_linear(),
+                            full_range,
+                            _pad: [0.0; 3],
+                        };
+                        let bytes = bytemuck::bytes_of(&inst);
+                        self.ring_nv12.grow_to_fit(&self.device, bytes.len() as u64);
+                        let (off, wrote) = self.ring_nv12.alloc_write(&self.queue, bytes);
+                        debug_assert_eq!(wrote as usize, bytes.len());
+                        cmds.push(Cmd::ImageNv12 {
+                            off,
+                            cnt: 1,
+                            handle: *handle,
+                        });
+                    } else {
+                        // RGBA uses GlyphInstance struct (reused pipeline)
+                        let inst = GlyphInstance {
+                            xywh: xywh_ndc,
+                            uv: uv_rect,
+                            color: tint.to_linear(),
+                        };
+                        let bytes = bytemuck::bytes_of(&inst);
+                        self.ring_glyph_color
+                            .grow_to_fit(&self.device, bytes.len() as u64);
+                        let (off, wrote) = self.ring_glyph_color.alloc_write(&self.queue, bytes);
+                        debug_assert_eq!(wrote as usize, bytes.len());
+                        cmds.push(Cmd::ImageRgba {
+                            off,
+                            cnt: 1,
+                            handle: *handle,
+                        });
+                    }
                 }
                 SceneNode::PushClip { rect, radius } => {
-                    batch.flush(
-                        (
-                            &mut self.ring_rect,
-                            &mut self.ring_border,
-                            &mut self.ring_ellipse,
-                            &mut self.ring_ellipse_border,
-                            &mut self.ring_glyph_mask,
-                            &mut self.ring_glyph_color,
-                        ),
-                        &self.device,
-                        &self.queue,
-                        &mut cmds,
-                    );
+                    flush_batch!();
 
                     let t_identity = Transform::identity();
                     let current_transform = transform_stack.last().unwrap_or(&t_identity);
@@ -1925,19 +2483,7 @@ impl RenderBackend for WgpuBackend {
                     });
                 }
                 SceneNode::PopClip => {
-                    batch.flush(
-                        (
-                            &mut self.ring_rect,
-                            &mut self.ring_border,
-                            &mut self.ring_ellipse,
-                            &mut self.ring_ellipse_border,
-                            &mut self.ring_glyph_mask,
-                            &mut self.ring_glyph_color,
-                        ),
-                        &self.device,
-                        &self.queue,
-                        &mut cmds,
-                    );
+                    flush_batch!();
 
                     if !scissor_stack.is_empty() {
                         scissor_stack.pop();
@@ -1966,19 +2512,7 @@ impl RenderBackend for WgpuBackend {
             }
         }
 
-        batch.flush(
-            (
-                &mut self.ring_rect,
-                &mut self.ring_border,
-                &mut self.ring_ellipse,
-                &mut self.ring_ellipse_border,
-                &mut self.ring_glyph_mask,
-                &mut self.ring_glyph_color,
-            ),
-            &self.device,
-            &self.queue,
-            &mut cmds,
-        );
+        flush_batch!();
 
         let mut encoder = self
             .device
@@ -2098,22 +2632,34 @@ impl RenderBackend for WgpuBackend {
                         rpass.draw(0..6, 0..n);
                     }
 
-                    Cmd::Image {
+                    Cmd::ImageRgba {
                         off,
                         cnt: n,
                         handle,
                     } => {
-                        if let Some(tex) = self.images.get(&handle) {
-                            rpass.set_pipeline(&self.text_pipeline_color);
-                            rpass.set_bind_group(1, &tex.bind, &[]);
+                        if let Some(ImageTex::Rgba { bind, .. }) = self.images.get(&handle) {
+                            rpass.set_pipeline(&self.image_pipeline_rgba);
+                            rpass.set_bind_group(1, bind, &[]);
                             let bytes = (n as u64) * std::mem::size_of::<GlyphInstance>() as u64;
                             rpass.set_vertex_buffer(
                                 0,
                                 self.ring_glyph_color.buf.slice(off..off + bytes),
                             );
                             rpass.draw(0..6, 0..n);
-                        } else {
-                            log::warn!("Image handle {} not found; skipping draw", handle);
+                        }
+                    }
+
+                    Cmd::ImageNv12 {
+                        off,
+                        cnt: n,
+                        handle,
+                    } => {
+                        if let Some(ImageTex::Nv12 { bind, .. }) = self.images.get(&handle) {
+                            rpass.set_pipeline(&self.image_pipeline_nv12);
+                            rpass.set_bind_group(1, bind, &[]);
+                            let bytes = (n as u64) * std::mem::size_of::<Nv12Instance>() as u64;
+                            rpass.set_vertex_buffer(0, self.ring_nv12.buf.slice(off..off + bytes));
+                            rpass.draw(0..6, 0..n);
                         }
                     }
 
@@ -2145,6 +2691,9 @@ impl RenderBackend for WgpuBackend {
         if let Err(e) = catch_unwind(AssertUnwindSafe(|| frame.present())) {
             log::warn!("frame.present panicked: {:?}", e);
         }
+
+        // Frame end maintenance: Evict unused images
+        self.evict_unused_images();
     }
 }
 

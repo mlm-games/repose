@@ -6,5 +6,5 @@ mod ui;
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    run_desktop_app(app::app)
+    run_desktop_app(|s, _rc| app::app(s))
 }

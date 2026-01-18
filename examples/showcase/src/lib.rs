@@ -9,7 +9,7 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen(start)]
 pub fn wasm_start() -> Result<(), JsValue> {
     repose_platform::web::run_web_app(
-        app::app as fn(&mut repose_core::Scheduler) -> repose_core::View,
+        |s, _rc| app::app(s),
         repose_platform::web::WebOptions::new(None),
     )
 }
@@ -30,5 +30,5 @@ use winit::platform::android::activity::AndroidApp;
 #[unsafe(no_mangle)]
 pub extern "C" fn android_main(android_app: AndroidApp) {
     android_logger::init_once(android_logger::Config::default().with_max_level(LevelFilter::Info));
-    let _ = run_android_app(android_app, app::app as fn(&mut Scheduler) -> View);
+    let _ = run_android_app(android_app, |s, _rc| app::app(s));
 }

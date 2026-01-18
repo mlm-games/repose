@@ -3,9 +3,7 @@ use crate::a11y::ReposeActionHandler;
 use accesskit_winit::Adapter;
 use repose_core::locals::dp_to_px;
 use repose_core::*;
-use repose_ui::textfield::{
-    self, TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, byte_to_char_index, measure_text,
-};
+use repose_ui::textfield::{TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, measure_text};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -19,6 +17,9 @@ pub mod web;
 
 pub mod a11y;
 mod common;
+pub mod render;
+
+pub use render::{ImageHandleGuard, RenderCommand, RenderContext};
 
 /// Compose a single frame with density and text-scale applied, returning Frame.
 pub fn compose_frame<F>(
@@ -77,7 +78,9 @@ pub fn tf_ensure_visible_in_rect(state: &mut repose_ui::TextFieldState, inner_re
 }
 
 #[cfg(feature = "desktop")]
-pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> anyhow::Result<()> {
+pub fn run_desktop_app(
+    root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
+) -> anyhow::Result<()> {
     use std::collections::{HashMap, HashSet};
     use winit::application::ApplicationHandler;
     use winit::dpi::{LogicalPosition, LogicalSize, PhysicalSize};
@@ -107,7 +110,8 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
     }
 
     struct App {
-        root: Box<dyn FnMut(&mut Scheduler) -> View>,
+        root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>,
+        render: RenderContext,
         window: Option<Arc<Window>>,
         backend: Option<repose_render_wgpu::WgpuBackend>,
         sched: Scheduler,
@@ -128,6 +132,9 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
         accesskit_adapter: Option<Adapter>,
         a11y_actions: Arc<Mutex<Vec<accesskit::ActionRequest>>>,
         a11y_tree: A11yTree,
+
+        last_redraw: Instant,
+        pending_redraw: bool,
     }
 
     impl App {
@@ -163,9 +170,10 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
             }
         }
 
-        fn new(root: Box<dyn FnMut(&mut Scheduler) -> View>) -> Self {
+        fn new(root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>) -> Self {
             Self {
                 root,
+                render: RenderContext::new(),
                 window: None,
                 backend: None,
                 sched: Scheduler::new(),
@@ -195,6 +203,9 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                 accesskit_adapter: None,
                 a11y_actions: Arc::new(Mutex::new(Vec::new())),
                 a11y_tree: A11yTree::default(),
+
+                last_redraw: Instant::now(),
+                pending_redraw: false,
             }
         }
 
@@ -214,7 +225,6 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
 
         fn copy_to_clipboard(&mut self, text: String) {
             if let Some(cb) = &mut self.clipboard {
-                // pollster::block_on executes synchronously (since CAwl is async)
                 let _ = pollster::block_on(cb.set_text(&text));
             }
         }
@@ -230,6 +240,46 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                 }
             } else {
                 None
+            }
+        }
+
+        fn process_render_commands(&mut self) {
+            let Some(backend) = &mut self.backend else {
+                return;
+            };
+
+            for cmd in self.render.drain() {
+                match cmd {
+                    RenderCommand::SetImageEncoded {
+                        handle,
+                        bytes,
+                        srgb,
+                    } => {
+                        let _ = backend.set_image_from_bytes(handle, &bytes, srgb);
+                    }
+                    RenderCommand::SetImageRgba8 {
+                        handle,
+                        w,
+                        h,
+                        rgba,
+                        srgb,
+                    } => {
+                        let _ = backend.set_image_rgba8(handle, w, h, &rgba, srgb);
+                    }
+                    RenderCommand::SetImageNv12 {
+                        handle,
+                        w,
+                        h,
+                        y,
+                        uv,
+                        full_range,
+                    } => {
+                        let _ = backend.set_image_nv12(handle, w, h, &y, &uv, full_range);
+                    }
+                    RenderCommand::RemoveImage { handle } => {
+                        backend.remove_image(handle);
+                    }
+                }
             }
         }
     }
@@ -1097,6 +1147,7 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                 WindowEvent::RedrawRequested => {
                     // 1. Process any pending A11y actions (clicks from screen reader)
                     self.process_a11y_actions();
+                    self.process_render_commands();
 
                     if let (Some(backend), Some(win)) =
                         (self.backend.as_mut(), self.window.as_ref())
@@ -1106,9 +1157,13 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                         let size_px_u32 = self.sched.size;
                         let focused = self.sched.focused;
 
+                        let rc = self.render.clone();
+                        let root_fn = &mut self.root;
+                        let mut composed_root = |s: &mut Scheduler| (root_fn)(s, &rc);
+
                         let frame = compose_frame(
                             &mut self.sched,
-                            &mut self.root,
+                            &mut composed_root,
                             scale,
                             size_px_u32,
                             self.hover_id,
@@ -1143,15 +1198,33 @@ pub fn run_desktop_app(root: impl FnMut(&mut Scheduler) -> View + 'static) -> an
                             // .lock()
                             .frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
                         self.frame_cache = Some(frame);
+
+                        self.last_redraw = Instant::now();
                     }
                 }
                 _ => {}
             }
         }
 
-        fn about_to_wait(&mut self, _el: &winit::event_loop::ActiveEventLoop) {
+        fn about_to_wait(&mut self, el: &winit::event_loop::ActiveEventLoop) {
             if take_frame_request() {
+                self.pending_redraw = true;
+            }
+            if !self.pending_redraw {
+                return;
+            }
+
+            let now = Instant::now();
+            let interval = web_time::Duration::from_millis(16);
+
+            if now.saturating_duration_since(self.last_redraw) >= interval {
+                self.pending_redraw = false;
                 self.request_redraw();
+                self.last_redraw = now;
+            } else {
+                el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                    self.last_redraw + interval,
+                ));
             }
         }
 

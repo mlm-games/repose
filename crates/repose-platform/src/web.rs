@@ -1,5 +1,6 @@
 //! Web runner (wasm32) using winit + repose-render-wgpu (async init).
 use crate::common as rc;
+use crate::render::{RenderCommand, RenderContext};
 use crate::*;
 
 use std::cell::RefCell;
@@ -88,13 +89,13 @@ impl WebOptions {
 #[wasm_bindgen]
 pub fn run_app(options: WebOptions) -> Result<(), JsValue> {
     run_web_app(
-        |_sched| repose_core::View::new(0, repose_core::ViewKind::Surface),
+        |_sched, _rc| repose_core::View::new(0, repose_core::ViewKind::Surface),
         options,
     )
 }
 
 pub fn run_web_app(
-    root: impl FnMut(&mut Scheduler) -> View + 'static,
+    root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
     options: WebOptions,
 ) -> Result<(), JsValue> {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -110,7 +111,7 @@ pub fn run_web_app(
 }
 
 struct App {
-    root: Box<dyn FnMut(&mut Scheduler) -> View>,
+    root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>,
     options: WebOptions,
 
     window: Option<Arc<Window>>,
@@ -118,6 +119,7 @@ struct App {
 
     sched: Scheduler,
     frame_cache: Option<Frame>,
+    render: RenderContext,
 
     // pointer + focus
     mouse_pos_px: (f32, f32),
@@ -151,7 +153,10 @@ struct App {
 }
 
 impl App {
-    fn new(root: Box<dyn FnMut(&mut Scheduler) -> View>, options: WebOptions) -> Self {
+    fn new(
+        root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>,
+        options: WebOptions,
+    ) -> Self {
         Self {
             root,
             options,
@@ -159,6 +164,8 @@ impl App {
             backend: Rc::new(RefCell::new(None)),
             sched: Scheduler::new(),
             frame_cache: None,
+
+            render: RenderContext::new(),
 
             mouse_pos_px: (0.0, 0.0),
             modifiers: Modifiers::default(),
@@ -450,6 +457,52 @@ impl App {
                 true
             }
             _ => false,
+        }
+    }
+
+    fn drain_render_commands(&self) {
+        let cmds = self.render.drain();
+        if cmds.is_empty() {
+            return;
+        }
+
+        let mut backend_ref = self.backend.borrow_mut();
+        let Some(backend) = backend_ref.as_mut() else {
+            return;
+        };
+
+        for cmd in cmds {
+            match cmd {
+                RenderCommand::SetImageEncoded {
+                    handle,
+                    bytes,
+                    srgb,
+                } => {
+                    let _ = backend.set_image_from_bytes(handle, &bytes, srgb);
+                }
+                RenderCommand::SetImageRgba8 {
+                    handle,
+                    w,
+                    h,
+                    rgba,
+                    srgb,
+                } => {
+                    let _ = backend.set_image_rgba8(handle, w, h, &rgba, srgb);
+                }
+                RenderCommand::SetImageNv12 {
+                    handle,
+                    w,
+                    h,
+                    y,
+                    uv,
+                    full_range,
+                } => {
+                    let _ = backend.set_image_nv12(handle, w, h, &y, &uv, full_range);
+                }
+                RenderCommand::RemoveImage { handle } => {
+                    backend.remove_image(handle);
+                }
+            }
         }
     }
 }
@@ -1198,6 +1251,8 @@ impl ApplicationHandler<()> for App {
                 self.ensure_fullscreen_size(&window);
                 self.sync_size_from_window(&window);
 
+                self.drain_render_commands();
+
                 if self.backend.borrow().is_none() {
                     window.request_redraw();
                     return;
@@ -1210,9 +1265,10 @@ impl ApplicationHandler<()> for App {
                 let auto_root_scroll = self.options.auto_root_scroll;
                 let root_scroll = self.root_scroll.clone();
                 let root_fn = &mut self.root;
+                let rc = self.render.clone();
 
                 let mut composed_root = move |s: &mut Scheduler| {
-                    let v = (root_fn)(s);
+                    let v = (root_fn)(s, &rc);
                     if auto_root_scroll {
                         rc::wrap_root_scroll(v, root_scroll.clone())
                     } else {
