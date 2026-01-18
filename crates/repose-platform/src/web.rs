@@ -26,6 +26,13 @@ enum ClipboardAction {
     PasteText(String),
 }
 
+enum ExternalDropAction {
+    DroppedFiles {
+        names: Vec<String>,
+        pos_px: (f32, f32),
+    },
+}
+
 #[wasm_bindgen]
 pub struct WebOptions {
     canvas_id: Option<String>,
@@ -118,6 +125,11 @@ struct DragSession {
     over_id: Option<u64>,
 }
 
+struct WebDropListeners {
+    _drag_over: wasm_bindgen::closure::Closure<dyn FnMut(web_sys::DragEvent)>,
+    _drop: wasm_bindgen::closure::Closure<dyn FnMut(web_sys::DragEvent)>,
+}
+
 struct App {
     root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>,
     options: WebOptions,
@@ -153,6 +165,11 @@ struct App {
 
     // clipboard async results
     clipboard_actions: Rc<RefCell<Vec<ClipboardAction>>>,
+
+    external_drop_actions: Rc<RefCell<Vec<ExternalDropAction>>>,
+
+    // keep DOM listener closures alive
+    drop_listeners: Option<WebDropListeners>,
 
     // multi-touch for pinch
     active_touches: HashMap<u64, (f32, f32)>,
@@ -197,6 +214,9 @@ impl App {
             root_scroll: Rc::new(RefCell::new(rc::RootScrollState::default())),
 
             clipboard_actions: Rc::new(RefCell::new(Vec::new())),
+
+            external_drop_actions: Rc::new(RefCell::new(Vec::new())),
+            drop_listeners: None,
 
             active_touches: HashMap::new(),
             primary_touch_id: None,
@@ -697,6 +717,55 @@ impl App {
         };
         self.dnd_finish(pos, false);
     }
+    fn dispatch_dropped_files(&mut self, window: &Window, names: Vec<String>, pos_px: (f32, f32)) {
+        let Some(f) = &self.frame_cache else {
+            return;
+        };
+
+        let pos = Vec2 {
+            x: pos_px.0,
+            y: pos_px.1,
+        };
+
+        let files = names
+            .into_iter()
+            .map(|name| repose_core::dnd::DroppedFile { name, path: None })
+            .collect::<Vec<_>>();
+
+        let payload: repose_core::dnd::DragPayload =
+            std::rc::Rc::new(repose_core::dnd::DroppedFiles { files });
+
+        let Some(target_id) = Self::dnd_target_id_at(f, pos) else {
+            return;
+        };
+
+        if let Some(i) = rc::hit_index_by_id(f, target_id) {
+            if let Some(cb) = &f.hit_regions[i].on_drop {
+                let _accepted = cb(repose_core::dnd::DropEvent {
+                    source_id: 0,
+                    target_id,
+                    position: pos,
+                    modifiers: self.modifiers,
+                    payload,
+                });
+                self.request_redraw();
+            }
+        }
+    }
+
+    fn apply_external_drop_actions(&mut self, window: &Window) {
+        if self.external_drop_actions.borrow().is_empty() {
+            return;
+        }
+        let actions = std::mem::take(&mut *self.external_drop_actions.borrow_mut());
+        for a in actions {
+            match a {
+                ExternalDropAction::DroppedFiles { names, pos_px } => {
+                    self.dispatch_dropped_files(window, names, pos_px);
+                }
+            }
+        }
+    }
 }
 
 impl ApplicationHandler<()> for App {
@@ -737,6 +806,73 @@ impl ApplicationHandler<()> for App {
 
         self.window = Some(window.clone());
 
+        if let Some(canvas) = window.canvas() {
+            use wasm_bindgen::JsCast;
+
+            let actions = self.external_drop_actions.clone();
+            let win = self.window.clone();
+
+            let drag_over =
+                wasm_bindgen::closure::Closure::wrap(Box::new(move |e: web_sys::DragEvent| {
+                    e.prevent_default(); // required to allow drop
+                    if let Some(dt) = e.data_transfer() {
+                        dt.set_drop_effect("copy");
+                    }
+                }) as Box<dyn FnMut(_)>);
+
+            let actions2 = self.external_drop_actions.clone();
+            let win2 = self.window.clone();
+
+            let drop =
+                wasm_bindgen::closure::Closure::wrap(Box::new(move |e: web_sys::DragEvent| {
+                    e.prevent_default();
+                    let Some(dt) = e.data_transfer() else {
+                        return;
+                    };
+                    let Some(list) = dt.files() else {
+                        return;
+                    };
+
+                    let mut names = Vec::new();
+                    for i in 0..list.length() {
+                        if let Some(f) = list.get(i) {
+                            names.push(f.name());
+                        }
+                    }
+
+                    let mut pos_px = (0.0f32, 0.0f32);
+                    if let Some(target) = e
+                        .target()
+                        .and_then(|t| t.dyn_into::<web_sys::HtmlCanvasElement>().ok())
+                    {
+                        let rect = target.get_bounding_client_rect();
+                        let x_css = e.client_x() as f64 - rect.left();
+                        let y_css = e.client_y() as f64 - rect.top();
+                        let dpr = web_sys::window()
+                            .map(|w| w.device_pixel_ratio())
+                            .unwrap_or(1.0);
+                        pos_px = ((x_css * dpr) as f32, (y_css * dpr) as f32);
+                    }
+
+                    actions2
+                        .borrow_mut()
+                        .push(ExternalDropAction::DroppedFiles { names, pos_px });
+
+                    if let Some(w) = win2.as_ref() {
+                        w.request_redraw();
+                    }
+                }) as Box<dyn FnMut(_)>);
+
+            let _ = canvas
+                .add_event_listener_with_callback("dragover", drag_over.as_ref().unchecked_ref());
+            let _ = canvas.add_event_listener_with_callback("drop", drop.as_ref().unchecked_ref());
+
+            self.drop_listeners = Some(WebDropListeners {
+                _drag_over: drag_over,
+                _drop: drop,
+            });
+        }
+
         let backend_cell = self.backend.clone();
         let window_for_async = window.clone();
         spawn_local(async move {
@@ -769,6 +905,7 @@ impl ApplicationHandler<()> for App {
 
         // Apply any async clipboard results (paste)
         self.apply_clipboard_actions(&window);
+        self.apply_external_drop_actions(&window);
 
         match event {
             WindowEvent::CloseRequested => el.exit(),

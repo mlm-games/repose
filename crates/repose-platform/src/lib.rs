@@ -137,6 +137,10 @@ pub fn run_desktop_app(
         mouse_down_pos_px: Option<(f32, f32)>,
         drag: Option<DragSession>,
 
+        // Files
+        pending_dropped_files: Vec<std::path::PathBuf>,
+        pending_drop_pos_px: Option<(f32, f32)>,
+
         key_pressed_active: Option<u64>,
         clipboard: Option<clipawl::Clipboard>,
         a11y: Box<dyn A11yBridge>,
@@ -201,6 +205,8 @@ pub fn run_desktop_app(
                 pressed_ids: HashSet::new(),
                 mouse_down_pos_px: None,
                 drag: None,
+                pending_dropped_files: Vec::new(),
+                pending_drop_pos_px: None,
                 key_pressed_active: None,
                 clipboard: None,
                 a11y: {
@@ -372,6 +378,13 @@ pub fn run_desktop_app(
             match event {
                 WindowEvent::CloseRequested => {
                     el.exit();
+                }
+                WindowEvent::DroppedFile(path) => {
+                    self.pending_dropped_files.push(path);
+                    if self.pending_drop_pos_px.is_none() {
+                        self.pending_drop_pos_px = Some(self.mouse_pos_px);
+                    }
+                    self.request_redraw();
                 }
                 WindowEvent::Resized(size) => {
                     self.sched.size = (size.width, size.height);
@@ -1199,6 +1212,7 @@ pub fn run_desktop_app(
                 WindowEvent::RedrawRequested => {
                     // 1. Process any pending A11y actions (clicks from screen reader)
                     self.process_a11y_actions();
+                    self.dispatch_file_drop_now();
                     self.process_render_commands();
 
                     if let (Some(backend), Some(win)) =
@@ -1300,6 +1314,112 @@ pub fn run_desktop_app(
     }
 
     impl App {
+        fn announce_focus_change(&mut self) {
+            if let Some(f) = &self.frame_cache {
+                let focused_node = self
+                    .sched
+                    .focused
+                    .and_then(|id| f.semantics_nodes.iter().find(|n| n.id == id));
+                self.a11y.focus_changed(focused_node);
+            }
+        }
+        fn notify_text_change(&self, id: u64, text: String) {
+            if let Some(f) = &self.frame_cache
+                && let Some(h) = f.hit_regions.iter().find(|h| h.id == id)
+                && let Some(cb) = &h.on_text_change
+            {
+                cb(text);
+            }
+        }
+        fn tf_key_of(&self, visual_id: u64) -> u64 {
+            if let Some(f) = &self.frame_cache
+                && let Some(hr) = f.hit_regions.iter().find(|h| h.id == visual_id)
+            {
+                return hr.tf_state_key.unwrap_or(hr.id);
+            }
+            visual_id
+        }
+        fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
+            use repose_core::shortcuts;
+
+            if let (Some(f), Some(fid)) = (&self.frame_cache, self.sched.focused) {
+                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
+                    if let Some(cb) = &hit.on_action {
+                        if cb(action.clone()) {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            if shortcuts::handle(action.clone()) {
+                return true;
+            }
+
+            self.dispatch_default_action(action)
+        }
+
+        fn dispatch_default_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
+            use repose_core::shortcuts::Action;
+
+            let Some(fid) = self.sched.focused else {
+                return false;
+            };
+            let key = self.tf_key_of(fid);
+            let Some(state_rc) = self.textfield_states.get(&key).cloned() else {
+                return false;
+            };
+
+            match action {
+                Action::Copy => {
+                    let txt = state_rc.borrow().selected_text();
+                    if txt.is_empty() {
+                        return false;
+                    }
+                    self.copy_to_clipboard(txt);
+                    true
+                }
+                Action::Cut => {
+                    let txt = state_rc.borrow().selected_text();
+                    if txt.is_empty() {
+                        return false;
+                    }
+                    self.copy_to_clipboard(txt);
+                    {
+                        let mut st = state_rc.borrow_mut();
+                        st.insert_text("");
+                        self.notify_text_change(fid, st.text.clone());
+                        App::tf_ensure_caret_visible(&mut st);
+                    }
+                    true
+                }
+                Action::Paste => {
+                    let Some(mut txt) = self.paste_from_clipboard() else {
+                        return false;
+                    };
+                    txt.retain(|c| !c.is_control() && c != '\n' && c != '\r');
+                    if txt.is_empty() {
+                        return false;
+                    }
+                    {
+                        let mut st = state_rc.borrow_mut();
+                        st.insert_text(&txt);
+                        self.notify_text_change(fid, st.text.clone());
+                        App::tf_ensure_caret_visible(&mut st);
+                    }
+                    true
+                }
+                Action::SelectAll => {
+                    {
+                        let mut st = state_rc.borrow_mut();
+                        st.selection = 0..st.text.len();
+                        App::tf_ensure_caret_visible(&mut st);
+                    }
+                    true
+                }
+                _ => false,
+            }
+        }
         fn is_dnd_target(hit: &HitRegion) -> bool {
             hit.on_drop.is_some()
                 || hit.on_drag_enter.is_some()
@@ -1484,111 +1604,65 @@ pub fn run_desktop_app(
             self.dnd_finish(pos, false);
         }
 
-        fn announce_focus_change(&mut self) {
-            if let Some(f) = &self.frame_cache {
-                let focused_node = self
-                    .sched
-                    .focused
-                    .and_then(|id| f.semantics_nodes.iter().find(|n| n.id == id));
-                self.a11y.focus_changed(focused_node);
-            }
-        }
-        fn notify_text_change(&self, id: u64, text: String) {
-            if let Some(f) = &self.frame_cache
-                && let Some(h) = f.hit_regions.iter().find(|h| h.id == id)
-                && let Some(cb) = &h.on_text_change
-            {
-                cb(text);
-            }
-        }
-        fn tf_key_of(&self, visual_id: u64) -> u64 {
-            if let Some(f) = &self.frame_cache
-                && let Some(hr) = f.hit_regions.iter().find(|h| h.id == visual_id)
-            {
-                return hr.tf_state_key.unwrap_or(hr.id);
-            }
-            visual_id
-        }
-        fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
-            use repose_core::shortcuts;
+        fn dispatch_file_drop_now(&mut self) {
+            let Some(f) = &self.frame_cache else {
+                self.pending_dropped_files.clear();
+                self.pending_drop_pos_px = None;
+                return;
+            };
 
-            if let (Some(f), Some(fid)) = (&self.frame_cache, self.sched.focused) {
-                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
-                    if let Some(cb) = &hit.on_action {
-                        if cb(action.clone()) {
-                            return true;
+            if self.pending_dropped_files.is_empty() {
+                return;
+            }
+
+            let pos_px = self.pending_drop_pos_px.unwrap_or(self.mouse_pos_px);
+            let pos = Vec2 {
+                x: pos_px.0,
+                y: pos_px.1,
+            };
+
+            let mut files = Vec::new();
+            for p in self.pending_dropped_files.drain(..) {
+                let name = p
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("file")
+                    .to_string();
+                files.push(repose_core::dnd::DroppedFile {
+                    name,
+                    path: Some(p),
+                });
+            }
+
+            let payload: repose_core::dnd::DragPayload =
+                std::rc::Rc::new(repose_core::dnd::DroppedFiles { files });
+
+            let Some(target_id) = Self::dnd_target_id_at(f, pos) else {
+                self.pending_drop_pos_px = None;
+                return;
+            };
+
+            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == target_id) {
+                if let Some(cb) = &hit.on_drop {
+                    let accepted = cb(repose_core::dnd::DropEvent {
+                        source_id: 0, // external source (OS)
+                        target_id,
+                        position: pos,
+                        modifiers: self.modifiers,
+                        payload: payload.clone(),
+                    });
+
+                    if accepted {
+                        if let Some(node) = f.semantics_nodes.iter().find(|n| n.id == target_id) {
+                            let label = node.label.as_deref().unwrap_or("");
+                            self.a11y.announce(&format!("Dropped files on {}", label));
                         }
                     }
                 }
             }
 
-            if shortcuts::handle(action.clone()) {
-                return true;
-            }
-
-            self.dispatch_default_action(action)
-        }
-
-        fn dispatch_default_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
-            use repose_core::shortcuts::Action;
-
-            let Some(fid) = self.sched.focused else {
-                return false;
-            };
-            let key = self.tf_key_of(fid);
-            let Some(state_rc) = self.textfield_states.get(&key).cloned() else {
-                return false;
-            };
-
-            match action {
-                Action::Copy => {
-                    let txt = state_rc.borrow().selected_text();
-                    if txt.is_empty() {
-                        return false;
-                    }
-                    self.copy_to_clipboard(txt);
-                    true
-                }
-                Action::Cut => {
-                    let txt = state_rc.borrow().selected_text();
-                    if txt.is_empty() {
-                        return false;
-                    }
-                    self.copy_to_clipboard(txt);
-                    {
-                        let mut st = state_rc.borrow_mut();
-                        st.insert_text("");
-                        self.notify_text_change(fid, st.text.clone());
-                        App::tf_ensure_caret_visible(&mut st);
-                    }
-                    true
-                }
-                Action::Paste => {
-                    let Some(mut txt) = self.paste_from_clipboard() else {
-                        return false;
-                    };
-                    txt.retain(|c| !c.is_control() && c != '\n' && c != '\r');
-                    if txt.is_empty() {
-                        return false;
-                    }
-                    {
-                        let mut st = state_rc.borrow_mut();
-                        st.insert_text(&txt);
-                        self.notify_text_change(fid, st.text.clone());
-                        App::tf_ensure_caret_visible(&mut st);
-                    }
-                    true
-                }
-                Action::SelectAll => {
-                    {
-                        let mut st = state_rc.borrow_mut();
-                        st.selection = 0..st.text.len();
-                        App::tf_ensure_caret_visible(&mut st);
-                    }
-                    true
-                }
-                _ => false,
-            }
+            self.pending_drop_pos_px = None;
+            self.request_redraw();
         }
     }
 

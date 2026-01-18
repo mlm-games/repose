@@ -1,4 +1,4 @@
-use std::{any::Any, rc::Rc};
+use std::{any::Any, path::PathBuf, rc::Rc};
 
 /// Opaque payload moved during internal drag & drop.
 /// Use `payload.as_ref().downcast_ref::<T>()` on the receiver side.
@@ -33,4 +33,19 @@ pub struct DropEvent {
 #[derive(Clone, Copy, Debug)]
 pub struct DragEnd {
     pub accepted: bool,
+}
+
+/// A single dropped file descriptor.
+/// - On desktop: `path` is `Some(PathBuf)`.
+/// - On web: `path` is usually `None` (browser doesn't expose local paths).
+#[derive(Clone, Debug)]
+pub struct DroppedFile {
+    pub name: String,
+    pub path: Option<PathBuf>,
+}
+
+/// Payload type for file drag/drop coming from the OS/browser.
+#[derive(Clone, Debug)]
+pub struct DroppedFiles {
+    pub files: Vec<DroppedFile>,
 }
