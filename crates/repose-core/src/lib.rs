@@ -98,6 +98,7 @@
 
 pub mod animation;
 pub mod color;
+pub mod dnd;
 pub mod effects;
 pub mod effects_ext;
 pub mod error;
@@ -119,6 +120,7 @@ pub mod tests;
 pub mod view;
 
 pub use color::*;
+pub use dnd::*;
 pub use effects::*;
 pub use effects_ext::*;
 pub use frame_clock::{peek_frame_request, request_frame, take_frame_request};

@@ -1089,6 +1089,13 @@ impl LayoutEngine {
                 on_text_submit: None,
                 tf_state_key: None,
                 on_action: modifier.on_action.clone(),
+
+                on_drag_start: modifier.on_drag_start.clone(),
+                on_drag_end: modifier.on_drag_end.clone(),
+                on_drag_enter: modifier.on_drag_enter.clone(),
+                on_drag_over: modifier.on_drag_over.clone(),
+                on_drag_leave: modifier.on_drag_leave.clone(),
+                on_drop: modifier.on_drop.clone(),
             });
         }
 
@@ -1183,6 +1190,13 @@ impl LayoutEngine {
                         on_text_submit: None,
                         tf_state_key: None,
                         on_action: modifier.on_action.clone(),
+
+                        on_drag_start: modifier.on_drag_start.clone(),
+                        on_drag_end: modifier.on_drag_end.clone(),
+                        on_drag_enter: modifier.on_drag_enter.clone(),
+                        on_drag_over: modifier.on_drag_over.clone(),
+                        on_drag_leave: modifier.on_drag_leave.clone(),
+                        on_drop: modifier.on_drop.clone(),
                     });
                 }
                 sems.push(SemNode {
@@ -1236,6 +1250,13 @@ impl LayoutEngine {
                     on_text_submit: on_submit.clone(),
                     tf_state_key: Some(tf_key),
                     on_action: modifier.on_action.clone(),
+
+                    on_drag_start: modifier.on_drag_start.clone(),
+                    on_drag_end: modifier.on_drag_end.clone(),
+                    on_drag_enter: modifier.on_drag_enter.clone(),
+                    on_drag_over: modifier.on_drag_over.clone(),
+                    on_drag_leave: modifier.on_drag_leave.clone(),
+                    on_drop: modifier.on_drop.clone(),
                 });
                 let pad_x = dp_to_px(TF_PADDING_X_DP);
                 let inner = repose_core::Rect {
@@ -1403,6 +1424,13 @@ impl LayoutEngine {
                     on_text_submit: None,
                     tf_state_key: None,
                     on_action: modifier.on_action.clone(),
+
+                    on_drag_start: modifier.on_drag_start.clone(),
+                    on_drag_end: modifier.on_drag_end.clone(),
+                    on_drag_enter: modifier.on_drag_enter.clone(),
+                    on_drag_over: modifier.on_drag_over.clone(),
+                    on_drag_leave: modifier.on_drag_leave.clone(),
+                    on_drop: modifier.on_drop.clone(),
                 });
                 sems.push(SemNode {
                     id: view_id,
@@ -1469,6 +1497,13 @@ impl LayoutEngine {
                     on_text_submit: None,
                     tf_state_key: None,
                     on_action: modifier.on_action.clone(),
+
+                    on_drag_start: modifier.on_drag_start.clone(),
+                    on_drag_end: modifier.on_drag_end.clone(),
+                    on_drag_enter: modifier.on_drag_enter.clone(),
+                    on_drag_over: modifier.on_drag_over.clone(),
+                    on_drag_leave: modifier.on_drag_leave.clone(),
+                    on_drop: modifier.on_drop.clone(),
                 });
                 sems.push(SemNode {
                     id: view_id,
@@ -1545,6 +1580,13 @@ impl LayoutEngine {
                     on_text_submit: None,
                     tf_state_key: None,
                     on_action: modifier.on_action.clone(),
+
+                    on_drag_start: modifier.on_drag_start.clone(),
+                    on_drag_end: modifier.on_drag_end.clone(),
+                    on_drag_enter: modifier.on_drag_enter.clone(),
+                    on_drag_over: modifier.on_drag_over.clone(),
+                    on_drag_leave: modifier.on_drag_leave.clone(),
+                    on_drop: modifier.on_drop.clone(),
                 });
                 sems.push(SemNode {
                     id: view_id,
@@ -1679,6 +1721,13 @@ impl LayoutEngine {
                         on_text_submit: None,
                         tf_state_key: None,
                         on_action: modifier.on_action.clone(),
+
+                        on_drag_start: modifier.on_drag_start.clone(),
+                        on_drag_end: modifier.on_drag_end.clone(),
+                        on_drag_enter: modifier.on_drag_enter.clone(),
+                        on_drag_over: modifier.on_drag_over.clone(),
+                        on_drag_leave: modifier.on_drag_leave.clone(),
+                        on_drop: modifier.on_drop.clone(),
                     });
                 }
                 sems.push(SemNode {
@@ -1888,6 +1937,13 @@ impl LayoutEngine {
                         on_text_submit: None,
                         tf_state_key: None,
                         on_action: modifier.on_action.clone(),
+
+                        on_drag_start: modifier.on_drag_start.clone(),
+                        on_drag_end: modifier.on_drag_end.clone(),
+                        on_drag_enter: modifier.on_drag_enter.clone(),
+                        on_drag_over: modifier.on_drag_over.clone(),
+                        on_drag_leave: modifier.on_drag_leave.clone(),
+                        on_drop: modifier.on_drop.clone(),
                     });
                 }
             }
@@ -1958,6 +2014,13 @@ impl LayoutEngine {
                     on_text_submit: None,
                     tf_state_key: None,
                     on_action: modifier.on_action.clone(),
+
+                    on_drag_start: modifier.on_drag_start.clone(),
+                    on_drag_end: modifier.on_drag_end.clone(),
+                    on_drag_enter: modifier.on_drag_enter.clone(),
+                    on_drag_over: modifier.on_drag_over.clone(),
+                    on_drag_leave: modifier.on_drag_leave.clone(),
+                    on_drop: modifier.on_drop.clone(),
                 });
                 let vp = content_rect;
                 if let Some(s) = set_viewport_height {
@@ -2061,6 +2124,13 @@ impl LayoutEngine {
                     on_text_submit: None,
                     tf_state_key: None,
                     on_action: modifier.on_action.clone(),
+
+                    on_drag_start: modifier.on_drag_start.clone(),
+                    on_drag_end: modifier.on_drag_end.clone(),
+                    on_drag_enter: modifier.on_drag_enter.clone(),
+                    on_drag_over: modifier.on_drag_over.clone(),
+                    on_drag_leave: modifier.on_drag_leave.clone(),
+                    on_drop: modifier.on_drop.clone(),
                 });
                 let vp = content_rect;
                 if let Some(s) = set_viewport_width {
@@ -2322,6 +2392,14 @@ fn push_scrollbar_v(
             on_pointer_up: Some(Rc::new(|_| {})),
             on_pointer_enter: None,
             on_action: None,
+
+            on_drag_start: None,
+            on_drag_end: None,
+            on_drag_enter: None,
+            on_drag_over: None,
+            on_drag_leave: None,
+            on_drop: None,
+
             on_pointer_leave: None,
             z_index: z + 1000.0,
             on_text_change: None,
@@ -2416,6 +2494,14 @@ fn push_scrollbar_h(
             on_pointer_up: Some(Rc::new(|_| {})),
             on_pointer_enter: None,
             on_action: None,
+
+            on_drag_start: None,
+            on_drag_end: None,
+            on_drag_enter: None,
+            on_drag_over: None,
+            on_drag_leave: None,
+            on_drop: None,
+
             on_pointer_leave: None,
             z_index: z + 1000.0,
             on_text_change: None,

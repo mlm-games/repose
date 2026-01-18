@@ -148,6 +148,15 @@ pub struct HitRegion {
     /// If this hit region belongs to a TextField, this persistent key is used
     /// for looking up platform-managed TextFieldState. Falls back to `id` if None.
     pub tf_state_key: Option<u64>,
+
+    // internal
+    pub on_drag_start: Option<Rc<dyn Fn(crate::dnd::DragStart) -> Option<crate::dnd::DragPayload>>>,
+    pub on_drag_end: Option<Rc<dyn Fn(crate::dnd::DragEnd)>>,
+    pub on_drag_enter: Option<Rc<dyn Fn(crate::dnd::DragOver)>>,
+    pub on_drag_over: Option<Rc<dyn Fn(crate::dnd::DragOver)>>,
+    pub on_drag_leave: Option<Rc<dyn Fn(crate::dnd::DragOver)>>,
+    pub on_drop: Option<Rc<dyn Fn(crate::dnd::DropEvent) -> bool>>,
+
     pub on_action: Option<Rc<dyn Fn(crate::shortcuts::Action) -> bool>>,
 }
 

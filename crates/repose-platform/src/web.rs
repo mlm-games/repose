@@ -110,6 +110,14 @@ pub fn run_web_app(
     Ok(())
 }
 
+#[derive(Clone)]
+struct DragSession {
+    source_id: u64,
+    payload: repose_core::dnd::DragPayload,
+    start_px: (f32, f32),
+    over_id: Option<u64>,
+}
+
 struct App {
     root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>,
     options: WebOptions,
@@ -127,6 +135,9 @@ struct App {
     hover_id: Option<u64>,
     capture_id: Option<u64>,
     pressed_ids: HashSet<u64>,
+
+    mouse_down_pos_px: Option<(f32, f32)>,
+    drag: Option<DragSession>,
 
     // touch click-cancel after scroll
     touch_scrolled: bool,
@@ -172,6 +183,9 @@ impl App {
             hover_id: None,
             capture_id: None,
             pressed_ids: HashSet::new(),
+
+            mouse_down_pos_px: None,
+            drag: None,
 
             touch_scrolled: false,
             touch_scroll_accum_y_px: 0.0,
@@ -505,6 +519,184 @@ impl App {
             }
         }
     }
+    fn is_dnd_target(hit: &HitRegion) -> bool {
+        hit.on_drop.is_some()
+            || hit.on_drag_enter.is_some()
+            || hit.on_drag_over.is_some()
+            || hit.on_drag_leave.is_some()
+    }
+
+    fn dnd_slop_px(&self, window: &Window) -> f32 {
+        6.0 * self.scale(window)
+    }
+
+    fn dnd_target_id_at(f: &Frame, pos: Vec2) -> Option<u64> {
+        f.hit_regions
+            .iter()
+            .rev()
+            .filter(|h| h.rect.contains(pos))
+            .find(|h| Self::is_dnd_target(h))
+            .map(|h| h.id)
+    }
+
+    fn dnd_update_over(&mut self, pos: Vec2) {
+        let Some(f) = &self.frame_cache else {
+            return;
+        };
+        let Some(session) = self.drag.as_mut() else {
+            return;
+        };
+
+        let new_over = Self::dnd_target_id_at(f, pos);
+
+        if new_over != session.over_id {
+            if let Some(prev) = session.over_id {
+                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == prev) {
+                    if let Some(cb) = &hit.on_drag_leave {
+                        cb(repose_core::dnd::DragOver {
+                            source_id: session.source_id,
+                            target_id: prev,
+                            position: pos,
+                            modifiers: self.modifiers,
+                            payload: session.payload.clone(),
+                        });
+                    }
+                }
+            }
+
+            if let Some(now) = new_over {
+                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == now) {
+                    if let Some(cb) = &hit.on_drag_enter {
+                        cb(repose_core::dnd::DragOver {
+                            source_id: session.source_id,
+                            target_id: now,
+                            position: pos,
+                            modifiers: self.modifiers,
+                            payload: session.payload.clone(),
+                        });
+                    }
+                }
+            }
+
+            session.over_id = new_over;
+        }
+
+        if let Some(over) = session.over_id {
+            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == over) {
+                if let Some(cb) = &hit.on_drag_over {
+                    cb(repose_core::dnd::DragOver {
+                        source_id: session.source_id,
+                        target_id: over,
+                        position: pos,
+                        modifiers: self.modifiers,
+                        payload: session.payload.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    fn dnd_try_begin_mouse(&mut self, window: &Window, pos: Vec2) -> bool {
+        if self.drag.is_some() {
+            return true;
+        }
+
+        let Some((sx, sy)) = self.mouse_down_pos_px else {
+            return false;
+        };
+        let Some(cid) = self.capture_id else {
+            return false;
+        };
+        if !self.pressed_ids.contains(&cid) {
+            return false;
+        }
+
+        let dx = pos.x - sx;
+        let dy = pos.y - sy;
+        let dist = (dx * dx + dy * dy).sqrt();
+        if dist < self.dnd_slop_px(window) {
+            return false;
+        }
+
+        let Some(f) = &self.frame_cache else {
+            return false;
+        };
+        let Some(i) = rc::hit_index_by_id(f, cid) else {
+            return false;
+        };
+        let Some(cb) = &f.hit_regions[i].on_drag_start else {
+            return false;
+        };
+
+        let payload = cb(repose_core::dnd::DragStart {
+            source_id: cid,
+            position: pos,
+            modifiers: self.modifiers,
+        });
+        let Some(payload) = payload else {
+            return false;
+        };
+
+        self.drag = Some(DragSession {
+            source_id: cid,
+            payload,
+            start_px: (sx, sy),
+            over_id: None,
+        });
+        self.pressed_ids.remove(&cid);
+        self.request_redraw();
+        true
+    }
+
+    fn dnd_finish(&mut self, pos: Vec2, accept_if_possible: bool) {
+        let Some(f) = &self.frame_cache else {
+            self.drag = None;
+            self.capture_id = None;
+            self.mouse_down_pos_px = None;
+            self.request_redraw();
+            return;
+        };
+
+        let Some(session) = self.drag.take() else {
+            return;
+        };
+
+        let mut accepted = false;
+        if accept_if_possible {
+            let drop_target = Self::dnd_target_id_at(f, pos);
+            if let Some(tid) = drop_target {
+                if let Some(i) = rc::hit_index_by_id(f, tid) {
+                    if let Some(cb) = &f.hit_regions[i].on_drop {
+                        accepted = cb(repose_core::dnd::DropEvent {
+                            source_id: session.source_id,
+                            target_id: tid,
+                            position: pos,
+                            modifiers: self.modifiers,
+                            payload: session.payload.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
+        if let Some(i) = rc::hit_index_by_id(f, session.source_id) {
+            if let Some(cb) = &f.hit_regions[i].on_drag_end {
+                cb(repose_core::dnd::DragEnd { accepted });
+            }
+        }
+
+        self.capture_id = None;
+        self.mouse_down_pos_px = None;
+        self.request_redraw();
+    }
+
+    fn dnd_cancel(&mut self) {
+        let pos = Vec2 {
+            x: self.mouse_pos_px.0,
+            y: self.mouse_pos_px.1,
+        };
+        self.dnd_finish(pos, false);
+    }
 }
 
 impl ApplicationHandler<()> for App {
@@ -601,6 +793,23 @@ impl ApplicationHandler<()> for App {
 
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse_pos_px = (position.x as f32, position.y as f32);
+
+                let pos = Vec2 {
+                    x: self.mouse_pos_px.0,
+                    y: self.mouse_pos_px.1,
+                };
+
+                if self.drag.is_some() {
+                    self.dnd_update_over(pos);
+                    self.request_redraw();
+                    return;
+                }
+
+                // DnD (mouse)
+                if self.dnd_try_begin_mouse(&window, pos) {
+                    self.dnd_update_over(pos);
+                    return;
+                }
 
                 // TextField drag selection (if captured)
                 if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id)
@@ -716,6 +925,8 @@ impl ApplicationHandler<()> for App {
 
                     match state {
                         ElementState::Pressed => {
+                            self.mouse_down_pos_px = Some(self.mouse_pos_px);
+                            self.drag = None;
                             if let Some(i) = rc::top_hit_index(f, pos) {
                                 let hit = &f.hit_regions[i];
                                 self.capture_id = Some(hit.id);
@@ -776,6 +987,19 @@ impl ApplicationHandler<()> for App {
                         }
 
                         ElementState::Released => {
+                            let pos = Vec2 {
+                                x: self.mouse_pos_px.0,
+                                y: self.mouse_pos_px.1,
+                            };
+
+                            if self.drag.is_some() {
+                                self.dnd_finish(pos, true);
+                                self.capture_id = None;
+                                self.pressed_ids.clear();
+                                self.request_redraw();
+                                return;
+                            }
+
                             if let Some(cid) = self.capture_id {
                                 self.pressed_ids.remove(&cid);
 
@@ -1000,6 +1224,15 @@ impl ApplicationHandler<()> for App {
                 event: key_event, ..
             } => {
                 use repose_core::shortcuts::Action;
+
+                if key_event.state == ElementState::Pressed
+                    && !key_event.repeat
+                    && matches!(key_event.physical_key, PhysicalKey::Code(KeyCode::Escape))
+                    && self.drag.is_some()
+                {
+                    self.dnd_cancel();
+                    return;
+                }
 
                 // Clipboard shortcuts via dispatch_action (Ctrl/Cmd + C/X/V/A/Z)
                 if key_event.state == ElementState::Pressed

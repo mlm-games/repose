@@ -92,6 +92,15 @@ pub struct Modifier {
     pub margin_bottom: Option<f32>,
     pub aspect_ratio: Option<f32>,
     pub painter: Option<Rc<dyn Fn(&mut crate::Scene, crate::Rect)>>,
+
+    // Drag-drop (internal)
+    pub on_drag_start: Option<Rc<dyn Fn(crate::dnd::DragStart) -> Option<crate::dnd::DragPayload>>>,
+    pub on_drag_end: Option<Rc<dyn Fn(crate::dnd::DragEnd)>>,
+    pub on_drag_enter: Option<Rc<dyn Fn(crate::dnd::DragOver)>>,
+    pub on_drag_over: Option<Rc<dyn Fn(crate::dnd::DragOver)>>,
+    pub on_drag_leave: Option<Rc<dyn Fn(crate::dnd::DragOver)>>,
+    pub on_drop: Option<Rc<dyn Fn(crate::dnd::DropEvent) -> bool>>,
+
     pub on_action: Option<Rc<dyn Fn(crate::shortcuts::Action) -> bool>>,
 }
 
@@ -155,6 +164,12 @@ impl std::fmt::Debug for Modifier {
             .field("offset_bottom", &self.offset_bottom)
             .field("aspect_ratio", &self.aspect_ratio)
             .field("painter", &self.painter.as_ref().map(|_| "..."))
+            .field("on_drag_start", &self.on_drag_start.as_ref().map(|_| "..."))
+            .field("on_drag_end", &self.on_drag_end.as_ref().map(|_| "..."))
+            .field("on_drag_enter", &self.on_drag_enter.as_ref().map(|_| "..."))
+            .field("on_drag_over", &self.on_drag_over.as_ref().map(|_| "..."))
+            .field("on_drag_leave", &self.on_drag_leave.as_ref().map(|_| "..."))
+            .field("on_drop", &self.on_drop.as_ref().map(|_| "..."))
             .field("on_action", &self.on_action.as_ref().map(|_| "..."))
             .finish()
     }
@@ -451,6 +466,46 @@ impl Modifier {
     }
     pub fn on_action(mut self, f: impl Fn(crate::shortcuts::Action) -> bool + 'static) -> Self {
         self.on_action = Some(Rc::new(f));
+        self
+    }
+
+    /// Mark this node as a drag source. Return `Some(payload)` to start dragging.
+    pub fn on_drag_start(
+        mut self,
+        f: impl Fn(crate::dnd::DragStart) -> Option<crate::dnd::DragPayload> + 'static,
+    ) -> Self {
+        self.on_drag_start = Some(Rc::new(f));
+        self
+    }
+
+    /// Called when a drag ends (drop accepted or canceled/ignored).
+    pub fn on_drag_end(mut self, f: impl Fn(crate::dnd::DragEnd) + 'static) -> Self {
+        self.on_drag_end = Some(Rc::new(f));
+        self
+    }
+
+    /// Called when a drag first enters this target.
+    pub fn on_drag_enter(mut self, f: impl Fn(crate::dnd::DragOver) + 'static) -> Self {
+        self.on_drag_enter = Some(Rc::new(f));
+        self
+    }
+
+    /// Called on every pointer move while a drag is over this target.
+    pub fn on_drag_over(mut self, f: impl Fn(crate::dnd::DragOver) + 'static) -> Self {
+        self.on_drag_over = Some(Rc::new(f));
+        self
+    }
+
+    /// Called when a drag leaves this target.
+    pub fn on_drag_leave(mut self, f: impl Fn(crate::dnd::DragOver) + 'static) -> Self {
+        self.on_drag_leave = Some(Rc::new(f));
+        self
+    }
+
+    /// Called on pointer release while a drag is over this target.
+    /// Return `true` to accept the drop.
+    pub fn on_drop(mut self, f: impl Fn(crate::dnd::DropEvent) -> bool + 'static) -> Self {
+        self.on_drop = Some(Rc::new(f));
         self
     }
 }

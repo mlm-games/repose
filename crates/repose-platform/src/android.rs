@@ -20,6 +20,14 @@ use winit::platform::android::EventLoopBuilderExtAndroid;
 use winit::platform::android::activity::AndroidApp;
 use winit::window::{ImePurpose, Window, WindowAttributes};
 
+#[derive(Clone)]
+struct DragSession {
+    source_id: u64,
+    payload: repose_core::dnd::DragPayload,
+    start_px: (f32, f32),
+    over_id: Option<u64>,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct AndroidOptions {
     /// If true, runner keeps requesting frames (good for animations, costs battery).
@@ -98,6 +106,8 @@ pub fn run_android_app_with_options(
 
         // swipe tracking
         touch_start: Option<(web_time::Instant, (f32, f32))>,
+
+        drag: Option<DragSession>,
     }
 
     impl AppState {
@@ -134,6 +144,8 @@ pub fn run_android_app_with_options(
                 primary_touch_id: None,
                 pinch_last_dist: None,
                 touch_start: None,
+
+                drag: None,
             }
         }
 
@@ -357,6 +369,170 @@ pub fn run_android_app_with_options(
                 _ => false,
             }
         }
+        fn dnd_slop_px(&self) -> f32 {
+            self.dp_px(6.0)
+        }
+
+        fn is_dnd_target(hit: &HitRegion) -> bool {
+            hit.on_drop.is_some()
+                || hit.on_drag_enter.is_some()
+                || hit.on_drag_over.is_some()
+                || hit.on_drag_leave.is_some()
+        }
+
+        fn dnd_target_id_at(f: &Frame, pos: Vec2) -> Option<u64> {
+            f.hit_regions
+                .iter()
+                .rev()
+                .filter(|h| h.rect.contains(pos))
+                .find(|h| Self::is_dnd_target(h))
+                .map(|h| h.id)
+        }
+
+        fn dnd_update_over(&mut self, pos: Vec2) {
+            let Some(f) = &self.frame_cache else {
+                return;
+            };
+            let Some(session) = self.drag.as_mut() else {
+                return;
+            };
+
+            let new_over = Self::dnd_target_id_at(f, pos);
+
+            if new_over != session.over_id {
+                if let Some(prev) = session.over_id {
+                    if let Some(i) = rc::hit_index_by_id(f, prev) {
+                        if let Some(cb) = &f.hit_regions[i].on_drag_leave {
+                            cb(repose_core::dnd::DragOver {
+                                source_id: session.source_id,
+                                target_id: prev,
+                                position: pos,
+                                modifiers: self.modifiers,
+                                payload: session.payload.clone(),
+                            });
+                        }
+                    }
+                }
+
+                if let Some(now) = new_over {
+                    if let Some(i) = rc::hit_index_by_id(f, now) {
+                        if let Some(cb) = &f.hit_regions[i].on_drag_enter {
+                            cb(repose_core::dnd::DragOver {
+                                source_id: session.source_id,
+                                target_id: now,
+                                position: pos,
+                                modifiers: self.modifiers,
+                                payload: session.payload.clone(),
+                            });
+                        }
+                    }
+                }
+
+                session.over_id = new_over;
+            }
+
+            if let Some(over) = session.over_id {
+                if let Some(i) = rc::hit_index_by_id(f, over) {
+                    if let Some(cb) = &f.hit_regions[i].on_drag_over {
+                        cb(repose_core::dnd::DragOver {
+                            source_id: session.source_id,
+                            target_id: over,
+                            position: pos,
+                            modifiers: self.modifiers,
+                            payload: session.payload.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
+        fn dnd_try_begin_touch(&mut self, pos: Vec2) -> bool {
+            if self.drag.is_some() {
+                return true;
+            }
+            let Some(cid) = self.capture_id else {
+                return false;
+            };
+            let Some((_t0, (sx, sy))) = self.touch_start else {
+                return false;
+            };
+
+            let dx = pos.x - sx;
+            let dy = pos.y - sy;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist < self.dnd_slop_px() {
+                return false;
+            }
+
+            let Some(f) = &self.frame_cache else {
+                return false;
+            };
+            let Some(i) = rc::hit_index_by_id(f, cid) else {
+                return false;
+            };
+            let Some(cb) = &f.hit_regions[i].on_drag_start else {
+                return false;
+            };
+
+            let payload = cb(repose_core::dnd::DragStart {
+                source_id: cid,
+                position: pos,
+                modifiers: self.modifiers,
+            });
+            let Some(payload) = payload else {
+                return false;
+            };
+
+            self.drag = Some(DragSession {
+                source_id: cid,
+                payload,
+                start_px: (sx, sy),
+                over_id: None,
+            });
+
+            // Prevent click-on-release behavior
+            self.touch_scrolled = true;
+            true
+        }
+
+        fn dnd_finish(&mut self, pos: Vec2, accept_if_possible: bool) {
+            let Some(f) = &self.frame_cache else {
+                self.drag = None;
+                self.capture_id = None;
+                self.request_redraw();
+                return;
+            };
+            let Some(session) = self.drag.take() else {
+                return;
+            };
+
+            let mut accepted = false;
+            if accept_if_possible {
+                let drop_target = Self::dnd_target_id_at(f, pos);
+                if let Some(tid) = drop_target {
+                    if let Some(i) = rc::hit_index_by_id(f, tid) {
+                        if let Some(cb) = &f.hit_regions[i].on_drop {
+                            accepted = cb(repose_core::dnd::DropEvent {
+                                source_id: session.source_id,
+                                target_id: tid,
+                                position: pos,
+                                modifiers: self.modifiers,
+                                payload: session.payload.clone(),
+                            });
+                        }
+                    }
+                }
+            }
+
+            if let Some(i) = rc::hit_index_by_id(f, session.source_id) {
+                if let Some(cb) = &f.hit_regions[i].on_drag_end {
+                    cb(repose_core::dnd::DragEnd { accepted });
+                }
+            }
+
+            self.capture_id = None;
+            self.request_redraw();
+        }
     }
 
     impl ApplicationHandler<()> for AppState {
@@ -508,6 +684,19 @@ pub fn run_android_app_with_options(
                         }
 
                         winit::event::TouchPhase::Moved => {
+                            if self.drag.is_some() {
+                                self.dnd_update_over(pos);
+                                self.dirty = true;
+                                self.request_redraw();
+                                return;
+                            }
+
+                            if self.dnd_try_begin_touch(pos) {
+                                self.dnd_update_over(pos);
+                                self.dirty = true;
+                                self.request_redraw();
+                                return;
+                            }
                             // Pinch gesture detection
                             if self.active_touches.len() == 2 {
                                 let mut it = self.active_touches.values();
@@ -569,6 +758,16 @@ pub fn run_android_app_with_options(
                         }
 
                         winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
+                            if self.drag.is_some() {
+                                self.dnd_finish(pos, true);
+                                self.capture_id = None;
+                                self.prev_touch_px = None;
+                                self.pressed_ids.clear();
+                                self.dirty = true;
+                                self.request_redraw();
+                                return;
+                            }
+
                             self.active_touches.remove(&tid);
                             if self.active_touches.len() < 2 {
                                 self.pinch_last_dist = None;
