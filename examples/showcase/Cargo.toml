@@ -30,15 +30,11 @@ label = "Repose Showcase"
 fullscreen = true
 
 [target.'cfg(target_os = "android")'.dependencies]
-repose-platform = { path = "../../crates/repose-platform", version = "0.11.0", features = [
-    "android",
-] }
+repose-platform = { workspace = true, features = ["android"] }
 android_logger = { workspace = true }
 
 [target.'cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))'.dependencies]
-repose-platform = { path = "../../crates/repose-platform", version = "0.11.0", features = [
-    "desktop",
-] }
+repose-platform = { workspace = true, features = ["desktop"] }
 
 [dependencies]
 repose-core.workspace = true
