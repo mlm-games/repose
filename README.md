@@ -71,7 +71,7 @@ These are small projects I’ve used to test the toolkit:
 - wifi-exporter (Android Wifi Importer (Android 11+) and Exporter): https://github.com/mlm-games/wifi-exporter
 - soredowe (Linux pacman UI): https://github.com/mlm-games/soredowe
 
-(These work well, but are early and were initially for testing Repose in apps.)
+(These work well, but were made when repose was in its early stages and were initially for testing Repose in apps.)
 
 ## Architecture (high level)
 
