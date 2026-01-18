@@ -36,6 +36,10 @@ web-sys = { version = "0.3", features = [
     "HtmlElement",
     "HtmlCanvasElement",
     "CssStyleDeclaration",
+    "DragEvent",
+    "DataTransfer",
+    "FileList",
+    "File",
 ] }
 winit = { workspace = true, features = ["rwh_05"] }
 console_error_panic_hook = "0.1"

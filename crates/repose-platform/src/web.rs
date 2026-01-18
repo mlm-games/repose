@@ -7,6 +7,8 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
+use wasm_bindgen::closure::Closure;
+use web_sys::DragEvent;
 
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
@@ -126,8 +128,8 @@ struct DragSession {
 }
 
 struct WebDropListeners {
-    _drag_over: wasm_bindgen::closure::Closure<dyn FnMut(web_sys::DragEvent)>,
-    _drop: wasm_bindgen::closure::Closure<dyn FnMut(web_sys::DragEvent)>,
+    _drag_over: Closure<dyn FnMut(DragEvent)>,
+    _drop: Closure<dyn FnMut(DragEvent)>,
 }
 
 struct App {
@@ -812,56 +814,54 @@ impl ApplicationHandler<()> for App {
             let actions = self.external_drop_actions.clone();
             let win = self.window.clone();
 
-            let drag_over =
-                wasm_bindgen::closure::Closure::wrap(Box::new(move |e: web_sys::DragEvent| {
-                    e.prevent_default(); // required to allow drop
-                    if let Some(dt) = e.data_transfer() {
-                        dt.set_drop_effect("copy");
-                    }
-                }) as Box<dyn FnMut(_)>);
+            let drag_over = Closure::wrap(Box::new(move |e: DragEvent| {
+                e.prevent_default(); // required to allow drop
+                if let Some(dt) = e.data_transfer() {
+                    dt.set_drop_effect("copy");
+                }
+            }) as Box<dyn FnMut(_)>);
 
             let actions2 = self.external_drop_actions.clone();
             let win2 = self.window.clone();
 
-            let drop =
-                wasm_bindgen::closure::Closure::wrap(Box::new(move |e: web_sys::DragEvent| {
-                    e.prevent_default();
-                    let Some(dt) = e.data_transfer() else {
-                        return;
-                    };
-                    let Some(list) = dt.files() else {
-                        return;
-                    };
+            let drop = Closure::wrap(Box::new(move |e: DragEvent| {
+                e.prevent_default();
+                let Some(dt) = e.data_transfer() else {
+                    return;
+                };
+                let Some(list) = dt.files() else {
+                    return;
+                };
 
-                    let mut names = Vec::new();
-                    for i in 0..list.length() {
-                        if let Some(f) = list.get(i) {
-                            names.push(f.name());
-                        }
+                let mut names = Vec::new();
+                for i in 0..list.length() {
+                    if let Some(f) = list.get(i) {
+                        names.push(f.name());
                     }
+                }
 
-                    let mut pos_px = (0.0f32, 0.0f32);
-                    if let Some(target) = e
-                        .target()
-                        .and_then(|t| t.dyn_into::<web_sys::HtmlCanvasElement>().ok())
-                    {
-                        let rect = target.get_bounding_client_rect();
-                        let x_css = e.client_x() as f64 - rect.left();
-                        let y_css = e.client_y() as f64 - rect.top();
-                        let dpr = web_sys::window()
-                            .map(|w| w.device_pixel_ratio())
-                            .unwrap_or(1.0);
-                        pos_px = ((x_css * dpr) as f32, (y_css * dpr) as f32);
-                    }
+                let mut pos_px = (0.0f32, 0.0f32);
+                if let Some(target) = e
+                    .target()
+                    .and_then(|t| t.dyn_into::<web_sys::HtmlCanvasElement>().ok())
+                {
+                    let rect = target.get_bounding_client_rect();
+                    let x_css = e.client_x() as f64 - rect.left();
+                    let y_css = e.client_y() as f64 - rect.top();
+                    let dpr = web_sys::window()
+                        .map(|w| w.device_pixel_ratio())
+                        .unwrap_or(1.0);
+                    pos_px = ((x_css * dpr) as f32, (y_css * dpr) as f32);
+                }
 
-                    actions2
-                        .borrow_mut()
-                        .push(ExternalDropAction::DroppedFiles { names, pos_px });
+                actions2
+                    .borrow_mut()
+                    .push(ExternalDropAction::DroppedFiles { names, pos_px });
 
-                    if let Some(w) = win2.as_ref() {
-                        w.request_redraw();
-                    }
-                }) as Box<dyn FnMut(_)>);
+                if let Some(w) = win2.as_ref() {
+                    w.request_redraw();
+                }
+            }) as Box<dyn FnMut(_)>);
 
             let _ = canvas
                 .add_event_listener_with_callback("dragover", drag_over.as_ref().unchecked_ref());
