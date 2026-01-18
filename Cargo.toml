@@ -1,10 +1,10 @@
 [workspace]
 members = [
- "crates/repose-core",
- "crates/repose-tree",
- "crates/repose-ui",
- "crates/repose-render-wgpu",
- "crates/repose-platform",
+  "crates/repose-core",
+  "crates/repose-tree",
+  "crates/repose-ui",
+  "crates/repose-render-wgpu",
+  "crates/repose-platform",
   "crates/repose-devtools",
   "crates/repose-macros",
   "crates/repose-text",
@@ -14,6 +14,7 @@ members = [
   "examples/showcase",
   "examples/animation_demo",
   "examples/android_counter",
+  "crates/repose-docking",
 ]
 resolver = "2"
 
@@ -68,3 +69,4 @@ repose-text = { path = "crates/repose-text", version = "0.11.0" }
 repose-render-wgpu = { path = "crates/repose-render-wgpu", version = "0.11.0" }
 repose-platform = { path = "crates/repose-platform", version = "0.11.0" }
 repose-tree = { path = "crates/repose-tree", version = "0.11.0" }
+repose-docking = { path = "crates/repose-docking", version = "0.11.0" }

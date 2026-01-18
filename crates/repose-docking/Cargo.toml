@@ -1,0 +1,11 @@
+[package]
+name = "repose-docking"
+version.workspace = true
+edition.workspace = true
+license = "GPL-3.0-or-later"
+description = "Docking layout system (split panes + tabs + drag & drop) for Repose"
+
+[dependencies]
+repose-core.workspace = true
+repose-ui.workspace = true
+log.workspace = true

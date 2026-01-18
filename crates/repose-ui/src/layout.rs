@@ -1060,6 +1060,14 @@ impl LayoutEngine {
             || modifier.on_pointer_up.is_some()
             || modifier.on_pointer_enter.is_some()
             || modifier.on_pointer_leave.is_some();
+
+        let has_dnd = modifier.on_drag_start.is_some()
+            || modifier.on_drag_end.is_some()
+            || modifier.on_drag_enter.is_some()
+            || modifier.on_drag_over.is_some()
+            || modifier.on_drag_leave.is_some()
+            || modifier.on_drop.is_some();
+
         let kind_handles_hit = matches!(
             kind,
             ViewKind::Button { .. }
@@ -1072,7 +1080,10 @@ impl LayoutEngine {
                 | ViewKind::ScrollV { .. }
                 | ViewKind::ScrollXY { .. }
         );
-        if (has_pointer || modifier.click) && !kind_handles_hit {
+
+        let needs_hit = has_pointer || modifier.click || has_dnd || modifier.on_action.is_some();
+
+        if needs_hit && !kind_handles_hit {
             hits.push(HitRegion {
                 id: view_id,
                 rect,

@@ -2304,6 +2304,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "repose-docking"
+version = "0.11.0"
+dependencies = [
+ "log",
+ "repose-core",
+ "repose-ui",
+]
+
+[[package]]
 name = "repose-macros"
 version = "0.0.0"
 dependencies = [
