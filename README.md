@@ -98,4 +98,4 @@ Issues and PRs are welcome, especially for:
 
 GPL-3.0-or-later (see `LICENSE`).
 
-If you want to use Repose in a closed-source product, do open an issue.
+If you would want to use Repose in a closed-source product, do open an issue.
