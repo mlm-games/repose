@@ -3,7 +3,10 @@ use crate::a11y::ReposeActionHandler;
 use accesskit_winit::Adapter;
 use repose_core::locals::dp_to_px;
 use repose_core::*;
-use repose_ui::textfield::{TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, measure_text};
+use repose_ui::textfield::{
+    self, TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, caret_xy_for_byte, index_for_x_bytes,
+    index_for_xy_bytes, measure_text,
+};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -141,6 +144,10 @@ pub fn run_desktop_app(
         pending_dropped_files: Vec<std::path::PathBuf>,
         pending_drop_pos_px: Option<(f32, f32)>,
 
+        // External file drag hover (HoveredFile / Cancelled)
+        external_file_drag: bool,
+        hovered_files: Vec<std::path::PathBuf>,
+
         key_pressed_active: Option<u64>,
         clipboard: Option<clipawl::Clipboard>,
         a11y: Box<dyn A11yBridge>,
@@ -207,6 +214,10 @@ pub fn run_desktop_app(
                 drag: None,
                 pending_dropped_files: Vec::new(),
                 pending_drop_pos_px: None,
+
+                external_file_drag: false,
+                hovered_files: Vec::new(),
+
                 key_pressed_active: None,
                 clipboard: None,
                 a11y: {
@@ -241,7 +252,8 @@ pub fn run_desktop_app(
             let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
             let m = measure_text(&st.text, font_px);
             let caret_x_px = m.positions.get(st.caret_index()).copied().unwrap_or(0.0);
-            st.ensure_caret_visible(caret_x_px, st.inner_width, dp_to_px(2.0));
+            let iw = st.inner_width;
+            st.ensure_caret_visible(caret_x_px, iw, dp_to_px(2.0));
         }
 
         fn copy_to_clipboard(&mut self, text: String) {
@@ -302,6 +314,117 @@ pub fn run_desktop_app(
                     }
                 }
             }
+        }
+
+        fn reset_pointer_state(&mut self) {
+            self.capture_id = None;
+            self.pressed_ids.clear();
+            self.mouse_down_pos_px = None;
+            self.drag = None;
+            self.hover_id = None;
+        }
+
+        fn overlay_drag_indicator(&self, scene: &mut Scene) {
+            let dragging_internal = self.drag.is_some();
+            let dragging_files = self.external_file_drag;
+
+            if !(dragging_internal || dragging_files) {
+                return;
+            }
+
+            let pos = Vec2 {
+                x: self.mouse_pos_px.0,
+                y: self.mouse_pos_px.1,
+            };
+
+            // Highlight best drop target under cursor (if we have a frame)
+            if let Some(f) = &self.frame_cache {
+                if let Some(tid) = Self::dnd_target_id_at(f, pos) {
+                    if let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid) {
+                        let color = if dragging_files {
+                            Color::from_hex("#FFAA00")
+                        } else {
+                            Color::from_hex("#44AAFF")
+                        };
+                        scene.nodes.push(SceneNode::Border {
+                            rect: hit.rect,
+                            color,
+                            width: dp_to_px(2.0),
+                            radius: dp_to_px(8.0),
+                        });
+                    }
+                }
+            }
+
+            // Cursor badge
+            let label = if dragging_files {
+                "FILE DROP"
+            } else {
+                "DRAGGING"
+            };
+            let bg = if dragging_files {
+                Color::from_hex("#FFAA0077")
+            } else {
+                Color::from_hex("#44AAFF77")
+            };
+
+            let badge = Rect {
+                x: pos.x + dp_to_px(12.0),
+                y: pos.y + dp_to_px(12.0),
+                w: dp_to_px(110.0),
+                h: dp_to_px(24.0),
+            };
+
+            scene.nodes.push(SceneNode::Rect {
+                rect: badge,
+                brush: Brush::Solid(bg),
+                radius: dp_to_px(8.0),
+            });
+            scene.nodes.push(SceneNode::Text {
+                rect: Rect {
+                    x: badge.x + dp_to_px(8.0),
+                    y: badge.y + dp_to_px(6.0),
+                    w: 0.0,
+                    h: dp_to_px(14.0),
+                },
+                text: Arc::<str>::from(label),
+                color: Color::WHITE,
+                size: dp_to_px(12.0),
+            });
+        }
+
+        fn is_textfield(&self, id: u64) -> bool {
+            if let Some(f) = &self.frame_cache {
+                f.semantics_nodes
+                    .iter()
+                    .any(|n| n.id == id && n.role == Role::TextField)
+            } else {
+                false
+            }
+        }
+
+        fn is_multiline_id(&self, id: u64) -> bool {
+            if let Some(f) = &self.frame_cache {
+                f.hit_regions
+                    .iter()
+                    .find(|h| h.id == id)
+                    .map(|h| h.tf_multiline)
+                    .unwrap_or(false)
+            } else {
+                false
+            }
+        }
+
+        fn hit_by_id(f: &Frame, id: u64) -> Option<&HitRegion> {
+            f.hit_regions.iter().find(|h| h.id == id)
+        }
+
+        fn padding_px(&self) -> f32 {
+            dp_to_px(TF_PADDING_X_DP)
+        }
+
+        fn dp_px(&self, dp: f32) -> f32 {
+            dp_to_px(dp)
         }
     }
 
@@ -379,13 +502,58 @@ pub fn run_desktop_app(
                 WindowEvent::CloseRequested => {
                     el.exit();
                 }
-                WindowEvent::DroppedFile(path) => {
-                    self.pending_dropped_files.push(path);
+
+                WindowEvent::Focused(false) => {
+                    // Defensive reset: Wayland/KDE can "eat" releases during DnD.
+                    self.external_file_drag = false;
+                    self.hovered_files.clear();
+                    self.reset_pointer_state();
+
+                    if let Some(w) = &self.window {
+                        w.set_ime_allowed(false);
+                    }
+                    self.ime_preedit = false;
+
+                    self.request_redraw();
+                }
+
+                WindowEvent::HoveredFile(path) => {
+                    // Mark external drag active and keep a small bounded list
+                    self.external_file_drag = true;
+                    if self.hovered_files.len() < 32 {
+                        self.hovered_files.push(path);
+                    }
+                    // Update drop position (best effort)
                     if self.pending_drop_pos_px.is_none() {
                         self.pending_drop_pos_px = Some(self.mouse_pos_px);
                     }
                     self.request_redraw();
                 }
+
+                WindowEvent::HoveredFileCancelled => {
+                    self.external_file_drag = false;
+                    self.hovered_files.clear();
+
+                    // Defensive: cancel any internal capture/drag that might be left stuck
+                    self.reset_pointer_state();
+
+                    self.request_redraw();
+                }
+
+                WindowEvent::DroppedFile(path) => {
+                    // DroppedFile is emitted once per file. Batch them.
+                    self.pending_dropped_files.push(path);
+                    if self.pending_drop_pos_px.is_none() {
+                        self.pending_drop_pos_px = Some(self.mouse_pos_px);
+                    }
+
+                    // Drop ends the external file drag session.
+                    self.external_file_drag = false;
+                    self.hovered_files.clear();
+
+                    self.request_redraw();
+                }
+
                 WindowEvent::Resized(size) => {
                     self.sched.size = (size.width, size.height);
                     if let Some(b) = &mut self.backend {
@@ -406,6 +574,7 @@ pub fn run_desktop_app(
                     }
                     self.request_redraw();
                 }
+
                 WindowEvent::CursorMoved { position, .. } => {
                     self.mouse_pos_px = (position.x as f32, position.y as f32);
 
@@ -443,44 +612,66 @@ pub fn run_desktop_app(
                         self.request_redraw();
                     }
 
+                    // TextField/TextArea drag selection (if captured)
                     if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id)
-                        && let Some(_sem) = f
-                            .semantics_nodes
-                            .iter()
-                            .find(|n| n.id == cid && n.role == Role::TextField)
+                        && self.is_textfield(cid)
                     {
-                        let key = self.tf_key_of(cid);
-                        if let Some(state_rc) = self.textfield_states.get(&key) {
-                            use repose_ui::textfield::index_for_x_bytes;
+                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
+                            let key = self.tf_key_of(cid);
+                            if let Some(state_rc) = self.textfield_states.get(&key) {
+                                let mut st = state_rc.borrow_mut();
 
-                            let mut state = state_rc.borrow_mut();
-                            // inner content left edge in px
-                            let inner_x_px = f
-                                .hit_regions
-                                .iter()
-                                .find(|h| h.id == cid)
-                                .map(|h| h.rect.x + dp_to_px(TF_PADDING_X_DP))
-                                .unwrap_or(0.0);
-                            let content_x_px =
-                                self.mouse_pos_px.0 - inner_x_px + state.scroll_offset;
-                            let font_px =
-                                dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-                            let idx =
-                                index_for_x_bytes(&state.text, font_px, content_x_px.max(0.0));
-                            state.drag_to(idx);
+                                let pad_x = dp_to_px(TF_PADDING_X_DP);
+                                let inner_x = hit.rect.x + pad_x;
+                                let inner_y = hit.rect.y + dp_to_px(8.0);
+                                let inner_w = (hit.rect.w - 2.0 * pad_x).max(1.0);
+                                let inner_h = (hit.rect.h - dp_to_px(16.0)).max(1.0);
 
-                            // Scroll caret into view
-                            let m = measure_text(&state.text, font_px);
-                            let caret_x_px =
-                                m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
-                            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
-                                state.ensure_caret_visible(
-                                    caret_x_px,
-                                    hit.rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
-                                    dp_to_px(2.0),
-                                );
+                                st.set_inner_width(inner_w);
+                                st.set_inner_height(inner_h);
+
+                                let content_x =
+                                    (self.mouse_pos_px.0 - inner_x + st.scroll_offset).max(0.0);
+                                let content_y =
+                                    (self.mouse_pos_px.1 - inner_y + st.scroll_offset_y).max(0.0);
+
+                                let font_px =
+                                    dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+
+                                let idx = if hit.tf_multiline {
+                                    index_for_xy_bytes(
+                                        &st.text, font_px, inner_w, content_x, content_y,
+                                    )
+                                } else {
+                                    index_for_x_bytes(&st.text, font_px, content_x)
+                                };
+
+                                st.drag_to(idx);
+
+                                // Ensure caret visible
+                                if hit.tf_multiline {
+                                    let (cx, cy, _) = caret_xy_for_byte(
+                                        &st.text,
+                                        font_px,
+                                        inner_w,
+                                        st.caret_index(),
+                                    );
+                                    st.ensure_caret_visible_xy(
+                                        cx,
+                                        cy,
+                                        inner_w,
+                                        inner_h,
+                                        dp_to_px(2.0),
+                                    );
+                                } else {
+                                    let m = measure_text(&st.text, font_px);
+                                    let cx =
+                                        m.positions.get(st.caret_index()).copied().unwrap_or(0.0);
+                                    st.ensure_caret_visible(cx, inner_w, dp_to_px(2.0));
+                                }
+
+                                self.request_redraw();
                             }
-                            self.request_redraw();
                         }
                     }
 
@@ -550,6 +741,7 @@ pub fn run_desktop_app(
                         }
                     }
                 }
+
                 WindowEvent::MouseWheel { delta, .. } => {
                     // Convert line deltas (logical) to px; pixel delta is already px
                     let (dx_px, dy_px) = match delta {
@@ -582,6 +774,7 @@ pub fn run_desktop_app(
                         }
                     }
                 }
+
                 WindowEvent::MouseInput {
                     state: ElementState::Pressed,
                     button: MouseButton::Left,
@@ -600,6 +793,57 @@ pub fn run_desktop_app(
 
                             // Capture starts on press
                             self.capture_id = Some(hit.id);
+
+                            // Text input caret placement + begin drag selection
+                            if self.is_textfield(hit.id) {
+                                let key = self.tf_key_of(hit.id);
+                                self.textfield_states.entry(key).or_insert_with(|| {
+                                    Rc::new(RefCell::new(TextFieldState::new()))
+                                });
+                                if let Some(st_rc) = self.textfield_states.get(&key) {
+                                    let mut st = st_rc.borrow_mut();
+                                    let pad = self.padding_px();
+                                    let inner_x = hit.rect.x + pad;
+                                    let inner_y = hit.rect.y + self.dp_px(8.0);
+                                    let content_x =
+                                        (self.mouse_pos_px.0 - inner_x + st.scroll_offset).max(0.0);
+                                    let content_y = (self.mouse_pos_px.1 - inner_y
+                                        + st.scroll_offset_y)
+                                        .max(0.0);
+                                    let font_px = self.dp_px(TF_FONT_DP)
+                                        * repose_core::locals::text_scale().0;
+
+                                    let idx = if hit.tf_multiline {
+                                        textfield::index_for_xy_bytes(
+                                            &st.text,
+                                            font_px,
+                                            hit.rect.w - 2.0 * pad,
+                                            content_x,
+                                            content_y,
+                                        )
+                                    } else {
+                                        textfield::index_for_x_bytes(&st.text, font_px, content_x)
+                                    };
+
+                                    st.begin_drag(idx, self.modifiers.shift);
+
+                                    // Ensure caret visible
+                                    let caret_idx = st.caret_index();
+                                    let iw = st.inner_width;
+                                    let ih = st.inner_height;
+                                    let wrap_w = hit.rect.w - 2.0 * pad;
+                                    if hit.tf_multiline {
+                                        let (cx, cy, _) = textfield::caret_xy_for_byte(
+                                            &st.text, font_px, wrap_w, caret_idx,
+                                        );
+                                        st.ensure_caret_visible_xy(cx, cy, iw, ih, self.dp_px(2.0));
+                                    } else {
+                                        let m = measure_text(&st.text, font_px);
+                                        let cx = m.positions.get(caret_idx).copied().unwrap_or(0.0);
+                                        st.ensure_caret_visible(cx, iw, self.dp_px(2.0));
+                                    }
+                                }
+                            }
                             // Pressed visual for mouse
                             self.pressed_ids.insert(hit.id);
                             // Repaint for pressed state
@@ -645,41 +889,6 @@ pub fn run_desktop_app(
                                 cb(pe);
                             }
 
-                            // TextField: place caret and start drag selection
-                            if let Some(_sem) = f
-                                .semantics_nodes
-                                .iter()
-                                .find(|n| n.id == hit.id && n.role == Role::TextField)
-                            {
-                                let key = self.tf_key_of(hit.id);
-                                if let Some(state_rc) = self.textfield_states.get(&key) {
-                                    use repose_ui::textfield::index_for_x_bytes;
-
-                                    let mut state = state_rc.borrow_mut();
-                                    let inner_x_px = hit.rect.x + dp_to_px(TF_PADDING_X_DP);
-                                    let content_x_px =
-                                        self.mouse_pos_px.0 - inner_x_px + state.scroll_offset;
-                                    let font_px =
-                                        dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-                                    let idx = index_for_x_bytes(
-                                        &state.text,
-                                        font_px,
-                                        content_x_px.max(0.0),
-                                    );
-                                    state.begin_drag(idx, self.modifiers.shift);
-                                    let m = measure_text(&state.text, font_px);
-                                    let caret_x_px = m
-                                        .positions
-                                        .get(state.caret_index())
-                                        .copied()
-                                        .unwrap_or(0.0);
-                                    state.ensure_caret_visible(
-                                        caret_x_px,
-                                        hit.rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
-                                        dp_to_px(2.0),
-                                    );
-                                }
-                            }
                             if need_announce {
                                 self.announce_focus_change();
                             }
@@ -698,6 +907,7 @@ pub fn run_desktop_app(
                         }
                     }
                 }
+
                 WindowEvent::MouseInput {
                     state: ElementState::Released,
                     button: MouseButton::Left,
@@ -773,10 +983,12 @@ pub fn run_desktop_app(
                             state_rc.borrow_mut().end_drag();
                         }
                     }
+
                     self.capture_id = None;
 
                     repose_core::request_frame();
                 }
+
                 WindowEvent::ModifiersChanged(new_mods) => {
                     self.modifiers.shift = new_mods.state().shift_key();
                     self.modifiers.ctrl = new_mods.state().control_key();
@@ -788,6 +1000,7 @@ pub fn run_desktop_app(
                         self.modifiers.ctrl
                     };
                 }
+
                 WindowEvent::KeyboardInput {
                     event: key_event, ..
                 } => {
@@ -875,8 +1088,6 @@ pub fn run_desktop_app(
                             PhysicalKey::Code(KeyCode::KeyX) => self.dispatch_action(Action::Cut),
                             PhysicalKey::Code(KeyCode::KeyV) => self.dispatch_action(Action::Paste),
                             PhysicalKey::Code(KeyCode::KeyA) => {
-                                use repose_core::shortcuts::Action;
-
                                 self.dispatch_action(Action::SelectAll)
                             }
                             PhysicalKey::Code(KeyCode::KeyZ) => {
@@ -1129,13 +1340,6 @@ pub fn run_desktop_app(
                     }
                 }
 
-                // After a touchpad action is added => {
-                //     use repose_core::shortcuts::{Action, Gesture};
-                //     let ds = (1.0 + delta as f32).clamp(0.5, 2.0);
-                //     if self.dispatch_action(Action::Gesture(Gesture::Pinch { delta_scale: ds })) {
-                //         self.request_redraw();
-                //     }
-                // }
                 WindowEvent::Ime(ime) => {
                     use winit::event::Ime;
                     if let Some(focused_id) = self.sched.focused {
@@ -1209,65 +1413,77 @@ pub fn run_desktop_app(
                         }
                     }
                 }
+
                 WindowEvent::RedrawRequested => {
                     // 1. Process any pending A11y actions (clicks from screen reader)
                     self.process_a11y_actions();
                     self.dispatch_file_drop_now();
                     self.process_render_commands();
 
-                    if let (Some(backend), Some(win)) =
-                        (self.backend.as_mut(), self.window.as_ref())
-                    {
-                        let t0 = Instant::now();
-                        let scale = win.scale_factor() as f32;
-                        let size_px_u32 = self.sched.size;
-                        let focused = self.sched.focused;
-
-                        let rc = self.render.clone();
-                        let root_fn = &mut self.root;
-                        let mut composed_root = |s: &mut Scheduler| (root_fn)(s, &rc);
-
-                        let frame = compose_frame(
-                            &mut self.sched,
-                            &mut composed_root,
-                            scale,
-                            size_px_u32,
-                            self.hover_id,
-                            &self.pressed_ids,
-                            &self.textfield_states,
-                            focused,
-                        );
-
-                        let build_layout_ms = (Instant::now() - t0).as_secs_f32() * 1000.0;
-
-                        // UPDATE ACCESSIBILITY TREE
-                        if let Some(adapter) = &mut self.accesskit_adapter {
-                            let scale = win.scale_factor();
-                            if let Some(update) = self.a11y_tree.update(
-                                &frame.semantics_nodes,
-                                scale,
-                                self.sched.focused,
-                            ) {
-                                adapter.update_if_active(|| update);
-                            }
-                        }
-
-                        // Render
-                        let mut scene = frame.scene.clone();
-                        // Update HUD metrics before overlay draws
-                        self.inspector.hud.metrics = Some(repose_devtools::Metrics {
-                            build_layout_ms,
-                            scene_nodes: scene.nodes.len(),
-                        });
-                        self.inspector.frame(&mut scene);
-                        backend
-                            // .lock()
-                            .frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
-                        self.frame_cache = Some(frame);
-
-                        self.last_redraw = Instant::now();
+                    let Some(win) = self.window.as_ref() else {
+                        return;
+                    };
+                    if self.backend.is_none() {
+                        return;
                     }
+
+                    let t0 = Instant::now();
+                    let scale = win.scale_factor() as f32;
+                    let size_px_u32 = self.sched.size;
+                    let focused = self.sched.focused;
+
+                    let rc = self.render.clone();
+                    let root_fn = &mut self.root;
+                    let mut composed_root = |s: &mut Scheduler| (root_fn)(s, &rc);
+
+                    let frame = compose_frame(
+                        &mut self.sched,
+                        &mut composed_root,
+                        scale,
+                        size_px_u32,
+                        self.hover_id,
+                        &self.pressed_ids,
+                        &self.textfield_states,
+                        focused,
+                    );
+
+                    let build_layout_ms = (Instant::now() - t0).as_secs_f32() * 1000.0;
+
+                    // UPDATE ACCESSIBILITY TREE
+                    if let Some(adapter) = &mut self.accesskit_adapter {
+                        let win = self.window.as_ref().unwrap();
+                        let scale = win.scale_factor();
+                        if let Some(update) =
+                            self.a11y_tree
+                                .update(&frame.semantics_nodes, scale, self.sched.focused)
+                        {
+                            adapter.update_if_active(|| update);
+                        }
+                    }
+
+                    // Render
+                    let mut scene = frame.scene.clone();
+                    // Update HUD metrics before overlay draws
+                    self.inspector.hud.metrics = Some(repose_devtools::Metrics {
+                        build_layout_ms,
+                        scene_nodes: scene.nodes.len(),
+                    });
+                    self.inspector.frame(&mut scene);
+
+                    // Drag indicator overlay (internal + file drop)
+                    self.overlay_drag_indicator(&mut scene);
+
+                    // Now borrow backend mutably only for the frame() call
+                    let win = self.window.as_ref().unwrap();
+                    let scale = win.scale_factor() as f32;
+                    if let Some(backend) = self.backend.as_mut() {
+                        backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
+                    }
+
+                    self.frame_cache = Some(frame);
+                    self.last_redraw = Instant::now();
                 }
+
                 _ => {}
             }
         }
@@ -1323,6 +1539,7 @@ pub fn run_desktop_app(
                 self.a11y.focus_changed(focused_node);
             }
         }
+
         fn notify_text_change(&self, id: u64, text: String) {
             if let Some(f) = &self.frame_cache
                 && let Some(h) = f.hit_regions.iter().find(|h| h.id == id)
@@ -1331,6 +1548,7 @@ pub fn run_desktop_app(
                 cb(text);
             }
         }
+
         fn tf_key_of(&self, visual_id: u64) -> u64 {
             if let Some(f) = &self.frame_cache
                 && let Some(hr) = f.hit_regions.iter().find(|h| h.id == visual_id)
@@ -1339,6 +1557,7 @@ pub fn run_desktop_app(
             }
             visual_id
         }
+
         fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
             use repose_core::shortcuts;
 
@@ -1420,6 +1639,7 @@ pub fn run_desktop_app(
                 _ => false,
             }
         }
+
         fn is_dnd_target(hit: &HitRegion) -> bool {
             hit.on_drop.is_some()
                 || hit.on_drag_enter.is_some()
@@ -1546,7 +1766,7 @@ pub fn run_desktop_app(
                 over_id: None,
             });
 
-            // Don’t keep “pressed” visuals once dragging
+            // Don't keep "pressed" visuals once dragging
             self.pressed_ids.remove(&cid);
             self.request_redraw();
             true

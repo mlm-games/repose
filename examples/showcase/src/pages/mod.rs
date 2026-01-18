@@ -1,5 +1,7 @@
 pub mod animation;
 pub mod canvas;
+pub mod dnd;
+pub mod docking;
 pub mod errors;
 pub mod home;
 pub mod layout;

@@ -75,11 +75,22 @@ impl<K: std::hash::Hash + Eq + Clone, V> Lru<K, V> {
 
 static WRAP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32, u16, bool), (Vec<String>, bool)>>> =
     OnceCell::new();
+
+static WRAP_RANGES_LRU: OnceCell<
+    Mutex<Lru<(u64, u32, u32, u16, bool), (Vec<(usize, usize)>, bool)>>,
+> = OnceCell::new();
+
 static ELLIP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32), String>>> = OnceCell::new();
 
 fn wrap_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, bool), (Vec<String>, bool)>> {
     WRAP_LRU.get_or_init(|| Mutex::new(Lru::new(WRAP_CACHE_CAP)))
 }
+
+fn wrap_ranges_cache()
+-> &'static Mutex<Lru<(u64, u32, u32, u16, bool), (Vec<(usize, usize)>, bool)>> {
+    WRAP_RANGES_LRU.get_or_init(|| Mutex::new(Lru::new(WRAP_CACHE_CAP)))
+}
+
 fn ellip_cache() -> &'static Mutex<Lru<(u64, u32, u32), String>> {
     ELLIP_LRU.get_or_init(|| Mutex::new(Lru::new(ELLIP_CACHE_CAP)))
 }
@@ -446,6 +457,201 @@ pub fn wrap_lines(
 
     wrap_cache().lock().unwrap().put(key, res.clone());
     res
+}
+
+/// Like `wrap_lines`, but returns byte ranges into the original `text`
+/// for each visual line. This is required for multi-line editing so
+/// caret/selection mapping stays correct.
+///
+/// Ranges are half-open `[start, end)`, and never include the '\n' char
+/// (hard line breaks end a range at the '\n' byte index).
+pub fn wrap_line_ranges(
+    text: &str,
+    px: f32,
+    max_width: f32,
+    max_lines: Option<usize>,
+    soft_wrap: bool,
+) -> (Vec<(usize, usize)>, bool) {
+    if text.is_empty() || max_width <= 0.0 {
+        return (vec![(0, 0)], false);
+    }
+    if !soft_wrap {
+        // Hard lines only (split on '\n' but no width wrapping)
+        let mut out = Vec::new();
+        let mut start = 0usize;
+        for (i, ch) in text.char_indices() {
+            if ch == '\n' {
+                out.push((start, i));
+                start = i + 1;
+            }
+        }
+        out.push((start, text.len()));
+        return (out, false);
+    }
+
+    let max_lines_key: u16 = match max_lines {
+        None => 0,
+        Some(n) => {
+            let n = n.min(u16::MAX as usize - 1) as u16;
+            n.saturating_add(1)
+        }
+    };
+    let key = (
+        fast_hash(text),
+        (px * 100.0) as u32,
+        (max_width * 100.0) as u32,
+        max_lines_key,
+        soft_wrap,
+    );
+    if let Some(v) = wrap_ranges_cache().lock().unwrap().get(&key).cloned() {
+        return v;
+    }
+
+    // Shape once for width queries (whole string)
+    let m = metrics_for_textfield(text, px);
+
+    // Helper: width of substring [start..end] in bytes using m
+    let width_of = |start_b: usize, end_b: usize| -> f32 {
+        let i0 = match m.byte_offsets.binary_search(&start_b) {
+            Ok(i) | Err(i) => i,
+        };
+        let i1 = match m.byte_offsets.binary_search(&end_b) {
+            Ok(i) | Err(i) => i,
+        };
+        (m.positions.get(i1).copied().unwrap_or(0.0) - m.positions.get(i0).copied().unwrap_or(0.0))
+            .max(0.0)
+    };
+
+    let mut out: Vec<(usize, usize)> = Vec::new();
+    let mut truncated = false;
+
+    // Process hard lines split by '\n' while preserving original indices.
+    let mut line0_start = 0usize;
+    for (i, ch) in text.char_indices() {
+        if ch == '\n' {
+            let (mut ranges, tr) = wrap_one_hard_line_ranges(
+                text,
+                line0_start,
+                i,
+                max_width,
+                max_lines.map(|ml| ml.saturating_sub(out.len())),
+                &width_of,
+            );
+            out.append(&mut ranges);
+            if tr {
+                truncated = true;
+                break;
+            }
+            line0_start = i + 1;
+
+            if let Some(ml) = max_lines {
+                if out.len() >= ml {
+                    truncated = true;
+                    break;
+                }
+            }
+        }
+    }
+    if !truncated {
+        let (mut ranges, tr) = wrap_one_hard_line_ranges(
+            text,
+            line0_start,
+            text.len(),
+            max_width,
+            max_lines.map(|ml| ml.saturating_sub(out.len())),
+            &width_of,
+        );
+        out.append(&mut ranges);
+        truncated = tr;
+    }
+
+    if out.is_empty() {
+        out.push((0, 0));
+    }
+
+    let res = (out, truncated);
+    wrap_ranges_cache().lock().unwrap().put(key, res.clone());
+    res
+}
+
+fn wrap_one_hard_line_ranges(
+    text: &str,
+    start: usize,
+    end: usize,
+    max_width: f32,
+    max_lines: Option<usize>,
+    width_of: &dyn Fn(usize, usize) -> f32,
+) -> (Vec<(usize, usize)>, bool) {
+    let mut out = Vec::new();
+    let mut t = false;
+
+    if start >= end {
+        out.push((start, start));
+        return (out, false);
+    }
+
+    // Fast path: whole line fits
+    if width_of(start, end) <= max_width + 0.5 {
+        out.push((start, end));
+        return (out, false);
+    }
+
+    let mut line_start = start;
+    let mut best_break = line_start;
+    let mut unconsumed_start = start;
+
+    for tok in text[line_start..end].split_word_bounds() {
+        let tok_abs_start = unconsumed_start;
+        let tok_abs_end = tok_abs_start + tok.len();
+        unconsumed_start = tok_abs_end;
+
+        let w = width_of(line_start, tok_abs_end);
+        if w <= max_width + 0.5 {
+            best_break = tok_abs_end;
+            continue;
+        }
+
+        // Need break before tok_abs_end.
+        if best_break > line_start {
+            out.push((line_start, best_break));
+            line_start = best_break;
+        } else {
+            // Token too wide: force break at grapheme boundaries
+            let mut cut = tok_abs_start;
+            for (ofs, g) in tok.grapheme_indices(true) {
+                let next = tok_abs_start + ofs + g.len();
+                if width_of(line_start, next) <= max_width + 0.5 {
+                    cut = next;
+                } else {
+                    break;
+                }
+            }
+            if cut == line_start {
+                if let Some((ofs, gr)) = tok.grapheme_indices(true).next() {
+                    cut = tok_abs_start + ofs + gr.len();
+                }
+            }
+            out.push((line_start, cut));
+            line_start = cut;
+        }
+
+        // Max lines check
+        if let Some(ml) = max_lines {
+            if out.len() >= ml {
+                t = true;
+                break;
+            }
+        }
+
+        best_break = line_start;
+    }
+
+    // Tail
+    if !t && line_start < end && max_lines.is_none_or(|ml| out.len() < ml) {
+        out.push((line_start, end));
+    }
+
+    (out, t)
 }
 
 /// Return a string truncated to fit max_width at the given px size, appending '…' if truncated.

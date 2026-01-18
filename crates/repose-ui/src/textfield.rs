@@ -114,10 +114,13 @@ pub struct TextFieldState {
     pub text: String,
     pub selection: Range<usize>,
     pub composition: Option<Range<usize>>, // IME composition range (byte offsets)
-    pub scroll_offset: f32,                // px
+    pub scroll_offset: f32,                // px (x)
+    pub scroll_offset_y: f32,              // px (y) for multiline
     pub drag_anchor: Option<usize>,        // byte index where drag began
     pub blink_start: Instant,              // caret blink timer
     pub inner_width: f32,                  // px
+    pub inner_height: f32,                 // px
+    pub preferred_x_px: Option<f32>,       // for Up/Down caret movement in multiline
 }
 
 impl Default for TextFieldState {
@@ -133,9 +136,12 @@ impl TextFieldState {
             selection: 0..0,
             composition: None,
             scroll_offset: 0.0,
+            scroll_offset_y: 0.0,
             drag_anchor: None,
             blink_start: Instant::now(),
             inner_width: 0.0,
+            inner_height: 0.0,
+            preferred_x_px: None,
         }
     }
 
@@ -146,6 +152,7 @@ impl TextFieldState {
         self.text.replace_range(start..end, text);
         let new_pos = start + text.len();
         self.selection = new_pos..new_pos;
+        self.preferred_x_px = None;
         self.reset_caret_blink();
     }
 
@@ -160,6 +167,7 @@ impl TextFieldState {
         } else {
             self.insert_text("");
         }
+        self.preferred_x_px = None;
         self.reset_caret_blink();
     }
 
@@ -173,6 +181,7 @@ impl TextFieldState {
         } else {
             self.insert_text("");
         }
+        self.preferred_x_px = None;
         self.reset_caret_blink();
     }
 
@@ -192,6 +201,7 @@ impl TextFieldState {
         } else {
             self.selection = pos..pos;
         }
+        self.preferred_x_px = None;
         self.reset_caret_blink();
     }
 
@@ -213,6 +223,7 @@ impl TextFieldState {
                     self.selection = s..s;
                 }
             }
+            self.preferred_x_px = None;
             self.reset_caret_blink();
             return;
         }
@@ -243,6 +254,7 @@ impl TextFieldState {
             self.selection = end..end;
         }
 
+        self.preferred_x_px = None;
         self.reset_caret_blink();
     }
 
@@ -259,6 +271,7 @@ impl TextFieldState {
             let new_pos = pos + text.len();
             self.selection = new_pos..new_pos;
         }
+        self.preferred_x_px = None;
         self.reset_caret_blink();
     }
 
@@ -271,6 +284,7 @@ impl TextFieldState {
                 self.selection = s..s;
             }
         }
+        self.preferred_x_px = None;
         self.reset_caret_blink();
     }
 
@@ -280,6 +294,7 @@ impl TextFieldState {
             let end = self.selection.end.min(self.text.len());
             self.text.replace_range(start..end, "");
             self.selection = start..start;
+            self.preferred_x_px = None;
             self.reset_caret_blink();
             return;
         }
@@ -294,6 +309,7 @@ impl TextFieldState {
             self.text.replace_range(start..end, "");
             self.selection = start..start;
         }
+        self.preferred_x_px = None;
         self.reset_caret_blink();
     }
 
@@ -307,6 +323,7 @@ impl TextFieldState {
             self.selection = idx..idx;
             self.drag_anchor = Some(idx);
         }
+        self.preferred_x_px = None;
         self.reset_caret_blink();
     }
 
@@ -315,6 +332,7 @@ impl TextFieldState {
             let i = idx_byte.min(self.text.len());
             self.selection = anchor.min(i)..anchor.max(i);
         }
+        self.preferred_x_px = None;
         self.reset_caret_blink();
     }
     pub fn end_drag(&mut self) {
@@ -328,13 +346,44 @@ impl TextFieldState {
     /// Keep caret visible inside inner content width (px).
     /// `inset_px` is a small padding (px) to avoid hugging edges.
     pub fn ensure_caret_visible(&mut self, caret_x_px: f32, inner_width_px: f32, inset_px: f32) {
+        self.ensure_caret_visible_xy(caret_x_px, 0.0, inner_width_px, 1.0, inset_px);
+    }
+
+    /// Keep caret visible inside an inner rect (for multiline).
+    pub fn ensure_caret_visible_xy(
+        &mut self,
+        caret_x_px: f32,
+        caret_y_px: f32,
+        inner_w_px: f32,
+        inner_h_px: f32,
+        inset_px: f32,
+    ) {
         let inset_px = inset_px.max(0.0);
+
+        // X
         let left_px = self.scroll_offset + inset_px;
-        let right_px = self.scroll_offset + inner_width_px - inset_px;
+        let right_px = self.scroll_offset + inner_w_px - inset_px;
         if caret_x_px < left_px {
             self.scroll_offset = (caret_x_px - inset_px).max(0.0);
         } else if caret_x_px > right_px {
-            self.scroll_offset = (caret_x_px - inner_width_px + inset_px).max(0.0);
+            self.scroll_offset = (caret_x_px - inner_w_px + inset_px).max(0.0);
+        }
+
+        // Y
+        let top_px = self.scroll_offset_y + inset_px;
+        let bot_px = self.scroll_offset_y + inner_h_px - inset_px;
+        if caret_y_px < top_px {
+            self.scroll_offset_y = (caret_y_px - inset_px).max(0.0);
+        } else if caret_y_px > bot_px {
+            self.scroll_offset_y = (caret_y_px - inner_h_px + inset_px).max(0.0);
+        }
+    }
+
+    pub fn clamp_scroll(&mut self, content_h_px: f32) {
+        let max_y = (content_h_px - self.inner_height).max(0.0);
+        self.scroll_offset_y = self.scroll_offset_y.clamp(0.0, max_y);
+        if self.scroll_offset_y.is_nan() {
+            self.scroll_offset_y = 0.0;
         }
     }
 
@@ -348,6 +397,15 @@ impl TextFieldState {
 
     pub fn set_inner_width(&mut self, w_px: f32) {
         self.inner_width = w_px.max(0.0);
+        if self.scroll_offset.is_nan() {
+            self.scroll_offset = 0.0;
+        }
+    }
+    pub fn set_inner_height(&mut self, h_px: f32) {
+        self.inner_height = h_px.max(0.0);
+        if self.scroll_offset_y.is_nan() {
+            self.scroll_offset_y = 0.0;
+        }
     }
 }
 
@@ -365,6 +423,7 @@ pub fn TextField(
             hint: hint.into(),
             on_change: on_change.map(|f| std::rc::Rc::new(f) as _),
             on_submit: on_submit.map(|f| std::rc::Rc::new(f) as _),
+            multiline: false,
         },
     )
     .modifier(modifier)
@@ -376,20 +435,138 @@ pub fn TextField(
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Platform-managed view: multiline text input.
+/// - Allows '\n' insertion
+/// - Renders wrapped lines + vertical scrolling
+pub fn TextArea(
+    hint: impl Into<String>,
+    modifier: repose_core::Modifier,
+    on_change: Option<impl Fn(String) + 'static>,
+    on_submit: Option<impl Fn(String) + 'static>,
+) -> repose_core::View {
+    repose_core::View::new(
+        0,
+        repose_core::ViewKind::TextField {
+            state_key: 0,
+            hint: hint.into(),
+            multiline: true,
+            on_change: on_change.map(|f| std::rc::Rc::new(f) as _),
+            on_submit: on_submit.map(|f| std::rc::Rc::new(f) as _),
+        },
+    )
+    .modifier(modifier)
+    .semantics(repose_core::Semantics {
+        role: repose_core::Role::TextField,
+        label: None,
+        focused: false,
+        enabled: true,
+    })
+}
 
-    #[test]
-    fn test_index_for_x_bytes_grapheme() {
-        let t = "A👍🏽B";
-        let font_px = 16.0; // in tests, exact px isn't important—boundaries are.
-        let m = measure_text(t, font_px);
-        for i in 0..m.byte_offsets.len() - 1 {
-            let b = m.byte_offsets[i];
-            let _ = &t[..b];
+#[derive(Clone, Debug)]
+pub struct TextAreaLayout {
+    pub ranges: Vec<(usize, usize)>,
+    pub line_h_px: f32,
+}
+
+pub fn layout_text_area(text: &str, font_px: f32, wrap_w_px: f32) -> TextAreaLayout {
+    let line_h = font_px * 1.3;
+    let (ranges, _) = repose_text::wrap_line_ranges(text, font_px, wrap_w_px.max(1.0), None, true);
+    TextAreaLayout {
+        ranges,
+        line_h_px: line_h,
+    }
+}
+
+/// Return (line_index, local_byte, global_byte) for a global byte index.
+fn locate_byte_in_ranges(ranges: &[(usize, usize)], b: usize) -> (usize, usize, usize) {
+    if ranges.is_empty() {
+        return (0, 0, b);
+    }
+    for (i, (s, e)) in ranges.iter().enumerate() {
+        if b < *e || (b == *e && i + 1 == ranges.len()) {
+            let local = b.saturating_sub(*s).min(e.saturating_sub(*s));
+            return (i, local, *s + local);
+        }
+        if b == *e {
+            if let Some((ns, _ne)) = ranges.get(i + 1) {
+                if *ns == b {
+                    return (i + 1, 0, b);
+                }
+            }
         }
     }
+    let (ls, le) = ranges[ranges.len() - 1];
+    let local = b.saturating_sub(ls).min(le.saturating_sub(ls));
+    (ranges.len() - 1, local, ls + local)
+}
+
+/// Compute caret (x, y) in px relative to the top-left of the inner content (not scrolled).
+pub fn caret_xy_for_byte(
+    text: &str,
+    font_px: f32,
+    wrap_w_px: f32,
+    byte: usize,
+) -> (f32, f32, usize) {
+    let layout = layout_text_area(text, font_px, wrap_w_px);
+    let (ranges, line_h) = (&layout.ranges, layout.line_h_px);
+    let (li, local, _) = locate_byte_in_ranges(ranges, byte);
+    let (s, e) = ranges.get(li).copied().unwrap_or((0, 0));
+    let line = &text[s..e];
+    let m = measure_text(line, font_px);
+    let ci = byte_to_char_index(&m, local);
+    let x = m.positions.get(ci).copied().unwrap_or(0.0);
+    let y = (li as f32) * line_h;
+    (x, y, li)
+}
+
+/// Given x/y (px) relative to inner content (not scrolled), return nearest grapheme boundary byte index.
+pub fn index_for_xy_bytes(text: &str, font_px: f32, wrap_w_px: f32, x_px: f32, y_px: f32) -> usize {
+    let layout = layout_text_area(text, font_px, wrap_w_px);
+    let li = ((y_px / layout.line_h_px).floor() as isize).max(0) as usize;
+    let li = li.min(layout.ranges.len().saturating_sub(1));
+    let (s, e) = layout.ranges.get(li).copied().unwrap_or((0, 0));
+    let line = &text[s..e];
+    let local = index_for_x_bytes(line, font_px, x_px.max(0.0));
+    (s + local).min(text.len())
+}
+
+/// Move caret up/down in wrapped multiline text, keeping a preferred x column.
+pub fn move_caret_vertical(
+    text: &str,
+    font_px: f32,
+    wrap_w_px: f32,
+    cur_byte: usize,
+    dir: i32, // -1 up, +1 down
+    preferred_x: Option<f32>,
+) -> (usize, f32) {
+    let layout = layout_text_area(text, font_px, wrap_w_px);
+    if layout.ranges.is_empty() {
+        return (cur_byte, preferred_x.unwrap_or(0.0));
+    }
+    let (x, _y, li) = caret_xy_for_byte(text, font_px, wrap_w_px, cur_byte);
+    let px = preferred_x.unwrap_or(x);
+    let mut nli = li as i32 + dir;
+    nli = nli.clamp(0, (layout.ranges.len().saturating_sub(1)) as i32);
+    let nli = nli as usize;
+    let (s, e) = layout.ranges[nli];
+    let line = &text[s..e];
+    let local = index_for_x_bytes(line, font_px, px.max(0.0));
+    ((s + local).min(text.len()), px)
+}
+
+/// Move to start/end of current visual line.
+pub fn line_home_end(
+    text: &str,
+    font_px: f32,
+    wrap_w_px: f32,
+    cur_byte: usize,
+    to_end: bool,
+) -> usize {
+    let layout = layout_text_area(text, font_px, wrap_w_px);
+    let (li, _local, _) = locate_byte_in_ranges(&layout.ranges, cur_byte);
+    let (s, e) = layout.ranges.get(li).copied().unwrap_or((0, 0));
+    if to_end { e } else { s }
 }
 
 fn clamp_to_char_boundary(s: &str, i: usize) -> usize {
@@ -411,5 +588,21 @@ fn char_to_byte(s: &str, ci: usize) -> usize {
         0
     } else {
         s.char_indices().nth(ci).map(|(i, _)| i).unwrap_or(s.len())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_index_for_x_bytes_grapheme() {
+        let t = "A👍🏽B";
+        let font_px = 16.0; // in tests, exact px isn't important—boundaries are.
+        let m = measure_text(t, font_px);
+        for i in 0..m.byte_offsets.len() - 1 {
+            let b = m.byte_offsets[i];
+            let _ = &t[..b];
+        }
     }
 }

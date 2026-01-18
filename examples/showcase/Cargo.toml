@@ -42,6 +42,7 @@ repose-ui.workspace = true
 repose-material.workspace = true
 repose-canvas.workspace = true
 repose-navigation.workspace = true
+repose-docking.workspace = true
 
 winit = { workspace = true }
 env_logger = { workspace = true }

@@ -118,7 +118,9 @@ enum NodeContext {
     Button {
         label: String,
     },
-    TextField,
+    TextField {
+        multiline: bool,
+    },
     Checkbox,
     Radio,
     Switch,
@@ -635,7 +637,9 @@ impl LayoutEngine {
             ViewKind::Button { .. } => NodeContext::Button {
                 label: String::new(),
             },
-            ViewKind::TextField { .. } => NodeContext::TextField,
+            ViewKind::TextField { multiline, .. } => NodeContext::TextField {
+                multiline: *multiline,
+            },
             ViewKind::Checkbox { .. } => NodeContext::Checkbox,
             ViewKind::RadioButton { .. } => NodeContext::Radio,
             ViewKind::Switch { .. } => NodeContext::Switch,
@@ -739,9 +743,13 @@ impl LayoutEngine {
                 width: (label.len() as f32 * font_px(16.0) * 0.6) + px(24.0),
                 height: px(36.0),
             },
-            Some(NodeContext::TextField) => taffy::geometry::Size {
-                width: known.width.unwrap_or(px(120.0)),
-                height: px(36.0),
+            Some(NodeContext::TextField { multiline }) => taffy::geometry::Size {
+                width: known.width.unwrap_or(px(160.0)),
+                height: if *multiline {
+                    known.height.unwrap_or(px(140.0))
+                } else {
+                    px(36.0)
+                },
             },
             Some(NodeContext::Checkbox) => taffy::geometry::Size {
                 width: known.width.unwrap_or(px(24.0)),
@@ -867,6 +875,7 @@ impl LayoutEngine {
                             0usize.hash(&mut h);
                         }
                         ((st.scroll_offset * 8.0) as i32).hash(&mut h);
+                        ((st.scroll_offset_y * 8.0) as i32).hash(&mut h);
                         st.caret_visible().hash(&mut h);
                     }
                 }
@@ -1099,6 +1108,7 @@ impl LayoutEngine {
                 on_text_change: None,
                 on_text_submit: None,
                 tf_state_key: None,
+                tf_multiline: false,
                 on_action: modifier.on_action.clone(),
 
                 on_drag_start: modifier.on_drag_start.clone(),
@@ -1200,6 +1210,7 @@ impl LayoutEngine {
                         on_text_change: None,
                         on_text_submit: None,
                         tf_state_key: None,
+                        tf_multiline: false,
                         on_action: modifier.on_action.clone(),
 
                         on_drag_start: modifier.on_drag_start.clone(),
@@ -1240,16 +1251,57 @@ impl LayoutEngine {
             ViewKind::TextField {
                 state_key,
                 hint,
+                multiline,
                 on_change,
                 on_submit,
                 ..
             } => {
                 let tf_key = if *state_key != 0 { *state_key } else { view_id };
+
+                let pad_x = dp_to_px(TF_PADDING_X_DP);
+                let inner = repose_core::Rect {
+                    x: rect.x + pad_x,
+                    y: rect.y + dp_to_px(8.0),
+                    w: rect.w - 2.0 * pad_x,
+                    h: rect.h - dp_to_px(16.0),
+                };
+
+                // Scroll wheel support for multiline text areas
+                let on_scroll = if *multiline {
+                    let key = tf_key;
+                    let h = inner.h;
+                    let font_val = font_px(TF_FONT_DP);
+                    let wrap_w = inner.w.max(1.0);
+                    let states = textfield_states.get(&key).cloned();
+                    Some(Rc::new(move |d: Vec2| -> Vec2 {
+                        let Some(st_rc) = states.as_ref() else {
+                            return d;
+                        };
+                        let mut st = st_rc.borrow_mut();
+                        st.set_inner_height(h);
+                        let layout = crate::textfield::layout_text_area(&st.text, font_val, wrap_w);
+                        let content_h = layout.ranges.len().max(1) as f32 * layout.line_h_px;
+                        let max_y = (content_h - st.inner_height).max(0.0);
+
+                        let before = st.scroll_offset_y;
+                        let target = (st.scroll_offset_y - d.y).clamp(0.0, max_y);
+                        st.scroll_offset_y = target;
+
+                        let consumed = before - target;
+                        Vec2 {
+                            x: d.x,
+                            y: d.y - consumed,
+                        }
+                    }) as Rc<dyn Fn(Vec2) -> Vec2>)
+                } else {
+                    None
+                };
+
                 hits.push(HitRegion {
                     id: view_id,
                     rect,
                     on_click: None,
-                    on_scroll: None,
+                    on_scroll,
                     focusable: true,
                     on_pointer_down: None,
                     on_pointer_move: None,
@@ -1260,8 +1312,8 @@ impl LayoutEngine {
                     on_text_change: on_change.clone(),
                     on_text_submit: on_submit.clone(),
                     tf_state_key: Some(tf_key),
+                    tf_multiline: *multiline,
                     on_action: modifier.on_action.clone(),
-
                     on_drag_start: modifier.on_drag_start.clone(),
                     on_drag_end: modifier.on_drag_end.clone(),
                     on_drag_enter: modifier.on_drag_enter.clone(),
@@ -1269,17 +1321,12 @@ impl LayoutEngine {
                     on_drag_leave: modifier.on_drag_leave.clone(),
                     on_drop: modifier.on_drop.clone(),
                 });
-                let pad_x = dp_to_px(TF_PADDING_X_DP);
-                let inner = repose_core::Rect {
-                    x: rect.x + pad_x,
-                    y: rect.y + dp_to_px(8.0),
-                    w: rect.w - 2.0 * pad_x,
-                    h: rect.h - dp_to_px(16.0),
-                };
+
                 scene.nodes.push(SceneNode::PushClip {
                     rect: inner,
                     radius: 0.0,
                 });
+
                 if is_focused {
                     scene.nodes.push(SceneNode::Border {
                         rect,
@@ -1288,72 +1335,205 @@ impl LayoutEngine {
                         radius: modifier.clip_rounded.map(dp_to_px).unwrap_or(dp_to_px(6.0)),
                     });
                 }
+
                 if let Some(state_rc) = textfield_states.get(&tf_key) {
-                    state_rc.borrow_mut().set_inner_width(inner.w);
-                    let state = state_rc.borrow();
-                    let font_val = font_px(TF_FONT_DP);
-                    let m = measure_text(&state.text, font_val);
-                    if state.selection.start != state.selection.end {
-                        let sx = m
-                            .positions
-                            .get(byte_to_char_index(&m, state.selection.start))
-                            .copied()
-                            .unwrap_or(0.0)
-                            - state.scroll_offset;
-                        let ex = m
-                            .positions
-                            .get(byte_to_char_index(&m, state.selection.end))
-                            .copied()
-                            .unwrap_or(sx)
-                            - state.scroll_offset;
-                        scene.nodes.push(SceneNode::Rect {
-                            rect: repose_core::Rect {
-                                x: inner.x + sx.max(0.0),
-                                y: inner.y,
-                                w: (ex - sx).max(0.0),
-                                h: inner.h,
-                            },
-                            brush: Brush::Solid(Color::from_hex("#3B7BFF55")),
-                            radius: 0.0,
-                        });
+                    {
+                        let mut st = state_rc.borrow_mut();
+                        st.set_inner_width(inner.w);
+                        st.set_inner_height(inner.h);
                     }
-                    let txt_col = if state.text.is_empty() {
-                        Color::from_hex("#666666")
-                    } else {
-                        locals::theme().on_surface
-                    };
-                    scene.nodes.push(SceneNode::Text {
-                        rect: repose_core::Rect {
-                            x: inner.x - state.scroll_offset,
-                            y: inner.y,
-                            w: inner.w,
-                            h: inner.h,
-                        },
-                        text: Arc::from(if state.text.is_empty() {
-                            hint.clone()
+
+                    let st = state_rc.borrow();
+                    let font_val = font_px(TF_FONT_DP);
+
+                    if !*multiline {
+                        let m = measure_text(&st.text, font_val);
+
+                        if st.selection.start != st.selection.end {
+                            let sx = m
+                                .positions
+                                .get(byte_to_char_index(&m, st.selection.start))
+                                .copied()
+                                .unwrap_or(0.0)
+                                - st.scroll_offset;
+                            let ex = m
+                                .positions
+                                .get(byte_to_char_index(&m, st.selection.end))
+                                .copied()
+                                .unwrap_or(sx)
+                                - st.scroll_offset;
+
+                            scene.nodes.push(SceneNode::Rect {
+                                rect: repose_core::Rect {
+                                    x: inner.x + sx.max(0.0),
+                                    y: inner.y,
+                                    w: (ex - sx).max(0.0),
+                                    h: inner.h,
+                                },
+                                brush: Brush::Solid(Color::from_hex("#3B7BFF55")),
+                                radius: 0.0,
+                            });
+                        }
+
+                        let txt_col = if st.text.is_empty() {
+                            Color::from_hex("#666666")
                         } else {
-                            state.text.clone()
-                        }),
-                        color: txt_col,
-                        size: font_val,
-                    });
-                    if state.selection.start == state.selection.end && state.caret_visible() {
-                        let cx = m
-                            .positions
-                            .get(byte_to_char_index(&m, state.selection.end))
-                            .copied()
-                            .unwrap_or(0.0)
-                            - state.scroll_offset;
-                        scene.nodes.push(SceneNode::Rect {
+                            locals::theme().on_surface
+                        };
+
+                        scene.nodes.push(SceneNode::Text {
                             rect: repose_core::Rect {
-                                x: inner.x + cx.max(0.0),
+                                x: inner.x - st.scroll_offset,
                                 y: inner.y,
-                                w: dp_to_px(1.0),
+                                w: inner.w,
                                 h: inner.h,
                             },
-                            brush: Brush::Solid(Color::WHITE),
-                            radius: 0.0,
+                            text: Arc::from(if st.text.is_empty() {
+                                hint.clone()
+                            } else {
+                                st.text.clone()
+                            }),
+                            color: txt_col,
+                            size: font_val,
                         });
+
+                        if st.selection.start == st.selection.end && st.caret_visible() {
+                            let cx = m
+                                .positions
+                                .get(byte_to_char_index(&m, st.selection.end))
+                                .copied()
+                                .unwrap_or(0.0)
+                                - st.scroll_offset;
+                            scene.nodes.push(SceneNode::Rect {
+                                rect: repose_core::Rect {
+                                    x: inner.x + cx.max(0.0),
+                                    y: inner.y,
+                                    w: dp_to_px(1.0),
+                                    h: inner.h,
+                                },
+                                brush: Brush::Solid(Color::WHITE),
+                                radius: 0.0,
+                            });
+                        }
+                    } else {
+                        let layout = crate::textfield::layout_text_area(
+                            &st.text,
+                            font_val,
+                            inner.w.max(1.0),
+                        );
+                        let line_h = layout.line_h_px;
+                        let content_h = layout.ranges.len().max(1) as f32 * line_h;
+                        drop(st);
+
+                        // Reborrow mutably to clamp scroll after we know content height
+                        {
+                            let mut st = state_rc.borrow_mut();
+                            st.clamp_scroll(content_h);
+                        }
+
+                        // Render
+                        let st = state_rc.borrow();
+                        if st.text.is_empty() {
+                            scene.nodes.push(SceneNode::Text {
+                                rect: repose_core::Rect {
+                                    x: inner.x,
+                                    y: inner.y,
+                                    w: inner.w,
+                                    h: inner.h,
+                                },
+                                text: Arc::from(hint.clone()),
+                                color: Color::from_hex("#666666"),
+                                size: font_val,
+                            });
+                        } else {
+                            for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
+                                let ln = &st.text[s..e];
+                                let draw_y = inner.y + (i as f32) * line_h - st.scroll_offset_y;
+                                if draw_y + line_h < inner.y - 1.0
+                                    || draw_y > inner.y + inner.h + 1.0
+                                {
+                                    continue;
+                                }
+                                scene.nodes.push(SceneNode::Text {
+                                    rect: repose_core::Rect {
+                                        x: inner.x,
+                                        y: draw_y,
+                                        w: inner.w,
+                                        h: line_h,
+                                    },
+                                    text: Arc::<str>::from(ln.to_string()),
+                                    color: locals::theme().on_surface,
+                                    size: font_val,
+                                });
+                            }
+                        }
+
+                        // Selection (multi-line)
+                        if st.selection.start != st.selection.end {
+                            let (sel_a, sel_b) = if st.selection.start < st.selection.end {
+                                (st.selection.start, st.selection.end)
+                            } else {
+                                (st.selection.end, st.selection.start)
+                            };
+                            for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
+                                let os = sel_a.max(s);
+                                let oe = sel_b.min(e);
+                                if os >= oe {
+                                    continue;
+                                }
+                                let ln = &st.text[s..e];
+                                let m = measure_text(ln, font_val);
+
+                                let ls = os - s;
+                                let le = oe - s;
+
+                                let sx = m
+                                    .positions
+                                    .get(byte_to_char_index(&m, ls))
+                                    .copied()
+                                    .unwrap_or(0.0);
+                                let ex = m
+                                    .positions
+                                    .get(byte_to_char_index(&m, le))
+                                    .copied()
+                                    .unwrap_or(sx);
+
+                                let draw_y = inner.y + (i as f32) * line_h - st.scroll_offset_y;
+                                scene.nodes.push(SceneNode::Rect {
+                                    rect: repose_core::Rect {
+                                        x: inner.x + sx,
+                                        y: draw_y,
+                                        w: (ex - sx).max(0.0),
+                                        h: line_h,
+                                    },
+                                    brush: Brush::Solid(Color::from_hex("#3B7BFF55")),
+                                    radius: 0.0,
+                                });
+                            }
+                        }
+
+                        // Caret (multi-line)
+                        if st.selection.start == st.selection.end && st.caret_visible() {
+                            let caret = st.selection.end.min(st.text.len());
+                            let (cx, cy, _li) = crate::textfield::caret_xy_for_byte(
+                                &st.text,
+                                font_val,
+                                inner.w.max(1.0),
+                                caret,
+                            );
+                            let draw_x = inner.x + cx;
+                            let draw_y = inner.y + cy - st.scroll_offset_y;
+                            scene.nodes.push(SceneNode::Rect {
+                                rect: repose_core::Rect {
+                                    x: draw_x,
+                                    y: draw_y,
+                                    w: dp_to_px(1.0),
+                                    h: line_h,
+                                },
+                                brush: Brush::Solid(Color::WHITE),
+                                radius: 0.0,
+                            });
+                        }
                     }
                 } else {
                     scene.nodes.push(SceneNode::Text {
@@ -1363,7 +1543,9 @@ impl LayoutEngine {
                         size: font_px(TF_FONT_DP),
                     });
                 }
+
                 scene.nodes.push(SceneNode::PopClip);
+
                 sems.push(SemNode {
                     id: view_id,
                     parent: sem_parent,
@@ -1434,6 +1616,7 @@ impl LayoutEngine {
                     on_text_change: None,
                     on_text_submit: None,
                     tf_state_key: None,
+                    tf_multiline: false,
                     on_action: modifier.on_action.clone(),
 
                     on_drag_start: modifier.on_drag_start.clone(),
@@ -1507,6 +1690,7 @@ impl LayoutEngine {
                     on_text_change: None,
                     on_text_submit: None,
                     tf_state_key: None,
+                    tf_multiline: false,
                     on_action: modifier.on_action.clone(),
 
                     on_drag_start: modifier.on_drag_start.clone(),
@@ -1590,6 +1774,7 @@ impl LayoutEngine {
                     on_text_change: None,
                     on_text_submit: None,
                     tf_state_key: None,
+                    tf_multiline: false,
                     on_action: modifier.on_action.clone(),
 
                     on_drag_start: modifier.on_drag_start.clone(),
@@ -1731,6 +1916,7 @@ impl LayoutEngine {
                         on_text_change: None,
                         on_text_submit: None,
                         tf_state_key: None,
+                        tf_multiline: false,
                         on_action: modifier.on_action.clone(),
 
                         on_drag_start: modifier.on_drag_start.clone(),
@@ -1947,6 +2133,7 @@ impl LayoutEngine {
                         on_text_change: None,
                         on_text_submit: None,
                         tf_state_key: None,
+                        tf_multiline: false,
                         on_action: modifier.on_action.clone(),
 
                         on_drag_start: modifier.on_drag_start.clone(),
@@ -2024,6 +2211,7 @@ impl LayoutEngine {
                     on_text_change: None,
                     on_text_submit: None,
                     tf_state_key: None,
+                    tf_multiline: false,
                     on_action: modifier.on_action.clone(),
 
                     on_drag_start: modifier.on_drag_start.clone(),
@@ -2134,6 +2322,7 @@ impl LayoutEngine {
                     on_text_change: None,
                     on_text_submit: None,
                     tf_state_key: None,
+                    tf_multiline: false,
                     on_action: modifier.on_action.clone(),
 
                     on_drag_start: modifier.on_drag_start.clone(),
@@ -2403,6 +2592,7 @@ fn push_scrollbar_v(
             on_pointer_up: Some(Rc::new(|_| {})),
             on_pointer_enter: None,
             on_action: None,
+            tf_multiline: false,
 
             on_drag_start: None,
             on_drag_end: None,
@@ -2505,6 +2695,7 @@ fn push_scrollbar_h(
             on_pointer_up: Some(Rc::new(|_| {})),
             on_pointer_enter: None,
             on_action: None,
+            tf_multiline: false,
 
             on_drag_start: None,
             on_drag_end: None,

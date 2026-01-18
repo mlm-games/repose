@@ -2597,6 +2597,7 @@ dependencies = [
  "log",
  "repose-canvas",
  "repose-core",
+ "repose-docking",
  "repose-material",
  "repose-navigation",
  "repose-platform",

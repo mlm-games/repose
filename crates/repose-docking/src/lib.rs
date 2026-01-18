@@ -8,10 +8,6 @@ use std::rc::Rc;
 use repose_core::*;
 use repose_ui::*;
 
-// -----------------------------
-// Public API
-// -----------------------------
-
 pub type PanelId = u64;
 
 #[derive(Clone)]
@@ -214,18 +210,10 @@ impl DockState {
     }
 }
 
-// -----------------------------
-// Drag payload used by docking
-// -----------------------------
-
 #[derive(Clone, Debug)]
 pub struct DockTabPayload {
     pub panel_id: PanelId,
 }
-
-// -----------------------------
-// Dock UI
-// -----------------------------
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct HoverHint {
@@ -251,6 +239,8 @@ pub fn DockArea(
 
     // Ephemeral UI state (per DockArea)
     let hover_sig = remember_with_key(format!("dock:hover:{key}"), || signal(None::<HoverHint>));
+    let drag_active = remember_with_key(format!("dock:drag_active:{key}"), || signal(false));
+    let split_hover = remember_with_key(format!("dock:split_hover:{key}"), || signal(None::<u64>));
     let split_drag = remember_with_key(format!("dock:split_drag:{key}"), || {
         RefCell::new(None::<SplitDrag>)
     });
@@ -292,6 +282,8 @@ pub fn DockArea(
             &state,
             &callbacks,
             &hover_sig,
+            &drag_active,
+            &split_hover,
             &split_drag,
             key.as_str(),
         )
@@ -314,6 +306,8 @@ fn render_node(
     state: &Rc<RefCell<DockState>>,
     callbacks: &DockCallbacks,
     hover_sig: &Signal<Option<HoverHint>>,
+    drag_active: &Signal<bool>,
+    split_hover: &Signal<Option<u64>>,
     split_drag: &Rc<RefCell<Option<SplitDrag>>>,
     key_prefix: &str,
 ) -> View {
@@ -327,11 +321,31 @@ fn render_node(
         ),
 
         DockKind::Tabs { tabs, active } => render_tabs(
-            node.id, tabs, *active, registry, state, callbacks, hover_sig, key_prefix,
+            node.id,
+            tabs,
+            *active,
+            registry,
+            state,
+            callbacks,
+            hover_sig,
+            drag_active,
+            split_hover,
+            key_prefix,
         ),
 
         DockKind::Split { dir, ratio, a, b } => render_split(
-            node.id, *dir, *ratio, a, b, registry, state, callbacks, hover_sig, split_drag,
+            node.id,
+            *dir,
+            *ratio,
+            a,
+            b,
+            registry,
+            state,
+            callbacks,
+            hover_sig,
+            drag_active,
+            split_hover,
+            split_drag,
             key_prefix,
         ),
     }
@@ -345,6 +359,8 @@ fn render_tabs(
     state: &Rc<RefCell<DockState>>,
     callbacks: &DockCallbacks,
     hover_sig: &Signal<Option<HoverHint>>,
+    drag_active: &Signal<bool>,
+    _split_hover: &Signal<Option<u64>>,
     key_prefix: &str,
 ) -> View {
     let th = theme();
@@ -400,17 +416,29 @@ fn render_tabs(
                                     request_frame();
                                 }
                             })
-                            .on_drag_start(move |_start| {
-                                Some(Rc::new(DockTabPayload { panel_id: drag_pid }) as Rc<dyn Any>)
+                            .on_drag_start({
+                                let drag_active = drag_active.clone();
+                                move |_start| {
+                                    drag_active.set(true);
+                                    Some(Rc::new(DockTabPayload { panel_id: drag_pid })
+                                        as Rc<dyn Any>)
+                                }
                             })
                             .on_drag_end({
                                 let hover_sig = hover_sig.clone();
+                                let drag_active = drag_active.clone();
                                 move |_end| {
-                                    // Ensure hover clears if needed
+                                    drag_active.set(false);
                                     hover_sig.set(None);
                                 }
                             }))
-                        .child(Text(title).color(th.on_surface)),
+                        .child(
+                            Row(Modifier::new().align_items(AlignItems::Center)).child((
+                                Text("⋮⋮").size(12.0).color(Color::from_hex("#888888")),
+                                Box(Modifier::new().width(6.0).height(1.0)),
+                                Text(title).color(th.on_surface),
+                            )),
+                        ),
                         // Optional close + popout buttons (right aligned)
                         Row(Modifier::new()
                             .absolute()
@@ -447,7 +475,7 @@ fn render_tabs(
     };
 
     // Drop zones overlay (always present; highlight only when hovered)
-    let overlay = dock_drop_overlay(node_id, state, hover_sig, key_prefix);
+    let overlay = dock_drop_overlay(node_id, state, hover_sig, drag_active, key_prefix);
 
     Stack(Modifier::new().fill_max_size().key(node_id)).child((
         Column(Modifier::new().fill_max_size()).child((
@@ -465,9 +493,9 @@ fn dock_drop_overlay(
     node_id: u64,
     state: &Rc<RefCell<DockState>>,
     hover_sig: &Signal<Option<HoverHint>>,
+    drag_active: &Signal<bool>,
     key_prefix: &str,
 ) -> View {
-    let th = theme();
     let zone_dp = 48.0;
 
     let hover = hover_sig.get();
@@ -476,12 +504,19 @@ fn dock_drop_overlay(
         let state2 = state.clone();
         let hover2 = hover_sig.clone();
 
-        // Highlight view (visual only)
+        let dragging = drag_active.get();
+
+        // Always show faint zone outlines while dragging (discoverability),
+        // and stronger fill/border when hovered.
         let highlight = if hover.as_ref() == Some(&HoverHint { node_id, zone }) {
             Box(Modifier::new()
                 .fill_max_size()
                 .background(Color::from_hex("#44AAFF33"))
                 .border(2.0, Color::from_hex("#44AAFF"), 0.0))
+        } else if dragging {
+            Box(Modifier::new()
+                .fill_max_size()
+                .border(1.0, Color::from_hex("#44AAFF55"), 0.0))
         } else {
             Box(Modifier::new())
         };
@@ -586,6 +621,8 @@ fn render_split(
     state: &Rc<RefCell<DockState>>,
     callbacks: &DockCallbacks,
     hover_sig: &Signal<Option<HoverHint>>,
+    drag_active: &Signal<bool>,
+    split_hover: &Signal<Option<u64>>,
     split_drag: &Rc<RefCell<Option<SplitDrag>>>,
     key_prefix: &str,
 ) -> View {
@@ -646,31 +683,92 @@ fn render_split(
         }
     };
 
-    let divider = Box(Modifier::new()
-        .size(
-            if dir == SplitDir::Horizontal {
-                divider_thick
-            } else {
-                1.0
-            },
-            if dir == SplitDir::Vertical {
-                divider_thick
-            } else {
-                1.0
-            },
-        )
-        .background(th.outline.with_alpha(80))
-        .clip_rounded(4.0)
-        .on_pointer_down(start_drag)
-        .on_pointer_move(move_drag)
-        .on_pointer_up(end_drag)
-        .z_index(1500.0));
+    // Visible splitter: thin line + thicker hit target (egui-ish)
+    let hovered = split_hover.get() == Some(node_id);
+    let line_color = if hovered { th.focus } else { th.outline };
+    let hit_color = if hovered {
+        line_color.with_alpha(40)
+    } else {
+        line_color.with_alpha(20)
+    };
+
+    let splitter_mod = match dir {
+        SplitDir::Horizontal => Modifier::new().width(divider_thick).fill_max_height(),
+        SplitDir::Vertical => Modifier::new().height(divider_thick).fill_max_width(),
+    };
+
+    let divider = Stack(
+        splitter_mod
+            .background(hit_color)
+            .on_pointer_enter({
+                let split_hover = split_hover.clone();
+                move |_| split_hover.set(Some(node_id))
+            })
+            .on_pointer_leave({
+                let split_hover = split_hover.clone();
+                move |_| {
+                    if split_hover.get() == Some(node_id) {
+                        split_hover.set(None);
+                    }
+                }
+            })
+            .on_pointer_down(start_drag)
+            .on_pointer_move(move_drag)
+            .on_pointer_up(end_drag)
+            .z_index(1500.0),
+    )
+    .child((
+        // Center line
+        match dir {
+            SplitDir::Horizontal => Box(Modifier::new()
+                .absolute()
+                .offset(
+                    Some((divider_thick - 1.0) * 0.5),
+                    Some(0.0),
+                    None,
+                    Some(0.0),
+                )
+                .width(1.0)
+                .fill_max_height()
+                .background(line_color)),
+            SplitDir::Vertical => Box(Modifier::new()
+                .absolute()
+                .offset(
+                    Some(0.0),
+                    Some((divider_thick - 1.0) * 0.5),
+                    Some(0.0),
+                    None,
+                )
+                .height(1.0)
+                .fill_max_width()
+                .background(line_color)),
+        },
+        // Little grip dots
+        Box(Modifier::new().fill_max_size())
+            .child(Text("•••").size(12.0).color(Color::from_hex("#888888"))),
+    ));
 
     let a_view = render_node(
-        a, registry, state, callbacks, hover_sig, split_drag, key_prefix,
+        a,
+        registry,
+        state,
+        callbacks,
+        hover_sig,
+        drag_active,
+        split_hover,
+        split_drag,
+        key_prefix,
     );
     let b_view = render_node(
-        b, registry, state, callbacks, hover_sig, split_drag, key_prefix,
+        b,
+        registry,
+        state,
+        callbacks,
+        hover_sig,
+        drag_active,
+        split_hover,
+        split_drag,
+        key_prefix,
     );
 
     match dir {
@@ -686,10 +784,6 @@ fn render_split(
         )),
     }
 }
-
-// -----------------------------
-// Tree utilities
-// -----------------------------
 
 fn find_node_mut<'a>(node: &'a mut DockNode, id: u64) -> Option<&'a mut DockNode> {
     if node.id == id {
@@ -761,10 +855,6 @@ fn normalize_node(node: &mut DockNode) {
     }
 }
 
-// -----------------------------
-// Key helpers (stable-ish)
-///-----------------------------
-
 fn hash_zone_key(node_id: u64, zone: DropZone) -> u64 {
     let z = match zone {
         DropZone::Center => 1u64,
@@ -785,10 +875,6 @@ fn hash_str_key(prefix: &str, node_id: u64) -> u64 {
     }
     h ^ node_id.wrapping_mul(0x9E3779B97F4A7C15)
 }
-
-// -----------------------------
-// Tests
-// -----------------------------
 
 #[cfg(test)]
 mod tests {

@@ -1,12 +1,15 @@
-use repose_core::prelude::*;
+use repose_core::{prelude::*, signal};
 use repose_ui::*;
 
 use crate::ui::Section;
 
 pub fn screen() -> View {
+    let last_submit = remember_with_key("text_last_submit", || signal(String::new()));
+    let last_change = remember_with_key("text_last_change", || signal(String::new()));
+
     Column(Modifier::new().fill_max_width()).child((
         Section(
-            "TextField",
+            "TextField (single-line)",
             Column(Modifier::new().padding(12.0)).child((
                 TextField(
                     "Type here",
@@ -16,12 +19,53 @@ pub fn screen() -> View {
                         .background(theme().surface)
                         .border(1.0, theme().outline, 10.0)
                         .clip_rounded(10.0),
-                    Some(|_s| {}),
-                    Some(|_s| {}),
+                    Some({
+                        let last_change = last_change.clone();
+                        move |s| last_change.set(s)
+                    }),
+                    Some({
+                        let last_submit = last_submit.clone();
+                        move |s| last_submit.set(s)
+                    }),
                 ),
-                Box(Modifier::new().height(12.0).width(1.0)),
-                Text("Selection, IME composition underline, and caret scrolling are supported.")
+                Box(Modifier::new().height(8.0).width(1.0)),
+                Text("Single-line: Enter submits.")
                     .size(14.0)
+                    .color(Color::from_hex("#999999")),
+                Text(format!("last change: {}", last_change.get()))
+                    .size(12.0)
+                    .color(Color::from_hex("#999999")),
+                Text(format!("last submit: {}", last_submit.get()))
+                    .size(12.0)
+                    .color(Color::from_hex("#999999")),
+            )),
+        ),
+        Section(
+            "TextArea (multi-line)",
+            Column(Modifier::new().padding(12.0)).child((
+                TextArea(
+                    "Write notes…",
+                    Modifier::new()
+                        .height(180.0)
+                        .fill_max_width()
+                        .background(theme().surface)
+                        .border(1.0, theme().outline, 10.0)
+                        .clip_rounded(10.0),
+                    Some({
+                        let last_change = last_change.clone();
+                        move |s| last_change.set(s)
+                    }),
+                    Some({
+                        let last_submit = last_submit.clone();
+                        move |s| last_submit.set(s)
+                    }),
+                ),
+                Box(Modifier::new().height(8.0).width(1.0)),
+                Text("Multi-line: Enter inserts newline. Cmd/Ctrl+Enter submits (if wired).")
+                    .size(14.0)
+                    .color(Color::from_hex("#999999")),
+                Text(format!("last submit: {}", last_submit.get()))
+                    .size(12.0)
                     .color(Color::from_hex("#999999")),
             )),
         ),

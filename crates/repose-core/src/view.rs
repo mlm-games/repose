@@ -52,6 +52,7 @@ pub enum ViewKind {
     TextField {
         state_key: ViewId,
         hint: String,
+        multiline: bool,
         on_change: Option<Rc<dyn Fn(String)>>,
         on_submit: Option<Rc<dyn Fn(String)>>,
     },
@@ -154,12 +155,14 @@ impl std::fmt::Debug for ViewKind {
             ViewKind::TextField {
                 state_key,
                 hint,
+                multiline,
                 on_change,
                 on_submit,
             } => f
                 .debug_struct("TextField")
                 .field("state_key", state_key)
                 .field("hint", hint)
+                .field("multiline", multiline)
                 .finish(),
             ViewKind::Slider {
                 value,

@@ -21,6 +21,8 @@ pub enum Route {
     Canvas,
     Animation,
     Lists,
+    Dnd,
+    Docking,
     Errors,
 }
 
@@ -33,8 +35,10 @@ impl Route {
             Route::Text => "Text",
             Route::Scroll => "Scroll",
             Route::Canvas => "Canvas",
-            Route::Lists => "Lists",
             Route::Animation => "Animation",
+            Route::Lists => "Lists",
+            Route::Dnd => "Drag & Drop",
+            Route::Docking => "Docking",
             Route::Errors => "Errors",
         }
     }
@@ -49,6 +53,8 @@ impl Route {
             Route::Lists => 7,
             Route::Animation => 8,
             Route::Errors => 9,
+            Route::Dnd => 10,
+            Route::Docking => 11,
         }
     }
 }
@@ -103,9 +109,11 @@ pub fn app(_s: &mut Scheduler) -> View {
         Route::Widgets => pages::widgets::screen(),
         Route::Text => pages::text::screen(),
         Route::Scroll => pages::scroll::screen(),
-        Route::Lists => pages::lists::screen(),
         Route::Canvas => pages::canvas::screen(),
         Route::Animation => pages::animation::screen(),
+        Route::Lists => pages::lists::screen(),
+        Route::Dnd => pages::dnd::screen(),
+        Route::Docking => pages::docking::screen(),
         Route::Errors => pages::errors::screen(),
     });
 

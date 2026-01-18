@@ -149,6 +149,9 @@ pub struct HitRegion {
     /// for looking up platform-managed TextFieldState. Falls back to `id` if None.
     pub tf_state_key: Option<u64>,
 
+    /// True if this hit region corresponds to a multiline text input (TextArea).
+    pub tf_multiline: bool,
+
     // internal
     pub on_drag_start: Option<Rc<dyn Fn(crate::dnd::DragStart) -> Option<crate::dnd::DragPayload>>>,
     pub on_drag_end: Option<Rc<dyn Fn(crate::dnd::DragEnd)>>,

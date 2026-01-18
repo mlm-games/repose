@@ -386,7 +386,16 @@ impl App {
         for a in actions {
             match a {
                 ClipboardAction::PasteText(mut txt) => {
-                    txt.retain(|c| !c.is_control() && c != '\n' && c != '\r');
+                    let multiline = if let Some(fid) = self.sched.focused {
+                        self.frame_cache
+                            .as_ref()
+                            .and_then(|f| rc::hit_index_by_id(f, fid))
+                            .map(|i| self.frame_cache.as_ref().unwrap().hit_regions[i].tf_multiline)
+                            .unwrap_or(false)
+                    } else {
+                        false
+                    };
+                    txt.retain(|c| !c.is_control() && c != '\r' && (multiline || c != '\n'));
                     if txt.is_empty() {
                         continue;
                     }
@@ -1524,9 +1533,20 @@ impl ApplicationHandler<()> for App {
                         && !self.modifiers.meta
                         && let Some(raw) = key_event.text.as_deref()
                     {
+                        let multiline = if let Some(fid) = self.sched.focused {
+                            self.frame_cache
+                                .as_ref()
+                                .and_then(|f| rc::hit_index_by_id(f, fid))
+                                .map(|i| {
+                                    self.frame_cache.as_ref().unwrap().hit_regions[i].tf_multiline
+                                })
+                                .unwrap_or(false)
+                        } else {
+                            false
+                        };
                         let text: String = raw
                             .chars()
-                            .filter(|c| !c.is_control() && *c != '\n' && *c != '\r')
+                            .filter(|c| !c.is_control() && *c != '\r' && (multiline || *c != '\n'))
                             .collect();
 
                         if !text.is_empty()

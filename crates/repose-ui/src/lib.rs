@@ -120,10 +120,9 @@ use taffy::style::FlexDirection;
 use taffy::{Overflow, Point};
 
 pub mod textfield;
-pub use textfield::{TextField, TextFieldState};
-
 use crate::textfield::{TF_FONT_DP, TF_PADDING_X_DP, byte_to_char_index, measure_text};
 use repose_core::locals;
+pub use textfield::{TextArea, TextField, TextFieldState};
 
 thread_local! {
     static LAYOUT_ENGINE: RefCell<layout::LayoutEngine> =
