@@ -20,8 +20,8 @@ winit = { workspace = true, optional = true }
 log = { workspace = true }
 anyhow = { workspace = true }
 clipawl = { workspace = true, features = ["linux-wayland", "linux-x11"] }
-pollster = "0.4.0"                                                        # trying to avoid tokio but might have to add later...
 web-time.workspace = true
+pollster = "0.4.0"                                                        # trying to avoid tokio but might have to add later...
 accesskit = "0.22"
 accesskit_winit = "0.30"                                                  # Compatible with winit 0.30
 rustc-hash = { workspace = true }
