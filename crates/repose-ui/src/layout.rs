@@ -1110,6 +1110,7 @@ impl LayoutEngine {
                 tf_state_key: None,
                 tf_multiline: false,
                 on_action: modifier.on_action.clone(),
+                cursor: modifier.cursor,
 
                 on_drag_start: modifier.on_drag_start.clone(),
                 on_drag_end: modifier.on_drag_end.clone(),
@@ -1212,6 +1213,7 @@ impl LayoutEngine {
                         tf_state_key: None,
                         tf_multiline: false,
                         on_action: modifier.on_action.clone(),
+                        cursor: modifier.cursor,
 
                         on_drag_start: modifier.on_drag_start.clone(),
                         on_drag_end: modifier.on_drag_end.clone(),
@@ -1314,6 +1316,7 @@ impl LayoutEngine {
                     tf_state_key: Some(tf_key),
                     tf_multiline: *multiline,
                     on_action: modifier.on_action.clone(),
+                    cursor: Some(crate::CursorIcon::Text),
                     on_drag_start: modifier.on_drag_start.clone(),
                     on_drag_end: modifier.on_drag_end.clone(),
                     on_drag_enter: modifier.on_drag_enter.clone(),
@@ -1618,6 +1621,7 @@ impl LayoutEngine {
                     tf_state_key: None,
                     tf_multiline: false,
                     on_action: modifier.on_action.clone(),
+                    cursor: modifier.cursor,
 
                     on_drag_start: modifier.on_drag_start.clone(),
                     on_drag_end: modifier.on_drag_end.clone(),
@@ -1692,6 +1696,7 @@ impl LayoutEngine {
                     tf_state_key: None,
                     tf_multiline: false,
                     on_action: modifier.on_action.clone(),
+                    cursor: modifier.cursor,
 
                     on_drag_start: modifier.on_drag_start.clone(),
                     on_drag_end: modifier.on_drag_end.clone(),
@@ -1776,6 +1781,7 @@ impl LayoutEngine {
                     tf_state_key: None,
                     tf_multiline: false,
                     on_action: modifier.on_action.clone(),
+                    cursor: modifier.cursor,
 
                     on_drag_start: modifier.on_drag_start.clone(),
                     on_drag_end: modifier.on_drag_end.clone(),
@@ -1918,6 +1924,7 @@ impl LayoutEngine {
                         tf_state_key: None,
                         tf_multiline: false,
                         on_action: modifier.on_action.clone(),
+                        cursor: modifier.cursor,
 
                         on_drag_start: modifier.on_drag_start.clone(),
                         on_drag_end: modifier.on_drag_end.clone(),
@@ -2135,6 +2142,7 @@ impl LayoutEngine {
                         tf_state_key: None,
                         tf_multiline: false,
                         on_action: modifier.on_action.clone(),
+                        cursor: modifier.cursor,
 
                         on_drag_start: modifier.on_drag_start.clone(),
                         on_drag_end: modifier.on_drag_end.clone(),
@@ -2213,6 +2221,7 @@ impl LayoutEngine {
                     tf_state_key: None,
                     tf_multiline: false,
                     on_action: modifier.on_action.clone(),
+                    cursor: modifier.cursor,
 
                     on_drag_start: modifier.on_drag_start.clone(),
                     on_drag_end: modifier.on_drag_end.clone(),
@@ -2324,6 +2333,7 @@ impl LayoutEngine {
                     tf_state_key: None,
                     tf_multiline: false,
                     on_action: modifier.on_action.clone(),
+                    cursor: modifier.cursor,
 
                     on_drag_start: modifier.on_drag_start.clone(),
                     on_drag_end: modifier.on_drag_end.clone(),
@@ -2592,6 +2602,7 @@ fn push_scrollbar_v(
             on_pointer_up: Some(Rc::new(|_| {})),
             on_pointer_enter: None,
             on_action: None,
+            cursor: None,
             tf_multiline: false,
 
             on_drag_start: None,
@@ -2695,6 +2706,7 @@ fn push_scrollbar_h(
             on_pointer_up: Some(Rc::new(|_| {})),
             on_pointer_enter: None,
             on_action: None,
+            cursor: None,
             tf_multiline: false,
 
             on_drag_start: None,

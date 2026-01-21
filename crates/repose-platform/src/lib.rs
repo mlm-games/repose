@@ -89,6 +89,20 @@ pub fn tf_ensure_visible_in_rect(state: &mut repose_ui::TextFieldState, inner_re
 }
 
 #[cfg(feature = "desktop")]
+fn map_cursor(c: repose_core::CursorIcon) -> winit::window::CursorIcon {
+    use winit::window::CursorIcon as W;
+    match c {
+        repose_core::CursorIcon::Default => W::Default,
+        repose_core::CursorIcon::Pointer => W::Pointer,
+        repose_core::CursorIcon::Text => W::Text,
+        repose_core::CursorIcon::EwResize => W::EwResize,
+        repose_core::CursorIcon::NsResize => W::NsResize,
+        repose_core::CursorIcon::Grab => W::Grab,
+        repose_core::CursorIcon::Grabbing => W::Grabbing,
+    }
+}
+
+#[cfg(feature = "desktop")]
 pub fn run_desktop_app(
     root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
 ) -> anyhow::Result<()> {
@@ -683,6 +697,15 @@ pub fn run_desktop_app(
                             y: self.mouse_pos_px.1,
                         };
                         let top = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos));
+
+                        // Update cursor icon based on hit
+                        if let Some(win) = &self.window {
+                            let c = top
+                                .and_then(|h| h.cursor)
+                                .unwrap_or(repose_core::CursorIcon::Default);
+                            win.set_cursor(winit::window::Cursor::Icon(map_cursor(c)));
+                        }
+
                         let new_hover = top.map(|h| h.id);
 
                         // Enter/Leave

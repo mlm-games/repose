@@ -102,6 +102,9 @@ pub struct Modifier {
     pub on_drop: Option<Rc<dyn Fn(crate::dnd::DropEvent) -> bool>>,
 
     pub on_action: Option<Rc<dyn Fn(crate::shortcuts::Action) -> bool>>,
+
+    /// Cursor icon hint for desktop/web runners.
+    pub cursor: Option<crate::CursorIcon>,
 }
 
 impl std::fmt::Debug for Modifier {
@@ -506,6 +509,12 @@ impl Modifier {
     /// Return `true` to accept the drop.
     pub fn on_drop(mut self, f: impl Fn(crate::dnd::DropEvent) -> bool + 'static) -> Self {
         self.on_drop = Some(Rc::new(f));
+        self
+    }
+
+    /// Set the cursor icon hint for desktop/web runners.
+    pub fn cursor(mut self, c: crate::CursorIcon) -> Self {
+        self.cursor = Some(c);
         self
     }
 }

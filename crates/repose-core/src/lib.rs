@@ -98,6 +98,7 @@
 
 pub mod animation;
 pub mod color;
+pub mod cursor;
 pub mod dnd;
 pub mod effects;
 pub mod effects_ext;
@@ -120,6 +121,7 @@ pub mod tests;
 pub mod view;
 
 pub use color::*;
+pub use cursor::*;
 pub use dnd::*;
 pub use effects::*;
 pub use effects_ext::*;

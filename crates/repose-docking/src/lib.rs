@@ -289,7 +289,16 @@ pub fn DockArea(
         )
     };
 
-    Stack(modifier.fill_max_size()).child((float_target, root_view))
+    Stack(modifier.fill_max_size()).child((
+        Box(Modifier::new()
+            .absolute()
+            .offset(Some(0.0), Some(0.0), Some(0.0), Some(0.0)))
+        .child(float_target),
+        Box(Modifier::new()
+            .absolute()
+            .offset(Some(0.0), Some(0.0), Some(0.0), Some(0.0)))
+        .child(root_view),
+    ))
 }
 
 fn build_registry(panels: Vec<DockPanel>) -> HashMap<PanelId, DockPanel> {
@@ -409,6 +418,7 @@ fn render_tabs(
                         Box(Modifier::new()
                             .padding(6.0)
                             .clickable()
+                            .cursor(CursorIcon::Grab)
                             .on_pointer_down({
                                 let state_set = state_set.clone();
                                 move |_| {
@@ -715,6 +725,10 @@ fn render_split(
             .on_pointer_down(start_drag)
             .on_pointer_move(move_drag)
             .on_pointer_up(end_drag)
+            .cursor(match dir {
+                SplitDir::Horizontal => CursorIcon::EwResize,
+                SplitDir::Vertical => CursorIcon::NsResize,
+            })
             .z_index(1500.0),
     )
     .child((

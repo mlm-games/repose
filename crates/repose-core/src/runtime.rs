@@ -161,6 +161,9 @@ pub struct HitRegion {
     pub on_drop: Option<Rc<dyn Fn(crate::dnd::DropEvent) -> bool>>,
 
     pub on_action: Option<Rc<dyn Fn(crate::shortcuts::Action) -> bool>>,
+
+    /// Cursor hint for desktop/web.
+    pub cursor: Option<crate::CursorIcon>,
 }
 
 /// Flattened semantics node produced by `layout_and_paint`.
