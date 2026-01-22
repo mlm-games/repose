@@ -96,6 +96,11 @@ impl DockState {
         normalize_node(&mut self.root);
     }
 
+    /// Remove panel without normalizing - for use in compound operations
+    pub fn remove_panel_no_normalize(&mut self, pid: PanelId) -> bool {
+        remove_panel_in_node(&mut self.root, pid)
+    }
+
     pub fn remove_panel(&mut self, pid: PanelId) -> bool {
         let removed = remove_panel_in_node(&mut self.root, pid);
         if removed {
@@ -124,16 +129,18 @@ impl DockState {
     }
 
     pub fn dock_panel(&mut self, target_node_id: u64, zone: DropZone, pid: PanelId) -> bool {
-        // Remove it first (move semantics)
-        let _ = self.remove_panel(pid);
+        self.remove_panel_no_normalize(pid);
 
-        match zone {
+        let result = match zone {
             DropZone::Center => self.insert_as_tab(target_node_id, pid),
             DropZone::Left | DropZone::Right | DropZone::Top | DropZone::Bottom => {
                 self.insert_as_split(target_node_id, zone, pid)
             }
             DropZone::Float => false,
-        }
+        };
+
+        self.normalize();
+        result
     }
 
     fn insert_as_tab(&mut self, target_node_id: u64, pid: PanelId) -> bool {
@@ -163,14 +170,14 @@ impl DockState {
     }
 
     fn insert_as_split(&mut self, target_node_id: u64, zone: DropZone, pid: PanelId) -> bool {
+        // Allocate all IDs upfront before borrowing
         let new_tabs_id = self.alloc_id();
-        let old_node_id = self.alloc_id();
+        let new_split_id = self.alloc_id();
 
         let Some(n) = find_node_mut(&mut self.root, target_node_id) else {
             return false;
         };
 
-        // Take current node content
         let old_kind = std::mem::replace(&mut n.kind, DockKind::Empty);
 
         let dir = match zone {
@@ -187,8 +194,9 @@ impl DockState {
             },
         };
 
+        // Old content KEEPS the original target_node_id
         let old_node = DockNode {
-            id: old_node_id,
+            id: target_node_id,
             kind: old_kind,
         };
 
@@ -198,6 +206,8 @@ impl DockState {
             _ => (Box::new(old_node), Box::new(new_tabs)),
         };
 
+        // The node at this position becomes a split with a NEW ID
+        n.id = new_split_id;
         n.kind = DockKind::Split {
             dir,
             ratio: 0.5,
@@ -377,14 +387,66 @@ fn render_tabs(
     // Ensure active is valid
     let active_pid = active.or_else(|| tabs.first().copied());
 
-    // Tab bar
-    let tab_bar = Row(Modifier::new()
+    let tabbar_rect = remember_with_key(format!("dock:tabbar_rect:{key_prefix}:{node_id}"), || {
+        RefCell::new(Rect::default())
+    });
+
+    let mut bar_mod = Modifier::new()
         .fill_max_width()
         .height(40.0)
         .background(th.surface)
         .border(1.0, th.outline, 0.0)
-        .padding(6.0))
-    .with_children(
+        .padding(6.0)
+        .painter({
+            let tabbar_rect = tabbar_rect.clone();
+            move |_scene, r| *tabbar_rect.borrow_mut() = r
+        });
+
+    if drag_active.get() {
+        bar_mod = bar_mod.on_drop({
+            let state = state.clone();
+            let tabbar_rect = tabbar_rect.clone();
+            let hover_sig = hover_sig.clone();
+            let drag_active = drag_active.clone();
+
+            move |ev| {
+                let Some(p) = ev.payload.as_ref().downcast_ref::<DockTabPayload>() else {
+                    return false;
+                };
+
+                let mut st = state.borrow_mut();
+
+                // Always rm WITHOUT normalizing to preserve node_id validity
+                st.remove_panel_no_normalize(p.panel_id);
+
+                let r = *tabbar_rect.borrow();
+                let t = if r.w > 1.0 {
+                    ((ev.position.x - r.x) / r.w).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+
+                if let Some(n) = find_node_mut(&mut st.root, node_id) {
+                    if let DockKind::Tabs { tabs, active } = &mut n.kind {
+                        tabs.retain(|&x| x != p.panel_id);
+                        let idx =
+                            ((t * (tabs.len() as f32 + 1.0)).floor() as usize).min(tabs.len());
+                        tabs.insert(idx, p.panel_id);
+                        *active = Some(p.panel_id);
+                    }
+                }
+
+                st.normalize();
+
+                hover_sig.set(None);
+                drag_active.set(false);
+                request_frame();
+                true
+            }
+        });
+    }
+
+    let tab_bar = Row(bar_mod).with_children(
         tabs.iter()
             .copied()
             .filter_map(|pid| {
@@ -394,7 +456,6 @@ fn render_tabs(
                 let state_set = state.clone();
                 let title = panel.title.clone();
 
-                // Drag source payload
                 let drag_pid = pid;
 
                 let cb_close = callbacks.on_close.clone();
@@ -414,7 +475,6 @@ fn render_tabs(
                             .border(1.0, th.outline, 8.0),
                     )
                     .child((
-                        // Main clickable area
                         Box(Modifier::new()
                             .padding(6.0)
                             .clickable()
@@ -449,7 +509,6 @@ fn render_tabs(
                                 Text(title).color(th.on_surface),
                             )),
                         ),
-                        // Optional close + popout buttons (right aligned)
                         Row(Modifier::new()
                             .absolute()
                             .offset(None, Some(4.0), Some(4.0), None))
@@ -487,6 +546,8 @@ fn render_tabs(
     // Drop zones overlay (always present; highlight only when hovered)
     let overlay = dock_drop_overlay(node_id, state, hover_sig, drag_active, key_prefix);
 
+    let tab_h = 40.0;
+
     Stack(Modifier::new().fill_max_size().key(node_id)).child((
         Column(Modifier::new().fill_max_size()).child((
             tab_bar,
@@ -495,7 +556,10 @@ fn render_tabs(
                 Box(Modifier::new().fill_max_size().padding(8.0)).child(content),
             ),
         )),
-        overlay,
+        Box(Modifier::new()
+            .absolute()
+            .offset(Some(0.0), Some(tab_h), Some(0.0), Some(0.0)))
+        .child(overlay),
     ))
 }
 
@@ -506,6 +570,10 @@ fn dock_drop_overlay(
     drag_active: &Signal<bool>,
     key_prefix: &str,
 ) -> View {
+    if !drag_active.get() {
+        return Box(Modifier::new());
+    }
+
     let zone_dp = 48.0;
 
     let hover = hover_sig.get();
@@ -514,21 +582,30 @@ fn dock_drop_overlay(
         let state2 = state.clone();
         let hover2 = hover_sig.clone();
 
-        let dragging = drag_active.get();
+        let label = match zone {
+            DropZone::Center => "TAB",
+            DropZone::Left => "LEFT",
+            DropZone::Right => "RIGHT",
+            DropZone::Top => "TOP",
+            DropZone::Bottom => "BOTTOM",
+            DropZone::Float => "FLOAT",
+        };
 
-        // Always show faint zone outlines while dragging (discoverability),
-        // and stronger fill/border when hovered.
         let highlight = if hover.as_ref() == Some(&HoverHint { node_id, zone }) {
-            Box(Modifier::new()
-                .fill_max_size()
-                .background(Color::from_hex("#44AAFF33"))
-                .border(2.0, Color::from_hex("#44AAFF"), 0.0))
-        } else if dragging {
-            Box(Modifier::new()
-                .fill_max_size()
-                .border(1.0, Color::from_hex("#44AAFF55"), 0.0))
+            Stack(
+                Modifier::new()
+                    .fill_max_size()
+                    .background(Color::from_hex("#44AAFF33"))
+                    .border(2.0, Color::from_hex("#44AAFF"), 0.0),
+            )
+            .child(Text(label).size(12.0).color(Color::from_hex("#88CCFF")))
         } else {
-            Box(Modifier::new())
+            Stack(
+                Modifier::new()
+                    .fill_max_size()
+                    .border(1.0, Color::from_hex("#44AAFF55"), 0.0),
+            )
+            .child(Text(label).size(12.0).color(Color::from_hex("#555555")))
         };
 
         Stack(
