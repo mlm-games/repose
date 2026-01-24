@@ -37,7 +37,7 @@ pub struct PointerEvent {
     pub modifiers: Modifiers,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Modifiers {
     pub shift: bool,
     pub ctrl: bool,
@@ -46,7 +46,7 @@ pub struct Modifiers {
     pub command: bool, // egui like (Cmd on macOS, Ctrl elsewhere)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Key {
     Character(char),
     Enter,
@@ -64,6 +64,7 @@ pub enum Key {
     PageDown,
     Space,
     F(u8), // F1-F12
+    Unknown,
 }
 
 #[derive(Clone, Debug)]

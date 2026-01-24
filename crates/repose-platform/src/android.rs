@@ -1,4 +1,5 @@
 use crate::common as rc;
+use crate::common_web as rc_web;
 use crate::render::{RenderCommand, RenderContext};
 use crate::*;
 
@@ -864,12 +865,7 @@ pub fn run_android_app_with_options(
                                 ) {
                                     self.sched.focused = Some(next);
                                     if let Some(win) = &self.window {
-                                        if self.is_textfield(next) {
-                                            win.set_ime_allowed(true);
-                                            win.set_ime_purpose(ImePurpose::Normal);
-                                        } else {
-                                            win.set_ime_allowed(false);
-                                        }
+                                        rc_web::set_ime_for_textfield(win, self.is_textfield(next));
                                     }
                                     self.dirty = true;
                                     self.request_redraw();

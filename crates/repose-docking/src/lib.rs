@@ -86,6 +86,17 @@ impl DockState {
         st
     }
 
+    /// Create a DockState from a pre-built root node.
+    /// The `max_node_id` should be higher than any node ID used in the tree.
+    pub fn from_root(root: DockNode, max_node_id: u64) -> Self {
+        let mut st = Self {
+            root,
+            next_id: max_node_id + 1,
+        };
+        st.normalize();
+        st
+    }
+
     fn alloc_id(&mut self) -> u64 {
         let id = self.next_id;
         self.next_id += 1;

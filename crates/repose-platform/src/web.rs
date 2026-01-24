@@ -1,5 +1,6 @@
 //! Web runner (wasm32) using winit + repose-render-wgpu (async init).
 use crate::common as rc;
+use crate::common_web as rc_web;
 use crate::render::{RenderCommand, RenderContext};
 use crate::*;
 
@@ -1065,12 +1066,10 @@ impl ApplicationHandler<()> for App {
                                         Rc::new(RefCell::new(TextFieldState::new()))
                                     });
 
-                                    if self.is_textfield(hit.id) {
-                                        window.set_ime_allowed(true);
-                                        window.set_ime_purpose(ImePurpose::Normal);
-                                    } else {
-                                        window.set_ime_allowed(false);
-                                    }
+                                    rc_web::set_ime_for_textfield(
+                                        &window,
+                                        self.is_textfield(hit.id),
+                                    );
                                 }
 
                                 if let Some(cb) = &hit.on_pointer_down {
@@ -1106,7 +1105,7 @@ impl ApplicationHandler<()> for App {
                                 }
                             } else {
                                 self.sched.focused = None;
-                                window.set_ime_allowed(false);
+                                rc_web::set_ime_for_textfield(&window, false);
                             }
                             self.request_redraw();
                         }

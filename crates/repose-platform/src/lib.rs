@@ -20,8 +20,13 @@ pub mod web;
 
 pub mod a11y;
 mod common;
-use common as rc;
+mod common_android;
+mod common_web;
 pub mod render;
+
+use common as rc;
+use common_android as rc_android;
+use common_web as rc_web;
 
 pub use render::{ImageHandleGuard, RenderCommand, RenderContext};
 
@@ -1099,15 +1104,11 @@ pub fn run_desktop_app_with_snackbar(
 
                                 // IME only for TextField
                                 if let Some(win) = &self.window {
-                                    if f.semantics_nodes
+                                    let is_textfield = f
+                                        .semantics_nodes
                                         .iter()
-                                        .any(|n| n.id == next && n.role == Role::TextField)
-                                    {
-                                        win.set_ime_allowed(true);
-                                        win.set_ime_purpose(ImePurpose::Normal);
-                                    } else {
-                                        win.set_ime_allowed(false);
-                                    }
+                                        .any(|n| n.id == next && n.role == Role::TextField);
+                                    rc_web::set_ime_for_textfield(win, is_textfield);
                                 }
                                 self.announce_focus_change();
                                 self.request_redraw();

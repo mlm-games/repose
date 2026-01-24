@@ -2055,6 +2055,15 @@ impl RenderBackend for WgpuBackend {
             nv12s: Vec<Nv12Instance>,
         }
 
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        enum NodeKind {
+            Rect,
+            Border,
+            Ellipse,
+            EllipseBorder,
+            Text,
+        }
+
         impl Batch {
             fn new() -> Self {
                 Self {
@@ -2208,6 +2217,8 @@ impl RenderBackend for WgpuBackend {
             };
         }
 
+        let mut last_node: Option<NodeKind> = None;
+
         for node in &scene.nodes {
             let t_identity = Transform::identity();
             let current_transform = transform_stack.last().unwrap_or(&t_identity);
@@ -2218,6 +2229,14 @@ impl RenderBackend for WgpuBackend {
                     brush,
                     radius,
                 } => {
+                    let kind = NodeKind::Rect;
+                    if let Some(last) = last_node {
+                        if last != kind {
+                            flush_batch!();
+                        }
+                    }
+                    last_node = Some(kind);
+
                     let transformed_rect = current_transform.apply_to_rect(*rect);
                     let (brush_type, color0, color1, grad_start, grad_end) =
                         brush_to_instance_fields(brush);
@@ -2244,6 +2263,14 @@ impl RenderBackend for WgpuBackend {
                     width,
                     radius,
                 } => {
+                    let kind = NodeKind::Border;
+                    if let Some(last) = last_node {
+                        if last != kind {
+                            flush_batch!();
+                        }
+                    }
+                    last_node = Some(kind);
+
                     let transformed_rect = current_transform.apply_to_rect(*rect);
                     batch.borders.push(BorderInstance {
                         xywh: to_ndc(
@@ -2260,6 +2287,14 @@ impl RenderBackend for WgpuBackend {
                     });
                 }
                 SceneNode::Ellipse { rect, brush } => {
+                    let kind = NodeKind::Ellipse;
+                    if let Some(last) = last_node {
+                        if last != kind {
+                            flush_batch!();
+                        }
+                    }
+                    last_node = Some(kind);
+
                     let transformed = current_transform.apply_to_rect(*rect);
                     let color = brush_to_solid_color(brush);
                     batch.ellipses.push(EllipseInstance {
@@ -2275,6 +2310,14 @@ impl RenderBackend for WgpuBackend {
                     });
                 }
                 SceneNode::EllipseBorder { rect, color, width } => {
+                    let kind = NodeKind::EllipseBorder;
+                    if let Some(last) = last_node {
+                        if last != kind {
+                            flush_batch!();
+                        }
+                    }
+                    last_node = Some(kind);
+
                     let transformed = current_transform.apply_to_rect(*rect);
                     batch.e_borders.push(EllipseBorderInstance {
                         xywh: to_ndc(
@@ -2295,6 +2338,14 @@ impl RenderBackend for WgpuBackend {
                     color,
                     size,
                 } => {
+                    let kind = NodeKind::Text;
+                    if let Some(last) = last_node {
+                        if last != kind {
+                            flush_batch!();
+                        }
+                    }
+                    last_node = Some(kind);
+
                     let px = (*size).clamp(8.0, 96.0);
                     let shaped = repose_text::shape_line(text.as_ref(), px);
                     let transformed_rect = current_transform.apply_to_rect(*rect);
@@ -2325,6 +2376,9 @@ impl RenderBackend for WgpuBackend {
                     tint,
                     fit,
                 } => {
+                    flush_batch!();
+                    last_node = None;
+
                     // Update usage timestamp for eviction
                     let (img_w, img_h, is_nv12) = if let Some(t) = self.images.get_mut(handle) {
                         match t {
@@ -2400,9 +2454,6 @@ impl RenderBackend for WgpuBackend {
                         }
                     };
 
-                    // Flush batch before drawing image (since image changes bind group)
-                    flush_batch!();
-
                     if is_nv12 {
                         let full_range = if let Some(ImageTex::Nv12 { full_range, .. }) =
                             self.images.get(handle)
@@ -2449,6 +2500,7 @@ impl RenderBackend for WgpuBackend {
                 }
                 SceneNode::PushClip { rect, radius } => {
                     flush_batch!();
+                    last_node = None;
 
                     let t_identity = Transform::identity();
                     let current_transform = transform_stack.last().unwrap_or(&t_identity);
@@ -2484,6 +2536,7 @@ impl RenderBackend for WgpuBackend {
                 }
                 SceneNode::PopClip => {
                     flush_batch!();
+                    last_node = None;
 
                     if !scissor_stack.is_empty() {
                         scissor_stack.pop();
@@ -2496,6 +2549,9 @@ impl RenderBackend for WgpuBackend {
                     cmds.push(Cmd::ClipPop { scissor });
                 }
                 SceneNode::PushTransform { transform } => {
+                    flush_batch!();
+                    last_node = None;
+
                     let combined = current_transform.combine(transform);
                     if transform.rotate != 0.0 {
                         ROT_WARN_ONCE.call_once(|| {
@@ -2507,6 +2563,9 @@ impl RenderBackend for WgpuBackend {
                     transform_stack.push(combined);
                 }
                 SceneNode::PopTransform => {
+                    flush_batch!();
+                    last_node = None;
+
                     transform_stack.pop();
                 }
             }

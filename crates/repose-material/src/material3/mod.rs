@@ -5,6 +5,7 @@ use std::rc::Rc;
 use repose_core::*;
 use repose_ui::{
     Box, Column, Row, Spacer, Stack, Surface, Text, TextStyle, ViewExt, anim::animate_f32,
+    overlay::SnackbarAction,
 };
 
 pub fn AlertDialog(
@@ -125,6 +126,58 @@ pub fn Card(modifier: Modifier, elevated: bool, content: View) -> View {
             .clip_rounded(12.0)
             .padding(16.0),
         content,
+    )
+}
+
+pub fn Snackbar(message: impl Into<String>, action: Option<SnackbarAction>) -> View {
+    let msg = message.into();
+    let th = theme();
+    let bg = th.surface_variant;
+    let fg = th.on_surface;
+    let action_color = th.primary;
+
+    Surface(
+        Modifier::new()
+            .background(bg)
+            .clip_rounded(th.shapes.small)
+            .border(1.0, th.outline_variant, th.shapes.small)
+            .padding_values(PaddingValues {
+                left: 16.0,
+                right: 16.0,
+                top: 12.0,
+                bottom: 12.0,
+            })
+            .min_height(48.0)
+            .min_width(280.0),
+        Row(Modifier::new().align_items(repose_core::AlignItems::Center)).child((
+            Text(msg)
+                .color(fg)
+                .size(th.typography.body_medium)
+                .max_lines(2)
+                .overflow_ellipsize(),
+            Spacer(),
+            action
+                .map(|a| {
+                    let label = a.label.clone();
+                    Box(Modifier::new()
+                        .padding_values(PaddingValues {
+                            left: 8.0,
+                            right: 8.0,
+                            top: 6.0,
+                            bottom: 6.0,
+                        })
+                        .clip_rounded(th.shapes.extra_small)
+                        .clickable()
+                        .on_pointer_down(move |_| (a.on_click)()))
+                    .child(
+                        Text(label)
+                            .color(action_color)
+                            .size(th.typography.label_large)
+                            .single_line(),
+                    )
+                })
+                .unwrap_or(Box(Modifier::new())),
+        )),
     )
 }
 

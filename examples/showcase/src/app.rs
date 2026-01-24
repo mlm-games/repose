@@ -2,11 +2,14 @@ use std::rc::Rc;
 
 use repose_core::{
     TextDirection, prelude::*, set_text_direction_default, set_text_scale_default,
-    set_theme_default, set_ui_scale_default, signal, with_text_direction,
+    set_theme_default, set_ui_scale_default, shortcuts, signal,
 };
+use repose_material::material3;
 use repose_navigation::{
     NavDisplay, NavTransition, Navigator, back, remember_back_stack, renderer,
 };
+use repose_ui::overlay::{OverlayHandle, SnackbarAction, SnackbarController, SnackbarRequest};
+use repose_ui::{Box, Column, Stack, Text, TextStyle, ViewExt};
 use serde::{Deserialize, Serialize};
 
 use crate::{pages, ui};
@@ -67,6 +70,9 @@ pub fn app(_s: &mut Scheduler) -> View {
     let ui_scale = remember(|| signal(1.0f32)); // extra scale multiplier
     let text_scale = remember(|| signal(1.0f32)); // font multiplier
 
+    let overlay = remember(|| OverlayHandle::new());
+    let snackbar = remember(|| SnackbarController::new((*overlay).clone()));
+
     // Theme presets
     let theme_light = {
         let mut t = Theme::default();
@@ -82,6 +88,7 @@ pub fn app(_s: &mut Scheduler) -> View {
         t.button_bg_pressed = Color::from_hex("#1D4ED8");
         t.scrollbar_track = Color(0, 0, 0, 20);
         t.scrollbar_thumb = Color(0, 0, 0, 80);
+        t.sync_colors_from_fields();
         t
     };
     let theme_dark = Theme::default();
@@ -130,7 +137,7 @@ pub fn app(_s: &mut Scheduler) -> View {
     set_ui_scale_default(UiScale(ui_scale.get()));
     set_text_scale_default(TextScale(text_scale.get()));
 
-    ui::AppShell(
+    let content = ui::AppShell(
         current,
         navigator.clone(),
         dark.get(),
@@ -159,5 +166,120 @@ pub fn app(_s: &mut Scheduler) -> View {
             None,
             NavTransition::default(),
         ),
-    )
+    );
+
+    let overlay_root = (*overlay).host(Modifier::new().fill_max_size(), content);
+
+    let snackbar = snackbar.clone();
+    let shortcut_note = remember(|| signal("Press Ctrl+S to trigger".to_string()));
+    let shortcut_demo = remember(|| signal(false));
+
+    let mut map = shortcuts::ShortcutMap::new();
+    let mut save_mods = Modifiers {
+        command: true,
+        ..Modifiers::default()
+    };
+    if !cfg!(target_os = "macos") {
+        save_mods.ctrl = true;
+    }
+    map.insert(
+        Key::Character('s'),
+        save_mods,
+        shortcuts::Action::Custom("showcase.save".into()),
+    );
+    let snackbar = snackbar.clone();
+    let shortcut_note = shortcut_note.clone();
+    let shortcut_demo = shortcut_demo.clone();
+    let shortcut_note_clone = shortcut_note.clone();
+    let shortcut_demo_clone = shortcut_demo.clone();
+    scoped_effect(move || {
+        let _map_scope = shortcuts::InstallShortcutMap(map.clone());
+        let snackbar_for_handler = snackbar.clone();
+        let _handler_scope = shortcuts::InstallShortcutHandler(Rc::new(move |action| {
+            log::info!("Shortcut action: {:?}", action);
+            if matches!(action, shortcuts::Action::Custom(key) if key.as_ref() == "showcase.save") {
+                shortcut_note_clone.set("Shortcut override triggered".to_string());
+                shortcut_demo_clone.set(true);
+                let snackbar_for_action = snackbar_for_handler.clone();
+                let snackbar_for_builder = snackbar_for_handler.clone();
+                snackbar_for_handler.show(SnackbarRequest {
+                    message: "Shortcut saved".to_string(),
+                    action: Some(SnackbarAction {
+                        label: "Undo".to_string(),
+                        on_click: Rc::new(move || {
+                            log::info!("Snackbar undo");
+                            snackbar_for_action.dismiss();
+                        }),
+                    }),
+                    duration_ms: 2500,
+                    builder: Rc::new(move || {
+                        let snackbar_dismiss = snackbar_for_builder.clone();
+                        material3::Snackbar(
+                            "Shortcut saved",
+                            Some(SnackbarAction {
+                                label: "Undo".to_string(),
+                                on_click: Rc::new(move || {
+                                    log::info!("Snackbar undo");
+                                    snackbar_dismiss.dismiss();
+                                }),
+                            }),
+                        )
+                        .modifier(Modifier::new().absolute().offset(
+                            Some(16.0),
+                            Some(16.0),
+                            Some(16.0),
+                            None,
+                        ))
+                    }),
+                });
+                true
+            } else {
+                false
+            }
+        }));
+        Dispose::new(move || {
+            _map_scope.run();
+            _handler_scope.run();
+        })
+    });
+
+    let overlay_root = Stack(Modifier::new().fill_max_size()).child((
+        overlay_root,
+        Box(Modifier::new()
+            .absolute()
+            .offset(None, None, Some(16.0), Some(16.0))
+            .padding(10.0)
+            .background(Color::from_hex("#111111CC"))
+            .clip_rounded(12.0)
+            .hit_passthrough()
+            .render_z_index(1000.0)) // Render on top of scroll content
+        .child(
+            Column(Modifier::new()).child(
+                std::iter::once(
+                    Text("Shortcut Overrides")
+                        .size(12.0)
+                        .color(Color::from_hex("#FFFFFFCC")),
+                )
+                .chain(std::iter::once(Box(Modifier::new().size(1.0, 6.0))))
+                .chain(std::iter::once(
+                    Text(shortcut_note.get())
+                        .size(12.0)
+                        .color(Color::from_hex("#FFFFFF99")),
+                ))
+                .chain(std::iter::once(Box(Modifier::new().size(1.0, 4.0))))
+                .chain(std::iter::once(if shortcut_demo.get() {
+                    Text("Snackbar triggered")
+                        .size(12.0)
+                        .color(Color::from_hex("#8BE28A"))
+                } else {
+                    Text("Snackbar idle")
+                        .size(12.0)
+                        .color(Color::from_hex("#FFFFFF66"))
+                }))
+                .collect::<Vec<_>>(),
+            ),
+        ),
+    ));
+
+    overlay_root
 }

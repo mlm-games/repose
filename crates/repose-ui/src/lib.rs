@@ -108,6 +108,7 @@ pub mod gestures;
 pub mod layout;
 pub mod lazy;
 pub mod navigation;
+pub mod overlay;
 pub mod scroll;
 
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -155,6 +156,10 @@ pub fn Column(modifier: Modifier) -> View {
 
 pub fn Stack(modifier: Modifier) -> View {
     View::new(0, ViewKind::Stack).modifier(modifier)
+}
+
+pub fn OverlayHost(modifier: Modifier) -> View {
+    View::new(0, ViewKind::OverlayHost).modifier(modifier)
 }
 
 #[deprecated = "Use ScollArea instead"]

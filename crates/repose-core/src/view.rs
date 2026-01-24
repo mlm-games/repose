@@ -16,12 +16,19 @@ pub type Callback = Rc<dyn Fn()>;
 pub type ScrollCallback = Rc<dyn Fn(crate::Vec2) -> crate::Vec2>;
 
 #[derive(Clone)]
+pub struct OverlayEntry {
+    pub id: u64,
+    pub view: Box<View>,
+}
+
+#[derive(Clone)]
 pub enum ViewKind {
     Surface,
     Box,
     Row,
     Column,
     Stack,
+    OverlayHost,
     ScrollV {
         on_scroll: Option<ScrollCallback>,
         set_viewport_height: Option<Rc<dyn Fn(f32)>>,
@@ -119,102 +126,33 @@ impl std::fmt::Debug for ViewKind {
             ViewKind::Switch { checked, .. } => {
                 f.debug_struct("Switch").field("checked", checked).finish()
             }
-            ViewKind::Surface => write!(f, "Surface"),
-            ViewKind::Box => write!(f, "Box"),
-            ViewKind::Row => write!(f, "Row"),
-            ViewKind::Column => write!(f, "Column"),
-            ViewKind::Stack => write!(f, "Stack"),
-            ViewKind::ScrollV { .. } => write!(f, "ScrollV"),
-            ViewKind::ScrollXY { .. } => write!(f, "ScrollXY"),
-            ViewKind::Text {
-                text,
-                color,
-                font_size,
-                soft_wrap,
-                max_lines,
-                overflow,
-            } => f
-                .debug_struct("Text")
-                .field("text", text)
-                .field("color", color)
-                .field("font_size", font_size)
-                .field("soft_wrap", soft_wrap)
-                .field("max_lines", max_lines)
-                .field("overflow", overflow)
-                .finish(),
-            ViewKind::Image { handle, tint, fit } => f
-                .debug_struct("Image")
-                .field("handle", handle)
-                .field("tint", tint)
-                .field("fit", fit)
-                .finish(),
-            ViewKind::Button { .. } => f
-                .debug_struct("Button")
-                .field("on_click", &"<callback>")
-                .finish(),
-            ViewKind::TextField {
-                state_key,
-                hint,
-                multiline,
-                on_change,
-                on_submit,
-            } => f
-                .debug_struct("TextField")
-                .field("state_key", state_key)
-                .field("hint", hint)
-                .field("multiline", multiline)
-                .finish(),
-            ViewKind::Slider {
-                value,
-                min,
-                max,
-                step,
-                ..
-            } => f
-                .debug_struct("Slider")
-                .field("value", value)
-                .field("min", min)
-                .field("max", max)
-                .field("step", step)
-                .finish(),
-            ViewKind::RangeSlider {
-                start,
-                end,
-                min,
-                max,
-                step,
-                ..
-            } => f
+            ViewKind::Slider { value, .. } => {
+                f.debug_struct("Slider").field("value", value).finish()
+            }
+            ViewKind::RangeSlider { start, end, .. } => f
                 .debug_struct("RangeSlider")
                 .field("start", start)
                 .field("end", end)
-                .field("min", min)
-                .field("max", max)
-                .field("step", step)
                 .finish(),
-            ViewKind::ProgressBar {
-                value,
-                min,
-                max,
-                circular,
-            } => f
-                .debug_struct("ProgressBar")
-                .field("value", value)
-                .field("min", min)
-                .field("max", max)
-                .field("circular", circular)
-                .finish(),
-            ViewKind::Ellipse { rect, color } => f
-                .debug_struct("Ellipse")
-                .field("rect", rect)
-                .field("color", color)
-                .finish(),
-            ViewKind::EllipseBorder { rect, color, width } => f
-                .debug_struct("EllipseBorder")
-                .field("rect", rect)
-                .field("color", color)
-                .field("width", width)
-                .finish(),
+            ViewKind::ProgressBar { value, .. } => {
+                f.debug_struct("ProgressBar").field("value", value).finish()
+            }
+            ViewKind::ScrollV { .. } => f.debug_struct("ScrollV").finish(),
+            ViewKind::ScrollXY { .. } => f.debug_struct("ScrollXY").finish(),
+            ViewKind::Text { text, .. } => f.debug_struct("Text").field("text", text).finish(),
+            ViewKind::Button { .. } => f.debug_struct("Button").finish(),
+            ViewKind::TextField { hint, .. } => {
+                f.debug_struct("TextField").field("hint", hint).finish()
+            }
+            ViewKind::Surface => f.debug_struct("Surface").finish(),
+            ViewKind::Box => f.debug_struct("Box").finish(),
+            ViewKind::Row => f.debug_struct("Row").finish(),
+            ViewKind::Column => f.debug_struct("Column").finish(),
+            ViewKind::Stack => f.debug_struct("Stack").finish(),
+            ViewKind::OverlayHost => f.debug_struct("OverlayHost").finish(),
+            ViewKind::Image { .. } => f.debug_struct("Image").finish(),
+            ViewKind::Ellipse { .. } => f.debug_struct("Ellipse").finish(),
+            ViewKind::EllipseBorder { .. } => f.debug_struct("EllipseBorder").finish(),
         }
     }
 }

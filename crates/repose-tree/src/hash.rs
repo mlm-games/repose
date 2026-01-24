@@ -128,7 +128,12 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
         ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. } => {
             // Scroll state is external, not part of content hash
         }
-        ViewKind::Surface | ViewKind::Box | ViewKind::Row | ViewKind::Column | ViewKind::Stack => {
+        ViewKind::OverlayHost
+        | ViewKind::Surface
+        | ViewKind::Box
+        | ViewKind::Row
+        | ViewKind::Column
+        | ViewKind::Stack => {
             // These are just containers, discriminant is enough
         }
     }

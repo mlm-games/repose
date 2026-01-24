@@ -409,7 +409,8 @@ impl LayoutEngine {
             ViewKind::Column
             | ViewKind::Surface
             | ViewKind::ScrollV { .. }
-            | ViewKind::ScrollXY { .. } => {
+            | ViewKind::ScrollXY { .. }
+            | ViewKind::OverlayHost => {
                 s.flex_direction = FlexDirection::Column;
             }
             ViewKind::Stack => s.display = Display::Grid,
@@ -647,6 +648,7 @@ impl LayoutEngine {
             ViewKind::RangeSlider { .. } => NodeContext::Range,
             ViewKind::ProgressBar { .. } => NodeContext::Progress,
             ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. } => NodeContext::ScrollContainer,
+            ViewKind::OverlayHost => NodeContext::Container,
             _ => NodeContext::Container,
         }
     }
@@ -793,6 +795,7 @@ impl LayoutEngine {
         };
         let mut hits = Vec::new();
         let mut sems = Vec::new();
+        let mut deferred: Vec<(NodeId, (f32, f32), f32, Option<u64>, f32)> = Vec::new();
 
         self.walk_paint(
             root_id,
@@ -807,9 +810,33 @@ impl LayoutEngine {
             None,
             font_px,
             true,
+            &mut deferred,
+            false, // Allow deferral in first pass
         );
 
-        hits.sort_by(|a, b| a.z_index.partial_cmp(&b.z_index).unwrap_or(Ordering::Equal));
+        // Paint deferred nodes sorted by render_z_index (ascending = higher on top)
+        deferred.sort_by(|a, b| a.4.partial_cmp(&b.4).unwrap_or(Ordering::Equal));
+        for (node_id, parent_offset_px, alpha_accum, sem_parent, _z) in deferred {
+            self.walk_paint(
+                node_id,
+                &mut scene,
+                &mut hits,
+                &mut sems,
+                textfield_states,
+                interactions,
+                focused,
+                parent_offset_px,
+                alpha_accum,
+                sem_parent,
+                font_px,
+                true,
+                &mut Vec::new(), // No further deferral in second pass
+                true,            // Skip defer check
+            );
+        }
+
+        hits.sort_by(|a, b| b.z_index.partial_cmp(&a.z_index).unwrap_or(Ordering::Equal));
+        hits.reverse();
         (scene, hits, sems)
     }
 
@@ -888,6 +915,40 @@ impl LayoutEngine {
         h.finish()
     }
 
+    fn walk_paint_view(
+        &mut self,
+        view: &View,
+        scene: &mut Scene,
+        hits: &mut Vec<HitRegion>,
+        sems: &mut Vec<SemNode>,
+        textfield_states: &HashMap<u64, Rc<RefCell<TextFieldState>>>,
+        interactions: &Interactions,
+        focused: Option<u64>,
+        parent_offset_px: (f32, f32),
+        alpha_accum: f32,
+        sem_parent: Option<u64>,
+        font_px: &dyn Fn(f32) -> f32,
+    ) {
+        let root_id = self.tree.update(view);
+        self.sync_taffy_tree(root_id, font_px);
+        self.walk_paint(
+            root_id,
+            scene,
+            hits,
+            sems,
+            textfield_states,
+            interactions,
+            focused,
+            parent_offset_px,
+            alpha_accum,
+            sem_parent,
+            font_px,
+            false,
+            &mut Vec::new(),
+            false,
+        );
+    }
+
     fn walk_paint(
         &mut self,
         node_id: NodeId,
@@ -902,6 +963,8 @@ impl LayoutEngine {
         sem_parent: Option<u64>,
         font_px: &dyn Fn(f32) -> f32,
         allow_cache: bool,
+        deferred: &mut Vec<(NodeId, (f32, f32), f32, Option<u64>, f32)>,
+        skip_defer: bool,
     ) {
         let (subtree_hash, modifier, kind, children) = {
             let n = self.tree.get(node_id).unwrap();
@@ -912,6 +975,17 @@ impl LayoutEngine {
                 n.children.clone(),
             )
         };
+
+        // Check if this node should be deferred for later painting
+        if !skip_defer {
+            if let Some(render_z) = modifier.render_z_index {
+                if !deferred.is_empty() || render_z != 0.0 {
+                    // Defer this node - it will be painted later based on render_z_index
+                    deferred.push((node_id, parent_offset_px, alpha_accum, sem_parent, render_z));
+                    return;
+                }
+            }
+        }
 
         // Use LayoutEngine-assigned stable id (unique per node)
         let view_id = *self.view_ids.get(&node_id).unwrap_or(&0);
@@ -1005,6 +1079,8 @@ impl LayoutEngine {
                 sem_parent,
                 font_px,
                 false,
+                &mut Vec::new(), // Don't defer within repaint boundary
+                true,            // Skip defer check in repaint boundary
             );
 
             let entry = PaintCacheEntry {
@@ -1092,7 +1168,7 @@ impl LayoutEngine {
 
         let needs_hit = has_pointer || modifier.click || has_dnd || modifier.on_action.is_some();
 
-        if needs_hit && !kind_handles_hit {
+        if needs_hit && !kind_handles_hit && !modifier.hit_passthrough {
             hits.push(HitRegion {
                 id: view_id,
                 rect,
@@ -1195,7 +1271,7 @@ impl LayoutEngine {
                         radius: modifier.clip_rounded.map(dp_to_px).unwrap_or(dp_to_px(6.0)),
                     });
                 }
-                if modifier.click || on_click.is_some() {
+                if (modifier.click || on_click.is_some()) && !modifier.hit_passthrough {
                     hits.push(HitRegion {
                         id: view_id,
                         rect,
@@ -1299,31 +1375,33 @@ impl LayoutEngine {
                     None
                 };
 
-                hits.push(HitRegion {
-                    id: view_id,
-                    rect,
-                    on_click: None,
-                    on_scroll,
-                    focusable: true,
-                    on_pointer_down: None,
-                    on_pointer_move: None,
-                    on_pointer_up: None,
-                    on_pointer_enter: None,
-                    on_pointer_leave: None,
-                    z_index: modifier.z_index,
-                    on_text_change: on_change.clone(),
-                    on_text_submit: on_submit.clone(),
-                    tf_state_key: Some(tf_key),
-                    tf_multiline: *multiline,
-                    on_action: modifier.on_action.clone(),
-                    cursor: Some(crate::CursorIcon::Text),
-                    on_drag_start: modifier.on_drag_start.clone(),
-                    on_drag_end: modifier.on_drag_end.clone(),
-                    on_drag_enter: modifier.on_drag_enter.clone(),
-                    on_drag_over: modifier.on_drag_over.clone(),
-                    on_drag_leave: modifier.on_drag_leave.clone(),
-                    on_drop: modifier.on_drop.clone(),
-                });
+                if !modifier.hit_passthrough {
+                    hits.push(HitRegion {
+                        id: view_id,
+                        rect,
+                        on_click: None,
+                        on_scroll,
+                        focusable: true,
+                        on_pointer_down: None,
+                        on_pointer_move: None,
+                        on_pointer_up: None,
+                        on_pointer_enter: None,
+                        on_pointer_leave: None,
+                        z_index: modifier.z_index,
+                        on_text_change: on_change.clone(),
+                        on_text_submit: on_submit.clone(),
+                        tf_state_key: Some(tf_key),
+                        tf_multiline: *multiline,
+                        on_action: modifier.on_action.clone(),
+                        cursor: Some(crate::CursorIcon::Text),
+                        on_drag_start: modifier.on_drag_start.clone(),
+                        on_drag_end: modifier.on_drag_end.clone(),
+                        on_drag_enter: modifier.on_drag_enter.clone(),
+                        on_drag_over: modifier.on_drag_over.clone(),
+                        on_drag_leave: modifier.on_drag_leave.clone(),
+                        on_drop: modifier.on_drop.clone(),
+                    });
+                }
 
                 scene.nodes.push(SceneNode::PushClip {
                     rect: inner,
@@ -1679,32 +1757,34 @@ impl LayoutEngine {
                         radius: (d - dp_to_px(8.0)) * 0.5,
                     });
                 }
-                hits.push(HitRegion {
-                    id: view_id,
-                    rect,
-                    on_click: on_select.clone(),
-                    on_scroll: None,
-                    focusable: true,
-                    on_pointer_down: None,
-                    on_pointer_move: None,
-                    on_pointer_up: None,
-                    on_pointer_enter: None,
-                    on_pointer_leave: None,
-                    z_index: modifier.z_index,
-                    on_text_change: None,
-                    on_text_submit: None,
-                    tf_state_key: None,
-                    tf_multiline: false,
-                    on_action: modifier.on_action.clone(),
-                    cursor: modifier.cursor,
+                if !modifier.hit_passthrough {
+                    hits.push(HitRegion {
+                        id: view_id,
+                        rect,
+                        on_click: on_select.clone(),
+                        on_scroll: None,
+                        focusable: true,
+                        on_pointer_down: None,
+                        on_pointer_move: None,
+                        on_pointer_up: None,
+                        on_pointer_enter: None,
+                        on_pointer_leave: None,
+                        z_index: modifier.z_index,
+                        on_text_change: None,
+                        on_text_submit: None,
+                        tf_state_key: None,
+                        tf_multiline: false,
+                        on_action: modifier.on_action.clone(),
+                        cursor: modifier.cursor,
 
-                    on_drag_start: modifier.on_drag_start.clone(),
-                    on_drag_end: modifier.on_drag_end.clone(),
-                    on_drag_enter: modifier.on_drag_enter.clone(),
-                    on_drag_over: modifier.on_drag_over.clone(),
-                    on_drag_leave: modifier.on_drag_leave.clone(),
-                    on_drop: modifier.on_drop.clone(),
-                });
+                        on_drag_start: modifier.on_drag_start.clone(),
+                        on_drag_end: modifier.on_drag_end.clone(),
+                        on_drag_enter: modifier.on_drag_enter.clone(),
+                        on_drag_over: modifier.on_drag_over.clone(),
+                        on_drag_leave: modifier.on_drag_leave.clone(),
+                        on_drop: modifier.on_drop.clone(),
+                    });
+                }
                 sems.push(SemNode {
                     id: view_id,
                     parent: sem_parent,
@@ -2279,6 +2359,8 @@ impl LayoutEngine {
                         next_sem_parent,
                         font_px,
                         allow_cache,
+                        deferred,
+                        skip_defer,
                     );
                 }
 
@@ -2387,6 +2469,8 @@ impl LayoutEngine {
                         next_sem_parent,
                         font_px,
                         allow_cache,
+                        deferred,
+                        skip_defer,
                     );
                 }
                 let mut i = hits_start;
@@ -2427,6 +2511,26 @@ impl LayoutEngine {
                 );
                 scene.nodes.push(SceneNode::PopClip);
             }
+            ViewKind::OverlayHost => {
+                for &child_id in &children {
+                    self.walk_paint(
+                        child_id,
+                        scene,
+                        hits,
+                        sems,
+                        textfield_states,
+                        interactions,
+                        focused,
+                        child_offset_px,
+                        alpha_accum,
+                        next_sem_parent,
+                        font_px,
+                        allow_cache,
+                        deferred,
+                        skip_defer,
+                    );
+                }
+            }
             _ => {
                 for &child_id in &children {
                     self.walk_paint(
@@ -2442,6 +2546,8 @@ impl LayoutEngine {
                         next_sem_parent,
                         font_px,
                         allow_cache,
+                        deferred,
+                        skip_defer,
                     );
                 }
             }
@@ -2758,4 +2864,378 @@ fn apply_step(v: f32, dir: i32, min: f32, max: f32, step: Option<f32>) -> f32 {
     }
     let s = step.unwrap_or(1.0).max(1e-6);
     snap_step(v + (dir as f32) * s, min, max, step)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Box as RBox, Column, Stack, ViewExt};
+
+    fn font_px(dp: f32) -> f32 {
+        dp // 1:1 for tests
+    }
+
+    #[test]
+    fn test_render_z_index_paints_last() {
+        // Create a Stack with two children:
+        // 1. A red box (painted first, no render_z_index)
+        // 2. A blue box with render_z_index(100.0) (should be painted last)
+
+        let red = Color::from_rgb(255, 0, 0);
+        let blue = Color::from_rgb(0, 0, 255);
+
+        let red_box = RBox(Modifier::new().size(100.0, 100.0).background(red));
+        let blue_box = RBox(
+            Modifier::new()
+                .size(100.0, 100.0)
+                .background(blue)
+                .render_z_index(100.0),
+        );
+
+        let root = Stack(Modifier::new().size(200.0, 200.0)).child((red_box, blue_box));
+
+        let mut engine = LayoutEngine::new();
+        let (scene, _hits, _sems) = engine.layout_frame(
+            &root,
+            (200, 200),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        );
+
+        // Find the rect nodes - there should be two (red and blue backgrounds)
+        let rects: Vec<_> = scene
+            .nodes
+            .iter()
+            .filter_map(|n| {
+                if let SceneNode::Rect { brush, .. } = n {
+                    Some(brush.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert!(
+            rects.len() >= 2,
+            "Expected at least 2 rect nodes, got {}",
+            rects.len()
+        );
+
+        // The blue box (with render_z_index) should be painted LAST
+        // So its brush should be the last rect in the scene
+        let last_rect_brush = rects.last().unwrap();
+        assert!(
+            matches!(last_rect_brush, Brush::Solid(c) if *c == blue),
+            "Expected blue box to be painted last, but got {:?}",
+            last_rect_brush
+        );
+
+        // And the red box should be painted before the blue
+        let second_to_last = rects.get(rects.len() - 2);
+        assert!(second_to_last.is_some(), "Expected at least 2 rect nodes");
+        let second_brush = second_to_last.unwrap();
+        assert!(
+            matches!(second_brush, Brush::Solid(c) if *c == red),
+            "Expected red box to be painted before blue, but got {:?}",
+            second_brush
+        );
+    }
+
+    #[test]
+    fn test_render_z_index_order_by_value() {
+        // Test that higher render_z_index values are painted later
+
+        let red = Color::from_rgb(255, 0, 0);
+        let green = Color::from_rgb(0, 255, 0);
+        let blue = Color::from_rgb(0, 0, 255);
+
+        let box1 = RBox(
+            Modifier::new()
+                .size(50.0, 50.0)
+                .background(red)
+                .render_z_index(10.0),
+        );
+        let box2 = RBox(
+            Modifier::new()
+                .size(50.0, 50.0)
+                .background(green)
+                .render_z_index(20.0),
+        );
+        let box3 = RBox(
+            Modifier::new()
+                .size(50.0, 50.0)
+                .background(blue)
+                .render_z_index(5.0),
+        );
+
+        let root = Stack(Modifier::new().size(200.0, 200.0)).child((box1, box2, box3));
+
+        let mut engine = LayoutEngine::new();
+        let (scene, _hits, _sems) = engine.layout_frame(
+            &root,
+            (200, 200),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        );
+
+        let rects: Vec<_> = scene
+            .nodes
+            .iter()
+            .filter_map(|n| {
+                if let SceneNode::Rect { brush, .. } = n {
+                    Some(brush.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Order should be: BLUE (z=5), RED (z=10), GREEN (z=20)
+        assert!(rects.len() >= 3, "Expected at least 3 rects");
+
+        let len = rects.len();
+        assert!(
+            matches!(&rects[len - 3], Brush::Solid(c) if *c == blue),
+            "Expected BLUE (z=5) third from last"
+        );
+        assert!(
+            matches!(&rects[len - 2], Brush::Solid(c) if *c == red),
+            "Expected RED (z=10) second from last"
+        );
+        assert!(
+            matches!(&rects[len - 1], Brush::Solid(c) if *c == green),
+            "Expected GREEN (z=20) last"
+        );
+    }
+
+    #[test]
+    fn test_render_z_index_with_nested_children() {
+        // This test mimics the showcase scenario:
+        // Stack {
+        //   Column { red_box, green_box }  // This is like the main content
+        //   blue_box with render_z_index(1000)  // This is like the hint overlay
+        // }
+        // The blue_box should be painted AFTER all contents of Column
+
+        let red = Color::from_rgb(255, 0, 0);
+        let green = Color::from_rgb(0, 255, 0);
+        let blue = Color::from_rgb(0, 0, 255);
+
+        let red_box = RBox(Modifier::new().size(50.0, 50.0).background(red));
+        let green_box = RBox(Modifier::new().size(50.0, 50.0).background(green));
+
+        let content = Column(Modifier::new()).child((red_box, green_box));
+
+        let overlay = RBox(
+            Modifier::new()
+                .size(30.0, 30.0)
+                .background(blue)
+                .render_z_index(1000.0),
+        );
+
+        let root = Stack(Modifier::new().size(200.0, 200.0)).child((content, overlay));
+
+        let mut engine = LayoutEngine::new();
+        let (scene, _hits, _sems) = engine.layout_frame(
+            &root,
+            (200, 200),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        );
+
+        let rects: Vec<_> = scene
+            .nodes
+            .iter()
+            .filter_map(|n| {
+                if let SceneNode::Rect { brush, .. } = n {
+                    Some(brush.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Order should be: RED, GREEN, then BLUE (because blue has render_z_index)
+        assert!(
+            rects.len() >= 3,
+            "Expected at least 3 rects, got {}",
+            rects.len()
+        );
+
+        let len = rects.len();
+        // Blue should be LAST
+        assert!(
+            matches!(&rects[len - 1], Brush::Solid(c) if *c == blue),
+            "Expected BLUE (z=1000) to be painted last, but got {:?}",
+            &rects[len - 1]
+        );
+
+        // Red and Green should be before blue
+        // Find their positions
+        let blue_pos = rects
+            .iter()
+            .position(|b| matches!(b, Brush::Solid(c) if *c == blue))
+            .unwrap();
+        let red_pos = rects
+            .iter()
+            .position(|b| matches!(b, Brush::Solid(c) if *c == red))
+            .unwrap();
+        let green_pos = rects
+            .iter()
+            .position(|b| matches!(b, Brush::Solid(c) if *c == green))
+            .unwrap();
+
+        assert!(red_pos < blue_pos, "Red should be painted before blue");
+        assert!(green_pos < blue_pos, "Green should be painted before blue");
+    }
+
+    #[test]
+    fn test_render_z_index_paints_over_scrollbars() {
+        // This test verifies that a node with render_z_index paints AFTER scrollbars
+        // Structure:
+        // Stack {
+        //   Scroll(tall content)  // This will show a scrollbar
+        //   Box with render_z_index(1000)  // This should paint LAST
+        // }
+        use crate::Scroll;
+
+        let content_color = Color::from_rgb(100, 100, 100);
+        let overlay_color = Color::from_rgb(0, 0, 255);
+
+        // Tall content inside scroll - 500px tall in 200px viewport
+        let tall_content = RBox(Modifier::new().size(180.0, 500.0).background(content_color));
+
+        let scroll = Scroll(Modifier::new().size(200.0, 200.0)).child(tall_content);
+
+        let overlay = RBox(
+            Modifier::new()
+                .size(50.0, 50.0)
+                .background(overlay_color)
+                .render_z_index(1000.0),
+        );
+
+        let root = Stack(Modifier::new().size(200.0, 200.0)).child((scroll, overlay));
+
+        let mut engine = LayoutEngine::new();
+        let (scene, _hits, _sems) = engine.layout_frame(
+            &root,
+            (200, 200),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        );
+
+        // Collect all rect nodes (this includes content, scrollbar track, scrollbar thumb, and overlay)
+        let rects: Vec<_> = scene
+            .nodes
+            .iter()
+            .filter_map(|n| {
+                if let SceneNode::Rect { brush, .. } = n {
+                    Some(brush.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // The overlay (blue) should be painted LAST
+        let overlay_pos = rects
+            .iter()
+            .position(|b| matches!(b, Brush::Solid(c) if *c == overlay_color));
+        assert!(
+            overlay_pos.is_some(),
+            "Overlay should be present in scene, rects: {:?}",
+            rects
+        );
+        let overlay_pos = overlay_pos.unwrap();
+
+        // Check that overlay is painted last (after scrollbar)
+        assert_eq!(
+            overlay_pos,
+            rects.len() - 1,
+            "Overlay should be the last rect, but it's at position {} of {}. Rects: {:?}",
+            overlay_pos,
+            rects.len(),
+            rects
+        );
+    }
+
+    #[test]
+    fn test_render_z_index_with_overlay_host() {
+        // This test mimics the showcase app structure more closely:
+        // Stack {
+        //   OverlayHost { content with Scroll }
+        //   Box with render_z_index(1000)  // Hint box
+        // }
+        use crate::Scroll;
+        use crate::overlay::OverlayHandle;
+
+        let content_color = Color::from_rgb(100, 100, 100);
+        let overlay_color = Color::from_rgb(0, 0, 255);
+
+        // Tall content inside scroll - 500px tall in 200px viewport
+        let tall_content = RBox(Modifier::new().size(180.0, 500.0).background(content_color));
+        let scroll = Scroll(Modifier::new().size(200.0, 200.0)).child(tall_content);
+
+        // Create an OverlayHost wrapping the scroll content
+        let overlay_handle = OverlayHandle::new();
+        let overlay_host = overlay_handle.host(Modifier::new().fill_max_size(), scroll);
+
+        // The hint box with render_z_index should paint on top
+        let hint_box = RBox(
+            Modifier::new()
+                .size(50.0, 50.0)
+                .background(overlay_color)
+                .render_z_index(1000.0),
+        );
+
+        // Final structure: Stack { OverlayHost, HintBox }
+        let root = Stack(Modifier::new().size(200.0, 200.0)).child((overlay_host, hint_box));
+
+        let mut engine = LayoutEngine::new();
+        let (scene, _hits, _sems) = engine.layout_frame(
+            &root,
+            (200, 200),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        );
+
+        // Collect all rect nodes
+        let rects: Vec<_> = scene
+            .nodes
+            .iter()
+            .filter_map(|n| {
+                if let SceneNode::Rect { brush, .. } = n {
+                    Some(brush.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // The hint box (blue) should be painted LAST
+        let overlay_pos = rects
+            .iter()
+            .position(|b| matches!(b, Brush::Solid(c) if *c == overlay_color));
+        assert!(
+            overlay_pos.is_some(),
+            "Hint box should be present in scene, rects: {:?}",
+            rects
+        );
+        let overlay_pos = overlay_pos.unwrap();
+
+        // Check that hint box is painted last (after scrollbar)
+        assert_eq!(
+            overlay_pos,
+            rects.len() - 1,
+            "Hint box should be the last rect, but it's at position {} of {}. Rects: {:?}",
+            overlay_pos,
+            rects.len(),
+            rects
+        );
+    }
 }

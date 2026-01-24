@@ -65,8 +65,12 @@ pub struct Modifier {
     pub align_items_container: Option<AlignItems>,
     pub align_content: Option<AlignContent>,
     pub clip_rounded: Option<f32>,
-    /// Works for hit-testing only, draw order is not changed.
+    /// Z-index for hit-testing order (higher = receives events first).
     pub z_index: f32,
+    /// Z-index for render order (higher = painted on top). If None, uses tree order.
+    pub render_z_index: Option<f32>,
+    /// If true, this view does not create hit regions.
+    pub hit_passthrough: bool,
     pub repaint_boundary: bool,
     pub click: bool,
     pub on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>>,
@@ -134,6 +138,8 @@ impl std::fmt::Debug for Modifier {
             .field("align_content", &self.align_content)
             .field("clip_rounded", &self.clip_rounded)
             .field("z_index", &self.z_index)
+            .field("render_z_index", &self.render_z_index)
+            .field("hit_passthrough", &self.hit_passthrough)
             .field("repaint_boundary", &self.repaint_boundary)
             .field("click", &self.click)
             .field("on_scroll", &self.on_scroll.as_ref().map(|_| "..."))
@@ -315,6 +321,18 @@ impl Modifier {
     }
     pub fn z_index(mut self, z: f32) -> Self {
         self.z_index = z;
+        self
+    }
+
+    /// Sets the render z-index for this view. Higher values are painted on top.
+    /// Unlike `z_index` (which only affects hit-testing), this affects visual layering.
+    pub fn render_z_index(mut self, z: f32) -> Self {
+        self.render_z_index = Some(z);
+        self
+    }
+
+    pub fn hit_passthrough(mut self) -> Self {
+        self.hit_passthrough = true;
         self
     }
     pub fn clickable(mut self) -> Self {
