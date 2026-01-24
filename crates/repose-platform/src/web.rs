@@ -22,7 +22,9 @@ use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys, Window
 use winit::window::{ImePurpose, Window};
 
 use repose_ui::TextFieldState;
-use repose_ui::textfield::{TF_FONT_DP, TF_PADDING_X_DP, index_for_x_bytes, measure_text};
+use repose_ui::textfield::{
+    TF_FONT_DP, TF_PADDING_X_DP, caret_xy_for_byte, index_for_x_bytes, move_caret_vertical,
+};
 
 enum ClipboardAction {
     PasteText(String),
@@ -242,15 +244,12 @@ impl App {
     }
 
     fn touch_slop_px(&self, window: &Window) -> f32 {
-        6.0 * self.scale(window)
+        rc::touch_slop_px(self.scale(window))
     }
 
     fn tf_key_of(&self, visual_id: u64) -> u64 {
-        if let Some(f) = &self.frame_cache
-            && let Some(i) = rc::hit_index_by_id(f, visual_id)
-        {
-            let hr = &f.hit_regions[i];
-            return hr.tf_state_key.unwrap_or(hr.id);
+        if let Some(f) = &self.frame_cache {
+            return rc::tf_key_of(f, visual_id);
         }
         visual_id
     }
@@ -265,14 +264,13 @@ impl App {
     }
 
     fn is_textfield(&self, id: u64) -> bool {
-        self.frame_cache
-            .as_ref()
-            .map(|f| {
-                f.semantics_nodes
-                    .iter()
-                    .any(|n| n.id == id && n.role == Role::TextField)
-            })
-            .unwrap_or(false)
+        if let Some(f) = &self.frame_cache {
+            f.semantics_nodes
+                .iter()
+                .any(|n| n.id == id && n.role == Role::TextField)
+        } else {
+            false
+        }
     }
 
     fn tf_ensure_caret_visible_in_hit(
@@ -281,11 +279,8 @@ impl App {
         state: &mut TextFieldState,
         hit_rect: Rect,
     ) {
-        let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-        let m = measure_text(&state.text, font_px);
-        let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
         let pad = self.padding_px(window);
-        state.ensure_caret_visible(caret_x_px, hit_rect.w - 2.0 * pad, dp_to_px(2.0));
+        rc::tf_ensure_caret_visible(state, hit_rect, pad);
     }
 
     fn inject_fullscreen_css_if_needed(&self, window: &Window) {
@@ -550,24 +545,8 @@ impl App {
             }
         }
     }
-    fn is_dnd_target(hit: &HitRegion) -> bool {
-        hit.on_drop.is_some()
-            || hit.on_drag_enter.is_some()
-            || hit.on_drag_over.is_some()
-            || hit.on_drag_leave.is_some()
-    }
-
     fn dnd_slop_px(&self, window: &Window) -> f32 {
-        6.0 * self.scale(window)
-    }
-
-    fn dnd_target_id_at(f: &Frame, pos: Vec2) -> Option<u64> {
-        f.hit_regions
-            .iter()
-            .rev()
-            .filter(|h| h.rect.contains(pos))
-            .find(|h| Self::is_dnd_target(h))
-            .map(|h| h.id)
+        rc::touch_slop_px(self.scale(window))
     }
 
     fn dnd_update_over(&mut self, pos: Vec2) {
@@ -578,7 +557,7 @@ impl App {
             return;
         };
 
-        let new_over = Self::dnd_target_id_at(f, pos);
+        let new_over = rc::dnd_target_id_at(f, pos);
 
         if new_over != session.over_id {
             if let Some(prev) = session.over_id {
@@ -694,7 +673,7 @@ impl App {
 
         let mut accepted = false;
         if accept_if_possible {
-            let drop_target = Self::dnd_target_id_at(f, pos);
+            let drop_target = rc::dnd_target_id_at(f, pos);
             if let Some(tid) = drop_target {
                 if let Some(i) = rc::hit_index_by_id(f, tid) {
                     if let Some(cb) = &f.hit_regions[i].on_drop {
@@ -746,7 +725,7 @@ impl App {
         let payload: repose_core::dnd::DragPayload =
             std::rc::Rc::new(repose_core::dnd::DroppedFiles { files });
 
-        let Some(target_id) = Self::dnd_target_id_at(f, pos) else {
+        let Some(target_id) = rc::dnd_target_id_at(f, pos) else {
             return;
         };
 
@@ -1380,44 +1359,17 @@ impl ApplicationHandler<()> for App {
                     return;
                 }
 
-                // Clipboard shortcuts via dispatch_action (Ctrl/Cmd + C/X/V/A/Z)
-                if key_event.state == ElementState::Pressed
-                    && !key_event.repeat
-                    && self.modifiers.command
-                {
-                    let handled = match key_event.physical_key {
-                        PhysicalKey::Code(KeyCode::KeyC) => {
-                            self.dispatch_action(&window, Action::Copy)
-                        }
-                        PhysicalKey::Code(KeyCode::KeyX) => {
-                            self.dispatch_action(&window, Action::Cut)
-                        }
-                        PhysicalKey::Code(KeyCode::KeyV) => {
-                            self.dispatch_action(&window, Action::Paste)
-                        }
-                        PhysicalKey::Code(KeyCode::KeyA) => {
-                            self.dispatch_action(&window, Action::SelectAll)
-                        }
-                        PhysicalKey::Code(KeyCode::KeyZ) => self.dispatch_action(
-                            &window,
-                            if self.modifiers.shift {
-                                Action::Redo
-                            } else {
-                                Action::Undo
-                            },
+                if key_event.state == ElementState::Pressed && !key_event.repeat {
+                    if let Some(action) = repose_core::shortcuts::resolve_action(
+                        repose_core::shortcuts::KeyChord::new(
+                            rc::map_key(key_event.physical_key),
+                            self.modifiers,
                         ),
-                        PhysicalKey::Code(KeyCode::KeyF) => {
-                            self.dispatch_action(&window, Action::Find)
+                    ) {
+                        if self.dispatch_action(&window, action) {
+                            self.request_redraw();
+                            return;
                         }
-                        PhysicalKey::Code(KeyCode::KeyS) => {
-                            self.dispatch_action(&window, Action::Save)
-                        }
-                        _ => false,
-                    };
-
-                    if handled {
-                        self.request_redraw();
-                        return;
                     }
                 }
 
@@ -1425,29 +1377,11 @@ impl ApplicationHandler<()> for App {
                 if matches!(key_event.physical_key, PhysicalKey::Code(KeyCode::Tab)) {
                     if key_event.state == ElementState::Pressed && !key_event.repeat {
                         if let Some(f) = &self.frame_cache {
-                            let chain = &f.focus_chain;
-                            if !chain.is_empty() {
-                                let shift = self.modifiers.shift;
-                                let current = self.sched.focused;
-
-                                let next = if let Some(cur) = current {
-                                    if let Some(idx) = chain.iter().position(|&id| id == cur) {
-                                        if shift {
-                                            if idx == 0 {
-                                                chain[chain.len() - 1]
-                                            } else {
-                                                chain[idx - 1]
-                                            }
-                                        } else {
-                                            chain[(idx + 1) % chain.len()]
-                                        }
-                                    } else {
-                                        chain[0]
-                                    }
-                                } else {
-                                    chain[0]
-                                };
-
+                            if let Some(next) = rc::focus_next_in_chain(
+                                &f.focus_chain,
+                                self.sched.focused,
+                                self.modifiers.shift,
+                            ) {
                                 self.sched.focused = Some(next);
                                 if self.is_textfield(next) {
                                     window.set_ime_allowed(true);
@@ -1496,10 +1430,98 @@ impl ApplicationHandler<()> for App {
                                     self.notify_text_change(fid, st.text.clone());
                                 }
                                 PhysicalKey::Code(KeyCode::ArrowLeft) => {
-                                    st.move_cursor(-1, self.modifiers.shift)
+                                    st.move_cursor(-1, self.modifiers.shift);
+                                    st.preferred_x_px = None;
                                 }
                                 PhysicalKey::Code(KeyCode::ArrowRight) => {
-                                    st.move_cursor(1, self.modifiers.shift)
+                                    st.move_cursor(1, self.modifiers.shift);
+                                    st.preferred_x_px = None;
+                                }
+                                PhysicalKey::Code(KeyCode::ArrowUp) => {
+                                    if let Some(f) = &self.frame_cache
+                                        && let Some(hit) =
+                                            f.hit_regions.iter().find(|h| h.id == fid)
+                                        && hit.tf_multiline
+                                    {
+                                        let font_px = dp_to_px(TF_FONT_DP)
+                                            * repose_core::locals::text_scale().0;
+                                        let pad = self.padding_px(&window);
+                                        let wrap_w = hit.rect.w - 2.0 * pad;
+                                        let cur = st.caret_index();
+                                        let (new_pos, px) = move_caret_vertical(
+                                            &st.text,
+                                            font_px,
+                                            wrap_w,
+                                            cur,
+                                            -1,
+                                            st.preferred_x_px,
+                                        );
+                                        if self.modifiers.shift {
+                                            st.selection.end = new_pos;
+                                        } else {
+                                            st.selection = new_pos..new_pos;
+                                        }
+                                        st.preferred_x_px = Some(px);
+                                        // Use multiline-aware caret visibility
+                                        let (cx, cy, _) = caret_xy_for_byte(
+                                            &st.text,
+                                            font_px,
+                                            wrap_w,
+                                            st.caret_index(),
+                                        );
+                                        let iw = st.inner_width;
+                                        let ih = st.inner_height;
+                                        st.ensure_caret_visible_xy(
+                                            cx,
+                                            cy,
+                                            iw,
+                                            ih,
+                                            2.0 * self.scale(&window),
+                                        );
+                                    }
+                                }
+                                PhysicalKey::Code(KeyCode::ArrowDown) => {
+                                    if let Some(f) = &self.frame_cache
+                                        && let Some(hit) =
+                                            f.hit_regions.iter().find(|h| h.id == fid)
+                                        && hit.tf_multiline
+                                    {
+                                        let font_px = dp_to_px(TF_FONT_DP)
+                                            * repose_core::locals::text_scale().0;
+                                        let pad = self.padding_px(&window);
+                                        let wrap_w = hit.rect.w - 2.0 * pad;
+                                        let cur = st.caret_index();
+                                        let (new_pos, px) = move_caret_vertical(
+                                            &st.text,
+                                            font_px,
+                                            wrap_w,
+                                            cur,
+                                            1,
+                                            st.preferred_x_px,
+                                        );
+                                        if self.modifiers.shift {
+                                            st.selection.end = new_pos;
+                                        } else {
+                                            st.selection = new_pos..new_pos;
+                                        }
+                                        st.preferred_x_px = Some(px);
+                                        // Use multiline-aware caret visibility
+                                        let (cx, cy, _) = caret_xy_for_byte(
+                                            &st.text,
+                                            font_px,
+                                            wrap_w,
+                                            st.caret_index(),
+                                        );
+                                        let iw = st.inner_width;
+                                        let ih = st.inner_height;
+                                        st.ensure_caret_visible_xy(
+                                            cx,
+                                            cy,
+                                            iw,
+                                            ih,
+                                            2.0 * self.scale(&window),
+                                        );
+                                    }
                                 }
                                 PhysicalKey::Code(KeyCode::Home) => st.selection = 0..0,
                                 PhysicalKey::Code(KeyCode::End) => {

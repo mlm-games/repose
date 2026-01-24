@@ -1,5 +1,8 @@
 use crate::*;
 use repose_core::input::{PointerButton, PointerEvent, PointerEventKind, PointerId, PointerKind};
+use repose_core::locals::dp_to_px;
+use repose_ui::TextFieldState;
+use repose_ui::textfield::{TF_FONT_DP, measure_text};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -17,6 +20,14 @@ pub(crate) fn top_hit_index(frame: &Frame, pos: Vec2) -> Option<usize> {
 
 pub(crate) fn hit_index_by_id(frame: &Frame, id: u64) -> Option<usize> {
     frame.hit_regions.iter().position(|h| h.id == id)
+}
+
+pub(crate) fn tf_key_of(frame: &Frame, visual_id: u64) -> u64 {
+    if let Some(i) = hit_index_by_id(frame, visual_id) {
+        let hr = &frame.hit_regions[i];
+        return hr.tf_state_key.unwrap_or(hr.id);
+    }
+    visual_id
 }
 
 pub(crate) fn pe_mouse(event: PointerEventKind, pos: Vec2, mods: Modifiers) -> PointerEvent {
@@ -61,6 +72,131 @@ pub(crate) fn pe_up_primary(kind: PointerKind, pos: Vec2, mods: Modifiers) -> Po
         pressure: 1.0,
         modifiers: mods,
     }
+}
+
+pub(crate) fn map_key(key: winit::keyboard::PhysicalKey) -> repose_core::input::Key {
+    use repose_core::input::Key;
+    use winit::keyboard::{KeyCode, PhysicalKey};
+
+    match key {
+        PhysicalKey::Code(KeyCode::Enter) => Key::Enter,
+        PhysicalKey::Code(KeyCode::Tab) => Key::Tab,
+        PhysicalKey::Code(KeyCode::Backspace) => Key::Backspace,
+        PhysicalKey::Code(KeyCode::Delete) => Key::Delete,
+        PhysicalKey::Code(KeyCode::Escape) => Key::Escape,
+        PhysicalKey::Code(KeyCode::ArrowLeft) => Key::ArrowLeft,
+        PhysicalKey::Code(KeyCode::ArrowRight) => Key::ArrowRight,
+        PhysicalKey::Code(KeyCode::ArrowUp) => Key::ArrowUp,
+        PhysicalKey::Code(KeyCode::ArrowDown) => Key::ArrowDown,
+        PhysicalKey::Code(KeyCode::Home) => Key::Home,
+        PhysicalKey::Code(KeyCode::End) => Key::End,
+        PhysicalKey::Code(KeyCode::PageUp) => Key::PageUp,
+        PhysicalKey::Code(KeyCode::PageDown) => Key::PageDown,
+        PhysicalKey::Code(KeyCode::Space) => Key::Space,
+        PhysicalKey::Code(KeyCode::KeyA) => Key::Character('a'),
+        PhysicalKey::Code(KeyCode::KeyB) => Key::Character('b'),
+        PhysicalKey::Code(KeyCode::KeyC) => Key::Character('c'),
+        PhysicalKey::Code(KeyCode::KeyD) => Key::Character('d'),
+        PhysicalKey::Code(KeyCode::KeyE) => Key::Character('e'),
+        PhysicalKey::Code(KeyCode::KeyF) => Key::Character('f'),
+        PhysicalKey::Code(KeyCode::KeyG) => Key::Character('g'),
+        PhysicalKey::Code(KeyCode::KeyH) => Key::Character('h'),
+        PhysicalKey::Code(KeyCode::KeyI) => Key::Character('i'),
+        PhysicalKey::Code(KeyCode::KeyJ) => Key::Character('j'),
+        PhysicalKey::Code(KeyCode::KeyK) => Key::Character('k'),
+        PhysicalKey::Code(KeyCode::KeyL) => Key::Character('l'),
+        PhysicalKey::Code(KeyCode::KeyM) => Key::Character('m'),
+        PhysicalKey::Code(KeyCode::KeyN) => Key::Character('n'),
+        PhysicalKey::Code(KeyCode::KeyO) => Key::Character('o'),
+        PhysicalKey::Code(KeyCode::KeyP) => Key::Character('p'),
+        PhysicalKey::Code(KeyCode::KeyQ) => Key::Character('q'),
+        PhysicalKey::Code(KeyCode::KeyR) => Key::Character('r'),
+        PhysicalKey::Code(KeyCode::KeyS) => Key::Character('s'),
+        PhysicalKey::Code(KeyCode::KeyT) => Key::Character('t'),
+        PhysicalKey::Code(KeyCode::KeyU) => Key::Character('u'),
+        PhysicalKey::Code(KeyCode::KeyV) => Key::Character('v'),
+        PhysicalKey::Code(KeyCode::KeyW) => Key::Character('w'),
+        PhysicalKey::Code(KeyCode::KeyX) => Key::Character('x'),
+        PhysicalKey::Code(KeyCode::KeyY) => Key::Character('y'),
+        PhysicalKey::Code(KeyCode::KeyZ) => Key::Character('z'),
+        PhysicalKey::Code(KeyCode::Digit0) => Key::Character('0'),
+        PhysicalKey::Code(KeyCode::Digit1) => Key::Character('1'),
+        PhysicalKey::Code(KeyCode::Digit2) => Key::Character('2'),
+        PhysicalKey::Code(KeyCode::Digit3) => Key::Character('3'),
+        PhysicalKey::Code(KeyCode::Digit4) => Key::Character('4'),
+        PhysicalKey::Code(KeyCode::Digit5) => Key::Character('5'),
+        PhysicalKey::Code(KeyCode::Digit6) => Key::Character('6'),
+        PhysicalKey::Code(KeyCode::Digit7) => Key::Character('7'),
+        PhysicalKey::Code(KeyCode::Digit8) => Key::Character('8'),
+        PhysicalKey::Code(KeyCode::Digit9) => Key::Character('9'),
+        PhysicalKey::Code(KeyCode::F1) => Key::F(1),
+        PhysicalKey::Code(KeyCode::F2) => Key::F(2),
+        PhysicalKey::Code(KeyCode::F3) => Key::F(3),
+        PhysicalKey::Code(KeyCode::F4) => Key::F(4),
+        PhysicalKey::Code(KeyCode::F5) => Key::F(5),
+        PhysicalKey::Code(KeyCode::F6) => Key::F(6),
+        PhysicalKey::Code(KeyCode::F7) => Key::F(7),
+        PhysicalKey::Code(KeyCode::F8) => Key::F(8),
+        PhysicalKey::Code(KeyCode::F9) => Key::F(9),
+        PhysicalKey::Code(KeyCode::F10) => Key::F(10),
+        PhysicalKey::Code(KeyCode::F11) => Key::F(11),
+        PhysicalKey::Code(KeyCode::F12) => Key::F(12),
+        _ => Key::Unknown,
+    }
+}
+
+pub(crate) fn tf_ensure_caret_visible(state: &mut TextFieldState, hit_rect: Rect, padding_px: f32) {
+    let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+    let m = measure_text(&state.text, font_px);
+    let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
+    state.ensure_caret_visible(caret_x_px, hit_rect.w - 2.0 * padding_px, dp_to_px(2.0));
+}
+
+pub(crate) fn touch_slop_px(scale: f32) -> f32 {
+    6.0 * scale
+}
+
+pub(crate) fn focus_next_in_chain(chain: &[u64], current: Option<u64>, shift: bool) -> Option<u64> {
+    if chain.is_empty() {
+        return None;
+    }
+
+    let next = if let Some(cur) = current {
+        if let Some(idx) = chain.iter().position(|&id| id == cur) {
+            if shift {
+                if idx == 0 {
+                    chain[chain.len() - 1]
+                } else {
+                    chain[idx - 1]
+                }
+            } else {
+                chain[(idx + 1) % chain.len()]
+            }
+        } else {
+            chain[0]
+        }
+    } else {
+        chain[0]
+    };
+
+    Some(next)
+}
+
+pub(crate) fn is_dnd_target(hit: &HitRegion) -> bool {
+    hit.on_drop.is_some()
+        || hit.on_drag_enter.is_some()
+        || hit.on_drag_over.is_some()
+        || hit.on_drag_leave.is_some()
+}
+
+pub(crate) fn dnd_target_id_at(frame: &Frame, pos: Vec2) -> Option<u64> {
+    frame
+        .hit_regions
+        .iter()
+        .rev()
+        .filter(|h| h.rect.contains(pos))
+        .find(|h| is_dnd_target(h))
+        .map(|h| h.id)
 }
 
 /// Dispatch wheel/touch-scroll to the top-most scroll consumer under `pos`.

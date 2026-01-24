@@ -20,6 +20,7 @@ pub mod web;
 
 pub mod a11y;
 mod common;
+use common as rc;
 pub mod render;
 
 pub use render::{ImageHandleGuard, RenderCommand, RenderContext};
@@ -106,6 +107,14 @@ fn map_cursor(c: repose_core::CursorIcon) -> winit::window::CursorIcon {
 pub fn run_desktop_app(
     root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
 ) -> anyhow::Result<()> {
+    run_desktop_app_with_snackbar(root, None)
+}
+
+#[cfg(feature = "desktop")]
+pub fn run_desktop_app_with_snackbar(
+    root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
+    snackbar_tick: Option<Rc<dyn Fn(u32)>>,
+) -> anyhow::Result<()> {
     use std::collections::{HashMap, HashSet};
     use winit::application::ApplicationHandler;
     use winit::dpi::{LogicalPosition, LogicalSize, PhysicalSize};
@@ -173,6 +182,7 @@ pub fn run_desktop_app(
 
         last_redraw: Instant,
         pending_redraw: bool,
+        snackbar_tick: Option<Rc<dyn Fn(u32)>>,
     }
 
     impl App {
@@ -252,12 +262,34 @@ pub fn run_desktop_app(
 
                 last_redraw: Instant::now(),
                 pending_redraw: false,
+                snackbar_tick: None,
             }
+        }
+
+        fn new_with_snackbar(
+            root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>,
+            snackbar_tick: Option<Rc<dyn Fn(u32)>>,
+        ) -> Self {
+            let mut app = Self::new(root);
+            app.snackbar_tick = snackbar_tick;
+            app
         }
 
         fn request_redraw(&self) {
             if let Some(w) = &self.window {
                 w.request_redraw();
+            }
+        }
+
+        fn tick_snackbar(&mut self) {
+            let Some(cb) = &self.snackbar_tick else {
+                return;
+            };
+            let now = Instant::now();
+            let elapsed = now.saturating_duration_since(self.last_redraw);
+            let ms = elapsed.as_millis().min(u32::MAX as u128) as u32;
+            if ms > 0 {
+                cb(ms);
             }
         }
 
@@ -353,7 +385,7 @@ pub fn run_desktop_app(
 
             // Highlight best drop target under cursor (if we have a frame)
             if let Some(f) = &self.frame_cache {
-                if let Some(tid) = Self::dnd_target_id_at(f, pos) {
+                if let Some(tid) = rc::dnd_target_id_at(f, pos) {
                     if let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid) {
                         let color = if dragging_files {
                             Color::from_hex("#FFAA00")
@@ -1053,32 +1085,16 @@ pub fn run_desktop_app(
                             && !key_event.repeat
                             && let Some(f) = &self.frame_cache
                         {
-                            let chain = &f.focus_chain;
-                            if !chain.is_empty() {
+                            if let Some(next) = rc::focus_next_in_chain(
+                                &f.focus_chain,
+                                self.sched.focused,
+                                self.modifiers.shift,
+                            ) {
                                 // If a button was "pressed" via keyboard, clear it when we move focus
                                 if let Some(active) = self.key_pressed_active.take() {
                                     self.pressed_ids.remove(&active);
                                 }
 
-                                let shift = self.modifiers.shift;
-                                let current = self.sched.focused;
-                                let next = if let Some(cur) = current {
-                                    if let Some(idx) = chain.iter().position(|&id| id == cur) {
-                                        if shift {
-                                            if idx == 0 {
-                                                chain[chain.len() - 1]
-                                            } else {
-                                                chain[idx - 1]
-                                            }
-                                        } else {
-                                            chain[(idx + 1) % chain.len()]
-                                        }
-                                    } else {
-                                        chain[0]
-                                    }
-                                } else {
-                                    chain[0]
-                                };
                                 self.sched.focused = Some(next);
 
                                 // IME only for TextField
@@ -1100,34 +1116,17 @@ pub fn run_desktop_app(
                         return; // swallow Tab
                     }
 
-                    if key_event.state == ElementState::Pressed
-                        && !key_event.repeat
-                        && self.modifiers.command
-                    {
-                        use repose_core::shortcuts::Action;
-
-                        let handled = match key_event.physical_key {
-                            PhysicalKey::Code(KeyCode::KeyC) => self.dispatch_action(Action::Copy),
-                            PhysicalKey::Code(KeyCode::KeyX) => self.dispatch_action(Action::Cut),
-                            PhysicalKey::Code(KeyCode::KeyV) => self.dispatch_action(Action::Paste),
-                            PhysicalKey::Code(KeyCode::KeyA) => {
-                                self.dispatch_action(Action::SelectAll)
+                    if key_event.state == ElementState::Pressed && !key_event.repeat {
+                        if let Some(action) = repose_core::shortcuts::resolve_action(
+                            repose_core::shortcuts::KeyChord::new(
+                                rc::map_key(key_event.physical_key),
+                                self.modifiers,
+                            ),
+                        ) {
+                            if self.dispatch_action(action) {
+                                self.request_redraw();
+                                return;
                             }
-                            PhysicalKey::Code(KeyCode::KeyZ) => {
-                                self.dispatch_action(if self.modifiers.shift {
-                                    Action::Redo
-                                } else {
-                                    Action::Undo
-                                })
-                            }
-                            PhysicalKey::Code(KeyCode::KeyF) => self.dispatch_action(Action::Find),
-                            PhysicalKey::Code(KeyCode::KeyS) => self.dispatch_action(Action::Save),
-                            _ => false,
-                        };
-
-                        if handled {
-                            self.request_redraw();
-                            return;
                         }
                     }
 
@@ -1159,21 +1158,46 @@ pub fn run_desktop_app(
                     }
 
                     // Keyboard activation for focused TextField submit on Enter
+                    // For multiline: Ctrl+Enter or Cmd+Enter submits, plain Enter inserts newline
+                    // For single-line: Enter submits
                     if key_event.state == ElementState::Pressed
                         && !key_event.repeat
                         && let PhysicalKey::Code(KeyCode::Enter) = key_event.physical_key
                         && let Some(focused_id) = self.sched.focused
                         && let Some(f) = &self.frame_cache
                         && let Some(hit) = f.hit_regions.iter().find(|h| h.id == focused_id)
-                        && let Some(on_submit) = &hit.on_text_submit
                     {
-                        let key = self.tf_key_of(focused_id);
+                        let is_multiline = hit.tf_multiline;
+                        let should_submit = if is_multiline {
+                            // Multiline: Ctrl+Enter or Cmd+Enter submits
+                            self.modifiers.ctrl || self.modifiers.meta
+                        } else {
+                            // Single-line: Enter always submits
+                            true
+                        };
 
-                        if let Some(state) = self.textfield_states.get(&key) {
-                            let text = state.borrow().text.clone();
-                            on_submit(text);
-                            self.request_redraw();
-                            return; // don't continue as button activation
+                        if should_submit {
+                            if let Some(on_submit) = &hit.on_text_submit {
+                                let key = self.tf_key_of(focused_id);
+                                if let Some(state) = self.textfield_states.get(&key) {
+                                    let text = state.borrow().text.clone();
+                                    on_submit(text);
+                                    self.request_redraw();
+                                    return;
+                                }
+                            }
+                        } else {
+                            // Multiline with plain Enter: insert newline
+                            let key = self.tf_key_of(focused_id);
+                            if let Some(state_rc) = self.textfield_states.get(&key) {
+                                let mut st = state_rc.borrow_mut();
+                                st.insert_text("\n");
+                                let new_text = st.text.clone();
+                                self.notify_text_change(focused_id, new_text);
+                                App::tf_ensure_caret_visible(&mut st);
+                                self.request_redraw();
+                                return;
+                            }
                         }
                     }
 
@@ -1210,13 +1234,111 @@ pub fn run_desktop_app(
                                     }
                                     PhysicalKey::Code(KeyCode::ArrowLeft) => {
                                         state.move_cursor(-1, self.modifiers.shift);
+                                        state.preferred_x_px = None; // Reset preferred x on horizontal movement
                                         App::tf_ensure_caret_visible(&mut state);
                                         self.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::ArrowRight) => {
                                         state.move_cursor(1, self.modifiers.shift);
+                                        state.preferred_x_px = None; // Reset preferred x on horizontal movement
                                         App::tf_ensure_caret_visible(&mut state);
                                         self.request_redraw();
+                                    }
+                                    PhysicalKey::Code(KeyCode::ArrowUp) => {
+                                        if self.is_multiline_id(focused_id) {
+                                            if let Some(f) = &self.frame_cache {
+                                                if let Some(hit) = f
+                                                    .hit_regions
+                                                    .iter()
+                                                    .find(|h| h.id == focused_id)
+                                                {
+                                                    let font_px = dp_to_px(TF_FONT_DP);
+                                                    let pad = self.padding_px();
+                                                    let wrap_w = hit.rect.w - 2.0 * pad;
+                                                    let cur = state.caret_index();
+                                                    let (new_pos, px) =
+                                                        repose_ui::textfield::move_caret_vertical(
+                                                            &state.text,
+                                                            font_px,
+                                                            wrap_w,
+                                                            cur,
+                                                            -1,
+                                                            state.preferred_x_px,
+                                                        );
+                                                    if self.modifiers.shift {
+                                                        state.selection.end = new_pos;
+                                                    } else {
+                                                        state.selection = new_pos..new_pos;
+                                                    }
+                                                    state.preferred_x_px = Some(px);
+                                                    // Use multiline-aware caret visibility
+                                                    let (cx, cy, _) = caret_xy_for_byte(
+                                                        &state.text,
+                                                        font_px,
+                                                        wrap_w,
+                                                        state.caret_index(),
+                                                    );
+                                                    let iw = state.inner_width;
+                                                    let ih = state.inner_height;
+                                                    state.ensure_caret_visible_xy(
+                                                        cx,
+                                                        cy,
+                                                        iw,
+                                                        ih,
+                                                        self.dp_px(2.0),
+                                                    );
+                                                    self.request_redraw();
+                                                }
+                                            }
+                                        }
+                                    }
+                                    PhysicalKey::Code(KeyCode::ArrowDown) => {
+                                        if self.is_multiline_id(focused_id) {
+                                            if let Some(f) = &self.frame_cache {
+                                                if let Some(hit) = f
+                                                    .hit_regions
+                                                    .iter()
+                                                    .find(|h| h.id == focused_id)
+                                                {
+                                                    let font_px = dp_to_px(TF_FONT_DP);
+                                                    let pad = self.padding_px();
+                                                    let wrap_w = hit.rect.w - 2.0 * pad;
+                                                    let cur = state.caret_index();
+                                                    let (new_pos, px) =
+                                                        repose_ui::textfield::move_caret_vertical(
+                                                            &state.text,
+                                                            font_px,
+                                                            wrap_w,
+                                                            cur,
+                                                            1,
+                                                            state.preferred_x_px,
+                                                        );
+                                                    if self.modifiers.shift {
+                                                        state.selection.end = new_pos;
+                                                    } else {
+                                                        state.selection = new_pos..new_pos;
+                                                    }
+                                                    state.preferred_x_px = Some(px);
+                                                    // Use multiline-aware caret visibility
+                                                    let (cx, cy, _) = caret_xy_for_byte(
+                                                        &state.text,
+                                                        font_px,
+                                                        wrap_w,
+                                                        state.caret_index(),
+                                                    );
+                                                    let iw = state.inner_width;
+                                                    let ih = state.inner_height;
+                                                    state.ensure_caret_visible_xy(
+                                                        cx,
+                                                        cy,
+                                                        iw,
+                                                        ih,
+                                                        self.dp_px(2.0),
+                                                    );
+                                                    self.request_redraw();
+                                                }
+                                            }
+                                        }
                                     }
                                     PhysicalKey::Code(KeyCode::Home) => {
                                         state.selection = 0..0;
@@ -1284,14 +1406,22 @@ pub fn run_desktop_app(
                                     PhysicalKey::Code(KeyCode::KeyV) => {
                                         if let Some(fid) = self.sched.focused {
                                             let key = self.tf_key_of(fid);
+                                            let is_multiline = self.is_multiline_id(fid);
                                             if let Some(state_rc) =
                                                 self.textfield_states.get(&key).cloned()
                                                 && let Some(mut txt) = self.paste_from_clipboard()
                                             {
-                                                // Single-line TextField: strip control/newlines
-                                                txt.retain(|c| {
-                                                    !c.is_control() && c != '\n' && c != '\r'
-                                                });
+                                                // For multiline: allow newlines but strip other control chars
+                                                // For single-line: strip all control chars including newlines
+                                                if is_multiline {
+                                                    txt.retain(|c| {
+                                                        c == '\n' || (!c.is_control() && c != '\r')
+                                                    });
+                                                } else {
+                                                    txt.retain(|c| {
+                                                        !c.is_control() && c != '\n' && c != '\r'
+                                                    });
+                                                }
                                                 if !txt.is_empty() {
                                                     let mut st = state_rc.borrow_mut();
                                                     st.insert_text(&txt);
@@ -1504,6 +1634,7 @@ pub fn run_desktop_app(
                     }
 
                     self.frame_cache = Some(frame);
+                    self.tick_snackbar();
                     self.last_redraw = Instant::now();
                 }
 
@@ -1573,10 +1704,8 @@ pub fn run_desktop_app(
         }
 
         fn tf_key_of(&self, visual_id: u64) -> u64 {
-            if let Some(f) = &self.frame_cache
-                && let Some(hr) = f.hit_regions.iter().find(|h| h.id == visual_id)
-            {
-                return hr.tf_state_key.unwrap_or(hr.id);
+            if let Some(f) = &self.frame_cache {
+                return rc::tf_key_of(f, visual_id);
             }
             visual_id
         }
@@ -1663,24 +1792,8 @@ pub fn run_desktop_app(
             }
         }
 
-        fn is_dnd_target(hit: &HitRegion) -> bool {
-            hit.on_drop.is_some()
-                || hit.on_drag_enter.is_some()
-                || hit.on_drag_over.is_some()
-                || hit.on_drag_leave.is_some()
-        }
-
         fn dnd_slop_px(&self) -> f32 {
             dp_to_px(6.0)
-        }
-
-        fn dnd_target_id_at(f: &Frame, pos: Vec2) -> Option<u64> {
-            f.hit_regions
-                .iter()
-                .rev()
-                .filter(|h| h.rect.contains(pos))
-                .find(|h| Self::is_dnd_target(h))
-                .map(|h| h.id)
         }
 
         fn dnd_update_over(&mut self, pos: Vec2) {
@@ -1691,7 +1804,7 @@ pub fn run_desktop_app(
                 return;
             };
 
-            let new_over = Self::dnd_target_id_at(f, pos);
+            let new_over = rc::dnd_target_id_at(f, pos);
 
             if new_over != session.over_id {
                 if let Some(prev) = session.over_id {
@@ -1811,7 +1924,7 @@ pub fn run_desktop_app(
             let mut accepted = false;
 
             if accept_if_possible {
-                let drop_target = Self::dnd_target_id_at(f, pos);
+                let drop_target = rc::dnd_target_id_at(f, pos);
                 if let Some(tid) = drop_target {
                     if let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid) {
                         if let Some(cb) = &hit.on_drop {
@@ -1880,8 +1993,7 @@ pub fn run_desktop_app(
             let payload: repose_core::dnd::DragPayload =
                 std::rc::Rc::new(repose_core::dnd::DroppedFiles { files });
 
-            let Some(target_id) = Self::dnd_target_id_at(f, pos) else {
-                self.pending_drop_pos_px = None;
+            let Some(target_id) = rc::dnd_target_id_at(f, pos) else {
                 return;
             };
 
@@ -1910,11 +2022,19 @@ pub fn run_desktop_app(
     }
 
     let event_loop = EventLoop::new()?;
-    let mut app = App::new(Box::new(root));
+    let mut app = App::new_with_snackbar(Box::new(root), snackbar_tick);
     // Install system clock once
     repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
     event_loop.run_app(&mut app)?;
     Ok(())
+}
+
+#[cfg(feature = "desktop")]
+pub fn run_app_with_snackbar(
+    root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
+    snackbar_tick: Rc<dyn Fn(u32)>,
+) -> anyhow::Result<()> {
+    run_desktop_app_with_snackbar(root, Some(snackbar_tick))
 }
 
 // Accessibility bridge stub (Noop by default; logs on Linux for now)

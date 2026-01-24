@@ -3,7 +3,7 @@ use crate::render::{RenderCommand, RenderContext};
 use crate::*;
 
 use repose_ui::TextFieldState;
-use repose_ui::textfield::{TF_FONT_DP, TF_PADDING_X_DP, index_for_x_bytes, measure_text};
+use repose_ui::textfield::{TF_FONT_DP, TF_PADDING_X_DP, index_for_x_bytes};
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -171,28 +171,24 @@ pub fn run_android_app_with_options(
         }
 
         fn touch_slop_px(&self) -> f32 {
-            self.dp_px(6.0)
+            rc::touch_slop_px(self.scale())
         }
 
         fn tf_key_of(&self, visual_id: u64) -> u64 {
-            if let Some(f) = &self.frame_cache
-                && let Some(i) = rc::hit_index_by_id(f, visual_id)
-            {
-                let hr = &f.hit_regions[i];
-                return hr.tf_state_key.unwrap_or(hr.id);
+            if let Some(f) = &self.frame_cache {
+                return rc::tf_key_of(f, visual_id);
             }
             visual_id
         }
 
         fn is_textfield(&self, id: u64) -> bool {
-            self.frame_cache
-                .as_ref()
-                .map(|f| {
-                    f.semantics_nodes
-                        .iter()
-                        .any(|n| n.id == id && n.role == Role::TextField)
-                })
-                .unwrap_or(false)
+            if let Some(f) = &self.frame_cache {
+                f.semantics_nodes
+                    .iter()
+                    .any(|n| n.id == id && n.role == Role::TextField)
+            } else {
+                false
+            }
         }
 
         fn notify_text_change(&self, id: u64, text: String) {
@@ -205,14 +201,7 @@ pub fn run_android_app_with_options(
         }
 
         fn ensure_caret_visible_in_hit(&self, st: &mut TextFieldState, hit_rect: Rect) {
-            let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-            let m = measure_text(&st.text, font_px);
-            let caret_x_px = m.positions.get(st.caret_index()).copied().unwrap_or(0.0);
-            st.ensure_caret_visible(
-                caret_x_px,
-                hit_rect.w - 2.0 * self.padding_px(),
-                dp_to_px(2.0),
-            );
+            rc::tf_ensure_caret_visible(st, hit_rect, self.padding_px());
         }
 
         fn sync_window_size(&mut self, size: PhysicalSize<u32>) {
@@ -370,23 +359,7 @@ pub fn run_android_app_with_options(
             }
         }
         fn dnd_slop_px(&self) -> f32 {
-            self.dp_px(6.0)
-        }
-
-        fn is_dnd_target(hit: &HitRegion) -> bool {
-            hit.on_drop.is_some()
-                || hit.on_drag_enter.is_some()
-                || hit.on_drag_over.is_some()
-                || hit.on_drag_leave.is_some()
-        }
-
-        fn dnd_target_id_at(f: &Frame, pos: Vec2) -> Option<u64> {
-            f.hit_regions
-                .iter()
-                .rev()
-                .filter(|h| h.rect.contains(pos))
-                .find(|h| Self::is_dnd_target(h))
-                .map(|h| h.id)
+            rc::touch_slop_px(self.scale())
         }
 
         fn dnd_update_over(&mut self, pos: Vec2) {
@@ -397,7 +370,7 @@ pub fn run_android_app_with_options(
                 return;
             };
 
-            let new_over = Self::dnd_target_id_at(f, pos);
+            let new_over = rc::dnd_target_id_at(f, pos);
 
             if new_over != session.over_id {
                 if let Some(prev) = session.over_id {
@@ -508,7 +481,7 @@ pub fn run_android_app_with_options(
 
             let mut accepted = false;
             if accept_if_possible {
-                let drop_target = Self::dnd_target_id_at(f, pos);
+                let drop_target = rc::dnd_target_id_at(f, pos);
                 if let Some(tid) = drop_target {
                     if let Some(i) = rc::hit_index_by_id(f, tid) {
                         if let Some(cb) = &f.hit_regions[i].on_drop {
@@ -865,34 +838,18 @@ pub fn run_android_app_with_options(
                         }
                     }
 
-                    // Dispatch actions via command key (Ctrl on Android with hardware keyboard)
-                    if key_event.state == ElementState::Pressed
-                        && !key_event.repeat
-                        && self.modifiers.command
-                    {
-                        use repose_core::shortcuts::Action;
-
-                        let handled = match key_event.physical_key {
-                            PhysicalKey::Code(KeyCode::KeyC) => self.dispatch_action(Action::Copy),
-                            PhysicalKey::Code(KeyCode::KeyX) => self.dispatch_action(Action::Cut),
-                            PhysicalKey::Code(KeyCode::KeyV) => self.dispatch_action(Action::Paste),
-                            PhysicalKey::Code(KeyCode::KeyA) => {
-                                self.dispatch_action(Action::SelectAll)
+                    if key_event.state == ElementState::Pressed && !key_event.repeat {
+                        if let Some(action) = repose_core::shortcuts::resolve_action(
+                            repose_core::shortcuts::KeyChord::new(
+                                rc::map_key(key_event.physical_key),
+                                self.modifiers,
+                            ),
+                        ) {
+                            if self.dispatch_action(action) {
+                                self.dirty = true;
+                                self.request_redraw();
+                                return;
                             }
-                            PhysicalKey::Code(KeyCode::KeyZ) => {
-                                self.dispatch_action(if self.modifiers.shift {
-                                    Action::Redo
-                                } else {
-                                    Action::Undo
-                                })
-                            }
-                            _ => false,
-                        };
-
-                        if handled {
-                            self.dirty = true;
-                            self.request_redraw();
-                            return;
                         }
                     }
 
@@ -900,29 +857,11 @@ pub fn run_android_app_with_options(
                     if matches!(key_event.physical_key, PhysicalKey::Code(KeyCode::Tab)) {
                         if key_event.state == ElementState::Pressed && !key_event.repeat {
                             if let Some(f) = &self.frame_cache {
-                                let chain = &f.focus_chain;
-                                if !chain.is_empty() {
-                                    let shift = self.modifiers.shift;
-                                    let current = self.sched.focused;
-
-                                    let next = if let Some(cur) = current {
-                                        if let Some(idx) = chain.iter().position(|&id| id == cur) {
-                                            if shift {
-                                                if idx == 0 {
-                                                    chain[chain.len() - 1]
-                                                } else {
-                                                    chain[idx - 1]
-                                                }
-                                            } else {
-                                                chain[(idx + 1) % chain.len()]
-                                            }
-                                        } else {
-                                            chain[0]
-                                        }
-                                    } else {
-                                        chain[0]
-                                    };
-
+                                if let Some(next) = rc::focus_next_in_chain(
+                                    &f.focus_chain,
+                                    self.sched.focused,
+                                    self.modifiers.shift,
+                                ) {
                                     self.sched.focused = Some(next);
                                     if let Some(win) = &self.window {
                                         if self.is_textfield(next) {
