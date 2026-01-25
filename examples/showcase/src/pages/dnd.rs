@@ -69,11 +69,11 @@ pub fn screen() -> View {
                 Box(Modifier::new().height(8.0).width(1.0)),
                 Text("Drag an item here (internal), or drop files from the OS/browser (if supported).")
                     .size(14.0)
-                    .color(Color::from_hex("#999999")),
+                    .color(th.on_surface_variant),
                 Box(Modifier::new().height(8.0).width(1.0)),
                 Text(dropped.get())
                     .size(12.0)
-                    .color(Color::from_hex("#BBBBBB"))
+                    .color(th.on_surface_variant)
                     .overflow_clip(),
             )),
         )
@@ -84,7 +84,7 @@ pub fn screen() -> View {
         Column(Modifier::new().padding(12.0)).child((
             Text("Internal DnD works on all platforms; file drop depends on runner support.")
                 .size(14.0)
-                .color(Color::from_hex("#999999")),
+                .color(theme().on_surface_variant),
             Box(Modifier::new().height(12.0).width(1.0)),
             Row(Modifier::new().align_items(AlignItems::Center)).child((
                 mk_draggable(1, "Drag me (Item 1)"),

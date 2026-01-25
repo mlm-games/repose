@@ -10,15 +10,15 @@ use std::sync::Arc;
 use repose_core::*;
 use repose_tree::{NodeId, TreeNode, TreeStats, ViewTree};
 use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
-use taffy::TaffyTree;
 use taffy::prelude::*;
 use taffy::style::FlexDirection;
 use taffy::style::Overflow;
+use taffy::TaffyTree;
 
-use crate::Interactions;
 use crate::textfield::{
-    TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, byte_to_char_index, measure_text,
+    byte_to_char_index, measure_text, TextFieldState, TF_FONT_DP, TF_PADDING_X_DP,
 };
+use crate::Interactions;
 
 /// The incremental layout engine.
 pub struct LayoutEngine {
@@ -1497,6 +1497,8 @@ impl LayoutEngine {
                                 .unwrap_or(sx)
                                 - st.scroll_offset;
 
+                            let th = locals::theme();
+                            let selection = mul_alpha_color(th.focus, 85.0 / 255.0);
                             scene.nodes.push(SceneNode::Rect {
                                 rect: repose_core::Rect {
                                     x: inner.x + sx.max(0.0),
@@ -1504,15 +1506,16 @@ impl LayoutEngine {
                                     w: (ex - sx).max(0.0),
                                     h: inner.h,
                                 },
-                                brush: Brush::Solid(Color::from_hex("#3B7BFF55")),
+                                brush: Brush::Solid(selection),
                                 radius: 0.0,
                             });
                         }
 
+                        let th = locals::theme();
                         let txt_col = if st.text.is_empty() {
-                            Color::from_hex("#666666")
+                            th.on_surface_variant
                         } else {
-                            locals::theme().on_surface
+                            th.on_surface
                         };
 
                         scene.nodes.push(SceneNode::Text {
@@ -1545,7 +1548,7 @@ impl LayoutEngine {
                                     w: dp_to_px(1.0),
                                     h: inner.h,
                                 },
-                                brush: Brush::Solid(Color::WHITE),
+                                brush: Brush::Solid(th.on_surface),
                                 radius: 0.0,
                             });
                         }
@@ -1567,6 +1570,8 @@ impl LayoutEngine {
 
                         // Render
                         let st = state_rc.borrow();
+                        let th = locals::theme();
+                        let selection = mul_alpha_color(th.focus, 85.0 / 255.0);
                         if st.text.is_empty() {
                             scene.nodes.push(SceneNode::Text {
                                 rect: repose_core::Rect {
@@ -1576,7 +1581,7 @@ impl LayoutEngine {
                                     h: inner.h,
                                 },
                                 text: Arc::from(hint.clone()),
-                                color: Color::from_hex("#666666"),
+                                color: th.on_surface_variant,
                                 size: font_val,
                             });
                         } else {
@@ -1640,7 +1645,7 @@ impl LayoutEngine {
                                         w: (ex - sx).max(0.0),
                                         h: line_h,
                                     },
-                                    brush: Brush::Solid(Color::from_hex("#3B7BFF55")),
+                                    brush: Brush::Solid(selection),
                                     radius: 0.0,
                                 });
                             }
@@ -1664,16 +1669,17 @@ impl LayoutEngine {
                                     w: dp_to_px(1.0),
                                     h: line_h,
                                 },
-                                brush: Brush::Solid(Color::WHITE),
+                                brush: Brush::Solid(th.on_surface),
                                 radius: 0.0,
                             });
                         }
                     }
                 } else {
+                    let th = locals::theme();
                     scene.nodes.push(SceneNode::Text {
                         rect: inner,
                         text: Arc::from(hint.clone()),
-                        color: Color::from_hex("#666666"),
+                        color: th.on_surface_variant,
                         size: font_px(TF_FONT_DP),
                     });
                 }
@@ -1869,11 +1875,7 @@ impl LayoutEngine {
                         w: tw,
                         h: th_h,
                     },
-                    brush: Brush::Solid(if *checked {
-                        th.primary
-                    } else {
-                        Color::from_hex("#333333")
-                    }),
+                    brush: Brush::Solid(if *checked { th.primary } else { th.outline }),
                     radius: th_h * 0.5,
                 });
                 let kw = dp_to_px(22.0);
@@ -1889,7 +1891,7 @@ impl LayoutEngine {
                         w: kw,
                         h: kw,
                     },
-                    brush: Brush::Solid(Color::from_hex("#EEEEEE")),
+                    brush: Brush::Solid(th.on_surface),
                     radius: kw * 0.5,
                 });
                 let t = !*checked;
@@ -1960,7 +1962,7 @@ impl LayoutEngine {
                         w: rect.w,
                         h: th_h,
                     },
-                    brush: Brush::Solid(Color::from_hex("#333333")),
+                    brush: Brush::Solid(th.outline),
                     radius: th_h * 0.5,
                 });
                 let t = norm(*value, *min, *max).clamp(0.0, 1.0);
@@ -2105,7 +2107,7 @@ impl LayoutEngine {
                         w: rect.w,
                         h: th_h,
                     },
-                    brush: Brush::Solid(Color::from_hex("#333333")),
+                    brush: Brush::Solid(th.outline),
                     radius: th_h * 0.5,
                 });
                 let t0 = norm(*start, *min, *max).clamp(0.0, 1.0);
@@ -2299,7 +2301,7 @@ impl LayoutEngine {
                         w: rect.w,
                         h: th_h,
                     },
-                    brush: Brush::Solid(Color::from_hex("#333333")),
+                    brush: Brush::Solid(th.outline),
                     radius: th_h * 0.5,
                 });
                 let t = norm(*value, *min, *max).clamp(0.0, 1.0);
@@ -3223,8 +3225,8 @@ mod tests {
         //   OverlayHost { content with Scroll }
         //   Box with render_z_index(1000)  // Hint box
         // }
-        use crate::Scroll;
         use crate::overlay::OverlayHandle;
+        use crate::Scroll;
 
         let content_color = Color::from_rgb(100, 100, 100);
         let overlay_color = Color::from_rgb(0, 0, 255);

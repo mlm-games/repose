@@ -515,7 +515,7 @@ fn render_tabs(
                             }))
                         .child(
                             Row(Modifier::new().align_items(AlignItems::Center)).child((
-                                Text("⋮⋮").size(12.0).color(Color::from_hex("#888888")),
+                                Text("⋮⋮").size(12.0).color(th.on_surface_variant),
                                 Box(Modifier::new().width(6.0).height(1.0)),
                                 Text(title).color(th.on_surface),
                             )),
@@ -581,6 +581,7 @@ fn dock_drop_overlay(
     drag_active: &Signal<bool>,
     key_prefix: &str,
 ) -> View {
+    let th = theme();
     if !drag_active.get() {
         return Box(Modifier::new());
     }
@@ -606,17 +607,17 @@ fn dock_drop_overlay(
             Stack(
                 Modifier::new()
                     .fill_max_size()
-                    .background(Color::from_hex("#44AAFF33"))
-                    .border(2.0, Color::from_hex("#44AAFF"), 0.0),
+                    .background(th.primary.with_alpha(51))
+                    .border(2.0, th.primary, 0.0),
             )
-            .child(Text(label).size(12.0).color(Color::from_hex("#88CCFF")))
+            .child(Text(label).size(12.0).color(th.on_primary))
         } else {
             Stack(
                 Modifier::new()
                     .fill_max_size()
-                    .border(1.0, Color::from_hex("#44AAFF55"), 0.0),
+                    .border(1.0, th.outline_variant, 0.0),
             )
-            .child(Text(label).size(12.0).color(Color::from_hex("#555555")))
+            .child(Text(label).size(12.0).color(th.on_surface_variant))
         };
 
         Stack(
@@ -847,7 +848,7 @@ fn render_split(
         },
         // Little grip dots
         Box(Modifier::new().fill_max_size())
-            .child(Text("•••").size(12.0).color(Color::from_hex("#888888"))),
+            .child(Text("•••").size(12.0).color(theme().on_surface_variant)),
     ));
 
     let a_view = render_node(

@@ -1,12 +1,12 @@
 use std::rc::Rc;
 
 use repose_core::{
-    TextDirection, prelude::*, set_text_direction_default, set_text_scale_default,
-    set_theme_default, set_ui_scale_default, shortcuts, signal,
+    prelude::*, set_text_direction_default, set_text_scale_default, set_theme_default,
+    set_ui_scale_default, shortcuts, signal, TextDirection,
 };
 use repose_material::material3;
 use repose_navigation::{
-    NavDisplay, NavTransition, Navigator, back, remember_back_stack, renderer,
+    back, remember_back_stack, renderer, NavDisplay, NavTransition, Navigator,
 };
 use repose_ui::overlay::{OverlayHandle, SnackbarAction, SnackbarController, SnackbarRequest};
 use repose_ui::{Box, Column, Stack, Text, TextStyle, ViewExt};
@@ -76,19 +76,28 @@ pub fn app(_s: &mut Scheduler) -> View {
     // Theme presets
     let theme_light = {
         let mut t = Theme::default();
-        t.background = Color::from_hex("#FAFAFA");
-        t.surface = Color::from_hex("#FFFFFF");
-        t.on_surface = Color::from_hex("#222222");
-        t.primary = Color::from_hex("#3B82F6");
-        t.on_primary = Color::WHITE;
-        t.outline = Color::from_hex("#DDDDDD");
-        t.focus = Color::from_hex("#2563EB");
-        t.button_bg = Color::from_hex("#3B82F6");
-        t.button_bg_hover = Color::from_hex("#2563EB");
-        t.button_bg_pressed = Color::from_hex("#1D4ED8");
-        t.scrollbar_track = Color(0, 0, 0, 20);
-        t.scrollbar_thumb = Color(0, 0, 0, 80);
-        t.sync_colors_from_fields();
+        t.colors.background = Color::from_hex("#F7F7F5");
+        t.colors.surface = Color::from_hex("#FFFFFF");
+        t.colors.surface_variant = Color::from_hex("#F1F1EE");
+        t.colors.on_surface = Color::from_hex("#1F2328");
+        t.colors.on_surface_variant = Color::from_hex("#5E6368");
+        t.colors.primary = Color::from_hex("#2F6FEB");
+        t.colors.on_primary = Color::WHITE;
+        t.colors.secondary = Color::from_hex("#0F766E");
+        t.colors.on_secondary = Color::WHITE;
+        t.colors.tertiary = Color::from_hex("#B45309");
+        t.colors.on_tertiary = Color::WHITE;
+        t.colors.outline = Color::from_hex("#D2D6DC");
+        t.colors.outline_variant = Color::from_hex("#E6E8EC");
+        t.colors.error = Color::from_hex("#B42318");
+        t.colors.on_error = Color::WHITE;
+        t.colors.focus = Color::from_hex("#1D4ED8");
+        t.apply_colors();
+        t.button_bg = t.primary;
+        t.button_bg_hover = Color::from_hex("#1F5FDB");
+        t.button_bg_pressed = Color::from_hex("#1C4FC2");
+        t.scrollbar_track = t.on_surface.with_alpha(24);
+        t.scrollbar_thumb = t.on_surface.with_alpha(96);
         t
     };
     let theme_dark = Theme::default();
@@ -245,36 +254,37 @@ pub fn app(_s: &mut Scheduler) -> View {
 
     let overlay_root = Stack(Modifier::new().fill_max_size()).child((
         overlay_root,
-        Box(Modifier::new()
-            .absolute()
-            .offset(None, None, Some(16.0), Some(16.0))
-            .padding(10.0)
-            .background(Color::from_hex("#111111CC"))
-            .clip_rounded(12.0)
-            .hit_passthrough()
-            .render_z_index(1000.0)) // Render on top of scroll content
+        {
+            let th = theme();
+            Box(Modifier::new()
+                .absolute()
+                .offset(None, None, Some(16.0), Some(16.0))
+                .padding(10.0)
+                .background(th.surface.with_alpha(204))
+                .clip_rounded(12.0)
+                .hit_passthrough()
+                .render_z_index(1000.0)) // Render on top of scroll content
+        }
         .child(
             Column(Modifier::new()).child(
                 std::iter::once(
                     Text("Shortcut Overrides")
                         .size(12.0)
-                        .color(Color::from_hex("#FFFFFFCC")),
+                        .color(theme().on_surface.with_alpha(204)),
                 )
                 .chain(std::iter::once(Box(Modifier::new().size(1.0, 6.0))))
                 .chain(std::iter::once(
                     Text(shortcut_note.get())
                         .size(12.0)
-                        .color(Color::from_hex("#FFFFFF99")),
+                        .color(theme().on_surface.with_alpha(153)),
                 ))
                 .chain(std::iter::once(Box(Modifier::new().size(1.0, 4.0))))
                 .chain(std::iter::once(if shortcut_demo.get() {
-                    Text("Snackbar triggered")
-                        .size(12.0)
-                        .color(Color::from_hex("#8BE28A"))
+                    Text("Snackbar triggered").size(12.0).color(theme().primary)
                 } else {
                     Text("Snackbar idle")
                         .size(12.0)
-                        .color(Color::from_hex("#FFFFFF66"))
+                        .color(theme().on_surface.with_alpha(102))
                 }))
                 .collect::<Vec<_>>(),
             ),

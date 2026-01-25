@@ -37,7 +37,7 @@ pub fn screen() -> View {
         Column(Modifier::new().padding(12.0)).child((
             Text("Drag tabs to edges/center to dock. Drag splitters to resize.")
                 .size(14.0)
-                .color(Color::from_hex("#999999")),
+                .color(theme().on_surface_variant),
             Box(Modifier::new().height(12.0).width(1.0)),
             DockArea(
                 "showcase_dock",

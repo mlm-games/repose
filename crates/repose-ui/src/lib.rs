@@ -61,8 +61,8 @@
 //!     Surface(
 //!         Modifier::new()
 //!             .padding(16.0)
-//!             .background(Color::from_hex("#1E1E1E"))
-//!             .border(1.0, Color::from_hex("#333333"), 8.0)
+//!             .background(theme().surface)
+//!             .border(1.0, theme().outline, 8.0)
 //!             .clip_rounded(8.0),
 //!         Text("Hello, Repose!"),
 //!     )
@@ -182,7 +182,7 @@ pub fn Text(text: impl Into<String>) -> View {
         0,
         ViewKind::Text {
             text: text.into(),
-            color: Color::WHITE,
+            color: locals::theme().on_surface,
             font_size: 16.0, // dp (converted to px in layout/paint)
             soft_wrap: true,
             max_lines: None,

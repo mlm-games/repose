@@ -1,13 +1,14 @@
 use repose_core::*;
-use repose_platform::{RenderContext, run_desktop_app};
+use repose_platform::{run_desktop_app, RenderContext};
 use repose_ui::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
 fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
+    let th = theme();
     let animated_color = remember_with_key("color", || {
         Rc::new(RefCell::new(repose_core::animation::AnimatedValue::new(
-            Color::from_hex("#2196F3"),
+            th.primary,
             repose_core::animation::AnimationSpec::default(),
         )))
     });
@@ -34,16 +35,14 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
     let current_size = *animated_size.borrow().get();
 
     Surface(
-        Modifier::new()
-            .fill_max_size()
-            .background(Color::from_hex("#121212")),
+        Modifier::new().fill_max_size().background(th.background),
         Column(Modifier::new().padding(32.0)).child((
             Text("Animation Demo").modifier(Modifier::new().padding(12.0)),
             // Animated box
             Box(Modifier::new()
                 .size(current_size, current_size)
                 .background(current_color)
-                .border(2.0, Color::WHITE, 8.0)),
+                .border(2.0, th.on_surface, 8.0)),
             // Controls
             Row(Modifier::new().padding(16.0)).child((
                 Button(
@@ -51,7 +50,7 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
                     {
                         let anim = animated_color.clone();
                         move || {
-                            anim.borrow_mut().set_target(Color::from_hex("#2196F3"));
+                            anim.borrow_mut().set_target(th.primary);
                         }
                     },
                 ),
@@ -60,7 +59,7 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
                     {
                         let anim = animated_color.clone();
                         move || {
-                            anim.borrow_mut().set_target(Color::from_hex("#4CAF50"));
+                            anim.borrow_mut().set_target(th.secondary);
                         }
                     },
                 ),
@@ -69,7 +68,7 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
                     {
                         let anim = animated_color.clone();
                         move || {
-                            anim.borrow_mut().set_target(Color::from_hex("#FF5252"));
+                            anim.borrow_mut().set_target(th.error);
                         }
                     },
                 ),
@@ -111,7 +110,7 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
                 },
             )
             .size(64.0)
-            .color(Color::from_hex("#888888"))
+            .color(th.on_surface_variant)
             .modifier(Modifier::new().padding(12.0)),
         )),
     )

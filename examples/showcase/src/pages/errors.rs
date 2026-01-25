@@ -11,9 +11,10 @@ pub fn screen() -> View {
         "ErrorBoundary",
         ErrorBoundary(
             |info| {
+                let th = theme();
                 Box(Modifier::new()
-                    .background(Color::from_hex("#331111"))
-                    .border(1.0, theme().outline, 12.0)
+                    .background(th.error)
+                    .border(1.0, th.outline, 12.0)
                     .clip_rounded(12.0)
                     .padding(12.0))
                 .child(Text(format!("Recovered from panic: {}", info.message)))

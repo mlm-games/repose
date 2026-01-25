@@ -10,7 +10,7 @@ pub fn screen() -> View {
         Column(Modifier::new().padding(12.0)).child((
             Text("Immediate-mode drawing recorded into SceneNodes.")
                 .size(14.0)
-                .color(Color::from_hex("#999999")),
+                .color(theme().on_surface_variant),
             Box(Modifier::new().height(12.0).width(1.0)),
             Canvas(
                 Modifier::new()

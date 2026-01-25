@@ -107,7 +107,7 @@ pub fn NavRail(current: Route, nav: Navigator<Route>) -> View {
         Column(Modifier::new().fill_max_size()).child((
             Text("Navigation")
                 .size(14.0)
-                .color(Color::from_hex("#999999"))
+                .color(th.on_surface_variant)
                 .modifier(Modifier::new().padding(8.0)),
             Column(Modifier::new().fill_max_size()).child(
                 routes
@@ -128,8 +128,7 @@ fn NavItem(route: Route, selected: bool, on_click: impl Fn() + 'static) -> View 
     let th = theme();
 
     let bg = if selected {
-        // selected state: use primary with some transparency
-        Color(th.primary.0, th.primary.1, th.primary.2, 48)
+        th.primary.with_alpha(48)
     } else {
         th.surface
     };
@@ -157,8 +156,9 @@ pub fn Section(title: &str, body: View) -> View {
 }
 
 pub fn LabeledSwitch(label: &str, checked: bool, on_change: impl Fn(bool) + 'static) -> View {
+    let th = theme();
     Row(Modifier::new().align_items(AlignItems::Center)).child((
-        Text(label).size(14.0).color(Color::from_hex("#999999")),
+        Text(label).size(14.0).color(th.on_surface_variant),
         Box(Modifier::new().width(8.0).height(1.0)),
         Switch(checked, on_change),
     ))
@@ -171,10 +171,11 @@ pub fn LabeledSlider(
     step: Option<f32>,
     on_change: impl Fn(f32) + 'static,
 ) -> View {
+    let th = theme();
     Column(Modifier::new().align_items(AlignItems::Stretch)).child((
         Text(format!("{label}: {:.2}", value))
             .size(14.0)
-            .color(Color::from_hex("#999999")),
+            .color(th.on_surface_variant),
         Box(Modifier::new().height(6.0).width(1.0)),
         Slider(value, range, step, on_change),
     ))

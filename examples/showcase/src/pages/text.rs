@@ -33,13 +33,13 @@ pub fn screen() -> View {
                 Box(Modifier::new().height(8.0).width(1.0)),
                 Text("Single-line: Enter submits.")
                     .size(14.0)
-                    .color(Color::from_hex("#999999")),
+                    .color(theme().on_surface_variant),
                 Text(format!("last change: {}", last_change_single.get()))
                     .size(12.0)
-                    .color(Color::from_hex("#999999")),
+                    .color(theme().on_surface_variant),
                 Text(format!("last submit: {}", last_submit_single.get()))
                     .size(12.0)
-                    .color(Color::from_hex("#999999")),
+                    .color(theme().on_surface_variant),
             )),
         ),
         Section(
@@ -65,13 +65,13 @@ pub fn screen() -> View {
                 Box(Modifier::new().height(8.0).width(1.0)),
                 Text("Multi-line: Enter inserts newline. Cmd/Ctrl+Enter submits (if wired).")
                     .size(14.0)
-                    .color(Color::from_hex("#999999")),
+                    .color(theme().on_surface_variant),
                 Text(format!("last change: {}", last_change_multi.get()))
                     .size(12.0)
-                    .color(Color::from_hex("#999999")),
+                    .color(theme().on_surface_variant),
                 Text(format!("last submit: {}", last_submit_multi.get()))
                     .size(12.0)
-                    .color(Color::from_hex("#999999")),
+                    .color(theme().on_surface_variant),
             )),
         ),
         Section(

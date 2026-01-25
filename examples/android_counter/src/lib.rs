@@ -1,8 +1,8 @@
 #![cfg(target_os = "android")]
 use log::LevelFilter;
 use repose_core::prelude::*;
-use repose_platform::RenderContext;
 use repose_platform::android::run_android_app;
+use repose_platform::RenderContext;
 use repose_ui::*;
 use winit::platform::android::activity::AndroidApp;
 
@@ -11,7 +11,7 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
     Surface(
         Modifier::new()
             .fill_max_size()
-            .background(Color::from_hex("#121212")),
+            .background(theme().background),
         Column(Modifier::new().padding(24.0).fill_max_size()).with_children(vec![
             Spacer(),
             Text(format!("Count: {}", count.get())).modifier(Modifier::new().padding(12.0)),

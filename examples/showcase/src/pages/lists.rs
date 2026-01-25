@@ -32,7 +32,7 @@ pub fn screen() -> View {
         Modifier::new().max_width(1200.0).max_height(500.0),
         |it, _| {
             let th = theme();
-            let done_tint = Color(th.primary.0, th.primary.1, th.primary.2, 48);
+            let done_tint = th.primary.with_alpha(48);
             Row(Modifier::new()
                 .padding(12.0)
                 .background(if it.done { done_tint } else { th.surface })
