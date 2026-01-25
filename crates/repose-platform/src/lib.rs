@@ -19,15 +19,19 @@ pub mod android;
 pub mod web;
 
 pub mod a11y;
+#[cfg(any(feature = "desktop", feature = "android", target_arch = "wasm32"))]
 mod common;
 #[cfg(any(feature = "desktop", all(feature = "android", target_os = "android")))]
 mod common_android;
+#[cfg(any(feature = "desktop", feature = "android", target_arch = "wasm32"))]
 mod common_web;
 pub mod render;
 
+#[cfg(any(feature = "desktop", feature = "android", target_arch = "wasm32"))]
 use common as rc;
 #[cfg(any(feature = "desktop", all(feature = "android", target_os = "android")))]
 use common_android as rc_android;
+#[cfg(any(feature = "desktop", feature = "android", target_arch = "wasm32"))]
 use common_web as rc_web;
 
 pub use render::{ImageHandleGuard, RenderCommand, RenderContext};
