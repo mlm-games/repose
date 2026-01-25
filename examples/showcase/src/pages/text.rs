@@ -4,8 +4,10 @@ use repose_ui::*;
 use crate::ui::Section;
 
 pub fn screen() -> View {
-    let last_submit = remember_with_key("text_last_submit", || signal(String::new()));
-    let last_change = remember_with_key("text_last_change", || signal(String::new()));
+    let last_submit_single = remember_with_key("text_last_submit_single", || signal(String::new()));
+    let last_change_single = remember_with_key("text_last_change_single", || signal(String::new()));
+    let last_submit_multi = remember_with_key("text_last_submit_multi", || signal(String::new()));
+    let last_change_multi = remember_with_key("text_last_change_multi", || signal(String::new()));
 
     Column(Modifier::new().fill_max_width()).child((
         Section(
@@ -20,11 +22,11 @@ pub fn screen() -> View {
                         .border(1.0, theme().outline, 10.0)
                         .clip_rounded(10.0),
                     Some({
-                        let last_change = last_change.clone();
+                        let last_change = last_change_single.clone();
                         move |s| last_change.set(s)
                     }),
                     Some({
-                        let last_submit = last_submit.clone();
+                        let last_submit = last_submit_single.clone();
                         move |s| last_submit.set(s)
                     }),
                 ),
@@ -32,10 +34,10 @@ pub fn screen() -> View {
                 Text("Single-line: Enter submits.")
                     .size(14.0)
                     .color(Color::from_hex("#999999")),
-                Text(format!("last change: {}", last_change.get()))
+                Text(format!("last change: {}", last_change_single.get()))
                     .size(12.0)
                     .color(Color::from_hex("#999999")),
-                Text(format!("last submit: {}", last_submit.get()))
+                Text(format!("last submit: {}", last_submit_single.get()))
                     .size(12.0)
                     .color(Color::from_hex("#999999")),
             )),
@@ -52,11 +54,11 @@ pub fn screen() -> View {
                         .border(1.0, theme().outline, 10.0)
                         .clip_rounded(10.0),
                     Some({
-                        let last_change = last_change.clone();
+                        let last_change = last_change_multi.clone();
                         move |s| last_change.set(s)
                     }),
                     Some({
-                        let last_submit = last_submit.clone();
+                        let last_submit = last_submit_multi.clone();
                         move |s| last_submit.set(s)
                     }),
                 ),
@@ -64,7 +66,10 @@ pub fn screen() -> View {
                 Text("Multi-line: Enter inserts newline. Cmd/Ctrl+Enter submits (if wired).")
                     .size(14.0)
                     .color(Color::from_hex("#999999")),
-                Text(format!("last submit: {}", last_submit.get()))
+                Text(format!("last change: {}", last_change_multi.get()))
+                    .size(12.0)
+                    .color(Color::from_hex("#999999")),
+                Text(format!("last submit: {}", last_submit_multi.get()))
                     .size(12.0)
                     .color(Color::from_hex("#999999")),
             )),

@@ -1494,19 +1494,40 @@ impl ApplicationHandler<()> for App {
                     }
                 }
 
-                // Enter submits focused TextField
+                // Enter behavior for focused TextField
                 if key_event.state == ElementState::Pressed && !key_event.repeat {
                     if let PhysicalKey::Code(KeyCode::Enter) = key_event.physical_key {
                         if let Some(focused_id) = self.sched.focused
                             && let Some(f) = &self.frame_cache
                             && let Some(i) = rc::hit_index_by_id(f, focused_id)
-                            && let Some(on_submit) = &f.hit_regions[i].on_text_submit
                         {
-                            let key = self.tf_key_of(focused_id);
-                            if let Some(state) = self.textfield_states.get(&key) {
-                                on_submit(state.borrow().text.clone());
-                                self.request_redraw();
-                                return;
+                            let hit = &f.hit_regions[i];
+                            let is_multiline = hit.tf_multiline;
+                            let should_submit = if is_multiline {
+                                self.modifiers.ctrl || self.modifiers.meta
+                            } else {
+                                true
+                            };
+
+                            if should_submit {
+                                if let Some(on_submit) = &hit.on_text_submit {
+                                    let key = self.tf_key_of(focused_id);
+                                    if let Some(state) = self.textfield_states.get(&key) {
+                                        on_submit(state.borrow().text.clone());
+                                        self.request_redraw();
+                                        return;
+                                    }
+                                }
+                            } else {
+                                let key = self.tf_key_of(focused_id);
+                                if let Some(state_rc) = self.textfield_states.get(&key) {
+                                    let mut st = state_rc.borrow_mut();
+                                    st.insert_text("\n");
+                                    self.notify_text_change(focused_id, st.text.clone());
+                                    self.tf_ensure_caret_visible_in_hit(&window, &mut st, hit.rect);
+                                    self.request_redraw();
+                                    return;
+                                }
                             }
                         }
                     }
