@@ -2,7 +2,10 @@ use crate::*;
 use repose_core::input::{PointerButton, PointerEvent, PointerEventKind, PointerId, PointerKind};
 use repose_core::locals::dp_to_px;
 use repose_ui::TextFieldState;
-use repose_ui::textfield::{TF_FONT_DP, measure_text};
+use repose_ui::textfield::{
+    TF_FONT_DP, TF_PADDING_X_DP, caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes,
+    measure_text,
+};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -150,6 +153,54 @@ pub(crate) fn tf_ensure_caret_visible(state: &mut TextFieldState, hit_rect: Rect
     let m = measure_text(&state.text, font_px);
     let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
     state.ensure_caret_visible(caret_x_px, hit_rect.w - 2.0 * padding_px, dp_to_px(2.0));
+}
+
+/// Place caret in textfield at pointer position and begin drag selection.
+/// Handles both single-line and multiline textfields.
+/// `pos_px`: absolute pointer position in pixels
+/// `scale`: display scale factor
+/// `shift`: whether shift key is held (extends selection)
+pub(crate) fn tf_place_caret_at_pointer(
+    state: &mut TextFieldState,
+    hit_rect: Rect,
+    is_multiline: bool,
+    pos_px: (f32, f32),
+    scale: f32,
+    shift: bool,
+) {
+    let padding_px = TF_PADDING_X_DP * scale;
+    let inner_x_px = hit_rect.x + padding_px;
+    let inner_y_px = hit_rect.y + 8.0 * scale;
+    let content_x_px = (pos_px.0 - inner_x_px + state.scroll_offset).max(0.0);
+    let content_y_px = (pos_px.1 - inner_y_px + state.scroll_offset_y).max(0.0);
+    let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+
+    let idx = if is_multiline {
+        index_for_xy_bytes(
+            &state.text,
+            font_px,
+            hit_rect.w - 2.0 * padding_px,
+            content_x_px,
+            content_y_px,
+        )
+    } else {
+        index_for_x_bytes(&state.text, font_px, content_x_px)
+    };
+    state.begin_drag(idx, shift);
+
+    // Ensure caret visible
+    let caret_idx = state.caret_index();
+    let wrap_w = hit_rect.w - 2.0 * padding_px;
+    if is_multiline {
+        let (cx, cy, _) = caret_xy_for_byte(&state.text, font_px, wrap_w, caret_idx);
+        let iw = state.inner_width;
+        let ih = state.inner_height;
+        state.ensure_caret_visible_xy(cx, cy, iw, ih, 2.0 * scale);
+    } else {
+        let m = measure_text(&state.text, font_px);
+        let cx = m.positions.get(caret_idx).copied().unwrap_or(0.0);
+        state.ensure_caret_visible(cx, wrap_w, 2.0 * scale);
+    }
 }
 
 pub(crate) fn touch_slop_px(scale: f32) -> f32 {

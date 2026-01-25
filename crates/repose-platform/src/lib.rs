@@ -561,7 +561,7 @@ pub fn run_desktop_app_with_snackbar(
                     self.reset_pointer_state();
 
                     if let Some(w) = &self.window {
-                        w.set_ime_allowed(false);
+                        rc_web::set_ime_for_textfield(w, false);
                     }
                     self.ime_preedit = false;
 
@@ -919,8 +919,7 @@ pub fn run_desktop_app_with_snackbar(
                                 });
                                 if let Some(win) = &self.window {
                                     let sf = win.scale_factor();
-                                    win.set_ime_allowed(true);
-                                    win.set_ime_purpose(ImePurpose::Normal);
+                                    rc_web::set_ime_for_textfield(win, true);
                                     win.set_ime_cursor_area(
                                         LogicalPosition::new(
                                             hit.rect.x as f64 / sf,
@@ -958,7 +957,7 @@ pub fn run_desktop_app_with_snackbar(
                             // Click outside: drop focus/IME
                             if self.ime_preedit {
                                 if let Some(win) = &self.window {
-                                    win.set_ime_allowed(false);
+                                    rc_web::set_ime_for_textfield(win, false);
                                 }
                                 self.ime_preedit = false;
                             }
@@ -1495,74 +1494,28 @@ pub fn run_desktop_app_with_snackbar(
                 }
 
                 WindowEvent::Ime(ime) => {
-                    use winit::event::Ime;
                     if let Some(focused_id) = self.sched.focused {
                         let key = self.tf_key_of(focused_id);
                         if let Some(state_rc) = self.textfield_states.get(&key) {
-                            let mut state = state_rc.borrow_mut();
-                            match ime {
-                                Ime::Enabled => {
-                                    // IME allowed, but not necessarily composing
-                                    self.ime_preedit = false;
-                                }
-                                Ime::Preedit(text, cursor) => {
-                                    let cursor_usize = cursor.map(|(a, b)| (a, b));
-                                    state.set_composition(text.clone(), cursor_usize);
-                                    self.ime_preedit = !text.is_empty();
-                                    if let Some(f) = &self.frame_cache
-                                        && let Some(hit) =
-                                            f.hit_regions.iter().find(|h| h.id == focused_id)
-                                    {
-                                        let inner = Rect {
-                                            x: hit.rect.x + dp_to_px(TF_PADDING_X_DP),
-                                            y: hit.rect.y,
-                                            w: hit.rect.w,
-                                            h: hit.rect.h,
-                                        };
-                                        tf_ensure_visible_in_rect(&mut state, inner);
+                            if let Some(f) = &self.frame_cache
+                                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == focused_id)
+                            {
+                                let mut state = state_rc.borrow_mut();
+                                let hit_rect = hit.rect;
+                                let on_text_change = hit.on_text_change.clone();
+                                let mut notify = |text: String| {
+                                    if let Some(cb) = &on_text_change {
+                                        cb(text);
                                     }
-                                    // notify on-change if you wired it:
-                                    self.notify_text_change(focused_id, state.text.clone());
-                                    self.request_redraw();
-                                }
-                                Ime::Commit(text) => {
-                                    state.commit_composition(text);
-                                    self.ime_preedit = false;
-                                    if let Some(f) = &self.frame_cache
-                                        && let Some(hit) =
-                                            f.hit_regions.iter().find(|h| h.id == focused_id)
-                                    {
-                                        let inner = Rect {
-                                            x: hit.rect.x + dp_to_px(TF_PADDING_X_DP),
-                                            y: hit.rect.y,
-                                            w: hit.rect.w,
-                                            h: hit.rect.h,
-                                        };
-                                        tf_ensure_visible_in_rect(&mut state, inner);
-                                    }
-                                    self.notify_text_change(focused_id, state.text.clone());
-                                    self.request_redraw();
-                                }
-                                Ime::Disabled => {
-                                    self.ime_preedit = false;
-                                    if state.composition.is_some() {
-                                        state.cancel_composition();
-                                        if let Some(f) = &self.frame_cache
-                                            && let Some(hit) =
-                                                f.hit_regions.iter().find(|h| h.id == focused_id)
-                                        {
-                                            let inner = Rect {
-                                                x: hit.rect.x + dp_to_px(TF_PADDING_X_DP),
-                                                y: hit.rect.y,
-                                                w: hit.rect.w,
-                                                h: hit.rect.h,
-                                            };
-                                            tf_ensure_visible_in_rect(&mut state, inner);
-                                        }
-                                        self.notify_text_change(focused_id, state.text.clone());
-                                    }
-                                    self.request_redraw();
-                                }
+                                };
+                                rc_android::handle_ime_event(
+                                    ime,
+                                    &mut state,
+                                    hit_rect,
+                                    &mut notify,
+                                    &mut self.ime_preedit,
+                                );
+                                self.request_redraw();
                             }
                         }
                     }

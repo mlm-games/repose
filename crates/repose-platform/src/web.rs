@@ -24,7 +24,8 @@ use winit::window::{ImePurpose, Window};
 
 use repose_ui::TextFieldState;
 use repose_ui::textfield::{
-    TF_FONT_DP, TF_PADDING_X_DP, caret_xy_for_byte, index_for_x_bytes, move_caret_vertical,
+    TF_FONT_DP, TF_PADDING_X_DP, caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes,
+    move_caret_vertical,
 };
 
 enum ClipboardAction {
@@ -183,6 +184,8 @@ struct App {
 
     // swipe tracking
     touch_start: Option<(web_time::Instant, (f32, f32))>,
+
+    key_pressed_active: Option<u64>,
 }
 
 impl App {
@@ -227,6 +230,8 @@ impl App {
             primary_touch_id: None,
             pinch_last_dist: None,
             touch_start: None,
+
+            key_pressed_active: None,
         }
     }
 
@@ -946,22 +951,49 @@ impl ApplicationHandler<()> for App {
                         let mut state = state_rc.borrow_mut();
                         let pad = self.padding_px(&window);
 
-                        let inner_x_px = f
-                            .hit_regions
-                            .iter()
-                            .find(|h| h.id == cid)
-                            .map(|h| h.rect.x + pad)
-                            .unwrap_or(0.0);
-
-                        let content_x_px = self.mouse_pos_px.0 - inner_x_px + state.scroll_offset;
-                        let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-                        let idx = index_for_x_bytes(&state.text, font_px, content_x_px.max(0.0));
-                        state.drag_to(idx);
-
                         if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
-                            self.tf_ensure_caret_visible_in_hit(&window, &mut state, hit.rect);
+                            let inner_x_px = hit.rect.x + pad;
+                            let inner_y_px = hit.rect.y + 8.0 * self.scale(&window);
+                            let content_x_px =
+                                (self.mouse_pos_px.0 - inner_x_px + state.scroll_offset).max(0.0);
+                            let content_y_px =
+                                (self.mouse_pos_px.1 - inner_y_px + state.scroll_offset_y).max(0.0);
+                            let font_px =
+                                dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+
+                            let idx = if hit.tf_multiline {
+                                index_for_xy_bytes(
+                                    &state.text,
+                                    font_px,
+                                    hit.rect.w - 2.0 * pad,
+                                    content_x_px,
+                                    content_y_px,
+                                )
+                            } else {
+                                index_for_x_bytes(&state.text, font_px, content_x_px)
+                            };
+                            state.drag_to(idx);
+
+                            // Ensure caret visible
+                            if hit.tf_multiline {
+                                let caret_idx = state.caret_index();
+                                let wrap_w = hit.rect.w - 2.0 * pad;
+                                let (cx, cy, _) =
+                                    caret_xy_for_byte(&state.text, font_px, wrap_w, caret_idx);
+                                let iw = state.inner_width;
+                                let ih = state.inner_height;
+                                state.ensure_caret_visible_xy(
+                                    cx,
+                                    cy,
+                                    iw,
+                                    ih,
+                                    2.0 * self.scale(&window),
+                                );
+                            } else {
+                                self.tf_ensure_caret_visible_in_hit(&window, &mut state, hit.rect);
+                            }
+                            self.request_redraw();
                         }
-                        self.request_redraw();
                     }
                 }
 
@@ -1053,6 +1085,8 @@ impl ApplicationHandler<()> for App {
                         ElementState::Pressed => {
                             self.mouse_down_pos_px = Some(self.mouse_pos_px);
                             self.drag = None;
+
+                            // Find top-most hit for capture
                             if let Some(i) = rc::top_hit_index(f, pos) {
                                 let hit = &f.hit_regions[i];
                                 self.capture_id = Some(hit.id);
@@ -1085,21 +1119,13 @@ impl ApplicationHandler<()> for App {
                                     let key = self.tf_key_of(hit.id);
                                     if let Some(state_rc) = self.textfield_states.get(&key) {
                                         let mut st = state_rc.borrow_mut();
-                                        let pad = self.padding_px(&window);
-                                        let inner_x_px = hit.rect.x + pad;
-                                        let content_x_px =
-                                            self.mouse_pos_px.0 - inner_x_px + st.scroll_offset;
-                                        let font_px = dp_to_px(TF_FONT_DP)
-                                            * repose_core::locals::text_scale().0;
-
-                                        let idx = index_for_x_bytes(
-                                            &st.text,
-                                            font_px,
-                                            content_x_px.max(0.0),
-                                        );
-                                        st.begin_drag(idx, self.modifiers.shift);
-                                        self.tf_ensure_caret_visible_in_hit(
-                                            &window, &mut st, hit.rect,
+                                        rc::tf_place_caret_at_pointer(
+                                            &mut st,
+                                            hit.rect,
+                                            hit.tf_multiline,
+                                            self.mouse_pos_px,
+                                            self.scale(&window),
+                                            self.modifiers.shift,
                                         );
                                     }
                                 }
@@ -1137,13 +1163,25 @@ impl ApplicationHandler<()> for App {
                                     ));
                                 }
 
-                                if let Some(i) = rc::hit_index_by_id(f, cid) {
-                                    let hit = &f.hit_regions[i];
-                                    if hit.rect.contains(pos)
-                                        && let Some(cb) = &hit.on_click
-                                    {
+                                // Robust click search: find the top-most region with this ID
+                                // that actually contains the point and has a click handler.
+                                // NOTE: We search in reverse (top-to-bottom) because overlays
+                                // are usually drawn last (at the end of the list).
+                                let click_hit = f.hit_regions.iter().rev().find(|h| {
+                                    h.id == cid && h.rect.contains(pos) && h.on_click.is_some()
+                                });
+
+                                if let Some(hit) = click_hit {
+                                    log::info!("MouseUp: Clicked! id={}", hit.id);
+                                    if let Some(cb) = &hit.on_click {
                                         cb();
                                     }
+                                } else {
+                                    log::info!(
+                                        "MouseUp: No click match for captured id={} at pos={:?}",
+                                        cid,
+                                        pos
+                                    );
                                 }
 
                                 if self.is_textfield(cid) {
@@ -1203,8 +1241,20 @@ impl ApplicationHandler<()> for App {
                                     self.textfield_states.entry(key).or_insert_with(|| {
                                         Rc::new(RefCell::new(TextFieldState::new()))
                                     });
-                                    window.set_ime_allowed(true);
-                                    window.set_ime_purpose(ImePurpose::Normal);
+                                    rc_web::set_ime_for_textfield(&window, true);
+
+                                    // Place caret at touch position
+                                    if let Some(state_rc) = self.textfield_states.get(&key) {
+                                        let mut st = state_rc.borrow_mut();
+                                        rc::tf_place_caret_at_pointer(
+                                            &mut st,
+                                            hit.rect,
+                                            hit.tf_multiline,
+                                            pos_px,
+                                            self.scale(&window),
+                                            self.modifiers.shift,
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -1381,18 +1431,67 @@ impl ApplicationHandler<()> for App {
                                 self.sched.focused,
                                 self.modifiers.shift,
                             ) {
-                                self.sched.focused = Some(next);
-                                if self.is_textfield(next) {
-                                    window.set_ime_allowed(true);
-                                    window.set_ime_purpose(ImePurpose::Normal);
-                                } else {
-                                    window.set_ime_allowed(false);
+                                // If a button was "pressed" via keyboard, clear it when we move focus
+                                if let Some(active) = self.key_pressed_active.take() {
+                                    self.pressed_ids.remove(&active);
                                 }
+
+                                self.sched.focused = Some(next);
+                                rc_web::set_ime_for_textfield(&window, self.is_textfield(next));
                                 self.request_redraw();
                             }
                         }
                     }
                     return;
+                }
+
+                if let Some(fid) = self.sched.focused {
+                    // If focused is NOT a TextField, allow Space/Enter activation
+                    let is_textfield = if let Some(f) = &self.frame_cache {
+                        f.semantics_nodes
+                            .iter()
+                            .any(|n| n.id == fid && n.role == Role::TextField)
+                    } else {
+                        false
+                    };
+
+                    if !is_textfield {
+                        match key_event.physical_key {
+                            PhysicalKey::Code(KeyCode::Space)
+                            | PhysicalKey::Code(KeyCode::Enter) => {
+                                if key_event.state == ElementState::Pressed && !key_event.repeat {
+                                    self.pressed_ids.insert(fid);
+                                    self.key_pressed_active = Some(fid);
+                                    self.request_redraw();
+                                    return;
+                                } else if key_event.state == ElementState::Released {
+                                    if self.pressed_ids.contains(&fid) {
+                                        self.pressed_ids.remove(&fid);
+                                        self.key_pressed_active = None;
+
+                                        // Execute click
+                                        if let Some(f) = &self.frame_cache {
+                                            // Robust search: find a region with this ID that has a click handler.
+                                            // Search in reverse (top-to-bottom) to match mouse behavior.
+                                            if let Some(hit) = f
+                                                .hit_regions
+                                                .iter()
+                                                .rev()
+                                                .find(|h| h.id == fid && h.on_click.is_some())
+                                            {
+                                                if let Some(cb) = &hit.on_click {
+                                                    cb();
+                                                }
+                                            }
+                                        }
+                                        self.request_redraw();
+                                        return;
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                 }
 
                 // Enter submits focused TextField

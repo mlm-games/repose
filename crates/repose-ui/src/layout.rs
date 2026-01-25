@@ -796,6 +796,7 @@ impl LayoutEngine {
         let mut hits = Vec::new();
         let mut sems = Vec::new();
         let mut deferred: Vec<(NodeId, (f32, f32), f32, Option<u64>, f32)> = Vec::new();
+        let mut deferred_blockers: Vec<(f32, repose_core::Rect)> = Vec::new();
 
         self.walk_paint(
             root_id,
@@ -816,7 +817,21 @@ impl LayoutEngine {
 
         // Paint deferred nodes sorted by render_z_index (ascending = higher on top)
         deferred.sort_by(|a, b| a.4.partial_cmp(&b.4).unwrap_or(Ordering::Equal));
-        for (node_id, parent_offset_px, alpha_accum, sem_parent, _z) in deferred {
+        for (node_id, parent_offset_px, alpha_accum, sem_parent, z) in deferred.iter().copied() {
+            let view_id = *self.view_ids.get(&node_id).unwrap_or(&0);
+            let taffy_id = self.taffy_map[&node_id];
+            let layout = self.taffy.layout(taffy_id).unwrap();
+            let rect = repose_core::Rect {
+                x: parent_offset_px.0 + layout.location.x,
+                y: parent_offset_px.1 + layout.location.y,
+                w: layout.size.width,
+                h: layout.size.height,
+            };
+            if let Some(node) = self.tree.get(node_id) {
+                if node.modifier.input_blocker && !node.modifier.hit_passthrough {
+                    deferred_blockers.push((z, rect));
+                }
+            }
             self.walk_paint(
                 node_id,
                 &mut scene,
@@ -833,10 +848,48 @@ impl LayoutEngine {
                 &mut Vec::new(), // No further deferral in second pass
                 true,            // Skip defer check
             );
+            let _ = view_id;
+        }
+        deferred.clear();
+
+        if !deferred_blockers.is_empty() {
+            deferred_blockers.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
+            let max_z = hits
+                .iter()
+                .map(|h| h.z_index)
+                .fold(0.0_f32, |a, b| a.max(b));
+            let bump = max_z + 1.0;
+            for (i, (_z, rect)) in deferred_blockers.iter().enumerate() {
+                let blocker_id = u64::MAX - i as u64;
+                hits.push(HitRegion {
+                    id: blocker_id,
+                    rect: *rect,
+                    on_click: None,
+                    on_scroll: None,
+                    focusable: false,
+                    on_pointer_down: None,
+                    on_pointer_move: None,
+                    on_pointer_up: None,
+                    on_pointer_enter: None,
+                    on_pointer_leave: None,
+                    z_index: bump + i as f32,
+                    on_text_change: None,
+                    on_text_submit: None,
+                    tf_state_key: None,
+                    tf_multiline: false,
+                    on_action: None,
+                    cursor: None,
+                    on_drag_start: None,
+                    on_drag_end: None,
+                    on_drag_enter: None,
+                    on_drag_over: None,
+                    on_drag_leave: None,
+                    on_drop: None,
+                });
+            }
         }
 
-        hits.sort_by(|a, b| b.z_index.partial_cmp(&a.z_index).unwrap_or(Ordering::Equal));
-        hits.reverse();
+        hits.sort_by(|a, b| a.z_index.partial_cmp(&b.z_index).unwrap_or(Ordering::Equal));
         (scene, hits, sems)
     }
 

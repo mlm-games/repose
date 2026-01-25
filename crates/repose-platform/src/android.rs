@@ -1,4 +1,5 @@
 use crate::common as rc;
+use crate::common_android as rc_android;
 use crate::common_web as rc_web;
 use crate::render::{RenderCommand, RenderContext};
 use crate::*;
@@ -14,7 +15,7 @@ use std::sync::Arc;
 use repose_core::shortcuts::{Action, Gesture};
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
-use winit::event::{ElementState, WindowEvent};
+use winit::event::{ElementState, Ime, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::android::EventLoopBuilderExtAndroid;
@@ -902,61 +903,96 @@ pub fn run_android_app_with_options(
                         if let Some(state_rc) = self.textfield_states.get(&key) {
                             let mut state = state_rc.borrow_mut();
                             match ime {
-                                winit::event::Ime::Enabled => self.ime_preedit = false,
-
-                                winit::event::Ime::Preedit(text, cursor) => {
+                                Ime::Enabled => {
+                                    self.ime_preedit = false;
+                                }
+                                Ime::Preedit(text, cursor) => {
                                     let cursor_usize =
                                         cursor.map(|(a, b)| (a as usize, b as usize));
                                     state.set_composition(text.clone(), cursor_usize);
                                     self.ime_preedit = !text.is_empty();
+                                    self.notify_text_change(focused_id, state.text.clone());
 
                                     if let Some(f) = &self.frame_cache
                                         && let Some(i) = rc::hit_index_by_id(f, focused_id)
                                     {
-                                        self.ensure_caret_visible_in_hit(
-                                            &mut state,
-                                            f.hit_regions[i].rect,
+                                        let hit_rect = f.hit_regions[i].rect;
+                                        let font_px = dp_to_px(TF_FONT_DP)
+                                            * repose_core::locals::text_scale().0;
+                                        let m = repose_ui::textfield::measure_text(
+                                            &state.text,
+                                            font_px,
+                                        );
+                                        let caret_x_px = m
+                                            .positions
+                                            .get(state.caret_index())
+                                            .copied()
+                                            .unwrap_or(0.0);
+                                        state.ensure_caret_visible(
+                                            caret_x_px,
+                                            hit_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
+                                            dp_to_px(2.0),
                                         );
                                     }
-
-                                    self.notify_text_change(focused_id, state.text.clone());
                                     self.dirty = true;
                                     self.request_redraw();
                                 }
-
-                                winit::event::Ime::Commit(text) => {
+                                Ime::Commit(text) => {
                                     state.commit_composition(text);
                                     self.ime_preedit = false;
+                                    self.notify_text_change(focused_id, state.text.clone());
 
                                     if let Some(f) = &self.frame_cache
                                         && let Some(i) = rc::hit_index_by_id(f, focused_id)
                                     {
-                                        self.ensure_caret_visible_in_hit(
-                                            &mut state,
-                                            f.hit_regions[i].rect,
+                                        let hit_rect = f.hit_regions[i].rect;
+                                        let font_px = dp_to_px(TF_FONT_DP)
+                                            * repose_core::locals::text_scale().0;
+                                        let m = repose_ui::textfield::measure_text(
+                                            &state.text,
+                                            font_px,
+                                        );
+                                        let caret_x_px = m
+                                            .positions
+                                            .get(state.caret_index())
+                                            .copied()
+                                            .unwrap_or(0.0);
+                                        state.ensure_caret_visible(
+                                            caret_x_px,
+                                            hit_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
+                                            dp_to_px(2.0),
                                         );
                                     }
-
-                                    self.notify_text_change(focused_id, state.text.clone());
                                     self.dirty = true;
                                     self.request_redraw();
                                 }
-
-                                winit::event::Ime::Disabled => {
+                                Ime::Disabled => {
                                     self.ime_preedit = false;
                                     if state.composition.is_some() {
                                         state.cancel_composition();
+                                        self.notify_text_change(focused_id, state.text.clone());
 
                                         if let Some(f) = &self.frame_cache
                                             && let Some(i) = rc::hit_index_by_id(f, focused_id)
                                         {
-                                            self.ensure_caret_visible_in_hit(
-                                                &mut state,
-                                                f.hit_regions[i].rect,
+                                            let hit_rect = f.hit_regions[i].rect;
+                                            let font_px = dp_to_px(TF_FONT_DP)
+                                                * repose_core::locals::text_scale().0;
+                                            let m = repose_ui::textfield::measure_text(
+                                                &state.text,
+                                                font_px,
+                                            );
+                                            let caret_x_px = m
+                                                .positions
+                                                .get(state.caret_index())
+                                                .copied()
+                                                .unwrap_or(0.0);
+                                            state.ensure_caret_visible(
+                                                caret_x_px,
+                                                hit_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
+                                                dp_to_px(2.0),
                                             );
                                         }
-
-                                        self.notify_text_change(focused_id, state.text.clone());
                                         self.dirty = true;
                                         self.request_redraw();
                                     }
