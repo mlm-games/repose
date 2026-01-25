@@ -236,6 +236,8 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
 
     // Z-index
     ((m.z_index * 100.0) as i32).hash(hasher);
+    m.render_z_index.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.input_blocker.hash(hasher);
 
     // Clickable
     m.click.hash(hasher);

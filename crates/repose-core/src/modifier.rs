@@ -71,6 +71,8 @@ pub struct Modifier {
     pub render_z_index: Option<f32>,
     /// If true, this view does not create hit regions.
     pub hit_passthrough: bool,
+    /// If true, this view blocks pointer/touch input for hits below it.
+    pub input_blocker: bool,
     pub repaint_boundary: bool,
     pub click: bool,
     pub on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>>,
@@ -140,6 +142,7 @@ impl std::fmt::Debug for Modifier {
             .field("z_index", &self.z_index)
             .field("render_z_index", &self.render_z_index)
             .field("hit_passthrough", &self.hit_passthrough)
+            .field("input_blocker", &self.input_blocker)
             .field("repaint_boundary", &self.repaint_boundary)
             .field("click", &self.click)
             .field("on_scroll", &self.on_scroll.as_ref().map(|_| "..."))
@@ -328,6 +331,12 @@ impl Modifier {
     /// Unlike `z_index` (which only affects hit-testing), this affects visual layering.
     pub fn render_z_index(mut self, z: f32) -> Self {
         self.render_z_index = Some(z);
+        self
+    }
+
+    /// Prevent pointer/touch from reaching lower layers.
+    pub fn input_blocker(mut self) -> Self {
+        self.input_blocker = true;
         self
     }
 
