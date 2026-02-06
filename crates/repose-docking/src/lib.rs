@@ -476,6 +476,7 @@ fn render_tabs(
                     Stack(
                         Modifier::new()
                             .key(pid)
+                            .height(32.0)
                             .padding(4.0)
                             .clip_rounded(8.0)
                             .background(if is_active {
@@ -487,7 +488,8 @@ fn render_tabs(
                     )
                     .child((
                         Box(Modifier::new()
-                            .padding(6.0)
+                            .height(24.0)
+                            .offset(None, Some(4.0), None, None)
                             .clickable()
                             .cursor(CursorIcon::Grab)
                             .on_pointer_down({
@@ -514,12 +516,15 @@ fn render_tabs(
                                 }
                             }))
                         .child(
-                            Row(Modifier::new().height(24.0).align_self(AlignSelf::Center))
+                            Row(Modifier::new().height(24.0))
                                 .child((Text(title).color(th.on_surface),)),
                         ),
-                        Row(Modifier::new()
-                            .absolute()
-                            .offset(None, Some(4.0), Some(4.0), None))
+                        Row(Modifier::new().absolute().height(24.0).offset(
+                            None,
+                            Some(4.0),
+                            Some(2.0),
+                            None,
+                        ))
                         .child((
                             if let Some(pop) = cb_pop {
                                 Button(Text("↗").size(12.0), move || pop(pid))
