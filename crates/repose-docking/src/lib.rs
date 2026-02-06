@@ -514,11 +514,8 @@ fn render_tabs(
                                 }
                             }))
                         .child(
-                            Row(Modifier::new().align_items(AlignItems::Center)).child((
-                                Text("⋮⋮").size(12.0).color(th.on_surface_variant),
-                                Box(Modifier::new().width(6.0).height(1.0)),
-                                Text(title).color(th.on_surface),
-                            )),
+                            Row(Modifier::new().height(24.0).align_self(AlignSelf::Center))
+                                .child((Text(title).color(th.on_surface),)),
                         ),
                         Row(Modifier::new()
                             .absolute()
@@ -846,9 +843,6 @@ fn render_split(
                 .fill_max_width()
                 .background(line_color)),
         },
-        // Little grip dots
-        Box(Modifier::new().fill_max_size())
-            .child(Text("•••").size(12.0).color(theme().on_surface_variant)),
     ));
 
     let a_view = render_node(
