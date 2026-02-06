@@ -203,7 +203,13 @@ pub fn run_android_app_with_options(
         }
 
         fn ensure_caret_visible_in_hit(&self, st: &mut TextFieldState, hit_rect: Rect) {
-            rc::tf_ensure_caret_visible(st, hit_rect, self.padding_px());
+            let is_multiline = self
+                .frame_cache
+                .as_ref()
+                .and_then(|f| f.hit_regions.iter().find(|h| h.rect == hit_rect))
+                .map(|h| h.tf_multiline)
+                .unwrap_or(false);
+            rc::tf_ensure_caret_visible(st, is_multiline);
         }
 
         fn sync_window_size(&mut self, size: PhysicalSize<u32>) {

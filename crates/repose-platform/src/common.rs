@@ -1,11 +1,11 @@
 use crate::*;
 use repose_core::input::{PointerButton, PointerEvent, PointerEventKind, PointerId, PointerKind};
 use repose_core::locals::dp_to_px;
-use repose_ui::TextFieldState;
 use repose_ui::textfield::{
-    TF_FONT_DP, TF_PADDING_X_DP, caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes,
-    measure_text,
+    caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes, measure_text, TF_FONT_DP,
+    TF_PADDING_X_DP,
 };
+use repose_ui::TextFieldState;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -148,11 +148,20 @@ pub(crate) fn map_key(key: winit::keyboard::PhysicalKey) -> repose_core::input::
     }
 }
 
-pub(crate) fn tf_ensure_caret_visible(state: &mut TextFieldState, hit_rect: Rect, padding_px: f32) {
+pub(crate) fn tf_ensure_caret_visible(state: &mut TextFieldState, is_multiline: bool) {
     let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-    let m = measure_text(&state.text, font_px);
-    let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
-    state.ensure_caret_visible(caret_x_px, hit_rect.w - 2.0 * padding_px, dp_to_px(2.0));
+    let wrap_width = state.inner_width;
+
+    if is_multiline {
+        let (cx, cy, _) = caret_xy_for_byte(&state.text, font_px, wrap_width, state.caret_index());
+        let iw = state.inner_width;
+        let ih = state.inner_height;
+        state.ensure_caret_visible_xy(cx, cy, iw, ih, dp_to_px(2.0));
+    } else {
+        let m = measure_text(&state.text, font_px);
+        let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
+        state.ensure_caret_visible(caret_x_px, wrap_width, dp_to_px(2.0));
+    }
 }
 
 /// Place caret in textfield at pointer position and begin drag selection.

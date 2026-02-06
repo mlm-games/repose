@@ -484,7 +484,15 @@ fn locate_byte_in_ranges(ranges: &[(usize, usize)], b: usize) -> (usize, usize, 
         return (0, 0, b);
     }
     for (i, (s, e)) in ranges.iter().enumerate() {
-        if b < *e || (b == *e && i + 1 == ranges.len()) {
+        if b < *s {
+            if i == 0 {
+                return (0, 0, b);
+            }
+            let (ps, pe) = ranges[i - 1];
+            let local = pe.saturating_sub(ps);
+            return (i - 1, local, ps + local);
+        }
+        if b < *e {
             let local = b.saturating_sub(*s).min(e.saturating_sub(*s));
             return (i, local, *s + local);
         }
@@ -494,10 +502,12 @@ fn locate_byte_in_ranges(ranges: &[(usize, usize)], b: usize) -> (usize, usize, 
                     return (i + 1, 0, b);
                 }
             }
+            let local = e.saturating_sub(*s);
+            return (i, local, *s + local);
         }
     }
     let (ls, le) = ranges[ranges.len() - 1];
-    let local = b.saturating_sub(ls).min(le.saturating_sub(ls));
+    let local = le.saturating_sub(ls);
     (ranges.len() - 1, local, ls + local)
 }
 
@@ -566,7 +576,11 @@ pub fn line_home_end(
     let layout = layout_text_area(text, font_px, wrap_w_px);
     let (li, _local, _) = locate_byte_in_ranges(&layout.ranges, cur_byte);
     let (s, e) = layout.ranges.get(li).copied().unwrap_or((0, 0));
-    if to_end { e } else { s }
+    if to_end {
+        e
+    } else {
+        s
+    }
 }
 
 fn clamp_to_char_boundary(s: &str, i: usize) -> usize {

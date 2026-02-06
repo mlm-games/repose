@@ -305,12 +305,8 @@ pub fn run_desktop_app_with_snackbar(
         }
 
         // Ensure caret is visible after edits/moves (all units in px)
-        fn tf_ensure_caret_visible(st: &mut TextFieldState) {
-            let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-            let m = measure_text(&st.text, font_px);
-            let caret_x_px = m.positions.get(st.caret_index()).copied().unwrap_or(0.0);
-            let iw = st.inner_width;
-            st.ensure_caret_visible(caret_x_px, iw, dp_to_px(2.0));
+        fn tf_ensure_caret_visible(st: &mut TextFieldState, is_multiline: bool) {
+            rc::tf_ensure_caret_visible(st, is_multiline);
         }
 
         fn copy_to_clipboard(&mut self, text: String) {
@@ -1200,7 +1196,7 @@ pub fn run_desktop_app_with_snackbar(
                                 st.insert_text("\n");
                                 let new_text = st.text.clone();
                                 self.notify_text_change(focused_id, new_text);
-                                App::tf_ensure_caret_visible(&mut st);
+                                App::tf_ensure_caret_visible(&mut st, hit.tf_multiline);
                                 self.request_redraw();
                                 return;
                             }
@@ -1228,26 +1224,38 @@ pub fn run_desktop_app_with_snackbar(
                                         state.delete_backward();
                                         let new_text = state.text.clone();
                                         self.notify_text_change(focused_id, new_text);
-                                        App::tf_ensure_caret_visible(&mut state);
+                                        App::tf_ensure_caret_visible(
+                                            &mut state,
+                                            self.is_multiline_id(focused_id),
+                                        );
                                         self.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::Delete) => {
                                         state.delete_forward();
                                         let new_text = state.text.clone();
                                         self.notify_text_change(focused_id, new_text);
-                                        App::tf_ensure_caret_visible(&mut state);
+                                        App::tf_ensure_caret_visible(
+                                            &mut state,
+                                            self.is_multiline_id(focused_id),
+                                        );
                                         self.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::ArrowLeft) => {
                                         state.move_cursor(-1, self.modifiers.shift);
                                         state.preferred_x_px = None; // Reset preferred x on horizontal movement
-                                        App::tf_ensure_caret_visible(&mut state);
+                                        App::tf_ensure_caret_visible(
+                                            &mut state,
+                                            self.is_multiline_id(focused_id),
+                                        );
                                         self.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::ArrowRight) => {
                                         state.move_cursor(1, self.modifiers.shift);
                                         state.preferred_x_px = None; // Reset preferred x on horizontal movement
-                                        App::tf_ensure_caret_visible(&mut state);
+                                        App::tf_ensure_caret_visible(
+                                            &mut state,
+                                            self.is_multiline_id(focused_id),
+                                        );
                                         self.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::ArrowUp) => {
@@ -1348,7 +1356,10 @@ pub fn run_desktop_app_with_snackbar(
                                     }
                                     PhysicalKey::Code(KeyCode::Home) => {
                                         state.selection = 0..0;
-                                        App::tf_ensure_caret_visible(&mut state);
+                                        App::tf_ensure_caret_visible(
+                                            &mut state,
+                                            self.is_multiline_id(focused_id),
+                                        );
                                         self.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::End) => {
@@ -1356,12 +1367,18 @@ pub fn run_desktop_app_with_snackbar(
                                             let end = state.text.len();
                                             state.selection = end..end;
                                         }
-                                        App::tf_ensure_caret_visible(&mut state);
+                                        App::tf_ensure_caret_visible(
+                                            &mut state,
+                                            self.is_multiline_id(focused_id),
+                                        );
                                         self.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::KeyA) if self.modifiers.ctrl => {
                                         state.selection = 0..state.text.len();
-                                        App::tf_ensure_caret_visible(&mut state);
+                                        App::tf_ensure_caret_visible(
+                                            &mut state,
+                                            self.is_multiline_id(focused_id),
+                                        );
                                         self.request_redraw();
                                     }
                                     _ => {}
@@ -1401,7 +1418,10 @@ pub fn run_desktop_app_with_snackbar(
                                                         self.notify_text_change(
                                                             focused_id, new_text,
                                                         );
-                                                        App::tf_ensure_caret_visible(&mut st);
+                                                        App::tf_ensure_caret_visible(
+                                                            &mut st,
+                                                            self.is_multiline_id(focused_id),
+                                                        );
                                                     }
                                                     self.request_redraw();
                                                 }
@@ -1433,7 +1453,7 @@ pub fn run_desktop_app_with_snackbar(
                                                     st.insert_text(&txt);
                                                     let new_text = st.text.clone();
                                                     self.notify_text_change(focused_id, new_text);
-                                                    App::tf_ensure_caret_visible(&mut st);
+                                                    App::tf_ensure_caret_visible(&mut st, is_multiline);
                                                     self.request_redraw();
                                                 }
                                             }
@@ -1464,7 +1484,11 @@ pub fn run_desktop_app_with_snackbar(
                                     let mut st = state_rc.borrow_mut();
                                     st.insert_text(&text);
                                     self.notify_text_change(fid, st.text.clone());
-                                    App::tf_ensure_caret_visible(&mut st);
+                                    if let Some(f) = &self.frame_cache
+                                        && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
+                                    {
+                                        App::tf_ensure_caret_visible(&mut st, hit.tf_multiline);
+                                    }
                                     self.request_redraw();
                                 }
                             }
@@ -1720,7 +1744,11 @@ pub fn run_desktop_app_with_snackbar(
                         let mut st = state_rc.borrow_mut();
                         st.insert_text("");
                         self.notify_text_change(fid, st.text.clone());
-                        App::tf_ensure_caret_visible(&mut st);
+                        if let Some(f) = &self.frame_cache
+                            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
+                        {
+                            App::tf_ensure_caret_visible(&mut st, hit.tf_multiline);
+                        }
                     }
                     true
                 }
@@ -1736,7 +1764,11 @@ pub fn run_desktop_app_with_snackbar(
                         let mut st = state_rc.borrow_mut();
                         st.insert_text(&txt);
                         self.notify_text_change(fid, st.text.clone());
-                        App::tf_ensure_caret_visible(&mut st);
+                        if let Some(f) = &self.frame_cache
+                            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
+                        {
+                            App::tf_ensure_caret_visible(&mut st, hit.tf_multiline);
+                        }
                     }
                     true
                 }
@@ -1744,7 +1776,11 @@ pub fn run_desktop_app_with_snackbar(
                     {
                         let mut st = state_rc.borrow_mut();
                         st.selection = 0..st.text.len();
-                        App::tf_ensure_caret_visible(&mut st);
+                        if let Some(f) = &self.frame_cache
+                            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
+                        {
+                            App::tf_ensure_caret_visible(&mut st, hit.tf_multiline);
+                        }
                     }
                     true
                 }

@@ -281,12 +281,10 @@ impl App {
 
     fn tf_ensure_caret_visible_in_hit(
         &self,
-        window: &Window,
         state: &mut TextFieldState,
-        hit_rect: Rect,
+        is_multiline: bool,
     ) {
-        let pad = self.padding_px(window);
-        rc::tf_ensure_caret_visible(state, hit_rect, pad);
+        rc::tf_ensure_caret_visible(state, is_multiline);
     }
 
     fn inject_fullscreen_css_if_needed(&self, window: &Window) {
@@ -412,9 +410,8 @@ impl App {
                                 && let Some(i) = rc::hit_index_by_id(f, fid)
                             {
                                 self.tf_ensure_caret_visible_in_hit(
-                                    window,
                                     &mut st,
-                                    f.hit_regions[i].rect,
+                                    f.hit_regions[i].tf_multiline,
                                 );
                             }
                         }
@@ -481,7 +478,10 @@ impl App {
                     if let Some(f) = &self.frame_cache
                         && let Some(i) = rc::hit_index_by_id(f, fid)
                     {
-                        self.tf_ensure_caret_visible_in_hit(window, &mut st, f.hit_regions[i].rect);
+                        self.tf_ensure_caret_visible_in_hit(
+                            &mut st,
+                            f.hit_regions[i].tf_multiline,
+                        );
                     }
                 }
                 true
@@ -497,7 +497,10 @@ impl App {
                     if let Some(f) = &self.frame_cache
                         && let Some(i) = rc::hit_index_by_id(f, fid)
                     {
-                        self.tf_ensure_caret_visible_in_hit(window, &mut st, f.hit_regions[i].rect);
+                        self.tf_ensure_caret_visible_in_hit(
+                            &mut st,
+                            f.hit_regions[i].tf_multiline,
+                        );
                     }
                 }
                 true
@@ -990,7 +993,10 @@ impl ApplicationHandler<()> for App {
                                     2.0 * self.scale(&window),
                                 );
                             } else {
-                                self.tf_ensure_caret_visible_in_hit(&window, &mut state, hit.rect);
+                                self.tf_ensure_caret_visible_in_hit(
+                                    &mut state,
+                                    hit.tf_multiline,
+                                );
                             }
                             self.request_redraw();
                         }
@@ -1524,7 +1530,10 @@ impl ApplicationHandler<()> for App {
                                     let mut st = state_rc.borrow_mut();
                                     st.insert_text("\n");
                                     self.notify_text_change(focused_id, st.text.clone());
-                                    self.tf_ensure_caret_visible_in_hit(&window, &mut st, hit.rect);
+                                    self.tf_ensure_caret_visible_in_hit(
+                                        &mut st,
+                                        hit.tf_multiline,
+                                    );
                                     self.request_redraw();
                                     return;
                                 }
@@ -1659,9 +1668,8 @@ impl ApplicationHandler<()> for App {
                                 && let Some(i) = rc::hit_index_by_id(f, fid)
                             {
                                 self.tf_ensure_caret_visible_in_hit(
-                                    &window,
                                     &mut st,
-                                    f.hit_regions[i].rect,
+                                    f.hit_regions[i].tf_multiline,
                                 );
                             }
                             self.request_redraw();
@@ -1703,9 +1711,8 @@ impl ApplicationHandler<()> for App {
                                     && let Some(i) = rc::hit_index_by_id(f, fid)
                                 {
                                     self.tf_ensure_caret_visible_in_hit(
-                                        &window,
                                         &mut st,
-                                        f.hit_regions[i].rect,
+                                        f.hit_regions[i].tf_multiline,
                                     );
                                 }
                                 self.request_redraw();
@@ -1732,9 +1739,8 @@ impl ApplicationHandler<()> for App {
                                     && let Some(i) = rc::hit_index_by_id(f, focused_id)
                                 {
                                     self.tf_ensure_caret_visible_in_hit(
-                                        &window,
                                         &mut state,
-                                        f.hit_regions[i].rect,
+                                        f.hit_regions[i].tf_multiline,
                                     );
                                 }
                                 self.request_redraw();
@@ -1748,9 +1754,8 @@ impl ApplicationHandler<()> for App {
                                     && let Some(i) = rc::hit_index_by_id(f, focused_id)
                                 {
                                     self.tf_ensure_caret_visible_in_hit(
-                                        &window,
                                         &mut state,
-                                        f.hit_regions[i].rect,
+                                        f.hit_regions[i].tf_multiline,
                                     );
                                 }
                                 self.request_redraw();
@@ -1765,9 +1770,8 @@ impl ApplicationHandler<()> for App {
                                         && let Some(i) = rc::hit_index_by_id(f, focused_id)
                                     {
                                         self.tf_ensure_caret_visible_in_hit(
-                                            &window,
                                             &mut state,
-                                            f.hit_regions[i].rect,
+                                            f.hit_regions[i].tf_multiline,
                                         );
                                     }
                                     self.request_redraw();

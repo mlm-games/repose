@@ -382,7 +382,7 @@ pub fn wrap_lines(
 
     let mut line_start = 0usize; // byte index
     let mut best_break = line_start;
-    let mut last_w = 0.0;
+    let mut _last_w = 0.0;
 
     // Iterate word boundaries (keep whitespace tokens so they factor widths)
     for tok in text.split_word_bounds() {
@@ -392,7 +392,7 @@ pub fn wrap_lines(
 
         if w <= max_width + 0.5 {
             best_break = tok_end;
-            last_w = w;
+            _last_w = w;
             continue;
         }
 
@@ -434,14 +434,14 @@ pub fn wrap_lines(
 
         // Reset best_break for new line
         best_break = line_start;
-        last_w = 0.0;
+        _last_w = 0.0;
 
         // Re-consider current token if not fully consumed
         if line_start < tok_end {
             // recompute width with the remaining token portion
             if width_of(line_start, tok_end) <= max_width + 0.5 {
                 best_break = tok_end;
-                last_w = width_of(line_start, best_break);
+                _last_w = width_of(line_start, best_break);
             } else {
                 // will be handled in next iterations (or forced again)
             }
@@ -673,7 +673,7 @@ pub fn ellipsize_line(text: &str, px: f32, max_width: f32) -> String {
     {
         return text.to_string();
     }
-    let el = "…";
+    let _el = "…";
     let e_w = ellipsis_width(px);
     if e_w >= max_width {
         return String::new();
