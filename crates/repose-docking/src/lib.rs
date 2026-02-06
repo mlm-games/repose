@@ -438,6 +438,13 @@ fn render_tabs(
                 };
 
                 if let Some(n) = find_node_mut(&mut st.root, node_id) {
+                    if matches!(n.kind, DockKind::Empty) {
+                        n.kind = DockKind::Tabs {
+                            tabs: Vec::new(),
+                            active: None,
+                        };
+                    }
+
                     if let DockKind::Tabs { tabs, active } = &mut n.kind {
                         tabs.retain(|&x| x != p.panel_id);
                         let idx =
