@@ -395,13 +395,13 @@ impl WgpuBackend {
             depth_compare: wgpu::CompareFunction::Always,
             stencil: wgpu::StencilState {
                 front: wgpu::StencilFaceState {
-                    compare: wgpu::CompareFunction::Equal,
+                    compare: wgpu::CompareFunction::LessEqual,
                     fail_op: wgpu::StencilOperation::Keep,
                     depth_fail_op: wgpu::StencilOperation::Keep,
                     pass_op: wgpu::StencilOperation::Keep,
                 },
                 back: wgpu::StencilFaceState {
-                    compare: wgpu::CompareFunction::Equal,
+                    compare: wgpu::CompareFunction::LessEqual,
                     fail_op: wgpu::StencilOperation::Keep,
                     depth_fail_op: wgpu::StencilOperation::Keep,
                     pass_op: wgpu::StencilOperation::Keep,

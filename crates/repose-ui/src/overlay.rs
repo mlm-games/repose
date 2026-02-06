@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-use repose_core::{Modifier, View, ViewKind, request_frame};
+use repose_core::{request_frame, Modifier, View, ViewKind};
 
 thread_local! {
     static SNACKBAR_TICK: RefCell<Option<Rc<dyn Fn(u32)>>> = RefCell::new(None);
@@ -101,7 +101,11 @@ impl OverlayHandle {
 
         for entry in overlays {
             let view = (entry.builder)();
-            let mut modifier = view.modifier.clone().z_index(entry.z_index);
+            let mut modifier = view
+                .modifier
+                .clone()
+                .z_index(entry.z_index)
+                .render_z_index(entry.z_index + 1000.0);
             if entry.pass_through {
                 modifier = modifier.hit_passthrough();
             }
