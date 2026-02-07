@@ -96,6 +96,6 @@ Issues and PRs are welcome, especially for:
 
 ## License
 
-GPL-3.0-or-later (see `LICENSE`).
+LGPL-3.0-or-later (see `LICENSE`).
 
 If you would want to use Repose in a closed-source product, do open an issue.
