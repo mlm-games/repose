@@ -1,12 +1,12 @@
 use std::rc::Rc;
 
 use repose_core::{
-    TextDirection, prelude::*, set_text_direction_default, set_text_scale_default,
-    set_theme_default, set_ui_scale_default, shortcuts, signal,
+    prelude::*, set_text_direction_default, set_text_scale_default, set_theme_default,
+    set_ui_scale_default, shortcuts, signal, TextDirection,
 };
 use repose_material::material3;
 use repose_navigation::{
-    NavDisplay, NavTransition, Navigator, back, remember_back_stack, renderer,
+    back, remember_back_stack, renderer, NavDisplay, NavTransition, Navigator,
 };
 use repose_ui::overlay::{OverlayHandle, SnackbarAction, SnackbarController, SnackbarRequest};
 use repose_ui::{Box, Column, Stack, Text, TextStyle, ViewExt};
@@ -27,6 +27,7 @@ pub enum Route {
     Dnd,
     Docking,
     Errors,
+    Windows,
 }
 
 impl Route {
@@ -43,6 +44,7 @@ impl Route {
             Route::Dnd => "Drag & Drop",
             Route::Docking => "Docking",
             Route::Errors => "Errors",
+            Route::Windows => "Windows",
         }
     }
     pub fn id(self) -> u64 {
@@ -58,6 +60,7 @@ impl Route {
             Route::Errors => 9,
             Route::Dnd => 10,
             Route::Docking => 11,
+            Route::Windows => 12,
         }
     }
 }
@@ -131,6 +134,7 @@ pub fn app(_s: &mut Scheduler) -> View {
         Route::Dnd => pages::dnd::screen(),
         Route::Docking => pages::docking::screen(),
         Route::Errors => pages::errors::screen(),
+        Route::Windows => pages::windows::screen(),
     });
 
     let dir = if rtl.get() {

@@ -1,7 +1,7 @@
 use repose_core::prelude::*;
 use repose_ui::scroll::{
-    HorizontalScrollArea, ScrollArea, ScrollAreaXY, remember_horizontal_scroll_state,
-    remember_scroll_state, remember_scroll_state_xy,
+    remember_horizontal_scroll_state, remember_scroll_state, remember_scroll_state_xy,
+    HorizontalScrollArea, ScrollArea, ScrollAreaXY,
 };
 use repose_ui::*;
 

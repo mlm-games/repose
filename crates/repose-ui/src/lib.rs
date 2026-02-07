@@ -110,6 +110,7 @@ pub mod lazy;
 pub mod navigation;
 pub mod overlay;
 pub mod scroll;
+pub mod windowing;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::{HashMap, HashSet};

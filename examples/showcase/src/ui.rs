@@ -80,7 +80,7 @@ pub fn TopBar(
 pub fn NavRail(current: Route, nav: Navigator<Route>) -> View {
     let th = theme();
 
-    let routes: [Route; 11] = [
+    let routes: [Route; 12] = [
         Route::Home,
         Route::Layout,
         Route::Widgets,
@@ -92,6 +92,7 @@ pub fn NavRail(current: Route, nav: Navigator<Route>) -> View {
         Route::Dnd,
         Route::Docking,
         Route::Errors,
+        Route::Windows,
     ];
 
     // A simple left rail: Card for a consistent surface.
