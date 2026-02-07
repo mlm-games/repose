@@ -1,12 +1,12 @@
 use std::rc::Rc;
 
 use repose_core::{
-    prelude::*, set_text_direction_default, set_text_scale_default, set_theme_default,
-    set_ui_scale_default, shortcuts, signal, TextDirection,
+    TextDirection, prelude::*, set_text_direction_default, set_text_scale_default,
+    set_theme_default, set_ui_scale_default, shortcuts, signal,
 };
 use repose_material::material3;
 use repose_navigation::{
-    back, remember_back_stack, renderer, NavDisplay, NavTransition, Navigator,
+    NavDisplay, NavTransition, Navigator, back, remember_back_stack, renderer,
 };
 use repose_ui::overlay::{OverlayHandle, SnackbarAction, SnackbarController, SnackbarRequest};
 use repose_ui::{Box, Column, Stack, Text, TextStyle, ViewExt};
@@ -232,13 +232,13 @@ pub fn app(_s: &mut Scheduler) -> View {
                                     snackbar_dismiss.dismiss();
                                 }),
                             }),
+                            Modifier::new().absolute().offset(
+                                Some(16.0),
+                                Some(16.0),
+                                Some(16.0),
+                                None,
+                            ),
                         )
-                        .modifier(Modifier::new().absolute().offset(
-                            Some(16.0),
-                            Some(16.0),
-                            Some(16.0),
-                            None,
-                        ))
                     }),
                 });
                 true

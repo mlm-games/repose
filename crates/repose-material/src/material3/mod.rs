@@ -129,26 +129,33 @@ pub fn Card(modifier: Modifier, elevated: bool, content: View) -> View {
     )
 }
 
-pub fn Snackbar(message: impl Into<String>, action: Option<SnackbarAction>) -> View {
+pub fn Snackbar(
+    message: impl Into<String>,
+    action: Option<SnackbarAction>,
+    base_modifier: Modifier,
+) -> View {
     let msg = message.into();
     let th = theme();
     let bg = th.surface_variant;
     let fg = th.on_surface;
     let action_color = th.primary;
 
+    // Base (positioning) first, then layer on snackbar styling
+    let modifier = base_modifier
+        .background(bg)
+        .clip_rounded(th.shapes.small)
+        .border(1.0, th.outline_variant, th.shapes.small)
+        .padding_values(PaddingValues {
+            left: 16.0,
+            right: 16.0,
+            top: 12.0,
+            bottom: 12.0,
+        })
+        .min_height(48.0)
+        .min_width(280.0);
+
     Surface(
-        Modifier::new()
-            .background(bg)
-            .clip_rounded(th.shapes.small)
-            .border(1.0, th.outline_variant, th.shapes.small)
-            .padding_values(PaddingValues {
-                left: 16.0,
-                right: 16.0,
-                top: 12.0,
-                bottom: 12.0,
-            })
-            .min_height(48.0)
-            .min_width(280.0),
+        modifier,
         Row(Modifier::new().align_items(repose_core::AlignItems::Center)).child((
             Text(msg)
                 .color(fg)

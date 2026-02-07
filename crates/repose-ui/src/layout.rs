@@ -10,15 +10,15 @@ use std::sync::Arc;
 use repose_core::*;
 use repose_tree::{NodeId, TreeNode, TreeStats, ViewTree};
 use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
+use taffy::TaffyTree;
 use taffy::prelude::*;
 use taffy::style::FlexDirection;
 use taffy::style::Overflow;
-use taffy::TaffyTree;
 
-use crate::textfield::{
-    byte_to_char_index, measure_text, TextFieldState, TF_FONT_DP, TF_PADDING_X_DP,
-};
 use crate::Interactions;
+use crate::textfield::{
+    TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, byte_to_char_index, measure_text,
+};
 
 /// The incremental layout engine.
 pub struct LayoutEngine {
@@ -1029,6 +1029,8 @@ impl LayoutEngine {
             )
         };
 
+        let view_id = *self.view_ids.get(&node_id).unwrap_or(&0);
+
         // Check if this node should be deferred for later painting
         if !skip_defer {
             if let Some(render_z) = modifier.render_z_index {
@@ -1039,9 +1041,6 @@ impl LayoutEngine {
                 }
             }
         }
-
-        // Use LayoutEngine-assigned stable id (unique per node)
-        let view_id = *self.view_ids.get(&node_id).unwrap_or(&0);
         debug_assert!(view_id != 0);
 
         let taffy_id = self.taffy_map[&node_id];
@@ -3225,8 +3224,8 @@ mod tests {
         //   OverlayHost { content with Scroll }
         //   Box with render_z_index(1000)  // Hint box
         // }
-        use crate::overlay::OverlayHandle;
         use crate::Scroll;
+        use crate::overlay::OverlayHandle;
 
         let content_color = Color::from_rgb(100, 100, 100);
         let overlay_color = Color::from_rgb(0, 0, 255);
