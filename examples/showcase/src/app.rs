@@ -9,6 +9,7 @@ use repose_navigation::{
     back, remember_back_stack, renderer, NavDisplay, NavTransition, Navigator,
 };
 use repose_ui::overlay::{OverlayHandle, SnackbarAction, SnackbarController, SnackbarRequest};
+use repose_ui::windowing::{WindowHost, WindowManagerState};
 use repose_ui::{Box, Column, Stack, Text, TextStyle, ViewExt};
 use serde::{Deserialize, Serialize};
 
@@ -110,6 +111,10 @@ pub fn app(_s: &mut Scheduler) -> View {
         stack: (*stack).clone(),
     };
 
+    let global_windows = remember_with_key("showcase:global_windows", || {
+        std::cell::RefCell::new(WindowManagerState::new())
+    });
+
     // Back handler: set each frame (simple + robust).
     back::set(Some(Rc::new({
         let nav = navigator.clone();
@@ -122,19 +127,22 @@ pub fn app(_s: &mut Scheduler) -> View {
         .unwrap_or(Route::Home);
 
     // Typed route -> page renderer
-    let render = renderer(move |scope| match *scope.key() {
-        Route::Home => pages::home::screen(),
-        Route::Layout => pages::layout::screen(),
-        Route::Widgets => pages::widgets::screen(),
-        Route::Text => pages::text::screen(),
-        Route::Scroll => pages::scroll::screen(),
-        Route::Canvas => pages::canvas::screen(),
-        Route::Animation => pages::animation::screen(),
-        Route::Lists => pages::lists::screen(),
-        Route::Dnd => pages::dnd::screen(),
-        Route::Docking => pages::docking::screen(),
-        Route::Errors => pages::errors::screen(),
-        Route::Windows => pages::windows::screen(),
+    let render = renderer({
+        let global_windows = global_windows.clone();
+        move |scope| match *scope.key() {
+            Route::Home => pages::home::screen(),
+            Route::Layout => pages::layout::screen(),
+            Route::Widgets => pages::widgets::screen(),
+            Route::Text => pages::text::screen(),
+            Route::Scroll => pages::scroll::screen(),
+            Route::Canvas => pages::canvas::screen(),
+            Route::Animation => pages::animation::screen(),
+            Route::Lists => pages::lists::screen(),
+            Route::Dnd => pages::dnd::screen(),
+            Route::Docking => pages::docking::screen(),
+            Route::Errors => pages::errors::screen(),
+            Route::Windows => pages::windows::screen(global_windows.clone()),
+        }
     });
 
     let dir = if rtl.get() {
@@ -179,6 +187,13 @@ pub fn app(_s: &mut Scheduler) -> View {
             None,
             NavTransition::default(),
         ),
+    );
+
+    let content = WindowHost(
+        "showcase_global_windows",
+        Modifier::new().fill_max_size(),
+        global_windows,
+        content,
     );
 
     let overlay_root = (*overlay).host(Modifier::new().fill_max_size(), content);

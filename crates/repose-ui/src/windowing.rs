@@ -244,8 +244,8 @@ pub fn WindowHost(
         .enumerate()
         .map(|(idx, window)| {
             let z_base = WINDOW_Z_BASE + (idx as f32 * WINDOW_Z_STEP);
-            let chrome_z = z_base + 2.0;
-            let content_z = z_base + 1.0;
+            let chrome_z = 2.0;
+            let content_z = 1.0;
 
             let window_id = window.id;
             let window_actions = window.actions.clone();
@@ -493,15 +493,13 @@ pub fn WindowHost(
                 Box(Modifier::new().fill_max_size().padding(WINDOW_PADDING_DP)).child(content_view);
 
             let resize_handles = if window_resizable {
-                apply_z_offset(
-                    build_resize_handles(
-                        window_id,
-                        start_drag.clone(),
-                        move_drag.clone(),
-                        end_drag.clone(),
-                    ),
-                    chrome_z + 1.0,
-                )
+                let handles = build_resize_handles(
+                    window_id,
+                    start_drag.clone(),
+                    move_drag.clone(),
+                    end_drag.clone(),
+                );
+                apply_z_offset(handles, chrome_z + 1.0)
             } else {
                 Box(Modifier::new())
             };
@@ -518,7 +516,7 @@ pub fn WindowHost(
                 }
             };
 
-            Surface(
+            let mut window_view = Surface(
                 Modifier::new()
                     .key(key_for(window_id, 1))
                     .absolute()
@@ -527,11 +525,12 @@ pub fn WindowHost(
                     .background(th.surface)
                     .border(1.0, border_color, 10.0)
                     .clip_rounded(10.0)
-                    .on_pointer_down(focus_on_pointer_down)
-                    .render_z_index(z_base)
-                    .z_index(z_base),
+                    .z_index(-1.0)
+                    .on_pointer_down(focus_on_pointer_down),
                 Stack(Modifier::new().fill_max_size()).child((column, resize_handles)),
-            )
+            );
+            window_view = apply_z_offset(window_view, z_base);
+            window_view
         })
         .collect::<Vec<_>>();
 

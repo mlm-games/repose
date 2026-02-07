@@ -8,7 +8,7 @@ use repose_ui::*;
 
 use crate::ui::Section;
 
-pub fn screen() -> View {
+pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
     let windows = remember_with_key("windows:state", || RefCell::new(WindowManagerState::new()));
     let list_state = remember_scroll_state("windows:list");
 
@@ -273,6 +273,32 @@ pub fn screen() -> View {
         }
     };
 
+    let open_global = {
+        let global_windows = global_windows.clone();
+        move || {
+            let mut st = global_windows.borrow_mut();
+            let id = st.alloc_id();
+            st.open(
+                FloatingWindow::new(
+                    id,
+                    format!("Global {}", id),
+                    Rc::new(move || {
+                        Column(Modifier::new().fill_max_size()).child((
+                            Text("Global window").size(14.0).color(theme().on_surface),
+                            Box(Modifier::new().height(8.0).width(1.0)),
+                            Text("Persists across navigation")
+                                .size(12.0)
+                                .color(theme().on_surface_variant),
+                        ))
+                    }),
+                )
+                .position(220.0, 140.0)
+                .size(320.0, 200.0)
+                .min_size(240.0, 160.0),
+            );
+        }
+    };
+
     let window_count = windows.borrow().windows.len();
 
     let content = Section(
@@ -290,6 +316,8 @@ pub fn screen() -> View {
                 Button(Text("Tools"), open_tools),
                 Box(Modifier::new().width(10.0).height(1.0)),
                 Button(Text("Palette"), open_palette),
+                Box(Modifier::new().width(10.0).height(1.0)),
+                Button(Text("Global Window"), open_global),
                 Spacer(),
                 Text(format!("{} windows", window_count))
                     .size(12.0)
