@@ -121,6 +121,8 @@ navigator.push(Route::Details);
 back::set(Some(Rc::new(move || navigator.pop())));
 ```
 
+## GIF
+
 <img src="others/demo.gif" align="center">
 
 <img width="2083" height="1326" alt="soredowe ui" src="https://github.com/user-attachments/assets/1f143ebd-5f24-47c8-9a95-3a09e762db0b" />
