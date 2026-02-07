@@ -1,101 +1,187 @@
 # Repose
 
-A small, composable UI toolkit/runtime in Rust with a Compose-like API, cross-platform runners (desktop/Android/web), and a WGPU renderer.
+A small, composable UI toolkit in Rust with a Compose-like API, cross-platform runners (desktop/Android/web), and a WGPU renderer.
 
-Status: **experimental / pre-1.0**. The API and internals may change. Currently have few working apps.
+[![Crates.io](https://img.shields.io/crates/v/repose-core)](https://crates.io/crates/repose-core)
+[![GitHub](https://img.shields.io/github/license/mlm-games/repose)](LICENSE)
+[![Pages](https://img.shields.io/badge/demo-live-blue)](https://mlm-games.github.io/repose/)
 
-## Goals
+> **Status: pre-1.0**. API (mostly minor) might change. A few working apps exist, and there shouldn't be any major issues.
 
-- Declarative UI with simple state (`signal`, `remember`, effects)
-- Cross-platform rendering via **wgpu**
-- Practical widgets (text, buttons, scrolling, text field) + a small Material-ish component set
-- Runs on **desktop (winit)**, **Android**, and **Web (wasm)**
+Useful for simple apps (though aiming for bigger ones in the future), and for developers who want a Compose-like experience in Rust without the overhead of embedding a web view or maintaining separate native UI codebases.
 
-## Non-goals (for now)
+<!-- Rebuilds the entire view tree each frame (since Views are lightweight data). State lives in reactive signals. Layout uses Taffy (Flexbox/Grid). Rendering uses WGPU. Platform integration (windowing, input, clipboard) is handled by platform-specific runners. -->
 
-- Full parity with mature UI toolkits. (Should take atleast 1 or 2 years)
-- Complex text editing features beyond single-line fields (rich selection handles, etc.)
-- Accessibility coverage across all platforms (in progress)
-- Multi-window + complex popup/overlay system
+## Features
 
-## What’s implemented
+- **Declarative UI** — Compose-like API with `View` functions, reactive `Signal`s, and `remember` for state
+- **Cross-platform** — Desktop (winit), Android, and WebAssembly
+- **Layout** — Flexbox and Grid via Taffy
+- **Rendering** — Rectangles, borders, rounded clips, ellipses, text, images via WGPU
+- **Text** — Shaping, metrics, and wrapping via cosmic-text with caching
+- **Input** — Pointer events, scrolling, focus traversal, IME support
+- **Widgets** — Text, Button, TextField, Checkbox, Switch, Slider, ScrollArea, LazyColumn
+- **Navigation** — Typed stack navigation with transitions (`repose-navigation`)
+- **Accessibility** — AccessKit integration on desktop, semantic node pipeline
+- **DevTools** — Inspector overlay (Ctrl+Shift+I)
 
-- Layout: Flexbox/Grid via **taffy**
-- Rendering: rectangles, borders, rounded clipping, ellipses, text, images (wgpu)
-- Text: shaping/metrics via **cosmic-text** with caching
-- Input: pointer events, scrolling, basic focus traversal, IME hooks (platform dependent)
-- Widgets: `Text`, `Button`, `TextField`, `Checkbox`, `Switch`, `Slider`, `ScrollArea`, `LazyColumn`
-- Navigation: `repose-navigation` (typed stack + transitions)
-- Devtools: HUD/inspector overlay
-- Accessibility: **AccessKit** integration (desktop runner) + `SemNode` pipeline
+### Non-Goals
 
-## Try it
+- Full feature parity with mature toolkits (will need funding, with years of usage)
+- Accessibility coverage on all platforms (in progress)
+- Multi-window (native, until a better alternative to winit comes up, which wouldn't happen anytime soon) and complex popup systems
 
-### Desktop
+## Quick Start
+
+### Prerequisites
+
+- For desktop: system dependencies for WGPU (varies by OS)
+- For web: `trunk` (`cargo install trunk`)
+- For Android: Android SDK/NDK and `cargo-apk`
+
+### Run the Showcase
+
+**Desktop:**
 ```bash
 cargo run -p showcase --features desktop-bin
 ```
 
-### Web (WASM)
-A hosted demo (Showcase, check the github pages [link](https://mlm-games.github.io/repose/))
-
-(or)
-
-Build locally:
+**Web:**
 ```bash
 cd examples/showcase
 trunk serve
 ```
 
-### Android
+Or try the [hosted demo](https://mlm-games.github.io/repose/).
+
+**Android:**
 ```bash
 cd examples/showcase
-# build instructions depend on your Android setup; see examples/showcase/Cargo.toml metadata for cargo-apk conf.
-# for cargo-apk
 cargo rapk run --target aarch64-linux-android --lib
 ```
 
-## Examples / Demos
+## Usage
 
-- Showcase app: `examples/showcase` (widgets/layout/scroll/text/canvas/navigation)
-- Animation demo: `examples/animation_demo`, animations in showcase are of placeholder level
-- Android counter: `examples/android_counter`
+```rust
+use repose_core::prelude::*;
+use repose_ui::*;
 
-If you prefer “see it first”: the **Showcase web build** is the best entry point.
+fn Counter() -> View {
+    let count = remember_state(|| 0);
+    
+    Column(Modifier::new().padding(16.0)).child((
+        Text(format!("Count: {}", *count.borrow())),
+        Button("Increment", {
+            let count = count.clone();
+            move || *count.borrow_mut() += 1
+        }),
+    ))
+}
 
-## Built with Repose (early)
+fn main() -> anyhow::Result<()> {
+    repose_platform::run_desktop_app(|_sched, _ctx| Counter())
+}
+```
 
-These are small projects I’ve used to test the toolkit:
+**State management:**
+```rust
+// Signal for shared/global state
+let theme = signal(Theme::default());
+theme.set(Theme::dark());
 
-- startpose (web startpage): https://github.com/mlm-games/startpose
-- wifi-exporter (Android Wifi Importer (Android 11+) and Exporter): https://github.com/mlm-games/wifi-exporter
-- soredowe (Linux pacman UI): https://github.com/mlm-games/soredowe
+// remember_state for component-local state
+let input = remember_state(|| String::new());
 
-(These work well, but were made when repose was in its early stages and were initially for testing Repose in apps.)
+// Derived state
+let full_name = produce_state("full", {
+    let first = first_name.clone();
+    let last = last_name.clone();
+    move || format!("{} {}", first.get(), last.get())
+});
+```
 
-## Architecture (high level)
+**Layout:**
+```rust
+Row(Modifier::new().gap(8.0)).child((
+    Text("Left"),
+    Spacer(),
+    Text("Right"),
+))
+```
 
-- `repose-core`: signals/effects/runtime, view model (`View`, `Modifier`, `Scene`)
-- `repose-ui`: widgets + layout/paint (Taffy -> Scene + HitRegions + Semantics)
-- `repose-render-wgpu`: renderer backend (wgpu pipelines, atlases)
-- `repose-platform`: platform runners (winit desktop / Android / wasm web)
-- `repose-text`: text shaping + metrics + wrapping/ellipsis caches
-- `repose-navigation`, `repose-material`, `repose-canvas`: higher-level components
+**Navigation:**
+```rust
+let stack = remember_back_stack(Route::Home);
+let navigator = Navigator { stack: (*stack).clone() };
 
-## Contributing / Feedback
+// Push route
+navigator.push(Route::Details);
+
+// Pop (back button)
+back::set(Some(Rc::new(move || navigator.pop())));
+```
+
+[others/demo.gif]
+
+<img width="2083" height="1326" alt="soredowe ui" src="https://github.com/user-attachments/assets/1f143ebd-5f24-47c8-9a95-3a09e762db0b" />
+
+## Inspiration
+
+Wanted an UI which was short and easy to understand by looking at the code (essentially declaritive, helps balance out rust ig :), similar to Compose, and liked the design of Jetpack Compose too (like Iced, which was, similarly, based on elm-ui)
+
+
+## Architecture
+
+| Crate | Purpose |
+|-------|---------|
+| `repose-core` | Signals, effects, runtime, view model, locals, animation |
+| `repose-ui` | Widgets, layout (Taffy), paint, hit regions, semantics |
+| `repose-render-wgpu` | WGPU renderer, atlases, pipelines |
+| `repose-platform` | Platform runners (winit desktop / Android / WASM web) |
+| `repose-text` | Text shaping, metrics, wrapping/ellipsis caches |
+| `repose-material` | Material Design-inspired components |
+| `repose-navigation` | Typed stack navigation with transitions |
+| `repose-canvas` | Custom painting surface |
+| `repose-devtools` | Inspector HUD |
+| `repose-docking` | Dockable panels |
+
+## Projects Using Repose
+
+These were built to test the toolkit in real apps:
+
+- **[startpose](https://github.com/mlm-games/startpose)** — Web startpage
+- **[wifi-exporter](https://github.com/mlm-games/wifi-exporter)** — Android WiFi importer/exporter
+- **[soredowe](https://github.com/mlm-games/soredowe)** — Linux pacman UI
+
+## Contributing
 
 Issues and PRs are welcome, especially for:
-- correctness bugs
-- perf regressions (include a small repro)
-- platform gaps (ignore external ones like Android IME/keyboard.)
+- Correctness bugs
+- Performance regressions (include a repro)
+- Platform gaps (except external issues like Android IME, if documented)
 
-## Screenshot
+### Development Setup
 
-<img width="2083" height="1326" alt="image" src="https://github.com/user-attachments/assets/1f143ebd-5f24-47c8-9a95-3a09e762db0b" />
+```bash
+git clone https://github.com/mlm-games/repose
+cd repose
+cargo test --workspace
+```
 
+## Support
+
+Consider donating if you'd like to support it's development. Open an issue or a discussions for bugs or questions.
+
+For commercial licensing (LGPL-2.1 is the default), open an issue to discuss.
+
+## Mentions
+
+- [Taffy](https://github.com/DioxusLabs/taffy) for layout
+- [cosmic-text](https://github.com/pop-os/cosmic-text) for text shaping
+- [wgpu](https://github.com/gfx-rs/wgpu) for cross-platform graphics
+- [AccessKit](https://github.com/AccessKit/accesskit) for accessibility
+- Heavily inspired by Jetpack Compose's API design
 
 ## License
 
-LGPL-3.0-or-later (see `LICENSE`).
-
-If you would want to use Repose in a closed-source product, do open an issue.
+See [LICENSE](LICENSE).
