@@ -111,13 +111,21 @@ pub fn run_web_app(
     root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
     options: WebOptions,
 ) -> Result<(), JsValue> {
+    run_web_app_with_snackbar(root, options, None)
+}
+
+pub fn run_web_app_with_snackbar(
+    root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
+    options: WebOptions,
+    snackbar_tick: Option<Rc<dyn Fn(u32)>>,
+) -> Result<(), JsValue> {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     let _ = console_log::init_with_level(log::Level::Info);
 
     repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
 
     let event_loop = EventLoop::new().map_err(|e| JsValue::from_str(&format!("{e:?}")))?;
-    let app = App::new(Box::new(root), options);
+    let app = App::new_with_snackbar(Box::new(root), options, snackbar_tick);
 
     event_loop.spawn_app(app);
     Ok(())
@@ -186,6 +194,9 @@ struct App {
     touch_start: Option<(web_time::Instant, (f32, f32))>,
 
     key_pressed_active: Option<u64>,
+
+    snackbar_tick: Option<Rc<dyn Fn(u32)>>,
+    last_redraw: web_time::Instant,
 }
 
 impl App {
@@ -232,6 +243,31 @@ impl App {
             touch_start: None,
 
             key_pressed_active: None,
+
+            snackbar_tick: None,
+            last_redraw: web_time::Instant::now(),
+        }
+    }
+
+    fn new_with_snackbar(
+        root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>,
+        options: WebOptions,
+        snackbar_tick: Option<Rc<dyn Fn(u32)>>,
+    ) -> Self {
+        let mut app = Self::new(root, options);
+        app.snackbar_tick = snackbar_tick;
+        app
+    }
+
+    fn tick_snackbar(&mut self) {
+        let Some(cb) = &self.snackbar_tick else {
+            return;
+        };
+        let now = web_time::Instant::now();
+        let elapsed = now.saturating_duration_since(self.last_redraw);
+        let ms = elapsed.as_millis().min(u32::MAX as u128) as u32;
+        if ms > 0 {
+            cb(ms);
         }
     }
 
@@ -1783,6 +1819,7 @@ impl ApplicationHandler<()> for App {
             }
 
             WindowEvent::RedrawRequested => {
+                self.tick_snackbar();
                 self.ensure_fullscreen_size(&window);
                 self.sync_size_from_window(&window);
 
@@ -1827,6 +1864,7 @@ impl ApplicationHandler<()> for App {
                 }
 
                 self.frame_cache = Some(frame);
+                self.last_redraw = web_time::Instant::now();
 
                 if self.options.continuous_redraw {
                     window.request_redraw();
