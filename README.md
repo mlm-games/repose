@@ -27,9 +27,7 @@ Useful for simple apps (though aiming for bigger ones in the future), and for de
 
 ### Non-Goals
 
-- Full feature parity with mature toolkits (will need funding, with years of usage)
-- Accessibility coverage on all platforms (in progress)
-- Multi-window (native, until a better alternative to winit comes up, which wouldn't happen anytime soon) and complex popup systems
+- Full feature parity with mature toolkits (prioritising having a minimal and maintainable  for 80% of the tasks, until i get enough funding, or after years of usage)
 
 ## Quick Start
 
