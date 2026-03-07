@@ -1,5 +1,8 @@
 #![allow(non_snake_case)]
 
+mod components;
+pub use components::*;
+
 use std::rc::Rc;
 
 use repose_core::*;

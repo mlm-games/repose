@@ -1,12 +1,12 @@
 use std::rc::Rc;
 
 use repose_core::{
-    prelude::*, set_text_direction_default, set_text_scale_default, set_theme_default,
-    set_ui_scale_default, shortcuts, signal, TextDirection,
+    ColorScheme, TextDirection, prelude::*, set_text_direction_default, set_text_scale_default,
+    set_theme_default, set_ui_scale_default, shortcuts, signal,
 };
 use repose_material::material3;
 use repose_navigation::{
-    back, remember_back_stack, renderer, NavDisplay, NavTransition, Navigator,
+    NavDisplay, NavTransition, Navigator, back, remember_back_stack, renderer,
 };
 use repose_ui::overlay::{OverlayHandle, SnackbarAction, SnackbarController, SnackbarRequest};
 use repose_ui::windowing::{WindowHost, WindowManagerState};
@@ -79,27 +79,7 @@ pub fn app(_s: &mut Scheduler) -> View {
 
     // Theme presets
     let theme_light = {
-        let mut t = Theme::default();
-        t.colors.background = Color::from_hex("#F7F7F5");
-        t.colors.surface = Color::from_hex("#FFFFFF");
-        t.colors.surface_variant = Color::from_hex("#F1F1EE");
-        t.colors.on_surface = Color::from_hex("#1F2328");
-        t.colors.on_surface_variant = Color::from_hex("#5E6368");
-        t.colors.primary = Color::from_hex("#2F6FEB");
-        t.colors.on_primary = Color::WHITE;
-        t.colors.secondary = Color::from_hex("#0F766E");
-        t.colors.on_secondary = Color::WHITE;
-        t.colors.tertiary = Color::from_hex("#B45309");
-        t.colors.on_tertiary = Color::WHITE;
-        t.colors.outline = Color::from_hex("#D2D6DC");
-        t.colors.outline_variant = Color::from_hex("#E6E8EC");
-        t.colors.error = Color::from_hex("#B42318");
-        t.colors.on_error = Color::WHITE;
-        t.colors.focus = Color::from_hex("#1D4ED8");
-        t.apply_colors();
-        t.button_bg = t.primary;
-        t.button_bg_hover = Color::from_hex("#1F5FDB");
-        t.button_bg_pressed = Color::from_hex("#1C4FC2");
+        let mut t = Theme::default().with_colors(ColorScheme::light());
         t.scrollbar_track = t.on_surface.with_alpha(24);
         t.scrollbar_thumb = t.on_surface.with_alpha(96);
         t

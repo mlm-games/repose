@@ -147,46 +147,158 @@ fn get_local<T: 'static + Copy>() -> Option<T> {
 #[derive(Clone, Copy, Debug)]
 #[must_use]
 pub struct ColorScheme {
-    pub background: Color,
-    pub surface: Color,
-    pub surface_variant: Color,
-    pub on_surface: Color,
-    pub on_surface_variant: Color,
-
     pub primary: Color,
     pub on_primary: Color,
+    pub primary_container: Color,
+    pub on_primary_container: Color,
+
     pub secondary: Color,
     pub on_secondary: Color,
+    pub secondary_container: Color,
+    pub on_secondary_container: Color,
+
     pub tertiary: Color,
     pub on_tertiary: Color,
+    pub tertiary_container: Color,
+    pub on_tertiary_container: Color,
+
+    pub error: Color,
+    pub on_error: Color,
+    pub error_container: Color,
+    pub on_error_container: Color,
+
+    pub background: Color,
+    pub on_background: Color,
+    pub surface: Color,
+    pub on_surface: Color,
+    pub surface_variant: Color,
+    pub on_surface_variant: Color,
+    pub surface_container_lowest: Color,
+    pub surface_container_low: Color,
+    pub surface_container: Color,
+    pub surface_container_high: Color,
+    pub surface_container_highest: Color,
+    pub surface_bright: Color,
+    pub surface_dim: Color,
+    pub surface_tint: Color,
+
+    pub inverse_surface: Color,
+    pub inverse_on_surface: Color,
+    pub inverse_primary: Color,
 
     pub outline: Color,
     pub outline_variant: Color,
-    pub error: Color,
-    pub on_error: Color,
+
+    pub scrim: Color,
+    pub shadow: Color,
     pub focus: Color,
+}
+
+impl ColorScheme {
+    pub fn dark() -> Self {
+        Self {
+            primary: Color::from_hex("#D0BCFF"),
+            on_primary: Color::from_hex("#381E72"),
+            primary_container: Color::from_hex("#4F378B"),
+            on_primary_container: Color::from_hex("#EADDFF"),
+
+            secondary: Color::from_hex("#CCC2DC"),
+            on_secondary: Color::from_hex("#332D41"),
+            secondary_container: Color::from_hex("#4A4458"),
+            on_secondary_container: Color::from_hex("#E8DEF8"),
+
+            tertiary: Color::from_hex("#EFB8C8"),
+            on_tertiary: Color::from_hex("#492532"),
+            tertiary_container: Color::from_hex("#633B48"),
+            on_tertiary_container: Color::from_hex("#FFD8E4"),
+
+            error: Color::from_hex("#F2B8B5"),
+            on_error: Color::from_hex("#601410"),
+            error_container: Color::from_hex("#8C1D18"),
+            on_error_container: Color::from_hex("#F9DEDC"),
+
+            background: Color::from_hex("#141218"),
+            on_background: Color::from_hex("#E6E0E9"),
+            surface: Color::from_hex("#141218"),
+            on_surface: Color::from_hex("#E6E0E9"),
+            surface_variant: Color::from_hex("#49454F"),
+            on_surface_variant: Color::from_hex("#CAC4D0"),
+            surface_container_lowest: Color::from_hex("#0F0D13"),
+            surface_container_low: Color::from_hex("#1D1B20"),
+            surface_container: Color::from_hex("#211F26"),
+            surface_container_high: Color::from_hex("#2B2930"),
+            surface_container_highest: Color::from_hex("#36343B"),
+            surface_bright: Color::from_hex("#3B383E"),
+            surface_dim: Color::from_hex("#141218"),
+            surface_tint: Color::from_hex("#D0BCFF"),
+
+            inverse_surface: Color::from_hex("#E6E0E9"),
+            inverse_on_surface: Color::from_hex("#322F35"),
+            inverse_primary: Color::from_hex("#6750A4"),
+
+            outline: Color::from_hex("#938F99"),
+            outline_variant: Color::from_hex("#49454F"),
+
+            scrim: Color::from_hex("#000000"),
+            shadow: Color::from_hex("#000000"),
+            focus: Color::from_hex("#88CCFF"),
+        }
+    }
+
+    pub fn light() -> Self {
+        Self {
+            primary: Color::from_hex("#6750A4"),
+            on_primary: Color::WHITE,
+            primary_container: Color::from_hex("#EADDFF"),
+            on_primary_container: Color::from_hex("#21005D"),
+
+            secondary: Color::from_hex("#625B71"),
+            on_secondary: Color::WHITE,
+            secondary_container: Color::from_hex("#E8DEF8"),
+            on_secondary_container: Color::from_hex("#1D192B"),
+
+            tertiary: Color::from_hex("#7D5260"),
+            on_tertiary: Color::WHITE,
+            tertiary_container: Color::from_hex("#FFD8E4"),
+            on_tertiary_container: Color::from_hex("#31111D"),
+
+            error: Color::from_hex("#B3261E"),
+            on_error: Color::WHITE,
+            error_container: Color::from_hex("#F9DEDC"),
+            on_error_container: Color::from_hex("#410E0B"),
+
+            background: Color::from_hex("#FEF7FF"),
+            on_background: Color::from_hex("#1D1B20"),
+            surface: Color::from_hex("#FEF7FF"),
+            on_surface: Color::from_hex("#1D1B20"),
+            surface_variant: Color::from_hex("#E7E0EC"),
+            on_surface_variant: Color::from_hex("#49454F"),
+            surface_container_lowest: Color::WHITE,
+            surface_container_low: Color::from_hex("#F7F2FA"),
+            surface_container: Color::from_hex("#F3EDF7"),
+            surface_container_high: Color::from_hex("#ECE6F0"),
+            surface_container_highest: Color::from_hex("#E6E0E9"),
+            surface_bright: Color::from_hex("#FEF7FF"),
+            surface_dim: Color::from_hex("#DED8E1"),
+            surface_tint: Color::from_hex("#6750A4"),
+
+            inverse_surface: Color::from_hex("#322F35"),
+            inverse_on_surface: Color::from_hex("#F5EFF7"),
+            inverse_primary: Color::from_hex("#D0BCFF"),
+
+            outline: Color::from_hex("#79747E"),
+            outline_variant: Color::from_hex("#CAC4D0"),
+
+            scrim: Color::from_hex("#000000"),
+            shadow: Color::from_hex("#000000"),
+            focus: Color::from_hex("#1D4ED8"),
+        }
+    }
 }
 
 impl Default for ColorScheme {
     fn default() -> Self {
-        Self {
-            background: Color::from_hex("#121212"),
-            surface: Color::from_hex("#1E1E1E"),
-            surface_variant: Color::from_hex("#2A2A2A"),
-            on_surface: Color::from_hex("#DDDDDD"),
-            on_surface_variant: Color::from_hex("#B8B8B8"),
-            primary: Color::from_hex("#34AF82"),
-            on_primary: Color::WHITE,
-            secondary: Color::from_hex("#7BB6FF"),
-            on_secondary: Color::from_hex("#0E1A2B"),
-            tertiary: Color::from_hex("#E7A3FF"),
-            on_tertiary: Color::from_hex("#2B0E2B"),
-            outline: Color::from_hex("#555555"),
-            outline_variant: Color::from_hex("#3A3A3A"),
-            error: Color::from_hex("#AE3636"),
-            on_error: Color::WHITE,
-            focus: Color::from_hex("#88CCFF"),
-        }
+        Self::dark()
     }
 }
 
@@ -338,20 +450,42 @@ pub struct Theme {
     pub button_bg_pressed: Color,
 
     pub background: Color,
+    pub on_background: Color,
     pub surface: Color,
     pub surface_variant: Color,
     pub on_surface: Color,
     pub on_surface_variant: Color,
+    pub surface_container_lowest: Color,
+    pub surface_container_low: Color,
+    pub surface_container: Color,
+    pub surface_container_high: Color,
+    pub surface_container_highest: Color,
+    pub surface_bright: Color,
+    pub surface_dim: Color,
+    pub surface_tint: Color,
     pub primary: Color,
     pub on_primary: Color,
+    pub primary_container: Color,
+    pub on_primary_container: Color,
     pub secondary: Color,
     pub on_secondary: Color,
+    pub secondary_container: Color,
+    pub on_secondary_container: Color,
     pub tertiary: Color,
     pub on_tertiary: Color,
-    pub outline: Color,
-    pub outline_variant: Color,
+    pub tertiary_container: Color,
+    pub on_tertiary_container: Color,
     pub error: Color,
     pub on_error: Color,
+    pub error_container: Color,
+    pub on_error_container: Color,
+    pub inverse_surface: Color,
+    pub inverse_on_surface: Color,
+    pub inverse_primary: Color,
+    pub outline: Color,
+    pub outline_variant: Color,
+    pub scrim: Color,
+    pub shadow: Color,
 }
 
 impl Default for Theme {
@@ -359,20 +493,42 @@ impl Default for Theme {
         let colors = ColorScheme::default();
         Self {
             background: colors.background,
+            on_background: colors.on_background,
             surface: colors.surface,
             surface_variant: colors.surface_variant,
             on_surface: colors.on_surface,
             on_surface_variant: colors.on_surface_variant,
+            surface_container_lowest: colors.surface_container_lowest,
+            surface_container_low: colors.surface_container_low,
+            surface_container: colors.surface_container,
+            surface_container_high: colors.surface_container_high,
+            surface_container_highest: colors.surface_container_highest,
+            surface_bright: colors.surface_bright,
+            surface_dim: colors.surface_dim,
+            surface_tint: colors.surface_tint,
             primary: colors.primary,
             on_primary: colors.on_primary,
+            primary_container: colors.primary_container,
+            on_primary_container: colors.on_primary_container,
             secondary: colors.secondary,
             on_secondary: colors.on_secondary,
+            secondary_container: colors.secondary_container,
+            on_secondary_container: colors.on_secondary_container,
             tertiary: colors.tertiary,
             on_tertiary: colors.on_tertiary,
-            outline: colors.outline,
-            outline_variant: colors.outline_variant,
+            tertiary_container: colors.tertiary_container,
+            on_tertiary_container: colors.on_tertiary_container,
             error: colors.error,
             on_error: colors.on_error,
+            error_container: colors.error_container,
+            on_error_container: colors.on_error_container,
+            inverse_surface: colors.inverse_surface,
+            inverse_on_surface: colors.inverse_on_surface,
+            inverse_primary: colors.inverse_primary,
+            outline: colors.outline,
+            outline_variant: colors.outline_variant,
+            scrim: colors.scrim,
+            shadow: colors.shadow,
             colors,
             typography: Typography::default(),
             shapes: Shapes::default(),
@@ -383,8 +539,8 @@ impl Default for Theme {
             scrollbar_track: Color(0xDD, 0xDD, 0xDD, 32),
             scrollbar_thumb: Color(0xDD, 0xDD, 0xDD, 140),
             button_bg: colors.primary,
-            button_bg_hover: Color::from_hex("#2A8F6A"),
-            button_bg_pressed: Color::from_hex("#1F7556"),
+            button_bg_hover: colors.primary_container,
+            button_bg_pressed: colors.on_primary_container,
         }
     }
 }
@@ -392,40 +548,86 @@ impl Default for Theme {
 impl Theme {
     pub fn apply_colors(&mut self) {
         self.background = self.colors.background;
+        self.on_background = self.colors.on_background;
         self.surface = self.colors.surface;
         self.surface_variant = self.colors.surface_variant;
         self.on_surface = self.colors.on_surface;
         self.on_surface_variant = self.colors.on_surface_variant;
+        self.surface_container_lowest = self.colors.surface_container_lowest;
+        self.surface_container_low = self.colors.surface_container_low;
+        self.surface_container = self.colors.surface_container;
+        self.surface_container_high = self.colors.surface_container_high;
+        self.surface_container_highest = self.colors.surface_container_highest;
+        self.surface_bright = self.colors.surface_bright;
+        self.surface_dim = self.colors.surface_dim;
+        self.surface_tint = self.colors.surface_tint;
         self.primary = self.colors.primary;
         self.on_primary = self.colors.on_primary;
+        self.primary_container = self.colors.primary_container;
+        self.on_primary_container = self.colors.on_primary_container;
         self.secondary = self.colors.secondary;
         self.on_secondary = self.colors.on_secondary;
+        self.secondary_container = self.colors.secondary_container;
+        self.on_secondary_container = self.colors.on_secondary_container;
         self.tertiary = self.colors.tertiary;
         self.on_tertiary = self.colors.on_tertiary;
-        self.outline = self.colors.outline;
-        self.outline_variant = self.colors.outline_variant;
+        self.tertiary_container = self.colors.tertiary_container;
+        self.on_tertiary_container = self.colors.on_tertiary_container;
         self.error = self.colors.error;
         self.on_error = self.colors.on_error;
+        self.error_container = self.colors.error_container;
+        self.on_error_container = self.colors.on_error_container;
+        self.inverse_surface = self.colors.inverse_surface;
+        self.inverse_on_surface = self.colors.inverse_on_surface;
+        self.inverse_primary = self.colors.inverse_primary;
+        self.outline = self.colors.outline;
+        self.outline_variant = self.colors.outline_variant;
+        self.scrim = self.colors.scrim;
+        self.shadow = self.colors.shadow;
         self.focus = self.colors.focus;
         self.button_bg = self.colors.primary;
+        self.button_bg_hover = self.colors.primary_container;
+        self.button_bg_pressed = self.colors.on_primary_container;
     }
 
     pub fn sync_colors_from_fields(&mut self) {
         self.colors.background = self.background;
+        self.colors.on_background = self.on_background;
         self.colors.surface = self.surface;
         self.colors.surface_variant = self.surface_variant;
         self.colors.on_surface = self.on_surface;
         self.colors.on_surface_variant = self.on_surface_variant;
+        self.colors.surface_container_lowest = self.surface_container_lowest;
+        self.colors.surface_container_low = self.surface_container_low;
+        self.colors.surface_container = self.surface_container;
+        self.colors.surface_container_high = self.surface_container_high;
+        self.colors.surface_container_highest = self.surface_container_highest;
+        self.colors.surface_bright = self.surface_bright;
+        self.colors.surface_dim = self.surface_dim;
+        self.colors.surface_tint = self.surface_tint;
         self.colors.primary = self.primary;
         self.colors.on_primary = self.on_primary;
+        self.colors.primary_container = self.primary_container;
+        self.colors.on_primary_container = self.on_primary_container;
         self.colors.secondary = self.secondary;
         self.colors.on_secondary = self.on_secondary;
+        self.colors.secondary_container = self.secondary_container;
+        self.colors.on_secondary_container = self.on_secondary_container;
         self.colors.tertiary = self.tertiary;
         self.colors.on_tertiary = self.on_tertiary;
-        self.colors.outline = self.outline;
-        self.colors.outline_variant = self.outline_variant;
+        self.colors.tertiary_container = self.tertiary_container;
+        self.colors.on_tertiary_container = self.on_tertiary_container;
         self.colors.error = self.error;
         self.colors.on_error = self.on_error;
+        self.colors.error_container = self.error_container;
+        self.colors.on_error_container = self.on_error_container;
+        self.colors.inverse_surface = self.inverse_surface;
+        self.colors.inverse_on_surface = self.inverse_on_surface;
+        self.colors.inverse_primary = self.inverse_primary;
+        self.colors.outline = self.outline;
+        self.colors.outline_variant = self.outline_variant;
+        self.colors.scrim = self.scrim;
+        self.colors.shadow = self.shadow;
         self.colors.focus = self.focus;
     }
 
