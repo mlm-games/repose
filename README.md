@@ -174,8 +174,6 @@ cargo test --workspace
 
 Consider donating if you'd like to support it's development. Open an issue or a discussions for bugs or questions.
 
-For commercial licensing (LGPL-2.1 is the default right now), open an issue to discuss.
-
 ## Mentions
 
 - [Taffy](https://github.com/DioxusLabs/taffy) for layout
@@ -186,4 +184,6 @@ For commercial licensing (LGPL-2.1 is the default right now), open an issue to d
 
 ## License
 
-See [LICENSE](LICENSE).
+Repose is licensed under the GNU Lesser General Public License, version 2.1 or later (`LGPL-2.1-or-later`). 
+
+See [LICENSE](LICENSE) for more info.
