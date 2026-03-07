@@ -2,7 +2,7 @@
 name = "repose-tree"
 version.workspace = true
 edition.workspace = true
-license = "GPL-3.0-or-later"
+license.workspace = true
 description = "Persistent view tree with incremental updates for Repose"
 
 [dependencies]

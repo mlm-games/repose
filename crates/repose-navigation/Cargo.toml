@@ -2,7 +2,7 @@
 name = "repose-navigation"
 version.workspace = true
 edition.workspace = true
-license = "GPL-3.0-or-later"
+license.workspace = true
 description = "Navigation (Nav3-like) for Repose"
 
 [dependencies]

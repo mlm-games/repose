@@ -2,7 +2,7 @@
 name = "repose-docking"
 version.workspace = true
 edition.workspace = true
-license = "GPL-3.0-or-later"
+license.workspace = true
 description = "Docking layout system (split panes + tabs + drag & drop) for Repose"
 
 [dependencies]

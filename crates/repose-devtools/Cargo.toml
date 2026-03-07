@@ -2,7 +2,7 @@
 name = "repose-devtools"
 version.workspace = true
 edition.workspace = true
-license = "GPL-3.0-or-later"
+license.workspace = true
 description = "Repose developer tools for debugging."
 
 [dependencies]

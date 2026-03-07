@@ -2,7 +2,7 @@
 name = "repose-canvas"
 version.workspace = true
 edition.workspace = true
-license = "GPL-3.0-or-later"
+license.workspace = true
 description = "Immediate-mode canvas utilities for Repose"
 [dependencies]
 repose-core.workspace = true
