@@ -21,3 +21,6 @@ image = { version = "0.25", default-features = false, features = [
     "png",
     "jpeg",
 ] }
+
+[profile.dev]
+opt-level = 2

@@ -11,3 +11,6 @@ fontdb = { workspace = true }
 once_cell = "1"
 ahash = "0.8"
 unicode-segmentation = { workspace = true }
+
+[profile.dev]
+opt-level = 2
