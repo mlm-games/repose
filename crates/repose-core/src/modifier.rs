@@ -60,6 +60,9 @@ pub struct Modifier {
     pub flex_basis: Option<f32>,
     pub flex_wrap: Option<FlexWrap>,
     pub flex_dir: Option<FlexDirection>,
+    pub gap: Option<f32>,
+    pub row_gap: Option<f32>,
+    pub column_gap: Option<f32>,
     pub align_self: Option<AlignSelf>,
     pub justify_content: Option<JustifyContent>,
     pub align_items_container: Option<AlignItems>,
@@ -134,6 +137,9 @@ impl std::fmt::Debug for Modifier {
             .field("flex_grow", &self.flex_grow)
             .field("flex_shrink", &self.flex_shrink)
             .field("flex_basis", &self.flex_basis)
+            .field("gap", &self.gap)
+            .field("row_gap", &self.row_gap)
+            .field("column_gap", &self.column_gap)
             .field("align_self", &self.align_self)
             .field("justify_content", &self.justify_content)
             .field("align_items_container", &self.align_items_container)
@@ -296,6 +302,21 @@ impl Modifier {
     }
     pub fn flex_dir(mut self, d: FlexDirection) -> Self {
         self.flex_dir = Some(d);
+        self
+    }
+    pub fn gap(mut self, v: f32) -> Self {
+        let v = v.max(0.0);
+        self.gap = Some(v);
+        self.row_gap = Some(v);
+        self.column_gap = Some(v);
+        self
+    }
+    pub fn row_gap(mut self, v: f32) -> Self {
+        self.row_gap = Some(v.max(0.0));
+        self
+    }
+    pub fn column_gap(mut self, v: f32) -> Self {
+        self.column_gap = Some(v.max(0.0));
         self
     }
     pub fn align_self(mut self, a: AlignSelf) -> Self {

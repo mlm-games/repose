@@ -462,6 +462,17 @@ impl LayoutEngine {
             s.align_content = Some(ac);
         }
 
+        let row_gap_dp = m.row_gap.or(m.gap);
+        let column_gap_dp = m.column_gap.or(m.gap);
+
+        if let Some(v) = column_gap_dp {
+            s.gap.width = length(px(v.max(0.0)));
+        }
+
+        if let Some(v) = row_gap_dp {
+            s.gap.height = length(px(v.max(0.0)));
+        }
+
         if let Some(v) = m.margin_top {
             s.margin.top = length(px(v));
         }
@@ -490,10 +501,12 @@ impl LayoutEngine {
             s.grid_template_columns = (0..cfg.columns.max(1))
                 .map(|_| GridTemplateComponent::Single(flex(1.0)))
                 .collect();
-            s.gap = taffy::geometry::Size {
-                width: length(px(cfg.column_gap)),
-                height: length(px(cfg.row_gap)),
-            };
+            if column_gap_dp.is_none() {
+                s.gap.width = length(px(cfg.column_gap));
+            }
+            if row_gap_dp.is_none() {
+                s.gap.height = length(px(cfg.row_gap));
+            }
         }
 
         if matches!(kind, ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }) {
