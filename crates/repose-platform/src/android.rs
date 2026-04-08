@@ -646,6 +646,12 @@ pub fn run_android_app_with_options(
                                             st.begin_drag(idx, self.modifiers.shift);
                                             self.ensure_caret_visible_in_hit(&mut st, hit.rect);
                                         }
+                                    } else {
+                                        self.sched.focused = None;
+                                        self.ime_preedit = false;
+                                        if let Some(win) = &self.window {
+                                            rc_web::set_ime_for_textfield(win, false);
+                                        }
                                     }
 
                                     // pointer down callback
@@ -655,6 +661,12 @@ pub fn run_android_app_with_options(
                                             pos,
                                             self.modifiers,
                                         ));
+                                    }
+                                } else {
+                                    self.sched.focused = None;
+                                    self.ime_preedit = false;
+                                    if let Some(win) = &self.window {
+                                        rc_web::set_ime_for_textfield(win, false);
                                     }
                                 }
                             }
