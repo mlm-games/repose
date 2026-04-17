@@ -53,15 +53,59 @@ impl UploadRing {
         if end > self.cap {
             self.head = 0;
             let start = 0;
-            let end = len.min(self.cap);
-            queue.write_buffer(&self.buf, start, &bytes[0..end as usize]);
-            self.head = end;
-            (start, len.min(self.cap - start))
+            queue.write_buffer(&self.buf, start, bytes);
+            self.head = len;
+            (start, len)
         } else {
             queue.write_buffer(&self.buf, start, bytes);
             self.head = end;
             (start, len)
         }
+    }
+}
+
+struct InstancedPipe<I: bytemuck::Pod> {
+    pipeline: wgpu::RenderPipeline,
+    ring: UploadRing,
+    stride: u64,
+    _marker: std::marker::PhantomData<I>,
+}
+
+impl<I: bytemuck::Pod> InstancedPipe<I> {
+    fn new(pipeline: wgpu::RenderPipeline, ring: UploadRing) -> Self {
+        Self {
+            pipeline,
+            ring,
+            stride: std::mem::size_of::<I>() as u64,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    fn upload(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        data: &[I],
+    ) -> Option<(u64, u32)> {
+        if data.is_empty() {
+            return None;
+        }
+        let bytes = bytemuck::cast_slice(data);
+        self.ring.grow_to_fit(device, bytes.len() as u64);
+        let (off, wrote) = self.ring.alloc_write(queue, bytes);
+        debug_assert_eq!(wrote as usize, bytes.len());
+        Some((off, data.len() as u32))
+    }
+
+    fn bind<'a>(&'a self, rpass: &mut wgpu::RenderPass<'a>, off: u64, cnt: u32) {
+        let bytes = (cnt as u64) * self.stride;
+        rpass.set_pipeline(&self.pipeline);
+        rpass.set_vertex_buffer(0, self.ring.buf.slice(off..off + bytes));
+        rpass.draw(0..6, 0..cnt);
+    }
+
+    fn reset(&mut self) {
+        self.ring.reset();
     }
 }
 
@@ -78,14 +122,15 @@ pub struct WgpuBackend {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
 
-    rect_pipeline: wgpu::RenderPipeline,
-    border_pipeline: wgpu::RenderPipeline,
-    ellipse_pipeline: wgpu::RenderPipeline,
-    ellipse_border_pipeline: wgpu::RenderPipeline,
-    text_pipeline_mask: wgpu::RenderPipeline,
-    text_pipeline_color: wgpu::RenderPipeline,
+    // Instanced draw pipes
+    rects: InstancedPipe<RectInstance>,
+    borders: InstancedPipe<BorderInstance>,
+    ellipses: InstancedPipe<EllipseInstance>,
+    ellipse_borders: InstancedPipe<EllipseBorderInstance>,
+    glyph_mask: InstancedPipe<GlyphInstance>,
+    glyph_color: InstancedPipe<GlyphInstance>,
 
-    // Images
+    // Not instanced
     image_pipeline_rgba: wgpu::RenderPipeline,
     image_pipeline_nv12: wgpu::RenderPipeline,
     image_bind_layout_rgba: wgpu::BindGroupLayout,
@@ -97,6 +142,11 @@ pub struct WgpuBackend {
     // Stencil clip pipelines
     clip_pipeline_a2c: wgpu::RenderPipeline,
     clip_pipeline_bin: wgpu::RenderPipeline,
+    clip_ring: UploadRing,
+
+    // Instanced
+    nv12: InstancedPipe<Nv12Instance>,
+
     msaa_samples: u32,
 
     // Depth-stencil target
@@ -114,16 +164,6 @@ pub struct WgpuBackend {
     // Glyph atlas
     atlas_mask: AtlasA8,
     atlas_color: AtlasRGBA,
-
-    // per-frame upload rings
-    ring_rect: UploadRing,
-    ring_border: UploadRing,
-    ring_ellipse: UploadRing,
-    ring_ellipse_border: UploadRing,
-    ring_glyph_mask: UploadRing,
-    ring_glyph_color: UploadRing,
-    ring_clip: UploadRing,
-    ring_nv12: UploadRing,
 
     // Image management
     next_image_handle: u64,
@@ -1078,35 +1118,28 @@ impl WgpuBackend {
             device,
             queue,
             config,
-            rect_pipeline,
-            border_pipeline,
-            text_pipeline_mask,
-            text_pipeline_color,
+
+            rects: InstancedPipe::new(rect_pipeline, ring_rect),
+            borders: InstancedPipe::new(border_pipeline, ring_border),
+            ellipses: InstancedPipe::new(ellipse_pipeline, ring_ellipse),
+            ellipse_borders: InstancedPipe::new(ellipse_border_pipeline, ring_ellipse_border),
+            glyph_mask: InstancedPipe::new(text_pipeline_mask, ring_glyph_mask),
+            glyph_color: InstancedPipe::new(text_pipeline_color, ring_glyph_color),
+
             text_bind_layout,
 
             image_pipeline_rgba,
-            image_pipeline_nv12,
+            image_pipeline_nv12: image_pipeline_nv12.clone(),
             image_bind_layout_rgba,
             image_bind_layout_nv12,
             image_sampler,
 
-            ellipse_pipeline,
-            ellipse_border_pipeline,
-            atlas_mask,
-            atlas_color,
-            ring_rect,
-            ring_border,
-            ring_ellipse,
-            ring_ellipse_border,
-            ring_glyph_color,
-            ring_glyph_mask,
-            ring_clip,
-            ring_nv12,
-
-            next_image_handle: 1,
-            images: HashMap::new(),
             clip_pipeline_a2c,
             clip_pipeline_bin,
+            clip_ring: ring_clip,
+
+            nv12: InstancedPipe::new(image_pipeline_nv12, ring_nv12),
+
             msaa_samples,
             depth_stencil_tex,
             depth_stencil_view,
@@ -1115,6 +1148,12 @@ impl WgpuBackend {
             globals_bind,
             globals_buf,
             globals_layout,
+
+            atlas_mask,
+            atlas_color,
+
+            next_image_handle: 1,
+            images: HashMap::new(),
 
             frame_index: 0,
             image_bytes_total: 0,
@@ -2080,114 +2119,78 @@ impl RenderBackend for WgpuBackend {
 
             fn flush(
                 &mut self,
-                rings: (
-                    &mut UploadRing,
-                    &mut UploadRing,
-                    &mut UploadRing,
-                    &mut UploadRing,
-                    &mut UploadRing,
-                    &mut UploadRing,
-                    &mut UploadRing,
+                pipes: (
+                    &mut InstancedPipe<RectInstance>,
+                    &mut InstancedPipe<BorderInstance>,
+                    &mut InstancedPipe<EllipseInstance>,
+                    &mut InstancedPipe<EllipseBorderInstance>,
                 ),
+                glyph_pipes: (
+                    &mut InstancedPipe<GlyphInstance>,
+                    &mut InstancedPipe<GlyphInstance>,
+                ),
+                nv12_pipe: &mut InstancedPipe<Nv12Instance>,
                 device: &wgpu::Device,
                 queue: &wgpu::Queue,
                 cmds: &mut Vec<Cmd>,
             ) {
-                let (
-                    ring_rect,
-                    ring_border,
-                    ring_ellipse,
-                    ring_ellipse_border,
-                    ring_mask,
-                    ring_color,
-                    ring_nv12,
-                ) = rings;
+                let (rects, borders, ellipses, e_borders) = pipes;
+                let (masks, colors) = glyph_pipes;
 
                 if !self.rects.is_empty() {
-                    let bytes = bytemuck::cast_slice(&self.rects);
-                    ring_rect.grow_to_fit(device, bytes.len() as u64);
-                    let (off, wrote) = ring_rect.alloc_write(queue, bytes);
-                    debug_assert_eq!(wrote as usize, bytes.len());
-                    cmds.push(Cmd::Rect {
-                        off,
-                        cnt: self.rects.len() as u32,
-                    });
+                    if let Some((off, cnt)) = rects.upload(device, queue, &self.rects) {
+                        cmds.push(Cmd::Rect { off, cnt });
+                    }
                     self.rects.clear();
                 }
                 if !self.borders.is_empty() {
-                    let bytes = bytemuck::cast_slice(&self.borders);
-                    ring_border.grow_to_fit(device, bytes.len() as u64);
-                    let (off, wrote) = ring_border.alloc_write(queue, bytes);
-                    debug_assert_eq!(wrote as usize, bytes.len());
-                    cmds.push(Cmd::Border {
-                        off,
-                        cnt: self.borders.len() as u32,
-                    });
+                    if let Some((off, cnt)) = borders.upload(device, queue, &self.borders) {
+                        cmds.push(Cmd::Border { off, cnt });
+                    }
                     self.borders.clear();
                 }
                 if !self.ellipses.is_empty() {
-                    let bytes = bytemuck::cast_slice(&self.ellipses);
-                    ring_ellipse.grow_to_fit(device, bytes.len() as u64);
-                    let (off, wrote) = ring_ellipse.alloc_write(queue, bytes);
-                    debug_assert_eq!(wrote as usize, bytes.len());
-                    cmds.push(Cmd::Ellipse {
-                        off,
-                        cnt: self.ellipses.len() as u32,
-                    });
+                    if let Some((off, cnt)) = ellipses.upload(device, queue, &self.ellipses) {
+                        cmds.push(Cmd::Ellipse { off, cnt });
+                    }
                     self.ellipses.clear();
                 }
                 if !self.e_borders.is_empty() {
-                    let bytes = bytemuck::cast_slice(&self.e_borders);
-                    ring_ellipse_border.grow_to_fit(device, bytes.len() as u64);
-                    let (off, wrote) = ring_ellipse_border.alloc_write(queue, bytes);
-                    debug_assert_eq!(wrote as usize, bytes.len());
-                    cmds.push(Cmd::EllipseBorder {
-                        off,
-                        cnt: self.e_borders.len() as u32,
-                    });
+                    if let Some((off, cnt)) = e_borders.upload(device, queue, &self.e_borders) {
+                        cmds.push(Cmd::EllipseBorder { off, cnt });
+                    }
                     self.e_borders.clear();
                 }
                 if !self.masks.is_empty() {
-                    let bytes = bytemuck::cast_slice(&self.masks);
-                    ring_mask.grow_to_fit(device, bytes.len() as u64);
-                    let (off, wrote) = ring_mask.alloc_write(queue, bytes);
-                    debug_assert_eq!(wrote as usize, bytes.len());
-                    cmds.push(Cmd::GlyphsMask {
-                        off,
-                        cnt: self.masks.len() as u32,
-                    });
+                    if let Some((off, cnt)) = masks.upload(device, queue, &self.masks) {
+                        cmds.push(Cmd::GlyphsMask { off, cnt });
+                    }
                     self.masks.clear();
                 }
                 if !self.colors.is_empty() {
-                    let bytes = bytemuck::cast_slice(&self.colors);
-                    ring_color.grow_to_fit(device, bytes.len() as u64);
-                    let (off, wrote) = ring_color.alloc_write(queue, bytes);
-                    debug_assert_eq!(wrote as usize, bytes.len());
-                    cmds.push(Cmd::GlyphsColor {
-                        off,
-                        cnt: self.colors.len() as u32,
-                    });
+                    if let Some((off, cnt)) = colors.upload(device, queue, &self.colors) {
+                        cmds.push(Cmd::GlyphsColor { off, cnt });
+                    }
                     self.colors.clear();
                 }
                 if !self.nv12s.is_empty() {
-                    let bytes = bytemuck::cast_slice(&self.nv12s);
-                    ring_nv12.grow_to_fit(device, bytes.len() as u64);
-                    let (_off, wrote) = ring_nv12.alloc_write(queue, bytes);
-                    debug_assert_eq!(wrote as usize, bytes.len());
-                    // NV12 instances are unused via this batch path currently
+                    if let Some((off, cnt)) = nv12_pipe.upload(device, queue, &self.nv12s) {
+                        // NV12 instances are unused via this batch path currently
+                        let _ = (off, cnt);
+                    }
                     self.nv12s.clear();
                 }
             }
         }
 
-        self.ring_rect.reset();
-        self.ring_border.reset();
-        self.ring_ellipse.reset();
-        self.ring_ellipse_border.reset();
-        self.ring_glyph_mask.reset();
-        self.ring_glyph_color.reset();
-        self.ring_clip.reset();
-        self.ring_nv12.reset();
+        self.rects.reset();
+        self.borders.reset();
+        self.ellipses.reset();
+        self.ellipse_borders.reset();
+        self.glyph_mask.reset();
+        self.glyph_color.reset();
+        self.clip_ring.reset();
+        self.nv12.reset();
 
         let mut batch = Batch::new();
         let mut transform_stack: Vec<Transform> = vec![Transform::identity()];
@@ -2204,14 +2207,13 @@ impl RenderBackend for WgpuBackend {
                 if !batch.is_empty() {
                     batch.flush(
                         (
-                            &mut self.ring_rect,
-                            &mut self.ring_border,
-                            &mut self.ring_ellipse,
-                            &mut self.ring_ellipse_border,
-                            &mut self.ring_glyph_mask,
-                            &mut self.ring_glyph_color,
-                            &mut self.ring_nv12,
+                            &mut self.rects,
+                            &mut self.borders,
+                            &mut self.ellipses,
+                            &mut self.ellipse_borders,
                         ),
+                        (&mut self.glyph_mask, &mut self.glyph_color),
+                        &mut self.nv12,
                         &self.device,
                         &self.queue,
                         &mut cmds,
@@ -2435,15 +2437,14 @@ impl RenderBackend for WgpuBackend {
                             full_range,
                             _pad: [0.0; 3],
                         };
-                        let bytes = bytemuck::bytes_of(&inst);
-                        self.ring_nv12.grow_to_fit(&self.device, bytes.len() as u64);
-                        let (off, wrote) = self.ring_nv12.alloc_write(&self.queue, bytes);
-                        debug_assert_eq!(wrote as usize, bytes.len());
-                        cmds.push(Cmd::ImageNv12 {
-                            off,
-                            cnt: 1,
-                            handle: *handle,
-                        });
+                        if let Some((off, _)) = self.nv12.upload(&self.device, &self.queue, &[inst])
+                        {
+                            cmds.push(Cmd::ImageNv12 {
+                                off,
+                                cnt: 1,
+                                handle: *handle,
+                            });
+                        }
                     } else {
                         // RGBA uses GlyphInstance struct (reused pipeline)
                         let inst = GlyphInstance {
@@ -2451,16 +2452,15 @@ impl RenderBackend for WgpuBackend {
                             uv: uv_rect,
                             color: tint.to_linear(),
                         };
-                        let bytes = bytemuck::bytes_of(&inst);
-                        self.ring_glyph_color
-                            .grow_to_fit(&self.device, bytes.len() as u64);
-                        let (off, wrote) = self.ring_glyph_color.alloc_write(&self.queue, bytes);
-                        debug_assert_eq!(wrote as usize, bytes.len());
-                        cmds.push(Cmd::ImageRgba {
-                            off,
-                            cnt: 1,
-                            handle: *handle,
-                        });
+                        if let Some((off, _)) =
+                            self.glyph_color.upload(&self.device, &self.queue, &[inst])
+                        {
+                            cmds.push(Cmd::ImageRgba {
+                                off,
+                                cnt: 1,
+                                handle: *handle,
+                            });
+                        }
                     }
                 }
                 SceneNode::PushClip { rect, radius } => {
@@ -2488,9 +2488,8 @@ impl RenderBackend for WgpuBackend {
                         _pad: [0.0; 3],
                     };
                     let bytes = bytemuck::bytes_of(&inst);
-                    self.ring_clip.grow_to_fit(&self.device, bytes.len() as u64);
-                    let (off, wrote) = self.ring_clip.alloc_write(&self.queue, bytes);
-                    debug_assert_eq!(wrote as usize, bytes.len());
+                    self.clip_ring.grow_to_fit(&self.device, bytes.len() as u64);
+                    let (off, _) = self.clip_ring.alloc_write(&self.queue, bytes);
 
                     cmds.push(Cmd::ClipPush {
                         off,
@@ -2601,7 +2600,7 @@ impl RenderBackend for WgpuBackend {
                         }
 
                         let bytes = (n as u64) * std::mem::size_of::<ClipInstance>() as u64;
-                        rpass.set_vertex_buffer(0, self.ring_clip.buf.slice(off..off + bytes));
+                        rpass.set_vertex_buffer(0, self.clip_ring.buf.slice(off..off + bytes));
                         rpass.draw(0..6, 0..n);
 
                         clip_depth = (clip_depth + 1).min(255);
@@ -2615,35 +2614,35 @@ impl RenderBackend for WgpuBackend {
                     }
 
                     Cmd::Rect { off, cnt: n } => {
-                        rpass.set_pipeline(&self.rect_pipeline);
+                        rpass.set_pipeline(&self.rects.pipeline);
                         let bytes = (n as u64) * std::mem::size_of::<RectInstance>() as u64;
-                        rpass.set_vertex_buffer(0, self.ring_rect.buf.slice(off..off + bytes));
+                        rpass.set_vertex_buffer(0, self.rects.ring.buf.slice(off..off + bytes));
                         rpass.draw(0..6, 0..n);
                     }
 
                     Cmd::Border { off, cnt: n } => {
-                        rpass.set_pipeline(&self.border_pipeline);
+                        rpass.set_pipeline(&self.borders.pipeline);
                         let bytes = (n as u64) * std::mem::size_of::<BorderInstance>() as u64;
-                        rpass.set_vertex_buffer(0, self.ring_border.buf.slice(off..off + bytes));
+                        rpass.set_vertex_buffer(0, self.borders.ring.buf.slice(off..off + bytes));
                         rpass.draw(0..6, 0..n);
                     }
 
                     Cmd::GlyphsMask { off, cnt: n } => {
-                        rpass.set_pipeline(&self.text_pipeline_mask);
+                        rpass.set_pipeline(&self.glyph_mask.pipeline);
                         rpass.set_bind_group(1, &bind_mask, &[]);
                         let bytes = (n as u64) * std::mem::size_of::<GlyphInstance>() as u64;
                         rpass
-                            .set_vertex_buffer(0, self.ring_glyph_mask.buf.slice(off..off + bytes));
+                            .set_vertex_buffer(0, self.glyph_mask.ring.buf.slice(off..off + bytes));
                         rpass.draw(0..6, 0..n);
                     }
 
                     Cmd::GlyphsColor { off, cnt: n } => {
-                        rpass.set_pipeline(&self.text_pipeline_color);
+                        rpass.set_pipeline(&self.glyph_color.pipeline);
                         rpass.set_bind_group(1, &bind_color, &[]);
                         let bytes = (n as u64) * std::mem::size_of::<GlyphInstance>() as u64;
                         rpass.set_vertex_buffer(
                             0,
-                            self.ring_glyph_color.buf.slice(off..off + bytes),
+                            self.glyph_color.ring.buf.slice(off..off + bytes),
                         );
                         rpass.draw(0..6, 0..n);
                     }
@@ -2659,7 +2658,7 @@ impl RenderBackend for WgpuBackend {
                             let bytes = (n as u64) * std::mem::size_of::<GlyphInstance>() as u64;
                             rpass.set_vertex_buffer(
                                 0,
-                                self.ring_glyph_color.buf.slice(off..off + bytes),
+                                self.glyph_color.ring.buf.slice(off..off + bytes),
                             );
                             rpass.draw(0..6, 0..n);
                         }
@@ -2671,28 +2670,28 @@ impl RenderBackend for WgpuBackend {
                         handle,
                     } => {
                         if let Some(ImageTex::Nv12 { bind, .. }) = self.images.get(&handle) {
-                            rpass.set_pipeline(&self.image_pipeline_nv12);
+                            rpass.set_pipeline(&self.nv12.pipeline);
                             rpass.set_bind_group(1, bind, &[]);
                             let bytes = (n as u64) * std::mem::size_of::<Nv12Instance>() as u64;
-                            rpass.set_vertex_buffer(0, self.ring_nv12.buf.slice(off..off + bytes));
+                            rpass.set_vertex_buffer(0, self.nv12.ring.buf.slice(off..off + bytes));
                             rpass.draw(0..6, 0..n);
                         }
                     }
 
                     Cmd::Ellipse { off, cnt: n } => {
-                        rpass.set_pipeline(&self.ellipse_pipeline);
+                        rpass.set_pipeline(&self.ellipses.pipeline);
                         let bytes = (n as u64) * std::mem::size_of::<EllipseInstance>() as u64;
-                        rpass.set_vertex_buffer(0, self.ring_ellipse.buf.slice(off..off + bytes));
+                        rpass.set_vertex_buffer(0, self.ellipses.ring.buf.slice(off..off + bytes));
                         rpass.draw(0..6, 0..n);
                     }
 
                     Cmd::EllipseBorder { off, cnt: n } => {
-                        rpass.set_pipeline(&self.ellipse_border_pipeline);
+                        rpass.set_pipeline(&self.ellipse_borders.pipeline);
                         let bytes =
                             (n as u64) * std::mem::size_of::<EllipseBorderInstance>() as u64;
                         rpass.set_vertex_buffer(
                             0,
-                            self.ring_ellipse_border.buf.slice(off..off + bytes),
+                            self.ellipse_borders.ring.buf.slice(off..off + bytes),
                         );
                         rpass.draw(0..6, 0..n);
                     }
