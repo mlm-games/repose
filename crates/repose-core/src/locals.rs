@@ -11,6 +11,8 @@
 //! Locals can be overridden for a subtree with `with_*`. If no local is set,
 //! getters fall back to global defaults (which an app can set each frame).
 
+use std::ops::Deref;
+
 use std::any::{Any, TypeId};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -448,87 +450,19 @@ pub struct Theme {
     pub button_bg: Color,
     pub button_bg_hover: Color,
     pub button_bg_pressed: Color,
+}
 
-    pub background: Color,
-    pub on_background: Color,
-    pub surface: Color,
-    pub surface_variant: Color,
-    pub on_surface: Color,
-    pub on_surface_variant: Color,
-    pub surface_container_lowest: Color,
-    pub surface_container_low: Color,
-    pub surface_container: Color,
-    pub surface_container_high: Color,
-    pub surface_container_highest: Color,
-    pub surface_bright: Color,
-    pub surface_dim: Color,
-    pub surface_tint: Color,
-    pub primary: Color,
-    pub on_primary: Color,
-    pub primary_container: Color,
-    pub on_primary_container: Color,
-    pub secondary: Color,
-    pub on_secondary: Color,
-    pub secondary_container: Color,
-    pub on_secondary_container: Color,
-    pub tertiary: Color,
-    pub on_tertiary: Color,
-    pub tertiary_container: Color,
-    pub on_tertiary_container: Color,
-    pub error: Color,
-    pub on_error: Color,
-    pub error_container: Color,
-    pub on_error_container: Color,
-    pub inverse_surface: Color,
-    pub inverse_on_surface: Color,
-    pub inverse_primary: Color,
-    pub outline: Color,
-    pub outline_variant: Color,
-    pub scrim: Color,
-    pub shadow: Color,
+impl Deref for Theme {
+    type Target = ColorScheme;
+    fn deref(&self) -> &Self::Target {
+        &self.colors
+    }
 }
 
 impl Default for Theme {
     fn default() -> Self {
         let colors = ColorScheme::default();
         Self {
-            background: colors.background,
-            on_background: colors.on_background,
-            surface: colors.surface,
-            surface_variant: colors.surface_variant,
-            on_surface: colors.on_surface,
-            on_surface_variant: colors.on_surface_variant,
-            surface_container_lowest: colors.surface_container_lowest,
-            surface_container_low: colors.surface_container_low,
-            surface_container: colors.surface_container,
-            surface_container_high: colors.surface_container_high,
-            surface_container_highest: colors.surface_container_highest,
-            surface_bright: colors.surface_bright,
-            surface_dim: colors.surface_dim,
-            surface_tint: colors.surface_tint,
-            primary: colors.primary,
-            on_primary: colors.on_primary,
-            primary_container: colors.primary_container,
-            on_primary_container: colors.on_primary_container,
-            secondary: colors.secondary,
-            on_secondary: colors.on_secondary,
-            secondary_container: colors.secondary_container,
-            on_secondary_container: colors.on_secondary_container,
-            tertiary: colors.tertiary,
-            on_tertiary: colors.on_tertiary,
-            tertiary_container: colors.tertiary_container,
-            on_tertiary_container: colors.on_tertiary_container,
-            error: colors.error,
-            on_error: colors.on_error,
-            error_container: colors.error_container,
-            on_error_container: colors.on_error_container,
-            inverse_surface: colors.inverse_surface,
-            inverse_on_surface: colors.inverse_on_surface,
-            inverse_primary: colors.inverse_primary,
-            outline: colors.outline,
-            outline_variant: colors.outline_variant,
-            scrim: colors.scrim,
-            shadow: colors.shadow,
             colors,
             typography: Typography::default(),
             shapes: Shapes::default(),
@@ -546,94 +480,8 @@ impl Default for Theme {
 }
 
 impl Theme {
-    pub fn apply_colors(&mut self) {
-        self.background = self.colors.background;
-        self.on_background = self.colors.on_background;
-        self.surface = self.colors.surface;
-        self.surface_variant = self.colors.surface_variant;
-        self.on_surface = self.colors.on_surface;
-        self.on_surface_variant = self.colors.on_surface_variant;
-        self.surface_container_lowest = self.colors.surface_container_lowest;
-        self.surface_container_low = self.colors.surface_container_low;
-        self.surface_container = self.colors.surface_container;
-        self.surface_container_high = self.colors.surface_container_high;
-        self.surface_container_highest = self.colors.surface_container_highest;
-        self.surface_bright = self.colors.surface_bright;
-        self.surface_dim = self.colors.surface_dim;
-        self.surface_tint = self.colors.surface_tint;
-        self.primary = self.colors.primary;
-        self.on_primary = self.colors.on_primary;
-        self.primary_container = self.colors.primary_container;
-        self.on_primary_container = self.colors.on_primary_container;
-        self.secondary = self.colors.secondary;
-        self.on_secondary = self.colors.on_secondary;
-        self.secondary_container = self.colors.secondary_container;
-        self.on_secondary_container = self.colors.on_secondary_container;
-        self.tertiary = self.colors.tertiary;
-        self.on_tertiary = self.colors.on_tertiary;
-        self.tertiary_container = self.colors.tertiary_container;
-        self.on_tertiary_container = self.colors.on_tertiary_container;
-        self.error = self.colors.error;
-        self.on_error = self.colors.on_error;
-        self.error_container = self.colors.error_container;
-        self.on_error_container = self.colors.on_error_container;
-        self.inverse_surface = self.colors.inverse_surface;
-        self.inverse_on_surface = self.colors.inverse_on_surface;
-        self.inverse_primary = self.colors.inverse_primary;
-        self.outline = self.colors.outline;
-        self.outline_variant = self.colors.outline_variant;
-        self.scrim = self.colors.scrim;
-        self.shadow = self.colors.shadow;
-        self.focus = self.colors.focus;
-        self.button_bg = self.colors.primary;
-        self.button_bg_hover = self.colors.primary_container;
-        self.button_bg_pressed = self.colors.on_primary_container;
-    }
-
-    pub fn sync_colors_from_fields(&mut self) {
-        self.colors.background = self.background;
-        self.colors.on_background = self.on_background;
-        self.colors.surface = self.surface;
-        self.colors.surface_variant = self.surface_variant;
-        self.colors.on_surface = self.on_surface;
-        self.colors.on_surface_variant = self.on_surface_variant;
-        self.colors.surface_container_lowest = self.surface_container_lowest;
-        self.colors.surface_container_low = self.surface_container_low;
-        self.colors.surface_container = self.surface_container;
-        self.colors.surface_container_high = self.surface_container_high;
-        self.colors.surface_container_highest = self.surface_container_highest;
-        self.colors.surface_bright = self.surface_bright;
-        self.colors.surface_dim = self.surface_dim;
-        self.colors.surface_tint = self.surface_tint;
-        self.colors.primary = self.primary;
-        self.colors.on_primary = self.on_primary;
-        self.colors.primary_container = self.primary_container;
-        self.colors.on_primary_container = self.on_primary_container;
-        self.colors.secondary = self.secondary;
-        self.colors.on_secondary = self.on_secondary;
-        self.colors.secondary_container = self.secondary_container;
-        self.colors.on_secondary_container = self.on_secondary_container;
-        self.colors.tertiary = self.tertiary;
-        self.colors.on_tertiary = self.on_tertiary;
-        self.colors.tertiary_container = self.tertiary_container;
-        self.colors.on_tertiary_container = self.on_tertiary_container;
-        self.colors.error = self.error;
-        self.colors.on_error = self.on_error;
-        self.colors.error_container = self.error_container;
-        self.colors.on_error_container = self.on_error_container;
-        self.colors.inverse_surface = self.inverse_surface;
-        self.colors.inverse_on_surface = self.inverse_on_surface;
-        self.colors.inverse_primary = self.inverse_primary;
-        self.colors.outline = self.outline;
-        self.colors.outline_variant = self.outline_variant;
-        self.colors.scrim = self.scrim;
-        self.colors.shadow = self.shadow;
-        self.colors.focus = self.focus;
-    }
-
     pub fn with_colors(mut self, colors: ColorScheme) -> Self {
         self.colors = colors;
-        self.apply_colors();
         self
     }
 }
