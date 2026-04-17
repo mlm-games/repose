@@ -12,6 +12,3 @@ smallvec = { workspace = true }
 slotmap = { workspace = true }
 log = { workspace = true }
 ahash = { workspace = true }
-
-[profile.dev]
-opt-level = 2

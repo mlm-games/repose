@@ -277,14 +277,14 @@ fn swash_to_a8_coverage(content: cosmic_text::SwashContent, data: &[u8]) -> Opti
 
 impl WgpuBackend {
     pub async fn new_async(window: Arc<winit::window::Window>) -> anyhow::Result<Self> {
-        let mut desc = wgpu::InstanceDescriptor::from_env_or_default();
         let instance: Instance;
 
         if cfg!(target_arch = "wasm32") {
+            let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
             desc.backends = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
-            instance = wgpu::util::new_instance_with_webgpu_detection(&desc).await;
+            instance = wgpu::util::new_instance_with_webgpu_detection(desc).await;
         } else {
-            instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::from_env_or_default());
+            instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         };
 
         let surface = instance.create_surface(window.clone())?;
@@ -391,8 +391,8 @@ impl WgpuBackend {
 
         let stencil_for_content = wgpu::DepthStencilState {
             format: ds_format,
-            depth_write_enabled: false,
-            depth_compare: wgpu::CompareFunction::Always,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Always),
             stencil: wgpu::StencilState {
                 front: wgpu::StencilFaceState {
                     compare: wgpu::CompareFunction::LessEqual,
@@ -414,8 +414,8 @@ impl WgpuBackend {
 
         let stencil_for_clip_inc = wgpu::DepthStencilState {
             format: ds_format,
-            depth_write_enabled: false,
-            depth_compare: wgpu::CompareFunction::Always,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Always),
             stencil: wgpu::StencilState {
                 front: wgpu::StencilFaceState {
                     compare: wgpu::CompareFunction::Equal,
@@ -450,7 +450,7 @@ impl WgpuBackend {
         });
         let rect_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rect pipeline layout"),
-            bind_group_layouts: &[&globals_layout],
+            bind_group_layouts: &[Some(&globals_layout)],
             immediate_size: 0,
         });
         let rect_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -527,7 +527,7 @@ impl WgpuBackend {
         let border_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("border pipeline layout"),
-                bind_group_layouts: &[&globals_layout],
+                bind_group_layouts: &[Some(&globals_layout)],
                 immediate_size: 0,
             });
         let border_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -589,7 +589,7 @@ impl WgpuBackend {
         let ellipse_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("ellipse pipeline layout"),
-                bind_group_layouts: &[&globals_layout],
+                bind_group_layouts: &[Some(&globals_layout)],
                 immediate_size: 0,
             });
         let ellipse_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -643,7 +643,7 @@ impl WgpuBackend {
         let ellipse_border_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("ellipse border layout"),
-                bind_group_layouts: &[&globals_layout],
+                bind_group_layouts: &[Some(&globals_layout)],
                 immediate_size: 0,
             });
         let ellipse_border_pipeline =
@@ -781,7 +781,7 @@ impl WgpuBackend {
 
         let text_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("text pipeline layout"),
-            bind_group_layouts: &[&globals_layout, &text_bind_layout],
+            bind_group_layouts: &[Some(&globals_layout), Some(&text_bind_layout)],
             immediate_size: 0,
         });
 
@@ -890,7 +890,7 @@ impl WgpuBackend {
 
         let image_nv12_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("image nv12 pipeline layout"),
-            bind_group_layouts: &[&globals_layout, &image_bind_layout_nv12],
+            bind_group_layouts: &[Some(&globals_layout), Some(&image_bind_layout_nv12)],
             immediate_size: 0,
         });
 
@@ -962,7 +962,7 @@ impl WgpuBackend {
 
         let clip_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("clip pipeline layout"),
-            bind_group_layouts: &[&globals_layout],
+            bind_group_layouts: &[Some(&globals_layout)],
             immediate_size: 0,
         });
 
@@ -1936,25 +1936,25 @@ impl RenderBackend for WgpuBackend {
         }
         let frame = loop {
             match self.surface.get_current_texture() {
-                Ok(f) => break f,
-                Err(wgpu::SurfaceError::Lost) => {
-                    log::warn!("surface lost; reconfiguring");
+                wgpu::CurrentSurfaceTexture::Success(f) => break f,
+                wgpu::CurrentSurfaceTexture::Suboptimal(f) => {
+                    log::warn!("suboptimal surface; reconfiguring");
                     self.surface.configure(&self.device, &self.config);
+                    break f;
                 }
-                Err(wgpu::SurfaceError::Outdated) => {
+                wgpu::CurrentSurfaceTexture::Outdated => {
                     log::warn!("surface outdated; reconfiguring");
                     self.surface.configure(&self.device, &self.config);
                 }
-                Err(wgpu::SurfaceError::Timeout) => {
-                    log::warn!("surface timeout; retrying");
+                wgpu::CurrentSurfaceTexture::Lost => {
+                    log::warn!("surface lost; reconfiguring");
+                    self.surface.configure(&self.device, &self.config);
+                }
+                wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
                     continue;
                 }
-                Err(wgpu::SurfaceError::OutOfMemory) => {
-                    log::error!("surface OOM");
-                    return;
-                }
-                Err(wgpu::SurfaceError::Other) => {
-                    log::error!("Other error");
+                wgpu::CurrentSurfaceTexture::Validation => {
+                    log::error!("surface validation error");
                     return;
                 }
             }
