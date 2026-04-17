@@ -549,22 +549,16 @@ pub fn with_text_direction<R>(dir: TextDirection, f: impl FnOnce() -> R) -> R {
     })
 }
 
-pub fn theme() -> Theme {
-    get_local::<Theme>().unwrap_or_else(|| defaults().read().theme)
+macro_rules! def_local_getter {
+    ($fn_name:ident, $ty:ty, $default_field:ident) => {
+        pub fn $fn_name() -> $ty {
+            get_local::<$ty>().unwrap_or_else(|| defaults().read().$default_field)
+        }
+    };
 }
 
-pub fn density() -> Density {
-    get_local::<Density>().unwrap_or_else(|| defaults().read().density)
-}
-
-pub fn ui_scale() -> UiScale {
-    get_local::<UiScale>().unwrap_or_else(|| defaults().read().ui_scale)
-}
-
-pub fn text_scale() -> TextScale {
-    get_local::<TextScale>().unwrap_or_else(|| defaults().read().text_scale)
-}
-
-pub fn text_direction() -> TextDirection {
-    get_local::<TextDirection>().unwrap_or_else(|| defaults().read().text_direction)
-}
+def_local_getter!(theme, Theme, theme);
+def_local_getter!(density, Density, density);
+def_local_getter!(ui_scale, UiScale, ui_scale);
+def_local_getter!(text_scale, TextScale, text_scale);
+def_local_getter!(text_direction, TextDirection, text_direction);

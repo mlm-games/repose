@@ -2259,7 +2259,7 @@ impl LayoutEngine {
                     }
                 }
 
-                push_scrollbar_v(
+                push_scrollbar(
                     scene,
                     hits,
                     interactions,
@@ -2268,6 +2268,7 @@ impl LayoutEngine {
                     ch,
                     off,
                     modifier.z_index,
+                    ScrollAxis::V,
                     set_scroll_offset.clone(),
                 );
 
@@ -2352,7 +2353,11 @@ impl LayoutEngine {
                     let ox = ox;
                     Rc::new(move |y| s(ox, y)) as Rc<dyn Fn(f32)>
                 });
-                push_scrollbar_v(
+                let set_x = set_scroll_offset_xy.clone().map(|s| {
+                    let oy = oy;
+                    Rc::new(move |x| s(x, oy)) as Rc<dyn Fn(f32)>
+                });
+                push_scrollbar(
                     scene,
                     hits,
                     interactions,
@@ -2361,9 +2366,10 @@ impl LayoutEngine {
                     ch,
                     oy,
                     modifier.z_index,
+                    ScrollAxis::V,
                     set_y,
                 );
-                push_scrollbar_h(
+                push_scrollbar(
                     scene,
                     hits,
                     interactions,
@@ -2372,8 +2378,8 @@ impl LayoutEngine {
                     cw,
                     ox,
                     modifier.z_index,
-                    set_scroll_offset_xy.clone(),
-                    oy,
+                    ScrollAxis::H,
+                    set_x,
                 );
                 scene.nodes.push(SceneNode::PopClip);
             }
@@ -2490,172 +2496,141 @@ fn norm(v: f32, min: f32, max: f32) -> f32 {
     }
 }
 
-fn push_scrollbar_v(
-    scene: &mut Scene,
-    hits: &mut Vec<HitRegion>,
-    interactions: &Interactions,
-    vid: u64,
-    vp: repose_core::Rect,
-    ch: f32,
-    off: f32,
-    z: f32,
-    set: Option<Rc<dyn Fn(f32)>>,
-) {
-    if ch <= vp.h + 0.5 {
-        return;
-    }
-    let thick = dp_to_px(6.0);
-    let m = dp_to_px(2.0);
-    let tx = vp.x + vp.w - m - thick;
-    let ty = vp.y + m;
-    let th = (vp.h - 2.0 * m).max(0.0);
-    if th <= 0.5 {
-        return;
-    }
-    let ratio = (vp.h / ch).clamp(0.0, 1.0);
-    let thumb_h = (th * ratio).max(dp_to_px(24.0)).min(th);
-    let tpos = (off / (ch - vp.h).max(1.0)).clamp(0.0, 1.0);
-    let thumb_y = ty + tpos * (th - thumb_h);
-    let color = locals::theme().scrollbar_thumb;
-
-    scene.nodes.push(SceneNode::Rect {
-        rect: repose_core::Rect {
-            x: tx,
-            y: ty,
-            w: thick,
-            h: th,
-        },
-        brush: Brush::Solid(locals::theme().scrollbar_track),
-        radius: thick * 0.5,
-    });
-    scene.nodes.push(SceneNode::Rect {
-        rect: repose_core::Rect {
-            x: tx,
-            y: thumb_y,
-            w: thick,
-            h: thumb_h,
-        },
-        brush: Brush::Solid(color),
-        radius: thick * 0.5,
-    });
-
-    if let Some(s) = set {
-        let tid = vid ^ 0x8000_0001;
-        let map = Rc::new(move |py: f32| -> f32 {
-            let max_p = (th - thumb_h).max(0.0);
-            let p = ((py - ty) - thumb_h * 0.5).clamp(0.0, max_p);
-            (if max_p > 0.0 { p / max_p } else { 0.0 }) * (ch - vp.h).max(1.0)
-        });
-        let on_pd = {
-            let s = s.clone();
-            let m = map.clone();
-            Rc::new(move |pe: PointerEvent| s(m(pe.position.y)))
-        };
-        let on_pm = if interactions.pressed.contains(&tid) {
-            let s = s.clone();
-            let m = map.clone();
-            Some(Rc::new(move |pe: PointerEvent| s(m(pe.position.y))) as Rc<dyn Fn(PointerEvent)>)
-        } else {
-            None
-        };
-        hits.push(HitRegion {
-            id: tid,
-            rect: repose_core::Rect {
-                x: tx,
-                y: thumb_y,
-                w: thick,
-                h: thumb_h,
-            },
-            on_pointer_down: Some(on_pd),
-            on_pointer_move: on_pm,
-            on_pointer_up: Some(Rc::new(|_| {})),
-            z_index: z + 1000.0,
-            ..Default::default()
-        });
-    }
+#[derive(Clone, Copy)]
+enum ScrollAxis {
+    V,
+    H,
 }
 
-fn push_scrollbar_h(
+fn push_scrollbar(
     scene: &mut Scene,
     hits: &mut Vec<HitRegion>,
     interactions: &Interactions,
     vid: u64,
     vp: repose_core::Rect,
-    cw: f32,
-    off: f32,
+    content_len: f32,
+    offset: f32,
     z: f32,
-    set: Option<Rc<dyn Fn(f32, f32)>>,
-    keep_y: f32,
+    axis: ScrollAxis,
+    set_offset: Option<Rc<dyn Fn(f32)>>,
 ) {
-    if cw <= vp.w + 0.5 {
+    let vp_len = match axis {
+        ScrollAxis::V => vp.h,
+        ScrollAxis::H => vp.w,
+    };
+    if content_len <= vp_len + 0.5 {
         return;
     }
+
     let thick = dp_to_px(6.0);
     let m = dp_to_px(2.0);
-    let tx = vp.x + m;
-    let ty = vp.y + vp.h - m - thick;
-    let tw = (vp.w - 2.0 * m).max(0.0);
-    if tw <= 0.5 {
+
+    let (track_x, track_y, track_main, track_cross) = match axis {
+        ScrollAxis::V => (
+            vp.x + vp.w - m - thick,
+            vp.y + m,
+            (vp.h - 2.0 * m).max(0.0),
+            thick,
+        ),
+        ScrollAxis::H => (
+            vp.x + m,
+            vp.y + vp.h - m - thick,
+            (vp.w - 2.0 * m).max(0.0),
+            thick,
+        ),
+    };
+    if track_main <= 0.5 {
         return;
     }
-    let ratio = (vp.w / cw).clamp(0.0, 1.0);
-    let thumb_w = (tw * ratio).max(dp_to_px(24.0)).min(tw);
-    let tpos = (off / (cw - vp.w).max(1.0)).clamp(0.0, 1.0);
-    let thumb_x = tx + tpos * (tw - thumb_w);
-    let color = locals::theme().scrollbar_thumb;
+
+    let ratio = (vp_len / content_len).clamp(0.0, 1.0);
+    let thumb_len = (track_main * ratio).max(dp_to_px(24.0)).min(track_main);
+    let tpos = (offset / (content_len - vp_len).max(1.0)).clamp(0.0, 1.0);
+    let thumb_offset = tpos * (track_main - thumb_len);
+
+    let (track_rect, thumb_rect) = match axis {
+        ScrollAxis::V => (
+            repose_core::Rect {
+                x: track_x,
+                y: track_y,
+                w: track_cross,
+                h: track_main,
+            },
+            repose_core::Rect {
+                x: track_x,
+                y: track_y + thumb_offset,
+                w: track_cross,
+                h: thumb_len,
+            },
+        ),
+        ScrollAxis::H => (
+            repose_core::Rect {
+                x: track_x,
+                y: track_y,
+                w: track_main,
+                h: track_cross,
+            },
+            repose_core::Rect {
+                x: track_x + thumb_offset,
+                y: track_y,
+                w: thumb_len,
+                h: track_cross,
+            },
+        ),
+    };
 
     scene.nodes.push(SceneNode::Rect {
-        rect: repose_core::Rect {
-            x: tx,
-            y: ty,
-            w: tw,
-            h: thick,
-        },
+        rect: track_rect,
         brush: Brush::Solid(locals::theme().scrollbar_track),
         radius: thick * 0.5,
     });
     scene.nodes.push(SceneNode::Rect {
-        rect: repose_core::Rect {
-            x: thumb_x,
-            y: ty,
-            w: thumb_w,
-            h: thick,
-        },
-        brush: Brush::Solid(color),
+        rect: thumb_rect,
+        brush: Brush::Solid(locals::theme().scrollbar_thumb),
         radius: thick * 0.5,
     });
-    if let Some(s) = set {
-        let tid = vid ^ 0x8000_0002;
-        let map = Rc::new(move |px: f32| -> f32 {
-            let max_p = (tw - thumb_w).max(0.0);
-            let p = ((px - tx) - thumb_w * 0.5).clamp(0.0, max_p);
-            (if max_p > 0.0 { p / max_p } else { 0.0 }) * (cw - vp.w).max(1.0)
+
+    if let Some(s) = set_offset {
+        let tid = match axis {
+            ScrollAxis::V => vid ^ 0x8000_0001,
+            ScrollAxis::H => vid ^ 0x8000_0002,
+        };
+        let track_start = match axis {
+            ScrollAxis::V => track_y,
+            ScrollAxis::H => track_x,
+        };
+        let max_scroll = (content_len - vp_len).max(1.0);
+
+        let map = Rc::new(move |pos: f32| -> f32 {
+            let max_p = (track_main - thumb_len).max(0.0);
+            let p = ((pos - track_start) - thumb_len * 0.5).clamp(0.0, max_p);
+            (if max_p > 0.0 { p / max_p } else { 0.0 }) * max_scroll
         });
+
+        let extract = match axis {
+            ScrollAxis::V => (|pe: &PointerEvent| pe.position.y) as fn(&PointerEvent) -> f32,
+            ScrollAxis::H => (|pe: &PointerEvent| pe.position.x) as fn(&PointerEvent) -> f32,
+        };
+
         let on_pd = {
             let s = s.clone();
             let m = map.clone();
-            Rc::new(move |pe: PointerEvent| s(m(pe.position.x), keep_y))
+            Rc::new(move |pe: PointerEvent| s(m(extract(&pe))))
         };
         let on_pm = if interactions.pressed.contains(&tid) {
             let s = s.clone();
             let m = map.clone();
-            Some(Rc::new(move |pe: PointerEvent| s(m(pe.position.x), keep_y))
-                as Rc<dyn Fn(PointerEvent)>)
+            Some(Rc::new(move |pe: PointerEvent| s(m(extract(&pe)))) as Rc<dyn Fn(PointerEvent)>)
         } else {
             None
         };
         hits.push(HitRegion {
             id: tid,
-            rect: repose_core::Rect {
-                x: thumb_x,
-                y: ty,
-                w: thumb_w,
-                h: thick,
-            },
+            rect: thumb_rect,
+            z_index: z + 1000.0,
             on_pointer_down: Some(on_pd),
             on_pointer_move: on_pm,
             on_pointer_up: Some(Rc::new(|_| {})),
-            z_index: z + 1000.0,
             ..Default::default()
         });
     }

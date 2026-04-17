@@ -115,44 +115,26 @@ pub enum ViewKind {
 impl std::fmt::Debug for ViewKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ViewKind::Checkbox { checked, .. } => f
-                .debug_struct("Checkbox")
-                .field("checked", checked)
-                .finish(),
-            ViewKind::RadioButton { selected, .. } => f
-                .debug_struct("RadioButton")
-                .field("selected", selected)
-                .finish(),
-            ViewKind::Switch { checked, .. } => {
-                f.debug_struct("Switch").field("checked", checked).finish()
-            }
-            ViewKind::Slider { value, .. } => {
-                f.debug_struct("Slider").field("value", value).finish()
-            }
-            ViewKind::RangeSlider { start, end, .. } => f
-                .debug_struct("RangeSlider")
-                .field("start", start)
-                .field("end", end)
-                .finish(),
-            ViewKind::ProgressBar { value, .. } => {
-                f.debug_struct("ProgressBar").field("value", value).finish()
-            }
-            ViewKind::ScrollV { .. } => f.debug_struct("ScrollV").finish(),
-            ViewKind::ScrollXY { .. } => f.debug_struct("ScrollXY").finish(),
-            ViewKind::Text { text, .. } => f.debug_struct("Text").field("text", text).finish(),
-            ViewKind::Button { .. } => f.debug_struct("Button").finish(),
-            ViewKind::TextField { hint, .. } => {
-                f.debug_struct("TextField").field("hint", hint).finish()
-            }
-            ViewKind::Surface => f.debug_struct("Surface").finish(),
-            ViewKind::Box => f.debug_struct("Box").finish(),
-            ViewKind::Row => f.debug_struct("Row").finish(),
-            ViewKind::Column => f.debug_struct("Column").finish(),
-            ViewKind::Stack => f.debug_struct("Stack").finish(),
-            ViewKind::OverlayHost => f.debug_struct("OverlayHost").finish(),
-            ViewKind::Image { .. } => f.debug_struct("Image").finish(),
-            ViewKind::Ellipse { .. } => f.debug_struct("Ellipse").finish(),
-            ViewKind::EllipseBorder { .. } => f.debug_struct("EllipseBorder").finish(),
+            Self::Surface => f.write_str("Surface"),
+            Self::Box => f.write_str("Box"),
+            Self::Row => f.write_str("Row"),
+            Self::Column => f.write_str("Column"),
+            Self::Stack => f.write_str("Stack"),
+            Self::OverlayHost => f.write_str("OverlayHost"),
+            Self::ScrollV { .. } => f.write_str("ScrollV"),
+            Self::ScrollXY { .. } => f.write_str("ScrollXY"),
+            Self::Button { .. } => f.write_str("Button"),
+            Self::Image { .. } => f.write_str("Image"),
+            Self::Ellipse { .. } => f.write_str("Ellipse"),
+            Self::EllipseBorder { .. } => f.write_str("EllipseBorder"),
+            Self::Text { text, .. } => write!(f, "Text({:?})", text),
+            Self::TextField { hint, .. } => write!(f, "TextField({:?})", hint),
+            Self::Checkbox { checked, .. } => write!(f, "Checkbox({})", checked),
+            Self::RadioButton { selected, .. } => write!(f, "Radio({})", selected),
+            Self::Switch { checked, .. } => write!(f, "Switch({})", checked),
+            Self::Slider { value, .. } => write!(f, "Slider({})", value),
+            Self::RangeSlider { start, end, .. } => write!(f, "Range({}..{})", start, end),
+            Self::ProgressBar { value, .. } => write!(f, "Progress({})", value),
         }
     }
 }

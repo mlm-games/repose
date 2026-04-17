@@ -174,78 +174,101 @@ pub struct Modifier {
 
 impl std::fmt::Debug for Modifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Modifier")
-            .field("key", &self.key)
-            .field("size", &self.size)
-            .field("width", &self.width)
-            .field("height", &self.height)
-            .field("fill_max", &self.fill_max)
-            .field("fill_max_w", &self.fill_max_w)
-            .field("fill_max_h", &self.fill_max_h)
-            .field("padding", &self.padding)
-            .field("padding_values", &self.padding_values)
-            .field("min_width", &self.min_width)
-            .field("min_height", &self.min_height)
-            .field("max_width", &self.max_width)
-            .field("max_height", &self.max_height)
-            .field("background", &self.background)
-            .field("border", &self.border)
-            .field("flex_grow", &self.flex_grow)
-            .field("flex_shrink", &self.flex_shrink)
-            .field("flex_basis", &self.flex_basis)
-            .field("gap", &self.gap)
-            .field("row_gap", &self.row_gap)
-            .field("column_gap", &self.column_gap)
-            .field("align_self", &self.align_self)
-            .field("justify_content", &self.justify_content)
-            .field("align_items_container", &self.align_items_container)
-            .field("align_content", &self.align_content)
-            .field("clip_rounded", &self.clip_rounded)
-            .field("z_index", &self.z_index)
-            .field("render_z_index", &self.render_z_index)
-            .field("hit_passthrough", &self.hit_passthrough)
-            .field("input_blocker", &self.input_blocker)
-            .field("repaint_boundary", &self.repaint_boundary)
-            .field("click", &self.click)
-            .field("on_scroll", &self.on_scroll.as_ref().map(|_| "..."))
-            .field(
-                "on_pointer_down",
-                &self.on_pointer_down.as_ref().map(|_| "..."),
-            )
-            .field(
-                "on_pointer_move",
-                &self.on_pointer_move.as_ref().map(|_| "..."),
-            )
-            .field("on_pointer_up", &self.on_pointer_up.as_ref().map(|_| "..."))
-            .field(
-                "on_pointer_enter",
-                &self.on_pointer_enter.as_ref().map(|_| "..."),
-            )
-            .field(
-                "on_pointer_leave",
-                &self.on_pointer_leave.as_ref().map(|_| "..."),
-            )
-            .field("semantics", &self.semantics)
-            .field("alpha", &self.alpha)
-            .field("transform", &self.transform)
-            .field("grid", &self.grid)
-            .field("grid_col_span", &self.grid_col_span)
-            .field("grid_row_span", &self.grid_row_span)
-            .field("position_type", &self.position_type)
-            .field("offset_left", &self.offset_left)
-            .field("offset_right", &self.offset_right)
-            .field("offset_top", &self.offset_top)
-            .field("offset_bottom", &self.offset_bottom)
-            .field("aspect_ratio", &self.aspect_ratio)
-            .field("painter", &self.painter.as_ref().map(|_| "..."))
-            .field("on_drag_start", &self.on_drag_start.as_ref().map(|_| "..."))
-            .field("on_drag_end", &self.on_drag_end.as_ref().map(|_| "..."))
-            .field("on_drag_enter", &self.on_drag_enter.as_ref().map(|_| "..."))
-            .field("on_drag_over", &self.on_drag_over.as_ref().map(|_| "..."))
-            .field("on_drag_leave", &self.on_drag_leave.as_ref().map(|_| "..."))
-            .field("on_drop", &self.on_drop.as_ref().map(|_| "..."))
-            .field("on_action", &self.on_action.as_ref().map(|_| "..."))
-            .finish()
+        let mut s = f.debug_struct("Modifier");
+
+        macro_rules! opt_val {
+            ($($name:ident),+ $(,)?) => {
+                $( if self.$name.is_some() { s.field(stringify!($name), &self.$name); } )+
+            };
+        }
+        opt_val!(
+            key,
+            size,
+            width,
+            height,
+            padding,
+            padding_values,
+            min_width,
+            min_height,
+            max_width,
+            max_height,
+            background,
+            border,
+            flex_grow,
+            flex_shrink,
+            flex_basis,
+            flex_wrap,
+            flex_dir,
+            gap,
+            row_gap,
+            column_gap,
+            align_self,
+            justify_content,
+            align_items_container,
+            align_content,
+            clip_rounded,
+            render_z_index,
+            semantics,
+            alpha,
+            transform,
+            grid,
+            grid_col_span,
+            grid_row_span,
+            position_type,
+            offset_left,
+            offset_right,
+            offset_top,
+            offset_bottom,
+            margin_left,
+            margin_right,
+            margin_top,
+            margin_bottom,
+            aspect_ratio,
+            cursor,
+        );
+
+        macro_rules! opt_cb {
+            ($($name:ident),+ $(,)?) => {
+                $( if self.$name.is_some() { s.field(stringify!($name), &"…"); } )+
+            };
+        }
+        opt_cb!(
+            on_scroll,
+            on_pointer_down,
+            on_pointer_move,
+            on_pointer_up,
+            on_pointer_enter,
+            on_pointer_leave,
+            painter,
+            on_drag_start,
+            on_drag_end,
+            on_drag_enter,
+            on_drag_over,
+            on_drag_leave,
+            on_drop,
+            on_action,
+        );
+
+        macro_rules! flag {
+            ($($name:ident),+ $(,)?) => {
+                $( if self.$name { s.field(stringify!($name), &true); } )+
+            };
+        }
+        flag!(
+            fill_max,
+            fill_max_w,
+            fill_max_h,
+            hit_passthrough,
+            input_blocker,
+            repaint_boundary,
+            click,
+        );
+
+        if self.z_index != 0.0 {
+            s.field("z_index", &self.z_index);
+        }
+
+        s.finish()
     }
 }
 
