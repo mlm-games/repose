@@ -20,6 +20,19 @@ use crate::textfield::{
     TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, byte_to_char_index, measure_text,
 };
 
+fn push_focus_ring(scene: &mut Scene, rect: repose_core::Rect, radius_dp: f32) {
+    scene.nodes.push(SceneNode::Border {
+        rect,
+        color: locals::theme().focus,
+        width: dp_to_px(2.0),
+        radius: dp_to_px(radius_dp),
+    });
+}
+
+fn focus_radius(modifier: &Modifier) -> f32 {
+    modifier.clip_rounded.unwrap_or(6.0)
+}
+
 /// The incremental layout engine.
 pub struct LayoutEngine {
     /// Persistent view tree.
@@ -877,27 +890,8 @@ impl LayoutEngine {
                 hits.push(HitRegion {
                     id: blocker_id,
                     rect: *rect,
-                    on_click: None,
-                    on_scroll: None,
-                    focusable: false,
-                    on_pointer_down: None,
-                    on_pointer_move: None,
-                    on_pointer_up: None,
-                    on_pointer_enter: None,
-                    on_pointer_leave: None,
                     z_index: bump + i as f32,
-                    on_text_change: None,
-                    on_text_submit: None,
-                    tf_state_key: None,
-                    tf_multiline: false,
-                    on_action: None,
-                    cursor: None,
-                    on_drag_start: None,
-                    on_drag_end: None,
-                    on_drag_enter: None,
-                    on_drag_over: None,
-                    on_drag_leave: None,
-                    on_drop: None,
+                    ..Default::default()
                 });
             }
         }
@@ -1237,28 +1231,9 @@ impl LayoutEngine {
             hits.push(HitRegion {
                 id: view_id,
                 rect,
-                on_click: None,
-                on_scroll: None,
-                focusable: false,
-                on_pointer_down: modifier.on_pointer_down.clone(),
-                on_pointer_move: modifier.on_pointer_move.clone(),
-                on_pointer_up: modifier.on_pointer_up.clone(),
-                on_pointer_enter: modifier.on_pointer_enter.clone(),
-                on_pointer_leave: modifier.on_pointer_leave.clone(),
                 z_index: modifier.z_index,
-                on_text_change: None,
-                on_text_submit: None,
-                tf_state_key: None,
-                tf_multiline: false,
-                on_action: modifier.on_action.clone(),
-                cursor: modifier.cursor,
-
-                on_drag_start: modifier.on_drag_start.clone(),
-                on_drag_end: modifier.on_drag_end.clone(),
-                on_drag_enter: modifier.on_drag_enter.clone(),
-                on_drag_over: modifier.on_drag_over.clone(),
-                on_drag_leave: modifier.on_drag_leave.clone(),
-                on_drop: modifier.on_drop.clone(),
+                focusable: false,
+                ..HitRegion::from_modifier(view_id, rect, &modifier)
             });
         }
 
@@ -1341,27 +1316,9 @@ impl LayoutEngine {
                         id: view_id,
                         rect,
                         on_click: on_click.clone(),
-                        on_scroll: None,
                         focusable: true,
-                        on_pointer_down: modifier.on_pointer_down.clone(),
-                        on_pointer_move: modifier.on_pointer_move.clone(),
-                        on_pointer_up: modifier.on_pointer_up.clone(),
-                        on_pointer_enter: modifier.on_pointer_enter.clone(),
-                        on_pointer_leave: modifier.on_pointer_leave.clone(),
                         z_index: modifier.z_index,
-                        on_text_change: None,
-                        on_text_submit: None,
-                        tf_state_key: None,
-                        tf_multiline: false,
-                        on_action: modifier.on_action.clone(),
-                        cursor: modifier.cursor,
-
-                        on_drag_start: modifier.on_drag_start.clone(),
-                        on_drag_end: modifier.on_drag_end.clone(),
-                        on_drag_enter: modifier.on_drag_enter.clone(),
-                        on_drag_over: modifier.on_drag_over.clone(),
-                        on_drag_leave: modifier.on_drag_leave.clone(),
-                        on_drop: modifier.on_drop.clone(),
+                        ..HitRegion::from_modifier(view_id, rect, &modifier)
                     });
                 }
                 sems.push(SemNode {
@@ -1375,12 +1332,7 @@ impl LayoutEngine {
                 });
                 next_sem_parent = Some(view_id);
                 if is_focused {
-                    scene.nodes.push(SceneNode::Border {
-                        rect,
-                        color: locals::theme().focus,
-                        width: dp_to_px(2.0),
-                        radius: modifier.clip_rounded.map(dp_to_px).unwrap_or(dp_to_px(6.0)),
-                    });
+                    push_focus_ring(scene, rect, focus_radius(&modifier));
                 }
             }
             ViewKind::Image { handle, tint, fit } => {
@@ -1444,27 +1396,15 @@ impl LayoutEngine {
                     hits.push(HitRegion {
                         id: view_id,
                         rect,
-                        on_click: None,
                         on_scroll,
                         focusable: true,
-                        on_pointer_down: None,
-                        on_pointer_move: None,
-                        on_pointer_up: None,
-                        on_pointer_enter: None,
-                        on_pointer_leave: None,
                         z_index: modifier.z_index,
                         on_text_change: on_change.clone(),
                         on_text_submit: on_submit.clone(),
                         tf_state_key: Some(tf_key),
                         tf_multiline: *multiline,
-                        on_action: modifier.on_action.clone(),
                         cursor: Some(crate::CursorIcon::Text),
-                        on_drag_start: modifier.on_drag_start.clone(),
-                        on_drag_end: modifier.on_drag_end.clone(),
-                        on_drag_enter: modifier.on_drag_enter.clone(),
-                        on_drag_over: modifier.on_drag_over.clone(),
-                        on_drag_leave: modifier.on_drag_leave.clone(),
-                        on_drop: modifier.on_drop.clone(),
+                        ..HitRegion::from_modifier(view_id, rect, &modifier)
                     });
                 }
 
@@ -1474,12 +1414,7 @@ impl LayoutEngine {
                 });
 
                 if is_focused {
-                    scene.nodes.push(SceneNode::Border {
-                        rect,
-                        color: locals::theme().focus,
-                        width: dp_to_px(2.0),
-                        radius: modifier.clip_rounded.map(dp_to_px).unwrap_or(dp_to_px(6.0)),
-                    });
+                    push_focus_ring(scene, rect, focus_radius(&modifier));
                 }
 
                 if let Some(state_rc) = textfield_states.get(&tf_key) {
@@ -1757,27 +1692,9 @@ impl LayoutEngine {
                     id: view_id,
                     rect,
                     on_click,
-                    on_scroll: None,
                     focusable: true,
-                    on_pointer_down: None,
-                    on_pointer_move: None,
-                    on_pointer_up: None,
-                    on_pointer_enter: None,
-                    on_pointer_leave: None,
                     z_index: modifier.z_index,
-                    on_text_change: None,
-                    on_text_submit: None,
-                    tf_state_key: None,
-                    tf_multiline: false,
-                    on_action: modifier.on_action.clone(),
-                    cursor: modifier.cursor,
-
-                    on_drag_start: modifier.on_drag_start.clone(),
-                    on_drag_end: modifier.on_drag_end.clone(),
-                    on_drag_enter: modifier.on_drag_enter.clone(),
-                    on_drag_over: modifier.on_drag_over.clone(),
-                    on_drag_leave: modifier.on_drag_leave.clone(),
-                    on_drop: modifier.on_drop.clone(),
+                    ..HitRegion::from_modifier(view_id, rect, &modifier)
                 });
                 sems.push(SemNode {
                     id: view_id,
@@ -1790,12 +1707,7 @@ impl LayoutEngine {
                 });
                 next_sem_parent = Some(view_id);
                 if is_focused {
-                    scene.nodes.push(SceneNode::Border {
-                        rect,
-                        color: th.focus,
-                        width: dp_to_px(2.0),
-                        radius: dp_to_px(6.0),
-                    });
+                    push_focus_ring(scene, rect, 6.0);
                 }
             }
             ViewKind::RadioButton {
@@ -1833,27 +1745,9 @@ impl LayoutEngine {
                         id: view_id,
                         rect,
                         on_click: on_select.clone(),
-                        on_scroll: None,
                         focusable: true,
-                        on_pointer_down: None,
-                        on_pointer_move: None,
-                        on_pointer_up: None,
-                        on_pointer_enter: None,
-                        on_pointer_leave: None,
                         z_index: modifier.z_index,
-                        on_text_change: None,
-                        on_text_submit: None,
-                        tf_state_key: None,
-                        tf_multiline: false,
-                        on_action: modifier.on_action.clone(),
-                        cursor: modifier.cursor,
-
-                        on_drag_start: modifier.on_drag_start.clone(),
-                        on_drag_end: modifier.on_drag_end.clone(),
-                        on_drag_enter: modifier.on_drag_enter.clone(),
-                        on_drag_over: modifier.on_drag_over.clone(),
-                        on_drag_leave: modifier.on_drag_leave.clone(),
-                        on_drop: modifier.on_drop.clone(),
+                        ..HitRegion::from_modifier(view_id, rect, &modifier)
                     });
                 }
                 sems.push(SemNode {
@@ -1867,12 +1761,7 @@ impl LayoutEngine {
                 });
                 next_sem_parent = Some(view_id);
                 if is_focused {
-                    scene.nodes.push(SceneNode::Border {
-                        rect,
-                        color: th.focus,
-                        width: dp_to_px(2.0),
-                        radius: dp_to_px(6.0),
-                    });
+                    push_focus_ring(scene, rect, 6.0);
                 }
             }
             ViewKind::Switch { checked, on_change } => {
@@ -1915,27 +1804,9 @@ impl LayoutEngine {
                     id: view_id,
                     rect,
                     on_click,
-                    on_scroll: None,
                     focusable: true,
-                    on_pointer_down: None,
-                    on_pointer_move: None,
-                    on_pointer_up: None,
-                    on_pointer_enter: None,
-                    on_pointer_leave: None,
                     z_index: modifier.z_index,
-                    on_text_change: None,
-                    on_text_submit: None,
-                    tf_state_key: None,
-                    tf_multiline: false,
-                    on_action: modifier.on_action.clone(),
-                    cursor: modifier.cursor,
-
-                    on_drag_start: modifier.on_drag_start.clone(),
-                    on_drag_end: modifier.on_drag_end.clone(),
-                    on_drag_enter: modifier.on_drag_enter.clone(),
-                    on_drag_over: modifier.on_drag_over.clone(),
-                    on_drag_leave: modifier.on_drag_leave.clone(),
-                    on_drop: modifier.on_drop.clone(),
+                    ..HitRegion::from_modifier(view_id, rect, &modifier)
                 });
                 sems.push(SemNode {
                     id: view_id,
@@ -1948,12 +1819,7 @@ impl LayoutEngine {
                 });
                 next_sem_parent = Some(view_id);
                 if is_focused {
-                    scene.nodes.push(SceneNode::Border {
-                        rect,
-                        color: th.focus,
-                        width: dp_to_px(2.0),
-                        radius: dp_to_px(6.0),
-                    });
+                    push_focus_ring(scene, rect, 6.0);
                 }
             }
             ViewKind::Slider {
@@ -2057,7 +1923,6 @@ impl LayoutEngine {
                     hits.push(HitRegion {
                         id: view_id,
                         rect,
-                        on_click: None,
                         on_scroll: Some(on_scroll),
                         focusable: true,
                         on_pointer_down: Some(on_pd),
@@ -2066,19 +1931,7 @@ impl LayoutEngine {
                         on_pointer_enter: modifier.on_pointer_enter.clone(),
                         on_pointer_leave: modifier.on_pointer_leave.clone(),
                         z_index: modifier.z_index,
-                        on_text_change: None,
-                        on_text_submit: None,
-                        tf_state_key: None,
-                        tf_multiline: false,
-                        on_action: modifier.on_action.clone(),
-                        cursor: modifier.cursor,
-
-                        on_drag_start: modifier.on_drag_start.clone(),
-                        on_drag_end: modifier.on_drag_end.clone(),
-                        on_drag_enter: modifier.on_drag_enter.clone(),
-                        on_drag_over: modifier.on_drag_over.clone(),
-                        on_drag_leave: modifier.on_drag_leave.clone(),
-                        on_drop: modifier.on_drop.clone(),
+                        ..HitRegion::from_modifier(view_id, rect, &modifier)
                     });
                 }
                 sems.push(SemNode {
@@ -2092,12 +1945,7 @@ impl LayoutEngine {
                 });
                 next_sem_parent = Some(view_id);
                 if is_focused {
-                    scene.nodes.push(SceneNode::Border {
-                        rect,
-                        color: th.focus,
-                        width: dp_to_px(2.0),
-                        radius: dp_to_px(6.0),
-                    });
+                    push_focus_ring(scene, rect, 6.0);
                 }
             }
             ViewKind::RangeSlider {
@@ -2275,7 +2123,6 @@ impl LayoutEngine {
                     hits.push(HitRegion {
                         id: view_id,
                         rect,
-                        on_click: None,
                         on_scroll: Some(on_scroll),
                         focusable: true,
                         on_pointer_down: Some(on_pd),
@@ -2284,19 +2131,7 @@ impl LayoutEngine {
                         on_pointer_enter: modifier.on_pointer_enter.clone(),
                         on_pointer_leave: modifier.on_pointer_leave.clone(),
                         z_index: modifier.z_index,
-                        on_text_change: None,
-                        on_text_submit: None,
-                        tf_state_key: None,
-                        tf_multiline: false,
-                        on_action: modifier.on_action.clone(),
-                        cursor: modifier.cursor,
-
-                        on_drag_start: modifier.on_drag_start.clone(),
-                        on_drag_end: modifier.on_drag_end.clone(),
-                        on_drag_enter: modifier.on_drag_enter.clone(),
-                        on_drag_over: modifier.on_drag_over.clone(),
-                        on_drag_leave: modifier.on_drag_leave.clone(),
-                        on_drop: modifier.on_drop.clone(),
+                        ..HitRegion::from_modifier(view_id, rect, &modifier)
                     });
                 }
             }
@@ -2354,28 +2189,10 @@ impl LayoutEngine {
                 hits.push(HitRegion {
                     id: view_id,
                     rect,
-                    on_click: None,
                     on_scroll: on_scroll.clone(),
                     focusable: false,
-                    on_pointer_down: modifier.on_pointer_down.clone(),
-                    on_pointer_move: modifier.on_pointer_move.clone(),
-                    on_pointer_up: modifier.on_pointer_up.clone(),
-                    on_pointer_enter: modifier.on_pointer_enter.clone(),
-                    on_pointer_leave: modifier.on_pointer_leave.clone(),
                     z_index: modifier.z_index,
-                    on_text_change: None,
-                    on_text_submit: None,
-                    tf_state_key: None,
-                    tf_multiline: false,
-                    on_action: modifier.on_action.clone(),
-                    cursor: modifier.cursor,
-
-                    on_drag_start: modifier.on_drag_start.clone(),
-                    on_drag_end: modifier.on_drag_end.clone(),
-                    on_drag_enter: modifier.on_drag_enter.clone(),
-                    on_drag_over: modifier.on_drag_over.clone(),
-                    on_drag_leave: modifier.on_drag_leave.clone(),
-                    on_drop: modifier.on_drop.clone(),
+                    ..HitRegion::from_modifier(view_id, rect, &modifier)
                 });
                 let vp = content_rect;
                 if let Some(s) = set_viewport_height {
@@ -2468,28 +2285,10 @@ impl LayoutEngine {
                 hits.push(HitRegion {
                     id: view_id,
                     rect,
-                    on_click: None,
                     on_scroll: on_scroll.clone(),
                     focusable: false,
-                    on_pointer_down: modifier.on_pointer_down.clone(),
-                    on_pointer_move: modifier.on_pointer_move.clone(),
-                    on_pointer_up: modifier.on_pointer_up.clone(),
-                    on_pointer_enter: modifier.on_pointer_enter.clone(),
-                    on_pointer_leave: modifier.on_pointer_leave.clone(),
                     z_index: modifier.z_index,
-                    on_text_change: None,
-                    on_text_submit: None,
-                    tf_state_key: None,
-                    tf_multiline: false,
-                    on_action: modifier.on_action.clone(),
-                    cursor: modifier.cursor,
-
-                    on_drag_start: modifier.on_drag_start.clone(),
-                    on_drag_end: modifier.on_drag_end.clone(),
-                    on_drag_enter: modifier.on_drag_enter.clone(),
-                    on_drag_over: modifier.on_drag_over.clone(),
-                    on_drag_leave: modifier.on_drag_leave.clone(),
-                    on_drop: modifier.on_drop.clone(),
+                    ..HitRegion::from_modifier(view_id, rect, &modifier)
                 });
                 let vp = content_rect;
                 if let Some(s) = set_viewport_width {
@@ -2767,29 +2566,11 @@ fn push_scrollbar_v(
                 w: thick,
                 h: thumb_h,
             },
-            on_click: None,
-            on_scroll: None,
-            focusable: false,
             on_pointer_down: Some(on_pd),
             on_pointer_move: on_pm,
             on_pointer_up: Some(Rc::new(|_| {})),
-            on_pointer_enter: None,
-            on_action: None,
-            cursor: None,
-            tf_multiline: false,
-
-            on_drag_start: None,
-            on_drag_end: None,
-            on_drag_enter: None,
-            on_drag_over: None,
-            on_drag_leave: None,
-            on_drop: None,
-
-            on_pointer_leave: None,
             z_index: z + 1000.0,
-            on_text_change: None,
-            on_text_submit: None,
-            tf_state_key: None,
+            ..Default::default()
         });
     }
 }
@@ -2871,29 +2652,11 @@ fn push_scrollbar_h(
                 w: thumb_w,
                 h: thick,
             },
-            on_click: None,
-            on_scroll: None,
-            focusable: false,
             on_pointer_down: Some(on_pd),
             on_pointer_move: on_pm,
             on_pointer_up: Some(Rc::new(|_| {})),
-            on_pointer_enter: None,
-            on_action: None,
-            cursor: None,
-            tf_multiline: false,
-
-            on_drag_start: None,
-            on_drag_end: None,
-            on_drag_enter: None,
-            on_drag_over: None,
-            on_drag_leave: None,
-            on_drop: None,
-
-            on_pointer_leave: None,
             z_index: z + 1000.0,
-            on_text_change: None,
-            on_text_submit: None,
-            tf_state_key: None,
+            ..Default::default()
         });
     }
 }

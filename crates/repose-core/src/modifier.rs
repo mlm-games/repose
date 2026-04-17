@@ -4,6 +4,62 @@ use taffy::{AlignContent, AlignItems, AlignSelf, FlexDirection, FlexWrap, Justif
 
 use crate::{Brush, Color, PointerEvent, Size, Transform, Vec2};
 
+macro_rules! merge_opts {
+    ($dst:ident, $src:ident; $($f:ident),+ $(,)?) => {
+        $( $dst.$f = $src.$f.or($dst.$f); )+
+    };
+}
+macro_rules! merge_flags {
+    ($dst:ident, $src:ident; $($f:ident),+ $(,)?) => {
+        $( $dst.$f |= $src.$f; )+
+    };
+}
+
+macro_rules! impl_option_fields {
+    ($ty:ty, $fn:ident) => {
+        impl $ty {
+            $fn!(replace);
+        }
+    };
+    ($ty:ident) => {
+        impl $ty {
+            /// Chain another modifier's settings onto this one.
+            /// Useful for creating reusable modifier templates.
+            pub fn then(mut self, other: Self) -> Self {
+                merge_opts!(self, other;
+                    key, size, width, height,
+                    padding, padding_values,
+                    min_width, min_height, max_width, max_height,
+                    background, border,
+                    flex_grow, flex_shrink, flex_basis, flex_wrap, flex_dir,
+                    gap, row_gap, column_gap,
+                    align_self, justify_content, align_items_container, align_content,
+                    clip_rounded, render_z_index,
+                    on_scroll,
+                    on_pointer_down, on_pointer_move, on_pointer_up,
+                    on_pointer_enter, on_pointer_leave,
+                    semantics, alpha, transform,
+                    grid, grid_col_span, grid_row_span,
+                    position_type,
+                    offset_left, offset_right, offset_top, offset_bottom,
+                    margin_left, margin_right, margin_top, margin_bottom,
+                    aspect_ratio, painter,
+                    on_drag_start, on_drag_end, on_drag_enter, on_drag_over, on_drag_leave, on_drop,
+                    on_action, cursor,
+                );
+                merge_flags!(self, other;
+                    fill_max, fill_max_w, fill_max_h,
+                    hit_passthrough, input_blocker, repaint_boundary, click,
+                );
+                if other.z_index != 0.0 {
+                    self.z_index = other.z_index;
+                }
+                self
+            }
+        }
+    };
+}
+
 #[derive(Clone, Debug)]
 pub struct Border {
     pub width: f32,
@@ -192,6 +248,8 @@ impl std::fmt::Debug for Modifier {
             .finish()
     }
 }
+
+impl_option_fields!(Modifier);
 
 impl Modifier {
     pub fn new() -> Self {

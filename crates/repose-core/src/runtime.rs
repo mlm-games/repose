@@ -130,7 +130,7 @@ pub struct Frame {
     pub focus_chain: Vec<u64>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct HitRegion {
     pub id: u64,
     pub rect: Rect,
@@ -164,6 +164,33 @@ pub struct HitRegion {
 
     /// Cursor hint for desktop/web.
     pub cursor: Option<crate::CursorIcon>,
+}
+
+impl HitRegion {
+    /// Seed a HitRegion with all the modifier's event handlers + dnd + cursor.
+    /// Call‑sites should only override the fields that differ (on_click, focusable, etc.)
+    /// via struct‑update syntax: `HitRegion { focusable: true, ..from_modifier(..) }`.
+    pub fn from_modifier(id: u64, rect: Rect, m: &crate::modifier::Modifier) -> Self {
+        Self {
+            id,
+            rect,
+            z_index: m.z_index,
+            on_pointer_down: m.on_pointer_down.clone(),
+            on_pointer_move: m.on_pointer_move.clone(),
+            on_pointer_up: m.on_pointer_up.clone(),
+            on_pointer_enter: m.on_pointer_enter.clone(),
+            on_pointer_leave: m.on_pointer_leave.clone(),
+            on_action: m.on_action.clone(),
+            cursor: m.cursor,
+            on_drag_start: m.on_drag_start.clone(),
+            on_drag_end: m.on_drag_end.clone(),
+            on_drag_enter: m.on_drag_enter.clone(),
+            on_drag_over: m.on_drag_over.clone(),
+            on_drag_leave: m.on_drag_leave.clone(),
+            on_drop: m.on_drop.clone(),
+            ..Default::default()
+        }
+    }
 }
 
 /// Flattened semantics node produced by `layout_and_paint`.
