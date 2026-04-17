@@ -127,7 +127,7 @@ pub fn OutlinedButton(label: impl Into<String>, on_click: impl Fn() + 'static) -
     Box(Modifier::new()
         .height(40.0)
         .min_width(48.0)
-        .border(1.0, th.outline, 20.0)
+        .border(1.0, th.outline_variant, 20.0)
         .clip_rounded(20.0)
         .padding_values(PaddingValues {
             left: 24.0,
@@ -141,7 +141,7 @@ pub fn OutlinedButton(label: impl Into<String>, on_click: impl Fn() + 'static) -
         .on_pointer_down(move |_| on_click()))
     .child(
         Text(label)
-            .color(th.primary)
+            .color(th.on_surface)
             .size(th.typography.label_large)
             .single_line(),
     )

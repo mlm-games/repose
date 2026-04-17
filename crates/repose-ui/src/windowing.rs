@@ -260,7 +260,11 @@ pub fn WindowHost(
 
             let is_active = active_id == Some(window_id);
             let th = repose_core::locals::theme();
-            let border_color = if is_active { th.focus } else { th.outline };
+            let border_color = if is_active {
+                th.focus
+            } else {
+                th.outline_variant
+            };
             let title_fg = if is_active {
                 th.on_surface
             } else {

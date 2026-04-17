@@ -7,8 +7,8 @@ use std::rc::Rc;
 
 use repose_core::*;
 use repose_ui::{
-    Box, Column, Row, Spacer, Stack, Surface, Text, TextStyle, ViewExt, anim::animate_f32,
-    overlay::SnackbarAction,
+    anim::animate_f32, overlay::SnackbarAction, Box, Column, Row, Spacer, Stack, Surface, Text,
+    TextStyle, ViewExt,
 };
 
 pub fn AlertDialog(
@@ -122,12 +122,15 @@ fn NavigationBarItem(item: NavItem, selected: bool) -> View {
 }
 
 pub fn Card(modifier: Modifier, elevated: bool, content: View) -> View {
-    Surface(
+    let th = theme();
+    let bg = th.surface_container_low;
+    let modifier = if elevated {
         modifier
-            .background(theme().surface)
-            .border(1.0, Color::from_hex("#22222222"), 12.0)
-            .clip_rounded(12.0)
-            .padding(16.0),
+    } else {
+        modifier.border(1.0, th.outline_variant, 12.0)
+    };
+    Surface(
+        modifier.background(bg).clip_rounded(12.0).padding(16.0),
         content,
     )
 }
