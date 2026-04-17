@@ -47,20 +47,12 @@ impl UploadRing {
 
     fn alloc_write(&mut self, queue: &wgpu::Queue, bytes: &[u8]) -> (u64, u64) {
         let len = bytes.len() as u64;
-        let align = 4u64;
-        let start = (self.head + (align - 1)) & !(align - 1);
+        let start = (self.head + 3) & !3; // align to 4
         let end = start + len;
-        if end > self.cap {
-            self.head = 0;
-            let start = 0;
-            queue.write_buffer(&self.buf, start, bytes);
-            self.head = len;
-            (start, len)
-        } else {
-            queue.write_buffer(&self.buf, start, bytes);
-            self.head = end;
-            (start, len)
-        }
+        debug_assert!(end <= self.cap, "ring overflow - call grow_to_fit first");
+        queue.write_buffer(&self.buf, start, bytes);
+        self.head = end;
+        (start, len)
     }
 }
 
@@ -1990,7 +1982,8 @@ impl RenderBackend for WgpuBackend {
                     self.surface.configure(&self.device, &self.config);
                 }
                 wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
-                    continue;
+                    // Skip frame if surface is not ready
+                    return;
                 }
                 wgpu::CurrentSurfaceTexture::Validation => {
                     log::error!("surface validation error");
@@ -2202,6 +2195,17 @@ impl RenderBackend for WgpuBackend {
             h: fb_h,
         };
 
+        let mut current_prim: Option<&'static str> = None;
+
+        macro_rules! flush_if_prim_changed {
+            ($prim:literal, $pipe:expr) => {
+                if current_prim != Some($prim) {
+                    flush_batch!();
+                    current_prim = Some($prim);
+                }
+            };
+        }
+
         macro_rules! flush_batch {
             () => {
                 if !batch.is_empty() {
@@ -2219,6 +2223,7 @@ impl RenderBackend for WgpuBackend {
                         &mut cmds,
                     )
                 }
+                current_prim = None;
             };
         }
 
@@ -2232,6 +2237,7 @@ impl RenderBackend for WgpuBackend {
                     brush,
                     radius,
                 } => {
+                    flush_if_prim_changed!("rect", &self.rects);
                     let transformed_rect = current_transform.apply_to_rect(*rect);
                     let (brush_type, color0, color1, grad_start, grad_end) =
                         brush_to_instance_fields(brush);
@@ -2251,7 +2257,6 @@ impl RenderBackend for WgpuBackend {
                         grad_start,
                         grad_end,
                     });
-                    flush_batch!();
                 }
                 SceneNode::Border {
                     rect,
@@ -2259,6 +2264,7 @@ impl RenderBackend for WgpuBackend {
                     width,
                     radius,
                 } => {
+                    flush_if_prim_changed!("border", &self.borders);
                     let transformed_rect = current_transform.apply_to_rect(*rect);
                     batch.borders.push(BorderInstance {
                         xywh: to_ndc(
@@ -2273,9 +2279,9 @@ impl RenderBackend for WgpuBackend {
                         stroke: *width,
                         color: color.to_linear(),
                     });
-                    flush_batch!();
                 }
                 SceneNode::Ellipse { rect, brush } => {
+                    flush_if_prim_changed!("ellipse", &self.ellipses);
                     let transformed = current_transform.apply_to_rect(*rect);
                     let color = brush_to_solid_color(brush);
                     batch.ellipses.push(EllipseInstance {
@@ -2289,9 +2295,9 @@ impl RenderBackend for WgpuBackend {
                         ),
                         color,
                     });
-                    flush_batch!();
                 }
                 SceneNode::EllipseBorder { rect, color, width } => {
+                    flush_if_prim_changed!("ellipse_border", &self.ellipse_borders);
                     let transformed = current_transform.apply_to_rect(*rect);
                     batch.e_borders.push(EllipseBorderInstance {
                         xywh: to_ndc(
@@ -2305,7 +2311,6 @@ impl RenderBackend for WgpuBackend {
                         stroke: *width,
                         color: color.to_linear(),
                     });
-                    flush_batch!();
                 }
                 SceneNode::Text {
                     rect,
@@ -2313,6 +2318,8 @@ impl RenderBackend for WgpuBackend {
                     color,
                     size,
                 } => {
+                    flush_batch!(); // flush any prior primitives
+
                     let px = (*size).clamp(8.0, 96.0);
                     let shaped = repose_text::shape_line(text.as_ref(), px);
                     let transformed_rect = current_transform.apply_to_rect(*rect);
@@ -2336,7 +2343,7 @@ impl RenderBackend for WgpuBackend {
                             });
                         }
                     }
-                    flush_batch!();
+                    // Don't flush here - let next primitive trigger flush
                 }
                 SceneNode::Image {
                     rect,
@@ -2464,7 +2471,7 @@ impl RenderBackend for WgpuBackend {
                     }
                 }
                 SceneNode::PushClip { rect, radius } => {
-                    flush_batch!();
+                    flush_batch!(); // flush content before entering clip
 
                     let t_identity = Transform::identity();
                     let current_transform = transform_stack.last().unwrap_or(&t_identity);
@@ -2511,6 +2518,7 @@ impl RenderBackend for WgpuBackend {
                     cmds.push(Cmd::ClipPop { scissor });
                 }
                 SceneNode::PushTransform { transform } => {
+                    flush_batch!(); // flush before transform change
                     let combined = current_transform.combine(transform);
                     if transform.rotate != 0.0 {
                         ROT_WARN_ONCE.call_once(|| {
@@ -2522,6 +2530,7 @@ impl RenderBackend for WgpuBackend {
                     transform_stack.push(combined);
                 }
                 SceneNode::PopTransform => {
+                    flush_batch!(); // flush before transform change
                     transform_stack.pop();
                 }
             }
