@@ -7,8 +7,8 @@ use std::rc::Rc;
 
 use repose_core::*;
 use repose_ui::{
-    anim::animate_f32, overlay::SnackbarAction, Box, Column, Row, Spacer, Stack, Surface, Text,
-    TextStyle, ViewExt,
+    Box, Column, Row, Spacer, Stack, Surface, Text, TextStyle, ViewExt, anim::animate_f32,
+    overlay::SnackbarAction,
 };
 
 pub fn AlertDialog(
@@ -146,11 +146,12 @@ pub fn Snackbar(
     let fg = th.on_surface;
     let action_color = th.primary;
 
-    // Base (positioning) first, then layer on snackbar styling
-    let modifier = base_modifier
+    // Base (positioning) first
+    let modifier = Modifier::new()
         .background(bg)
         .clip_rounded(th.shapes.small)
         .border(1.0, th.outline_variant, th.shapes.small)
+        .then(base_modifier)
         .padding_values(PaddingValues {
             left: 16.0,
             right: 16.0,

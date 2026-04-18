@@ -231,12 +231,10 @@ pub fn app(_s: &mut Scheduler) -> View {
                                     snackbar_dismiss.dismiss();
                                 }),
                             }),
-                            Modifier::new().absolute().offset(
-                                Some(16.0),
-                                Some(16.0),
-                                Some(16.0),
-                                None,
-                            ),
+                            Modifier::new()
+                                .absolute()
+                                .offset(Some(16.0), Some(16.0), Some(16.0), None)
+                                .background(theme().primary_container),
                         )
                     }),
                 });
