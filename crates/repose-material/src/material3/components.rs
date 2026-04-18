@@ -70,8 +70,9 @@ pub fn FilledIconButton(icon: View, on_click: impl Fn() + 'static) -> View {
 }
 
 /// M3 Filled Button — prominent action button with primary color fill.
-pub fn FilledButton(label: impl Into<String>, on_click: impl Fn() + 'static) -> View {
+pub fn FilledButton(on_click: impl Fn() + 'static, content: impl FnOnce() -> View) -> View {
     let th = theme();
+    let content = with_content_color(th.on_primary, content);
     Box(Modifier::new()
         .height(40.0)
         .min_width(48.0)
@@ -87,17 +88,13 @@ pub fn FilledButton(label: impl Into<String>, on_click: impl Fn() + 'static) -> 
         .justify_content(JustifyContent::Center)
         .clickable()
         .on_pointer_down(move |_| on_click()))
-    .child(
-        Text(label)
-            .color(th.on_primary)
-            .size(th.typography.label_large)
-            .single_line(),
-    )
+    .child(content)
 }
 
-/// M3 Filled Tonal Button — a softer variant using secondary container colors.
-pub fn FilledTonalButton(label: impl Into<String>, on_click: impl Fn() + 'static) -> View {
+/// M3 Filled Tonal Button — uses secondary container colors.
+pub fn FilledTonalButton(on_click: impl Fn() + 'static, content: impl FnOnce() -> View) -> View {
     let th = theme();
+    let content = with_content_color(th.on_secondary_container, content);
     Box(Modifier::new()
         .height(40.0)
         .min_width(48.0)
@@ -113,17 +110,13 @@ pub fn FilledTonalButton(label: impl Into<String>, on_click: impl Fn() + 'static
         .justify_content(JustifyContent::Center)
         .clickable()
         .on_pointer_down(move |_| on_click()))
-    .child(
-        Text(label)
-            .color(th.on_secondary_container)
-            .size(th.typography.label_large)
-            .single_line(),
-    )
+    .child(content)
 }
 
 /// M3 Outlined Button — button with an outline border and no fill.
-pub fn OutlinedButton(label: impl Into<String>, on_click: impl Fn() + 'static) -> View {
+pub fn OutlinedButton(on_click: impl Fn() + 'static, content: impl FnOnce() -> View) -> View {
     let th = theme();
+    let content = with_content_color(th.on_surface, content);
     Box(Modifier::new()
         .height(40.0)
         .min_width(48.0)
@@ -139,17 +132,13 @@ pub fn OutlinedButton(label: impl Into<String>, on_click: impl Fn() + 'static) -
         .justify_content(JustifyContent::Center)
         .clickable()
         .on_pointer_down(move |_| on_click()))
-    .child(
-        Text(label)
-            .color(th.on_surface)
-            .size(th.typography.label_large)
-            .single_line(),
-    )
+    .child(content)
 }
 
-/// M3 Text Button — a low-emphasis button with only a text label.
-pub fn TextButton(label: impl Into<String>, on_click: impl Fn() + 'static) -> View {
+/// M3 Text Button — a low-emphasis button.
+pub fn TextButton(on_click: impl Fn() + 'static, content: impl FnOnce() -> View) -> View {
     let th = theme();
+    let content = with_content_color(th.on_surface, content);
     Box(Modifier::new()
         .height(40.0)
         .min_width(48.0)
@@ -164,12 +153,7 @@ pub fn TextButton(label: impl Into<String>, on_click: impl Fn() + 'static) -> Vi
         .justify_content(JustifyContent::Center)
         .clickable()
         .on_pointer_down(move |_| on_click()))
-    .child(
-        Text(label)
-            .color(th.primary)
-            .size(th.typography.label_large)
-            .single_line(),
-    )
+    .child(content)
 }
 
 /// M3 Floating Action Button (regular, 56dp).

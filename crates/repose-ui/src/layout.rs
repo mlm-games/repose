@@ -123,6 +123,7 @@ struct PaintCacheEntry {
 enum NodeContext {
     Text {
         text: String,
+        color: Color,
         font_dp: f32,
         soft_wrap: bool,
         max_lines: Option<usize>,
@@ -649,6 +650,7 @@ impl LayoutEngine {
         match &node.kind {
             ViewKind::Text {
                 text,
+                color,
                 font_size,
                 soft_wrap,
                 max_lines,
@@ -656,6 +658,7 @@ impl LayoutEngine {
                 ..
             } => NodeContext::Text {
                 text: text.clone(),
+                color: *color,
                 font_dp: *font_size,
                 soft_wrap: *soft_wrap,
                 max_lines: *max_lines,
@@ -693,6 +696,7 @@ impl LayoutEngine {
         match ctx {
             Some(NodeContext::Text {
                 text,
+                color: _,
                 font_dp,
                 soft_wrap,
                 max_lines,

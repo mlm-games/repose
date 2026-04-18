@@ -1,4 +1,5 @@
 use repose_core::{prelude::*, signal};
+use repose_material::material3::TextButton;
 use repose_ui::*;
 
 use crate::ui::Section;
@@ -28,15 +29,21 @@ pub fn screen() -> View {
                     },
                     Box(Modifier::new().height(12.0).width(1.0)),
                     Row(Modifier::new()).child((
-                        Button(Text("Throw"), {
-                            let b = boom.clone();
-                            move || b.set(true)
-                        }),
+                        TextButton(
+                            {
+                                let b = boom.clone();
+                                move || b.set(true)
+                            },
+                            || Text("Throw"),
+                        ),
                         Box(Modifier::new().width(12.0).height(1.0)),
-                        Button(Text("Reset"), {
-                            let b = boom.clone();
-                            move || b.set(false)
-                        }),
+                        TextButton(
+                            {
+                                let b = boom.clone();
+                                move || b.set(false)
+                            },
+                            || Text("Reset"),
+                        ),
                     )),
                 ))
             },

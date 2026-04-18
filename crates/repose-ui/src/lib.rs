@@ -183,7 +183,7 @@ pub fn Text(text: impl Into<String>) -> View {
         0,
         ViewKind::Text {
             text: text.into(),
-            color: locals::theme().on_surface,
+            color: locals::content_color(),
             font_size: 16.0, // dp (converted to px in layout/paint)
             soft_wrap: true,
             max_lines: None,

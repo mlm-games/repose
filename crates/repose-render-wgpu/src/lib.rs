@@ -2331,7 +2331,7 @@ impl RenderBackend for WgpuBackend {
                             batch.colors.push(GlyphInstance {
                                 xywh: to_ndc(x, y, info.w, info.h, fb_w, fb_h),
                                 uv: [info.u0, info.v1, info.u1, info.v0],
-                                color: [1.0, 1.0, 1.0, 1.0],
+                                color: color.to_linear(),
                             });
                         } else if let Some(info) = self.upload_glyph_mask(sg.key, px as u32) {
                             let x = transformed_rect.x + sg.x + sg.bearing_x;

@@ -1,4 +1,5 @@
 use repose_core::{prelude::*, signal};
+use repose_material::material3::TextButton;
 use repose_ui::*;
 
 use crate::ui::Section;
@@ -72,15 +73,21 @@ pub fn screen() -> View {
                 ProgressBar(prog.get(), (0.0, 1.0)),
                 Box(Modifier::new().height(12.0).width(1.0)),
                 Row(Modifier::new()).child((
-                    Button(Text("Decrease"), {
-                        let p = prog.clone();
-                        move || p.update(|x| *x = (*x - 0.05).max(0.0))
-                    }),
+                    TextButton(
+                        {
+                            let p = prog.clone();
+                            move || p.update(|x| *x = (*x - 0.05).max(0.0))
+                        },
+                        || Text("Decrease"),
+                    ),
                     Box(Modifier::new().width(12.0).height(1.0)),
-                    Button(Text("Increase"), {
-                        let p = prog.clone();
-                        move || p.update(|x| *x = (*x + 0.05).min(1.0))
-                    }),
+                    TextButton(
+                        {
+                            let p = prog.clone();
+                            move || p.update(|x| *x = (*x + 0.05).min(1.0))
+                        },
+                        || Text("Increase"),
+                    ),
                 )),
             )),
         ),

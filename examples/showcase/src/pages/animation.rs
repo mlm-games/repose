@@ -1,4 +1,5 @@
 use repose_core::{prelude::*, signal};
+use repose_material::material3::TextButton;
 use repose_ui::{anim::animate_f32, *};
 
 use crate::ui::Section;
@@ -18,25 +19,37 @@ pub fn screen() -> View {
         "Animations",
         Column(Modifier::new().padding(12.0)).child((
             Row(Modifier::new().align_items(AlignItems::Center)).child((
-                Button(Text("Gentle"), {
-                    let m = mode.clone();
-                    move || m.set(SpringMode::Gentle)
-                }),
+                TextButton(
+                    {
+                        let m = mode.clone();
+                        move || m.set(SpringMode::Gentle)
+                    },
+                    || Text("Gentle"),
+                ),
                 Box(Modifier::new().width(8.0).height(1.0)),
-                Button(Text("Bouncy"), {
-                    let m = mode.clone();
-                    move || m.set(SpringMode::Bouncy)
-                }),
+                TextButton(
+                    {
+                        let m = mode.clone();
+                        move || m.set(SpringMode::Bouncy)
+                    },
+                    || Text("Bouncy"),
+                ),
                 Box(Modifier::new().width(8.0).height(1.0)),
-                Button(Text("Crit"), {
-                    let m = mode.clone();
-                    move || m.set(SpringMode::Crit)
-                }),
+                TextButton(
+                    {
+                        let m = mode.clone();
+                        move || m.set(SpringMode::Crit)
+                    },
+                    || Text("Crit"),
+                ),
                 Spacer(),
-                Button(Text("Toggle"), {
-                    let v = visible.clone();
-                    move || v.update(|x| *x = !*x)
-                }),
+                TextButton(
+                    {
+                        let v = visible.clone();
+                        move || v.update(|x| *x = !*x)
+                    },
+                    || Text("Toggle"),
+                ),
             )),
             Box(Modifier::new().height(16.0).width(1.0)),
             {

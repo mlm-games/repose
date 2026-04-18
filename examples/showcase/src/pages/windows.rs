@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_core::prelude::*;
+use repose_material::material3::{FilledButton, TextButton};
 use repose_ui::scroll::{remember_scroll_state, ScrollArea};
 use repose_ui::windowing::{FloatingWindow, WindowAction, WindowHost, WindowManagerState};
 use repose_ui::*;
@@ -202,13 +203,13 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                                 .size(13.0)
                                 .color(theme().on_surface_variant),
                             Box(Modifier::new().height(8.0).width(1.0)),
-                            Button(Text("Focus Note"), || {})
+                            TextButton(|| {}, || Text("Focus Note"))
                                 .modifier(Modifier::new().fill_max_width()),
                             Box(Modifier::new().height(8.0).width(1.0)),
-                            Button(Text("Spawn Task"), || {})
+                            TextButton(|| {}, || Text("Spawn Task"))
                                 .modifier(Modifier::new().fill_max_width()),
                             Box(Modifier::new().height(8.0).width(1.0)),
-                            Button(Text("Clear Logs"), || {})
+                            TextButton(|| {}, || Text("Clear Logs"))
                                 .modifier(Modifier::new().fill_max_width()),
                         ))
                     }),
@@ -309,15 +310,15 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                 .color(theme().on_surface_variant),
             Box(Modifier::new().height(10.0).width(1.0)),
             Row(Modifier::new().align_items(AlignItems::Center)).child(vec![
-                Button(Text("New Note"), open_note),
+                FilledButton(open_note, || Text("New Note")),
                 Box(Modifier::new().width(10.0).height(1.0)),
-                Button(Text("New Log"), open_log),
+                FilledButton(open_log, || Text("New Log")),
                 Box(Modifier::new().width(10.0).height(1.0)),
-                Button(Text("Tools"), open_tools),
+                FilledButton(open_tools, || Text("Tools")),
                 Box(Modifier::new().width(10.0).height(1.0)),
-                Button(Text("Palette"), open_palette),
+                FilledButton(open_palette, || Text("Palette")),
                 Box(Modifier::new().width(10.0).height(1.0)),
-                Button(Text("Global Window"), open_global),
+                FilledButton(open_global, || Text("Global Window")),
                 Spacer(),
                 Text(format!("{} windows", window_count))
                     .size(12.0)
