@@ -199,97 +199,97 @@ pub struct ColorScheme {
 impl ColorScheme {
     pub fn dark() -> Self {
         Self {
-            primary: Color::from_hex("#D0BCFF"),
-            on_primary: Color::from_hex("#381E72"),
-            primary_container: Color::from_hex("#4F378B"),
-            on_primary_container: Color::from_hex("#EADDFF"),
+            primary: Color::from_hex("#69FDBE"),
+            on_primary: Color::from_hex("#003020"),
+            primary_container: Color::from_hex("#004D40"),
+            on_primary_container: Color::from_hex("#6FF7F6"),
 
-            secondary: Color::from_hex("#CCC2DC"),
-            on_secondary: Color::from_hex("#332D41"),
-            secondary_container: Color::from_hex("#4A4458"),
-            on_secondary_container: Color::from_hex("#E8DEF8"),
+            secondary: Color::from_hex("#B3C9A7"),
+            on_secondary: Color::from_hex("#1C3519"),
+            secondary_container: Color::from_hex("#334D2E"),
+            on_secondary_container: Color::from_hex("#CCE8B3"),
 
-            tertiary: Color::from_hex("#EFB8C8"),
-            on_tertiary: Color::from_hex("#492532"),
-            tertiary_container: Color::from_hex("#633B48"),
-            on_tertiary_container: Color::from_hex("#FFD8E4"),
+            tertiary: Color::from_hex("#FFC9C1"),
+            on_tertiary: Color::from_hex("#3F1619"),
+            tertiary_container: Color::from_hex("#5D1F22"),
+            on_tertiary_container: Color::from_hex("#FFDBD8"),
 
             error: Color::from_hex("#F2B8B5"),
             on_error: Color::from_hex("#601410"),
             error_container: Color::from_hex("#8C1D18"),
             on_error_container: Color::from_hex("#F9DEDC"),
 
-            background: Color::from_hex("#141218"),
-            on_background: Color::from_hex("#E6E0E9"),
-            surface: Color::from_hex("#141218"),
-            on_surface: Color::from_hex("#E6E0E9"),
-            surface_variant: Color::from_hex("#49454F"),
-            on_surface_variant: Color::from_hex("#CAC4D0"),
-            surface_container_lowest: Color::from_hex("#0F0D13"),
-            surface_container_low: Color::from_hex("#1D1B20"),
-            surface_container: Color::from_hex("#211F26"),
-            surface_container_high: Color::from_hex("#2B2930"),
-            surface_container_highest: Color::from_hex("#36343B"),
-            surface_bright: Color::from_hex("#3B383E"),
-            surface_dim: Color::from_hex("#141218"),
-            surface_tint: Color::from_hex("#D0BCFF"),
+            background: Color::from_hex("#1A1C1E"),
+            on_background: Color::from_hex("#E6E1E5"),
+            surface: Color::from_hex("#1A1C1E"),
+            on_surface: Color::from_hex("#E6E1E5"),
+            surface_variant: Color::from_hex("#44474E"),
+            on_surface_variant: Color::from_hex("#C4C6CE"),
+            surface_container_lowest: Color::from_hex("#0A0A0C"),
+            surface_container_low: Color::from_hex("#141115"),
+            surface_container: Color::from_hex("#19131A"),
+            surface_container_high: Color::from_hex("#1F1B22"),
+            surface_container_highest: Color::from_hex("#2A2930"),
+            surface_bright: Color::from_hex("#26292F"),
+            surface_dim: Color::from_hex("#1A1C1E"),
+            surface_tint: Color::from_hex("#69FDBE"),
 
-            inverse_surface: Color::from_hex("#E6E0E9"),
-            inverse_on_surface: Color::from_hex("#322F35"),
-            inverse_primary: Color::from_hex("#6750A4"),
+            inverse_surface: Color::from_hex("#E6E1E5"),
+            inverse_on_surface: Color::from_hex("#2A2930"),
+            inverse_primary: Color::from_hex("#005048"),
 
-            outline: Color::from_hex("#938F99"),
-            outline_variant: Color::from_hex("#49454F"),
+            outline: Color::from_hex("#74777F"),
+            outline_variant: Color::from_hex("#44474E"),
 
             scrim: Color::from_hex("#000000"),
             shadow: Color::from_hex("#000000"),
-            focus: Color::from_hex("#88CCFF"),
+            focus: Color::from_hex("#006A6A"),
         }
     }
 
     pub fn light() -> Self {
         Self {
-            primary: Color::from_hex("#6750A4"),
+            primary: Color::from_hex("#006A6A"),
             on_primary: Color::WHITE,
-            primary_container: Color::from_hex("#EADDFF"),
-            on_primary_container: Color::from_hex("#21005D"),
+            primary_container: Color::from_hex("#9EF0EC"),
+            on_primary_container: Color::from_hex("#002020"),
 
-            secondary: Color::from_hex("#625B71"),
+            secondary: Color::from_hex("#586146"),
             on_secondary: Color::WHITE,
-            secondary_container: Color::from_hex("#E8DEF8"),
-            on_secondary_container: Color::from_hex("#1D192B"),
+            secondary_container: Color::from_hex("#D8E3B8"),
+            on_secondary_container: Color::from_hex("#161C0A"),
 
-            tertiary: Color::from_hex("#7D5260"),
+            tertiary: Color::from_hex("#744639"),
             on_tertiary: Color::WHITE,
-            tertiary_container: Color::from_hex("#FFD8E4"),
-            on_tertiary_container: Color::from_hex("#31111D"),
+            tertiary_container: Color::from_hex("#FFD9CD"),
+            on_tertiary_container: Color::from_hex("#2C0E07"),
 
-            error: Color::from_hex("#B3261E"),
+            error: Color::from_hex("#BA1A1A"),
             on_error: Color::WHITE,
-            error_container: Color::from_hex("#F9DEDC"),
-            on_error_container: Color::from_hex("#410E0B"),
+            error_container: Color::from_hex("#FFDAD6"),
+            on_error_container: Color::from_hex("#410002"),
 
             background: Color::from_hex("#FEF7FF"),
-            on_background: Color::from_hex("#1D1B20"),
+            on_background: Color::from_hex("#1A1C1E"),
             surface: Color::from_hex("#FEF7FF"),
-            on_surface: Color::from_hex("#1D1B20"),
-            surface_variant: Color::from_hex("#E7E0EC"),
-            on_surface_variant: Color::from_hex("#49454F"),
+            on_surface: Color::from_hex("#1A1C1E"),
+            surface_variant: Color::from_hex("#E1E3DE"),
+            on_surface_variant: Color::from_hex("#44474E"),
             surface_container_lowest: Color::WHITE,
-            surface_container_low: Color::from_hex("#F7F2FA"),
-            surface_container: Color::from_hex("#F3EDF7"),
-            surface_container_high: Color::from_hex("#ECE6F0"),
-            surface_container_highest: Color::from_hex("#E6E0E9"),
+            surface_container_low: Color::from_hex("#F4F5F0"),
+            surface_container: Color::from_hex("#EEF0E9"),
+            surface_container_high: Color::from_hex("#E9EAE4"),
+            surface_container_highest: Color::from_hex("#E3E5DF"),
             surface_bright: Color::from_hex("#FEF7FF"),
-            surface_dim: Color::from_hex("#DED8E1"),
-            surface_tint: Color::from_hex("#6750A4"),
+            surface_dim: Color::from_hex("#DEDAD0"),
+            surface_tint: Color::from_hex("#006A6A"),
 
-            inverse_surface: Color::from_hex("#322F35"),
-            inverse_on_surface: Color::from_hex("#F5EFF7"),
-            inverse_primary: Color::from_hex("#D0BCFF"),
+            inverse_surface: Color::from_hex("#2F3033"),
+            inverse_on_surface: Color::from_hex("#F1F0F4"),
+            inverse_primary: Color::from_hex("#69FDBE"),
 
-            outline: Color::from_hex("#79747E"),
-            outline_variant: Color::from_hex("#CAC4D0"),
+            outline: Color::from_hex("#74777F"),
+            outline_variant: Color::from_hex("#C4C6CE"),
 
             scrim: Color::from_hex("#000000"),
             shadow: Color::from_hex("#000000"),
@@ -547,6 +547,22 @@ pub fn with_text_direction<R>(dir: TextDirection, f: impl FnOnce() -> R) -> R {
         set_local_boxed(TypeId::of::<TextDirection>(), Box::new(dir));
         f()
     })
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ContentColor(pub Color);
+
+pub fn with_content_color<R>(color: Color, f: impl FnOnce() -> R) -> R {
+    with_locals_frame(|| {
+        set_local_boxed(TypeId::of::<ContentColor>(), Box::new(ContentColor(color)));
+        f()
+    })
+}
+
+pub fn content_color() -> Color {
+    get_local::<ContentColor>()
+        .map(|c| c.0)
+        .unwrap_or_else(|| theme().on_surface)
 }
 
 macro_rules! def_local_getter {
