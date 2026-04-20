@@ -604,12 +604,13 @@ fn dock_drop_overlay(
         let hover2 = hover_sig.clone();
 
         let label = match zone {
-            DropZone::Center => "TAB",
-            DropZone::Left => "LEFT",
-            DropZone::Right => "RIGHT",
-            DropZone::Top => "TOP",
-            DropZone::Bottom => "BOTTOM",
-            DropZone::Float => "FLOAT",
+            // Maybe have icons here later?
+            DropZone::Center => " ",
+            DropZone::Left => " ",
+            DropZone::Right => " ",
+            DropZone::Top => " ",
+            DropZone::Bottom => " ",
+            DropZone::Float => " ",
         };
 
         let highlight = if hover.as_ref() == Some(&HoverHint { node_id, zone }) {
