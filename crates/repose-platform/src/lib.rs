@@ -411,9 +411,9 @@ pub fn run_desktop_app_with_snackbar(
 
             // Cursor badge
             let label = if dragging_files {
-                "FILE DROP"
+                "" // Wont be displayed
             } else {
-                "DRAGGING"
+                " " // Add an icon (for android/web?)
             };
             let bg = if dragging_files {
                 Color::from_hex("#FFAA0077")
@@ -424,7 +424,7 @@ pub fn run_desktop_app_with_snackbar(
             let badge = Rect {
                 x: pos.x + dp_to_px(12.0),
                 y: pos.y + dp_to_px(12.0),
-                w: dp_to_px(110.0),
+                w: dp_to_px(110.0), // Looks similar to showcase rects, so let it be, for now
                 h: dp_to_px(24.0),
             };
 
@@ -1453,7 +1453,10 @@ pub fn run_desktop_app_with_snackbar(
                                                     st.insert_text(&txt);
                                                     let new_text = st.text.clone();
                                                     self.notify_text_change(focused_id, new_text);
-                                                    App::tf_ensure_caret_visible(&mut st, is_multiline);
+                                                    App::tf_ensure_caret_visible(
+                                                        &mut st,
+                                                        is_multiline,
+                                                    );
                                                     self.request_redraw();
                                                 }
                                             }
@@ -1485,7 +1488,8 @@ pub fn run_desktop_app_with_snackbar(
                                     st.insert_text(&text);
                                     self.notify_text_change(fid, st.text.clone());
                                     if let Some(f) = &self.frame_cache
-                                        && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
+                                        && let Some(hit) =
+                                            f.hit_regions.iter().find(|h| h.id == fid)
                                     {
                                         App::tf_ensure_caret_visible(&mut st, hit.tf_multiline);
                                     }
