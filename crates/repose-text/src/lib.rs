@@ -147,13 +147,15 @@ fn engine() -> &'static Mutex<Engine> {
 
         let cache = SwashCache::new();
 
-        #[cfg(any(target_os = "android", target_arch = "wasm32"))]
-        // Until cosmic-text has android/web font loading support
+        // #[cfg(any(target_os = "android", target_arch = "wasm32"))]
+        // // Until cosmic-text has android/web font loading support, would save around 15mb?
         {
             static FALLBACK_TTF: &[u8] = include_bytes!("assets/OpenSans-Regular.ttf"); // GFonts, OFL licensed
             static FALLBACK_EMOJI_TTF: &[u8] = include_bytes!("assets/NotoColorEmoji-Regular.ttf"); // GFonts, OFL licensed
             static FALLBACK_SYMBOLS_TTF: &[u8] =
                 include_bytes!("assets/NotoSansSymbols2-Regular.ttf"); // GFonts, OFL licensed
+            static MATERIAL_SYMBOLS_TTF: &[u8] =
+                include_bytes!("assets/MaterialSymbolsOutlined.ttf"); // Google Fonts, Apache 2.0 licensed
             {
                 // Register fallback font data into font DB
                 let db = fs.db_mut();
@@ -162,6 +164,7 @@ fn engine() -> &'static Mutex<Engine> {
 
                 db.load_font_data(FALLBACK_SYMBOLS_TTF.to_vec());
                 db.load_font_data(FALLBACK_EMOJI_TTF.to_vec());
+                db.load_font_data(MATERIAL_SYMBOLS_TTF.to_vec());
             }
         }
         Mutex::new(Engine {
@@ -170,6 +173,12 @@ fn engine() -> &'static Mutex<Engine> {
             key_map: HashMap::new(),
         })
     })
+}
+
+/// Register a font blob into the global FontSystem.
+pub fn register_font_data(bytes: &'static [u8]) {
+    let mut eng = engine().lock().unwrap();
+    eng.fs.db_mut().load_font_data(bytes.to_vec());
 }
 
 // Utility: stable u64 key from a CacheKey using its Hash impl

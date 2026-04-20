@@ -1,7 +1,16 @@
 use repose_core::{prelude::*, signal};
+use repose_material::material3::Card;
+use repose_material::{Icon, material_symbols};
 use repose_ui::*;
 
 use crate::ui::Section;
+
+material_symbols! {
+    home     : '\u{E88A}',
+    favorite : '\u{E87D}',
+    settings : '\u{E8B8}',
+    search   : '\u{E8B6}',
+}
 
 pub fn screen() -> View {
     let last_submit_single = remember_with_key("text_last_submit_single", || signal(String::new()));
@@ -10,39 +19,67 @@ pub fn screen() -> View {
     let last_change_multi = remember_with_key("text_last_change_multi", || signal(String::new()));
 
     Column(Modifier::new().fill_max_width()).child((
+        Row(Modifier::new().fill_max_width().gap(16.0)).child((
+            Section(
+                "TextField (single-line)",
+                Column(Modifier::new().padding(12.0)).child((
+                    TextField(
+                        "Type here",
+                        Modifier::new()
+                            .height(40.0)
+                            .fill_max_width()
+                            .background(theme().surface)
+                            .border(1.0, theme().outline, 10.0)
+                            .clip_rounded(10.0),
+                        Some({
+                            let last_change = last_change_single.clone();
+                            move |s| last_change.set(s)
+                        }),
+                        Some({
+                            let last_submit = last_submit_single.clone();
+                            move |s| last_submit.set(s)
+                        }),
+                    ),
+                    Box(Modifier::new().height(8.0).width(1.0)),
+                    Text("Single-line: Enter submits.")
+                        .size(14.0)
+                        .color(theme().on_surface_variant),
+                    Text(format!("last change: {}", last_change_single.get()))
+                        .size(12.0)
+                        .color(theme().on_surface_variant),
+                    Text(format!("last submit: {}", last_submit_single.get()))
+                        .size(12.0)
+                        .color(theme().on_surface_variant),
+                )),
+            )
+            .modifier(Modifier::new().flex_grow(1.0)),
+            Section(
+                "Material Symbols",
+                Column(Modifier::new().padding(12.0)).child((
+                    Row(Modifier::new().gap(16.0)).child((
+                        Column(Modifier::new().gap(4.0)).child((
+                            Icon(Symbols::home).size(32.0).color(theme().primary),
+                            Text("home").size(12.0),
+                        )),
+                        Column(Modifier::new().gap(4.0)).child((
+                            Icon(Symbols::favorite).size(32.0).color(theme().error),
+                            Text("favorite").size(12.0),
+                        )),
+                        Column(Modifier::new().gap(4.0)).child((
+                            Icon(Symbols::settings).size(32.0).color(theme().on_surface),
+                            Text("settings").size(12.0),
+                        )),
+                        Column(Modifier::new().gap(4.0)).child((
+                            Icon(Symbols::search).size(32.0).color(theme().primary),
+                            Text("search").size(12.0),
+                        )),
+                    )),
+                )),
+            )
+            .modifier(Modifier::new().flex_grow(1.0)),
+        )),
         Section(
-            "TextField (single-line)",
-            Column(Modifier::new().padding(12.0)).child((
-                TextField(
-                    "Type here",
-                    Modifier::new()
-                        .height(40.0)
-                        .fill_max_width()
-                        .background(theme().surface)
-                        .border(1.0, theme().outline, 10.0)
-                        .clip_rounded(10.0),
-                    Some({
-                        let last_change = last_change_single.clone();
-                        move |s| last_change.set(s)
-                    }),
-                    Some({
-                        let last_submit = last_submit_single.clone();
-                        move |s| last_submit.set(s)
-                    }),
-                ),
-                Box(Modifier::new().height(8.0).width(1.0)),
-                Text("Single-line: Enter submits.")
-                    .size(14.0)
-                    .color(theme().on_surface_variant),
-                Text(format!("last change: {}", last_change_single.get()))
-                    .size(12.0)
-                    .color(theme().on_surface_variant),
-                Text(format!("last submit: {}", last_submit_single.get()))
-                    .size(12.0)
-                    .color(theme().on_surface_variant),
-            )),
-        ),
-        Section(
+
             "TextArea (multi-line)",
             Column(Modifier::new().padding(12.0)).child((
                 TextArea(
@@ -69,7 +106,7 @@ pub fn screen() -> View {
                 Text(format!("last change: {}", last_change_multi.get()))
                     .size(12.0)
                     .color(theme().on_surface_variant),
-                Text(format!("last submit: {}", last_submit_multi.get()))
+                Text(format!("{}", last_submit_multi.get()))
                     .size(12.0)
                     .color(theme().on_surface_variant),
             )),
