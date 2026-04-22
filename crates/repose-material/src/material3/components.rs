@@ -482,7 +482,7 @@ pub fn SegmentedButton(selected: &[usize], segments: Vec<Segment>) -> View {
 /// with `circular: true`.
 ///
 /// - `value`: `Some(0.0..=1.0)` for determinate, `None` for indeterminate.
-pub fn CircularProgress(value: Option<f32>) -> View {
+pub fn CircularProgressIndicator(value: Option<f32>) -> View {
     View::new(
         0,
         ViewKind::ProgressBar {
