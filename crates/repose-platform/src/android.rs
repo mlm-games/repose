@@ -202,6 +202,38 @@ pub fn run_android_app_with_options(
             }
         }
 
+        fn update_ime_state(&mut self) {
+            let Some(win) = &self.window else { return };
+
+            let allow = self
+                .sched
+                .focused
+                .map_or(false, |id| self.is_textfield(id));
+
+            win.set_ime_allowed(allow);
+
+            if allow {
+                win.set_ime_purpose(ImePurpose::Normal);
+                self.update_ime_cursor_area(win);
+            } else {
+                self.ime_preedit = false;
+            }
+        }
+
+        fn update_ime_cursor_area(&self, win: &Window) {
+            let Some(fid) = self.sched.focused else { return };
+            let Some(f) = &self.frame_cache else { return };
+            let Some(i) = rc::hit_index_by_id(f, fid) else { return };
+
+            let hit = &f.hit_regions[i];
+            let sf = win.scale_factor() as f32;
+
+            win.set_ime_cursor_area(
+                PhysicalPosition::new((hit.rect.x * sf) as i32, (hit.rect.y * sf) as i32),
+                PhysicalSize::new((hit.rect.w * sf) as u32, (hit.rect.h * sf) as u32),
+            );
+        }
+
         fn ensure_caret_visible_in_hit(&self, st: &mut TextFieldState, hit_rect: Rect) {
             let is_multiline = self
                 .frame_cache
@@ -650,7 +682,7 @@ pub fn run_android_app_with_options(
                                         self.sched.focused = None;
                                         self.ime_preedit = false;
                                         if let Some(win) = &self.window {
-                                            rc_web::set_ime_for_textfield(win, false);
+                                            win.set_ime_allowed(false);
                                         }
                                     }
 
@@ -666,7 +698,7 @@ pub fn run_android_app_with_options(
                                     self.sched.focused = None;
                                     self.ime_preedit = false;
                                     if let Some(win) = &self.window {
-                                        rc_web::set_ime_for_textfield(win, false);
+                                        win.set_ime_allowed(false);
                                     }
                                 }
                             }
@@ -840,10 +872,26 @@ pub fn run_android_app_with_options(
                     }
                 }
 
-                // Basic keyboard support (hardware keyboards / Tab focus)
+                // Basic keyboard support (hardware keyboards / Tab focus / Android soft keyboard fallback)
                 WindowEvent::KeyboardInput {
                     event: key_event, ..
                 } => {
+                    // Handle text from Android soft keyboard (fallback when IME events don't work)
+                    if let Some(text) = &key_event.text {
+                        if !text.is_empty() && key_event.state == ElementState::Pressed {
+                            if let Some(focused_id) = self.sched.focused {
+                                let key = self.tf_key_of(focused_id);
+                                if let Some(state_rc) = self.textfield_states.get(&key) {
+                                    let mut state = state_rc.borrow_mut();
+                                    state.insert_text(text);
+                                    self.notify_text_change(focused_id, state.text.clone());
+                                    self.dirty = true;
+                                    self.request_redraw();
+                                }
+                            }
+                        }
+                    }
+
                     // Back key / Escape handling (optional)
                     if key_event.state == ElementState::Pressed && !key_event.repeat {
                         match key_event.physical_key {
@@ -884,7 +932,7 @@ pub fn run_android_app_with_options(
                                 ) {
                                     self.sched.focused = Some(next);
                                     if let Some(win) = &self.window {
-                                        rc_web::set_ime_for_textfield(win, self.is_textfield(next));
+                                        win.set_ime_allowed(self.is_textfield(next));
                                     }
                                     self.dirty = true;
                                     self.request_redraw();
@@ -920,102 +968,69 @@ pub fn run_android_app_with_options(
                         let key = self.tf_key_of(focused_id);
                         if let Some(state_rc) = self.textfield_states.get(&key) {
                             let mut state = state_rc.borrow_mut();
+
+                            let hit_rect = if let Some(f) = self.frame_cache.as_ref() {
+                                rc::hit_index_by_id(f, focused_id)
+                                    .map(|i| f.hit_regions[i].rect)
+                                    .unwrap_or_default()
+                            } else {
+                                Rect::default()
+                            };
+
                             match ime {
                                 Ime::Enabled => {
                                     self.ime_preedit = false;
                                 }
                                 Ime::Preedit(text, cursor) => {
-                                    let cursor_usize =
-                                        cursor.map(|(a, b)| (a as usize, b as usize));
+                                    let cursor_usize = cursor.map(|(a, b)| (a as usize, b as usize));
                                     state.set_composition(text.clone(), cursor_usize);
                                     self.ime_preedit = !text.is_empty();
                                     self.notify_text_change(focused_id, state.text.clone());
-
-                                    if let Some(f) = &self.frame_cache
-                                        && let Some(i) = rc::hit_index_by_id(f, focused_id)
-                                    {
-                                        let hit_rect = f.hit_regions[i].rect;
-                                        let font_px = dp_to_px(TF_FONT_DP)
-                                            * repose_core::locals::text_scale().0;
-                                        let m = repose_ui::textfield::measure_text(
-                                            &state.text,
-                                            font_px,
-                                        );
-                                        let caret_x_px = m
-                                            .positions
-                                            .get(state.caret_index())
-                                            .copied()
-                                            .unwrap_or(0.0);
-                                        state.ensure_caret_visible(
-                                            caret_x_px,
-                                            hit_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
-                                            dp_to_px(2.0),
-                                        );
-                                    }
-                                    self.dirty = true;
-                                    self.request_redraw();
+                                    let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+                                    let m = repose_ui::textfield::measure_text(&state.text, font_px);
+                                    let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
+                                    state.ensure_caret_visible(
+                                        caret_x_px,
+                                        hit_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
+                                        dp_to_px(2.0),
+                                    );
                                 }
                                 Ime::Commit(text) => {
                                     state.commit_composition(text);
                                     self.ime_preedit = false;
                                     self.notify_text_change(focused_id, state.text.clone());
-
-                                    if let Some(f) = &self.frame_cache
-                                        && let Some(i) = rc::hit_index_by_id(f, focused_id)
-                                    {
-                                        let hit_rect = f.hit_regions[i].rect;
-                                        let font_px = dp_to_px(TF_FONT_DP)
-                                            * repose_core::locals::text_scale().0;
-                                        let m = repose_ui::textfield::measure_text(
-                                            &state.text,
-                                            font_px,
-                                        );
-                                        let caret_x_px = m
-                                            .positions
-                                            .get(state.caret_index())
-                                            .copied()
-                                            .unwrap_or(0.0);
-                                        state.ensure_caret_visible(
-                                            caret_x_px,
-                                            hit_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
-                                            dp_to_px(2.0),
-                                        );
-                                    }
-                                    self.dirty = true;
-                                    self.request_redraw();
+                                    let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+                                    let m = repose_ui::textfield::measure_text(&state.text, font_px);
+                                    let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
+                                    state.ensure_caret_visible(
+                                        caret_x_px,
+                                        hit_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
+                                        dp_to_px(2.0),
+                                    );
                                 }
                                 Ime::Disabled => {
                                     self.ime_preedit = false;
                                     if state.composition.is_some() {
                                         state.cancel_composition();
                                         self.notify_text_change(focused_id, state.text.clone());
-
-                                        if let Some(f) = &self.frame_cache
-                                            && let Some(i) = rc::hit_index_by_id(f, focused_id)
-                                        {
-                                            let hit_rect = f.hit_regions[i].rect;
-                                            let font_px = dp_to_px(TF_FONT_DP)
-                                                * repose_core::locals::text_scale().0;
-                                            let m = repose_ui::textfield::measure_text(
-                                                &state.text,
-                                                font_px,
-                                            );
-                                            let caret_x_px = m
-                                                .positions
-                                                .get(state.caret_index())
-                                                .copied()
-                                                .unwrap_or(0.0);
-                                            state.ensure_caret_visible(
-                                                caret_x_px,
-                                                hit_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
-                                                dp_to_px(2.0),
-                                            );
-                                        }
-                                        self.dirty = true;
-                                        self.request_redraw();
+                                        let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+                                        let m = repose_ui::textfield::measure_text(&state.text, font_px);
+                                        let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
+                                        state.ensure_caret_visible(
+                                            caret_x_px,
+                                            hit_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
+                                            dp_to_px(2.0),
+                                        );
                                     }
                                 }
                             }
+
+                            if let Some(win) = &self.window {
+                                self.update_ime_cursor_area(win);
+                            }
+
+                            self.dirty = true;
+                            self.request_redraw();
                         }
                     }
                 }

@@ -7,8 +7,11 @@ description = "Platform runners (winit Desktop, Android and Web)"
 
 [features]
 desktop = ["winit", "repose-render-wgpu"]
-android = ["winit/android-native-activity", "repose-render-wgpu"]
+android = ["winit", "repose-render-wgpu"]
 web = ["repose-render-wgpu"]
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { version = "0.6.1", default-features = false, features = ["native-activity"] }
 
 [dependencies]
 repose-core.workspace = true
