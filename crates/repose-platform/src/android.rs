@@ -205,10 +205,7 @@ pub fn run_android_app_with_options(
         fn update_ime_state(&mut self) {
             let Some(win) = &self.window else { return };
 
-            let allow = self
-                .sched
-                .focused
-                .map_or(false, |id| self.is_textfield(id));
+            let allow = self.sched.focused.map_or(false, |id| self.is_textfield(id));
 
             win.set_ime_allowed(allow);
 
@@ -221,9 +218,13 @@ pub fn run_android_app_with_options(
         }
 
         fn update_ime_cursor_area(&self, win: &Window) {
-            let Some(fid) = self.sched.focused else { return };
+            let Some(fid) = self.sched.focused else {
+                return;
+            };
             let Some(f) = &self.frame_cache else { return };
-            let Some(i) = rc::hit_index_by_id(f, fid) else { return };
+            let Some(i) = rc::hit_index_by_id(f, fid) else {
+                return;
+            };
 
             let hit = &f.hit_regions[i];
             let sf = win.scale_factor() as f32;
@@ -876,9 +877,24 @@ pub fn run_android_app_with_options(
                 WindowEvent::KeyboardInput {
                     event: key_event, ..
                 } => {
+                    // DO NOT REMOVE, USE FOR TESTING: log ALL keyboard events to see what's arriving from Android keyboard
+                    log::info!(
+                        "KeyboardInput: physical_key={:?}, logical_key={:?}, text={:?}, state={:?}, repeat={}",
+                        key_event.physical_key,
+                        key_event.logical_key,
+                        key_event.text,
+                        key_event.state,
+                        key_event.repeat
+                    );
+
                     // Handle text from Android soft keyboard (fallback when IME events don't work)
+                    // Filter out backspace character (\u{8}) which should be handled as delete, not text
                     if let Some(text) = &key_event.text {
-                        if !text.is_empty() && key_event.state == ElementState::Pressed {
+                        let is_backspace_char = text == "\u{8}" || text == "\u{7f}"; // BS or DEL
+                        if !text.is_empty()
+                            && !is_backspace_char
+                            && key_event.state == ElementState::Pressed
+                        {
                             if let Some(focused_id) = self.sched.focused {
                                 let key = self.tf_key_of(focused_id);
                                 if let Some(state_rc) = self.textfield_states.get(&key) {
@@ -887,6 +903,44 @@ pub fn run_android_app_with_options(
                                     self.notify_text_change(focused_id, state.text.clone());
                                     self.dirty = true;
                                     self.request_redraw();
+                                }
+                            }
+                        }
+                    }
+
+                    // Handle Backspace for textfields (Android soft keyboard fallback)
+                    if key_event.state == ElementState::Pressed {
+                        let is_backspace = matches!(
+                            key_event.physical_key,
+                            PhysicalKey::Code(KeyCode::Backspace)
+                        ) || matches!(
+                            key_event.logical_key,
+                            winit::keyboard::Key::Named(winit::keyboard::NamedKey::Backspace)
+                        );
+                        if is_backspace {
+                            if let Some(focused_id) = self.sched.focused {
+                                let key = self.tf_key_of(focused_id);
+                                if let Some(state_rc) = self.textfield_states.get(&key) {
+                                    let mut state = state_rc.borrow_mut();
+                                    state.delete_backward();
+                                    self.notify_text_change(focused_id, state.text.clone());
+                                    self.dirty = true;
+                                    self.request_redraw();
+                                }
+                            }
+                        }
+
+                        // Handle Enter for textfields (commit composition or submit)
+                        if matches!(key_event.physical_key, PhysicalKey::Code(KeyCode::Enter)) {
+                            if let Some(focused_id) = self.sched.focused {
+                                let key = self.tf_key_of(focused_id);
+                                if let Some(state) = self.textfield_states.get(&key) {
+                                    let mut st = state.borrow_mut();
+                                    // If we have a composition, commit it
+                                    if st.composition.is_some() {
+                                        st.commit_composition(String::new());
+                                        self.notify_text_change(focused_id, st.text.clone());
+                                    }
                                 }
                             }
                         }
@@ -953,9 +1007,6 @@ pub fn run_android_app_with_options(
                                 let key = self.tf_key_of(focused_id);
                                 if let Some(state) = self.textfield_states.get(&key) {
                                     on_submit(state.borrow().text.clone());
-                                    self.dirty = true;
-                                    self.request_redraw();
-                                    return;
                                 }
                             }
                         }
@@ -982,13 +1033,20 @@ pub fn run_android_app_with_options(
                                     self.ime_preedit = false;
                                 }
                                 Ime::Preedit(text, cursor) => {
-                                    let cursor_usize = cursor.map(|(a, b)| (a as usize, b as usize));
+                                    let cursor_usize =
+                                        cursor.map(|(a, b)| (a as usize, b as usize));
                                     state.set_composition(text.clone(), cursor_usize);
                                     self.ime_preedit = !text.is_empty();
                                     self.notify_text_change(focused_id, state.text.clone());
-                                    let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-                                    let m = repose_ui::textfield::measure_text(&state.text, font_px);
-                                    let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
+                                    let font_px =
+                                        dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+                                    let m =
+                                        repose_ui::textfield::measure_text(&state.text, font_px);
+                                    let caret_x_px = m
+                                        .positions
+                                        .get(state.caret_index())
+                                        .copied()
+                                        .unwrap_or(0.0);
                                     state.ensure_caret_visible(
                                         caret_x_px,
                                         hit_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
@@ -999,9 +1057,15 @@ pub fn run_android_app_with_options(
                                     state.commit_composition(text);
                                     self.ime_preedit = false;
                                     self.notify_text_change(focused_id, state.text.clone());
-                                    let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-                                    let m = repose_ui::textfield::measure_text(&state.text, font_px);
-                                    let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
+                                    let font_px =
+                                        dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+                                    let m =
+                                        repose_ui::textfield::measure_text(&state.text, font_px);
+                                    let caret_x_px = m
+                                        .positions
+                                        .get(state.caret_index())
+                                        .copied()
+                                        .unwrap_or(0.0);
                                     state.ensure_caret_visible(
                                         caret_x_px,
                                         hit_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
@@ -1013,9 +1077,17 @@ pub fn run_android_app_with_options(
                                     if state.composition.is_some() {
                                         state.cancel_composition();
                                         self.notify_text_change(focused_id, state.text.clone());
-                                        let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-                                        let m = repose_ui::textfield::measure_text(&state.text, font_px);
-                                        let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
+                                        let font_px = dp_to_px(TF_FONT_DP)
+                                            * repose_core::locals::text_scale().0;
+                                        let m = repose_ui::textfield::measure_text(
+                                            &state.text,
+                                            font_px,
+                                        );
+                                        let caret_x_px = m
+                                            .positions
+                                            .get(state.caret_index())
+                                            .copied()
+                                            .unwrap_or(0.0);
                                         state.ensure_caret_visible(
                                             caret_x_px,
                                             hit_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
