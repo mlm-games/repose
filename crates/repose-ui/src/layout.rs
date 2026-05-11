@@ -1485,7 +1485,7 @@ impl LayoutEngine {
                             size: font_val,
                         });
 
-                        if st.selection.start == st.selection.end && st.caret_visible() {
+                        if is_focused && st.selection.start == st.selection.end && st.caret_visible() {
                             let cx = m
                                 .positions
                                 .get(byte_to_char_index(&m, st.selection.end))
@@ -1603,7 +1603,7 @@ impl LayoutEngine {
                         }
 
                         // Caret (multi-line)
-                        if st.selection.start == st.selection.end && st.caret_visible() {
+                        if is_focused && st.selection.start == st.selection.end && st.caret_visible() {
                             let caret = st.selection.end.min(st.text.len());
                             let (cx, cy, _li) = crate::textfield::caret_xy_for_byte(
                                 &st.text,
