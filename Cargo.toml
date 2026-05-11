@@ -42,14 +42,16 @@ clipawl = { version = "0.2.1" }
 taffy = { version = "0.10", default-features = true }
 
 # Platform + GPU
-winit = { version = "0.30", default-features = false, features = ["android-native-activity"] }
+winit = { version = "0.30", default-features = false, features = [
+  "android-native-activity",
+] }
 wgpu = "29"
 pollster = "0.4.0"
 
 # Text
 ab_glyph = "0.2.32"
 fontdb = "0.23.0"
-cosmic-text = { version = "0.18.2", default-features = true, features = [
+cosmic-text = { version = "0.19", default-features = true, features = [
   "swash",
 ] }
 android_logger = "0.15"
