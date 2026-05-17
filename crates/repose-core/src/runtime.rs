@@ -242,6 +242,10 @@ impl Scheduler {
         id
     }
 
+    pub fn id_count(&self) -> u64 {
+        self.next_id - 1
+    }
+
     pub fn repose<F>(
         &mut self,
         mut build_root: F,

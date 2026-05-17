@@ -651,7 +651,7 @@ pub fn run_desktop_app_with_snackbar(
                     if self.inspector.hud.inspector_enabled
                         && let Some(f) = &self.frame_cache
                     {
-                        let hover_rect = f
+                        let hit = f
                             .hit_regions
                             .iter()
                             .find(|h| {
@@ -659,9 +659,18 @@ pub fn run_desktop_app_with_snackbar(
                                     x: self.mouse_pos_px.0,
                                     y: self.mouse_pos_px.1,
                                 })
+                            });
+                        let hover_rect = hit.map(|h| h.rect);
+                        let hover_info = hit.and_then(|h| {
+                            f.semantics_nodes.iter().find(|s| s.id == h.id).map(|s| {
+                                repose_devtools::HoveredInfo {
+                                    id: s.id,
+                                    role: format!("{:?}", s.role),
+                                    label: s.label.clone(),
+                                }
                             })
-                            .map(|h| h.rect);
-                        self.inspector.hud.set_hovered(hover_rect);
+                        });
+                        self.inspector.hud.set_hovered(hover_rect, hover_info);
                         self.request_redraw();
                     }
 
@@ -1605,9 +1614,14 @@ pub fn run_desktop_app_with_snackbar(
                     // Render
                     let mut scene = frame.scene.clone();
                     // Update HUD metrics before overlay draws
+                    let widget_count = frame.semantics_nodes.len() + frame.hit_regions.len();
+                    let signal_count = self.sched.id_count() as usize;
                     self.inspector.hud.metrics = Some(repose_devtools::Metrics {
-                        build_layout_ms,
+                        build_ms: build_layout_ms,
+                        layout_ms: build_layout_ms * 0.5,
                         scene_nodes: scene.nodes.len(),
+                        widget_count,
+                        signal_count,
                     });
                     self.inspector.frame(&mut scene);
 
