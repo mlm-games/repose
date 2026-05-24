@@ -154,56 +154,6 @@ pub fn screen() -> View {
                     )),
                 )),
                 Box(Modifier::new().height(16.0).width(1.0)),
-                Column(Modifier::new()).child((
-                    Text("SuggestionChip")
-                        .size(14.0)
-                        .color(theme().on_surface_variant),
-                    Box(Modifier::new().height(8.0).width(1.0)),
-                    Row(Modifier::new().gap(8.0)).child((
-                        SuggestionChip(|| {}, Text("Suggestion"), None),
-                        SuggestionChip(
-                            || {},
-                            Text("With icon"),
-                            Some(Icon(Symbols::search).size(18.0)),
-                        ),
-                    )),
-                )),
-                Box(Modifier::new().height(16.0).width(1.0)),
-                Column(Modifier::new()).child((
-                    Text("InputChip (toggle)")
-                        .size(14.0)
-                        .color(theme().on_surface_variant),
-                    Box(Modifier::new().height(8.0).width(1.0)),
-                    Row(Modifier::new().gap(8.0)).child((
-                        InputChip(
-                            input_selected.get(),
-                            {
-                                let is = input_selected.clone();
-                                move || is.update(|x| *x = !*x)
-                            },
-                            Text("Toggle"),
-                            None,
-                            None,
-                            None,
-                        ),
-                        InputChip(
-                            true,
-                            || {},
-                            Text("Trailing"),
-                            Some(Icon(Symbols::favorite).size(18.0)),
-                            None,
-                            Some(Icon(Symbols::close).size(18.0)),
-                        ),
-                        InputChip(
-                            false,
-                            || {},
-                            Text("Avatar"),
-                            None,
-                            Some(Icon(Symbols::send).size(18.0)),
-                            None,
-                        ),
-                    )),
-                )),
             )),
         ),
     ))
