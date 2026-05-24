@@ -427,7 +427,8 @@ impl LayoutEngine {
                 s.flex_direction = FlexDirection::Column;
             }
             ViewKind::ScrollXY {
-                set_viewport_height, ..
+                set_viewport_height,
+                ..
             } => {
                 // Horizontal-only: Row so width is content-based (scrollable axis).
                 // 2D: Column keeps vertical axis scrollable, horizontal relies on
@@ -443,6 +444,16 @@ impl LayoutEngine {
         }
 
         s.align_items = Some(AlignItems::Stretch);
+        // Needed for 2D scroll.
+        if matches!(
+            kind,
+            ViewKind::ScrollXY {
+                set_viewport_height: Some(_),
+                ..
+            }
+        ) {
+            s.align_items = Some(AlignItems::FlexStart);
+        }
         s.justify_content = Some(JustifyContent::FlexStart);
 
         if matches!(
@@ -594,9 +605,9 @@ impl LayoutEngine {
             }
         }
 
-        if s.min_size.width.is_auto() {
-            s.min_size.width = length(0.0);
-        }
+        //NOTE: Don't force min-width: 0 globally. The Auto default (min-content)
+        // is correct — it prevents content from shrinking below its natural
+        // size, which is essential for scroll containers to overflow properly.
 
         if matches!(kind, ViewKind::Button { .. }) {
             s.display = Display::Flex;
@@ -1496,7 +1507,10 @@ impl LayoutEngine {
                             size: font_val,
                         });
 
-                        if is_focused && st.selection.start == st.selection.end && st.caret_visible() {
+                        if is_focused
+                            && st.selection.start == st.selection.end
+                            && st.caret_visible()
+                        {
                             let cx = m
                                 .positions
                                 .get(byte_to_char_index(&m, st.selection.end))
@@ -1614,7 +1628,10 @@ impl LayoutEngine {
                         }
 
                         // Caret (multi-line)
-                        if is_focused && st.selection.start == st.selection.end && st.caret_visible() {
+                        if is_focused
+                            && st.selection.start == st.selection.end
+                            && st.caret_visible()
+                        {
                             let caret = st.selection.end.min(st.text.len());
                             let (cx, cy, _li) = crate::textfield::caret_xy_for_byte(
                                 &st.text,
