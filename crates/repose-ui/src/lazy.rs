@@ -6,6 +6,7 @@ use web_time::Instant;
 pub struct LazyColumnState {
     scroll_offset: Signal<f32>,   // px
     viewport_height: Signal<f32>, // px
+    content_height: Signal<f32>,  // px, actual measured height from layout
 
     // physics
     vel_px_s: RefCell<f32>, // px/sec
@@ -26,6 +27,7 @@ impl LazyColumnState {
         Self {
             scroll_offset: signal(0.0),
             viewport_height: signal(600.0),
+            content_height: signal(0.0),
             vel_px_s: RefCell::new(0.0),
             last_t: RefCell::new(now),
             last_input_t: RefCell::new(now),
@@ -129,8 +131,13 @@ where
     let scroll_offset_px = state.scroll_offset.get();
     let viewport_height_px = state.viewport_height.get();
 
-    // Advance physics in px
-    state.tick(content_height_px);
+    // NOTE: needed for full list traversal
+    let actual_content_h_px = if state.content_height.get() > 0.0 {
+        state.content_height.get()
+    } else {
+        content_height_px
+    };
+    state.tick(actual_content_h_px);
 
     // Visible range (px)
     let first_visible = (scroll_offset_px / item_h_px).floor().max(0.0) as usize;
@@ -166,7 +173,9 @@ where
     let on_scroll = {
         let st = state.clone();
         Rc::new(move |d: repose_core::Vec2| -> repose_core::Vec2 {
-            let leftover_y_px = st.scroll_immediate(d.y, content_height_px);
+            let ch = st.content_height.get();
+            let ch = if ch > 0.0 { ch } else { content_height_px };
+            let leftover_y_px = st.scroll_immediate(d.y, ch);
             repose_core::Vec2 {
                 x: d.x,
                 y: leftover_y_px,
@@ -186,12 +195,17 @@ where
 
     let set_scroll = {
         let st = state.clone();
-        Rc::new(move |off_px: f32| st.set_offset(off_px, content_height_px))
+        Rc::new(move |off_px: f32| {
+            let ch = st.content_height.get();
+            let ch = if ch > 0.0 { ch } else { content_height_px };
+            st.set_offset(off_px, ch);
+        })
     };
 
     let measured_h_px = {
         let st = state.clone();
         Rc::new(move |h_px: f32| {
+            st.content_height.set(h_px);
             st.set_offset(st.scroll_offset.get(), h_px);
         })
     };
