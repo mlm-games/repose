@@ -632,6 +632,10 @@ pub fn run_desktop_app_with_snackbar(
                 WindowEvent::CursorMoved { position, .. } => {
                     self.mouse_pos_px = (position.x as f32, position.y as f32);
 
+                    if self.external_file_drag {
+                        self.pending_drop_pos_px = Some(self.mouse_pos_px);
+                    }
+
                     let pos = Vec2 {
                         x: self.mouse_pos_px.0,
                         y: self.mouse_pos_px.1,
@@ -652,15 +656,12 @@ pub fn run_desktop_app_with_snackbar(
                     if self.inspector.hud.inspector_enabled
                         && let Some(f) = &self.frame_cache
                     {
-                        let hit = f
-                            .hit_regions
-                            .iter()
-                            .find(|h| {
-                                h.rect.contains(Vec2 {
-                                    x: self.mouse_pos_px.0,
-                                    y: self.mouse_pos_px.1,
-                                })
-                            });
+                        let hit = f.hit_regions.iter().find(|h| {
+                            h.rect.contains(Vec2 {
+                                x: self.mouse_pos_px.0,
+                                y: self.mouse_pos_px.1,
+                            })
+                        });
                         let hover_rect = hit.map(|h| h.rect);
                         let hover_info = hit.and_then(|h| {
                             f.semantics_nodes.iter().find(|s| s.id == h.id).map(|s| {
@@ -1568,7 +1569,6 @@ pub fn run_desktop_app_with_snackbar(
                 WindowEvent::RedrawRequested => {
                     // 1. Process any pending A11y actions (clicks from screen reader)
                     self.process_a11y_actions();
-                    self.dispatch_file_drop_now();
                     self.process_render_commands();
 
                     let Some(win) = self.window.as_ref() else {
@@ -1637,6 +1637,9 @@ pub fn run_desktop_app_with_snackbar(
                     }
 
                     self.frame_cache = Some(frame);
+
+                    self.dispatch_file_drop_now();
+
                     self.tick_snackbar();
                     self.last_redraw = Instant::now();
                 }
@@ -2009,6 +2012,7 @@ pub fn run_desktop_app_with_snackbar(
                 std::rc::Rc::new(repose_core::dnd::DroppedFiles { files });
 
             let Some(target_id) = rc::dnd_target_id_at(f, pos) else {
+                self.pending_drop_pos_px = None;
                 return;
             };
 
