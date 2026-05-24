@@ -423,15 +423,32 @@ impl LayoutEngine {
             ViewKind::Column
             | ViewKind::Surface
             | ViewKind::ScrollV { .. }
-            | ViewKind::ScrollXY { .. }
             | ViewKind::OverlayHost => {
                 s.flex_direction = FlexDirection::Column;
+            }
+            ViewKind::ScrollXY {
+                set_viewport_height, ..
+            } => {
+                if set_viewport_height.is_none() {
+                    s.flex_direction = FlexDirection::Row;
+                } else {
+                    s.flex_direction = FlexDirection::Column;
+                }
             }
             ViewKind::Stack => s.display = Display::Grid,
             _ => {}
         }
 
         s.align_items = Some(AlignItems::Stretch);
+        if matches!(
+            kind,
+            ViewKind::ScrollXY {
+                set_viewport_height: Some(_),
+                ..
+            }
+        ) {
+            s.align_items = Some(AlignItems::FlexStart);
+        }
         s.justify_content = Some(JustifyContent::FlexStart);
 
         if matches!(

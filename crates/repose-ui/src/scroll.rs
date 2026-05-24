@@ -476,11 +476,20 @@ pub fn HorizontalScrollArea(
         Rc::new(move |d: Vec2| -> Vec2 {
             // Most mice only generate vertical wheel. If dx is zero, treat dy as horizontal scroll.
             // Do also consume that vertical delta so parent vertical scrollers don't steal it.
-            let use_dx = if d.x.abs() > 0.001 { d.x } else { d.y };
-            let leftover_x = st_clone.scroll_immediate(use_dx);
-            Vec2 {
-                x: leftover_x,
-                y: if d.x.abs() > 0.001 { d.y } else { 0.0 },
+            if d.x.abs() > 0.001 {
+                // Actual horiz input (trackpad, horizontal wheel)
+                let leftover_x = st_clone.scroll_immediate(d.x);
+                Vec2 {
+                    x: leftover_x,
+                    y: d.y,
+                }
+            } else {
+                // Return leftover in Y so parent vertical scrollers can use it.
+                let leftover = st_clone.scroll_immediate(d.y);
+                Vec2 {
+                    x: 0.0,
+                    y: leftover,
+                }
             }
         })
     };
