@@ -23,19 +23,18 @@ pub fn AlertDialog(
         return Box(Modifier::new());
     }
 
+    let th = theme();
     Stack(Modifier::new().fill_max_size()).child((
-        // Scrim
         Box(Modifier::new()
             .fill_max_size()
-            .background(Color::from_hex("#000000AA"))
+            .background(th.scrim.with_alpha(170))
             .clickable()
             .on_pointer_down(move |_| on_dismiss())),
-        // Dialog content
         Surface(
             Modifier::new()
                 .size(280.0, 200.0)
-                .background(theme().surface)
-                .clip_rounded(28.0)
+                .background(th.surface_container_high)
+                .clip_rounded(th.shapes.extra_large)
                 .padding(24.0),
             Column(Modifier::new()).child((
                 title,
@@ -65,16 +64,14 @@ pub fn BottomSheet(
     );
 
     Stack(Modifier::new().fill_max_size()).child((
-        // Scrim
         if visible {
             Box(Modifier::new()
                 .fill_max_size()
-                .background(Color::from_hex("#00000055"))
+                .background(theme().scrim.with_alpha(85))
                 .on_pointer_down(move |_| on_dismiss()))
         } else {
             Box(Modifier::new())
         },
-        // Sheet
         Box(modifier
             .absolute()
             .offset(None, Some(offset), Some(0.0), Some(0.0)))
@@ -85,7 +82,7 @@ pub fn BottomSheet(
 pub fn NavigationBar(selected_index: usize, items: Vec<NavItem>) -> View {
     Row(Modifier::new()
         .fill_max_size()
-        .background(theme().surface)
+        .background(theme().surface_container)
         .padding(8.0))
     .child(
         items
@@ -103,10 +100,11 @@ pub struct NavItem {
 }
 
 fn NavigationBarItem(item: NavItem, selected: bool) -> View {
+    let th = theme();
     let color = if selected {
-        theme().primary
+        th.primary
     } else {
-        theme().on_surface
+        th.on_surface_variant
     };
 
     Column(
@@ -116,26 +114,114 @@ fn NavigationBarItem(item: NavItem, selected: bool) -> View {
             .on_pointer_down(move |_| (item.on_click)()),
     )
     .child((
-        item.icon, // Tint with color
-        Text(item.label).color(color),
+        item.icon,
+        Text(item.label)
+            .color(color)
+            .size(th.typography.label_medium)
+            .single_line(),
     ))
 }
 
-pub fn Card(modifier: Modifier, elevated: bool, content: View) -> View {
+pub fn Card(modifier: Modifier, content: View) -> View {
     let th = theme();
-    let bg = th.surface_container_low;
-    let modifier = if elevated {
-        modifier
-    } else {
-        modifier.border(1.0, th.outline_variant, 12.0)
-    };
     Surface(
-        modifier.state_colors(StateColors {
-            default: bg,
-            hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
-            pressed: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
-            disabled: bg,
-        }).clip_rounded(12.0).padding(16.0),
+        modifier
+            .background(th.surface_container_highest)
+            .clip_rounded(th.shapes.medium),
+        content,
+    )
+}
+
+pub fn ElevatedCard(modifier: Modifier, content: View) -> View {
+    let th = theme();
+    Surface(
+        modifier
+            .background(th.surface_container_low)
+            .state_elevation(StateElevation {
+                default: th.elevation.level1,
+                hovered: th.elevation.level2,
+                pressed: th.elevation.level3,
+                disabled: 0.0,
+            })
+            .clip_rounded(th.shapes.medium),
+        content,
+    )
+}
+
+pub fn OutlinedCard(modifier: Modifier, content: View) -> View {
+    let th = theme();
+    Surface(
+        modifier
+            .background(th.surface)
+            .border(1.0, th.outline_variant, th.shapes.medium)
+            .clip_rounded(th.shapes.medium),
+        content,
+    )
+}
+
+fn card_state_colors(bg: Color) -> StateColors {
+    let th = theme();
+    StateColors {
+        default: Color::TRANSPARENT,
+        hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
+        pressed: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
+        disabled: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
+    }
+}
+
+pub fn ClickableCard(on_click: impl Fn() + 'static, modifier: Modifier, content: View) -> View {
+    let th = theme();
+    let bg = th.surface_container_highest;
+    Surface(
+        modifier
+            .background(bg)
+            .state_colors(card_state_colors(bg))
+            .clip_rounded(th.shapes.medium)
+            .clickable()
+            .on_pointer_down(move |_| on_click()),
+        content,
+    )
+}
+
+pub fn ClickableElevatedCard(
+    on_click: impl Fn() + 'static,
+    modifier: Modifier,
+    content: View,
+) -> View {
+    let th = theme();
+    let bg = th.surface;
+    Surface(
+        modifier
+            .background(bg)
+            .state_colors(card_state_colors(bg))
+            .state_elevation(StateElevation {
+                default: th.elevation.level1,
+                hovered: th.elevation.level2,
+                pressed: th.elevation.level3,
+                disabled: 0.0,
+            })
+            .clip_rounded(th.shapes.medium)
+            .clickable()
+            .on_pointer_down(move |_| on_click()),
+        content,
+    )
+}
+
+pub fn ClickableOutlinedCard(
+    on_click: impl Fn() + 'static,
+    modifier: Modifier,
+    content: View,
+) -> View {
+    let th = theme();
+    let bg = th.surface;
+    Surface(
+        modifier
+            .background(bg)
+            .state_colors(card_state_colors(bg))
+            .border(1.0, th.outline_variant, th.shapes.medium)
+            .clip_rounded(th.shapes.medium)
+            .clickable()
+            .on_pointer_down(move |_| on_click()),
         content,
     )
 }
@@ -147,15 +233,13 @@ pub fn Snackbar(
 ) -> View {
     let msg = message.into();
     let th = theme();
-    let bg = th.surface_variant;
-    let fg = th.on_surface;
-    let action_color = th.primary;
+    let bg = th.inverse_surface;
+    let fg = th.inverse_on_surface;
+    let action_color = th.inverse_primary;
 
-    // Base (positioning) first
     let modifier = Modifier::new()
         .background(bg)
         .clip_rounded(th.shapes.small)
-        .border(1.0, th.outline_variant, th.shapes.small)
         .then(base_modifier)
         .padding_values(PaddingValues {
             left: 16.0,
@@ -200,16 +284,6 @@ pub fn Snackbar(
     )
 }
 
-pub fn OutlinedCard(modifier: Modifier, content: View) -> View {
-    Surface(
-        modifier
-            .border(1.0, Color::from_hex("#444444"), 12.0)
-            .clip_rounded(12.0)
-            .padding(16.0),
-        content,
-    )
-}
-
 pub fn FilterChip(
     selected: bool,
     on_click: impl Fn() + 'static,
@@ -217,9 +291,13 @@ pub fn FilterChip(
     leading_icon: Option<View>,
 ) -> View {
     let th = theme();
-    let bg = if selected { th.primary } else { th.surface };
+    let bg = if selected {
+        th.secondary_container
+    } else {
+        th.surface
+    };
     let fg = if selected {
-        th.on_primary
+        th.on_secondary_container
     } else {
         th.on_surface
     };
@@ -227,18 +305,69 @@ pub fn FilterChip(
     Surface(
         Modifier::new()
             .state_colors(StateColors {
-                default: bg,
+                default: Color::TRANSPARENT,
                 hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
                 pressed: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
                 disabled: th.surface,
             })
-            .border(1.0, Color::from_hex("#444444"), 8.0)
+            .border(1.0, th.outline, 8.0)
             .clip_rounded(8.0)
             .padding(12.0)
             .clickable()
-
             .on_pointer_down(move |_| on_click()),
-        Row(Modifier::new()).child((leading_icon.unwrap_or(Box(Modifier::new())), label)),
+        with_content_color(fg, move || {
+            Row(Modifier::new().align_items(AlignItems::Center)).child((
+                leading_icon
+                    .map(|v| {
+                        Box(Modifier::new().padding_values(PaddingValues {
+                            left: 0.0,
+                            right: 8.0,
+                            top: 0.0,
+                            bottom: 0.0,
+                        }))
+                        .child(v)
+                    })
+                    .unwrap_or(Box(Modifier::new())),
+                label,
+            ))
+        }),
+    )
+}
+
+pub fn AssistChip(on_click: impl Fn() + 'static, label: View, leading_icon: Option<View>) -> View {
+    let th = theme();
+    Surface(
+        Modifier::new()
+            .state_colors(StateColors {
+                default: Color::TRANSPARENT,
+                hovered: th.on_surface.with_alpha_f32(0.08),
+                pressed: th.on_surface.with_alpha_f32(0.12),
+                disabled: Color::TRANSPARENT,
+            })
+            .border(1.0, th.outline, 8.0)
+            .clip_rounded(8.0)
+            .padding_values(PaddingValues {
+                left: 16.0,
+                right: 16.0,
+                top: 8.0,
+                bottom: 8.0,
+            })
+            .clickable()
+            .on_pointer_down(move |_| on_click()),
+        Row(Modifier::new().align_items(AlignItems::Center)).child((
+            leading_icon
+                .map(|v| {
+                    Box(Modifier::new().padding_values(PaddingValues {
+                        left: 0.0,
+                        right: 8.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    }))
+                    .child(v)
+                })
+                .unwrap_or(Box(Modifier::new())),
+            label,
+        )),
     )
 }
 
@@ -249,7 +378,6 @@ pub fn Scaffold(
     content: impl Fn(PaddingValues) -> View,
 ) -> View {
     Stack(Modifier::new().fill_max_size()).child((
-        // Main content with padding
         Box(Modifier::new()
             .fill_max_size()
             .padding_values(PaddingValues {
@@ -258,7 +386,6 @@ pub fn Scaffold(
                 ..Default::default()
             }))
         .child(content(PaddingValues::default())),
-        // Top bar
         if let Some(bar) = top_bar {
             Box(Modifier::new()
                 .absolute()
@@ -267,7 +394,6 @@ pub fn Scaffold(
         } else {
             Box(Modifier::new())
         },
-        // Bottom bar
         if let Some(bar) = bottom_bar {
             Box(Modifier::new()
                 .absolute()
@@ -276,7 +402,6 @@ pub fn Scaffold(
         } else {
             Box(Modifier::new())
         },
-        // FAB
         if let Some(fab) = floating_action_button {
             Box(Modifier::new()
                 .absolute()
@@ -285,5 +410,79 @@ pub fn Scaffold(
         } else {
             Box(Modifier::new())
         },
+    ))
+}
+
+/// State controlling tooltip visibility.
+pub struct TooltipState {
+    visible: Signal<bool>,
+}
+
+impl TooltipState {
+    pub fn new() -> Rc<Self> {
+        Rc::new(Self {
+            visible: signal(false),
+        })
+    }
+
+    pub fn is_visible(&self) -> bool {
+        self.visible.get()
+    }
+
+    pub fn show(&self) {
+        self.visible.set(true);
+    }
+
+    pub fn dismiss(&self) {
+        self.visible.set(false);
+    }
+}
+
+/// Wraps `content` with a tooltip label shown above it when `state` is visible.
+///
+/// Usage:
+/// ```ignore
+/// let tip = TooltipState::new();
+/// TooltipBox("I'm a tooltip", tip.clone(), Modifier::new(), Button("Hover me", {
+///     let tip = tip.clone();
+///     move || tip.show()
+/// }));
+/// ```
+pub fn TooltipBox(
+    text: impl Into<String>,
+    state: Rc<TooltipState>,
+    modifier: Modifier,
+    content: View,
+) -> View {
+    let text: Rc<str> = Rc::from(text.into());
+    let th = theme();
+
+    let tooltip = state.is_visible().then(|| {
+        let bg = th.inverse_surface;
+        let fg = th.inverse_on_surface;
+        Box(Modifier::new()
+            .background(bg)
+            .clip_rounded(th.shapes.extra_small)
+            .padding_values(PaddingValues {
+                left: 8.0,
+                right: 8.0,
+                top: 4.0,
+                bottom: 4.0,
+            })
+            .absolute()
+            .offset(None, Some(-28.0), None, None)
+            .align_self(AlignSelf::Center)
+            .render_z_index(10000.0))
+        .child(
+            Text((*text).to_string())
+                .color(fg)
+                .size(th.typography.label_medium)
+                .single_line(),
+        )
+    });
+
+    Stack(modifier).child((
+        Box(Modifier::new().fill_max_size()).child(content),
+        tooltip.unwrap_or(Box(Modifier::new())),
     ))
 }

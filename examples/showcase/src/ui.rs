@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 
 use repose_core::prelude::*;
-use repose_material::material3::Card;
+use repose_material::material3::{Card, ElevatedCard};
 use repose_navigation::Navigator;
 use repose_ui::*;
 
@@ -95,16 +95,11 @@ pub fn NavRail(current: Route, nav: Navigator<Route>) -> View {
         Route::Windows,
     ];
 
-    // A simple left rail: Card for a consistent surface.
     Card(
         Modifier::new()
             .width(220.0)
             .fill_max_height()
-            .background(th.surface)
-            .border(1.0, th.outline, 12.0)
-            .clip_rounded(12.0)
             .padding(8.0),
-        true,
         Column(Modifier::new().fill_max_size()).child((
             Text("Navigation")
                 .size(14.0)
@@ -152,7 +147,7 @@ pub fn Section(title: &str, body: View) -> View {
             .size(18.0)
             .color(theme().on_surface)
             .modifier(Modifier::new().padding(8.0)),
-        Card(Modifier::new().fill_max_width(), true, body),
+        ElevatedCard(Modifier::new().fill_max_width().padding(16.0), body),
     ))
 }
 
