@@ -1,4 +1,4 @@
-use crate::{Brush, Color, Modifier, Rect, Transform};
+use crate::{Brush, Color, Modifier, Rect, Transform, Vec2};
 use std::{rc::Rc, sync::Arc};
 
 pub type ViewId = u64;
@@ -226,6 +226,14 @@ pub enum SceneNode {
         handle: ImageHandle,
         tint: Color,
         fit: ImageFit,
+    },
+    /// Shadow behind a rounded rect, typically driven by `StateElevation`.
+    /// The `elevation` field controls offset and alpha.
+    Shadow {
+        rect: Rect,
+        radius: f32,
+        elevation: f32,
+        color: Color,
     },
 }
 

@@ -16,7 +16,7 @@ use taffy::style::FlexDirection;
 use taffy::style::Overflow;
 
 use crate::Interactions;
-use crate::anim::animate_color;
+use crate::anim::{animate_color, animate_f32};
 use crate::textfield::{
     TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, byte_to_char_index, measure_text,
 };
@@ -1203,6 +1203,39 @@ impl LayoutEngine {
             });
         }
 
+        // rendered behind the component
+        if let Some(se) = &modifier.state_elevation {
+            let target = if modifier.disabled {
+                se.disabled
+            } else if is_pressed {
+                se.pressed
+            } else if is_hovered {
+                se.hovered
+            } else {
+                se.default
+            };
+            let elev = animate_f32(
+                format!("m3_elev:{view_id}"),
+                target,
+                repose_core::animation::AnimationSpec::m3_elevation_in(),
+            );
+            if elev > 0.5 {
+                let shadow_offset = elev * 0.5;
+                let shadow_alpha = ((elev / 24.0).clamp(0.0, 1.0) * 0.25 * 255.0) as u8;
+                scene.nodes.push(SceneNode::Shadow {
+                    rect: repose_core::Rect {
+                        x: rect.x + shadow_offset * 0.5,
+                        y: rect.y + shadow_offset,
+                        w: rect.w,
+                        h: rect.h,
+                    },
+                    radius: round_clip_px,
+                    elevation: elev,
+                    color: Color(0, 0, 0, shadow_alpha),
+                });
+            }
+        }
+
         if let Some(sc) = &modifier.state_colors {
             let target = if modifier.disabled {
                 sc.disabled
@@ -1213,7 +1246,11 @@ impl LayoutEngine {
             } else {
                 sc.default
             };
-            let bg = animate_color(format!("m3_sc:{view_id}"), target, repose_core::animation::AnimationSpec::fast());
+            let bg = animate_color(
+                format!("m3_sc:{view_id}"),
+                target,
+                repose_core::animation::AnimationSpec::fast(),
+            );
             scene.nodes.push(SceneNode::Rect {
                 rect,
                 brush: mul_alpha_brush(Brush::Solid(bg), alpha_accum),
@@ -1226,6 +1263,7 @@ impl LayoutEngine {
                 radius: round_clip_px,
             });
         }
+
         if let Some(b) = &modifier.border {
             scene.nodes.push(SceneNode::Border {
                 rect,
@@ -1268,7 +1306,8 @@ impl LayoutEngine {
                 | ViewKind::ScrollXY { .. }
         );
 
-        let needs_hit = !modifier.disabled && (has_pointer || modifier.click || has_dnd || modifier.on_action.is_some());
+        let needs_hit = !modifier.disabled
+            && (has_pointer || modifier.click || has_dnd || modifier.on_action.is_some());
 
         if needs_hit && !kind_handles_hit && !modifier.hit_passthrough {
             hits.push(HitRegion {
@@ -1354,7 +1393,10 @@ impl LayoutEngine {
                         radius: modifier.clip_rounded.map(dp_to_px).unwrap_or(dp_to_px(6.0)),
                     });
                 }
-                if (modifier.click || on_click.is_some()) && !modifier.hit_passthrough && !modifier.disabled {
+                if (modifier.click || on_click.is_some())
+                    && !modifier.hit_passthrough
+                    && !modifier.disabled
+                {
                     hits.push(HitRegion {
                         id: view_id,
                         rect,

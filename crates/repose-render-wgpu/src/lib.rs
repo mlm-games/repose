@@ -2517,6 +2517,33 @@ impl RenderBackend for WgpuBackend {
                     let scissor = to_scissor(&top, self.config.width, self.config.height);
                     cmds.push(Cmd::ClipPop { scissor });
                 }
+                SceneNode::Shadow {
+                    rect,
+                    radius,
+                    elevation: _,
+                    color,
+                } => {
+                    flush_if_prim_changed!("rect", &self.rects);
+                    let transformed_rect = current_transform.apply_to_rect(*rect);
+                    let (brush_type, color0, _color1, _grad_start, _grad_end) =
+                        brush_to_instance_fields(&Brush::Solid(*color));
+                    batch.rects.push(RectInstance {
+                        xywh: to_ndc(
+                            transformed_rect.x,
+                            transformed_rect.y,
+                            transformed_rect.w,
+                            transformed_rect.h,
+                            fb_w,
+                            fb_h,
+                        ),
+                        radius: *radius,
+                        brush_type,
+                        color0,
+                        color1: [0.0; 4],
+                        grad_start: [0.0; 2],
+                        grad_end: [0.0; 2],
+                    });
+                }
                 SceneNode::PushTransform { transform } => {
                     flush_batch!(); // flush before transform change
                     let combined = current_transform.combine(transform);

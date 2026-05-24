@@ -133,6 +133,7 @@ pub struct Modifier {
     pub background: Option<Brush>,
     pub state_colors: Option<StateColors>,
     pub state_elevation: Option<StateElevation>,
+
     pub border: Option<Border>,
     pub flex_grow: Option<f32>,
     pub flex_shrink: Option<f32>,
@@ -220,6 +221,7 @@ impl std::fmt::Debug for Modifier {
             background,
             state_colors,
             state_elevation,
+
             border,
             flex_grow,
             flex_shrink,

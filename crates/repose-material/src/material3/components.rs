@@ -108,6 +108,12 @@ pub fn FilledButton(
             pressed: th.on_primary.with_alpha_f32(0.12).composite_over(bg),
             disabled: th.on_surface.with_alpha_f32(0.12),
         })
+        .state_elevation(StateElevation {
+            default: 0.0,
+            hovered: 1.0,
+            pressed: 8.0,
+            disabled: 0.0,
+        })
         .clip_rounded(20.0)
         .padding_values(PaddingValues {
             left: 24.0,
@@ -139,6 +145,12 @@ pub fn FilledTonalButton(
             hovered: th.on_secondary_container.with_alpha_f32(0.08).composite_over(bg),
             pressed: th.on_secondary_container.with_alpha_f32(0.12).composite_over(bg),
             disabled: th.on_surface.with_alpha_f32(0.12),
+        })
+        .state_elevation(StateElevation {
+            default: 0.0,
+            hovered: 1.0,
+            pressed: 8.0,
+            disabled: 0.0,
         })
         .clip_rounded(20.0)
         .padding_values(PaddingValues {
@@ -235,31 +247,13 @@ pub fn FAB(
             pressed: th.on_primary_container.with_alpha_f32(0.12).composite_over(bg),
             disabled: th.on_surface.with_alpha_f32(0.12),
         })
-        .clip_rounded(16.0)
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
-        .clickable()
-
-        .on_pointer_down(move |_| on_click()))
-    .child(icon)
-}
-
-/// M3 Small FAB (40dp).
-pub fn SmallFAB(
-    icon: View,
-    on_click: impl Fn() + 'static,
-) -> View {
-    let th = theme();
-    let bg = th.primary_container;
-    Box(Modifier::new()
-        .size(40.0, 40.0)
-        .state_colors(StateColors {
-            default: bg,
-            hovered: th.on_primary_container.with_alpha_f32(0.08).composite_over(bg),
-            pressed: th.on_primary_container.with_alpha_f32(0.12).composite_over(bg),
-            disabled: th.on_surface.with_alpha_f32(0.12),
+        .state_elevation(StateElevation {
+            default: 6.0,
+            hovered: 8.0,
+            pressed: 12.0,
+            disabled: 0.0,
         })
-        .clip_rounded(12.0)
+        .clip_rounded(28.0)
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
         .clickable()
@@ -282,6 +276,12 @@ pub fn LargeFAB(
             hovered: th.on_primary_container.with_alpha_f32(0.08).composite_over(bg),
             pressed: th.on_primary_container.with_alpha_f32(0.12).composite_over(bg),
             disabled: th.on_surface.with_alpha_f32(0.12),
+        })
+        .state_elevation(StateElevation {
+            default: 6.0,
+            hovered: 8.0,
+            pressed: 12.0,
+            disabled: 0.0,
         })
         .clip_rounded(28.0)
         .align_items(AlignItems::Center)
@@ -309,6 +309,12 @@ pub fn ExtendedFAB(
             hovered: th.on_primary_container.with_alpha_f32(0.08).composite_over(bg),
             pressed: th.on_primary_container.with_alpha_f32(0.12).composite_over(bg),
             disabled: th.on_surface.with_alpha_f32(0.12),
+        })
+        .state_elevation(StateElevation {
+            default: 6.0,
+            hovered: 8.0,
+            pressed: 12.0,
+            disabled: 0.0,
         })
         .clip_rounded(16.0)
         .padding_values(PaddingValues {

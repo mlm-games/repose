@@ -21,6 +21,9 @@ pub enum Easing {
     SpringGentle,
     /// Underdamped, bouncier preset (ζ≈0.2, ω≈12)
     SpringBouncy,
+    /// Android FastOutSlowIn: cubic-bezier(0.4, 0.0, 0.2, 1.0).
+    /// Starts fast, decelerates through the middle, ends slow.
+    FastOutSlowIn,
 }
 
 impl Easing {
@@ -44,8 +47,35 @@ impl Easing {
             }
             Easing::SpringGentle => spring_underdamped_normalized(t, 0.5, 8.0),
             Easing::SpringBouncy => spring_underdamped_normalized(t, 0.2, 12.0),
+            Easing::FastOutSlowIn => eval_cubic_bezier(0.4, 0.0, 0.2, 1.0, t),
         }
     }
+}
+
+/// Evaluate a cubic bezier with control points P1=(p1x,p1y), P2=(p2x,p2y)
+/// (P0=(0,0) and P3=(1,1) are fixed). Uses Newton's method (5 iterations)
+/// to find `u` such that x(u) = t, then returns y(u).
+fn eval_cubic_bezier(p1x: f32, p1y: f32, p2x: f32, p2y: f32, t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    if t <= 0.0 {
+        return 0.0;
+    }
+    if t >= 1.0 {
+        return 1.0;
+    }
+    let mut u = t;
+    for _ in 0..6 {
+        let omu = 1.0 - u;
+        let x = 3.0 * omu * omu * u * p1x + 3.0 * omu * u * u * p2x + u * u * u;
+        let dx = 3.0 * omu * omu * p1x + 6.0 * omu * u * (p2x - p1x) + 3.0 * u * u * (1.0 - p2x);
+        if dx.abs() < 1e-10 {
+            break;
+        }
+        u -= (x - t) / dx;
+        u = u.clamp(0.0, 1.0);
+    }
+    let omu = 1.0 - u;
+    3.0 * omu * omu * u * p1y + 3.0 * omu * u * u * p2y + u * u * u
 }
 
 fn spring_underdamped_normalized(t: f32, zeta: f32, omega: f32) -> f32 {
@@ -124,6 +154,24 @@ impl AnimationSpec {
         Self {
             duration: Duration::from_millis(600),
             easing: Easing::EaseInOut,
+            delay: Duration::ZERO,
+        }
+    }
+
+    /// 120ms FastOutSlowIn
+    pub fn m3_elevation_in() -> Self {
+        Self {
+            duration: Duration::from_millis(120),
+            easing: Easing::FastOutSlowIn,
+            delay: Duration::ZERO,
+        }
+    }
+
+    /// 150ms with standard deceleration bezier
+    pub fn m3_elevation_out() -> Self {
+        Self {
+            duration: Duration::from_millis(150),
+            easing: Easing::EaseOut,
             delay: Duration::ZERO,
         }
     }
