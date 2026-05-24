@@ -5,7 +5,7 @@ use std::rc::Rc;
 use repose_core::{request_frame, Modifier, View, ViewKind};
 
 thread_local! {
-    static SNACKBAR_TICK: RefCell<Option<Rc<dyn Fn(u32)>>> = RefCell::new(None);
+    static SNACKBAR_TICKS: RefCell<Vec<Rc<dyn Fn(u32)>>> = RefCell::new(Vec::new());
 }
 
 #[derive(Clone)]
@@ -161,13 +161,13 @@ impl SnackbarController {
             let controller = controller.clone();
             Rc::new(move |elapsed_ms| controller.tick(elapsed_ms))
         };
-        SNACKBAR_TICK.with(|slot| *slot.borrow_mut() = Some(tick));
+        SNACKBAR_TICKS.with(|slot| slot.borrow_mut().push(tick));
         controller
     }
 
     pub fn tick_for_frame(elapsed_ms: u32) {
-        SNACKBAR_TICK.with(|tick| {
-            if let Some(cb) = &*tick.borrow() {
+        SNACKBAR_TICKS.with(|ticks| {
+            for cb in ticks.borrow().iter() {
                 cb(elapsed_ms);
             }
         });

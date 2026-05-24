@@ -150,10 +150,13 @@ pub fn InstallShortcutMap(map: ShortcutMap) -> Dispose {
 }
 
 /// Install/uninstall a global shortcut handler for the current scope.
+/// Restores the previous handler on unmount (supports nesting).
 #[allow(non_snake_case)]
 pub fn InstallShortcutHandler(handler: Handler) -> Dispose {
-    set(Some(handler));
-    on_unmount(|| set(None))
+    let prev = HANDLER.with(|h| h.borrow_mut().replace(handler));
+    on_unmount(move || {
+        HANDLER.with(|h| *h.borrow_mut() = prev);
+    })
 }
 
 pub fn default_chord_for(action: &Action) -> Option<KeyChord> {

@@ -15,6 +15,8 @@ pub struct GestureDetector {
     last_tap: Option<Instant>,
     press_start: Option<(Instant, Vec2)>,
     drag_start: Option<Vec2>,
+    last_position: Option<Vec2>,
+    last_move_time: Option<Instant>,
 }
 
 pub struct DragEvent {
@@ -48,6 +50,8 @@ impl GestureDetector {
             last_tap: None,
             press_start: None,
             drag_start: None,
+            last_position: None,
+            last_move_time: None,
         }
     }
 
@@ -56,6 +60,8 @@ impl GestureDetector {
             PointerEventKind::Down(_) => {
                 self.press_start = Some((Instant::now(), event.position));
                 self.drag_start = Some(event.position);
+                self.last_position = Some(event.position);
+                self.last_move_time = Some(Instant::now());
 
                 // Check for double tap
                 if let Some(last) = self.last_tap
@@ -103,21 +109,44 @@ impl GestureDetector {
                 }
                 self.press_start = None;
                 self.drag_start = None;
+                self.last_position = None;
+                self.last_move_time = None;
             }
             PointerEventKind::Move => {
                 if let Some(start) = self.drag_start
                     && let Some(cb) = &self.on_drag
                 {
+                    let delta = if let Some(prev) = self.last_position {
+                        Vec2 {
+                            x: event.position.x - prev.x,
+                            y: event.position.y - prev.y,
+                        }
+                    } else {
+                        Vec2::default()
+                    };
+
+                    let velocity = if let (Some(prev_time), Some(now)) =
+                        (self.last_move_time, Some(Instant::now()))
+                    {
+                        let dt = (now - prev_time).as_secs_f32().max(1.0 / 240.0);
+                        Vec2 {
+                            x: delta.x / dt,
+                            y: delta.y / dt,
+                        }
+                    } else {
+                        Vec2::default()
+                    };
+
                     cb(DragEvent {
                         start,
                         current: event.position,
-                        delta: Vec2 {
-                            x: event.position.x - start.x,
-                            y: event.position.y - start.y,
-                        },
-                        velocity: Vec2::default(), // TODO: calculate from history
+                        delta,
+                        velocity,
                     });
                 }
+
+                self.last_position = Some(event.position);
+                self.last_move_time = Some(Instant::now());
 
                 // Long press detection
                 if let Some((start_time, pos)) = self.press_start

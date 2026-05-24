@@ -98,8 +98,9 @@ impl<T> Signal<T> {
     }
 
     pub fn subscribe(&self, f: impl Fn(&T) + 'static) -> SubId {
-        self.0.borrow_mut().subs.push(Some(Box::new(f)));
-        self.0.borrow().subs.len() - 1
+        let mut inner = self.0.borrow_mut();
+        inner.subs.push(Some(Box::new(f)));
+        inner.subs.len() - 1
     }
 
     /// Remove a subscriber by id. Returns true if removed.
@@ -107,6 +108,10 @@ impl<T> Signal<T> {
         let mut inner = self.0.borrow_mut();
         if id < inner.subs.len() {
             inner.subs[id] = None;
+            // prevents unbounded tombstone growth
+            while inner.subs.last().map_or(false, |s| s.is_none()) {
+                inner.subs.pop();
+            }
             true
         } else {
             false
@@ -116,11 +121,9 @@ impl<T> Signal<T> {
     /// Subscribe and get a guard that auto-unsubscribes on drop.
     pub fn subscribe_guard(&self, f: impl Fn(&T) + 'static) -> SubGuard<T> {
         let id = self.subscribe(f);
-        let sig = self.clone();
         SubGuard {
-            sig,
+            sig: self.clone(),
             id,
-            active: true,
         }
     }
 }
@@ -133,13 +136,9 @@ pub fn signal<T>(t: T) -> Signal<T> {
 pub struct SubGuard<T: 'static> {
     sig: crate::Signal<T>,
     id: SubId,
-    active: bool,
 }
 impl<T> Drop for SubGuard<T> {
     fn drop(&mut self) {
-        if self.active {
-            let _ = self.sig.unsubscribe(self.id);
-            self.active = false;
-        }
+        let _ = self.sig.unsubscribe(self.id);
     }
 }

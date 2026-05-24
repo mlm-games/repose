@@ -49,7 +49,7 @@ impl UploadRing {
         let len = bytes.len() as u64;
         let start = (self.head + 3) & !3; // align to 4
         let end = start + len;
-        debug_assert!(end <= self.cap, "ring overflow - call grow_to_fit first");
+        assert!(end <= self.cap, "ring overflow - call grow_to_fit first");
         queue.write_buffer(&self.buf, start, bytes);
         self.head = end;
         (start, len)

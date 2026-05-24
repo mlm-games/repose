@@ -108,15 +108,25 @@ pub fn remove_observer(id: ObserverId) {
 pub fn run_observer_now(id: ObserverId) {
     let f = GRAPH.with(|gcell| {
         let mut g = gcell.borrow_mut();
+        if !g.running.insert(id) {
+            return None;
+        }
         g.remove_all_edges_for(id);
-        g.observers.get(&id).cloned()
-    });
-    if let Some(f) = f {
-        CURRENT_OBSERVER.with(|co| {
-            let prev = *co.borrow();
-            *co.borrow_mut() = Some(id);
-            f();
-            *co.borrow_mut() = prev;
+        let f = g.observers.get(&id).cloned();
+        drop(g);
+        if let Some(f) = f {
+            CURRENT_OBSERVER.with(|co| {
+                let prev = *co.borrow();
+                *co.borrow_mut() = Some(id);
+                f();
+                *co.borrow_mut() = prev;
+            });
+        }
+        GRAPH.with(|gcell| {
+            let mut g = gcell.borrow_mut();
+            g.running.remove(&id);
         });
-    }
+        Some(())
+    });
+    let _ = f;
 }

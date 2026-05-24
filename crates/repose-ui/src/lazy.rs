@@ -79,7 +79,7 @@ where
     F: Fn(T, usize) -> View + 'static,
 {
     // Convert once: internal math uses px
-    let item_h_px = dp_to_px(item_height_dp);
+    let item_h_px = dp_to_px(item_height_dp).max(1.0);
     let content_height_px = items.len() as f32 * item_h_px;
 
     // Signals are px (fed by ScrollV)

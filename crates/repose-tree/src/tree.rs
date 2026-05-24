@@ -141,9 +141,9 @@ impl ViewTree {
         let mut ctx = ReconcileContext::new(self.generation);
 
         let root_id = if let Some(existing_root) = self.root {
-            self.reconcile_node(existing_root, new_root, None, 0, &mut ctx)
+            self.reconcile_node(existing_root, new_root, None, 0, 0, &mut ctx)
         } else {
-            self.create_node(new_root, None, 0, &mut ctx)
+            self.create_node(new_root, None, 0, 0, &mut ctx)
         };
 
         self.root = Some(root_id);
@@ -169,22 +169,23 @@ impl ViewTree {
         view: &View,
         parent: Option<NodeId>,
         depth: u32,
+        index_in_parent: u32,
         ctx: &mut ReconcileContext,
     ) -> NodeId {
         let content_hash = hash_view_content(view);
 
-        let old_hash = self.nodes[node_id].content_hash;
+        let old_hash = self.nodes.get(node_id).expect("reconcile_node: node not found").content_hash;
         let content_changed = old_hash != content_hash;
 
         let new_children_hashes = self.reconcile_children(node_id, &view.children, depth, ctx);
 
         let new_subtree_hash = hash_subtree(content_hash, &new_children_hashes);
 
-        let view_id = self.compute_view_id(view, node_id, parent, depth);
+        let view_id = self.compute_view_id(view, node_id, parent, index_in_parent);
 
         let subtree_changed;
         {
-            let node = self.nodes.get_mut(node_id).unwrap();
+            let node = self.nodes.get_mut(node_id).expect("reconcile_node: node not found");
 
             // Update parent, depth, generation
             node.parent = parent;
@@ -257,14 +258,15 @@ impl ViewTree {
         let mut unkeyed_index = 0;
         let mut used_nodes: FxHashSet<NodeId> = FxHashSet::default();
 
-        for new_child in new_children {
+        for (i, new_child) in new_children.iter().enumerate() {
+            let idx = i as u32;
             let child_id = if let Some(key) = new_child.modifier.key {
                 // Keyed child: look up by key
                 if let Some(&existing_id) = keyed_children.get(&key) {
                     used_nodes.insert(existing_id);
-                    self.reconcile_node(existing_id, new_child, Some(parent_id), child_depth, ctx)
+                    self.reconcile_node(existing_id, new_child, Some(parent_id), child_depth, idx, ctx)
                 } else {
-                    self.create_node(new_child, Some(parent_id), child_depth, ctx)
+                    self.create_node(new_child, Some(parent_id), child_depth, idx, ctx)
                 }
             } else {
                 // Unkeyed child: match by position
@@ -272,9 +274,9 @@ impl ViewTree {
                     let existing_id = unkeyed_children[unkeyed_index];
                     unkeyed_index += 1;
                     used_nodes.insert(existing_id);
-                    self.reconcile_node(existing_id, new_child, Some(parent_id), child_depth, ctx)
+                    self.reconcile_node(existing_id, new_child, Some(parent_id), child_depth, idx, ctx)
                 } else {
-                    self.create_node(new_child, Some(parent_id), child_depth, ctx)
+                    self.create_node(new_child, Some(parent_id), child_depth, idx, ctx)
                 }
             };
 
@@ -306,6 +308,7 @@ impl ViewTree {
         view: &View,
         parent: Option<NodeId>,
         depth: u32,
+        index_in_parent: u32,
         ctx: &mut ReconcileContext,
     ) -> NodeId {
         let content_hash = hash_view_content(view);
@@ -323,7 +326,7 @@ impl ViewTree {
         ctx.created += 1;
 
         {
-            let node = self.nodes.get_mut(node_id).unwrap();
+            let node = self.nodes.get_mut(node_id).expect("create_node: node just inserted");
             node.parent = parent;
             node.depth = depth;
             node.content_hash = content_hash;
@@ -334,17 +337,17 @@ impl ViewTree {
         let child_depth = depth + 1;
         let mut child_ids: SmallVec<[NodeId; 4]> = SmallVec::new();
         let mut child_hashes: Vec<u64> = Vec::with_capacity(view.children.len());
-        for child_view in &view.children {
-            let child_id = self.create_node(child_view, Some(node_id), child_depth, ctx);
+        for (i, child_view) in view.children.iter().enumerate() {
+            let child_id = self.create_node(child_view, Some(node_id), child_depth, i as u32, ctx);
             child_ids.push(child_id);
-            child_hashes.push(self.nodes[child_id].subtree_hash);
+            child_hashes.push(self.nodes.get(child_id).expect("create_node: child just created").subtree_hash);
         }
 
         // Now compute the view_id and subtree_hash, and update the node
-        let view_id = self.compute_view_id(view, node_id, parent, depth);
+        let view_id = self.compute_view_id(view, node_id, parent, index_in_parent);
         let subtree_hash = hash_subtree(content_hash, &child_hashes);
 
-        let node = self.nodes.get_mut(node_id).unwrap();
+        let node = self.nodes.get_mut(node_id).expect("create_node: node just inserted");
         node.children = child_ids;
         node.subtree_hash = subtree_hash;
         node.view_id = view_id;

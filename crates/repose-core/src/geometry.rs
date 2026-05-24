@@ -75,12 +75,28 @@ impl Transform {
     }
 
     pub fn apply_to_rect(&self, r: Rect) -> Rect {
-        let p = self.apply_to_point(Vec2 { x: r.x, y: r.y });
+        let corners = [
+            Vec2 { x: r.x, y: r.y },
+            Vec2 { x: r.x + r.w, y: r.y },
+            Vec2 { x: r.x, y: r.y + r.h },
+            Vec2 { x: r.x + r.w, y: r.y + r.h },
+        ];
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        for c in corners {
+            let p = self.apply_to_point(c);
+            min_x = min_x.min(p.x);
+            min_y = min_y.min(p.y);
+            max_x = max_x.max(p.x);
+            max_y = max_y.max(p.y);
+        }
         Rect {
-            x: p.x,
-            y: p.y,
-            w: r.w * self.scale_x,
-            h: r.h * self.scale_y,
+            x: min_x,
+            y: min_y,
+            w: max_x - min_x,
+            h: max_y - min_y,
         }
     }
 
