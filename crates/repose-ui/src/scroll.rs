@@ -469,8 +469,10 @@ pub fn ScrollArea(modifier: Modifier, state: Rc<ScrollState>, content: View) -> 
 pub fn HorizontalScrollArea(
     modifier: Modifier,
     state: Rc<HorizontalScrollState>,
-    content: View,
+    mut content: View,
 ) -> View {
+    // Prevent content from shrinking below its natural width in the Row layout.
+    content.modifier = content.modifier.flex_shrink(0.0);
     let st_clone = state.clone();
     let on_scroll = {
         Rc::new(move |d: Vec2| -> Vec2 {

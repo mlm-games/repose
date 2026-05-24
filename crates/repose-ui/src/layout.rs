@@ -429,6 +429,9 @@ impl LayoutEngine {
             ViewKind::ScrollXY {
                 set_viewport_height, ..
             } => {
+                // Horizontal-only: Row so width is content-based (scrollable axis).
+                // 2D: Column keeps vertical axis scrollable, horizontal relies on
+                // descendant-extent computation in the paint walk.
                 if set_viewport_height.is_none() {
                     s.flex_direction = FlexDirection::Row;
                 } else {
@@ -440,15 +443,6 @@ impl LayoutEngine {
         }
 
         s.align_items = Some(AlignItems::Stretch);
-        if matches!(
-            kind,
-            ViewKind::ScrollXY {
-                set_viewport_height: Some(_),
-                ..
-            }
-        ) {
-            s.align_items = Some(AlignItems::FlexStart);
-        }
         s.justify_content = Some(JustifyContent::FlexStart);
 
         if matches!(
@@ -2322,9 +2316,20 @@ impl LayoutEngine {
                 let mut cw = 0.0f32;
                 let mut ch = 0.0f32;
                 for &c in &children {
-                    let l = self.taffy.layout(self.taffy_map[&c]).unwrap();
-                    cw = cw.max(l.location.x + l.size.width);
-                    ch = ch.max(l.location.y + l.size.height);
+                    let mut stack = vec![(self.taffy_map[&c], 0.0f32, 0.0f32)];
+                    while let Some((t_id, ox, oy)) = stack.pop() {
+                        if let Ok(l) = self.taffy.layout(t_id) {
+                            let ax = ox + l.location.x;
+                            let ay = oy + l.location.y;
+                            cw = cw.max(ax + l.size.width);
+                            ch = ch.max(ay + l.size.height);
+                            if let Ok(kids) = self.taffy.children(t_id) {
+                                for k in kids {
+                                    stack.push((k, ax, ay));
+                                }
+                            }
+                        }
+                    }
                 }
                 if let Some(s) = set_content_width {
                     s(cw);
