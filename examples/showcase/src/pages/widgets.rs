@@ -1,8 +1,17 @@
 use repose_core::{prelude::*, signal};
-use repose_material::material3::TextButton;
+use repose_material::material3::{AssistChip, FilterChip, InputChip, SuggestionChip, TextButton};
+use repose_material::{Icon, material_symbols};
 use repose_ui::*;
 
 use crate::ui::Section;
+
+material_symbols! {
+    add      : '\u{E145}',
+    close    : '\u{E5CD}',
+    favorite : '\u{E87D}',
+    search   : '\u{E8B6}',
+    send     : '\u{E163}',
+}
 
 pub fn screen() -> View {
     let cb = remember(|| signal(true));
@@ -12,6 +21,8 @@ pub fn screen() -> View {
     let r_a = remember(|| signal(0.2f32));
     let r_b = remember(|| signal(0.8f32));
     let prog = remember(|| signal(0.4f32));
+    let filter_selected = remember(|| signal(false));
+    let input_selected = remember(|| signal(false));
 
     Column(Modifier::new().fill_max_width()).child((
         Section(
@@ -88,6 +99,110 @@ pub fn screen() -> View {
                         },
                         || Text("Increase"),
                     ),
+                )),
+            )),
+        ),
+        Section(
+            "Chips",
+            Column(Modifier::new().padding(12.0)).child((
+                Column(Modifier::new()).child((
+                    Text("AssistChip")
+                        .size(14.0)
+                        .color(theme().on_surface_variant),
+                    Box(Modifier::new().height(8.0).width(1.0)),
+                    Row(Modifier::new().gap(8.0)).child((
+                        AssistChip(|| {}, Text("Basic"), None, None),
+                        AssistChip(
+                            || {},
+                            Text("Leading"),
+                            Some(Icon(Symbols::add).size(18.0)),
+                            None,
+                        ),
+                        AssistChip(
+                            || {},
+                            Text("Both"),
+                            Some(Icon(Symbols::search).size(18.0)),
+                            Some(Icon(Symbols::close).size(18.0)),
+                        ),
+                    )),
+                )),
+                Box(Modifier::new().height(16.0).width(1.0)),
+                Column(Modifier::new()).child((
+                    Text("FilterChip (toggle)")
+                        .size(14.0)
+                        .color(theme().on_surface_variant),
+                    Box(Modifier::new().height(8.0).width(1.0)),
+                    Row(Modifier::new().gap(8.0)).child((
+                        FilterChip(
+                            filter_selected.get(),
+                            {
+                                let fs = filter_selected.clone();
+                                move || fs.update(|x| *x = !*x)
+                            },
+                            Text("Toggle"),
+                            None,
+                            None,
+                        ),
+                        FilterChip(true, || {}, Text("Active"), None, None),
+                        FilterChip(
+                            true,
+                            || {},
+                            Text("Trailing"),
+                            Some(Icon(Symbols::favorite).size(18.0)),
+                            Some(Icon(Symbols::close).size(18.0)),
+                        ),
+                    )),
+                )),
+                Box(Modifier::new().height(16.0).width(1.0)),
+                Column(Modifier::new()).child((
+                    Text("SuggestionChip")
+                        .size(14.0)
+                        .color(theme().on_surface_variant),
+                    Box(Modifier::new().height(8.0).width(1.0)),
+                    Row(Modifier::new().gap(8.0)).child((
+                        SuggestionChip(|| {}, Text("Suggestion"), None),
+                        SuggestionChip(
+                            || {},
+                            Text("With icon"),
+                            Some(Icon(Symbols::search).size(18.0)),
+                        ),
+                    )),
+                )),
+                Box(Modifier::new().height(16.0).width(1.0)),
+                Column(Modifier::new()).child((
+                    Text("InputChip (toggle)")
+                        .size(14.0)
+                        .color(theme().on_surface_variant),
+                    Box(Modifier::new().height(8.0).width(1.0)),
+                    Row(Modifier::new().gap(8.0)).child((
+                        InputChip(
+                            input_selected.get(),
+                            {
+                                let is = input_selected.clone();
+                                move || is.update(|x| *x = !*x)
+                            },
+                            Text("Toggle"),
+                            None,
+                            None,
+                            None,
+                        ),
+                        InputChip(
+                            true,
+                            || {},
+                            Text("Trailing"),
+                            Some(Icon(Symbols::favorite).size(18.0)),
+                            None,
+                            Some(Icon(Symbols::close).size(18.0)),
+                        ),
+                        InputChip(
+                            false,
+                            || {},
+                            Text("Avatar"),
+                            None,
+                            Some(Icon(Symbols::send).size(18.0)),
+                            None,
+                        ),
+                    )),
                 )),
             )),
         ),

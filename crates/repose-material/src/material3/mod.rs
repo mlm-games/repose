@@ -289,6 +289,7 @@ pub fn FilterChip(
     on_click: impl Fn() + 'static,
     label: View,
     leading_icon: Option<View>,
+    trailing_icon: Option<View>,
 ) -> View {
     let th = theme();
     let bg = if selected {
@@ -296,55 +297,40 @@ pub fn FilterChip(
     } else {
         th.surface
     };
-    let fg = if selected {
+    let label_color = if selected {
         th.on_secondary_container
     } else {
-        th.on_surface
+        th.on_surface_variant
+    };
+    let leading_color = if selected {
+        th.on_secondary_container
+    } else {
+        th.primary
+    };
+    let trailing_color = if selected {
+        th.on_secondary_container
+    } else {
+        th.on_surface_variant
     };
 
     Surface(
         Modifier::new()
+            .background(bg)
             .state_colors(StateColors {
                 default: Color::TRANSPARENT,
                 hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
                 pressed: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
-                disabled: th.surface,
-            })
-            .border(1.0, th.outline, 8.0)
-            .clip_rounded(8.0)
-            .padding(12.0)
-            .clickable()
-            .on_pointer_down(move |_| on_click()),
-        with_content_color(fg, move || {
-            Row(Modifier::new().align_items(AlignItems::Center)).child((
-                leading_icon
-                    .map(|v| {
-                        Box(Modifier::new().padding_values(PaddingValues {
-                            left: 0.0,
-                            right: 8.0,
-                            top: 0.0,
-                            bottom: 0.0,
-                        }))
-                        .child(v)
-                    })
-                    .unwrap_or(Box(Modifier::new())),
-                label,
-            ))
-        }),
-    )
-}
-
-pub fn AssistChip(on_click: impl Fn() + 'static, label: View, leading_icon: Option<View>) -> View {
-    let th = theme();
-    Surface(
-        Modifier::new()
-            .state_colors(StateColors {
-                default: Color::TRANSPARENT,
-                hovered: th.on_surface.with_alpha_f32(0.08),
-                pressed: th.on_surface.with_alpha_f32(0.12),
                 disabled: Color::TRANSPARENT,
             })
-            .border(1.0, th.outline, 8.0)
+            .border(
+                1.0,
+                if selected {
+                    Color::TRANSPARENT
+                } else {
+                    th.outline_variant
+                },
+                8.0,
+            )
             .clip_rounded(8.0)
             .padding_values(PaddingValues {
                 left: 16.0,
@@ -363,10 +349,201 @@ pub fn AssistChip(on_click: impl Fn() + 'static, label: View, leading_icon: Opti
                         top: 0.0,
                         bottom: 0.0,
                     }))
-                    .child(v)
+                    .child(with_content_color(leading_color, move || v))
                 })
                 .unwrap_or(Box(Modifier::new())),
-            label,
+            with_content_color(label_color, move || label),
+            trailing_icon
+                .map(|v| {
+                    Box(Modifier::new().padding_values(PaddingValues {
+                        left: 8.0,
+                        right: 0.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    }))
+                    .child(with_content_color(trailing_color, move || v))
+                })
+                .unwrap_or(Box(Modifier::new())),
+        )),
+    )
+}
+
+pub fn AssistChip(
+    on_click: impl Fn() + 'static,
+    label: View,
+    leading_icon: Option<View>,
+    trailing_icon: Option<View>,
+) -> View {
+    let th = theme();
+    Surface(
+        Modifier::new()
+            .state_colors(StateColors {
+                default: Color::TRANSPARENT,
+                hovered: th.on_surface.with_alpha_f32(0.08),
+                pressed: th.on_surface.with_alpha_f32(0.12),
+                disabled: Color::TRANSPARENT,
+            })
+            .border(1.0, th.outline_variant, 8.0)
+            .clip_rounded(8.0)
+            .padding_values(PaddingValues {
+                left: 16.0,
+                right: 16.0,
+                top: 8.0,
+                bottom: 8.0,
+            })
+            .clickable()
+            .on_pointer_down(move |_| on_click()),
+        Row(Modifier::new().align_items(AlignItems::Center)).child((
+            leading_icon
+                .map(|v| {
+                    Box(Modifier::new().padding_values(PaddingValues {
+                        left: 0.0,
+                        right: 8.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    }))
+                    .child(with_content_color(th.primary, move || v))
+                })
+                .unwrap_or(Box(Modifier::new())),
+            with_content_color(th.on_surface, move || label),
+            trailing_icon
+                .map(|v| {
+                    Box(Modifier::new().padding_values(PaddingValues {
+                        left: 8.0,
+                        right: 0.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    }))
+                    .child(with_content_color(th.primary, move || v))
+                })
+                .unwrap_or(Box(Modifier::new())),
+        )),
+    )
+}
+
+pub fn SuggestionChip(
+    on_click: impl Fn() + 'static,
+    label: View,
+    icon: Option<View>,
+) -> View {
+    let th = theme();
+    Surface(
+        Modifier::new()
+            .state_colors(StateColors {
+                default: Color::TRANSPARENT,
+                hovered: th.on_surface.with_alpha_f32(0.08),
+                pressed: th.on_surface.with_alpha_f32(0.12),
+                disabled: Color::TRANSPARENT,
+            })
+            .border(1.0, th.outline_variant, 8.0)
+            .clip_rounded(8.0)
+            .padding_values(PaddingValues {
+                left: 16.0,
+                right: 16.0,
+                top: 8.0,
+                bottom: 8.0,
+            })
+            .clickable()
+            .on_pointer_down(move |_| on_click()),
+        Row(Modifier::new().align_items(AlignItems::Center)).child((
+            icon
+                .map(|v| {
+                    Box(Modifier::new().padding_values(PaddingValues {
+                        left: 0.0,
+                        right: 8.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    }))
+                    .child(with_content_color(th.primary, move || v))
+                })
+                .unwrap_or(Box(Modifier::new())),
+            with_content_color(th.on_surface_variant, move || label),
+        )),
+    )
+}
+
+pub fn InputChip(
+    selected: bool,
+    on_click: impl Fn() + 'static,
+    label: View,
+    leading_icon: Option<View>,
+    avatar: Option<View>,
+    trailing_icon: Option<View>,
+) -> View {
+    let th = theme();
+    let bg = if selected {
+        th.secondary_container
+    } else {
+        th.surface
+    };
+    let label_color = if selected {
+        th.on_secondary_container
+    } else {
+        th.on_surface_variant
+    };
+    let leading_color = if selected {
+        th.primary
+    } else {
+        th.on_surface_variant
+    };
+    let trailing_color = if selected {
+        th.on_secondary_container
+    } else {
+        th.on_surface_variant
+    };
+
+    Surface(
+        Modifier::new()
+            .background(bg)
+            .state_colors(StateColors {
+                default: Color::TRANSPARENT,
+                hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
+                pressed: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
+                disabled: Color::TRANSPARENT,
+            })
+            .border(
+                1.0,
+                if selected {
+                    Color::TRANSPARENT
+                } else {
+                    th.outline_variant
+                },
+                8.0,
+            )
+            .clip_rounded(8.0)
+            .padding_values(PaddingValues {
+                left: 16.0,
+                right: 16.0,
+                top: 8.0,
+                bottom: 8.0,
+            })
+            .clickable()
+            .on_pointer_down(move |_| on_click()),
+        Row(Modifier::new().align_items(AlignItems::Center)).child((
+            avatar
+                .or(leading_icon)
+                .map(|v| {
+                    Box(Modifier::new().padding_values(PaddingValues {
+                        left: 0.0,
+                        right: 8.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    }))
+                    .child(with_content_color(leading_color, move || v))
+                })
+                .unwrap_or(Box(Modifier::new())),
+            with_content_color(label_color, move || label),
+            trailing_icon
+                .map(|v| {
+                    Box(Modifier::new().padding_values(PaddingValues {
+                        left: 8.0,
+                        right: 0.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    }))
+                    .child(with_content_color(trailing_color, move || v))
+                })
+                .unwrap_or(Box(Modifier::new())),
         )),
     )
 }
@@ -485,4 +662,124 @@ pub fn TooltipBox(
         Box(Modifier::new().fill_max_size()).child(content),
         tooltip.unwrap_or(Box(Modifier::new())),
     ))
+}
+
+/// State controlling drawer open/close.
+pub struct DrawerState {
+    visible: Signal<bool>,
+}
+
+impl DrawerState {
+    pub fn new() -> Rc<Self> {
+        Rc::new(Self {
+            visible: signal(false),
+        })
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.visible.get()
+    }
+
+    pub fn open(&self) {
+        self.visible.set(true);
+    }
+
+    pub fn dismiss(&self) {
+        self.visible.set(false);
+    }
+}
+
+/// A modal navigation drawer that slides in from the left with a scrim overlay.
+pub fn ModalNavigationDrawer(
+    drawer_state: Rc<DrawerState>,
+    drawer_content: View,
+    content: View,
+) -> View {
+    let th = theme();
+
+    let drawer_offset = animate_f32(
+        "modal_drawer_offset",
+        if drawer_state.is_open() { 0.0 } else { -360.0 },
+        AnimationSpec::spring_gentle(),
+    );
+
+    Stack(Modifier::new().fill_max_size()).child((
+        Box(Modifier::new().fill_max_size()).child(content),
+        if drawer_state.is_open() {
+            Box(Modifier::new()
+                .fill_max_size()
+                .background(th.scrim.with_alpha(82))
+                .clickable()
+                .on_pointer_down({
+                    let ds = drawer_state.clone();
+                    move |_| ds.dismiss()
+                }))
+            .child(Box(Modifier::new()))
+        } else {
+            Box(Modifier::new())
+        },
+        Box(Modifier::new()
+            .absolute()
+            .offset(Some(drawer_offset), Some(0.0), None, Some(0.0))
+            .fill_max_height()
+            .width(300.0)
+            .background(th.surface_container_low)
+            .clip_rounded(th.shapes.large)
+        )
+        .child(drawer_content),
+    ))
+}
+
+/// A destination entry inside a NavigationDrawer.
+pub fn NavigationDrawerItem(
+    label: View,
+    selected: bool,
+    on_click: impl Fn() + 'static,
+    icon: Option<View>,
+    badge: Option<View>,
+) -> View {
+    let th = theme();
+    let bg = if selected {
+        th.secondary_container
+    } else {
+        Color::TRANSPARENT
+    };
+    let fg = if selected {
+        th.on_secondary_container
+    } else {
+        th.on_surface_variant
+    };
+
+    Surface(
+        Modifier::new()
+            .fill_max_width()
+            .padding_values(PaddingValues {
+                left: 12.0,
+                right: 12.0,
+                top: 0.0,
+                bottom: 0.0,
+            })
+            .min_height(56.0)
+            .background(bg)
+            .clip_rounded(28.0)
+            .clickable()
+            .on_pointer_down(move |_| on_click()),
+        with_content_color(fg, move || {
+            Row(Modifier::new()
+                .align_items(AlignItems::Center)
+                .padding_values(PaddingValues {
+                    left: 16.0,
+                    right: 24.0,
+                    top: 0.0,
+                    bottom: 0.0,
+                }),
+            )
+            .child((
+                icon.unwrap_or(Box(Modifier::new().width(24.0).height(24.0))),
+                Box(Modifier::new().width(12.0).height(1.0)),
+                Box(Modifier::new().flex_grow(1.0)).child(label),
+                badge.unwrap_or(Box(Modifier::new())),
+            ))
+        }),
+    )
 }
