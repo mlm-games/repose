@@ -1196,7 +1196,6 @@ impl LayoutEngine {
             rect.h,
         );
         let push_round_clip = round_clip_px > 0.5 && rect.w > 0.5 && rect.h > 0.5;
-        if (this_alpha - 1.0).abs() > 1e-6 {}
         if let Some(tf) = modifier.transform {
             scene.nodes.push(SceneNode::PushTransform { transform: tf });
         }
@@ -1218,18 +1217,17 @@ impl LayoutEngine {
             } else {
                 se.default
             };
-            let prev = *remember_state_with_key(
+            let elev_slot = remember_state_with_key(
                 format!("m3_elev_last:{view_id}"),
                 || target,
-            )
-            .borrow();
+            );
+            let prev = *elev_slot.borrow();
             let spec = if target > prev {
                 AnimationSpec::m3_elevation_in()
             } else {
                 AnimationSpec::m3_elevation_out()
             };
-            *remember_state_with_key(format!("m3_elev_last:{view_id}"), || target)
-                .borrow_mut() = target;
+            *elev_slot.borrow_mut() = target;
             let elev = animate_f32(format!("m3_elev:{view_id}"), target, spec);
             if elev > 0.5 {
                 let shadow_offset = elev * 0.5;
@@ -1363,7 +1361,6 @@ impl LayoutEngine {
                 let total_h = lines.len() as f32 * line_h_px;
                 let need_v_clip =
                     total_h > content_rect.h + 0.5 && *overflow != TextOverflow::Visible;
-                if lines.len() > 1 && !*soft_wrap { /* single line center handled elsewhere */ }
 
                 let need_clip =
                     *overflow != TextOverflow::Visible && (need_v_clip || content_rect.w > 0.0);

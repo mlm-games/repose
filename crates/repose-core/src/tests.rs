@@ -229,7 +229,7 @@ mod tests {
     }
 
     #[test]
-    fn test_scope_cleanup() {
+    fn test_scope_cleanup_on_drop() {
         let cleaned_up = std::rc::Rc::new(std::cell::RefCell::new(false));
 
         {
@@ -240,10 +240,9 @@ mod tests {
             });
 
             assert!(!*cleaned_up.borrow());
-        } // Scope drops here
+        } // ScopeInner::drop calls disposers
 
-        // Cleanup should not run yet (need explicit dispose)
-        // This test shows we need to explicitly call dispose
+        assert!(*cleaned_up.borrow());
     }
 
     #[test]

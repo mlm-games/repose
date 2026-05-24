@@ -14,7 +14,7 @@ use web_time::Instant;
 
 /// Handles velocity estimation from input deltas, frame-rate-independent
 /// exponential decay, edge snapping, and animation state tracking.
-struct ScrollPhysics {
+pub struct ScrollPhysics {
     vel: f32,
     last_t: Instant,
     last_input_t: Instant,
@@ -25,7 +25,11 @@ struct ScrollPhysics {
 }
 
 impl ScrollPhysics {
-    fn new(decay_per_60hz: f32, stop_velocity: f32, input_activate_velocity: f32) -> Self {
+    pub(crate) fn new(
+        decay_per_60hz: f32,
+        stop_velocity: f32,
+        input_activate_velocity: f32,
+    ) -> Self {
         let now = Instant::now();
         Self {
             vel: 0.0,
@@ -40,7 +44,7 @@ impl ScrollPhysics {
 
     /// Record a scroll input of `consumed` px. Estimates instantaneous velocity
     /// from the time delta since the last input.
-    fn record_input(&mut self, consumed: f32) {
+    pub(crate) fn record_input(&mut self, consumed: f32) {
         let now = Instant::now();
         let dt = (now - self.last_input_t)
             .as_secs_f32()
@@ -51,7 +55,7 @@ impl ScrollPhysics {
     }
 
     /// Return frame dt, capped to avoid physics explosion on lag spikes.
-    fn dt(&mut self) -> f32 {
+    pub(crate) fn dt(&mut self) -> f32 {
         let now = Instant::now();
         let dt = (now - self.last_t).as_secs_f32().min(0.1);
         self.last_t = now;
@@ -60,7 +64,7 @@ impl ScrollPhysics {
 
     /// Tick physics: integrate velocity over dt, apply decay, detect edges.
     /// Returns `Some(new_offset)` if still animating or `None` if stopped.
-    fn tick_integrate(&mut self, current: f32, min: f32, max: f32) -> Option<f32> {
+    pub(crate) fn tick_integrate(&mut self, current: f32, min: f32, max: f32) -> Option<f32> {
         if !self.animating {
             return None;
         }
@@ -98,6 +102,10 @@ impl ScrollPhysics {
         }
 
         Some(new)
+    }
+
+    pub(crate) fn is_animating(&self) -> bool {
+        self.animating
     }
 }
 

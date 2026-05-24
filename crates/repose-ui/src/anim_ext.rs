@@ -8,8 +8,6 @@ use crate::anim::animate_f32;
 pub fn AnimatedVisibility(
     key: impl Into<String>,
     visible: bool,
-    _enter: EnterTransition,
-    _exit: ExitTransition,
     content: View,
 ) -> View {
     let key = key.into();
@@ -32,6 +30,7 @@ pub fn AnimatedVisibility(
     }
 }
 
+#[allow(dead_code)]
 pub enum EnterTransition {
     FadeIn,
     SlideIn,
@@ -39,6 +38,7 @@ pub enum EnterTransition {
     ExpandIn,
 }
 
+#[allow(dead_code)]
 pub enum ExitTransition {
     FadeOut,
     SlideOut,

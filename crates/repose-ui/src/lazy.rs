@@ -1,18 +1,14 @@
+use crate::scroll::ScrollPhysics;
 use repose_core::*;
 use std::cell::RefCell;
 use std::rc::Rc;
-use web_time::Instant;
 
 pub struct LazyColumnState {
     scroll_offset: Signal<f32>,   // px
     viewport_height: Signal<f32>, // px
     content_height: Signal<f32>,  // px, actual measured height from layout
 
-    // physics
-    vel_px_s: RefCell<f32>, // px/sec
-    last_t: RefCell<Instant>,
-    last_input_t: RefCell<Instant>,
-    animating: RefCell<bool>,
+    physics: RefCell<ScrollPhysics>,
 }
 
 impl Default for LazyColumnState {
@@ -23,15 +19,11 @@ impl Default for LazyColumnState {
 
 impl LazyColumnState {
     pub fn new() -> Self {
-        let now = Instant::now();
         Self {
             scroll_offset: signal(0.0),
             viewport_height: signal(600.0),
             content_height: signal(0.0),
-            vel_px_s: RefCell::new(0.0),
-            last_t: RefCell::new(now),
-            last_input_t: RefCell::new(now),
-            animating: RefCell::new(false),
+            physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
         }
     }
 
@@ -51,62 +43,25 @@ impl LazyColumnState {
         self.scroll_offset.set(new_offset);
 
         let consumed = new_offset - before;
-        let leftover = delta_px - consumed;
 
-        // estimate velocity (px/sec) from input cadence
-        let now = Instant::now();
-        let dt = (now - *self.last_input_t.borrow())
-            .as_secs_f32()
-            .clamp(1.0 / 240.0, 1.0 / 15.0);
-        *self.last_input_t.borrow_mut() = now;
+        self.physics.borrow_mut().record_input(consumed);
 
-        *self.vel_px_s.borrow_mut() = consumed / dt;
-        *self.animating.borrow_mut() = self.vel_px_s.borrow().abs() > 10.0;
-
-        leftover
+        delta_px - consumed
     }
 
     /// Advance inertia one tick; returns true if animating.
     pub fn tick(&self, content_height_px: f32) -> bool {
-        if !*self.animating.borrow() {
-            return false;
-        }
-
-        let now = Instant::now();
-        let dt = (now - *self.last_t.borrow()).as_secs_f32().min(0.1);
-        *self.last_t.borrow_mut() = now;
-
-        if dt <= 0.0 {
-            return false;
-        }
-
-        let vel0 = *self.vel_px_s.borrow();
-        if vel0.abs() < 5.0 {
-            *self.vel_px_s.borrow_mut() = 0.0;
-            *self.animating.borrow_mut() = false;
-            return false;
-        }
-
-        let before = self.scroll_offset.get();
         let viewport = self.viewport_height.get();
         let max_offset = (content_height_px - viewport).max(0.0);
 
-        let new_off = (before + vel0 * dt).clamp(0.0, max_offset);
-        self.scroll_offset.set(new_off);
-
-        // Stop quickly at bounds
-        if (new_off - before).abs() < 0.01 && (before <= 0.0 || before >= max_offset) {
-            *self.vel_px_s.borrow_mut() = 0.0;
-            *self.animating.borrow_mut() = false;
-            return false;
+        let mut p = self.physics.borrow_mut();
+        if let Some(new_off) = p.tick_integrate(self.scroll_offset.get(), 0.0, max_offset) {
+            drop(p);
+            self.scroll_offset.set(new_off);
+            true
+        } else {
+            false
         }
-
-        // decay ~0.9 per 60Hz "frame"
-        let decay_per_60hz = 0.90f32;
-        let decay = decay_per_60hz.powf(dt * 60.0);
-        *self.vel_px_s.borrow_mut() = vel0 * decay;
-
-        true
     }
 }
 
