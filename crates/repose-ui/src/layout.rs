@@ -16,6 +16,7 @@ use taffy::style::FlexDirection;
 use taffy::style::Overflow;
 
 use crate::Interactions;
+use crate::anim::animate_color;
 use crate::textfield::{
     TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, byte_to_char_index, measure_text,
 };
@@ -1202,7 +1203,23 @@ impl LayoutEngine {
             });
         }
 
-        if let Some(bg) = modifier.background {
+        if let Some(sc) = &modifier.state_colors {
+            let target = if modifier.disabled {
+                sc.disabled
+            } else if is_pressed {
+                sc.pressed
+            } else if is_hovered {
+                sc.hovered
+            } else {
+                sc.default
+            };
+            let bg = animate_color(format!("m3_sc:{view_id}"), target, repose_core::animation::AnimationSpec::fast());
+            scene.nodes.push(SceneNode::Rect {
+                rect,
+                brush: mul_alpha_brush(Brush::Solid(bg), alpha_accum),
+                radius: round_clip_px,
+            });
+        } else if let Some(bg) = modifier.background {
             scene.nodes.push(SceneNode::Rect {
                 rect,
                 brush: mul_alpha_brush(bg, alpha_accum),
@@ -1251,7 +1268,7 @@ impl LayoutEngine {
                 | ViewKind::ScrollXY { .. }
         );
 
-        let needs_hit = has_pointer || modifier.click || has_dnd || modifier.on_action.is_some();
+        let needs_hit = !modifier.disabled && (has_pointer || modifier.click || has_dnd || modifier.on_action.is_some());
 
         if needs_hit && !kind_handles_hit && !modifier.hit_passthrough {
             hits.push(HitRegion {
@@ -1337,7 +1354,7 @@ impl LayoutEngine {
                         radius: modifier.clip_rounded.map(dp_to_px).unwrap_or(dp_to_px(6.0)),
                     });
                 }
-                if (modifier.click || on_click.is_some()) && !modifier.hit_passthrough {
+                if (modifier.click || on_click.is_some()) && !modifier.hit_passthrough && !modifier.disabled {
                     hits.push(HitRegion {
                         id: view_id,
                         rect,

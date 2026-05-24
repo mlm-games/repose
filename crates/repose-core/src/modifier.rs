@@ -4,6 +4,27 @@ use taffy::{AlignContent, AlignItems, AlignSelf, FlexDirection, FlexWrap, Justif
 
 use crate::{Brush, Color, PointerEvent, Size, Transform, Vec2};
 
+/// State-driven colors for interactive components.
+/// The layout engine selects the appropriate color based on hover/press/disabled state
+/// and animates transitions between them.
+#[derive(Clone, Copy, Debug)]
+pub struct StateColors {
+    pub default: Color,
+    pub hovered: Color,
+    pub pressed: Color,
+    pub disabled: Color,
+}
+
+/// State-driven elevation for interactive components.
+/// The layout engine animates elevation changes on interaction.
+#[derive(Clone, Copy, Debug)]
+pub struct StateElevation {
+    pub default: f32,
+    pub hovered: f32,
+    pub pressed: f32,
+    pub disabled: f32,
+}
+
 macro_rules! merge_opts {
     ($dst:ident, $src:ident; $($f:ident),+ $(,)?) => {
         $( $dst.$f = $src.$f.or($dst.$f); )+
@@ -30,7 +51,7 @@ macro_rules! impl_option_fields {
                     key, size, width, height,
                     padding, padding_values,
                     min_width, min_height, max_width, max_height,
-                    background, border,
+                    background, state_colors, state_elevation, border,
                     flex_grow, flex_shrink, flex_basis, flex_wrap, flex_dir,
                     gap, row_gap, column_gap,
                     align_self, justify_content, align_items_container, align_content,
@@ -49,7 +70,7 @@ macro_rules! impl_option_fields {
                 );
                 merge_flags!(self, other;
                     fill_max, fill_max_w, fill_max_h,
-                    hit_passthrough, input_blocker, repaint_boundary, click,
+                    hit_passthrough, input_blocker, repaint_boundary, click, disabled,
                 );
                 if other.z_index != 0.0 {
                     self.z_index = other.z_index;
@@ -110,6 +131,8 @@ pub struct Modifier {
     pub max_width: Option<f32>,
     pub max_height: Option<f32>,
     pub background: Option<Brush>,
+    pub state_colors: Option<StateColors>,
+    pub state_elevation: Option<StateElevation>,
     pub border: Option<Border>,
     pub flex_grow: Option<f32>,
     pub flex_shrink: Option<f32>,
@@ -134,6 +157,8 @@ pub struct Modifier {
     pub input_blocker: bool,
     pub repaint_boundary: bool,
     pub click: bool,
+    /// When true, the component ignores pointer events and appears disabled.
+    pub disabled: bool,
     pub on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>>,
     pub on_pointer_down: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_move: Option<Rc<dyn Fn(PointerEvent)>>,
@@ -193,6 +218,8 @@ impl std::fmt::Debug for Modifier {
             max_width,
             max_height,
             background,
+            state_colors,
+            state_elevation,
             border,
             flex_grow,
             flex_shrink,
@@ -262,6 +289,7 @@ impl std::fmt::Debug for Modifier {
             input_blocker,
             repaint_boundary,
             click,
+            disabled,
         );
 
         if self.z_index != 0.0 {
@@ -448,6 +476,27 @@ impl Modifier {
     }
     pub fn clickable(mut self) -> Self {
         self.click = true;
+        self
+    }
+    /// Set state-driven background colors for hover, press, disabled states.
+    /// The layout engine automatically selects and animates between these based on interaction.
+    pub fn state_colors(mut self, colors: StateColors) -> Self {
+        self.state_colors = Some(colors);
+        self
+    }
+    /// Set state-driven elevation values for hover, press, disabled states.
+    pub fn state_elevation(mut self, elev: StateElevation) -> Self {
+        self.state_elevation = Some(elev);
+        self
+    }
+    /// Mark this component as disabled — it won't respond to pointer events.
+    pub fn disabled(mut self) -> Self {
+        self.disabled = true;
+        self
+    }
+    /// Mark this component as enabled or disabled.
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.disabled = !enabled;
         self
     }
     pub fn on_scroll(mut self, f: impl Fn(Vec2) -> Vec2 + 'static) -> Self {

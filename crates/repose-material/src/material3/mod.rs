@@ -130,7 +130,12 @@ pub fn Card(modifier: Modifier, elevated: bool, content: View) -> View {
         modifier.border(1.0, th.outline_variant, 12.0)
     };
     Surface(
-        modifier.background(bg).clip_rounded(12.0).padding(16.0),
+        modifier.state_colors(StateColors {
+            default: bg,
+            hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
+            pressed: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
+            disabled: bg,
+        }).clip_rounded(12.0).padding(16.0),
         content,
     )
 }
@@ -211,24 +216,27 @@ pub fn FilterChip(
     label: View,
     leading_icon: Option<View>,
 ) -> View {
-    let bg = if selected {
-        theme().primary
-    } else {
-        theme().surface
-    };
+    let th = theme();
+    let bg = if selected { th.primary } else { th.surface };
     let fg = if selected {
-        theme().on_primary
+        th.on_primary
     } else {
-        theme().on_surface
+        th.on_surface
     };
 
     Surface(
         Modifier::new()
-            .background(bg)
+            .state_colors(StateColors {
+                default: bg,
+                hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
+                pressed: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
+                disabled: th.surface,
+            })
             .border(1.0, Color::from_hex("#444444"), 8.0)
             .clip_rounded(8.0)
             .padding(12.0)
             .clickable()
+
             .on_pointer_down(move |_| on_click()),
         Row(Modifier::new()).child((leading_icon.unwrap_or(Box(Modifier::new())), label)),
     )

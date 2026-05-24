@@ -162,6 +162,11 @@ impl View {
         self.modifier = m;
         self
     }
+    /// Mark this view as disabled — ignores pointer events.
+    pub fn disabled(mut self) -> Self {
+        self.modifier.disabled = true;
+        self
+    }
     pub fn with_children(mut self, kids: Vec<View>) -> Self {
         self.children = kids;
         self
