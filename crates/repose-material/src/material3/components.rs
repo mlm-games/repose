@@ -94,6 +94,7 @@ pub fn FilledIconButton(
 
 /// M3 Filled Button — prominent action button with primary color fill.
 pub fn FilledButton(
+    modifier: Modifier,
     on_click: impl Fn() + 'static,
     content: impl FnOnce() -> View,
 ) -> View {
@@ -126,13 +127,14 @@ pub fn FilledButton(
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
         .clickable()
-
-        .on_pointer_down(move |_| on_click()))
+        .on_pointer_down(move |_| on_click())
+        .then(modifier))
     .child(content)
 }
 
 /// M3 Filled Tonal Button — uses secondary container colors.
 pub fn FilledTonalButton(
+    modifier: Modifier,
     on_click: impl Fn() + 'static,
     content: impl FnOnce() -> View,
 ) -> View {
@@ -165,13 +167,14 @@ pub fn FilledTonalButton(
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
         .clickable()
-
-        .on_pointer_down(move |_| on_click()))
+        .on_pointer_down(move |_| on_click())
+        .then(modifier))
     .child(content)
 }
 
 /// M3 Outlined Button — button with an outline border and no fill.
 pub fn OutlinedButton(
+    modifier: Modifier,
     on_click: impl Fn() + 'static,
     content: impl FnOnce() -> View,
 ) -> View {
@@ -198,13 +201,14 @@ pub fn OutlinedButton(
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
         .clickable()
-
-        .on_pointer_down(move |_| on_click()))
+        .on_pointer_down(move |_| on_click())
+        .then(modifier))
     .child(content)
 }
 
 /// M3 Text Button — a low-emphasis button.
 pub fn TextButton(
+    modifier: Modifier,
     on_click: impl Fn() + 'static,
     content: impl FnOnce() -> View,
 ) -> View {
@@ -230,8 +234,8 @@ pub fn TextButton(
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
         .clickable()
-
-        .on_pointer_down(move |_| on_click()))
+        .on_pointer_down(move |_| on_click())
+        .then(modifier))
     .child(content)
 }
 

@@ -20,6 +20,7 @@ pub fn screen() -> View {
         Column(Modifier::new().padding(12.0)).child((
             Row(Modifier::new().align_items(AlignItems::Center)).child((
                 TextButton(
+                    Modifier::new(),
                     {
                         let m = mode.clone();
                         move || m.set(SpringMode::Gentle)
@@ -28,6 +29,7 @@ pub fn screen() -> View {
                 ),
                 Box(Modifier::new().width(8.0).height(1.0)),
                 TextButton(
+                    Modifier::new(),
                     {
                         let m = mode.clone();
                         move || m.set(SpringMode::Bouncy)
@@ -36,6 +38,7 @@ pub fn screen() -> View {
                 ),
                 Box(Modifier::new().width(8.0).height(1.0)),
                 TextButton(
+                    Modifier::new(),
                     {
                         let m = mode.clone();
                         move || m.set(SpringMode::Crit)
@@ -44,6 +47,7 @@ pub fn screen() -> View {
                 ),
                 Spacer(),
                 TextButton(
+                    Modifier::new(),
                     {
                         let v = visible.clone();
                         move || v.update(|x| *x = !*x)

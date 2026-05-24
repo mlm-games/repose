@@ -85,6 +85,7 @@ pub fn screen() -> View {
                 Box(Modifier::new().height(12.0).width(1.0)),
                 Row(Modifier::new()).child((
                     TextButton(
+                        Modifier::new(),
                         {
                             let p = prog.clone();
                             move || p.update(|x| *x = (*x - 0.05).max(0.0))
@@ -93,6 +94,7 @@ pub fn screen() -> View {
                     ),
                     Box(Modifier::new().width(12.0).height(1.0)),
                     TextButton(
+                        Modifier::new(),
                         {
                             let p = prog.clone();
                             move || p.update(|x| *x = (*x + 0.05).min(1.0))

@@ -203,14 +203,23 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                                 .size(13.0)
                                 .color(theme().on_surface_variant),
                             Box(Modifier::new().height(8.0).width(1.0)),
-                            TextButton(|| {}, || Text("Focus Note"))
-                                .modifier(Modifier::new().fill_max_width()),
+                            TextButton(
+                                Modifier::new().fill_max_width(),
+                                || {},
+                                || Text("Focus Note"),
+                            ),
                             Box(Modifier::new().height(8.0).width(1.0)),
-                            TextButton(|| {}, || Text("Spawn Task"))
-                                .modifier(Modifier::new().fill_max_width()),
+                            TextButton(
+                                Modifier::new().fill_max_width(),
+                                || {},
+                                || Text("Spawn Task"),
+                            ),
                             Box(Modifier::new().height(8.0).width(1.0)),
-                            TextButton(|| {}, || Text("Clear Logs"))
-                                .modifier(Modifier::new().fill_max_width()),
+                            TextButton(
+                                Modifier::new().fill_max_width(),
+                                || {},
+                                || Text("Clear Logs"),
+                            ),
                         ))
                     }),
                 )
@@ -310,15 +319,15 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                 .color(theme().on_surface_variant),
             Box(Modifier::new().height(10.0).width(1.0)),
             Row(Modifier::new().align_items(AlignItems::Center)).child(vec![
-                FilledButton(open_note, || Text("New Note")),
+                FilledButton(Modifier::new(), open_note, || Text("New Note")),
                 Box(Modifier::new().width(10.0).height(1.0)),
-                FilledButton(open_log, || Text("New Log")),
+                FilledButton(Modifier::new(), open_log, || Text("New Log")),
                 Box(Modifier::new().width(10.0).height(1.0)),
-                FilledButton(open_tools, || Text("Tools")),
+                FilledButton(Modifier::new(), open_tools, || Text("Tools")),
                 Box(Modifier::new().width(10.0).height(1.0)),
-                FilledButton(open_palette, || Text("Palette")),
+                FilledButton(Modifier::new(), open_palette, || Text("Palette")),
                 Box(Modifier::new().width(10.0).height(1.0)),
-                FilledButton(open_global, || Text("Global Window")),
+                FilledButton(Modifier::new(), open_global, || Text("Global Window")),
                 Spacer(),
                 Text(format!("{} windows", window_count))
                     .size(12.0)
