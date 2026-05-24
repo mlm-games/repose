@@ -129,6 +129,7 @@ enum NodeContext {
         soft_wrap: bool,
         max_lines: Option<usize>,
         overflow: TextOverflow,
+        font_family: Option<&'static str>,
     },
     Button {
         label: String,
@@ -678,6 +679,7 @@ impl LayoutEngine {
                 soft_wrap,
                 max_lines,
                 overflow,
+                font_family,
                 ..
             } => NodeContext::Text {
                 text: text.clone(),
@@ -686,6 +688,7 @@ impl LayoutEngine {
                 soft_wrap: *soft_wrap,
                 max_lines: *max_lines,
                 overflow: *overflow,
+                font_family: *font_family,
             },
             ViewKind::Button { .. } => NodeContext::Button {
                 label: String::new(),
@@ -724,10 +727,11 @@ impl LayoutEngine {
                 soft_wrap,
                 max_lines,
                 overflow,
+                font_family,
             }) => {
                 let size_px_val = font_px(*font_dp);
                 let line_h_px_val = size_px_val * 1.3;
-                let max_content_w = measure_text(text, size_px_val)
+                let max_content_w = measure_text(text, size_px_val, *font_family)
                     .positions
                     .last()
                     .copied()
@@ -736,7 +740,7 @@ impl LayoutEngine {
 
                 let mut min_content_w = 0.0f32;
                 for w in text.split_whitespace() {
-                    let ww = measure_text(w, size_px_val)
+                    let ww = measure_text(w, size_px_val, *font_family)
                         .positions
                         .last()
                         .copied()
@@ -771,7 +775,7 @@ impl LayoutEngine {
                 let max_line_w = lines
                     .iter()
                     .map(|line| {
-                        measure_text(line, size_px_val)
+                        measure_text(line, size_px_val, *font_family)
                             .positions
                             .last()
                             .copied()
@@ -1346,6 +1350,7 @@ impl LayoutEngine {
                 font_size,
                 soft_wrap,
                 overflow,
+                font_family,
                 ..
             } => {
                 let tl = self.text_cache.get(&node_id);
@@ -1379,6 +1384,7 @@ impl LayoutEngine {
                         text: Arc::<str>::from(ln.clone()),
                         color: mul_alpha_color(*color, alpha_accum),
                         size: size_px,
+                        font_family: *font_family,
                     });
                 }
                 if need_clip {
@@ -1531,7 +1537,7 @@ impl LayoutEngine {
                     let font_val = font_px(TF_FONT_DP);
 
                     if !*multiline {
-                        let m = measure_text(&st.text, font_val);
+                        let m = measure_text(&st.text, font_val, None);
 
                         if st.selection.start != st.selection.end {
                             let sx = m
@@ -1582,6 +1588,7 @@ impl LayoutEngine {
                             }),
                             color: txt_col,
                             size: font_val,
+                            font_family: None,
                         });
 
                         if is_focused
@@ -1636,6 +1643,7 @@ impl LayoutEngine {
                                 text: Arc::from(hint.clone()),
                                 color: th.on_surface_variant,
                                 size: font_val,
+                                font_family: None,
                             });
                         } else {
                             for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
@@ -1656,6 +1664,7 @@ impl LayoutEngine {
                                     text: Arc::<str>::from(ln.to_string()),
                                     color: locals::theme().on_surface,
                                     size: font_val,
+                                    font_family: None,
                                 });
                             }
                         }
@@ -1674,7 +1683,7 @@ impl LayoutEngine {
                                     continue;
                                 }
                                 let ln = &st.text[s..e];
-                                let m = measure_text(ln, font_val);
+                                let m = measure_text(ln, font_val, None);
 
                                 let ls = os - s;
                                 let le = oe - s;
@@ -1737,6 +1746,7 @@ impl LayoutEngine {
                         text: Arc::from(hint.clone()),
                         color: th.on_surface_variant,
                         size: font_px(TF_FONT_DP),
+                        font_family: None,
                     });
                 }
 
@@ -1790,6 +1800,7 @@ impl LayoutEngine {
                         text: Arc::from("✓"),
                         color: th.on_primary,
                         size: font_px(16.0),
+                        font_family: None,
                     });
                 }
                 let toggled = !*checked;

@@ -188,6 +188,7 @@ pub fn Text(text: impl Into<String>) -> View {
             soft_wrap: true,
             max_lines: None,
             overflow: TextOverflow::Visible,
+            font_family: None,
         },
     )
 }
@@ -485,6 +486,7 @@ pub trait TextStyle {
     fn overflow_ellipsize(self) -> View;
     fn overflow_clip(self) -> View;
     fn overflow_visible(self) -> View;
+    fn font_family(self, family: &'static str) -> View;
 }
 impl TextStyle for View {
     fn color(mut self, c: Color) -> View {
@@ -545,6 +547,15 @@ impl TextStyle for View {
     fn overflow_visible(mut self) -> View {
         if let ViewKind::Text { overflow, .. } = &mut self.kind {
             *overflow = TextOverflow::Visible;
+        }
+        self
+    }
+    fn font_family(mut self, family: &'static str) -> View {
+        if let ViewKind::Text {
+            font_family: ff, ..
+        } = &mut self.kind
+        {
+            *ff = Some(family);
         }
         self
     }

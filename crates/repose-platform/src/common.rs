@@ -158,7 +158,7 @@ pub(crate) fn tf_ensure_caret_visible(state: &mut TextFieldState, is_multiline: 
         let ih = state.inner_height;
         state.ensure_caret_visible_xy(cx, cy, iw, ih, dp_to_px(2.0));
     } else {
-        let m = measure_text(&state.text, font_px);
+        let m = measure_text(&state.text, font_px, None);
         let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
         state.ensure_caret_visible(caret_x_px, wrap_width, dp_to_px(2.0));
     }
@@ -206,7 +206,7 @@ pub(crate) fn tf_place_caret_at_pointer(
         let ih = state.inner_height;
         state.ensure_caret_visible_xy(cx, cy, iw, ih, 2.0 * scale);
     } else {
-        let m = measure_text(&state.text, font_px);
+        let m = measure_text(&state.text, font_px, None);
         let cx = m.positions.get(caret_idx).copied().unwrap_or(0.0);
         state.ensure_caret_visible(cx, wrap_w, 2.0 * scale);
     }

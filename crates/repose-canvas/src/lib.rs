@@ -173,6 +173,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                         text: Arc::<str>::from(text.clone()),
                         color: *color,
                         size: *size,
+                        font_family: None,
                     });
                 }
             }

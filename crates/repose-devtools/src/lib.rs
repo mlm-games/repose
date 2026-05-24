@@ -117,6 +117,7 @@ impl Hud {
                 text: Arc::<str>::from(line),
                 color: Color::from_hex("#AAAAAA"),
                 size: 12.0,
+                font_family: None,
             });
             text_y += 16.0;
 
@@ -126,6 +127,7 @@ impl Hud {
                 text: Arc::<str>::from(line),
                 color: Color::from_hex("#888888"),
                 size: 11.0,
+                font_family: None,
             });
             text_y += 14.0;
 
@@ -135,6 +137,7 @@ impl Hud {
                 text: Arc::<str>::from(line),
                 color: Color::from_hex("#888888"),
                 size: 11.0,
+                font_family: None,
             });
             text_y += 14.0;
 
@@ -144,6 +147,7 @@ impl Hud {
                 text: Arc::<str>::from(line),
                 color: Color::from_hex("#888888"),
                 size: 11.0,
+                font_family: None,
             });
             text_y += 14.0;
 
@@ -153,6 +157,7 @@ impl Hud {
                 text: Arc::<str>::from(line),
                 color: Color::from_hex("#888888"),
                 size: 11.0,
+                font_family: None,
             });
             text_y += 14.0;
 
@@ -162,6 +167,7 @@ impl Hud {
                 text: Arc::<str>::from(line),
                 color: Color::from_hex("#888888"),
                 size: 11.0,
+                font_family: None,
             });
             text_y += 14.0;
 
@@ -171,6 +177,7 @@ impl Hud {
                 text: Arc::<str>::from(line),
                 color: Color::from_hex("#888888"),
                 size: 11.0,
+                font_family: None,
             });
 
             if let Some(hover) = &self.hovered_semantics {
@@ -181,6 +188,7 @@ impl Hud {
                     text: Arc::<str>::from(line),
                     color: Color::from_hex("#44AAFF"),
                     size: 11.0,
+                    font_family: None,
                 });
                 if let Some(lbl) = &hover.label {
                     text_y += 14.0;
@@ -189,6 +197,7 @@ impl Hud {
                         text: Arc::<str>::from(format!("  \"{}\"", lbl)),
                         color: Color::from_hex("#66CCFF"),
                         size: 10.0,
+                        font_family: None,
                     });
                 }
             }

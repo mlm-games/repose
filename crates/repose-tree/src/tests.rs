@@ -15,6 +15,7 @@ mod tests {
                 soft_wrap: true,
                 max_lines: None,
                 overflow: TextOverflow::Visible,
+                font_family: None,
             },
         )
     }

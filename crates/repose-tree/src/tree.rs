@@ -507,6 +507,7 @@ mod tests {
                 soft_wrap: true,
                 max_lines: None,
                 overflow: repose_core::TextOverflow::Visible,
+                font_family: None,
             },
         )
     }

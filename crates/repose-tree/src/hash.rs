@@ -47,7 +47,9 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             soft_wrap,
             max_lines,
             overflow,
+            font_family,
         } => {
+            font_family.hash(hasher);
             text.hash(hasher);
             hash_color(color, hasher);
             ((font_size * 100.0) as u32).hash(hasher);
@@ -321,6 +323,7 @@ mod tests {
                 soft_wrap: true,
                 max_lines: None,
                 overflow: TextOverflow::Visible,
+                font_family: None,
             },
         );
         let v2 = View::new(
@@ -332,6 +335,7 @@ mod tests {
                 soft_wrap: true,
                 max_lines: None,
                 overflow: TextOverflow::Visible,
+                font_family: None,
             },
         );
         let v3 = View::new(
@@ -343,6 +347,7 @@ mod tests {
                 soft_wrap: true,
                 max_lines: None,
                 overflow: TextOverflow::Visible,
+                font_family: None,
             },
         );
 

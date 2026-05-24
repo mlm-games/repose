@@ -2317,11 +2317,12 @@ impl RenderBackend for WgpuBackend {
                     text,
                     color,
                     size,
+                    font_family,
                 } => {
                     flush_batch!(); // flush any prior primitives
 
                     let px = (*size).clamp(8.0, 96.0);
-                    let shaped = repose_text::shape_line(text.as_ref(), px);
+                    let shaped = repose_text::shape_line(text.as_ref(), px, *font_family);
                     let transformed_rect = current_transform.apply_to_rect(*rect);
 
                     for sg in shaped {

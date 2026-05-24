@@ -58,8 +58,9 @@ pub struct TextMetrics {
 
 /// Measure caret positions for a single-line textfield using shaping.
 /// `font_px` must match the px size used for rendering the text.
-pub fn measure_text(text: &str, font_px: f32) -> TextMetrics {
-    let m = repose_text::metrics_for_textfield(text, font_px);
+/// `font_family` optionally overrides the default font (e.g. for icons).
+pub fn measure_text(text: &str, font_px: f32, font_family: Option<&'static str>) -> TextMetrics {
+    let m = repose_text::metrics_for_textfield(text, font_px, font_family);
     TextMetrics {
         positions: m.positions,
         byte_offsets: m.byte_offsets,
@@ -74,7 +75,7 @@ pub fn byte_to_char_index(m: &TextMetrics, byte: usize) -> usize {
 
 /// Given an x position (px), return the nearest grapheme boundary byte index.
 pub fn index_for_x_bytes(text: &str, font_px: f32, x_px: f32) -> usize {
-    let m = measure_text(text, font_px);
+    let m = measure_text(text, font_px, None);
 
     let mut best_i = 0usize;
     let mut best_d = f32::INFINITY;
@@ -523,7 +524,7 @@ pub fn caret_xy_for_byte(
     let (li, local, _) = locate_byte_in_ranges(ranges, byte);
     let (s, e) = ranges.get(li).copied().unwrap_or((0, 0));
     let line = &text[s..e];
-    let m = measure_text(line, font_px);
+    let m = measure_text(line, font_px, None);
     let ci = byte_to_char_index(&m, local);
     let x = m.positions.get(ci).copied().unwrap_or(0.0);
     let y = (li as f32) * line_h;
@@ -613,7 +614,7 @@ mod tests {
     fn test_index_for_x_bytes_grapheme() {
         let t = "A👍🏽B";
         let font_px = 16.0; // in tests, exact px isn't important—boundaries are.
-        let m = measure_text(t, font_px);
+        let m = measure_text(t, font_px, None);
         for i in 0..m.byte_offsets.len() - 1 {
             let b = m.byte_offsets[i];
             let _ = &t[..b];

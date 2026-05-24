@@ -52,6 +52,7 @@ pub enum ViewKind {
         soft_wrap: bool,
         max_lines: Option<usize>,
         overflow: TextOverflow,
+        font_family: Option<&'static str>,
     },
     Button {
         on_click: Option<Callback>,
@@ -202,6 +203,7 @@ pub enum SceneNode {
         text: Arc<str>,
         color: Color,
         size: f32,
+        font_family: Option<&'static str>,
     },
     Ellipse {
         rect: Rect,

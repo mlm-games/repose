@@ -1,6 +1,6 @@
 use ahash::{AHashMap, AHasher};
 use cosmic_text::{
-    Attrs, Buffer, CacheKey, FontSystem, Metrics, Shaping, SwashCache, SwashContent,
+    Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, SwashCache, SwashContent,
 };
 use once_cell::sync::OnceCell;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -26,8 +26,8 @@ pub fn current_frame() -> u64 {
 const WRAP_CACHE_CAP: usize = 1024;
 const ELLIP_CACHE_CAP: usize = 2048;
 
-static METRICS_LRU: OnceCell<Mutex<Lru<(u64, u32), TextMetrics>>> = OnceCell::new();
-fn metrics_cache() -> &'static Mutex<Lru<(u64, u32), TextMetrics>> {
+static METRICS_LRU: OnceCell<Mutex<Lru<(u64, u32, u64), TextMetrics>>> = OnceCell::new();
+fn metrics_cache() -> &'static Mutex<Lru<(u64, u32, u64), TextMetrics>> {
     METRICS_LRU.get_or_init(|| Mutex::new(Lru::new(4096)))
 }
 
@@ -189,7 +189,8 @@ fn key_from_cachekey(k: &CacheKey) -> GlyphKey {
 }
 
 // Shape a single-line string (no wrapping). Returns positioned glyphs relative to baseline y=0.
-pub fn shape_line(text: &str, px: f32) -> Vec<ShapedGlyph> {
+// `font_family` optionally overrides the default font (e.g. "Material Symbols Outlined").
+pub fn shape_line(text: &str, px: f32, font_family: Option<&str>) -> Vec<ShapedGlyph> {
     let mut eng = engine().lock().unwrap();
 
     // Construct a temporary buffer each call; FontSystem and caches are retained globally
@@ -198,7 +199,11 @@ pub fn shape_line(text: &str, px: f32) -> Vec<ShapedGlyph> {
         // Borrow with FS for ergonomic setters (no FS arg)
         let mut b = buf.borrow_with(&mut eng.fs);
         b.set_size(None, None);
-        b.set_text(text, &Attrs::new(), Shaping::Advanced, None);
+        let attrs = match font_family {
+            Some(family) => Attrs::new().family(Family::Name(family)),
+            None => Attrs::new(),
+        };
+        b.set_text(text, &attrs, Shaping::Advanced, None);
         b.shape_until_scroll(true);
     }
 
@@ -262,8 +267,10 @@ pub struct TextMetrics {
 }
 
 /// Computes caret mapping using shaping (no wrapping).
-pub fn metrics_for_textfield(text: &str, px: f32) -> TextMetrics {
-    let key = (fast_hash(text), (px * 100.0) as u32);
+/// `font_family` optionally overrides the default font (e.g. "Material Symbols Outlined").
+pub fn metrics_for_textfield(text: &str, px: f32, font_family: Option<&str>) -> TextMetrics {
+    let family_hash = font_family.map(fast_hash).unwrap_or(0);
+    let key = (fast_hash(text), (px * 100.0) as u32, family_hash);
     if let Some(m) = metrics_cache().lock().unwrap().get(&key).cloned() {
         return m;
     }
@@ -272,7 +279,11 @@ pub fn metrics_for_textfield(text: &str, px: f32) -> TextMetrics {
     {
         let mut b = buf.borrow_with(&mut eng.fs);
         b.set_size(None, None);
-        b.set_text(text, &Attrs::new(), Shaping::Advanced, None);
+        let attrs = match font_family {
+            Some(family) => Attrs::new().family(Family::Name(family)),
+            None => Attrs::new(),
+        };
+        b.set_text(text, &attrs, Shaping::Advanced, None);
         b.shape_until_scroll(true);
     }
     let mut edges: Vec<(usize, f32)> = Vec::new();
@@ -366,7 +377,7 @@ pub fn wrap_lines(
     }
 
     // Shape once and reuse positions/byte mapping.
-    let m = metrics_for_textfield(text, px);
+    let m = metrics_for_textfield(text, px, None);
     // Fast path: fits
     if let Some(&last) = m.positions.last()
         && last <= max_width + 0.5
@@ -517,7 +528,7 @@ pub fn wrap_line_ranges(
     }
 
     // Shape once for width queries (whole string)
-    let m = metrics_for_textfield(text, px);
+    let m = metrics_for_textfield(text, px, None);
 
     // Helper: width of substring [start..end] in bytes using m
     let width_of = |start_b: usize, end_b: usize| -> f32 {
@@ -676,7 +687,7 @@ pub fn ellipsize_line(text: &str, px: f32, max_width: f32) -> String {
     if let Some(s) = ellip_cache().lock().unwrap().get(&key).cloned() {
         return s;
     }
-    let m = metrics_for_textfield(text, px);
+    let m = metrics_for_textfield(text, px, None);
     if let Some(&last) = m.positions.last()
         && last <= max_width + 0.5
     {
@@ -719,7 +730,7 @@ fn ellipsis_width(px: f32) -> f32 {
     if let Some(w) = cache.lock().unwrap().get(&key).copied() {
         return w;
     }
-    let w = if let Some(g) = crate::shape_line("…", px).last() {
+    let w = if let Some(g) = crate::shape_line("…", px, None).last() {
         g.x + g.advance
     } else {
         0.0

@@ -3,7 +3,7 @@ mod symbol;
 pub use symbol::Symbol;
 
 use repose_core::View;
-use repose_ui::Text;
+use repose_ui::{Text, TextStyle};
 
 /// Register a font blob into the global FontSystem.
 pub fn install_material_symbols_font(bytes: &'static [u8]) {
@@ -26,5 +26,5 @@ macro_rules! material_symbols {
 
 /// A Material Symbol icon.
 pub fn Icon(symbol: Symbol) -> View {
-    Text(symbol.codepoint.to_string())
+    Text(symbol.codepoint.to_string()).font_family("Material Symbols Outlined")
 }
