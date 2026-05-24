@@ -338,10 +338,12 @@ impl App {
             let style = el.style();
             let _ = style.set_property("width", "100%");
             let _ = style.set_property("height", "100%");
+            let _ = style.set_property("overflow", "hidden");
         }
         if let Some(body) = doc.body() {
             let style = body.style();
             let _ = style.set_property("margin", "0");
+            let _ = style.set_property("padding", "0");
             let _ = style.set_property("width", "100%");
             let _ = style.set_property("height", "100%");
             let _ = style.set_property("overflow", "hidden");
