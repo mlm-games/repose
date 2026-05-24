@@ -70,20 +70,17 @@ pub fn signal_changed(sig: SignalId) {
                 continue;
             }
             g.running.insert(obs);
-            // clear previous deps before recompute
             g.remove_all_edges_for(obs);
+            let f = g.observers.get(&obs).cloned();
             drop(g);
-            // run under tracking
-            CURRENT_OBSERVER.with(|co| {
-                let prev = *co.borrow();
-                *co.borrow_mut() = Some(obs);
-                GRAPH.with(|g2| {
-                    if let Some(f) = g2.borrow().observers.get(&obs).cloned() {
-                        f();
-                    }
+            if let Some(f) = f {
+                CURRENT_OBSERVER.with(|co| {
+                    let prev = *co.borrow();
+                    *co.borrow_mut() = Some(obs);
+                    f();
+                    *co.borrow_mut() = prev;
                 });
-                *co.borrow_mut() = prev;
-            });
+            }
             g = gcell.borrow_mut();
             g.running.remove(&obs);
         }
@@ -109,19 +106,17 @@ pub fn remove_observer(id: ObserverId) {
 }
 
 pub fn run_observer_now(id: ObserverId) {
-    GRAPH.with(|gcell| {
+    let f = GRAPH.with(|gcell| {
         let mut g = gcell.borrow_mut();
         g.remove_all_edges_for(id);
-        drop(g);
+        g.observers.get(&id).cloned()
+    });
+    if let Some(f) = f {
         CURRENT_OBSERVER.with(|co| {
             let prev = *co.borrow();
             *co.borrow_mut() = Some(id);
-            GRAPH.with(|g2| {
-                if let Some(f) = g2.borrow().observers.get(&id).cloned() {
-                    f();
-                }
-            });
+            f();
             *co.borrow_mut() = prev;
         });
-    });
+    }
 }

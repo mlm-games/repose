@@ -12,17 +12,101 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use web_time::Instant;
 
+/// Handles velocity estimation from input deltas, frame-rate-independent
+/// exponential decay, edge snapping, and animation state tracking.
+struct ScrollPhysics {
+    vel: f32,
+    last_t: Instant,
+    last_input_t: Instant,
+    animating: bool,
+    decay_per_60hz: f32,
+    stop_velocity: f32,
+    input_activate_velocity: f32,
+}
+
+impl ScrollPhysics {
+    fn new(decay_per_60hz: f32, stop_velocity: f32, input_activate_velocity: f32) -> Self {
+        let now = Instant::now();
+        Self {
+            vel: 0.0,
+            last_t: now,
+            last_input_t: now,
+            animating: false,
+            decay_per_60hz,
+            stop_velocity,
+            input_activate_velocity,
+        }
+    }
+
+    /// Record a scroll input of `consumed` px. Estimates instantaneous velocity
+    /// from the time delta since the last input.
+    fn record_input(&mut self, consumed: f32) {
+        let now = Instant::now();
+        let dt = (now - self.last_input_t)
+            .as_secs_f32()
+            .clamp(1.0 / 240.0, 1.0 / 15.0);
+        self.last_input_t = now;
+        self.vel = consumed / dt;
+        self.animating = self.vel.abs() > self.input_activate_velocity;
+    }
+
+    /// Return frame dt, capped to avoid physics explosion on lag spikes.
+    fn dt(&mut self) -> f32 {
+        let now = Instant::now();
+        let dt = (now - self.last_t).as_secs_f32().min(0.1);
+        self.last_t = now;
+        dt
+    }
+
+    /// Tick physics: integrate velocity over dt, apply decay, detect edges.
+    /// Returns `Some(new_offset)` if still animating or `None` if stopped.
+    fn tick_integrate(&mut self, current: f32, min: f32, max: f32) -> Option<f32> {
+        if !self.animating {
+            return None;
+        }
+
+        let dt = self.dt();
+        if dt <= 0.0 {
+            return None;
+        }
+
+        let vel0 = self.vel;
+        if vel0.abs() < self.stop_velocity {
+            self.vel = 0.0;
+            self.animating = false;
+            return None;
+        }
+
+        let new = (current + vel0 * dt).clamp(min, max);
+
+        // Hit an edge: stop immediately.
+        if (new - current).abs() < 0.01 && (current <= min || current >= max) {
+            self.vel = 0.0;
+            self.animating = false;
+            return None;
+        }
+
+        // Frame-rate-independent exponential decay.
+        let decay = self.decay_per_60hz.powf(dt * 60.0);
+        self.vel = vel0 * decay;
+
+        // Re-check stop threshold after decay (avoids sub-threshold oscillation).
+        if self.vel.abs() < self.stop_velocity {
+            self.vel = 0.0;
+            self.animating = false;
+            return None;
+        }
+
+        Some(new)
+    }
+}
+
 /// Inertial scroll state (single axis Y).
 pub struct ScrollState {
     scroll_offset: Signal<f32>,
     viewport_height: Signal<f32>,
     content_height: Signal<f32>,
-
-    // physics (px/sec)
-    vel: RefCell<f32>,
-    last_t: RefCell<Instant>,
-    last_input_t: RefCell<Instant>,
-    animating: RefCell<bool>,
+    physics: RefCell<ScrollPhysics>,
 }
 
 impl Default for ScrollState {
@@ -33,15 +117,11 @@ impl Default for ScrollState {
 
 impl ScrollState {
     pub fn new() -> Self {
-        let now = Instant::now();
         Self {
             scroll_offset: signal(0.0),
             viewport_height: signal(0.0),
             content_height: signal(0.0),
-            vel: RefCell::new(0.0),
-            last_t: RefCell::new(now),
-            last_input_t: RefCell::new(now),
-            animating: RefCell::new(false),
+            physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
         }
     }
 
@@ -89,65 +169,27 @@ impl ScrollState {
         self.scroll_offset.set(new_off);
 
         let consumed = new_off - before;
-        let leftover = dy - consumed;
 
-        // Estimate input velocity (px/sec) based on time since last input.
-        let now = Instant::now();
-        let dt = (now - *self.last_input_t.borrow())
-            .as_secs_f32()
-            .clamp(1.0 / 240.0, 1.0 / 15.0);
-        *self.last_input_t.borrow_mut() = now;
+        self.physics.borrow_mut().record_input(consumed);
 
-        *self.vel.borrow_mut() = consumed / dt;
-        *self.animating.borrow_mut() = self.vel.borrow().abs() > 10.0;
-
-        leftover
+        dy - consumed // leftover
     }
 
     /// Advance physics one tick; returns true if animating.
     pub fn tick(&self) -> bool {
-        if !*self.animating.borrow() {
-            return false;
-        }
-
-        let now = Instant::now();
-        let dt = (now - *self.last_t.borrow()).as_secs_f32().min(0.1);
-        *self.last_t.borrow_mut() = now;
-        if dt <= 0.0 {
-            return false;
-        }
-
-        let vel0 = *self.vel.borrow();
-        if vel0.abs() < 5.0 {
-            *self.vel.borrow_mut() = 0.0;
-            *self.animating.borrow_mut() = false;
-            return false;
-        }
-
-        let before = self.scroll_offset.get();
         let vh = self.viewport_height.get();
         let ch = self.content_height.get();
         let max_off = (ch - vh).max(0.0);
 
-        // Integrate
-        let new_off = (before + vel0 * dt).clamp(0.0, max_off);
-        self.scroll_offset.set(new_off);
-
-        // If we hit an edge, stop quickly.
-        if (new_off - before).abs() < 0.01 && (before <= 0.0 || before >= max_off) {
-            *self.vel.borrow_mut() = 0.0;
-            *self.animating.borrow_mut() = false;
-            return false;
+        let mut p = self.physics.borrow_mut();
+        if let Some(new_off) = p.tick_integrate(self.scroll_offset.get(), 0.0, max_off) {
+            drop(p);
+            self.scroll_offset.set(new_off);
+            request_frame();
+            true
+        } else {
+            false
         }
-
-        // Frame-rate independent decay; matches ~0.9 per 60Hz “frame”.
-        let decay_per_60hz = 0.90f32;
-        let decay = decay_per_60hz.powf(dt * 60.0);
-        *self.vel.borrow_mut() = vel0 * decay;
-
-        request_frame();
-
-        true
     }
 }
 
@@ -156,11 +198,9 @@ pub struct HorizontalScrollState {
     scroll_offset: Signal<f32>,
     viewport_width: Signal<f32>,
     content_width: Signal<f32>,
-    vel: RefCell<f32>, // px/sec
-    last_t: RefCell<Instant>,
-    last_input_t: RefCell<Instant>,
-    animating: RefCell<bool>,
+    physics: RefCell<ScrollPhysics>,
 }
+
 impl Default for HorizontalScrollState {
     fn default() -> Self {
         Self::new()
@@ -169,15 +209,11 @@ impl Default for HorizontalScrollState {
 
 impl HorizontalScrollState {
     pub fn new() -> Self {
-        let now = Instant::now();
         Self {
             scroll_offset: signal(0.0),
             viewport_width: signal(0.0),
             content_width: signal(0.0),
-            vel: RefCell::new(0.0),
-            last_t: RefCell::new(now),
-            last_input_t: RefCell::new(now),
-            animating: RefCell::new(false),
+            physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
         }
     }
     pub fn set_viewport_width(&self, w: f32) {
@@ -208,56 +244,23 @@ impl HorizontalScrollState {
         self.scroll_offset.set(new_off);
 
         let consumed = new_off - before;
-        let leftover = dx - consumed;
 
-        let now = Instant::now();
-        let dt = (now - *self.last_input_t.borrow())
-            .as_secs_f32()
-            .clamp(1.0 / 240.0, 1.0 / 15.0);
-        *self.last_input_t.borrow_mut() = now;
+        self.physics.borrow_mut().record_input(consumed);
 
-        *self.vel.borrow_mut() = consumed / dt;
-        *self.animating.borrow_mut() = self.vel.borrow().abs() > 10.0;
-
-        leftover
+        dx - consumed
     }
     pub fn tick(&self) -> bool {
-        if !*self.animating.borrow() {
-            return false;
-        }
-
-        let now = Instant::now();
-        let dt = (now - *self.last_t.borrow()).as_secs_f32().min(0.1);
-        *self.last_t.borrow_mut() = now;
-        if dt <= 0.0 {
-            return false;
-        }
-
-        let vel0 = *self.vel.borrow();
-        if vel0.abs() < 5.0 {
-            *self.animating.borrow_mut() = false;
-            *self.vel.borrow_mut() = 0.0;
-            return false;
-        }
-
-        let before = self.scroll_offset.get();
         let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
-        let new_off = (before + vel0 * dt).clamp(0.0, max_off);
-        self.scroll_offset.set(new_off);
 
-        if (new_off - before).abs() < 0.01 && (before <= 0.0 || before >= max_off) {
-            *self.vel.borrow_mut() = 0.0;
-            *self.animating.borrow_mut() = false;
-            return false;
+        let mut p = self.physics.borrow_mut();
+        if let Some(new_off) = p.tick_integrate(self.scroll_offset.get(), 0.0, max_off) {
+            drop(p);
+            self.scroll_offset.set(new_off);
+            request_frame();
+            true
+        } else {
+            false
         }
-
-        let decay_per_60hz = 0.90f32;
-        let decay = decay_per_60hz.powf(dt * 60.0);
-        *self.vel.borrow_mut() = vel0 * decay;
-
-        request_frame();
-
-        true
     }
 }
 
@@ -269,11 +272,8 @@ pub struct ScrollStateXY {
     vp_h: Signal<f32>,
     c_w: Signal<f32>,
     c_h: Signal<f32>,
-    vel_x: RefCell<f32>, // px/sec
-    vel_y: RefCell<f32>, // px/sec
-    last_t: RefCell<Instant>,
-    last_input_t: RefCell<Instant>,
-    animating: RefCell<bool>,
+    physics_x: RefCell<ScrollPhysics>,
+    physics_y: RefCell<ScrollPhysics>,
 }
 impl Default for ScrollStateXY {
     fn default() -> Self {
@@ -283,7 +283,6 @@ impl Default for ScrollStateXY {
 
 impl ScrollStateXY {
     pub fn new() -> Self {
-        let now = Instant::now();
         Self {
             off_x: signal(0.0),
             off_y: signal(0.0),
@@ -291,11 +290,8 @@ impl ScrollStateXY {
             vp_h: signal(0.0),
             c_w: signal(0.0),
             c_h: signal(0.0),
-            vel_x: RefCell::new(0.0),
-            vel_y: RefCell::new(0.0),
-            last_t: RefCell::new(now),
-            last_input_t: RefCell::new(now),
-            animating: RefCell::new(false),
+            physics_x: RefCell::new(ScrollPhysics::new(0.95, 5.0, 10.0)),
+            physics_y: RefCell::new(ScrollPhysics::new(0.95, 5.0, 10.0)),
         }
     }
     pub fn set_viewport(&self, w: f32, h: f32) {
@@ -339,74 +335,83 @@ impl ScrollStateXY {
         let consumed_x = nx - bx;
         let consumed_y = ny - by;
 
-        let now = Instant::now();
-        let dt = (now - *self.last_input_t.borrow())
-            .as_secs_f32()
-            .clamp(1.0 / 240.0, 1.0 / 15.0);
-        *self.last_input_t.borrow_mut() = now;
-
-        *self.vel_x.borrow_mut() = consumed_x / dt;
-        *self.vel_y.borrow_mut() = consumed_y / dt;
-        *self.animating.borrow_mut() =
-            self.vel_x.borrow().abs() > 10.0 || self.vel_y.borrow().abs() > 10.0;
+        let mut px = self.physics_x.borrow_mut();
+        let mut py = self.physics_y.borrow_mut();
+        px.record_input(consumed_x);
+        py.record_input(consumed_y);
+        drop((px, py));
 
         Vec2 {
             x: d.x - consumed_x,
             y: d.y - consumed_y,
         }
     }
+    /// Advance physics for both axes using a shared dt.
+    /// Returns true if either axis is still animating.
     pub fn tick(&self) -> bool {
-        if !*self.animating.borrow() {
-            return false;
-        }
-
-        let now = Instant::now();
-        let dt = (now - *self.last_t.borrow()).as_secs_f32().min(0.1);
-        *self.last_t.borrow_mut() = now;
-        if dt <= 0.0 {
-            return false;
-        }
-
-        let vx0 = *self.vel_x.borrow();
-        let vy0 = *self.vel_y.borrow();
-        if vx0.abs() < 5.0 && vy0.abs() < 5.0 {
-            *self.animating.borrow_mut() = false;
-            *self.vel_x.borrow_mut() = 0.0;
-            *self.vel_y.borrow_mut() = 0.0;
-            return false;
-        }
-
-        let (bx, by) = (self.off_x.get(), self.off_y.get());
         let max_x = (self.c_w.get() - self.vp_w.get()).max(0.0);
         let max_y = (self.c_h.get() - self.vp_h.get()).max(0.0);
 
-        let nx = (bx + vx0 * dt).clamp(0.0, max_x);
-        let ny = (by + vy0 * dt).clamp(0.0, max_y);
+        let (bx, by) = (self.off_x.get(), self.off_y.get());
 
-        self.off_x.set(nx);
-        self.off_y.set(ny);
+        let mut px = self.physics_x.borrow_mut();
+        let mut py = self.physics_y.borrow_mut();
 
-        // stop quickly at edges
-        if (nx - bx).abs() < 0.01 && (bx <= 0.0 || bx >= max_x) {
-            *self.vel_x.borrow_mut() = 0.0;
-        }
-        if (ny - by).abs() < 0.01 && (by <= 0.0 || by >= max_y) {
-            *self.vel_y.borrow_mut() = 0.0;
+        if !px.animating && !py.animating {
+            return false;
         }
 
-        let decay_per_60hz = 0.95f32;
-        let decay = decay_per_60hz.powf(dt * 60.0);
-        *self.vel_x.borrow_mut() *= decay;
-        *self.vel_y.borrow_mut() *= decay;
+        let dt = px.dt().max(py.dt());
 
-        *self.animating.borrow_mut() =
-            self.vel_x.borrow().abs() > 5.0 || self.vel_y.borrow().abs() > 5.0;
+        // Integrate X
+        if px.animating {
+            if px.vel.abs() < 5.0 {
+                px.vel = 0.0;
+                px.animating = false;
+            } else {
+                let nx = (bx + px.vel * dt).clamp(0.0, max_x);
+                if (nx - bx).abs() < 0.01 && (bx <= 0.0 || bx >= max_x) {
+                    px.vel = 0.0;
+                    px.animating = false;
+                } else {
+                    px.vel *= px.decay_per_60hz.powf(dt * 60.0);
+                    if px.vel.abs() < px.stop_velocity {
+                        px.vel = 0.0;
+                        px.animating = false;
+                    } else {
+                        self.off_x.set(nx);
+                    }
+                }
+            }
+        }
 
-        if *self.animating.borrow() {
+        // Integrate Y
+        if py.animating {
+            if py.vel.abs() < 5.0 {
+                py.vel = 0.0;
+                py.animating = false;
+            } else {
+                let ny = (by + py.vel * dt).clamp(0.0, max_y);
+                if (ny - by).abs() < 0.01 && (by <= 0.0 || by >= max_y) {
+                    py.vel = 0.0;
+                    py.animating = false;
+                } else {
+                    py.vel *= py.decay_per_60hz.powf(dt * 60.0);
+                    if py.vel.abs() < py.stop_velocity {
+                        py.vel = 0.0;
+                        py.animating = false;
+                    } else {
+                        self.off_y.set(ny);
+                    }
+                }
+            }
+        }
+
+        let running = px.animating || py.animating;
+        if running {
             request_frame();
-            return true;
         }
-        false
+        running
     }
 }
 

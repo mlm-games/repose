@@ -268,3 +268,17 @@ impl Scheduler {
         }
     }
 }
+
+/// Avoids cross-test pollution
+#[cfg(test)]
+pub fn clear_composer() {
+    COMPOSER.with(|c| {
+        let mut c = c.borrow_mut();
+        c.slots.clear();
+        c.keyed_slots.clear();
+        c.cursor = 0;
+    });
+    ROOT_SCOPE.with(|rs| {
+        *rs.borrow_mut() = None;
+    });
+}

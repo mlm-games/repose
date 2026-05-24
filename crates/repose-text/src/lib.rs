@@ -402,7 +402,6 @@ pub fn wrap_lines(
 
     let mut line_start = 0usize; // byte index
     let mut best_break = line_start;
-    let mut _last_w = 0.0;
 
     // Iterate word boundaries (keep whitespace tokens so they factor widths)
     for tok in text.split_word_bounds() {
@@ -412,7 +411,6 @@ pub fn wrap_lines(
 
         if w <= max_width + 0.5 {
             best_break = tok_end;
-            _last_w = w;
             continue;
         }
 
@@ -454,14 +452,12 @@ pub fn wrap_lines(
 
         // Reset best_break for new line
         best_break = line_start;
-        _last_w = 0.0;
 
         // Re-consider current token if not fully consumed
         if line_start < tok_end {
             // recompute width with the remaining token portion
             if width_of(line_start, tok_end) <= max_width + 0.5 {
                 best_break = tok_end;
-                _last_w = width_of(line_start, best_break);
             } else {
                 // will be handled in next iterations (or forced again)
             }
