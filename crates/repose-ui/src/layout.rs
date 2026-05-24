@@ -1214,11 +1214,19 @@ impl LayoutEngine {
             } else {
                 se.default
             };
-            let elev = animate_f32(
-                format!("m3_elev:{view_id}"),
-                target,
-                repose_core::animation::AnimationSpec::m3_elevation_in(),
-            );
+            let prev = *remember_state_with_key(
+                format!("m3_elev_last:{view_id}"),
+                || target,
+            )
+            .borrow();
+            let spec = if target > prev {
+                AnimationSpec::m3_elevation_in()
+            } else {
+                AnimationSpec::m3_elevation_out()
+            };
+            *remember_state_with_key(format!("m3_elev_last:{view_id}"), || target)
+                .borrow_mut() = target;
+            let elev = animate_f32(format!("m3_elev:{view_id}"), target, spec);
             if elev > 0.5 {
                 let shadow_offset = elev * 0.5;
                 let shadow_alpha = ((elev / 24.0).clamp(0.0, 1.0) * 0.25 * 255.0) as u8;
@@ -1236,6 +1244,15 @@ impl LayoutEngine {
             }
         }
 
+        // Draw background (always)
+        if let Some(bg) = modifier.background {
+            scene.nodes.push(SceneNode::Rect {
+                rect,
+                brush: mul_alpha_brush(bg, alpha_accum),
+                radius: round_clip_px,
+            });
+        }
+        // State layer as overlay on top (independently animated alpha)
         if let Some(sc) = &modifier.state_colors {
             let target = if modifier.disabled {
                 sc.disabled
@@ -1246,22 +1263,18 @@ impl LayoutEngine {
             } else {
                 sc.default
             };
-            let bg = animate_color(
+            let overlay = animate_color(
                 format!("m3_sc:{view_id}"),
                 target,
-                repose_core::animation::AnimationSpec::fast(),
+                AnimationSpec::fast(),
             );
-            scene.nodes.push(SceneNode::Rect {
-                rect,
-                brush: mul_alpha_brush(Brush::Solid(bg), alpha_accum),
-                radius: round_clip_px,
-            });
-        } else if let Some(bg) = modifier.background {
-            scene.nodes.push(SceneNode::Rect {
-                rect,
-                brush: mul_alpha_brush(bg, alpha_accum),
-                radius: round_clip_px,
-            });
+            if overlay.3 > 0 {
+                scene.nodes.push(SceneNode::Rect {
+                    rect,
+                    brush: mul_alpha_brush(Brush::Solid(overlay), alpha_accum),
+                    radius: round_clip_px,
+                });
+            }
         }
 
         if let Some(b) = &modifier.border {
@@ -1314,9 +1327,14 @@ impl LayoutEngine {
                 id: view_id,
                 rect,
                 z_index: modifier.z_index,
-                focusable: false,
+                focusable: true,
                 ..HitRegion::from_modifier(view_id, rect, &modifier)
             });
+        }
+
+        // Focus ring for interactive views
+        if is_focused && (has_pointer || modifier.click || modifier.on_action.is_some()) {
+            push_focus_ring(scene, rect, focus_radius(&modifier));
         }
 
         let mut next_sem_parent = sem_parent;

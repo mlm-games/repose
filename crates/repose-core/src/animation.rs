@@ -253,6 +253,10 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
         }
     }
 
+    pub fn set_spec(&mut self, spec: AnimationSpec) {
+        self.spec = spec;
+    }
+
     pub fn set_target(&mut self, target: T) {
         if self.start_time.is_some() {
             self.update();

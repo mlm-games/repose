@@ -21,6 +21,7 @@ pub fn animate_f32_from(
     let mut a = anim.borrow_mut();
     let cur = *a.get();
     if (cur - target).abs() > 1e-3 {
+        a.set_spec(spec);
         a.set_target(target);
     }
 
@@ -51,6 +52,7 @@ pub fn animate_color_from(
 
     let mut a = anim.borrow_mut();
     if *a.get() != target {
+        a.set_spec(spec);
         a.set_target(target);
     }
 

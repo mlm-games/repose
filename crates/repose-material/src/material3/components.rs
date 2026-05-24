@@ -54,9 +54,9 @@ pub fn IconButton(
         .size(40.0, 40.0)
         .clip_rounded(20.0)
         .state_colors(StateColors {
-            default: bg,
-            hovered: th.on_surface.with_alpha_f32(0.08).composite_over(th.surface),
-            pressed: th.on_surface.with_alpha_f32(0.12).composite_over(th.surface),
+            default: Color::TRANSPARENT,
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
         .align_items(AlignItems::Center)
@@ -77,10 +77,11 @@ pub fn FilledIconButton(
     Box(Modifier::new()
         .size(40.0, 40.0)
         .clip_rounded(20.0)
+        .background(bg)
         .state_colors(StateColors {
-            default: bg,
-            hovered: th.on_primary.with_alpha_f32(0.08).composite_over(bg),
-            pressed: th.on_primary.with_alpha_f32(0.12).composite_over(bg),
+            default: Color::TRANSPARENT,
+            hovered: th.on_primary.with_alpha_f32(0.08),
+            pressed: th.on_primary.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         })
         .align_items(AlignItems::Center)
@@ -102,10 +103,11 @@ pub fn FilledButton(
     Box(Modifier::new()
         .height(40.0)
         .min_width(48.0)
+        .background(bg)
         .state_colors(StateColors {
-            default: bg,
-            hovered: th.on_primary.with_alpha_f32(0.08).composite_over(bg),
-            pressed: th.on_primary.with_alpha_f32(0.12).composite_over(bg),
+            default: Color::TRANSPARENT,
+            hovered: th.on_primary.with_alpha_f32(0.08),
+            pressed: th.on_primary.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         })
         .state_elevation(StateElevation {
@@ -140,10 +142,11 @@ pub fn FilledTonalButton(
     Box(Modifier::new()
         .height(40.0)
         .min_width(48.0)
+        .background(bg)
         .state_colors(StateColors {
-            default: bg,
-            hovered: th.on_secondary_container.with_alpha_f32(0.08).composite_over(bg),
-            pressed: th.on_secondary_container.with_alpha_f32(0.12).composite_over(bg),
+            default: Color::TRANSPARENT,
+            hovered: th.on_secondary_container.with_alpha_f32(0.08),
+            pressed: th.on_secondary_container.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         })
         .state_elevation(StateElevation {
@@ -179,9 +182,9 @@ pub fn OutlinedButton(
         .height(40.0)
         .min_width(48.0)
         .state_colors(StateColors {
-            default: bg,
-            hovered: th.on_surface.with_alpha_f32(0.08).composite_over(th.surface),
-            pressed: th.on_surface.with_alpha_f32(0.12).composite_over(th.surface),
+            default: Color::TRANSPARENT,
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
         .border(1.0, th.outline_variant, 20.0)
@@ -212,9 +215,9 @@ pub fn TextButton(
         .height(40.0)
         .min_width(48.0)
         .state_colors(StateColors {
-            default: bg,
-            hovered: th.on_surface.with_alpha_f32(0.08).composite_over(th.surface),
-            pressed: th.on_surface.with_alpha_f32(0.12).composite_over(th.surface),
+            default: Color::TRANSPARENT,
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
         .clip_rounded(20.0)
@@ -241,10 +244,11 @@ pub fn FAB(
     let bg = th.primary_container;
     Box(Modifier::new()
         .size(56.0, 56.0)
+        .background(bg)
         .state_colors(StateColors {
-            default: bg,
-            hovered: th.on_primary_container.with_alpha_f32(0.08).composite_over(bg),
-            pressed: th.on_primary_container.with_alpha_f32(0.12).composite_over(bg),
+            default: Color::TRANSPARENT,
+            hovered: th.on_primary_container.with_alpha_f32(0.08),
+            pressed: th.on_primary_container.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         })
         .state_elevation(StateElevation {
@@ -271,10 +275,11 @@ pub fn LargeFAB(
     let bg = th.primary_container;
     Box(Modifier::new()
         .size(96.0, 96.0)
+        .background(bg)
         .state_colors(StateColors {
-            default: bg,
-            hovered: th.on_primary_container.with_alpha_f32(0.08).composite_over(bg),
-            pressed: th.on_primary_container.with_alpha_f32(0.12).composite_over(bg),
+            default: Color::TRANSPARENT,
+            hovered: th.on_primary_container.with_alpha_f32(0.08),
+            pressed: th.on_primary_container.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         })
         .state_elevation(StateElevation {
@@ -304,10 +309,11 @@ pub fn ExtendedFAB(
     Row(Modifier::new()
         .height(56.0)
         .min_width(80.0)
+        .background(bg)
         .state_colors(StateColors {
-            default: bg,
-            hovered: th.on_primary_container.with_alpha_f32(0.08).composite_over(bg),
-            pressed: th.on_primary_container.with_alpha_f32(0.12).composite_over(bg),
+            default: Color::TRANSPARENT,
+            hovered: th.on_primary_container.with_alpha_f32(0.08),
+            pressed: th.on_primary_container.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         })
         .state_elevation(StateElevation {
@@ -407,8 +413,8 @@ pub fn ListItem(
         })
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08).composite_over(th.surface),
-            pressed: th.on_surface.with_alpha_f32(0.12).composite_over(th.surface),
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
         .padding_values(PaddingValues {
@@ -503,8 +509,8 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>) -> View {
                         .justify_content(JustifyContent::Center)
                         .state_colors(StateColors {
                             default: Color::TRANSPARENT,
-                            hovered: th.on_surface.with_alpha_f32(0.08).composite_over(th.surface),
-                            pressed: th.on_surface.with_alpha_f32(0.12).composite_over(th.surface),
+                            hovered: th.on_surface.with_alpha_f32(0.08),
+                            pressed: th.on_surface.with_alpha_f32(0.12),
                             disabled: Color::TRANSPARENT,
                         })
                         .clickable()
