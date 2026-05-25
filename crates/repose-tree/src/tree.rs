@@ -174,7 +174,11 @@ impl ViewTree {
     ) -> NodeId {
         let content_hash = hash_view_content(view);
 
-        let old_hash = self.nodes.get(node_id).expect("reconcile_node: node not found").content_hash;
+        let old_hash = self
+            .nodes
+            .get(node_id)
+            .expect("reconcile_node: node not found")
+            .content_hash;
         let content_changed = old_hash != content_hash;
 
         let new_children_hashes = self.reconcile_children(node_id, &view.children, depth, ctx);
@@ -185,18 +189,23 @@ impl ViewTree {
 
         let subtree_changed;
         {
-            let node = self.nodes.get_mut(node_id).expect("reconcile_node: node not found");
+            let node = self
+                .nodes
+                .get_mut(node_id)
+                .expect("reconcile_node: node not found");
 
             // Update parent, depth, generation
             node.parent = parent;
             node.depth = depth;
             node.generation = self.generation;
 
+            // NOTE: fields like on_pointer_down aren't part of the content hash, so can't rely on content_changed to keep them in sync.
+            node.kind = view.kind.clone();
+            node.modifier = view.modifier.clone();
+            node.content_hash = content_hash;
+            node.user_key = view.modifier.key;
+
             if content_changed {
-                node.kind = view.kind.clone();
-                node.modifier = view.modifier.clone();
-                node.content_hash = content_hash;
-                node.user_key = view.modifier.key;
                 node.invalidate_layout();
                 ctx.reconciled += 1;
             }
@@ -264,7 +273,14 @@ impl ViewTree {
                 // Keyed child: look up by key
                 if let Some(&existing_id) = keyed_children.get(&key) {
                     used_nodes.insert(existing_id);
-                    self.reconcile_node(existing_id, new_child, Some(parent_id), child_depth, idx, ctx)
+                    self.reconcile_node(
+                        existing_id,
+                        new_child,
+                        Some(parent_id),
+                        child_depth,
+                        idx,
+                        ctx,
+                    )
                 } else {
                     self.create_node(new_child, Some(parent_id), child_depth, idx, ctx)
                 }
@@ -274,7 +290,14 @@ impl ViewTree {
                     let existing_id = unkeyed_children[unkeyed_index];
                     unkeyed_index += 1;
                     used_nodes.insert(existing_id);
-                    self.reconcile_node(existing_id, new_child, Some(parent_id), child_depth, idx, ctx)
+                    self.reconcile_node(
+                        existing_id,
+                        new_child,
+                        Some(parent_id),
+                        child_depth,
+                        idx,
+                        ctx,
+                    )
                 } else {
                     self.create_node(new_child, Some(parent_id), child_depth, idx, ctx)
                 }
@@ -326,7 +349,10 @@ impl ViewTree {
         ctx.created += 1;
 
         {
-            let node = self.nodes.get_mut(node_id).expect("create_node: node just inserted");
+            let node = self
+                .nodes
+                .get_mut(node_id)
+                .expect("create_node: node just inserted");
             node.parent = parent;
             node.depth = depth;
             node.content_hash = content_hash;
@@ -340,14 +366,22 @@ impl ViewTree {
         for (i, child_view) in view.children.iter().enumerate() {
             let child_id = self.create_node(child_view, Some(node_id), child_depth, i as u32, ctx);
             child_ids.push(child_id);
-            child_hashes.push(self.nodes.get(child_id).expect("create_node: child just created").subtree_hash);
+            child_hashes.push(
+                self.nodes
+                    .get(child_id)
+                    .expect("create_node: child just created")
+                    .subtree_hash,
+            );
         }
 
         // Now compute the view_id and subtree_hash, and update the node
         let view_id = self.compute_view_id(view, node_id, parent, index_in_parent);
         let subtree_hash = hash_subtree(content_hash, &child_hashes);
 
-        let node = self.nodes.get_mut(node_id).expect("create_node: node just inserted");
+        let node = self
+            .nodes
+            .get_mut(node_id)
+            .expect("create_node: node just inserted");
         node.children = child_ids;
         node.subtree_hash = subtree_hash;
         node.view_id = view_id;
