@@ -237,6 +237,16 @@ impl LayoutEngine {
             !self.tree.dirty_nodes().is_empty() || !self.tree.removed_ids.is_empty();
         let need_layout = size_changed || !self.layout_valid || has_tree_mutation || locals_changed;
 
+        // NOTE: Needed to ensure that text is always re-measured with the new available width
+        if size_changed {
+            for &node_id in self.text_cache.keys() {
+                if let Some(&taffy_id) = self.taffy_map.get(&node_id) {
+                    let _ = self.taffy.mark_dirty(taffy_id);
+                }
+            }
+            self.text_cache.clear();
+        }
+
         // Helpers
         let px = |dp_val: f32| dp_to_px(dp_val);
         let font_px = |dp_font: f32| dp_to_px(dp_font) * locals::text_scale().0;
@@ -1217,10 +1227,7 @@ impl LayoutEngine {
             } else {
                 se.default
             };
-            let elev_slot = remember_state_with_key(
-                format!("m3_elev_last:{view_id}"),
-                || target,
-            );
+            let elev_slot = remember_state_with_key(format!("m3_elev_last:{view_id}"), || target);
             let prev = *elev_slot.borrow();
             let spec = if target > prev {
                 AnimationSpec::m3_elevation_in()
@@ -1265,11 +1272,7 @@ impl LayoutEngine {
             } else {
                 sc.default
             };
-            let overlay = animate_color(
-                format!("m3_sc:{view_id}"),
-                target,
-                AnimationSpec::fast(),
-            );
+            let overlay = animate_color(format!("m3_sc:{view_id}"), target, AnimationSpec::fast());
             if overlay.3 > 0 {
                 scene.nodes.push(SceneNode::Rect {
                     rect,
