@@ -80,7 +80,7 @@ pub fn TopBar(
 pub fn NavRail(current: Route, nav: Navigator<Route>) -> View {
     let th = theme();
 
-    let routes: [Route; 12] = [
+    let routes: [Route; 13] = [
         Route::Home,
         Route::Layout,
         Route::Widgets,
@@ -88,6 +88,7 @@ pub fn NavRail(current: Route, nav: Navigator<Route>) -> View {
         Route::Scroll,
         Route::Canvas,
         Route::Lists,
+        Route::Grid,
         Route::Animation,
         Route::Dnd,
         Route::Docking,

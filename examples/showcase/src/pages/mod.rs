@@ -3,6 +3,7 @@ pub mod canvas;
 pub mod dnd;
 pub mod docking;
 pub mod errors;
+pub mod grid;
 pub mod home;
 pub mod layout;
 pub mod lists;
