@@ -374,7 +374,7 @@ where
         })
     };
 
-    let content = crate::Column(Modifier::new()).with_children(children);
+    let content = crate::Column(Modifier::new().fill_max_width()).with_children(children);
 
     View::new(
         0,

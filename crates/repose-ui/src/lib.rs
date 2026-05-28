@@ -109,6 +109,7 @@ pub mod layout;
 pub mod lazy;
 pub mod navigation;
 pub mod overlay;
+pub mod pager;
 pub mod scroll;
 pub mod windowing;
 
@@ -358,6 +359,24 @@ pub fn ProgressBar(value: f32, range: (f32, f32)) -> View {
         focused: false,
         enabled: true,
     })
+}
+
+/// A circular progress indicator (spinner).
+///
+/// If `value` is `None`, renders an indeterminate spinner (filled circle).
+/// If `value` is `Some(f)`, renders a determinate circular progress with
+/// the value clamped to `0.0..=1.0`.
+pub fn CircularProgress(value: Option<f32>) -> View {
+    View::new(
+        0,
+        ViewKind::ProgressBar {
+            value: value.unwrap_or(0.0),
+            min: 0.0,
+            max: 1.0,
+            circular: true,
+        },
+    )
+    .modifier(Modifier::new().width(48.0).height(48.0))
 }
 
 pub fn Image(modifier: Modifier, handle: ImageHandle) -> View {

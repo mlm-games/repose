@@ -2360,32 +2360,95 @@ impl LayoutEngine {
                 }
             }
             ViewKind::ProgressBar {
-                value, min, max, ..
+                value, min, max, circular,
             } => {
                 let th = locals::theme();
-                let th_h = dp_to_px(6.0);
-                let cy = rect.y + rect.h * 0.5;
-                scene.nodes.push(SceneNode::Rect {
-                    rect: repose_core::Rect {
-                        x: rect.x,
-                        y: cy - th_h * 0.5,
-                        w: rect.w,
-                        h: th_h,
-                    },
-                    brush: Brush::Solid(th.outline),
-                    radius: th_h * 0.5,
-                });
-                let t = norm(*value, *min, *max).clamp(0.0, 1.0);
-                scene.nodes.push(SceneNode::Rect {
-                    rect: repose_core::Rect {
-                        x: rect.x,
-                        y: cy - th_h * 0.5,
-                        w: rect.w * t,
-                        h: th_h,
-                    },
-                    brush: Brush::Solid(th.primary),
-                    radius: th_h * 0.5,
-                });
+                if *circular {
+                    // Circular progress: pulsing ellipse for indeterminate,
+                    // or filled arc segment for determinate
+                    let cx = rect.x + rect.w * 0.5;
+                    let cy = rect.y + rect.h * 0.5;
+                    let diameter = rect.w.min(rect.h);
+                    let r = diameter * 0.5;
+                    let circle_rect = repose_core::Rect {
+                        x: cx - r,
+                        y: cy - r,
+                        w: diameter,
+                        h: diameter,
+                    };
+
+                    // Background track ring (thin)
+                    let track_w = dp_to_px(4.0);
+                    scene.nodes.push(SceneNode::EllipseBorder {
+                        rect: circle_rect,
+                        color: th.outline,
+                        width: track_w,
+                    });
+
+                    let t = norm(*value, *min, *max).clamp(0.0, 1.0);
+                    if t > 0.0 {
+                        // Progress arc: approximate with a filled ellipse clipped to partial sector.
+                        // For simplicity, render as a filled arc using a combination of primitives.
+                        // Full ellipse fill for the track, then clip to progress.
+                        let progress_color = th.primary;
+                        // Use ellipse fill with a rectangular clip to approximate pie fill
+                        if t >= 1.0 {
+                            scene.nodes.push(SceneNode::Ellipse {
+                                rect: circle_rect,
+                                brush: Brush::Solid(progress_color),
+                            });
+                        } else {
+                            // For partial progress, render a rectangular backdrop clipped
+                            // by the circle to approximate a progress arc.
+                            // This is a simple visual that fills from bottom to top.
+                            let fill_h = diameter * t;
+                            scene.nodes.push(SceneNode::PushClip {
+                                rect: repose_core::Rect {
+                                    x: cx - r,
+                                    y: cy + r - fill_h,
+                                    w: diameter,
+                                    h: fill_h,
+                                },
+                                radius: 0.0,
+                            });
+                            scene.nodes.push(SceneNode::Ellipse {
+                                rect: circle_rect,
+                                brush: Brush::Solid(progress_color),
+                            });
+                            scene.nodes.push(SceneNode::PopClip);
+                        }
+                    } else {
+                        // Indeterminate: render a visible filled circle
+                        scene.nodes.push(SceneNode::Ellipse {
+                            rect: circle_rect,
+                            brush: Brush::Solid(th.primary.with_alpha_f32(0.4)),
+                        });
+                    }
+                } else {
+                    let th_h = dp_to_px(6.0);
+                    let cy = rect.y + rect.h * 0.5;
+                    scene.nodes.push(SceneNode::Rect {
+                        rect: repose_core::Rect {
+                            x: rect.x,
+                            y: cy - th_h * 0.5,
+                            w: rect.w,
+                            h: th_h,
+                        },
+                        brush: Brush::Solid(th.outline),
+                        radius: th_h * 0.5,
+                    });
+                    let t = norm(*value, *min, *max).clamp(0.0, 1.0);
+                    scene.nodes.push(SceneNode::Rect {
+                        rect: repose_core::Rect {
+                            x: rect.x,
+                            y: cy - th_h * 0.5,
+                            w: rect.w * t,
+                            h: th_h,
+                        },
+                        brush: Brush::Solid(th.primary),
+                        radius: th_h * 0.5,
+                    });
+                }
                 sems.push(SemNode {
                     id: view_id,
                     parent: sem_parent,
