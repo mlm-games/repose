@@ -9,5 +9,5 @@ description = "Text handling (wrappers around cosmic-text apis)"
 cosmic-text = { workspace = true }
 fontdb = { workspace = true }
 once_cell = "1"
-ahash = "0.8"
+ahash = { workspace = true }
 unicode-segmentation = { workspace = true }

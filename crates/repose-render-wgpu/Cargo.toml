@@ -14,7 +14,7 @@ log = { workspace = true }
 anyhow = { workspace = true }
 ab_glyph = { workspace = true }
 fontdb = { workspace = true }
-bytemuck = { version = "1.23.2", features = ["derive"] }
+bytemuck = { workspace = true }
 pollster = { workspace = true }
 cosmic-text = { workspace = true }
 image = { version = "0.25", default-features = false, features = [

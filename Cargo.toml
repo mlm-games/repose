@@ -23,7 +23,7 @@ version = "0.15.0"
 edition = "2024"
 license = "LGPL-2.1-or-later"
 repository = "https://github.com/mlm-games/repose"
-rust-version = "1.92"
+rust-version = "1.93"
 
 [workspace.dependencies]
 anyhow = "1"
@@ -37,6 +37,22 @@ bitflags = "2.11.1"
 unicode-segmentation = "1.13"
 clipawl = { version = "0.2.1" }
 
+# Common (used across multiple crates)
+serde_json = "1"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+  "Document",
+  "Window",
+  "Element",
+  "HtmlElement",
+  "HtmlCanvasElement",
+  "CssStyleDeclaration",
+] }
+console_error_panic_hook = "0.1"
+console_log = "1"
+getrandom = "0.3"
+bytemuck = { version = "1.25.0", features = ["derive"] }
 
 # Layout
 taffy = { version = "0.10", default-features = true }
@@ -52,10 +68,10 @@ fontdb = "0.23.0"
 cosmic-text = { version = "0.19", default-features = true, features = [
   "swash",
 ] }
+
 android_logger = "0.15"
 serde = { version = "1", features = ["derive"] }
 web-time = "1"
-
 rustc-hash = "2.1"
 ahash = "0.8"
 
