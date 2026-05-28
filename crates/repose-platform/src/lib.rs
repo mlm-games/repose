@@ -210,7 +210,7 @@ pub fn run_desktop_app_with_snackbar(
             };
 
             for req in pending {
-                let target_id = req.target.0;
+                let target_id = req.target_node.0;
                 match req.action {
                     accesskit::Action::Click => {
                         if let Some(hit) = f.hit_regions.iter().find(|h| h.id == target_id) {

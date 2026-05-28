@@ -1,4 +1,6 @@
-use accesskit::{Action, ActionHandler, ActionRequest, Node, NodeId, Rect, Role, Tree, TreeUpdate};
+use accesskit::{
+    Action, ActionHandler, ActionRequest, Node, NodeId, Rect, Role, Tree, TreeId, TreeUpdate,
+};
 use repose_core::runtime::SemNode;
 use repose_core::semantics::Role as CoreRole;
 use rustc_hash::FxHashMap;
@@ -33,6 +35,7 @@ impl A11yTree {
             nodes: vec![(WINDOW_ID, root)],
             tree: Some(Tree::new(WINDOW_ID)),
             focus: WINDOW_ID,
+            tree_id: TreeId::ROOT,
         }
     }
 
@@ -108,6 +111,7 @@ impl A11yTree {
             nodes: changed_nodes,
             tree: None,
             focus,
+            tree_id: TreeId::ROOT,
         })
     }
 }
