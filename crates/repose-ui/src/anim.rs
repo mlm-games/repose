@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use repose_core::Color;
 use repose_core::{
     animation::{AnimatedValue, AnimationSpec},
@@ -23,7 +21,8 @@ pub fn animate_f32_from(
 
     let mut a = anim.borrow_mut();
     let mut lt = last.borrow_mut();
-    if lt.is_nan() || (*lt - target).abs() > 1e-6 {
+    let should_set_target = lt.is_nan() || (*lt - target).abs() > 1e-6;
+    if should_set_target {
         a.set_spec(spec);
         a.set_target(target);
         *lt = target;

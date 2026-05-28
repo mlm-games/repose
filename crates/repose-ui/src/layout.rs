@@ -1254,17 +1254,50 @@ impl LayoutEngine {
             let target_w = rect.w;
             let target_h = rect.h;
 
-            let prev = remember_state_with_key(format!("anim_size_target:{view_id}"), || {
-                (target_w, target_h)
+            let anim_w = remember_state_with_key(format!("anim_cs_w:{view_id}"), || {
+                AnimatedValue::new(target_w, *anim_spec)
             });
-            let mut p = prev.borrow_mut();
-            if (p.0 - target_w).abs() > 0.5 || (p.1 - target_h).abs() > 0.5 {
-                *p = (target_w, target_h);
-            }
-            drop(p);
+            let anim_h = remember_state_with_key(format!("anim_cs_h:{view_id}"), || {
+                AnimatedValue::new(target_h, *anim_spec)
+            });
+            let last_target =
+                remember_state_with_key(format!("anim_cs_last:{view_id}"), || (target_w, target_h));
 
-            let aw = animate_f32(format!("anim_size_w:{view_id}"), target_w, *anim_spec);
-            let ah = animate_f32(format!("anim_size_h:{view_id}"), target_h, *anim_spec);
+            // Check if target changed, and re-start animation from current value
+            let mut lt = last_target.borrow_mut();
+            let w_changed = (lt.0 - target_w).abs() > 0.5;
+            let h_changed = (lt.1 - target_h).abs() > 0.5;
+            if w_changed || h_changed {
+                *lt = (target_w, target_h);
+                drop(lt);
+                if w_changed {
+                    let mut a = anim_w.borrow_mut();
+                    a.set_spec(*anim_spec);
+                    a.set_target(target_w);
+                }
+                if h_changed {
+                    let mut a = anim_h.borrow_mut();
+                    a.set_spec(*anim_spec);
+                    a.set_target(target_h);
+                }
+            } else {
+                drop(lt);
+            }
+
+            let mut still = false;
+            let aw = {
+                let mut a = anim_w.borrow_mut();
+                still |= a.update();
+                *a.get()
+            };
+            let ah = {
+                let mut a = anim_h.borrow_mut();
+                still |= a.update();
+                *a.get()
+            };
+            if still {
+                request_frame();
+            }
 
             // Override rect and content_rect dimensions with animated values
             let aw = aw.max(1.0);

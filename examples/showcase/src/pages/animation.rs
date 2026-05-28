@@ -87,6 +87,27 @@ pub fn screen() -> View {
             ))
         }),
 
+        Section("Animate Content Size", {
+            Column(Modifier::new().padding(12.0)).child((
+                FilledButton(Modifier::new(), { let x = long_text.clone(); move || x.update(|v| *v = !*v) }, || Text("Toggle Long Text")),
+                Box(Modifier::new().height(8.0).width(1.0)),
+                Box(Modifier::new()
+                    .animate_content_size(AnimationSpec::spring_gentle())
+                    .background(theme().surface_container_highest)
+                    .clip_rounded(12.0)
+                    .padding(16.0)
+                ).child(
+                    Text(
+                        if long_text.get() {
+                            "This is a much longer text that demonstrates how animateContentSize smoothly transitions between different content sizes without any jarring jumps."
+                        } else {
+                            "Short text."
+                        }
+                    ).color(theme().on_surface).size(16.0),
+                ),
+            ))
+        }),
+
 
         Section("AnimatedContent", {
             let enter = match transition_kind.get() {
@@ -133,25 +154,6 @@ pub fn screen() -> View {
         }),
 
 
-        Section("Animate Content Size", {
-            Column(Modifier::new().padding(12.0)).child((
-                FilledButton(Modifier::new(), { let x = long_text.clone(); move || x.update(|v| *v = !*v) }, || Text("Toggle Long Text")),
-                Box(Modifier::new().height(8.0).width(1.0)),
-                Box(Modifier::new()
-                    .animate_content_size(AnimationSpec::spring_gentle())
-                    .background(theme().surface_container_highest)
-                    .clip_rounded(12.0)
-                    .padding(16.0)
-                ).child(
-                    Text(
-                        if long_text.get() {
-                            "This is a much longer text that demonstrates how animateContentSize smoothly transitions between different content sizes without any jarring jumps."
-                        } else {
-                            "Short text."
-                        }
-                    ).color(theme().on_surface).size(16.0),
-                ),
-            ))
-        }),
+
     )))
 }
