@@ -577,11 +577,7 @@ pub fn line_home_end(
     let layout = layout_text_area(text, font_px, wrap_w_px);
     let (li, _local, _) = locate_byte_in_ranges(&layout.ranges, cur_byte);
     let (s, e) = layout.ranges.get(li).copied().unwrap_or((0, 0));
-    if to_end {
-        e
-    } else {
-        s
-    }
+    if to_end { e } else { s }
 }
 
 fn clamp_to_char_boundary(s: &str, i: usize) -> usize {

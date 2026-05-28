@@ -1,8 +1,8 @@
 #![cfg(target_os = "android")]
 use log::LevelFilter;
 use repose_core::prelude::*;
-use repose_platform::android::run_android_app;
 use repose_platform::RenderContext;
+use repose_platform::android::run_android_app;
 use repose_ui::*;
 use winit::platform::android::activity::AndroidApp;
 

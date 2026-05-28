@@ -44,10 +44,7 @@ pub fn TopAppBar(
 }
 
 /// M3 Icon Button — a tappable circular container for an icon.
-pub fn IconButton(
-    icon: View,
-    on_click: impl Fn() + 'static,
-) -> View {
+pub fn IconButton(icon: View, on_click: impl Fn() + 'static) -> View {
     let th = theme();
     let bg = Color::TRANSPARENT;
     Box(Modifier::new()
@@ -62,16 +59,12 @@ pub fn IconButton(
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
         .clickable()
-
         .on_pointer_down(move |_| on_click()))
     .child(icon)
 }
 
 /// M3 Filled Icon Button — icon button with a filled container background.
-pub fn FilledIconButton(
-    icon: View,
-    on_click: impl Fn() + 'static,
-) -> View {
+pub fn FilledIconButton(icon: View, on_click: impl Fn() + 'static) -> View {
     let th = theme();
     let bg = th.primary;
     Box(Modifier::new()
@@ -87,7 +80,6 @@ pub fn FilledIconButton(
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
         .clickable()
-
         .on_pointer_down(move |_| on_click()))
     .child(icon)
 }
@@ -240,10 +232,7 @@ pub fn TextButton(
 }
 
 /// M3 Floating Action Button (regular, 56dp).
-pub fn FAB(
-    icon: View,
-    on_click: impl Fn() + 'static,
-) -> View {
+pub fn FAB(icon: View, on_click: impl Fn() + 'static) -> View {
     let th = theme();
     let bg = th.primary_container;
     Box(Modifier::new()
@@ -265,16 +254,12 @@ pub fn FAB(
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
         .clickable()
-
         .on_pointer_down(move |_| on_click()))
     .child(icon)
 }
 
 /// M3 Large FAB (96dp).
-pub fn LargeFAB(
-    icon: View,
-    on_click: impl Fn() + 'static,
-) -> View {
+pub fn LargeFAB(icon: View, on_click: impl Fn() + 'static) -> View {
     let th = theme();
     let bg = th.primary_container;
     Box(Modifier::new()
@@ -296,7 +281,6 @@ pub fn LargeFAB(
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
         .clickable()
-
         .on_pointer_down(move |_| on_click()))
     .child(icon)
 }
@@ -335,7 +319,6 @@ pub fn ExtendedFAB(
         })
         .align_items(AlignItems::Center)
         .clickable()
-
         .on_pointer_down(move |_| on_click()))
     .child((
         icon.unwrap_or(Box(Modifier::new())),

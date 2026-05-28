@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-use repose_core::{request_frame, Modifier, View, ViewKind};
+use repose_core::{Modifier, View, ViewKind, request_frame};
 
 thread_local! {
     static SNACKBAR_TICKS: RefCell<Vec<Rc<dyn Fn(u32)>>> = RefCell::new(Vec::new());

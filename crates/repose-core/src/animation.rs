@@ -189,8 +189,17 @@ impl Interpolate for f32 {
 
 impl Interpolate for crate::Color {
     fn interpolate(&self, other: &Self, t: f32) -> Self {
-        let lerp = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t).round().clamp(0.0, 255.0) as u8;
-        crate::Color(lerp(self.0, other.0), lerp(self.1, other.1), lerp(self.2, other.2), lerp(self.3, other.3))
+        let lerp = |a: u8, b: u8| {
+            (a as f32 + (b as f32 - a as f32) * t)
+                .round()
+                .clamp(0.0, 255.0) as u8
+        };
+        crate::Color(
+            lerp(self.0, other.0),
+            lerp(self.1, other.1),
+            lerp(self.2, other.2),
+            lerp(self.3, other.3),
+        )
     }
 }
 

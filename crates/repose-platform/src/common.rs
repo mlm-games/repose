@@ -1,11 +1,11 @@
 use crate::*;
 use repose_core::input::{PointerButton, PointerEvent, PointerEventKind, PointerId, PointerKind};
 use repose_core::locals::dp_to_px;
-use repose_ui::textfield::{
-    caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes, measure_text, TF_FONT_DP,
-    TF_PADDING_X_DP,
-};
 use repose_ui::TextFieldState;
+use repose_ui::textfield::{
+    TF_FONT_DP, TF_PADDING_X_DP, caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes,
+    measure_text,
+};
 
 use std::cell::RefCell;
 use std::rc::Rc;

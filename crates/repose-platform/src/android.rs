@@ -1040,8 +1040,11 @@ pub fn run_android_app_with_options(
                                     self.notify_text_change(focused_id, state.text.clone());
                                     let font_px =
                                         dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-                                    let m =
-                                        repose_ui::textfield::measure_text(&state.text, font_px, None);
+                                    let m = repose_ui::textfield::measure_text(
+                                        &state.text,
+                                        font_px,
+                                        None,
+                                    );
                                     let caret_x_px = m
                                         .positions
                                         .get(state.caret_index())
@@ -1059,8 +1062,11 @@ pub fn run_android_app_with_options(
                                     self.notify_text_change(focused_id, state.text.clone());
                                     let font_px =
                                         dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-                                    let m =
-                                        repose_ui::textfield::measure_text(&state.text, font_px, None);
+                                    let m = repose_ui::textfield::measure_text(
+                                        &state.text,
+                                        font_px,
+                                        None,
+                                    );
                                     let caret_x_px = m
                                         .positions
                                         .get(state.caret_index())

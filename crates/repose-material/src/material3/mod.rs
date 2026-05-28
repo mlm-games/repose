@@ -421,11 +421,7 @@ pub fn AssistChip(
     )
 }
 
-pub fn SuggestionChip(
-    on_click: impl Fn() + 'static,
-    label: View,
-    icon: Option<View>,
-) -> View {
+pub fn SuggestionChip(on_click: impl Fn() + 'static, label: View, icon: Option<View>) -> View {
     let th = theme();
     Surface(
         Modifier::new()
@@ -446,17 +442,16 @@ pub fn SuggestionChip(
             .clickable()
             .on_pointer_down(move |_| on_click()),
         Row(Modifier::new().align_items(AlignItems::Center)).child((
-            icon
-                .map(|v| {
-                    Box(Modifier::new().padding_values(PaddingValues {
-                        left: 0.0,
-                        right: 8.0,
-                        top: 0.0,
-                        bottom: 0.0,
-                    }))
-                    .child(with_content_color(th.primary, move || v))
-                })
-                .unwrap_or(Box(Modifier::new())),
+            icon.map(|v| {
+                Box(Modifier::new().padding_values(PaddingValues {
+                    left: 0.0,
+                    right: 8.0,
+                    top: 0.0,
+                    bottom: 0.0,
+                }))
+                .child(with_content_color(th.primary, move || v))
+            })
+            .unwrap_or(Box(Modifier::new())),
             with_content_color(th.on_surface_variant, move || label),
         )),
     )
@@ -724,8 +719,7 @@ pub fn ModalNavigationDrawer(
             .fill_max_height()
             .width(300.0)
             .background(th.surface_container_low)
-            .clip_rounded(th.shapes.large)
-        )
+            .clip_rounded(th.shapes.large))
         .child(drawer_content),
     ))
 }
@@ -772,8 +766,7 @@ pub fn NavigationDrawerItem(
                     right: 24.0,
                     top: 0.0,
                     bottom: 0.0,
-                }),
-            )
+                }))
             .child((
                 icon.unwrap_or(Box(Modifier::new().width(24.0).height(24.0))),
                 Box(Modifier::new().width(12.0).height(1.0)),

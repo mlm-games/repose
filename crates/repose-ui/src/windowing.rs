@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_core::{
-    request_frame, AlignItems, CursorIcon, Modifier, PaddingValues, PointerButton, PointerEvent,
-    PointerEventKind, Rect, Size, Vec2, View, ViewKind,
+    AlignItems, CursorIcon, Modifier, PaddingValues, PointerButton, PointerEvent, PointerEventKind,
+    Rect, Size, Vec2, View, ViewKind, request_frame,
 };
 
 use crate::{Box, Column, Row, Spacer, Stack, Surface, Text, TextStyle, ViewExt};
@@ -742,11 +742,7 @@ fn clamp_rect(
 }
 
 fn clamp_f32(v: f32, min: f32, max: f32) -> f32 {
-    if max < min {
-        min
-    } else {
-        v.clamp(min, max)
-    }
+    if max < min { min } else { v.clamp(min, max) }
 }
 
 fn apply_z_offset(mut view: View, z: f32) -> View {
@@ -822,11 +818,7 @@ fn key_for(window_id: u64, part: u64) -> u64 {
 
 fn px_to_dp(px: f32) -> f32 {
     let scale = repose_core::locals::density().scale * repose_core::locals::ui_scale().0;
-    if scale > 0.0001 {
-        px / scale
-    } else {
-        px
-    }
+    if scale > 0.0001 { px / scale } else { px }
 }
 
 fn px_vec_to_dp(v: Vec2) -> Vec2 {

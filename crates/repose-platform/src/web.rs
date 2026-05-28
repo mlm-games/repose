@@ -315,11 +315,7 @@ impl App {
         }
     }
 
-    fn tf_ensure_caret_visible_in_hit(
-        &self,
-        state: &mut TextFieldState,
-        is_multiline: bool,
-    ) {
+    fn tf_ensure_caret_visible_in_hit(&self, state: &mut TextFieldState, is_multiline: bool) {
         rc::tf_ensure_caret_visible(state, is_multiline);
     }
 
@@ -516,10 +512,7 @@ impl App {
                     if let Some(f) = &self.frame_cache
                         && let Some(i) = rc::hit_index_by_id(f, fid)
                     {
-                        self.tf_ensure_caret_visible_in_hit(
-                            &mut st,
-                            f.hit_regions[i].tf_multiline,
-                        );
+                        self.tf_ensure_caret_visible_in_hit(&mut st, f.hit_regions[i].tf_multiline);
                     }
                 }
                 true
@@ -535,10 +528,7 @@ impl App {
                     if let Some(f) = &self.frame_cache
                         && let Some(i) = rc::hit_index_by_id(f, fid)
                     {
-                        self.tf_ensure_caret_visible_in_hit(
-                            &mut st,
-                            f.hit_regions[i].tf_multiline,
-                        );
+                        self.tf_ensure_caret_visible_in_hit(&mut st, f.hit_regions[i].tf_multiline);
                     }
                 }
                 true
@@ -1031,10 +1021,7 @@ impl ApplicationHandler<()> for App {
                                     2.0 * self.scale(&window),
                                 );
                             } else {
-                                self.tf_ensure_caret_visible_in_hit(
-                                    &mut state,
-                                    hit.tf_multiline,
-                                );
+                                self.tf_ensure_caret_visible_in_hit(&mut state, hit.tf_multiline);
                             }
                             self.request_redraw();
                         }
@@ -1568,10 +1555,7 @@ impl ApplicationHandler<()> for App {
                                     let mut st = state_rc.borrow_mut();
                                     st.insert_text("\n");
                                     self.notify_text_change(focused_id, st.text.clone());
-                                    self.tf_ensure_caret_visible_in_hit(
-                                        &mut st,
-                                        hit.tf_multiline,
-                                    );
+                                    self.tf_ensure_caret_visible_in_hit(&mut st, hit.tf_multiline);
                                     self.request_redraw();
                                     return;
                                 }

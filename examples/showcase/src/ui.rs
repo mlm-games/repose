@@ -96,10 +96,7 @@ pub fn NavRail(current: Route, nav: Navigator<Route>) -> View {
     ];
 
     Card(
-        Modifier::new()
-            .width(220.0)
-            .fill_max_height()
-            .padding(8.0),
+        Modifier::new().width(220.0).fill_max_height().padding(8.0),
         Column(Modifier::new().fill_max_size()).child((
             Text("Navigation")
                 .size(14.0)

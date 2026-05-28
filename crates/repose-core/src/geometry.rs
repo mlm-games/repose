@@ -77,9 +77,18 @@ impl Transform {
     pub fn apply_to_rect(&self, r: Rect) -> Rect {
         let corners = [
             Vec2 { x: r.x, y: r.y },
-            Vec2 { x: r.x + r.w, y: r.y },
-            Vec2 { x: r.x, y: r.y + r.h },
-            Vec2 { x: r.x + r.w, y: r.y + r.h },
+            Vec2 {
+                x: r.x + r.w,
+                y: r.y,
+            },
+            Vec2 {
+                x: r.x,
+                y: r.y + r.h,
+            },
+            Vec2 {
+                x: r.x + r.w,
+                y: r.y + r.h,
+            },
         ];
         let mut min_x = f32::MAX;
         let mut min_y = f32::MAX;

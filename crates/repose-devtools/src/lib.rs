@@ -97,7 +97,12 @@ impl Hud {
 
         if let Some(m) = &self.metrics {
             scene.nodes.push(SceneNode::Rect {
-                rect: Rect { x: bar_x, y: bar_y, w: bar_w, h: bar_h },
+                rect: Rect {
+                    x: bar_x,
+                    y: bar_y,
+                    w: bar_w,
+                    h: bar_h,
+                },
                 brush: Brush::Solid(Color::from_hex("#1A1A1ACC")),
                 radius: 4.0,
             });
@@ -105,15 +110,31 @@ impl Hud {
             let fps_norm = (self.fps_smooth / 60.0).min(1.0);
             let bar_fill = bar_w * fps_norm;
             scene.nodes.push(SceneNode::Rect {
-                rect: Rect { x: bar_x + 2.0, y: bar_y + 2.0, w: bar_fill, h: bar_h - 4.0 },
-                brush: Brush::Solid(if self.fps_smooth >= 50.0 { Color::from_hex("#44FF44") } else if self.fps_smooth >= 30.0 { Color::from_hex("#FFAA00") } else { Color::from_hex("#FF4444") }),
+                rect: Rect {
+                    x: bar_x + 2.0,
+                    y: bar_y + 2.0,
+                    w: bar_fill,
+                    h: bar_h - 4.0,
+                },
+                brush: Brush::Solid(if self.fps_smooth >= 50.0 {
+                    Color::from_hex("#44FF44")
+                } else if self.fps_smooth >= 30.0 {
+                    Color::from_hex("#FFAA00")
+                } else {
+                    Color::from_hex("#FF4444")
+                }),
                 radius: 2.0,
             });
 
             let mut text_y = bar_y + bar_h + 4.0;
             let line = format!("{:.0} fps", self.fps_smooth);
             scene.nodes.push(SceneNode::Text {
-                rect: Rect { x: bar_x, y: text_y, w: 80.0, h: 14.0 },
+                rect: Rect {
+                    x: bar_x,
+                    y: text_y,
+                    w: 80.0,
+                    h: 14.0,
+                },
                 text: Arc::<str>::from(line),
                 color: Color::from_hex("#AAAAAA"),
                 size: 12.0,
@@ -123,7 +144,12 @@ impl Hud {
 
             let line = format!("frame: {}", self.frame_count);
             scene.nodes.push(SceneNode::Text {
-                rect: Rect { x: bar_x, y: text_y, w: 80.0, h: 14.0 },
+                rect: Rect {
+                    x: bar_x,
+                    y: text_y,
+                    w: 80.0,
+                    h: 14.0,
+                },
                 text: Arc::<str>::from(line),
                 color: Color::from_hex("#888888"),
                 size: 11.0,
@@ -133,7 +159,12 @@ impl Hud {
 
             let line = format!("build: {:.1}ms", m.build_ms);
             scene.nodes.push(SceneNode::Text {
-                rect: Rect { x: bar_x, y: text_y, w: 80.0, h: 14.0 },
+                rect: Rect {
+                    x: bar_x,
+                    y: text_y,
+                    w: 80.0,
+                    h: 14.0,
+                },
                 text: Arc::<str>::from(line),
                 color: Color::from_hex("#888888"),
                 size: 11.0,
@@ -143,7 +174,12 @@ impl Hud {
 
             let line = format!("layout: {:.1}ms", m.layout_ms);
             scene.nodes.push(SceneNode::Text {
-                rect: Rect { x: bar_x, y: text_y, w: 80.0, h: 14.0 },
+                rect: Rect {
+                    x: bar_x,
+                    y: text_y,
+                    w: 80.0,
+                    h: 14.0,
+                },
                 text: Arc::<str>::from(line),
                 color: Color::from_hex("#888888"),
                 size: 11.0,
@@ -153,7 +189,12 @@ impl Hud {
 
             let line = format!("widgets: {}", m.widget_count);
             scene.nodes.push(SceneNode::Text {
-                rect: Rect { x: bar_x, y: text_y, w: 80.0, h: 14.0 },
+                rect: Rect {
+                    x: bar_x,
+                    y: text_y,
+                    w: 80.0,
+                    h: 14.0,
+                },
                 text: Arc::<str>::from(line),
                 color: Color::from_hex("#888888"),
                 size: 11.0,
@@ -163,7 +204,12 @@ impl Hud {
 
             let line = format!("signals: {}", m.signal_count);
             scene.nodes.push(SceneNode::Text {
-                rect: Rect { x: bar_x, y: text_y, w: 80.0, h: 14.0 },
+                rect: Rect {
+                    x: bar_x,
+                    y: text_y,
+                    w: 80.0,
+                    h: 14.0,
+                },
                 text: Arc::<str>::from(line),
                 color: Color::from_hex("#888888"),
                 size: 11.0,
@@ -173,7 +219,12 @@ impl Hud {
 
             let line = format!("scene nodes: {}", m.scene_nodes);
             scene.nodes.push(SceneNode::Text {
-                rect: Rect { x: bar_x, y: text_y, w: 100.0, h: 14.0 },
+                rect: Rect {
+                    x: bar_x,
+                    y: text_y,
+                    w: 100.0,
+                    h: 14.0,
+                },
                 text: Arc::<str>::from(line),
                 color: Color::from_hex("#888888"),
                 size: 11.0,
@@ -184,7 +235,12 @@ impl Hud {
                 text_y += 20.0;
                 let line = format!("↳ {}: {:?}", hover.id, hover.role);
                 scene.nodes.push(SceneNode::Text {
-                    rect: Rect { x: bar_x, y: text_y, w: 150.0, h: 14.0 },
+                    rect: Rect {
+                        x: bar_x,
+                        y: text_y,
+                        w: 150.0,
+                        h: 14.0,
+                    },
                     text: Arc::<str>::from(line),
                     color: Color::from_hex("#44AAFF"),
                     size: 11.0,
@@ -193,7 +249,12 @@ impl Hud {
                 if let Some(lbl) = &hover.label {
                     text_y += 14.0;
                     scene.nodes.push(SceneNode::Text {
-                        rect: Rect { x: bar_x, y: text_y, w: 150.0, h: 14.0 },
+                        rect: Rect {
+                            x: bar_x,
+                            y: text_y,
+                            w: 150.0,
+                            h: 14.0,
+                        },
                         text: Arc::<str>::from(format!("  \"{}\"", lbl)),
                         color: Color::from_hex("#66CCFF"),
                         size: 10.0,

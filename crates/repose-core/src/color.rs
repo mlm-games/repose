@@ -38,7 +38,12 @@ impl Color {
     }
 
     pub fn with_alpha_f32(self, a: f32) -> Self {
-        Color(self.0, self.1, self.2, (a * 255.0).round().clamp(0.0, 255.0) as u8)
+        Color(
+            self.0,
+            self.1,
+            self.2,
+            (a * 255.0).round().clamp(0.0, 255.0) as u8,
+        )
     }
 
     /// Composite `self` (as a foreground with alpha) over a `background` color.
@@ -47,9 +52,15 @@ impl Color {
         let a = self.3 as f32 / 255.0;
         let inv_a = 1.0 - a;
         Color(
-            (self.0 as f32 * a + background.0 as f32 * inv_a).round().clamp(0.0, 255.0) as u8,
-            (self.1 as f32 * a + background.1 as f32 * inv_a).round().clamp(0.0, 255.0) as u8,
-            (self.2 as f32 * a + background.2 as f32 * inv_a).round().clamp(0.0, 255.0) as u8,
+            (self.0 as f32 * a + background.0 as f32 * inv_a)
+                .round()
+                .clamp(0.0, 255.0) as u8,
+            (self.1 as f32 * a + background.1 as f32 * inv_a)
+                .round()
+                .clamp(0.0, 255.0) as u8,
+            (self.2 as f32 * a + background.2 as f32 * inv_a)
+                .round()
+                .clamp(0.0, 255.0) as u8,
             background.3,
         )
     }
