@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use repose_core::Color;
 use repose_core::{
     animation::{AnimatedValue, AnimationSpec},
@@ -17,13 +19,16 @@ pub fn animate_f32_from(
     let anim = remember_state_with_key(format!("anim:f32:{key}"), || {
         AnimatedValue::new(initial, spec)
     });
+    let last = remember_state_with_key(format!("anim:f32_last:{key}"), || f32::NAN);
 
     let mut a = anim.borrow_mut();
-    let cur = *a.get();
-    if (cur - target).abs() > 1e-3 {
+    let mut lt = last.borrow_mut();
+    if lt.is_nan() || (*lt - target).abs() > 1e-6 {
         a.set_spec(spec);
         a.set_target(target);
+        *lt = target;
     }
+    drop(lt);
 
     let still_animating = a.update();
     if still_animating {
@@ -49,12 +54,16 @@ pub fn animate_color_from(
     let anim = remember_state_with_key(format!("anim:color:{key}"), || {
         AnimatedValue::new(initial, spec)
     });
+    let last = remember_state_with_key(format!("anim:color_last:{key}"), || None::<Color>);
 
     let mut a = anim.borrow_mut();
-    if *a.get() != target {
+    let mut lt = last.borrow_mut();
+    if lt.is_none() || lt.as_ref().unwrap() != &target {
         a.set_spec(spec);
         a.set_target(target);
+        *lt = Some(target);
     }
+    drop(lt);
 
     let still_animating = a.update();
     if still_animating {

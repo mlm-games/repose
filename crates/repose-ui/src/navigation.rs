@@ -1,4 +1,4 @@
-use crate::anim_ext::AnimatedContent;
+use crate::anim::animate_f32;
 use crate::{Box, ViewExt};
 use repose_core::*;
 use std::any::Any;
@@ -114,7 +114,27 @@ pub fn NavHost(
 
     if let Some(builder) = routes.get(&current) {
         let page = Box(Modifier::new().fill_max_size()).child((builder)());
-        AnimatedContent(current.clone(), trans, page)
+
+        // Simple page transition: slide on push/pop
+        match trans {
+            Some(Transition::Push { .. }) => {
+                let offset = animate_f32(
+                    format!("nav_push_{}", current),
+                    0.0,
+                    AnimationSpec::default(),
+                );
+                Box(Modifier::new().translate(offset, 0.0)).child(page)
+            }
+            Some(Transition::Pop { .. }) => {
+                let offset = animate_f32(
+                    format!("nav_pop_{}", current),
+                    0.0,
+                    AnimationSpec::default(),
+                );
+                Box(Modifier::new().translate(-offset, 0.0)).child(page)
+            }
+            _ => page,
+        }
     } else {
         // Empty fallback still fills so layouts/scrolls get a definite size
         Box(Modifier::new().fill_max_size())

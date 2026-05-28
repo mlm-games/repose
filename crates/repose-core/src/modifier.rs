@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use taffy::{AlignContent, AlignItems, AlignSelf, FlexDirection, FlexWrap, JustifyContent};
 
+use crate::animation::AnimationSpec;
 use crate::{Brush, Color, PointerEvent, Size, Transform, Vec2};
 
 /// State-driven colors for interactive components.
@@ -66,7 +67,7 @@ macro_rules! impl_option_fields {
                     margin_left, margin_right, margin_top, margin_bottom,
                     aspect_ratio, painter,
                     on_drag_start, on_drag_end, on_drag_enter, on_drag_over, on_drag_leave, on_drop,
-                    on_action, cursor,
+                    on_action, cursor, animate_content_size,
                 );
                 merge_flags!(self, other;
                     fill_max, fill_max_w, fill_max_h,
@@ -196,6 +197,10 @@ pub struct Modifier {
 
     /// Cursor icon hint for desktop/web runners.
     pub cursor: Option<crate::CursorIcon>,
+
+    /// If set, the size of this node will smoothly animate to its target size
+    /// whenever content size changes. Uses the provided animation spec.
+    pub animate_content_size: Option<AnimationSpec>,
 }
 
 impl std::fmt::Debug for Modifier {
@@ -221,7 +226,6 @@ impl std::fmt::Debug for Modifier {
             background,
             state_colors,
             state_elevation,
-
             border,
             flex_grow,
             flex_shrink,
@@ -254,6 +258,7 @@ impl std::fmt::Debug for Modifier {
             margin_bottom,
             aspect_ratio,
             cursor,
+            animate_content_size,
         );
 
         macro_rules! opt_cb {
@@ -695,6 +700,14 @@ impl Modifier {
     /// Set the cursor icon hint for desktop/web runners.
     pub fn cursor(mut self, c: crate::CursorIcon) -> Self {
         self.cursor = Some(c);
+        self
+    }
+
+    /// Animate size changes smoothly when the content's natural size changes.
+    /// Uses the provided `AnimationSpec` for the transition.
+    /// The content will be clipped to the animated size during transitions.
+    pub fn animate_content_size(mut self, spec: AnimationSpec) -> Self {
+        self.animate_content_size = Some(spec);
         self
     }
 }

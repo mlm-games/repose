@@ -357,12 +357,13 @@ impl LayoutEngine {
             return t_id;
         }
 
-        let (style, ctx, children) = {
+        let (style, ctx, children, is_stack) = {
             let node = self.tree.get(node_id).expect("Node missing in update");
             (
                 self.style_from_node(node, font_px),
                 self.context_from_node(node),
                 node.children.clone(),
+                matches!(node.kind, ViewKind::Stack),
             )
         };
 
@@ -379,6 +380,24 @@ impl LayoutEngine {
                 .new_with_children(style, &child_taffy_ids)
                 .unwrap();
             let _ = self.taffy.set_node_context(t, Some(ctx));
+            // Stack children must all occupy the same grid cell to overlap.
+            if is_stack {
+                for &child_tid in &child_taffy_ids {
+                    if let Ok(cs) = self.taffy.style(child_tid) {
+                        let mut new_cs = cs.clone();
+                        let placement = line::<GridPlacement>(1);
+                        new_cs.grid_row = Line {
+                            start: placement.clone(),
+                            end: GridPlacement::Auto,
+                        };
+                        new_cs.grid_column = Line {
+                            start: placement,
+                            end: GridPlacement::Auto,
+                        };
+                        let _ = self.taffy.set_style(child_tid, new_cs);
+                    }
+                }
+            }
             t
         };
 
@@ -397,12 +416,13 @@ impl LayoutEngine {
         // Ensure this node has a stable view id
         let _ = self.ensure_view_id(node_id);
 
-        let (new_style, new_ctx, children) = {
+        let (new_style, new_ctx, children, is_stack) = {
             let node = self.tree.get(node_id).unwrap();
             (
                 self.style_from_node(node, font_px),
                 self.context_from_node(node),
                 node.children.clone(),
+                matches!(node.kind, ViewKind::Stack),
             )
         };
 
@@ -414,6 +434,29 @@ impl LayoutEngine {
             .map(|&child_id| self.update_taffy_node(child_id, font_px))
             .collect();
         let _ = self.taffy.set_children(taffy_id, &child_taffy_ids);
+
+        // Stack children must all occupy the same grid cell (row 1, col 1)
+        // so they overlap. Without this, Display::Grid auto-places them in
+        // separate cells (row 1, row 2, …).
+        if is_stack {
+            for &child_tid in &child_taffy_ids {
+                if let Ok(cs) = self.taffy.style(child_tid) {
+                    let mut new_cs = cs.clone();
+                    let row_pl = line::<GridPlacement>(1);
+                    let col_pl = line::<GridPlacement>(1);
+                    new_cs.grid_row = Line {
+                        start: row_pl,
+                        end: GridPlacement::Auto,
+                    };
+                    new_cs.grid_column = Line {
+                        start: col_pl,
+                        end: GridPlacement::Auto,
+                    };
+                    let _ = self.taffy.set_style(child_tid, new_cs);
+                }
+            }
+        }
+
         self.stats.taffy_reused += 1;
     }
 
@@ -1100,14 +1143,14 @@ impl LayoutEngine {
             w: layout.size.width,
             h: layout.size.height,
         };
-        let rect = repose_core::Rect {
+        let mut rect = repose_core::Rect {
             x: parent_offset_px.0 + local_rect.x,
             y: parent_offset_px.1 + local_rect.y,
             w: local_rect.w,
             h: local_rect.h,
         };
 
-        let content_rect = if let Some(pv) = modifier.padding_values {
+        let mut content_rect = if let Some(pv) = modifier.padding_values {
             repose_core::Rect {
                 x: rect.x + dp_to_px(pv.left),
                 y: rect.y + dp_to_px(pv.top),
@@ -1206,6 +1249,34 @@ impl LayoutEngine {
             rect.h,
         );
         let push_round_clip = round_clip_px > 0.5 && rect.w > 0.5 && rect.h > 0.5;
+
+        if let Some(anim_spec) = &modifier.animate_content_size {
+            let target_w = rect.w;
+            let target_h = rect.h;
+
+            let prev = remember_state_with_key(format!("anim_size_target:{view_id}"), || {
+                (target_w, target_h)
+            });
+            let mut p = prev.borrow_mut();
+            if (p.0 - target_w).abs() > 0.5 || (p.1 - target_h).abs() > 0.5 {
+                *p = (target_w, target_h);
+            }
+            drop(p);
+
+            let aw = animate_f32(format!("anim_size_w:{view_id}"), target_w, *anim_spec);
+            let ah = animate_f32(format!("anim_size_h:{view_id}"), target_h, *anim_spec);
+
+            // Override rect and content_rect dimensions with animated values
+            let aw = aw.max(1.0);
+            let ah = ah.max(1.0);
+            let dw = rect.w - aw;
+            let dh = rect.h - ah;
+            rect.w = aw;
+            rect.h = ah;
+            content_rect.w = (content_rect.w - dw).max(0.0);
+            content_rect.h = (content_rect.h - dh).max(0.0);
+        }
+
         if let Some(tf) = modifier.transform {
             scene.nodes.push(SceneNode::PushTransform { transform: tf });
         }
