@@ -995,9 +995,8 @@ mod tests {
         let mut st = DockState::new_with_tabs(vec![1, 2, 3]);
         // Create a second tabs node by splitting
         assert!(st.dock_panel(1, DropZone::Right, 3));
-        // Now root is split; find some tabs node to dock into
-        // We dock panel 2 into root center should fail because root isn't tabs
-        assert!(!st.dock_panel(1, DropZone::Center, 2));
+        // Root is now a Split node; docking center into a Split should fail
+        assert!(!st.dock_panel(st.root.id, DropZone::Center, 2));
     }
 
     #[test]
