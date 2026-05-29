@@ -1,5 +1,5 @@
 use repose_core::{prelude::*, signal};
-use repose_material::material3::{FilledButton, TextButton};
+use repose_material::material3::{ElevatedButton, FilledButton, TextButton};
 use repose_ui::anim::animate_f32;
 use repose_ui::anim_ext::{AnimatedContent, Crossfade, EnterTransition, ExitTransition};
 use repose_ui::scroll::{ScrollArea, remember_scroll_state};
@@ -56,7 +56,7 @@ pub fn screen() -> View {
                     Box(Modifier::new().width(8.0).height(1.0)),
                     TextButton(Modifier::new(), { let m = mode.clone(); move || m.set(SpringMode::Bouncy) }, || Text("Bouncy")),
                     Box(Modifier::new().width(8.0).height(1.0)),
-                    TextButton(Modifier::new(), { let m = mode.clone(); move || m.set(SpringMode::Crit) }, || Text("Crit")),
+                    ElevatedButton(Modifier::new(), { let m = mode.clone(); move || m.set(SpringMode::Crit) }, || Text("Crit")),
                     Spacer(),
                     TextButton(Modifier::new(), { let v = visible.clone(); move || v.update(|x| *x = !*x) }, || Text("Toggle")),
                 )),

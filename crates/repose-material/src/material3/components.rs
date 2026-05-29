@@ -231,6 +231,46 @@ pub fn TextButton(
     .child(content)
 }
 
+/// M3 Elevated Button - uses `surface_container_low` background with elevation.
+pub fn ElevatedButton(
+    modifier: Modifier,
+    on_click: impl Fn() + 'static,
+    content: impl FnOnce() -> View,
+) -> View {
+    let th = theme();
+    let content = with_content_color(th.primary, content);
+    let bg = th.surface_container_low;
+    Box(Modifier::new()
+        .height(40.0)
+        .min_width(48.0)
+        .background(bg)
+        .state_colors(StateColors {
+            default: Color::TRANSPARENT,
+            hovered: th.primary.with_alpha_f32(0.08),
+            pressed: th.primary.with_alpha_f32(0.12),
+            disabled: th.on_surface.with_alpha_f32(0.12),
+        })
+        .state_elevation(StateElevation {
+            default: th.elevation.level1,
+            hovered: th.elevation.level2,
+            pressed: th.elevation.level3,
+            disabled: 0.0,
+        })
+        .clip_rounded(20.0)
+        .padding_values(PaddingValues {
+            left: 24.0,
+            right: 24.0,
+            top: 0.0,
+            bottom: 0.0,
+        })
+        .align_items(AlignItems::Center)
+        .justify_content(JustifyContent::Center)
+        .clickable()
+        .on_pointer_down(move |_| on_click())
+        .then(modifier))
+    .child(content)
+}
+
 /// M3 Floating Action Button (regular, 56dp).
 pub fn FAB(icon: View, on_click: impl Fn() + 'static) -> View {
     let th = theme();
@@ -472,56 +512,62 @@ pub struct Tab {
 /// M3 Tab Row - a horizontal row of tabs with an active indicator.
 pub fn TabRow(selected_index: usize, tabs: Vec<Tab>) -> View {
     let th = theme();
-    Row(Modifier::new()
-        .fill_max_width()
-        .height(48.0)
-        .background(th.surface))
-    .child(
-        tabs.into_iter()
-            .enumerate()
-            .map(|(i, tab)| {
-                let selected = i == selected_index;
-                let color = if selected {
-                    th.primary
-                } else {
-                    th.on_surface_variant
-                };
-                let cb = tab.on_click.clone();
-
-                Column(
-                    Modifier::new()
-                        .flex_grow(1.0)
-                        .fill_max_height()
-                        .align_items(AlignItems::Center)
-                        .justify_content(JustifyContent::Center)
-                        .state_colors(StateColors {
-                            default: Color::TRANSPARENT,
-                            hovered: th.on_surface.with_alpha_f32(0.08),
-                            pressed: th.on_surface.with_alpha_f32(0.12),
-                            disabled: Color::TRANSPARENT,
-                        })
-                        .clickable()
-                        .on_pointer_down(move |_| cb()),
-                )
-                .child((
-                    tab.icon.unwrap_or(Box(Modifier::new())),
-                    Text(tab.label)
-                        .color(color)
-                        .size(th.typography.title_small)
-                        .single_line(),
-                    if selected {
-                        Box(Modifier::new()
-                            .fill_max_width()
-                            .height(3.0)
-                            .background(th.primary)
-                            .clip_rounded(1.5))
+    Column(Modifier::new().fill_max_width()).child((
+        Row(Modifier::new()
+            .fill_max_width()
+            .height(48.0)
+            .background(th.surface))
+        .child(
+            tabs.into_iter()
+                .enumerate()
+                .map(|(i, tab)| {
+                    let selected = i == selected_index;
+                    let color = if selected {
+                        th.primary
                     } else {
-                        Box(Modifier::new().height(3.0))
-                    },
-                ))
-            })
-            .collect::<Vec<_>>(),
-    )
+                        th.on_surface_variant
+                    };
+                    let cb = tab.on_click.clone();
+
+                    Column(
+                        Modifier::new()
+                            .flex_grow(1.0)
+                            .fill_max_height()
+                            .align_items(AlignItems::Center)
+                            .justify_content(JustifyContent::Center)
+                            .state_colors(StateColors {
+                                default: Color::TRANSPARENT,
+                                hovered: th.on_surface.with_alpha_f32(0.08),
+                                pressed: th.on_surface.with_alpha_f32(0.12),
+                                disabled: Color::TRANSPARENT,
+                            })
+                            .clickable()
+                            .on_pointer_down(move |_| cb()),
+                    )
+                    .child((
+                        tab.icon.unwrap_or(Box(Modifier::new())),
+                        Text(tab.label)
+                            .color(color)
+                            .size(th.typography.title_small)
+                            .single_line(),
+                        if selected {
+                            Box(Modifier::new()
+                                .fill_max_width()
+                                .height(3.0)
+                                .background(th.primary)
+                                .clip_rounded(1.5))
+                        } else {
+                            Box(Modifier::new().height(3.0))
+                        },
+                    ))
+                })
+                .collect::<Vec<_>>(),
+        ),
+        Box(Modifier::new()
+            .fill_max_width()
+            .height(1.0)
+            .background(th.outline_variant)),
+    ))
 }
 
 /// A single segment definition for `SegmentedButton`.
@@ -605,6 +651,26 @@ pub fn CircularProgressIndicator(value: Option<f32>) -> View {
         },
     )
     .modifier(Modifier::new().size(48.0, 48.0))
+    .semantics(Semantics {
+        role: Role::ProgressBar,
+        label: None,
+        focused: false,
+        enabled: true,
+    })
+}
+
+/// M3 Linear Progress Indicator. Uses the built-in `ProgressBar` view kind.
+pub fn LinearProgressIndicator(value: Option<f32>) -> View {
+    View::new(
+        0,
+        ViewKind::ProgressBar {
+            value: value.unwrap_or(0.0),
+            min: 0.0,
+            max: 1.0,
+            circular: false,
+        },
+    )
+    .modifier(Modifier::new().fill_max_width().height(4.0))
     .semantics(Semantics {
         role: Role::ProgressBar,
         label: None,

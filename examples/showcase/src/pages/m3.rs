@@ -3,8 +3,8 @@ use std::rc::Rc;
 use repose_core::prelude::*;
 use repose_material::material3::{
     BottomSheet, DatePicker, DatePickerState, DropdownMenu, DropdownMenuEntry, DropdownMenuItem,
-    MenuState, ModalBottomSheet, PullToRefresh, PullToRefreshState, SearchBar, SearchBarState,
-    SheetState, TimePicker, TimePickerState,
+    FilledButton, MenuState, ModalBottomSheet, PullToRefresh, PullToRefreshState, SearchBar,
+    SearchBarState, SheetState, TextButton, TimePicker, TimePickerState,
 };
 use repose_ui::{anim::animate_f32, overlay::OverlayHandle, *};
 use web_time::Duration;
@@ -76,43 +76,22 @@ pub fn screen(overlay: OverlayHandle) -> View {
                     menu_state.clone(),
                     overlay.clone(),
                     Modifier::new().fill_max_width(),
-                    Button(
-                        Text(menu_label.get().clone())
-                            .color(th.on_surface)
-                            .size(th.typography.body_large),
-                        {
-                            let s = menu_state.clone();
-                            move || s.open()
-                        },
-                    ),
+                    FilledButton(Modifier::new(), {
+                        let s = menu_state.clone();
+                        move || s.open()
+                    }, || Text(menu_label.get().clone())
+                        .size(th.typography.body_large)),
                     menu_items.clone(),
                 ),
             )),
         ),
         Section(
-            "SearchBar",
-            Column(Modifier::new().padding(12.0)).child((SearchBar(
-                search_state.clone(),
-                Modifier::new().fill_max_width(),
-                None,
-                None,
-                "Search…",
-                None,
-                Column(Modifier::new().padding(12.0)).child((
-                    Text("Search suggestions").color(th.on_surface_variant),
-                    Text("Result 1").color(th.on_surface),
-                    Text("Result 2").color(th.on_surface),
-                    Text("Result 3").color(th.on_surface),
-                )),
-            ),)),
-        ),
-        Section(
             "Modal Bottom Sheet",
             Column(Modifier::new().padding(12.0)).child((
-                Button(Text("Open Bottom Sheet"), {
+                FilledButton(Modifier::new(), {
                     let s = sheet_state.clone();
                     move || s.show()
-                }),
+                }, || Text("Open Bottom Sheet")),
                 ModalBottomSheet(
                     sheet_state.clone(),
                     overlay.clone(),
@@ -122,10 +101,10 @@ pub fn screen(overlay: OverlayHandle) -> View {
                         Text("This is a modal bottom sheet with a drag handle.")
                             .color(th.on_surface_variant),
                         Box(Modifier::new().height(16.0).width(1.0)),
-                        Button(Text("Dismiss"), {
+                        TextButton(Modifier::new(), {
                             let s = sheet_state.clone();
                             move || s.dismiss()
-                        }),
+                        }, || Text("Dismiss")),
                     )),
                 ),
             )),
@@ -133,17 +112,13 @@ pub fn screen(overlay: OverlayHandle) -> View {
         Section(
             "Simple Bottom Sheet (animated)",
             Column(Modifier::new().padding(12.0)).child((
-                Button(
-                    Text(if old_sheet_state.get() {
-                        "Hide Sheet"
-                    } else {
-                        "Show Sheet"
-                    }),
-                    {
-                        let s = old_sheet_state.clone();
-                        move || s.set(!s.get())
-                    },
-                ),
+                FilledButton(Modifier::new(), {
+                    let s = old_sheet_state.clone();
+                    move || s.set(!s.get())
+                }, {
+                    let s = old_sheet_state.clone();
+                    move || Text(if s.get() { "Hide Sheet" } else { "Show Sheet" })
+                }),
                 BottomSheet(
                     old_sheet_state.get(),
                     {
@@ -161,18 +136,18 @@ pub fn screen(overlay: OverlayHandle) -> View {
         Section(
             "DatePicker + TimePicker",
             Column(Modifier::new().padding(12.0)).child((
-                Button(Text("Pick Date"), {
+                FilledButton(Modifier::new(), {
                     let s = show_date_picker.clone();
                     move || s.set(true)
-                }),
+                }, || Text("Pick Date")),
                 Text(format!("Date: {}", date_result.get()))
                     .color(th.on_surface)
                     .size(th.typography.body_medium),
                 Box(Modifier::new().height(8.0).width(1.0)),
-                Button(Text("Pick Time"), {
+                FilledButton(Modifier::new(), {
                     let s = show_time_picker.clone();
                     move || s.set(true)
-                }),
+                }, || Text("Pick Time")),
                 Text(format!("Time: {}", time_result.get()))
                     .color(th.on_surface)
                     .size(th.typography.body_medium),
@@ -241,10 +216,10 @@ pub fn screen(overlay: OverlayHandle) -> View {
         Section(
             "Animation: Keyframes (via animate_f32)",
             Column(Modifier::new().padding(12.0)).child((
-                Button(Text("Animate to random"), {
+                FilledButton(Modifier::new(), {
                     let t = anim_target.clone();
                     move || t.set(rand_val())
-                }),
+                }, || Text("Animate to random")),
                 Box(Modifier::new()
                     .size(anim_val * 100.0 + 20.0, 20.0)
                     .background(th.primary)

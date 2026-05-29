@@ -33,7 +33,8 @@ pub fn AlertDialog(
             .on_pointer_down(move |_| on_dismiss())),
         Surface(
             Modifier::new()
-                .size(280.0, 200.0)
+                .min_width(280.0)
+                .max_width(560.0)
                 .background(th.surface_container_high)
                 .clip_rounded(th.shapes.extra_large)
                 .padding(24.0),
@@ -95,6 +96,7 @@ pub fn BottomSheet(
 pub fn NavigationBar(selected_index: usize, items: Vec<NavItem>) -> View {
     Row(Modifier::new()
         .fill_max_size()
+        .min_height(80.0)
         .background(theme().surface_container)
         .padding(8.0))
     .child(
@@ -261,7 +263,8 @@ pub fn Snackbar(
             bottom: 12.0,
         })
         .min_height(48.0)
-        .min_width(280.0);
+        .min_width(280.0)
+        .max_width(600.0);
 
     Surface(
         modifier,
