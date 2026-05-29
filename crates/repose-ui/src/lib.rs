@@ -156,6 +156,18 @@ pub fn Column(modifier: Modifier) -> View {
     View::new(0, ViewKind::Column).modifier(modifier)
 }
 
+/// A horizontally-oriented flow layout that wraps children to new rows when
+/// they exceed the available width. Equivalent to `Row` with `flex_wrap(Wrap)`.
+pub fn FlowRow(modifier: Modifier) -> View {
+    Row(modifier.flex_wrap(FlexWrap::Wrap))
+}
+
+/// A vertically-oriented flow layout that wraps children to new columns when
+/// they exceed the available height. Equivalent to `Column` with `flex_wrap(Wrap)`.
+pub fn FlowColumn(modifier: Modifier) -> View {
+    Column(modifier.flex_wrap(FlexWrap::Wrap))
+}
+
 pub fn Stack(modifier: Modifier) -> View {
     View::new(0, ViewKind::Stack).modifier(modifier)
 }

@@ -9,6 +9,7 @@ pub mod layout;
 pub mod lists;
 pub mod pager;
 pub mod scroll;
+pub mod scroll_features;
 pub mod text;
 pub mod widgets;
 pub mod windows;
