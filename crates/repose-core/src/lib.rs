@@ -118,6 +118,7 @@ pub mod shortcuts;
 pub mod signal;
 pub mod state;
 pub mod tests;
+pub mod text;
 pub mod view;
 
 pub use color::*;
@@ -133,9 +134,11 @@ pub use prelude::*;
 pub use reactive::*;
 pub use render_api::*;
 pub use runtime::*;
+pub use runtime::{FocusDirection, FocusManager, FocusRequester, take_focus_request};
 pub use semantics::*;
 pub use signal::*;
 pub use state::*;
+pub use text::*;
 pub use view::*;
 
 // Ensure a clock is installed even if platform didn't (tests, benches).

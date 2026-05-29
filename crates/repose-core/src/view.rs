@@ -1,4 +1,4 @@
-use crate::{Brush, Color, Modifier, Rect, Transform, Vec2};
+use crate::{Brush, Color, Modifier, Rect, TextSpan, Transform};
 use std::{rc::Rc, sync::Arc};
 
 pub type ViewId = u64;
@@ -55,6 +55,7 @@ pub enum ViewKind {
         max_lines: Option<usize>,
         overflow: TextOverflow,
         font_family: Option<&'static str>,
+        annotations: Option<Arc<[TextSpan]>>,
     },
     Button {
         on_click: Option<Callback>,

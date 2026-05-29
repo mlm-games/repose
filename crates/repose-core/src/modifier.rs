@@ -67,7 +67,7 @@ macro_rules! impl_option_fields {
                     margin_left, margin_right, margin_top, margin_bottom,
                     aspect_ratio, painter,
                     on_drag_start, on_drag_end, on_drag_enter, on_drag_over, on_drag_leave, on_drop,
-                    on_action, cursor, animate_content_size,
+                    on_action, cursor, animate_content_size, focus_requester,
                 );
                 merge_flags!(self, other;
                     fill_max, fill_max_w, fill_max_h,
@@ -201,6 +201,11 @@ pub struct Modifier {
     /// If set, the size of this node will smoothly animate to its target size
     /// whenever content size changes. Uses the provided animation spec.
     pub animate_content_size: Option<AnimationSpec>,
+
+    /// A `FocusRequester` handle that will be associated with this view.
+    /// When the requester's `request_focus()` is called, keyboard focus will
+    /// move to this view.
+    pub focus_requester: Option<crate::runtime::FocusRequester>,
 }
 
 impl std::fmt::Debug for Modifier {
@@ -708,6 +713,13 @@ impl Modifier {
     /// The content will be clipped to the animated size during transitions.
     pub fn animate_content_size(mut self, spec: AnimationSpec) -> Self {
         self.animate_content_size = Some(spec);
+        self
+    }
+
+    /// Attach a `FocusRequester` to this view. The requester will be associated
+    /// with the view's focusable element, allowing programmatic focus requests.
+    pub fn focus_requester(mut self, fr: crate::runtime::FocusRequester) -> Self {
+        self.focus_requester = Some(fr);
         self
     }
 }

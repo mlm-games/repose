@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -9,6 +9,117 @@ use crate::{Rect, Scene, View, semantics::Role};
 thread_local! {
     pub static COMPOSER: RefCell<Composer> = RefCell::new(Composer::default());
     static ROOT_SCOPE: RefCell<Option<Scope>> = const { RefCell::new(None) };
+
+    /// A programmatic focus request, set by `FocusRequester::request_focus()`.
+    /// Stores the view ID that should receive focus on the next frame.
+    static FOCUS_REQUEST: Cell<Option<u64>> = const { Cell::new(None) };
+}
+
+pub fn take_focus_request() -> Option<u64> {
+    FOCUS_REQUEST.with(|r| r.replace(None))
+}
+
+/// A handle that can programmatically request focus for a widget.
+///
+/// Similar to Compose's `FocusRequester`. Create one via `remember(FocusRequester::new)`,
+/// attach it via `.focus_requester(...)` on a modifier, and call `request_focus()` to
+/// move keyboard focus to the associated widget on the next frame.
+#[derive(Clone)]
+pub struct FocusRequester {
+    /// Target view ID, set during layout/paint by the modifier system.
+    pub target: Rc<RefCell<Option<u64>>>,
+}
+
+impl FocusRequester {
+    pub fn new() -> Self {
+        Self {
+            target: Rc::new(RefCell::new(None)),
+        }
+    }
+
+    /// Request focus for the associated widget on the next frame.
+    pub fn request_focus(&self) {
+        if let Some(id) = *self.target.borrow() {
+            FOCUS_REQUEST.with(|r| r.set(Some(id)));
+        }
+    }
+}
+
+impl Default for FocusRequester {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Direction for focus movement.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FocusDirection {
+    Next,
+    Previous,
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+/// A manager for programmatic focus navigation.
+///
+/// Wraps a `&Scheduler` and provides methods to move focus.
+/// Can also be used standalone with a focus chain and focused element.
+#[derive(Clone)]
+pub struct FocusManager {
+    /// The ordered list of focusable element IDs.
+    pub chain: Vec<u64>,
+    /// The currently focused element (if any).
+    pub focused: Option<u64>,
+}
+
+impl FocusManager {
+    pub fn new(chain: Vec<u64>, focused: Option<u64>) -> Self {
+        Self { chain, focused }
+    }
+
+    /// Move focus in the given direction.
+    /// Returns the new focused element ID, or `None` if no movement is possible.
+    pub fn move_focus(&mut self, dir: FocusDirection) -> Option<u64> {
+        match dir {
+            FocusDirection::Next | FocusDirection::Previous => {
+                self.move_tab(dir == FocusDirection::Previous)
+            }
+            _ => None, // spatial navigation not implemented at the core level
+        }
+    }
+
+    /// Tab forward or backward in the focus chain.
+    pub fn move_tab(&mut self, reverse: bool) -> Option<u64> {
+        if self.chain.is_empty() {
+            return None;
+        }
+        let next = if let Some(cur) = self.focused {
+            if let Some(idx) = self.chain.iter().position(|&id| id == cur) {
+                if reverse {
+                    if idx == 0 {
+                        self.chain[self.chain.len() - 1]
+                    } else {
+                        self.chain[idx - 1]
+                    }
+                } else {
+                    self.chain[(idx + 1) % self.chain.len()]
+                }
+            } else {
+                self.chain[0]
+            }
+        } else {
+            self.chain[0]
+        };
+        self.focused = Some(next);
+        Some(next)
+    }
+
+    /// Set target ID on a FocusRequester (called during layout).
+    pub fn set_requester_target(requester: &FocusRequester, id: u64) {
+        *requester.target.borrow_mut() = Some(id);
+    }
 }
 
 #[derive(Default)]

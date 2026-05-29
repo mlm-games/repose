@@ -14,12 +14,13 @@ pub use crate::locals::{
 pub use crate::modifier::Modifier;
 pub use crate::render_api::{GlyphRasterConfig, RenderBackend};
 pub use crate::runtime::{
-    ComposeGuard, Frame, Scheduler, remember, remember_state, remember_state_with_key,
-    remember_with_key,
+    ComposeGuard, FocusDirection, FocusManager, FocusRequester, Frame, Scheduler, remember,
+    remember_state, remember_state_with_key, remember_with_key, take_focus_request,
 };
 pub use crate::scope::{Scope, current_scope, scoped_effect};
 pub use crate::semantics::{Role, Semantics};
 pub use crate::shortcuts;
+pub use crate::text::{AnnotatedString, AnnotatedStringBuilder, SpanStyle, TextSpan, build_annotated_string};
 pub use crate::signal::{Signal, signal};
 pub use crate::view::{
     ImageFit, ImageHandle, Scene, SceneNode, TextOverflow, View, ViewId, ViewKind,

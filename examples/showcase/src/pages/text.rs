@@ -1,5 +1,6 @@
 use repose_core::{prelude::*, signal};
 use repose_material::{Icon, material_symbols};
+use repose_material::material3::FilledButton;
 use repose_ui::*;
 
 use crate::ui::Section;
@@ -16,8 +17,9 @@ pub fn screen() -> View {
     let last_change_single = remember_with_key("text_last_change_single", || signal(String::new()));
     let last_submit_multi = remember_with_key("text_last_submit_multi", || signal(String::new()));
     let last_change_multi = remember_with_key("text_last_change_multi", || signal(String::new()));
+    let toggle = remember(|| signal(false));
 
-    Column(Modifier::new().fill_max_width()).child((
+    Column(Modifier::new().fill_max_width()).child(vec![
         Row(Modifier::new().fill_max_width().gap(16.0)).child((
             Section(
                 "TextField (single-line)",
@@ -123,5 +125,84 @@ pub fn screen() -> View {
                     .modifier(Modifier::new().width(420.0)),
             )),
         ),
-    ))
+
+        // Rich text (AnnotatedString) demos
+        Section("Annotated Text - Colored Spans", {
+            let annotated = build_annotated_string(|b| {
+                b.push_color("Red ", Color::from_rgba(0xE6, 0x1C, 0x1C, 255));
+                b.push_color("Green ", Color::from_rgba(0x1C, 0xE6, 0x1C, 255));
+                b.push_color("Blue ", Color::from_rgba(0x1C, 0x1C, 0xE6, 255));
+                b.push("and ");
+                b.push_color("Yellow", Color::from_rgba(0xE6, 0xE6, 0x1C, 255));
+                b.push(" text spans.");
+            });
+            AnnotatedText(annotated).size(18.0)
+        }),
+
+        Section("Annotated Text - Mixed Colors", {
+            let annotated = build_annotated_string(|b| {
+                b.push("This text has ");
+                b.push_color("multiple", Color::from_rgba(0xE6, 0x1C, 0x1C, 255));
+                b.push(" ");
+                b.push_color("different", Color::from_rgba(0x1C, 0xE6, 0x1C, 255));
+                b.push(" ");
+                b.push_color("colors", Color::from_rgba(0x1C, 0x1C, 0xE6, 255));
+                b.push(" in a single line.");
+            });
+            AnnotatedText(annotated).size(16.0)
+        }),
+
+        Section("Annotated Text - Themed Colors", {
+            let t = theme();
+            let annotated = build_annotated_string(|b| {
+                b.push_color("Primary ", t.primary);
+                b.push_color("Secondary ", t.secondary);
+                b.push_color("Tertiary ", t.tertiary);
+                b.push_color("Error", t.error);
+                b.push(" colored text.");
+            });
+            AnnotatedText(annotated).size(16.0)
+        }),
+
+        Section("Annotated Text - Custom Font Size", {
+            let annotated = build_annotated_string(|b| {
+                b.push("Normal text ");
+                b.push_with_style("Big text ", SpanStyle::default().font_size(24.0));
+                b.push_with_style("Colored big ", SpanStyle::default().color(Color::from_rgba(0xE6, 0x1C, 0x1C, 255)).font_size(24.0));
+                b.push("back to normal.");
+            });
+            AnnotatedText(annotated).size(14.0)
+        }),
+
+        Section("Annotated Text - Multi-line", {
+            let annotated = build_annotated_string(|b| {
+                b.push("This is a ");
+                b.push_color("long paragraph", Color::from_rgba(0x1C, 0x8C, 0xE6, 255));
+                b.push(" with styled spans that wraps across multiple lines when the text exceeds the available width. ");
+                b.push_color("Each span", Color::from_rgba(0xE6, 0x1C, 0x8C, 255));
+                b.push(" can have its own ");
+                b.push_color("color", Color::from_rgba(0x8C, 0xE6, 0x1C, 255));
+                b.push(" and the line breaking correctly preserves the styling per segment.");
+            });
+            AnnotatedText(annotated).size(16.0)
+        }),
+
+        Section("Annotated Text - Toggle Example", {
+            let annotated = if toggle.get() {
+                build_annotated_string(|b| {
+                    b.push_color("ON", Color::from_rgba(0x1C, 0xE6, 0x1C, 255));
+                    b.push(" - The toggle is active");
+                })
+            } else {
+                build_annotated_string(|b| {
+                    b.push_color("OFF", Color::from_rgba(0xE6, 0x1C, 0x1C, 255));
+                    b.push(" - The toggle is inactive");
+                })
+            };
+            Column(Modifier::new().padding(8.0)).child((
+                AnnotatedText(annotated).size(18.0),
+                FilledButton(Modifier::new(), { let t = toggle.clone(); move || t.update(|x| *x = !*x) }, || Text("Toggle")),
+            ))
+        }),
+    ])
 }

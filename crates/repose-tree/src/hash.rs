@@ -48,6 +48,7 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             max_lines,
             overflow,
             font_family,
+            ..
         } => {
             font_family.hash(hasher);
             text.hash(hasher);
@@ -324,6 +325,7 @@ mod tests {
                 max_lines: None,
                 overflow: TextOverflow::Visible,
                 font_family: None,
+                annotations: None,
             },
         );
         let v2 = View::new(
@@ -336,6 +338,7 @@ mod tests {
                 max_lines: None,
                 overflow: TextOverflow::Visible,
                 font_family: None,
+                annotations: None,
             },
         );
         let v3 = View::new(
@@ -348,6 +351,7 @@ mod tests {
                 max_lines: None,
                 overflow: TextOverflow::Visible,
                 font_family: None,
+                annotations: None,
             },
         );
 

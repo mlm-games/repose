@@ -58,7 +58,15 @@ pub fn compose_frame<F>(
 where
     F: FnMut(&mut Scheduler) -> View,
 {
+    // Process any programmatic focus request from FocusRequester
+    if let Some(requested_id) = repose_core::take_focus_request() {
+        sched.focused = Some(requested_id);
+    }
+
     set_density_default(Density { scale });
+
+    // Use scheduler's focused state (which may have been updated by focus request)
+    let current_focused = sched.focused;
 
     sched.repose(
         {
@@ -80,7 +88,7 @@ where
                         size_px_u32,
                         tf_states,
                         &interactions,
-                        focused,
+                        current_focused,
                     )
                 })
             }
@@ -1127,6 +1135,43 @@ pub fn run_desktop_app_with_snackbar(
                             }
                         }
                         return; // swallow Tab
+                    }
+
+                    // Arrow key focus navigation
+                    if key_event.state == ElementState::Pressed && !key_event.repeat {
+                        let nav_dir = match key_event.physical_key {
+                            PhysicalKey::Code(KeyCode::ArrowLeft) => Some(FocusDirection::Left),
+                            PhysicalKey::Code(KeyCode::ArrowRight) => Some(FocusDirection::Right),
+                            PhysicalKey::Code(KeyCode::ArrowUp) => Some(FocusDirection::Up),
+                            PhysicalKey::Code(KeyCode::ArrowDown) => Some(FocusDirection::Down),
+                            _ => None,
+                        };
+                        if let Some(dir) = nav_dir {
+                            if let Some(f) = &self.frame_cache {
+                                if let Some(next) = rc::focus_in_direction(
+                                    &f.focus_chain,
+                                    &f.hit_regions,
+                                    self.sched.focused,
+                                    dir,
+                                ) {
+                                    if let Some(active) = self.key_pressed_active.take() {
+                                        self.pressed_ids.remove(&active);
+                                    }
+                                    self.sched.focused = Some(next);
+                                    // IME only for TextField
+                                    if let Some(win) = &self.window {
+                                        let is_textfield = f
+                                            .semantics_nodes
+                                            .iter()
+                                            .any(|n| n.id == next && n.role == Role::TextField);
+                                        rc_web::set_ime_for_textfield(win, is_textfield);
+                                    }
+                                    self.announce_focus_change();
+                                    self.request_redraw();
+                                }
+                            }
+                            return; // swallow arrow key
+                        }
                     }
 
                     if key_event.state == ElementState::Pressed && !key_event.repeat {

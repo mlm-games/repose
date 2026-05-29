@@ -34,6 +34,13 @@ fn focus_radius(modifier: &Modifier) -> f32 {
     modifier.clip_rounded.unwrap_or(6.0)
 }
 
+/// Associate a `FocusRequester` (if present on the modifier) with the view.
+fn set_focus_requester(modifier: &Modifier, view_id: u64) {
+    if let Some(ref fr) = modifier.focus_requester {
+        FocusManager::set_requester_target(fr, view_id);
+    }
+}
+
 /// The incremental layout engine.
 pub struct LayoutEngine {
     /// Persistent view tree.
@@ -130,6 +137,7 @@ enum NodeContext {
         max_lines: Option<usize>,
         overflow: TextOverflow,
         font_family: Option<&'static str>,
+        annotations: Option<Arc<[TextSpan]>>,
     },
     Button {
         label: String,
@@ -150,8 +158,12 @@ enum NodeContext {
 #[derive(Clone)]
 struct TextLayout {
     lines: Vec<String>,
+    /// Byte ranges into the original text for each line (used for annotation splitting).
+    line_ranges: Vec<(usize, usize)>,
     size_px: f32,
     line_h_px: f32,
+    /// Pre-measured width per line.
+    line_widths: Vec<f32>,
 }
 
 impl Default for LayoutEngine {
@@ -761,6 +773,7 @@ impl LayoutEngine {
                 max_lines,
                 overflow,
                 font_family,
+                annotations,
                 ..
             } => NodeContext::Text {
                 text: text.clone(),
@@ -770,6 +783,7 @@ impl LayoutEngine {
                 max_lines: *max_lines,
                 overflow: *overflow,
                 font_family: *font_family,
+                annotations: annotations.clone(),
             },
             ViewKind::Button { .. } => NodeContext::Button {
                 label: String::new(),
@@ -809,6 +823,7 @@ impl LayoutEngine {
                 max_lines,
                 overflow,
                 font_family,
+                annotations,
             }) => {
                 let size_px_val = font_px(*font_dp);
                 let line_h_px_val = size_px_val * 1.3;
@@ -843,17 +858,27 @@ impl LayoutEngine {
                     }
                 };
 
-                let lines = if *soft_wrap {
-                    repose_text::wrap_lines(text, size_px_val, wrap_w_px, *max_lines, true).0
+                let (lines, line_ranges): (Vec<String>, Vec<(usize, usize)>) = if *soft_wrap {
+                    let (ranges, _) = repose_text::wrap_line_ranges(
+                        text, size_px_val, wrap_w_px, *max_lines, true,
+                    );
+                    let lns: Vec<String> = ranges
+                        .iter()
+                        .map(|&(s, e)| text[s..e].to_string())
+                        .collect();
+                    (lns, ranges)
                 } else if matches!(overflow, TextOverflow::Ellipsis)
                     && max_content_w > wrap_w_px + 0.5
                 {
-                    vec![repose_text::ellipsize_line(text, size_px_val, wrap_w_px)]
+                    let elided = repose_text::ellipsize_line(text, size_px_val, wrap_w_px);
+                    let elided_len = elided.len();
+                    (vec![elided], vec![(0, elided_len)])
                 } else {
-                    vec![text.clone()]
+                    let len = text.len();
+                    (vec![text.clone()], vec![(0, len)])
                 };
 
-                let max_line_w = lines
+                let line_widths: Vec<f32> = lines
                     .iter()
                     .map(|line| {
                         measure_text(line, size_px_val, *font_family)
@@ -862,15 +887,18 @@ impl LayoutEngine {
                             .copied()
                             .unwrap_or(0.0)
                     })
-                    .fold(0.0f32, f32::max);
+                    .collect();
+                let max_line_w = line_widths.iter().copied().fold(0.0f32, f32::max);
 
                 if let Some(node_id) = reverse_map.get(&taffy_node) {
                     text_cache.insert(
                         *node_id,
                         TextLayout {
                             lines: lines.clone(),
+                            line_ranges,
                             size_px: size_px_val,
                             line_h_px: line_h_px_val,
+                            line_widths,
                         },
                     );
                 }
@@ -1481,17 +1509,17 @@ impl LayoutEngine {
                 text,
                 color,
                 font_size,
-                soft_wrap,
                 overflow,
                 font_family,
+                annotations,
                 ..
             } => {
                 let tl = self.text_cache.get(&node_id);
-                let (size_px, line_h_px, lines) = if let Some(tl) = tl {
-                    (tl.size_px, tl.line_h_px, tl.lines.clone())
+                let (size_px, line_h_px, lines, line_ranges) = if let Some(tl) = tl {
+                    (tl.size_px, tl.line_h_px, tl.lines.clone(), Some(tl.line_ranges.clone()))
                 } else {
                     let px = font_px(*font_size);
-                    (px, px * 1.3, vec![text.clone()])
+                    (px, px * 1.3, vec![text.clone()], None)
                 };
                 let total_h = lines.len() as f32 * line_h_px;
                 let need_v_clip =
@@ -1505,20 +1533,95 @@ impl LayoutEngine {
                         radius: 0.0,
                     });
                 }
-                for (i, ln) in lines.iter().enumerate() {
-                    scene.nodes.push(SceneNode::Text {
-                        rect: repose_core::Rect {
-                            x: content_rect.x,
-                            y: content_rect.y + i as f32 * line_h_px,
-                            w: content_rect.w,
-                            h: line_h_px,
-                        },
-                        text: Arc::<str>::from(ln.clone()),
-                        color: mul_alpha_color(*color, alpha_accum),
-                        size: size_px,
-                        font_family: *font_family,
-                    });
+
+                let has_annotations = annotations
+                    .as_ref()
+                    .map(|a| !a.is_empty())
+                    .unwrap_or(false);
+
+                if has_annotations {
+                    // Emit one SceneNode::Text per styled segment per line
+                    let annos = annotations.as_ref().unwrap();
+                    for (i, ln) in lines.iter().enumerate() {
+                        let line_start = line_ranges.as_ref().and_then(|r| r.get(i).map(|&(s, _)| s)).unwrap_or(0);
+                        let line_end = line_ranges.as_ref().and_then(|r| r.get(i).map(|&(_, e)| e)).unwrap_or(ln.len());
+
+                        // Find spans that overlap this line's byte range
+                        let mut segments: Vec<(usize, usize, Color, f32)> = Vec::new();
+                        let mut cursor = line_start;
+
+                        // Sort overlapping spans by start position
+                        let mut relevant: Vec<&TextSpan> = annos
+                            .iter()
+                            .filter(|s| s.start < line_end && s.end > line_start)
+                            .collect();
+                        relevant.sort_by_key(|s| s.start);
+
+                        for span in &relevant {
+                            let seg_start = span.start.max(line_start);
+                            let seg_end = span.end.min(line_end);
+
+                            if seg_start > cursor {
+                                // Default-styled segment before this span
+                                segments.push((cursor, seg_start, *color, *font_size));
+                            }
+
+                            let span_color = span.style.color.unwrap_or(*color);
+                            let span_size = span.style.font_size.unwrap_or(*font_size);
+                            segments.push((seg_start, seg_end, span_color, span_size));
+                            cursor = seg_end;
+                        }
+
+                        if cursor < line_end {
+                            segments.push((cursor, line_end, *color, *font_size));
+                        }
+
+                        // Measure and emit each segment
+                        let seg_font_px = |dp: f32| dp_to_px(dp) * repose_core::locals::text_scale().0;
+                        let mut seg_x = content_rect.x;
+                        for (seg_start, seg_end, seg_color, seg_font_dp) in &segments {
+                            let seg_text = &text[*seg_start..*seg_end];
+                            if seg_text.is_empty() {
+                                continue;
+                            }
+                            let seg_px = seg_font_px(*seg_font_dp);
+                            let seg_w = measure_text(seg_text, seg_px, *font_family)
+                                .positions
+                                .last()
+                                .copied()
+                                .unwrap_or(0.0);
+                            scene.nodes.push(SceneNode::Text {
+                                rect: repose_core::Rect {
+                                    x: seg_x,
+                                    y: content_rect.y + i as f32 * line_h_px,
+                                    w: seg_w,
+                                    h: line_h_px,
+                                },
+                                text: Arc::<str>::from(seg_text.to_string().into_boxed_str()),
+                                color: mul_alpha_color(*seg_color, alpha_accum),
+                                size: seg_px,
+                                font_family: *font_family,
+                            });
+                            seg_x += seg_w;
+                        }
+                    }
+                } else {
+                    for (i, ln) in lines.iter().enumerate() {
+                        scene.nodes.push(SceneNode::Text {
+                            rect: repose_core::Rect {
+                                x: content_rect.x,
+                                y: content_rect.y + i as f32 * line_h_px,
+                                w: content_rect.w,
+                                h: line_h_px,
+                            },
+                            text: Arc::<str>::from(ln.clone()),
+                            color: mul_alpha_color(*color, alpha_accum),
+                            size: size_px,
+                            font_family: *font_family,
+                        });
+                    }
                 }
+
                 if need_clip {
                     scene.nodes.push(SceneNode::PopClip);
                 }
@@ -2766,6 +2869,9 @@ impl LayoutEngine {
         if modifier.transform.is_some() {
             scene.nodes.push(SceneNode::PopTransform);
         }
+
+        // Wire up FocusRequester if present on the modifier
+        set_focus_requester(&modifier, view_id);
     }
 }
 

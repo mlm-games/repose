@@ -203,6 +203,28 @@ pub fn Text(text: impl Into<String>) -> View {
             max_lines: None,
             overflow: TextOverflow::Visible,
             font_family: None,
+            annotations: None,
+        },
+    )
+}
+
+/// Create a text view with rich text spans (AnnotatedString).
+///
+/// Each span can override color and font_size for a range of text.
+pub fn AnnotatedText(annotated: AnnotatedString) -> View {
+    let annotations: Option<std::sync::Arc<[TextSpan]>> =
+        if annotated.spans.is_empty() { None } else { Some(annotated.spans.clone()) };
+    View::new(
+        0,
+        ViewKind::Text {
+            text: annotated.text,
+            color: locals::content_color(),
+            font_size: 16.0,
+            soft_wrap: true,
+            max_lines: None,
+            overflow: TextOverflow::Visible,
+            font_family: None,
+            annotations,
         },
     )
 }
