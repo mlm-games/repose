@@ -46,7 +46,7 @@ pub fn screen() -> View {
             let spec = match mode.get() {
                 SpringMode::Gentle => AnimationSpec::spring_gentle(),
                 SpringMode::Bouncy => AnimationSpec::spring_bouncy(),
-                SpringMode::Crit => AnimationSpec::spring_crit(8.0, web_time::Duration::from_millis(500)),
+                SpringMode::Crit => AnimationSpec::spring_crit(8.0),
             };
 
             let t = animate_f32("demo_scale", if visible.get() { 1.0 } else { 0.75 }, spec);

@@ -7,6 +7,30 @@ pub(crate) fn now() -> Instant {
     lock.read().now()
 }
 
+/// Physical spring parameters. Duration is emergent (determined by physics), not specified.
+#[derive(Clone, Copy, Debug)]
+pub struct SpringSpec {
+    /// Damping ratio ζ: 0 = undamped, <1 = underdamped (overshoot), 1 = critically damped,
+    /// >1 = overdamped.
+    pub damping_ratio: f32,
+    /// Stiffness k: higher = faster, snappier response.
+    pub stiffness: f32,
+}
+
+impl SpringSpec {
+    pub const fn new(damping_ratio: f32, stiffness: f32) -> Self {
+        Self { damping_ratio, stiffness }
+    }
+    /// Gentle preset: low overshoot, moderate speed.
+    pub const fn gentle() -> Self { Self::new(0.5, 200.0) }
+    /// Bouncier preset: more overshoot, faster.
+    pub const fn bouncy() -> Self { Self::new(0.2, 300.0) }
+    /// Critically damped: no overshoot, fast settle.
+    pub const fn crit() -> Self { Self::new(1.0, 200.0) }
+    /// Snappy preset: high damping, high stiffness.
+    pub const fn stiff() -> Self { Self::new(0.8, 600.0) }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum Easing {
     Linear,
@@ -97,6 +121,8 @@ pub struct AnimationSpec {
     pub duration: Duration,
     pub easing: Easing,
     pub delay: Duration,
+    /// If set, use true physical spring simulation (duration is ignored, emergent from physics).
+    pub spring: Option<SpringSpec>,
 }
 
 impl Default for AnimationSpec {
@@ -105,6 +131,7 @@ impl Default for AnimationSpec {
             duration: Duration::from_millis(300),
             easing: Easing::EaseInOut,
             delay: Duration::ZERO,
+            spring: None,
         }
     }
 }
@@ -115,31 +142,29 @@ impl AnimationSpec {
             duration,
             easing,
             delay: Duration::ZERO,
+            spring: None,
         }
     }
-    /// Critically-damped monotonic spring (no overshoot).
-    pub fn spring_crit(omega: f32, duration: Duration) -> Self {
+    /// True physical spring simulation — duration is emergent, no fixed duration needed.
+    pub fn spring(spring: SpringSpec) -> Self {
         Self {
-            duration,
-            easing: Easing::SpringCrit { omega },
+            duration: Duration::ZERO,
+            easing: Easing::Linear,
             delay: Duration::ZERO,
+            spring: Some(spring),
         }
     }
-    /// Gentle underdamped preset (small overshoot).
+    /// Gentle underdamped preset (small overshoot). Uses true spring physics.
     pub fn spring_gentle() -> Self {
-        Self {
-            duration: Duration::from_millis(450),
-            easing: Easing::SpringGentle,
-            delay: Duration::ZERO,
-        }
+        Self::spring(SpringSpec::gentle())
     }
-    /// Bouncier underdamped preset.
+    /// Bouncier underdamped preset. Uses true spring physics.
     pub fn spring_bouncy() -> Self {
-        Self {
-            duration: Duration::from_millis(700),
-            easing: Easing::SpringBouncy,
-            delay: Duration::ZERO,
-        }
+        Self::spring(SpringSpec::bouncy())
+    }
+    /// Critically damped spring with given omega (angular frequency). Uses true spring physics.
+    pub fn spring_crit(omega: f32) -> Self {
+        Self::spring(SpringSpec::new(1.0, omega * omega))
     }
 
     pub fn fast() -> Self {
@@ -147,6 +172,7 @@ impl AnimationSpec {
             duration: Duration::from_millis(150),
             easing: Easing::EaseOut,
             delay: Duration::ZERO,
+            spring: None,
         }
     }
 
@@ -155,6 +181,7 @@ impl AnimationSpec {
             duration: Duration::from_millis(600),
             easing: Easing::EaseInOut,
             delay: Duration::ZERO,
+            spring: None,
         }
     }
 
@@ -164,6 +191,7 @@ impl AnimationSpec {
             duration: Duration::from_millis(120),
             easing: Easing::FastOutSlowIn,
             delay: Duration::ZERO,
+            spring: None,
         }
     }
 
@@ -173,6 +201,7 @@ impl AnimationSpec {
             duration: Duration::from_millis(150),
             easing: Easing::EaseOut,
             delay: Duration::ZERO,
+            spring: None,
         }
     }
 }
@@ -238,13 +267,24 @@ impl Clock for TestClock {
     }
 }
 
-/// Animated value that transitions smoothly
+/// Animated value that transitions smoothly.
+///
+/// Supports two modes:
+/// - **Tween** (when `spec.spring` is `None`): interpolates between `start` and `target`
+///   over a fixed duration using an easing curve.
+/// - **Spring** (when `spec.spring` is `Some`): numerically integrates a physical spring ODE
+///   (`x'' = -k·(x - target) - d·x'`) with emergent duration. When the target changes
+///   mid-animation, the current value and velocity carry forward seamlessly.
 pub struct AnimatedValue<T: Interpolate + Clone> {
     current: T,
     target: T,
     start: T,
     spec: AnimationSpec,
     start_time: Option<Instant>,
+    // Spring simulation state (progress-based, works for any T: Interpolate)
+    progress: f32,
+    velocity: f32,
+    last_update: Option<Instant>,
 }
 
 impl<T: Interpolate + Clone> AnimatedValue<T> {
@@ -255,6 +295,9 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             start: initial,
             spec,
             start_time: None,
+            progress: 1.0,
+            velocity: 0.0,
+            last_update: None,
         }
     }
 
@@ -265,27 +308,99 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
     pub fn set_target(&mut self, target: T) {
         if self.start_time.is_some() {
             self.update();
-            self.start = self.current.clone();
-        } else {
-            self.start = self.current.clone();
         }
-
+        self.start = self.current.clone();
         self.target = target;
         self.start_time = Some(now());
+        self.last_update = None;
+        if self.spec.spring.is_some() {
+            // Spring mode: start progress at 0 (the current value), carry velocity forward
+            self.progress = 0.0;
+        }
+    }
+
+    /// Snap immediately to a value without animating.
+    pub fn snap_to(&mut self, value: T) {
+        self.current = value.clone();
+        self.target = value.clone();
+        self.start = value;
+        self.start_time = None;
+        self.progress = 1.0;
+        self.velocity = 0.0;
+        self.last_update = None;
     }
 
     pub fn update(&mut self) -> bool {
+        // Clone the spring spec to avoid borrowing self.spec during mutable self access
+        let spring_spec = self.spec.spring;
+        if let Some(spring) = spring_spec {
+            self.update_spring(&spring)
+        } else {
+            self.update_tween()
+        }
+    }
+
+    fn update_spring(&mut self, spring: &SpringSpec) -> bool {
+        let start = match self.start_time {
+            Some(s) => s,
+            None => return false,
+        };
+
+        let now = now();
+        let dt = match self.last_update {
+            Some(last) => now.saturating_duration_since(last).as_secs_f32().min(0.05),
+            None => 0.0,
+        };
+        self.last_update = Some(now);
+
+        // Still in delay phase
+        let elapsed = now.saturating_duration_since(start);
+        if elapsed < self.spec.delay {
+            return true;
+        }
+
+        if dt <= 0.0 {
+            return true;
+        }
+
+        // Spring ODE (progress-based, target progress = 1.0)
+        let k = spring.stiffness;
+        let d = 2.0 * spring.damping_ratio * k.sqrt();
+        let displacement = self.progress - 1.0;
+
+        if displacement.abs() < 0.005 && self.velocity.abs() < 0.1 {
+            // Settled
+            self.progress = 1.0;
+            self.velocity = 0.0;
+            self.current = self.target.clone();
+            self.start_time = None;
+            self.last_update = None;
+            return false;
+        }
+
+        // Semi-implicit Euler (symplectic integrator, more stable than explicit)
+        let acceleration = -k * displacement - d * self.velocity;
+        self.velocity += acceleration * dt;
+        self.progress += self.velocity * dt;
+
+        // Clamp progress to prevent extreme overshoot
+        self.progress = self.progress.clamp(-0.1, 2.0);
+
+        self.current = self.start.interpolate(&self.target, self.progress);
+        true
+    }
+
+    fn update_tween(&mut self) -> bool {
         if let Some(start) = self.start_time {
             let elapsed = now().saturating_duration_since(start);
 
             if elapsed < self.spec.delay {
-                return true; // Still in delay phase
+                return true;
             }
 
             let animation_time = elapsed - self.spec.delay;
 
             if animation_time >= self.spec.duration {
-                // Animation complete
                 self.current = self.target.clone();
                 self.start_time = None;
                 return false;
@@ -294,7 +409,6 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             let t =
                 (animation_time.as_secs_f32() / self.spec.duration.as_secs_f32()).clamp(0.0, 1.0);
             let eased_t = self.spec.easing.interpolate(t);
-
             let eased_t = eased_t.clamp(0.0, 1.0);
 
             self.current = self.start.interpolate(&self.target, eased_t);
