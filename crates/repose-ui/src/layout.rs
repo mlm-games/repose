@@ -2472,6 +2472,7 @@ impl LayoutEngine {
                 set_content_height,
                 get_scroll_offset,
                 set_scroll_offset,
+                show_scrollbar,
             } => {
                 hits.push(HitRegion {
                     id: view_id,
@@ -2546,18 +2547,20 @@ impl LayoutEngine {
                     }
                 }
 
-                push_scrollbar(
-                    scene,
-                    hits,
-                    interactions,
-                    view_id,
-                    vp,
-                    ch,
-                    off,
-                    modifier.z_index,
-                    ScrollAxis::V,
-                    set_scroll_offset.clone(),
-                );
+                if *show_scrollbar {
+                    push_scrollbar(
+                        scene,
+                        hits,
+                        interactions,
+                        view_id,
+                        vp,
+                        ch,
+                        off,
+                        modifier.z_index,
+                        ScrollAxis::V,
+                        set_scroll_offset.clone(),
+                    );
+                }
 
                 scene.nodes.push(SceneNode::PopClip);
             }
@@ -2569,6 +2572,7 @@ impl LayoutEngine {
                 set_content_height,
                 get_scroll_offset_xy,
                 set_scroll_offset_xy,
+                show_scrollbar,
             } => {
                 hits.push(HitRegion {
                     id: view_id,
@@ -2647,38 +2651,40 @@ impl LayoutEngine {
                         hits.remove(i);
                     }
                 }
-                let set_y = set_scroll_offset_xy.clone().map(|s| {
-                    let ox = ox;
-                    Rc::new(move |y| s(ox, y)) as Rc<dyn Fn(f32)>
-                });
-                let set_x = set_scroll_offset_xy.clone().map(|s| {
-                    let oy = oy;
-                    Rc::new(move |x| s(x, oy)) as Rc<dyn Fn(f32)>
-                });
-                push_scrollbar(
-                    scene,
-                    hits,
-                    interactions,
-                    view_id,
-                    vp,
-                    ch,
-                    oy,
-                    modifier.z_index,
-                    ScrollAxis::V,
-                    set_y,
-                );
-                push_scrollbar(
-                    scene,
-                    hits,
-                    interactions,
-                    view_id,
-                    vp,
-                    cw,
-                    ox,
-                    modifier.z_index,
-                    ScrollAxis::H,
-                    set_x,
-                );
+                if *show_scrollbar {
+                    let set_y = set_scroll_offset_xy.clone().map(|s| {
+                        let ox = ox;
+                        Rc::new(move |y| s(ox, y)) as Rc<dyn Fn(f32)>
+                    });
+                    let set_x = set_scroll_offset_xy.clone().map(|s| {
+                        let oy = oy;
+                        Rc::new(move |x| s(x, oy)) as Rc<dyn Fn(f32)>
+                    });
+                    push_scrollbar(
+                        scene,
+                        hits,
+                        interactions,
+                        view_id,
+                        vp,
+                        ch,
+                        oy,
+                        modifier.z_index,
+                        ScrollAxis::V,
+                        set_y,
+                    );
+                    push_scrollbar(
+                        scene,
+                        hits,
+                        interactions,
+                        view_id,
+                        vp,
+                        cw,
+                        ox,
+                        modifier.z_index,
+                        ScrollAxis::H,
+                        set_x,
+                    );
+                }
                 scene.nodes.push(SceneNode::PopClip);
             }
             ViewKind::OverlayHost => {

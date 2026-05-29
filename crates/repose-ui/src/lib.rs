@@ -186,6 +186,7 @@ pub fn Scroll(modifier: Modifier) -> View {
             set_content_height: None,
             get_scroll_offset: None,
             set_scroll_offset: None,
+            show_scrollbar: true,
         },
     )
     .modifier(modifier)

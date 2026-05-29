@@ -175,6 +175,7 @@ where
             set_content_height: Some(Rc::new(move |h| measured_h_px(h))),
             get_scroll_offset: Some(get_scroll),
             set_scroll_offset: Some(set_scroll),
+            show_scrollbar: true,
         },
     )
     .modifier(modifier)
@@ -384,6 +385,7 @@ where
             set_content_height: Some(Rc::new(move |h| measured_h(h))),
             get_scroll_offset: Some(get_scroll),
             set_scroll_offset: Some(set_scroll),
+            show_scrollbar: true,
         },
     )
     .modifier(modifier)

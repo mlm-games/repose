@@ -8,7 +8,7 @@
 //! so behavior is frame-rate independent.
 
 use repose_core::*;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use web_time::Instant;
 
@@ -57,10 +57,7 @@ fn run_pre_scroll(conn: &RefCell<Option<NestedScrollConnection>>, d: Vec2) -> Ve
     d
 }
 
-fn run_post_scroll(
-    conn: &RefCell<Option<NestedScrollConnection>>,
-    leftover: Vec2,
-) -> Vec2 {
+fn run_post_scroll(conn: &RefCell<Option<NestedScrollConnection>>, leftover: Vec2) -> Vec2 {
     if let Some(ref parent) = *conn.borrow() {
         if let Some(ref post) = parent.on_post_scroll {
             return post(leftover);
@@ -175,6 +172,7 @@ pub struct ScrollState {
     overscroll: Signal<f32>,
     overscroll_enabled: bool,
     parent_connection: RefCell<Option<NestedScrollConnection>>,
+    show_scrollbar: Cell<bool>,
 }
 
 impl Default for ScrollState {
@@ -193,6 +191,7 @@ impl ScrollState {
             overscroll: signal(0.0),
             overscroll_enabled: true,
             parent_connection: RefCell::new(None),
+            show_scrollbar: Cell::new(true),
         }
     }
 
@@ -208,10 +207,15 @@ impl ScrollState {
     }
 
     /// Set a parent nested scroll connection for coordinated scrolling.
-    /// This enables parent-child scroll cooperation (e.g., collapsing toolbars,
+    /// This enables parent-child scroll coordination (e.g., collapsing toolbars,
     /// pull-to-refresh). Call this before the scroll area is first composed.
     pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
         *self.parent_connection.borrow_mut() = Some(conn);
+    }
+
+    /// Enable or disable the scrollbar (enabled by default).
+    pub fn set_show_scrollbar(&self, show: bool) {
+        self.show_scrollbar.set(show);
     }
 
     pub fn set_viewport_height(&self, h: f32) {
@@ -292,7 +296,8 @@ impl ScrollState {
         let leftover = dy - consumed;
 
         // If at boundary with leftover, apply rubber-band overscroll
-        if can_overscroll && leftover.abs() > 0.5
+        if can_overscroll
+            && leftover.abs() > 0.5
             && ((before <= 0.0 && dy < 0.0) || (before >= max_off && dy > 0.0))
         {
             let bandied = Self::rubber_band(leftover, 150.0);
@@ -360,6 +365,7 @@ pub struct HorizontalScrollState {
     overscroll: Signal<f32>,
     overscroll_enabled: bool,
     parent_connection: RefCell<Option<NestedScrollConnection>>,
+    show_scrollbar: Cell<bool>,
 }
 
 impl Default for HorizontalScrollState {
@@ -378,6 +384,7 @@ impl HorizontalScrollState {
             overscroll: signal(0.0),
             overscroll_enabled: true,
             parent_connection: RefCell::new(None),
+            show_scrollbar: Cell::new(true),
         }
     }
 
@@ -394,6 +401,11 @@ impl HorizontalScrollState {
     /// Set a parent nested scroll connection for coordinated scrolling.
     pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
         *self.parent_connection.borrow_mut() = Some(conn);
+    }
+
+    /// Enable or disable the scrollbar (enabled by default).
+    pub fn set_show_scrollbar(&self, show: bool) {
+        self.show_scrollbar.set(show);
     }
 
     pub fn set_viewport_width(&self, w: f32) {
@@ -452,7 +464,8 @@ impl HorizontalScrollState {
         let consumed = new_off - before;
         let leftover = dx - consumed;
 
-        if can_overscroll && leftover.abs() > 0.5
+        if can_overscroll
+            && leftover.abs() > 0.5
             && ((before <= 0.0 && dx < 0.0) || (before >= max_off && dx > 0.0))
         {
             let bandied = ScrollState::rubber_band(leftover, 150.0);
@@ -507,6 +520,7 @@ pub struct ScrollStateXY {
     os_y: Signal<f32>,
     overscroll_enabled: bool,
     parent_connection: RefCell<Option<NestedScrollConnection>>,
+    show_scrollbar: Cell<bool>,
 }
 impl Default for ScrollStateXY {
     fn default() -> Self {
@@ -529,12 +543,18 @@ impl ScrollStateXY {
             os_y: signal(0.0),
             overscroll_enabled: true,
             parent_connection: RefCell::new(None),
+            show_scrollbar: Cell::new(true),
         }
     }
 
     /// Enable or disable the overscroll rubber-band effect (enabled by default).
     pub fn set_overscroll_enabled(&mut self, enabled: bool) {
         self.overscroll_enabled = enabled;
+    }
+
+    /// Enable or disable the scrollbar (enabled by default).
+    pub fn set_show_scrollbar(&self, show: bool) {
+        self.show_scrollbar.set(show);
     }
 
     /// Returns the current overscroll offsets as (x, y).
@@ -575,7 +595,11 @@ impl ScrollStateXY {
     fn rubber_band(amount: f32, max: f32) -> f32 {
         let sign = amount.signum();
         let abs_val = amount.abs();
-        let result = if abs_val <= 0.0 { 0.0 } else { (1.0 - 1.0 / (1.0 + abs_val / max)) * max };
+        let result = if abs_val <= 0.0 {
+            0.0
+        } else {
+            (1.0 - 1.0 / (1.0 + abs_val / max)) * max
+        };
         result * sign
     }
     fn os_scroll_axis(
@@ -614,7 +638,8 @@ impl ScrollStateXY {
         let consumed = new_off - before;
         let leftover = dx - consumed;
 
-        if can_os && leftover.abs() > 0.5
+        if can_os
+            && leftover.abs() > 0.5
             && ((before <= 0.0 && dx < 0.0) || (before >= max_off && dx > 0.0))
         {
             let bandied = Self::rubber_band(leftover, 150.0);
@@ -634,18 +659,16 @@ impl ScrollStateXY {
 
         let mut px = self.physics_x.borrow_mut();
         let mut py = self.physics_y.borrow_mut();
-        let lx = Self::os_scroll_axis(
-            &self.os_x, self.overscroll_enabled, bx, max_x, d.x, &mut px,
-        );
-        let ly = Self::os_scroll_axis(
-            &self.os_y, self.overscroll_enabled, by, max_y, d.y, &mut py,
-        );
+        let lx = Self::os_scroll_axis(&self.os_x, self.overscroll_enabled, bx, max_x, d.x, &mut px);
+        let ly = Self::os_scroll_axis(&self.os_y, self.overscroll_enabled, by, max_y, d.y, &mut py);
         drop((px, py));
 
         Vec2 { x: lx, y: ly }
     }
     fn tick_os_axis(os: &Signal<f32>, enabled: bool) -> bool {
-        if !enabled { return false; }
+        if !enabled {
+            return false;
+        }
         let v = os.get();
         if v.abs() > 0.5 {
             let decayed = v * 0.78;
@@ -664,8 +687,8 @@ impl ScrollStateXY {
     /// Returns true if either axis is still animating.
     pub fn tick(&self) -> bool {
         if self.overscroll_enabled {
-            let os_active = Self::tick_os_axis(&self.os_x, true)
-                || Self::tick_os_axis(&self.os_y, true);
+            let os_active =
+                Self::tick_os_axis(&self.os_x, true) || Self::tick_os_axis(&self.os_y, true);
             if os_active {
                 return true;
             }
@@ -758,7 +781,10 @@ pub fn ScrollArea(modifier: Modifier, state: Rc<ScrollState>, content: View) -> 
             let d = run_pre_scroll(&st.parent_connection, d);
             // My scroll
             let leftover_y = st.scroll_immediate(d.y);
-            let result = Vec2 { x: d.x, y: leftover_y };
+            let result = Vec2 {
+                x: d.x,
+                y: leftover_y,
+            };
             // Post-scroll: parent gets the leftover
             run_post_scroll(&st.parent_connection, result)
         })
@@ -790,6 +816,7 @@ pub fn ScrollArea(modifier: Modifier, state: Rc<ScrollState>, content: View) -> 
             set_content_height: Some(set_content),
             get_scroll_offset: Some(get_scroll),
             set_scroll_offset: Some(set_scroll),
+            show_scrollbar: state.show_scrollbar.get(),
         },
     )
     .modifier(modifier)
@@ -810,10 +837,16 @@ pub fn HorizontalScrollArea(
             let d = run_pre_scroll(&st.parent_connection, d);
             let result = if d.x.abs() > 0.001 {
                 let leftover_x = st.scroll_immediate(d.x);
-                Vec2 { x: leftover_x, y: d.y }
+                Vec2 {
+                    x: leftover_x,
+                    y: d.y,
+                }
             } else {
                 let leftover = st.scroll_immediate(d.y);
-                Vec2 { x: 0.0, y: leftover }
+                Vec2 {
+                    x: 0.0,
+                    y: leftover,
+                }
             };
             run_post_scroll(&st.parent_connection, result)
         })
@@ -847,6 +880,7 @@ pub fn HorizontalScrollArea(
             set_content_height: None,
             get_scroll_offset_xy: Some(get_scroll_xy),
             set_scroll_offset_xy: Some(set_xy),
+            show_scrollbar: state.show_scrollbar.get(),
         },
     )
     .modifier(modifier)
@@ -906,6 +940,7 @@ pub fn ScrollAreaXY(modifier: Modifier, state: Rc<ScrollStateXY>, content: View)
             set_content_height: Some(set_ch),
             get_scroll_offset_xy: Some(get_xy),
             set_scroll_offset_xy: Some(set_xy),
+            show_scrollbar: state.show_scrollbar.get(),
         },
     )
     .modifier(modifier)

@@ -349,6 +349,7 @@ pub(crate) fn wrap_root_scroll(child: View, st: Rc<RefCell<RootScrollState>>) ->
             set_content_height,
             get_scroll_offset,
             set_scroll_offset,
+            show_scrollbar: true,
         },
     )
     .modifier(Modifier::new().fill_max_size())
