@@ -357,13 +357,17 @@ impl LayoutEngine {
             return t_id;
         }
 
-        let (style, ctx, children, is_stack) = {
+        let (style, ctx, children, is_stack, is_scroll) = {
             let node = self.tree.get(node_id).expect("Node missing in update");
             (
                 self.style_from_node(node, font_px),
                 self.context_from_node(node),
                 node.children.clone(),
                 matches!(node.kind, ViewKind::Stack),
+                matches!(
+                    node.kind,
+                    ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }
+                ),
             )
         };
 
@@ -398,6 +402,16 @@ impl LayoutEngine {
                     }
                 }
             }
+            // ScrollV/ScrollXY children should use unbounded height
+            if is_scroll {
+                for &child_tid in &child_taffy_ids {
+                    if let Ok(cs) = self.taffy.style(child_tid) {
+                        let mut new_cs = cs.clone();
+                        new_cs.size.height = Dimension::auto();
+                        let _ = self.taffy.set_style(child_tid, new_cs);
+                    }
+                }
+            }
             t
         };
 
@@ -416,13 +430,17 @@ impl LayoutEngine {
         // Ensure this node has a stable view id
         let _ = self.ensure_view_id(node_id);
 
-        let (new_style, new_ctx, children, is_stack) = {
+        let (new_style, new_ctx, children, is_stack, is_scroll) = {
             let node = self.tree.get(node_id).unwrap();
             (
                 self.style_from_node(node, font_px),
                 self.context_from_node(node),
                 node.children.clone(),
                 matches!(node.kind, ViewKind::Stack),
+                matches!(
+                    node.kind,
+                    ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }
+                ),
             )
         };
 
@@ -452,6 +470,16 @@ impl LayoutEngine {
                         start: col_pl,
                         end: GridPlacement::Auto,
                     };
+                    let _ = self.taffy.set_style(child_tid, new_cs);
+                }
+            }
+        }
+        // ScrollV/ScrollXY children: unbounded height for scrollability.
+        if is_scroll {
+            for &child_tid in &child_taffy_ids {
+                if let Ok(cs) = self.taffy.style(child_tid) {
+                    let mut new_cs = cs.clone();
+                    new_cs.size.height = Dimension::auto();
                     let _ = self.taffy.set_style(child_tid, new_cs);
                 }
             }
