@@ -496,7 +496,7 @@ impl Modifier {
         self.state_elevation = Some(elev);
         self
     }
-    /// Mark this component as disabled — it won't respond to pointer events.
+    /// Mark this component as disabled - it won't respond to pointer events.
     pub fn disabled(mut self) -> Self {
         self.disabled = true;
         self

@@ -43,7 +43,7 @@ pub fn TopAppBar(
     ))
 }
 
-/// M3 Icon Button — a tappable circular container for an icon.
+/// M3 Icon Button - a tappable circular container for an icon.
 pub fn IconButton(icon: View, on_click: impl Fn() + 'static) -> View {
     let th = theme();
     let bg = Color::TRANSPARENT;
@@ -63,7 +63,7 @@ pub fn IconButton(icon: View, on_click: impl Fn() + 'static) -> View {
     .child(icon)
 }
 
-/// M3 Filled Icon Button — icon button with a filled container background.
+/// M3 Filled Icon Button - icon button with a filled container background.
 pub fn FilledIconButton(icon: View, on_click: impl Fn() + 'static) -> View {
     let th = theme();
     let bg = th.primary;
@@ -84,7 +84,7 @@ pub fn FilledIconButton(icon: View, on_click: impl Fn() + 'static) -> View {
     .child(icon)
 }
 
-/// M3 Filled Button — prominent action button with primary color fill.
+/// M3 Filled Button - prominent action button with primary color fill.
 pub fn FilledButton(
     modifier: Modifier,
     on_click: impl Fn() + 'static,
@@ -124,7 +124,7 @@ pub fn FilledButton(
     .child(content)
 }
 
-/// M3 Filled Tonal Button — uses secondary container colors.
+/// M3 Filled Tonal Button - uses secondary container colors.
 pub fn FilledTonalButton(
     modifier: Modifier,
     on_click: impl Fn() + 'static,
@@ -164,7 +164,7 @@ pub fn FilledTonalButton(
     .child(content)
 }
 
-/// M3 Outlined Button — button with an outline border and no fill.
+/// M3 Outlined Button - button with an outline border and no fill.
 pub fn OutlinedButton(
     modifier: Modifier,
     on_click: impl Fn() + 'static,
@@ -198,7 +198,7 @@ pub fn OutlinedButton(
     .child(content)
 }
 
-/// M3 Text Button — a low-emphasis button.
+/// M3 Text Button - a low-emphasis button.
 pub fn TextButton(
     modifier: Modifier,
     on_click: impl Fn() + 'static,
@@ -285,7 +285,7 @@ pub fn LargeFAB(icon: View, on_click: impl Fn() + 'static) -> View {
     .child(icon)
 }
 
-/// M3 Extended FAB — FAB with icon + label.
+/// M3 Extended FAB - FAB with icon + label.
 pub fn ExtendedFAB(
     icon: Option<View>,
     label: impl Into<String>,
@@ -330,7 +330,7 @@ pub fn ExtendedFAB(
     ))
 }
 
-/// M3 Horizontal Divider — a thin 1dp line.
+/// M3 Horizontal Divider - a thin 1dp line.
 pub fn Divider() -> View {
     let th = theme();
     Box(Modifier::new()
@@ -339,7 +339,7 @@ pub fn Divider() -> View {
         .background(th.outline_variant))
 }
 
-/// M3 Vertical Divider — a thin 1dp vertical line.
+/// M3 Vertical Divider - a thin 1dp vertical line.
 pub fn VerticalDivider() -> View {
     let th = theme();
     Box(Modifier::new()
@@ -348,7 +348,7 @@ pub fn VerticalDivider() -> View {
         .background(th.outline_variant))
 }
 
-/// M3 Badge — a small notification indicator. If `label` is `None`, shows a
+/// M3 Badge - a small notification indicator. If `label` is `None`, shows a
 /// small 6dp dot; otherwise shows the label text inside a 16dp pill.
 pub fn Badge(label: Option<impl Into<String>>) -> View {
     let th = theme();
@@ -382,7 +382,7 @@ pub fn Badge(label: Option<impl Into<String>>) -> View {
     }
 }
 
-/// M3 List Item — a single row in a list with optional leading/trailing content.
+/// M3 List Item - a single row in a list with optional leading/trailing content.
 pub fn ListItem(
     headline: impl Into<String>,
     supporting_text: Option<String>,
@@ -469,7 +469,7 @@ pub struct Tab {
     pub on_click: Rc<dyn Fn()>,
 }
 
-/// M3 Tab Row — a horizontal row of tabs with an active indicator.
+/// M3 Tab Row - a horizontal row of tabs with an active indicator.
 pub fn TabRow(selected_index: usize, tabs: Vec<Tab>) -> View {
     let th = theme();
     Row(Modifier::new()
@@ -531,7 +531,7 @@ pub struct Segment {
     pub on_click: Rc<dyn Fn()>,
 }
 
-/// M3 Segmented Button — a row of toggle segments. `selected` contains the
+/// M3 Segmented Button - a row of toggle segments. `selected` contains the
 /// indices of selected segments (single-select: pass a single-element set).
 pub fn SegmentedButton(selected: &[usize], segments: Vec<Segment>) -> View {
     let th = theme();

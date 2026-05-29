@@ -661,7 +661,7 @@ impl LayoutEngine {
         }
 
         //NOTE: Don't force min-width: 0 globally. The Auto default (min-content)
-        // is correct — it prevents content from shrinking below its natural
+        // is correct - it prevents content from shrinking below its natural
         // size, which is essential for scroll containers to overflow properly.
 
         if matches!(kind, ViewKind::Button { .. }) {
@@ -2360,7 +2360,10 @@ impl LayoutEngine {
                 }
             }
             ViewKind::ProgressBar {
-                value, min, max, circular,
+                value,
+                min,
+                max,
+                circular,
             } => {
                 let th = locals::theme();
                 if *circular {

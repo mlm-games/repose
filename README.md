@@ -14,16 +14,16 @@ Useful for simple apps (though aiming for bigger ones in the future), and for de
 
 ## Features
 
-- **Declarative UI** — Compose-like API with `View` functions, reactive `Signal`s, and `remember` for state
-- **Cross-platform** — Desktop (winit), Android, and WebAssembly
-- **Layout** — Flexbox and Grid via Taffy
-- **Rendering** — Rectangles, borders, rounded clips, ellipses, text, images via WGPU
-- **Text** — Shaping, metrics, and wrapping via cosmic-text with caching
-- **Input** — Pointer events, scrolling, focus traversal, IME support
-- **Widgets** — Text, Button, TextField, Checkbox, Switch, Slider, ScrollArea, LazyColumn
-- **Navigation** — Typed stack navigation with transitions (`repose-navigation`)
-- **Accessibility** — AccessKit integration on desktop, semantic node pipeline
-- **DevTools** — Inspector overlay (Ctrl+Shift+I)
+- **Declarative UI** - Compose-like API with `View` functions, reactive `Signal`s, and `remember` for state
+- **Cross-platform** - Desktop (winit), Android, and WebAssembly
+- **Layout** - Flexbox and Grid via Taffy
+- **Rendering** - Rectangles, borders, rounded clips, ellipses, text, images via WGPU
+- **Text** - Shaping, metrics, and wrapping via cosmic-text with caching
+- **Input** - Pointer events, scrolling, focus traversal, IME support
+- **Widgets** - Text, Button, TextField, Checkbox, Switch, Slider, ScrollArea, LazyColumn
+- **Navigation** - Typed stack navigation with transitions (`repose-navigation`)
+- **Accessibility** - AccessKit integration on desktop, semantic node pipeline
+- **DevTools** - Inspector overlay (Ctrl+Shift+I)
 
 ### Non-Goals
 
@@ -149,9 +149,9 @@ Wanted an UI which was short and easy to understand by looking at the code (esse
 
 These were built to test the toolkit in real apps:
 
-- **[startpose](https://github.com/mlm-games/startpose)** — Web startpage
-- **[wifi-exporter](https://github.com/mlm-games/wifi-exporter)** — Android WiFi importer/exporter
-- **[soredowe](https://github.com/mlm-games/soredowe)** — Linux pacman UI
+- **[startpose](https://github.com/mlm-games/startpose)** - Web startpage
+- **[wifi-exporter](https://github.com/mlm-games/wifi-exporter)** - Android WiFi importer/exporter
+- **[soredowe](https://github.com/mlm-games/soredowe)** - Linux pacman UI
 
 ## Contributing
 

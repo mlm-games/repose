@@ -3,7 +3,6 @@
 use repose_core::prelude::*;
 use repose_material::material3::{Card, ElevatedCard};
 use repose_navigation::Navigator;
-use repose_ui::scroll::{remember_scroll_state, ScrollArea};
 use repose_ui::*;
 
 use crate::app::Route;
@@ -38,16 +37,8 @@ pub fn AppShell(
             ),
             Row(Modifier::new().fill_max_size()).child((
                 NavRail(current, nav),
-                // Page container — automatically scrolls when content overflows (no visible scrollbar)
-                ScrollArea(
-                    Modifier::new().fill_max_size().padding(16.0),
-                    {
-                        let st = remember_scroll_state("page_scroll");
-                        st.set_show_scrollbar(false);
-                        st
-                    },
-                    content,
-                ),
+                // Page container
+                Box(Modifier::new().fill_max_size().padding(16.0)).child(content),
             )),
         )),
     )

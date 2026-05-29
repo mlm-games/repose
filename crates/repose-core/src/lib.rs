@@ -3,9 +3,9 @@
 //! Repose uses a small reactive core instead of an explicit widget tree with
 //! mutable fields. There are three main pieces:
 //!
-//! - `Signal<T>` — observable, reactive value.
-//! - `remember*` — lifecycle‑aware storage bound to composition.
-//! - `effect` / `scoped_effect` — side‑effects with cleanup.
+//! - `Signal<T>` - observable, reactive value.
+//! - `remember*` - lifecycle‑aware storage bound to composition.
+//! - `effect` / `scoped_effect` - side‑effects with cleanup.
 //!
 //! ## Signals
 //!

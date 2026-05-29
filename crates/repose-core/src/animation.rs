@@ -19,16 +19,27 @@ pub struct SpringSpec {
 
 impl SpringSpec {
     pub const fn new(damping_ratio: f32, stiffness: f32) -> Self {
-        Self { damping_ratio, stiffness }
+        Self {
+            damping_ratio,
+            stiffness,
+        }
     }
     /// Gentle preset: low overshoot, moderate speed.
-    pub const fn gentle() -> Self { Self::new(0.5, 200.0) }
+    pub const fn gentle() -> Self {
+        Self::new(0.5, 200.0)
+    }
     /// Bouncier preset: more overshoot, faster.
-    pub const fn bouncy() -> Self { Self::new(0.2, 300.0) }
+    pub const fn bouncy() -> Self {
+        Self::new(0.2, 300.0)
+    }
     /// Critically damped: no overshoot, fast settle.
-    pub const fn crit() -> Self { Self::new(1.0, 200.0) }
+    pub const fn crit() -> Self {
+        Self::new(1.0, 200.0)
+    }
     /// Snappy preset: high damping, high stiffness.
-    pub const fn stiff() -> Self { Self::new(0.8, 600.0) }
+    pub const fn stiff() -> Self {
+        Self::new(0.8, 600.0)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -145,7 +156,7 @@ impl AnimationSpec {
             spring: None,
         }
     }
-    /// True physical spring simulation — duration is emergent, no fixed duration needed.
+    /// True physical spring simulation - duration is emergent, no fixed duration needed.
     pub fn spring(spring: SpringSpec) -> Self {
         Self {
             duration: Duration::ZERO,

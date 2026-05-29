@@ -279,7 +279,7 @@ impl ScrollState {
                 }
                 return 0.0;
             } else {
-                // Scrolling further into overscroll — apply rubber-band
+                // Scrolling further into overscroll - apply rubber-band
                 let total = os + dy;
                 let bandied = Self::rubber_band(total, 150.0);
                 self.overscroll.set(bandied);

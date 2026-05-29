@@ -122,7 +122,7 @@ pub fn remember_state_with_key<T: 'static>(
     remember_with_key(key, || RefCell::new(init()))
 }
 
-/// Frame — output of composition for a tick: scene + input/semantics.
+/// Frame - output of composition for a tick: scene + input/semantics.
 pub struct Frame {
     pub scene: Scene,
     pub hit_regions: Vec<HitRegion>,

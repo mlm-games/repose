@@ -165,7 +165,7 @@ impl View {
         self.modifier = m;
         self
     }
-    /// Mark this view as disabled — ignores pointer events.
+    /// Mark this view as disabled - ignores pointer events.
     pub fn disabled(mut self) -> Self {
         self.modifier.disabled = true;
         self

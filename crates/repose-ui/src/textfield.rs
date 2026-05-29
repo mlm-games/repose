@@ -609,7 +609,7 @@ mod tests {
     #[test]
     fn test_index_for_x_bytes_grapheme() {
         let t = "A👍🏽B";
-        let font_px = 16.0; // in tests, exact px isn't important—boundaries are.
+        let font_px = 16.0; // in tests, exact px isn't important-boundaries are.
         let m = measure_text(t, font_px, None);
         for i in 0..m.byte_offsets.len() - 1 {
             let b = m.byte_offsets[i];

@@ -2,11 +2,11 @@
 //!
 //! Repose uses thread‑local “composition locals” for global UI parameters:
 //!
-//! - `Theme` — colors for surfaces, text, controls, etc.
-//! - `Density` — dp→px device scale factor (platform sets this).
-//! - `UiScale` — app-controlled UI scale multiplier (defaults to 1.0).
-//! - `TextScale` — user text scaling (defaults to 1.0).
-//! - `TextDirection` — LTR or RTL (defaults to LTR).
+//! - `Theme` - colors for surfaces, text, controls, etc.
+//! - `Density` - dp→px device scale factor (platform sets this).
+//! - `UiScale` - app-controlled UI scale multiplier (defaults to 1.0).
+//! - `TextScale` - user text scaling (defaults to 1.0).
+//! - `TextDirection` - LTR or RTL (defaults to LTR).
 //!
 //! Locals can be overridden for a subtree with `with_*`. If no local is set,
 //! getters fall back to global defaults (which an app can set each frame).
