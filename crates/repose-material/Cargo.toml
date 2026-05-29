@@ -8,3 +8,4 @@ description = "Material components for Repose"
 repose-core.workspace = true
 repose-ui.workspace = true
 repose-text.workspace = true
+web-time.workspace = true

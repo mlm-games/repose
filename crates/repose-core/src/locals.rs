@@ -40,6 +40,7 @@ struct Defaults {
     ui_scale: UiScale,
     text_scale: TextScale,
     density: Density,
+    window_insets: WindowInsets,
 }
 
 impl Default for Defaults {
@@ -50,6 +51,7 @@ impl Default for Defaults {
             ui_scale: UiScale::default(),
             text_scale: TextScale::default(),
             density: Density::default(),
+            window_insets: WindowInsets::default(),
         }
     }
 }
@@ -549,6 +551,13 @@ pub fn with_text_direction<R>(dir: TextDirection, f: impl FnOnce() -> R) -> R {
     })
 }
 
+pub fn with_window_insets<R>(insets: WindowInsets, f: impl FnOnce() -> R) -> R {
+    with_locals_frame(|| {
+        set_local_boxed(TypeId::of::<WindowInsets>(), Box::new(insets));
+        f()
+    })
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct ContentColor(pub Color);
 
@@ -563,6 +572,26 @@ pub fn content_color() -> Color {
     get_local::<ContentColor>()
         .map(|c| c.0)
         .unwrap_or_else(|| theme().on_surface)
+}
+
+/// System window insets (status bar, navigation bar, etc.)
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct WindowInsets {
+    pub top: f32,
+    pub bottom: f32,
+    pub left: f32,
+    pub right: f32,
+}
+
+/// Set the global default window insets (platform should call this when insets change).
+pub fn set_window_insets_default(insets: WindowInsets) {
+    defaults().write().window_insets = insets;
+}
+
+/// Query current window insets.
+pub fn window_insets() -> WindowInsets {
+    get_local::<WindowInsets>()
+        .unwrap_or_else(|| defaults().read().window_insets)
 }
 
 macro_rules! def_local_getter {

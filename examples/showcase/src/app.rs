@@ -32,6 +32,7 @@ pub enum Route {
     Docking,
     Errors,
     Windows,
+    M3,
 }
 
 impl Route {
@@ -52,6 +53,7 @@ impl Route {
             Route::Docking => "Docking",
             Route::Errors => "Errors",
             Route::Windows => "Windows",
+            Route::M3 => "M3 Components",
         }
     }
     pub fn id(self) -> u64 {
@@ -71,6 +73,7 @@ impl Route {
             Route::Docking => 13,
             Route::Errors => 14,
             Route::Windows => 15,
+            Route::M3 => 16,
         }
     }
 }
@@ -116,8 +119,10 @@ pub fn app(_s: &mut Scheduler) -> View {
         .unwrap_or(Route::Home);
 
     // Typed route -> page renderer
+    let overlay_clone = overlay.clone();
     let render = renderer({
         let global_windows = global_windows.clone();
+        let overlay = overlay_clone;
         move |scope| match *scope.key() {
             Route::Home => pages::home::screen(),
             Route::Layout => pages::layout::screen(),
@@ -134,6 +139,7 @@ pub fn app(_s: &mut Scheduler) -> View {
             Route::Docking => pages::docking::screen(),
             Route::Errors => pages::errors::screen(),
             Route::Windows => pages::windows::screen(global_windows.clone()),
+            Route::M3 => pages::m3::screen((*overlay).clone()),
         }
     });
 

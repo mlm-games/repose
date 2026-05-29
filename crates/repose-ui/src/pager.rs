@@ -61,8 +61,10 @@ pub fn HorizontalPager(
     let key = key.into();
     let page = state.current_page.get();
 
-    // ---- Drag-to-swipe gesture handling ----
-    let drag_start_x = Rc::new(remember_with_key(format!("pager_drag:{key}"), || RefCell::new(None::<f32>)));
+    // Drag-to-swipe gesture handling
+    let drag_start_x = Rc::new(remember_with_key(format!("pager_drag:{key}"), || {
+        RefCell::new(None::<f32>)
+    }));
 
     let on_down = {
         let d = drag_start_x.clone();
@@ -80,7 +82,8 @@ pub fn HorizontalPager(
                 let threshold = 50.0;
                 if delta.abs() > threshold {
                     if delta < 0.0 {
-                        let next = (st.current_page.get() + 1).min(st.page_count.get().saturating_sub(1));
+                        let next =
+                            (st.current_page.get() + 1).min(st.page_count.get().saturating_sub(1));
                         st.current_page.set(next);
                     } else {
                         let prev = st.current_page.get().saturating_sub(1);
@@ -115,10 +118,12 @@ pub fn HorizontalPager(
 
     crate::Stack(Modifier::new().fill_max_size().then(modifier)).with_children(vec![
         crate::Box(Modifier::new().fill_max_size()).with_children(vec![content]),
-        crate::Box(Modifier::new()
-            .fill_max_size()
-            .hit_passthrough()
-            .on_pointer_down(on_down)
-            .on_pointer_up(on_up)),
+        crate::Box(
+            Modifier::new()
+                .fill_max_size()
+                .hit_passthrough()
+                .on_pointer_down(on_down)
+                .on_pointer_up(on_up),
+        ),
     ])
 }

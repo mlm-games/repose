@@ -168,6 +168,11 @@ pub fn FlowColumn(modifier: Modifier) -> View {
     Column(modifier.flex_wrap(FlexWrap::Wrap))
 }
 
+/// Align self-center shorthand.
+pub fn Center(modifier: Modifier) -> View {
+    Box(modifier.align_self(AlignSelf::Center))
+}
+
 pub fn Stack(modifier: Modifier) -> View {
     View::new(0, ViewKind::Stack).modifier(modifier)
 }
@@ -212,8 +217,11 @@ pub fn Text(text: impl Into<String>) -> View {
 ///
 /// Each span can override color and font_size for a range of text.
 pub fn AnnotatedText(annotated: AnnotatedString) -> View {
-    let annotations: Option<std::sync::Arc<[TextSpan]>> =
-        if annotated.spans.is_empty() { None } else { Some(annotated.spans.clone()) };
+    let annotations: Option<std::sync::Arc<[TextSpan]>> = if annotated.spans.is_empty() {
+        None
+    } else {
+        Some(annotated.spans.clone())
+    };
     View::new(
         0,
         ViewKind::Text {

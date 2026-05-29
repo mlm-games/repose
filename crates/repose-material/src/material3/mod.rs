@@ -7,9 +7,10 @@ use std::rc::Rc;
 
 use repose_core::*;
 use repose_ui::{
-    Box, Column, Row, Spacer, Stack, Surface, Text, TextStyle, ViewExt, anim::animate_f32,
-    overlay::SnackbarAction,
+    Box, Column, Row, Spacer, Stack, Surface, Text, TextField, TextStyle, ViewExt,
+    anim::animate_f32, overlay::OverlayHandle, overlay::SnackbarAction,
 };
+use web_time::Duration;
 
 pub fn AlertDialog(
     visible: bool,
@@ -57,25 +58,37 @@ pub fn BottomSheet(
     modifier: Modifier,
     content: View,
 ) -> View {
-    let offset = animate_f32(
-        "sheet_offset",
-        if visible { 0.0 } else { 800.0 },
-        AnimationSpec::spring_gentle(),
+    let max_h = animate_f32(
+        "sheet_height",
+        if visible { 500.0 } else { 0.0 },
+        AnimationSpec::tween(Duration::from_millis(300), Easing::EaseOut),
     );
 
-    Stack(Modifier::new().fill_max_size()).child((
+    Column(Modifier::new()).child((
+        Box(if visible {
+            modifier
+                .clone()
+                .fill_max_width()
+                .max_height(max_h)
+                .clip_rounded(4.0)
+        } else {
+            Modifier::new().width(0.0).height(0.0)
+        })
+        .child(if visible {
+            content
+        } else {
+            Box(Modifier::new())
+        }),
         if visible {
             Box(Modifier::new()
-                .fill_max_size()
-                .background(theme().scrim.with_alpha(85))
+                .width(1.0)
+                .height(0.0)
+                .fill_max_width()
+                .hit_passthrough()
                 .on_pointer_down(move |_| on_dismiss()))
         } else {
             Box(Modifier::new())
         },
-        Box(modifier
-            .absolute()
-            .offset(None, Some(offset), Some(0.0), Some(0.0)))
-        .child(content),
     ))
 }
 
@@ -774,5 +787,1057 @@ pub fn NavigationDrawerItem(
                 badge.unwrap_or(Box(Modifier::new())),
             ))
         }),
+    )
+}
+
+/// A single item inside a `DropdownMenu`.
+#[derive(Clone)]
+pub struct DropdownMenuItem {
+    pub text: String,
+    pub leading_icon: Option<View>,
+    pub trailing_icon: Option<View>,
+    pub on_click: Rc<dyn Fn()>,
+    pub enabled: bool,
+}
+
+impl DropdownMenuItem {
+    pub fn new(text: impl Into<String>, on_click: impl Fn() + 'static) -> Self {
+        Self {
+            text: text.into(),
+            leading_icon: None,
+            trailing_icon: None,
+            on_click: Rc::new(on_click),
+            enabled: true,
+        }
+    }
+
+    pub fn leading_icon(mut self, icon: View) -> Self {
+        self.leading_icon = Some(icon);
+        self
+    }
+
+    pub fn trailing_icon(mut self, icon: View) -> Self {
+        self.trailing_icon = Some(icon);
+        self
+    }
+
+    pub fn disabled(mut self) -> Self {
+        self.enabled = false;
+        self
+    }
+}
+
+/// A menu divider line.
+pub struct MenuDivider;
+
+/// State for controlling `DropdownMenu` visibility.
+pub struct MenuState {
+    visible: Signal<bool>,
+    anchor: Signal<Option<Vec2>>,
+}
+
+impl MenuState {
+    pub fn new() -> Self {
+        Self {
+            visible: signal(false),
+            anchor: signal(None),
+        }
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.visible.get()
+    }
+
+    pub fn open(&self) {
+        self.visible.set(true);
+    }
+
+    pub fn open_at(&self, screen_pos: Vec2) {
+        self.anchor.set(Some(screen_pos));
+        self.visible.set(true);
+    }
+
+    pub fn dismiss(&self) {
+        self.visible.set(false);
+    }
+}
+
+/// M3 Dropdown Menu anchored to a trigger element.
+///
+/// Renders a full-screen scrim in the overlay (to dismiss taps outside the card)
+/// while keeping the menu positioned inline below the trigger for correct position.
+/// Items can be `DropdownMenuItem` or `MenuDivider`.
+pub fn DropdownMenu(
+    state: Rc<MenuState>,
+    overlay: OverlayHandle,
+    modifier: Modifier,
+    trigger: View,
+    items: Vec<DropdownMenuEntry>,
+) -> View {
+    let th = theme();
+    let overlay_id = remember_with_key("ddm_oid", || signal(0u64));
+
+    if state.is_open() {
+        if overlay_id.get() == 0 {
+            let scrim = Box(Modifier::new().fill_max_size().absolute().on_pointer_down({
+                let s = state.clone();
+                move |_| s.dismiss()
+            }));
+            let id = overlay.show_with(scrim, 899.0, true);
+            overlay_id.set(id);
+        }
+    } else {
+        let prev = overlay_id.get();
+        if prev != 0 {
+            let _ = overlay.dismiss(prev);
+            overlay_id.set(0);
+        }
+    }
+
+    Stack(modifier).child((
+        trigger,
+        if state.is_open() {
+            Box(Modifier::new()
+                .absolute()
+                .offset(None, Some(40.0), None, None)
+                .render_z_index(900.0))
+            .child(render_dropdown_menu_content(&th, &items, state.clone()))
+        } else {
+            Box(Modifier::new())
+        },
+    ))
+}
+
+/// Either a menu item or a divider.
+#[derive(Clone)]
+pub enum DropdownMenuEntry {
+    Item(DropdownMenuItem),
+    Divider,
+}
+
+fn render_dropdown_menu_content(
+    th: &Theme,
+    items: &[DropdownMenuEntry],
+    state: Rc<MenuState>,
+) -> View {
+    let children: Vec<View> = items
+        .iter()
+        .map(|entry| match entry {
+            DropdownMenuEntry::Item(item) => {
+                let text_color = if item.enabled {
+                    th.on_surface
+                } else {
+                    th.on_surface.with_alpha_f32(0.38)
+                };
+                let on_click = item.on_click.clone();
+                let state = state.clone();
+                let mut modifier = Modifier::new()
+                    .fill_max_width()
+                    .min_height(40.0)
+                    .padding_values(PaddingValues {
+                        left: 12.0,
+                        right: 12.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    })
+                    .align_items(AlignItems::Center);
+
+                if item.enabled {
+                    modifier = modifier
+                        .state_colors(StateColors {
+                            default: Color::TRANSPARENT,
+                            hovered: th.on_surface.with_alpha_f32(0.08),
+                            pressed: th.on_surface.with_alpha_f32(0.12),
+                            disabled: Color::TRANSPARENT,
+                        })
+                        .clickable()
+                        .on_pointer_down(move |_| {
+                            on_click();
+                            state.dismiss();
+                        });
+                }
+
+                Row(modifier).child((
+                    item.leading_icon
+                        .clone()
+                        .unwrap_or(Box(Modifier::new().width(24.0).height(24.0))),
+                    Box(Modifier::new().size(12.0, 1.0)),
+                    Box(Modifier::new().flex_grow(1.0)).child(
+                        Text(item.text.clone())
+                            .color(text_color)
+                            .size(th.typography.body_large)
+                            .single_line(),
+                    ),
+                    item.trailing_icon.clone().unwrap_or(Box(Modifier::new())),
+                ))
+            }
+            DropdownMenuEntry::Divider => Box(Modifier::new()
+                .fill_max_width()
+                .height(1.0)
+                .margin(12.0)
+                .background(th.outline_variant)),
+        })
+        .collect();
+
+    Surface(
+        Modifier::new()
+            .background(th.surface_container)
+            .clip_rounded(th.shapes.small)
+            .state_elevation(StateElevation {
+                default: th.elevation.level2,
+                hovered: th.elevation.level3,
+                pressed: th.elevation.level3,
+                disabled: 0.0,
+            })
+            .min_width(112.0)
+            .padding(4.0),
+        Column(Modifier::new()).with_children(children),
+    )
+}
+
+/// State for `SearchBar` - manages expanded/collapsed and query text.
+pub struct SearchBarState {
+    pub query: Signal<String>,
+    pub expanded: Signal<bool>,
+    pub active: Signal<bool>,
+}
+
+impl SearchBarState {
+    pub fn new() -> Self {
+        Self {
+            query: signal(String::new()),
+            expanded: signal(false),
+            active: signal(false),
+        }
+    }
+
+    pub fn query(&self) -> String {
+        self.query.get()
+    }
+
+    pub fn set_query(&self, q: String) {
+        self.query.set(q);
+    }
+
+    pub fn is_expanded(&self) -> bool {
+        self.expanded.get()
+    }
+
+    pub fn expand(&self) {
+        self.expanded.set(true);
+    }
+
+    pub fn collapse(&self) {
+        self.expanded.set(false);
+        self.active.set(false);
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active.get()
+    }
+
+    pub fn activate(&self) {
+        self.active.set(true);
+        self.expanded.set(true);
+    }
+
+    pub fn deactivate(&self) {
+        self.active.set(false);
+    }
+}
+
+/// M3 Search Bar - an expandable search input with leading icon and optional
+/// suggestions that expand below the search bar (pushing content down).
+pub fn SearchBar(
+    state: Rc<SearchBarState>,
+    modifier: Modifier,
+    leading_icon: Option<View>,
+    trailing_icon: Option<View>,
+    placeholder: impl Into<String>,
+    on_query_change: Option<Rc<dyn Fn(String)>>,
+    content: View,
+) -> View {
+    let th = theme();
+    let placeholder = placeholder.into();
+    let expanded = state.is_expanded();
+    let query = state.query();
+    let active = state.is_active();
+
+    let width = animate_f32(
+        "searchbar_width",
+        if expanded { 360.0 } else { 240.0 },
+        AnimationSpec::tween(Duration::from_millis(200), Easing::EaseOut),
+    );
+
+    let input_field: View = if active {
+        TextField(
+            placeholder.clone(),
+            Modifier::new().flex_grow(1.0).padding(4.0),
+            Some({
+                let s = state.clone();
+                let cb = on_query_change.clone();
+                move |text| {
+                    s.set_query(text);
+                    if let Some(ref cb) = cb {
+                        cb(s.query());
+                    }
+                }
+            }),
+            None::<fn(String)>,
+        )
+        .color(th.on_surface)
+        .size(th.typography.body_large)
+    } else {
+        Box(Modifier::new().flex_grow(1.0)).child(
+            Text(if query.is_empty() {
+                placeholder.clone()
+            } else {
+                query.clone()
+            })
+            .color(if query.is_empty() {
+                th.on_surface_variant
+            } else {
+                th.on_surface
+            })
+            .size(th.typography.body_large)
+            .single_line(),
+        )
+    };
+
+    let bar_modifier = modifier.clone();
+    let bar = Surface(
+        bar_modifier
+            .width(width)
+            .height(56.0)
+            .background(if active {
+                th.surface_container_high
+            } else {
+                th.surface_container
+            })
+            .state_elevation(StateElevation {
+                default: if active { th.elevation.level3 } else { 0.0 },
+                hovered: th.elevation.level2,
+                pressed: th.elevation.level3,
+                disabled: 0.0,
+            })
+            .clip_rounded(th.shapes.large)
+            .padding_values(PaddingValues {
+                left: 16.0,
+                right: 16.0,
+                top: 0.0,
+                bottom: 0.0,
+            })
+            .clickable()
+            .on_pointer_down({
+                let s = state.clone();
+                move |_| s.activate()
+            }),
+        Row(Modifier::new()
+            .fill_max_size()
+            .align_items(AlignItems::Center))
+        .child((
+            leading_icon.unwrap_or(Box(Modifier::new().size(24.0, 24.0))),
+            Box(Modifier::new().size(8.0, 1.0)),
+            input_field,
+            trailing_icon.unwrap_or(Box(Modifier::new())),
+        )),
+    );
+
+    if expanded {
+        Stack(modifier).child((
+            bar,
+            Box(Modifier::new()
+                .width(width)
+                .max_height(400.0)
+                .background(th.surface_container)
+                .clip_rounded(th.shapes.small))
+            .child(content),
+        ))
+    } else {
+        bar
+    }
+}
+
+/// M3 Docked Search Bar - full-width variant anchored to the top of the screen.
+pub fn DockedSearchBar(
+    state: Rc<SearchBarState>,
+    modifier: Modifier,
+    leading_icon: Option<View>,
+    placeholder: impl Into<String>,
+    on_query_change: Option<Rc<dyn Fn(String)>>,
+    content: View,
+) -> View {
+    let th = theme();
+    let placeholder = placeholder.into();
+    let expanded = state.is_expanded();
+    let query = state.query();
+    let active = state.is_active();
+
+    let bar = Surface(
+        modifier
+            .fill_max_width()
+            .height(56.0)
+            .background(if active {
+                th.surface_container_high
+            } else {
+                th.surface_container
+            })
+            .state_elevation(StateElevation {
+                default: if active { th.elevation.level3 } else { 0.0 },
+                hovered: th.elevation.level2,
+                pressed: th.elevation.level3,
+                disabled: 0.0,
+            })
+            .clip_rounded(th.shapes.large)
+            .padding_values(PaddingValues {
+                left: 16.0,
+                right: 16.0,
+                top: 0.0,
+                bottom: 0.0,
+            })
+            .clickable()
+            .on_pointer_down({
+                let s = state.clone();
+                move |_| s.activate()
+            }),
+        Row(Modifier::new()
+            .fill_max_size()
+            .align_items(AlignItems::Center))
+        .child((
+            leading_icon.unwrap_or(Box(Modifier::new().size(24.0, 24.0))),
+            Box(Modifier::new().size(12.0, 1.0)),
+            Box(Modifier::new().flex_grow(1.0)).child(if query.is_empty() {
+                Text(placeholder.clone())
+                    .color(th.on_surface_variant)
+                    .size(th.typography.body_large)
+                    .single_line()
+            } else {
+                Text(query.clone())
+                    .color(th.on_surface)
+                    .size(th.typography.body_large)
+                    .single_line()
+            }),
+            if active {
+                Box(Modifier::new()
+                    .size(24.0, 24.0)
+                    .clickable()
+                    .on_pointer_down({
+                        let s = state.clone();
+                        move |_| {
+                            s.set_query(String::new());
+                            s.collapse();
+                        }
+                    }))
+                .child(Text("✕").size(16.0).color(th.on_surface_variant))
+            } else {
+                Box(Modifier::new())
+            },
+        )),
+    );
+
+    if expanded {
+        Stack(Modifier::new()).child((
+            bar,
+            Box(Modifier::new()
+                .absolute()
+                .offset(None, Some(60.0), None, None)
+                .fill_max_width()
+                .max_height(400.0)
+                .clip_rounded(th.shapes.small)
+                .background(th.surface_container)
+                .state_elevation(StateElevation {
+                    default: th.elevation.level3,
+                    hovered: th.elevation.level3,
+                    pressed: th.elevation.level3,
+                    disabled: 0.0,
+                }))
+            .child(content),
+        ))
+    } else {
+        bar
+    }
+}
+
+/// State for `ModalBottomSheet` - manages visibility and drag offset.
+pub struct SheetState {
+    visible: Signal<bool>,
+    drag_offset: Signal<f32>,
+    peek_height: Signal<f32>,
+}
+
+impl SheetState {
+    pub fn new(peek_height: f32) -> Self {
+        Self {
+            visible: signal(false),
+            drag_offset: signal(0.0),
+            peek_height: signal(peek_height),
+        }
+    }
+
+    pub fn is_visible(&self) -> bool {
+        self.visible.get()
+    }
+
+    pub fn show(&self) {
+        self.visible.set(true);
+    }
+
+    pub fn dismiss(&self) {
+        self.visible.set(false);
+        self.drag_offset.set(0.0);
+    }
+
+    pub fn set_peek_height(&self, h: f32) {
+        self.peek_height.set(h);
+    }
+}
+
+/// M3 Modal Bottom Sheet - slides up from the bottom with a drag handle.
+///
+/// Renders as an overlay so it is not clipped by parent containers.
+/// Shows on `state.show()`, dismisses on `state.dismiss()` or scrim tap.
+pub fn ModalBottomSheet(
+    state: Rc<SheetState>,
+    overlay: OverlayHandle,
+    modifier: Modifier,
+    content: View,
+) -> View {
+    let th = theme();
+    let peek = state.peek_height.get();
+    let overlay_id = remember_with_key("mbs_oid", || signal(0u64));
+
+    // Animated offset: 600px (off-screen) → 0px (visible)
+    let anim = remember_state_with_key("mbs_anim", || {
+        AnimatedValue::new(600.0, AnimationSpec::spring_gentle())
+    });
+    let last_target = remember_state_with_key("mbs_anim_target", || f32::NAN);
+    let anim_target = if state.is_visible() { 0.0 } else { 600.0 };
+
+    {
+        let mut a = anim.borrow_mut();
+        let mut lt = last_target.borrow_mut();
+        if lt.is_nan() || (*lt - anim_target).abs() > 1e-6 {
+            a.set_target(anim_target);
+            *lt = anim_target;
+        }
+        drop(lt);
+        let still_animating = a.update();
+        if still_animating {
+            request_frame();
+        }
+    }
+
+    let offset = *anim.borrow().get();
+    let sheet_visible = state.is_visible() || offset < 590.0;
+
+    if sheet_visible {
+        if overlay_id.get() == 0 {
+            let builder: Rc<dyn Fn() -> View> = Rc::new({
+                let state = state.clone();
+                let anim = anim.clone();
+                let modifier = modifier.clone();
+                let content = content.clone();
+                let th = th.clone();
+                move || {
+                    let off = *anim.borrow().get();
+                    let modif = modifier.clone();
+                    let peek_h = state.peek_height.get();
+                    let sheet = Box(modif
+                        .fill_max_width()
+                        .absolute()
+                        .offset(None, Some(off), Some(0.0), Some(0.0))
+                        .min_height(peek_h.max(48.0))
+                        .background(th.surface_container_low)
+                        .clip_rounded(th.shapes.large))
+                    .child(
+                        Column(Modifier::new().fill_max_width()).child((
+                            Row(Modifier::new().fill_max_width().justify_content(JustifyContent::Center)).child(
+                                Box(Modifier::new()
+                                    .margin_vertical(8.0)
+                                    .width(32.0)
+                                    .height(4.0)
+                                    .background(th.on_surface_variant.with_alpha_f32(0.4))
+                                    .clip_rounded(2.0)),
+                            ),
+                            content.clone(),
+                        )),
+                    );
+
+                    let visible = state.is_visible();
+                    let scrim = if visible {
+                        Box(Modifier::new()
+                            .fill_max_size()
+                            .background(th.scrim.with_alpha(85))
+                            .on_pointer_down({
+                                let s = state.clone();
+                                move |_| s.dismiss()
+                            }))
+                    } else {
+                        Box(Modifier::new())
+                    };
+
+                    Stack(Modifier::new().fill_max_size().absolute()).child((scrim, sheet))
+                }
+            });
+
+            let id = overlay.show_entry(builder, 900.0, false);
+            overlay_id.set(id);
+        }
+    } else {
+        let prev = overlay_id.get();
+        if prev != 0 {
+            let _ = overlay.dismiss(prev);
+            overlay_id.set(0);
+        }
+    }
+
+    Box(Modifier::new())
+}
+
+/// State for `PullToRefresh` - tracks pull progress and refresh trigger.
+pub struct PullToRefreshState {
+    refreshing: Signal<bool>,
+    pull_offset: Signal<f32>,
+    enabled: bool,
+}
+
+impl PullToRefreshState {
+    pub fn new() -> Self {
+        Self {
+            refreshing: signal(false),
+            pull_offset: signal(0.0),
+            enabled: true,
+        }
+    }
+
+    pub fn is_refreshing(&self) -> bool {
+        self.refreshing.get()
+    }
+
+    pub fn set_refreshing(&self, v: bool) {
+        self.refreshing.set(v);
+    }
+
+    pub fn pull_offset(&self) -> f32 {
+        self.pull_offset.get()
+    }
+}
+
+/// Wraps scrollable content with a pull-to-refresh indicator.
+///
+/// Renders a small spinner at the top when the user pulls down past a threshold,
+/// or shows the current pull offset as a visual indicator.
+pub fn PullToRefresh(
+    state: Rc<PullToRefreshState>,
+    modifier: Modifier,
+    on_refresh: Rc<dyn Fn()>,
+    content: View,
+) -> View {
+    let th = theme();
+    let pull = state.pull_offset.get();
+    let refreshing = state.is_refreshing();
+
+    Stack(modifier).child((
+        // Indicator area (hidden behind content via z-ordering)
+        if pull > 0.0 || refreshing {
+            Box(Modifier::new()
+                .fill_max_width()
+                .height(pull.clamp(0.0, 64.0))
+                .absolute()
+                .offset(None, Some(-pull), None, None)
+                .align_items(AlignItems::Center)
+                .justify_content(JustifyContent::Center))
+            .child(if refreshing {
+                Text("↻")
+                    .size(24.0)
+                    .color(th.primary)
+                    .modifier(Modifier::new())
+            } else {
+                let p = (pull / 64.0).min(1.0);
+                Text("↓")
+                    .size((16.0 + p * 8.0).min(24.0))
+                    .color(th.primary.with_alpha_f32(p))
+                    .modifier(Modifier::new())
+            })
+        } else {
+            Box(Modifier::new())
+        },
+        // Content shifted down by pull offset
+        Box(Modifier::new()
+            .absolute()
+            .offset(None, Some(pull), None, None))
+        .child(content),
+    ))
+}
+
+/// State for `DatePicker` - manages selected date.
+pub struct DatePickerState {
+    pub year: Signal<i32>,
+    pub month: Signal<u32>, // 1-12
+    pub day: Signal<u32>,
+}
+
+impl DatePickerState {
+    pub fn new(year: i32, month: u32, day: u32) -> Self {
+        Self {
+            year: signal(year),
+            month: signal(month.clamp(1, 12)),
+            day: signal(day.clamp(1, 31)),
+        }
+    }
+
+    pub fn selected_date(&self) -> (i32, u32, u32) {
+        (self.year.get(), self.month.get(), self.day.get())
+    }
+}
+
+fn days_in_month(year: i32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0) {
+                29
+            } else {
+                28
+            }
+        }
+        _ => 30,
+    }
+}
+
+/// M3 Date Picker dialog - a simple date picker with month navigation.
+pub fn DatePicker(
+    state: Rc<DatePickerState>,
+    on_confirm: Rc<dyn Fn(i32, u32, u32)>,
+    on_dismiss: Rc<dyn Fn()>,
+) -> View {
+    let th = theme();
+    let (year, month, day) = state.selected_date();
+    let dim = days_in_month(year, month);
+
+    let month_names = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+
+    // Previous month
+    let prev_month = {
+        let s = state.clone();
+        move || {
+            if s.month.get() == 1 {
+                s.year.set(s.year.get() - 1);
+                s.month.set(12);
+            } else {
+                s.month.set(s.month.get() - 1);
+            }
+            let d = days_in_month(s.year.get(), s.month.get());
+            if s.day.get() > d {
+                s.day.set(d);
+            }
+        }
+    };
+
+    // Next month
+    let next_month = {
+        let s = state.clone();
+        move || {
+            if s.month.get() == 12 {
+                s.year.set(s.year.get() + 1);
+                s.month.set(1);
+            } else {
+                s.month.set(s.month.get() + 1);
+            }
+            let d = days_in_month(s.year.get(), s.month.get());
+            if s.day.get() > d {
+                s.day.set(d);
+            }
+        }
+    };
+
+    Surface(
+        Modifier::new()
+            .width(328.0)
+            .background(th.surface_container_high)
+            .clip_rounded(th.shapes.extra_large)
+            .padding(16.0),
+        Column(Modifier::new()).child((
+            // Month/Year header with nav
+            Row(Modifier::new()
+                .fill_max_width()
+                .align_items(AlignItems::Center))
+            .child((
+                IconButton(
+                    Box(Modifier::new()).child(Text("◀").color(th.on_surface).size(16.0)),
+                    prev_month,
+                ),
+                Spacer(),
+                Text(format!("{} {}", month_names[(month - 1) as usize], year))
+                    .size(th.typography.title_medium)
+                    .color(th.on_surface),
+                Spacer(),
+                IconButton(
+                    Box(Modifier::new()).child(Text("▶").color(th.on_surface).size(16.0)),
+                    next_month,
+                ),
+            )),
+            Box(Modifier::new().size(1.0, 16.0)),
+            // Day grid
+            Column(Modifier::new()).child({
+                let mut rows: Vec<View> = Vec::new();
+                // Day-of-week headers
+                let dow_headers: Vec<View> = ["M", "T", "W", "T", "F", "S", "S"]
+                    .iter()
+                    .map(|d| {
+                        Box(Modifier::new()
+                            .width(40.0)
+                            .height(40.0)
+                            .align_items(AlignItems::Center)
+                            .justify_content(JustifyContent::Center))
+                        .child(
+                            Text(d.to_string())
+                                .size(th.typography.label_small)
+                                .color(th.on_surface_variant),
+                        )
+                    })
+                    .collect();
+                rows.push(Row(Modifier::new()).with_children(dow_headers));
+
+                // Simple grid: 6 rows of 7 days
+                for w in 0..6 {
+                    let mut week: Vec<View> = Vec::new();
+                    for d in 0..7 {
+                        let day_num = w * 7 + d + 1;
+                        if day_num <= dim as i32 {
+                            let is_selected = day_num == day as i32;
+                            let s = state.clone();
+                            let on_confirm = on_confirm.clone();
+                            let on_dismiss_fn = on_dismiss.clone();
+                            week.push(
+                                Box(Modifier::new()
+                                    .width(40.0)
+                                    .height(40.0)
+                                    .background(if is_selected {
+                                        th.primary
+                                    } else {
+                                        Color::TRANSPARENT
+                                    })
+                                    .clip_rounded(20.0)
+                                    .align_items(AlignItems::Center)
+                                    .justify_content(JustifyContent::Center)
+                                    .clickable()
+                                    .on_pointer_down(move |_| {
+                                        s.day.set(day_num as u32);
+                                        on_confirm(s.year.get(), s.month.get(), day_num as u32);
+                                        on_dismiss_fn();
+                                    }))
+                                .child(
+                                    Text(day_num.to_string())
+                                        .size(th.typography.body_medium)
+                                        .color(if is_selected {
+                                            th.on_primary
+                                        } else {
+                                            th.on_surface
+                                        }),
+                                ),
+                            );
+                        } else {
+                            week.push(Box(Modifier::new().width(40.0).height(40.0)));
+                        }
+                    }
+                    rows.push(Row(Modifier::new()).with_children(week));
+                }
+                rows
+            }),
+        )),
+    )
+}
+
+/// State for `TimePicker` - manages selected hour and minute.
+pub struct TimePickerState {
+    pub hour: Signal<u32>,
+    pub minute: Signal<u32>,
+    pub is_am: Signal<bool>,
+}
+
+impl TimePickerState {
+    pub fn new(hour: u32, minute: u32) -> Self {
+        let h = hour % 12;
+        let am = hour < 12;
+        Self {
+            hour: signal(if h == 0 { 12 } else { h }),
+            minute: signal(minute.min(59)),
+            is_am: signal(am),
+        }
+    }
+
+    pub fn selected_time(&self) -> (u32, u32) {
+        let mut h = self.hour.get();
+        if !self.is_am.get() {
+            h = (h % 12) + 12;
+        } else if h == 12 {
+            h = 0;
+        }
+        (h, self.minute.get())
+    }
+}
+
+/// M3 Time Picker - a simple time picker with hour/minute fields and AM/PM toggle.
+pub fn TimePicker(
+    state: Rc<TimePickerState>,
+    on_confirm: Rc<dyn Fn(u32, u32)>,
+    on_dismiss: Rc<dyn Fn()>,
+) -> View {
+    let th = theme();
+    let hour = state.hour.get();
+    let minute = state.minute.get();
+    let is_am = state.is_am.get();
+
+    let hour_str = format!("{:02}", hour);
+    let min_str = format!("{:02}", minute);
+
+    Surface(
+        Modifier::new()
+            .width(256.0)
+            .background(th.surface_container_high)
+            .clip_rounded(th.shapes.extra_large)
+            .padding(24.0),
+        Column(Modifier::new().align_items(AlignItems::Center)).child((
+            // Time display
+            Row(Modifier::new().align_items(AlignItems::Center)).child((
+                Box(Modifier::new()
+                    .clickable()
+                    .on_pointer_down({
+                        let s = state.clone();
+                        move |_| s.hour.set((s.hour.get() % 12) + 1)
+                    })
+                    .padding(8.0))
+                .child(Text(hour_str).size(48.0).color(th.on_surface).single_line()),
+                Text(":")
+                    .size(48.0)
+                    .color(th.on_surface_variant)
+                    .single_line(),
+                Box(Modifier::new()
+                    .clickable()
+                    .on_pointer_down({
+                        let s = state.clone();
+                        move |_| s.minute.set((s.minute.get() + 1) % 60)
+                    })
+                    .padding(8.0))
+                .child(Text(min_str).size(48.0).color(th.on_surface).single_line()),
+            )),
+            Box(Modifier::new().size(1.0, 16.0)),
+            // AM/PM toggle
+            Row(Modifier::new().align_items(AlignItems::Center)).child((
+                Box(Modifier::new()
+                    .padding_values(PaddingValues {
+                        left: 12.0,
+                        right: 12.0,
+                        top: 4.0,
+                        bottom: 4.0,
+                    })
+                    .background(if is_am {
+                        th.primary
+                    } else {
+                        Color::TRANSPARENT
+                    })
+                    .clip_rounded(8.0)
+                    .clickable()
+                    .on_pointer_down({
+                        let s = state.clone();
+                        move |_| {
+                            if !s.is_am.get() {
+                                s.is_am.set(true);
+                                let h = s.hour.get();
+                                s.hour.set(if h == 12 { 12 } else { (h + 12) % 24 });
+                                if s.hour.get() == 0 {
+                                    s.hour.set(12);
+                                }
+                            }
+                        }
+                    }))
+                .child(
+                    Text("AM").size(th.typography.label_large).color(if is_am {
+                        th.on_primary
+                    } else {
+                        th.on_surface
+                    }),
+                ),
+                Box(Modifier::new().width(8.0).height(1.0)),
+                Box(Modifier::new()
+                    .padding_values(PaddingValues {
+                        left: 12.0,
+                        right: 12.0,
+                        top: 4.0,
+                        bottom: 4.0,
+                    })
+                    .background(if !is_am {
+                        th.primary
+                    } else {
+                        Color::TRANSPARENT
+                    })
+                    .clip_rounded(8.0)
+                    .clickable()
+                    .on_pointer_down({
+                        let s = state.clone();
+                        move |_| {
+                            if s.is_am.get() {
+                                s.is_am.set(false);
+                                let h = s.hour.get();
+                                s.hour.set(if h == 12 { 12 } else { (h + 12) % 24 });
+                                if s.hour.get() == 0 {
+                                    s.hour.set(12);
+                                }
+                            }
+                        }
+                    }))
+                .child(
+                    Text("PM").size(th.typography.label_large).color(if !is_am {
+                        th.on_primary
+                    } else {
+                        th.on_surface
+                    }),
+                ),
+            )),
+            Box(Modifier::new().size(1.0, 16.0)),
+            Row(Modifier::new().fill_max_width()).child((
+                Spacer(),
+                Box(Modifier::new().padding(8.0).clickable().on_pointer_down({
+                    let on_dismiss = on_dismiss.clone();
+                    move |_| on_dismiss()
+                }))
+                .child(
+                    Text("Cancel")
+                        .color(th.primary)
+                        .size(th.typography.label_large)
+                        .single_line(),
+                ),
+                Box(Modifier::new().width(8.0).height(1.0)),
+                Box(Modifier::new()
+                    .padding(8.0)
+                    .clickable()
+                    .on_pointer_down(move |_| {
+                        let (h, m) = state.selected_time();
+                        on_confirm(h, m);
+                        on_dismiss();
+                    }))
+                .child(
+                    Text("OK")
+                        .color(th.primary)
+                        .size(th.typography.label_large)
+                        .single_line(),
+                ),
+            )),
+        )),
     )
 }

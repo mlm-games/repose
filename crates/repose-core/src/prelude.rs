@@ -1,4 +1,7 @@
-pub use crate::animation::*;
+pub use crate::animation::{
+    AnimatedValue, AnimationSpec, Clock, DecayAnimationSpec, Easing, Interpolate, KeyframesSpec,
+    RepeatableSpec, SpringSpec, SystemClock, TestClock, ensure_system_clock, set_clock,
+};
 pub use crate::color::Color;
 pub use crate::dnd::*;
 pub use crate::effects::{Dispose, effect, on_unmount};
@@ -7,9 +10,9 @@ pub use crate::frame_clock::{peek_frame_request, request_frame, take_frame_reque
 pub use crate::geometry::{Rect, Size, Vec2};
 pub use crate::input::*;
 pub use crate::locals::{
-    Density, Dp, TextDirection, TextScale, Theme, UiScale, density, dp_to_px, text_direction,
-    text_scale, theme, ui_scale, with_density, with_text_direction, with_text_scale, with_theme,
-    with_ui_scale,
+    Density, Dp, TextDirection, TextScale, Theme, UiScale, WindowInsets, density, dp_to_px,
+    text_direction, text_scale, theme, ui_scale, window_insets, with_density,
+    with_text_direction, with_text_scale, with_theme, with_ui_scale, with_window_insets,
 };
 pub use crate::modifier::Modifier;
 pub use crate::render_api::{GlyphRasterConfig, RenderBackend};

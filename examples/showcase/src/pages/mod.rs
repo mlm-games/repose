@@ -7,6 +7,7 @@ pub mod grid;
 pub mod home;
 pub mod layout;
 pub mod lists;
+pub mod m3;
 pub mod pager;
 pub mod scroll;
 pub mod scroll_features;

@@ -217,6 +217,191 @@ impl AnimationSpec {
     }
 }
 
+/// A keyframe animation specification.
+///
+/// Defines a sequence of keyframes at specific timestamps (0.0 to 1.0),
+/// with target values and optional easing between each pair.
+#[derive(Clone, Debug)]
+pub struct KeyframesSpec<T: Clone> {
+    /// Keyframes as (timestamp 0.0-1.0, value, optional easing between previous and this).
+    /// The first keyframe should be at t=0.0 and uses no easing.
+    pub keyframes: Vec<(f32, T, Option<Easing>)>,
+}
+
+impl<T: Clone + Interpolate> KeyframesSpec<T> {
+    pub fn new(keyframes: Vec<(f32, T)>) -> Self {
+        let with_easing = keyframes.into_iter().map(|(t, v)| (t, v, None)).collect();
+        Self {
+            keyframes: with_easing,
+        }
+    }
+
+    /// Add easing between the previous keyframe and this one.
+    pub fn with_easing(mut self, easing: Easing) -> Self {
+        if let Some(last) = self.keyframes.last_mut() {
+            last.2 = Some(easing);
+        }
+        self
+    }
+
+    pub fn evaluate(&self, t: f32) -> T {
+        let t = t.clamp(0.0, 1.0);
+        let kf = &self.keyframes;
+        if kf.is_empty() {
+            panic!("KeyframesSpec must have at least one keyframe");
+        }
+        // Find the segment containing t
+        for i in 0..kf.len() - 1 {
+            let (t0, _, _) = kf[i];
+            let (t1, ref v1, easing) = kf[i + 1];
+            if t >= t0 && t <= t1 {
+                let segment_t = if (t1 - t0).abs() < f32::EPSILON {
+                    1.0
+                } else {
+                    (t - t0) / (t1 - t0)
+                };
+                let eased_t = match easing {
+                    Some(e) => e.interpolate(segment_t),
+                    None => segment_t,
+                };
+                return kf[i].1.interpolate(v1, eased_t);
+            }
+        }
+        kf.last().unwrap().1.clone()
+    }
+}
+
+/// A repeatable animation specification.
+///
+/// Wraps another animation spec and causes it to repeat.
+/// Default: infinite repeat with no reverse.
+#[derive(Clone, Copy, Debug)]
+pub struct RepeatableSpec {
+    /// Number of repetitions. `None` means infinite.
+    pub iterations: Option<u32>,
+    /// If true, alternate direction each iteration (forward, backward, forward...).
+    pub reverse: bool,
+    /// Delay between each iteration.
+    pub delay_between: Duration,
+}
+
+impl Default for RepeatableSpec {
+    fn default() -> Self {
+        Self {
+            iterations: None,
+            reverse: false,
+            delay_between: Duration::ZERO,
+        }
+    }
+}
+
+impl RepeatableSpec {
+    pub fn new(iterations: u32) -> Self {
+        Self {
+            iterations: Some(iterations),
+            reverse: false,
+            delay_between: Duration::ZERO,
+        }
+    }
+
+    pub fn infinite() -> Self {
+        Self {
+            iterations: None,
+            reverse: false,
+            delay_between: Duration::ZERO,
+        }
+    }
+
+    pub fn reverse(mut self) -> Self {
+        self.reverse = true;
+        self
+    }
+
+    pub fn delay_between(mut self, d: Duration) -> Self {
+        self.delay_between = d;
+        self
+    }
+}
+
+/// Decay animation configuration.
+///
+/// Models a damped decay (e.g., for fling-to-stop animations).
+#[derive(Clone, Copy, Debug)]
+pub struct DecayAnimationSpec {
+    /// How quickly the animation decelerates. Lower = faster stop.
+    pub friction: f32,
+    /// Minimum velocity threshold to stop.
+    pub stop_threshold: f32,
+}
+
+impl Default for DecayAnimationSpec {
+    fn default() -> Self {
+        Self {
+            friction: 0.8,
+            stop_threshold: 1.0,
+        }
+    }
+}
+
+impl DecayAnimationSpec {
+    pub fn new(friction: f32) -> Self {
+        Self {
+            friction: friction.clamp(0.01, 1.0),
+            stop_threshold: 1.0,
+        }
+    }
+}
+
+impl AnimatedValue<f32> {
+    /// Tick the decay animation. Returns `true` if still animating.
+    pub fn update_decay(&mut self, friction: f32, stop_threshold: f32) -> bool {
+        let start = match self.start_time {
+            Some(s) => s,
+            None => return false,
+        };
+
+        let now = now();
+        let dt = match self.last_update {
+            Some(last) => now.saturating_duration_since(last).as_secs_f32().min(0.05),
+            None => 0.0,
+        };
+        self.last_update = Some(now);
+
+        if dt <= 0.0 {
+            return true;
+        }
+
+        if self.velocity.abs() < stop_threshold {
+            self.velocity = 0.0;
+            self.start_time = None;
+            return false;
+        }
+
+        self.velocity *= friction.powf(dt * 60.0);
+        let delta = self.velocity * dt;
+        // We store the "current value" as a single f32 offset
+        // that accumulates. But AnimatedValue<f32> stores explicit
+        // start/target. For decay we just accumulate the current.
+        // Because of the AnimatedValue structure, we use progress as
+        // the accumulated value relative to start.
+        let new_progress = self.progress + delta;
+        self.progress = new_progress;
+        // current = start + (target - start) * progress but target = ???.
+        // For decay, progress IS the value (starting from 0).
+        // We repurpose: current = start + progress (progress is offset from start).
+        // Since T = f32, we can just set current directly.
+        if self.progress.abs() < 0.001 && self.velocity.abs() < stop_threshold {
+            self.progress = 0.0;
+            self.velocity = 0.0;
+            self.start_time = None;
+            return false;
+        }
+
+        self.current = self.start.interpolate(&self.target, self.progress);
+        true
+    }
+}
+
 pub trait Interpolate {
     fn interpolate(&self, other: &Self, t: f32) -> Self;
 }
