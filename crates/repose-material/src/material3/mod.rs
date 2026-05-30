@@ -1164,6 +1164,7 @@ pub fn SearchBar(
 }
 
 /// M3 Docked Search Bar - full-width variant anchored to the top of the screen.
+/// Shows a search bar with animated suggestions dropdown.
 pub fn DockedSearchBar(
     state: Rc<SearchBarState>,
     modifier: Modifier,
@@ -1177,6 +1178,50 @@ pub fn DockedSearchBar(
     let expanded = state.is_expanded();
     let query = state.query();
     let active = state.is_active();
+
+    let content_target = if expanded { 400.0 } else { 0.0 };
+    let content_height = animate_f32(
+        "docked_sh",
+        content_target,
+        AnimationSpec::tween(Duration::from_millis(250), Easing::FastOutSlowIn),
+    );
+    let content_alpha = animate_f32(
+        "docked_sa",
+        if expanded { 1.0 } else { 0.0 },
+        AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn),
+    );
+
+    let input_field: View = if active {
+        TextField(
+            placeholder.clone(),
+            Modifier::new().flex_grow(1.0),
+            Some({
+                let s = state.clone();
+                let cb = on_query_change.clone();
+                move |text| {
+                    s.set_query(text);
+                    if let Some(ref cb) = cb {
+                        cb(s.query());
+                    }
+                }
+            }),
+            None::<fn(String)>,
+        )
+        .color(th.on_surface)
+        .size(th.typography.body_large)
+    } else {
+        Box(Modifier::new().flex_grow(1.0)).child(if query.is_empty() {
+            Text(placeholder.clone())
+                .color(th.on_surface_variant)
+                .size(th.typography.body_large)
+                .single_line()
+        } else {
+            Text(query.clone())
+                .color(th.on_surface)
+                .size(th.typography.body_large)
+                .single_line()
+        })
+    };
 
     let bar = Surface(
         modifier
@@ -1203,7 +1248,11 @@ pub fn DockedSearchBar(
             .clickable()
             .on_pointer_down({
                 let s = state.clone();
-                move |_| s.activate()
+                move |_| {
+                    if !s.is_active() {
+                        s.activate()
+                    }
+                }
             }),
         Row(Modifier::new()
             .fill_max_size()
@@ -1211,17 +1260,7 @@ pub fn DockedSearchBar(
         .child((
             leading_icon.unwrap_or(Box(Modifier::new().size(24.0, 24.0))),
             Box(Modifier::new().size(12.0, 1.0)),
-            Box(Modifier::new().flex_grow(1.0)).child(if query.is_empty() {
-                Text(placeholder.clone())
-                    .color(th.on_surface_variant)
-                    .size(th.typography.body_large)
-                    .single_line()
-            } else {
-                Text(query.clone())
-                    .color(th.on_surface)
-                    .size(th.typography.body_large)
-                    .single_line()
-            }),
+            input_field,
             if active {
                 Box(Modifier::new()
                     .size(24.0, 24.0)
@@ -1240,14 +1279,14 @@ pub fn DockedSearchBar(
         )),
     );
 
-    if expanded {
-        Stack(Modifier::new()).child((
+    let show_content = expanded || content_height > 1.0;
+    if show_content {
+        Column(Modifier::new().fill_max_width()).child((
             bar,
             Box(Modifier::new()
-                .absolute()
-                .offset(None, Some(60.0), None, None)
                 .fill_max_width()
-                .max_height(400.0)
+                .height(content_height)
+                .alpha(content_alpha)
                 .clip_rounded(th.shapes.small)
                 .background(th.surface_container)
                 .state_elevation(StateElevation {
@@ -1256,7 +1295,15 @@ pub fn DockedSearchBar(
                     pressed: th.elevation.level3,
                     disabled: 0.0,
                 }))
-            .child(content),
+            .child(
+                Column(Modifier::new().fill_max_width()).child((
+                    Box(Modifier::new()
+                        .fill_max_width()
+                        .height(1.0)
+                        .background(th.outline_variant)),
+                    content,
+                )),
+            ),
         ))
     } else {
         bar
