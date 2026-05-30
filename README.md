@@ -27,7 +27,7 @@ Useful for simple apps (though aiming for bigger ones in the future), and for de
 
 ### Non-Goals
 
-- Full feature parity with mature toolkits (prioritising having a minimal and maintainable  for 80% of the tasks, until i get enough funding, or after years of usage)
+- Full feature parity with mature toolkits (prioritising having a minimal and maintainable toolkit, that should work for 80% of the tasks, until i get enough funding, or after years of usage)
 
 ## Quick Start
 
