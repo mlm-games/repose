@@ -3,8 +3,8 @@ use std::rc::Rc;
 use repose_core::prelude::*;
 use repose_material::material3::{
     BottomSheet, DatePicker, DatePickerState, DropdownMenu, DropdownMenuEntry, DropdownMenuItem,
-    FilledButton, MenuState, ModalBottomSheet, PullToRefresh, PullToRefreshState, SearchBar,
-    SearchBarState, SheetState, TextButton, TimePicker, TimePickerState,
+    FilledButton, MenuState, ModalBottomSheet, NavigationRail, NavRailItem,
+    SheetState, TextButton, TimePicker, TimePickerState,
 };
 use repose_ui::{anim::animate_f32, overlay::OverlayHandle, *};
 use web_time::Duration;
@@ -16,15 +16,9 @@ pub fn screen(overlay: OverlayHandle) -> View {
     let menu_state = remember(|| MenuState::new());
     let menu_label = remember(|| signal("Choose…".to_string()));
 
-    // SearchBar state
-    let search_state = remember(|| SearchBarState::new());
-
     // BottomSheet state
     let sheet_state = remember(|| SheetState::new(200.0));
     let old_sheet_state = remember(|| signal(false));
-
-    // PullToRefresh state
-    let ptr_state = remember(|| PullToRefreshState::new());
 
     // DatePicker state
     let date_state = remember(|| DatePickerState::new(2026, 5, 29));
@@ -43,6 +37,9 @@ pub fn screen(overlay: OverlayHandle) -> View {
         anim_target.get(),
         AnimationSpec::tween(Duration::from_millis(600), Easing::FastOutSlowIn),
     );
+
+    // NavigationRail demo
+    let rail_selected = remember(|| signal(0usize));
 
     let th = theme();
 
@@ -211,6 +208,79 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 } else {
                     Box(Modifier::new())
                 },
+            )),
+        ),
+        Section(
+            "NavigationRail",
+            Column(Modifier::new().padding(12.0)).child((
+                Text(format!("Selected: Item {}", rail_selected.get() + 1))
+                    .color(th.on_surface)
+                    .size(th.typography.body_medium),
+                Box(Modifier::new().height(8.0).width(1.0)),
+                Row(Modifier::new().height(400.0).border(1.0, th.outline, 8.0)).child({
+                    NavigationRail(
+                        rail_selected.get(),
+                        vec![
+                            NavRailItem {
+                                icon: Text("★").size(20.0),
+                                label: "Favorites".into(),
+                                on_click: Rc::new({
+                                    let s = rail_selected.clone();
+                                    move || s.set(0)
+                                }),
+                                badge: None,
+                            },
+                            NavRailItem {
+                                icon: Text("☁").size(20.0),
+                                label: "Cloud".into(),
+                                on_click: Rc::new({
+                                    let s = rail_selected.clone();
+                                    move || s.set(1)
+                                }),
+                                badge: None,
+                            },
+                            NavRailItem {
+                                icon: Text("⚙").size(20.0),
+                                label: "Settings".into(),
+                                on_click: Rc::new({
+                                    let s = rail_selected.clone();
+                                    move || s.set(2)
+                                }),
+                                badge: Some(
+                                    Box(Modifier::new()
+                                        .size(8.0, 8.0)
+                                        .background(th.error)
+                                        .clip_rounded(4.0)),
+                                ),
+                            },
+                            NavRailItem {
+                                icon: Text("🛒").size(20.0),
+                                label: "Cart".into(),
+                                on_click: Rc::new({
+                                    let s = rail_selected.clone();
+                                    move || s.set(3)
+                                }),
+                                badge: Some(
+                                    Box(Modifier::new()
+                                        .min_width(16.0)
+                                        .height(16.0)
+                                        .background(th.error)
+                                        .clip_rounded(8.0)
+                                        .align_items(AlignItems::Center)
+                                        .justify_content(JustifyContent::Center))
+                                    .child(
+                                        Text("3")
+                                            .color(th.on_error)
+                                            .size(10.0)
+                                            .single_line(),
+                                    ),
+                                ),
+                            },
+                        ],
+                        None,  // header
+                        None,  // FAB
+                    )
+                }),
             )),
         ),
         Section(

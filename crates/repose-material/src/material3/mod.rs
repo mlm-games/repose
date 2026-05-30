@@ -3,9 +3,11 @@
 mod components;
 pub use components::*;
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_core::*;
+use repose_ui::lazy::{LazyRow, LazyRowState};
 use repose_ui::{
     Box, Column, Row, Spacer, Stack, Surface, Text, TextField, TextStyle, ViewExt,
     anim::animate_f32, overlay::OverlayHandle, overlay::SnackbarAction,
@@ -1354,14 +1356,15 @@ pub fn ModalBottomSheet(
                         .clip_rounded(th.shapes.large))
                     .child(
                         Column(Modifier::new().fill_max_width()).child((
-                            Row(Modifier::new().fill_max_width().justify_content(JustifyContent::Center)).child(
-                                Box(Modifier::new()
-                                    .margin_vertical(8.0)
-                                    .width(32.0)
-                                    .height(4.0)
-                                    .background(th.on_surface_variant.with_alpha_f32(0.4))
-                                    .clip_rounded(2.0)),
-                            ),
+                            Row(Modifier::new()
+                                .fill_max_width()
+                                .justify_content(JustifyContent::Center))
+                            .child(Box(Modifier::new()
+                                .margin_vertical(8.0)
+                                .width(32.0)
+                                .height(4.0)
+                                .background(th.on_surface_variant.with_alpha_f32(0.4))
+                                .clip_rounded(2.0))),
                             content.clone(),
                         )),
                     );
@@ -1843,4 +1846,282 @@ pub fn TimePicker(
             )),
         )),
     )
+}
+
+/// A destination entry inside a NavigationRail.
+pub struct NavRailItem {
+    pub icon: View,
+    pub label: String,
+    pub on_click: Rc<dyn Fn()>,
+    pub badge: Option<View>,
+}
+
+/// M3 Navigation Rail — a compact vertical navigation sidebar.
+///
+/// Typically placed on the left side of the screen. Contains navigation items
+/// (icon + label) and optional header / FAB sections.
+pub fn NavigationRail(
+    selected_index: usize,
+    items: Vec<NavRailItem>,
+    header: Option<View>,
+    fab: Option<View>,
+) -> View {
+    let th = theme();
+
+    let mut rail_children: Vec<View> = Vec::new();
+
+    let has_header = header.is_some();
+    let has_fab = fab.is_some();
+
+    if let Some(h) = header {
+        rail_children.push(
+            Box(Modifier::new()
+                .padding_values(PaddingValues {
+                    left: 12.0,
+                    right: 12.0,
+                    top: 12.0,
+                    bottom: 12.0,
+                })
+                .align_self(AlignSelf::Center))
+            .child(h),
+        );
+    }
+
+    if let Some(f) = fab {
+        rail_children.push(
+            Box(Modifier::new()
+                .padding_values(PaddingValues {
+                    left: 12.0,
+                    right: 12.0,
+                    top: 8.0,
+                    bottom: 8.0,
+                })
+                .align_self(AlignSelf::Center))
+            .child(f),
+        );
+    }
+
+    // Divider after header/FAB area
+    if has_header || has_fab {
+        rail_children.push(Box(Modifier::new()
+            .size(80.0, 1.0)
+            .fill_max_width()
+            .background(th.outline_variant)));
+    }
+
+    for (i, item) in items.into_iter().enumerate() {
+        let selected = i == selected_index;
+        let fg = if selected {
+            th.on_secondary_container
+        } else {
+            th.on_surface_variant
+        };
+        let bg = if selected {
+            th.secondary_container
+        } else {
+            Color::TRANSPARENT
+        };
+        let cb = item.on_click.clone();
+
+        rail_children.push(
+            Column(
+                Modifier::new()
+                    .fill_max_width()
+                    .padding_values(PaddingValues {
+                        left: 4.0,
+                        right: 4.0,
+                        top: 4.0,
+                        bottom: 4.0,
+                    })
+                    .align_items(AlignItems::Center)
+                    .justify_content(JustifyContent::Center)
+                    .state_colors(StateColors {
+                        default: Color::TRANSPARENT,
+                        hovered: th.on_surface.with_alpha_f32(0.08),
+                        pressed: th.on_surface.with_alpha_f32(0.12),
+                        disabled: Color::TRANSPARENT,
+                    })
+                    .clip_rounded(16.0)
+                    .clickable()
+                    .on_pointer_down(move |_| cb()),
+            )
+            .child((
+                Stack(Modifier::new()).child((
+                    Box(Modifier::new().size(24.0, 24.0))
+                        .child(with_content_color(fg, move || item.icon)),
+                    item.badge
+                        .map(|b| {
+                            Box(Modifier::new()
+                                .absolute()
+                                .offset(None, None, None, Some(0.0)))
+                            .child(b)
+                        })
+                        .unwrap_or(Box(Modifier::new())),
+                )),
+                Box(Modifier::new().size(1.0, 4.0)),
+                Text(item.label)
+                    .color(fg)
+                    .size(th.typography.label_medium)
+                    .single_line(),
+            )),
+        );
+    }
+
+    Column(
+        Modifier::new()
+            .width(80.0)
+            .fill_max_height()
+            .background(th.surface)
+            .align_items(AlignItems::Center),
+    )
+    .with_children(rail_children)
+}
+
+/// State for `SwipeToDismiss` — tracks swipe offset with snap animation.
+pub struct SwipeToDismissState {
+    /// Animated offset: driven by target + AnimatedValue for spring snap.
+    anim_state: Rc<RefCell<SwipAnimState>>,
+    target: Signal<f32>,
+}
+
+struct SwipAnimState {
+    anim: AnimatedValue<f32>,
+}
+
+impl SwipeToDismissState {
+    pub fn new() -> Self {
+        Self {
+            anim_state: Rc::new(RefCell::new(SwipAnimState {
+                anim: AnimatedValue::new(0.0, AnimationSpec::spring_gentle()),
+            })),
+            target: signal(0.0),
+        }
+    }
+
+    pub fn offset(&self) -> f32 {
+        let mut s = self.anim_state.borrow_mut();
+        let target = self.target.get();
+        s.anim.set_spec(AnimationSpec::spring_gentle());
+        s.anim.set_target(target);
+        if s.anim.update() {
+            request_frame();
+        }
+        *s.anim.get()
+    }
+
+    /// Set the offset instantly (used during active drag).
+    pub fn set_offset_instant(&self, off: f32) {
+        self.target.set(off);
+        self.anim_state.borrow_mut().anim = AnimatedValue::new(off, AnimationSpec::spring_gentle());
+    }
+
+    pub fn is_dismissed(&self) -> bool {
+        self.target.get() < -250.0
+    }
+
+    /// Snap to dismissed position.
+    pub fn dismiss(&self) {
+        self.target.set(-300.0);
+    }
+
+    /// Snap back to origin.
+    pub fn reset(&self) {
+        self.target.set(0.0);
+    }
+}
+
+/// M3 SwipeToDismiss — wraps content that can be swiped left to reveal
+/// a `background` action view. On swipe past threshold, `on_dismiss` fires.
+pub fn SwipeToDismiss(
+    state: Rc<SwipeToDismissState>,
+    on_dismiss: Option<Rc<dyn Fn()>>,
+    background: View,
+    content: View,
+    modifier: Modifier,
+) -> View {
+    let offset = state.offset();
+    let threshold = 150.0;
+
+    if offset < -threshold {
+        if let Some(ref cb) = on_dismiss {
+            cb();
+        }
+    }
+
+    let drag_start_x = remember_with_key("swipe_drag_start", || RefCell::new(None::<f32>));
+    let drag_base = remember_with_key("swipe_drag_base", || RefCell::new(0.0f32));
+
+    let st = state.clone();
+    let on_down = {
+        let d = drag_start_x.clone();
+        let base = drag_base.clone();
+        move |e: PointerEvent| {
+            *d.borrow_mut() = Some(e.position.x);
+            *base.borrow_mut() = st.offset();
+        }
+    };
+
+    let st = state.clone();
+    let on_move = {
+        let d = drag_start_x.clone();
+        let base = drag_base.clone();
+        move |e: PointerEvent| {
+            if let Some(start) = *d.borrow() {
+                let dx = e.position.x - start;
+                st.set_offset_instant(*base.borrow() + dx);
+            }
+        }
+    };
+
+    let st = state.clone();
+    let on_up = {
+        let d = drag_start_x.clone();
+        move |_e: PointerEvent| {
+            *d.borrow_mut() = None;
+            if st.offset() > -50.0 {
+                st.reset();
+            } else {
+                st.dismiss();
+            }
+        }
+    };
+
+    let display_offset = offset.max(-300.0).min(0.0);
+
+    Stack(modifier.fill_max_width()).child((
+        Box(Modifier::new().fill_max_width()).child(background),
+        Box(Modifier::new()
+            .fill_max_width()
+            .offset(Some(display_offset), Some(0.0), None, None)
+            .on_pointer_down(on_down)
+            .on_pointer_move(on_move)
+            .on_pointer_up(on_up))
+        .child(content),
+    ))
+}
+
+/// M3 Carousel — a horizontally scrolling container with peek edges.
+///
+/// Uses a `LazyRow` internally. The first and last items are partially visible
+/// (peek) to indicate there is more scrollable content.
+pub fn Carousel<T, F>(
+    items: Vec<T>,
+    item_width: f32,
+    peek_amount: f32,
+    modifier: Modifier,
+    state: Rc<LazyRowState>,
+    item_builder: F,
+) -> View
+where
+    T: Clone + 'static,
+    F: Fn(T, usize) -> View + 'static,
+{
+    let padded_modifier = modifier.clone().padding_values(PaddingValues {
+        left: peek_amount,
+        right: peek_amount,
+        top: 0.0,
+        bottom: 0.0,
+    });
+
+    LazyRow(items, item_width, state, padded_modifier, item_builder)
 }

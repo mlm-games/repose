@@ -107,6 +107,7 @@ pub mod anim_ext;
 pub mod gestures;
 pub mod layout;
 pub mod lazy;
+pub use lazy::{LazyColumn, LazyColumnState, LazyGridState, LazyRow, LazyRowState, LazyVerticalGrid, SimpleList};
 pub mod navigation;
 pub mod overlay;
 pub mod pager;

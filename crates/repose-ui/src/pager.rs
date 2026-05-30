@@ -127,3 +127,82 @@ pub fn HorizontalPager(
         ),
     ])
 }
+
+/// A vertically swipable pager with animated page transitions.
+///
+/// Mirror of `HorizontalPager` — drag up/down to flip pages.
+#[allow(non_snake_case)]
+pub fn VerticalPager(
+    key: impl Into<String>,
+    state: Rc<PagerState>,
+    modifier: Modifier,
+    page_builder: impl Fn(usize) -> View + 'static,
+) -> View {
+    let key = key.into();
+    let page = state.current_page.get();
+
+    let drag_start_y = Rc::new(remember_with_key(format!("vpager_drag:{key}"), || {
+        RefCell::new(None::<f32>)
+    }));
+
+    let on_down = {
+        let d = drag_start_y.clone();
+        move |e: PointerEvent| {
+            *d.borrow_mut() = Some(e.position.y);
+        }
+    };
+
+    let st = state.clone();
+    let on_up = {
+        let d = drag_start_y.clone();
+        move |e: PointerEvent| {
+            if let Some(start_y) = *d.borrow() {
+                let delta = e.position.y - start_y;
+                let threshold = 50.0;
+                if delta.abs() > threshold {
+                    if delta < 0.0 {
+                        let next =
+                            (st.current_page.get() + 1).min(st.page_count.get().saturating_sub(1));
+                        st.current_page.set(next);
+                    } else {
+                        let prev = st.current_page.get().saturating_sub(1);
+                        st.current_page.set(prev);
+                    }
+                }
+            }
+            *d.borrow_mut() = None;
+        }
+    };
+
+    let content = AnimatedContent(
+        format!("vpage_content:{key}"),
+        page,
+        AnimationSpec::spring_gentle(),
+        EnterTransition::Composite(vec![
+            EnterTransition::FadeIn,
+            EnterTransition::SlideIn {
+                offset_x: 0.0,
+                offset_y: 600.0,
+            },
+        ]),
+        ExitTransition::Composite(vec![
+            ExitTransition::FadeOut,
+            ExitTransition::SlideOut {
+                offset_x: 0.0,
+                offset_y: -600.0,
+            },
+        ]),
+        move |p| page_builder(p),
+    );
+
+    crate::Stack(Modifier::new().fill_max_size().then(modifier)).with_children(vec![
+        crate::Box(Modifier::new().fill_max_size()).with_children(vec![content]),
+        crate::Box(
+            Modifier::new()
+                .fill_max_size()
+                .hit_passthrough()
+                .on_pointer_down(on_down)
+                .on_pointer_up(on_up),
+        ),
+    ])
+}

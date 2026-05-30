@@ -391,3 +391,182 @@ where
     .modifier(modifier)
     .with_children(vec![content])
 }
+
+/// State for a horizontal lazy list (`LazyRow`).
+///
+/// Tracks scroll offset, viewport width, content width, and inertial physics.
+pub struct LazyRowState {
+    scroll_offset: Signal<f32>,
+    viewport_width: Signal<f32>,
+    content_width: Signal<f32>,
+    physics: RefCell<ScrollPhysics>,
+}
+
+impl Default for LazyRowState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LazyRowState {
+    pub fn new() -> Self {
+        Self {
+            scroll_offset: signal(0.0),
+            viewport_width: signal(600.0),
+            content_width: signal(0.0),
+            physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
+        }
+    }
+
+    pub fn set_offset(&self, off: f32, content_width: f32) {
+        let vw = self.viewport_width.get();
+        let max_off = (content_width - vw).max(0.0);
+        self.scroll_offset.set(off.clamp(0.0, max_off));
+    }
+
+    pub fn scroll_immediate(&self, delta_px: f32, content_width_px: f32) -> f32 {
+        let before = self.scroll_offset.get();
+        let viewport = self.viewport_width.get();
+        let max_offset = (content_width_px - viewport).max(0.0);
+        let new_offset = (before + delta_px).clamp(0.0, max_offset);
+        self.scroll_offset.set(new_offset);
+        let consumed = new_offset - before;
+        self.physics.borrow_mut().record_input(consumed);
+        delta_px - consumed
+    }
+
+    pub fn tick(&self, content_width_px: f32) -> bool {
+        let viewport = self.viewport_width.get();
+        let max_offset = (content_width_px - viewport).max(0.0);
+        let mut p = self.physics.borrow_mut();
+        if let Some(new_off) = p.tick_integrate(self.scroll_offset.get(), 0.0, max_offset) {
+            drop(p);
+            self.scroll_offset.set(new_off);
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Virtualized horizontal list — only renders visible items.
+///
+/// Items are arranged left-to-right. Only items within the viewport
+/// (plus a buffer) are rendered. Each item has the same width (`item_width_dp`).
+///
+/// # Example
+/// ```ignore
+/// let state = Rc::new(LazyRowState::new());
+/// LazyRow(
+///     items,                  // Vec<MyItem>
+///     100.0,                  // item width in dp
+///     state,
+///     Modifier::new().fill_max_width().height(120.0),
+///     |item, index| Text(format!("Item {index}")),
+/// )
+/// ```
+#[allow(non_snake_case)]
+pub fn LazyRow<T, F>(
+    items: Vec<T>,
+    item_width_dp: f32,
+    state: Rc<LazyRowState>,
+    modifier: Modifier,
+    item_builder: F,
+) -> View
+where
+    T: Clone + 'static,
+    F: Fn(T, usize) -> View + 'static,
+{
+    let item_w_px = dp_to_px(item_width_dp).max(1.0);
+    let content_width_px = items.len() as f32 * item_w_px;
+
+    let scroll_offset_px = state.scroll_offset.get();
+    let viewport_width_px = state.viewport_width.get();
+
+    let actual_content_w_px = if state.content_width.get() > 0.0 {
+        state.content_width.get()
+    } else {
+        content_width_px
+    };
+    state.tick(actual_content_w_px);
+
+    let first_visible = (scroll_offset_px / item_w_px).floor().max(0.0) as usize;
+    let last_visible = ((scroll_offset_px + viewport_width_px) / item_w_px).ceil() as usize + 2;
+
+    let buffer = 2usize;
+    let first_with_buffer = first_visible.saturating_sub(buffer);
+
+    let mut children = Vec::new();
+
+    if first_with_buffer > 0 {
+        children.push(crate::Box(
+            Modifier::new().size(first_with_buffer as f32 * item_width_dp, 1.0),
+        ));
+    }
+
+    for i in first_with_buffer..last_visible {
+        if let Some(item) = items.get(i) {
+            children.push(item_builder(item.clone(), i));
+        }
+    }
+
+    if last_visible < items.len() {
+        let remaining = items.len() - last_visible;
+        children.push(crate::Box(
+            Modifier::new().size(remaining as f32 * item_width_dp, 1.0),
+        ));
+    }
+
+    let on_scroll = {
+        let st = state.clone();
+        Rc::new(move |d: Vec2| -> Vec2 {
+            let cw = st.content_width.get();
+            let cw = if cw > 0.0 { cw } else { content_width_px };
+            Vec2 { x: st.scroll_immediate(d.x, cw), y: d.y }
+        })
+    };
+
+    let set_viewport_w = {
+        let st = state.clone();
+        Rc::new(move |w: f32| st.viewport_width.set(w.max(0.0)))
+    };
+
+    let set_content_w = {
+        let st = state.clone();
+        Rc::new(move |w: f32| {
+            st.content_width.set(w);
+            st.set_offset(st.scroll_offset.get(), w);
+        })
+    };
+
+    let get_scroll = {
+        let st = state.clone();
+        Rc::new(move || -> (f32, f32) { (st.scroll_offset.get(), 0.0) })
+    };
+
+    let set_scroll = {
+        let st = state.clone();
+        Rc::new(move |x: f32, _y: f32| {
+            let cw = st.content_width.get();
+            st.set_offset(x, if cw > 0.0 { cw } else { content_width_px });
+        })
+    };
+
+    let content = crate::Row(Modifier::new().flex_shrink(0.0)).with_children(children);
+
+    View::new(
+        0,
+        ViewKind::ScrollXY {
+            on_scroll: Some(on_scroll),
+            set_viewport_width: Some(set_viewport_w),
+            set_viewport_height: None,
+            set_content_width: Some(set_content_w),
+            set_content_height: None,
+            get_scroll_offset_xy: Some(get_scroll),
+            set_scroll_offset_xy: Some(set_scroll),
+            show_scrollbar: true,
+        },
+    )
+    .modifier(modifier)
+    .with_children(vec![content])
+}
