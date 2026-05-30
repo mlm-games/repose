@@ -414,20 +414,17 @@ impl LayoutEngine {
                     }
                 }
             }
-            // ScrollV/ScrollXY: unbounded height for scrollability, unless
-            // child explicitly uses fill_max (wants to fill the viewport).
+            // ScrollV/ScrollXY children: auto height for scrollability
+            // with min-height to fill the viewport, and flex_shrink 0 to
+            // prevent Taffy from shrinking content below its natural height
             if is_scroll {
-                for (i, &child_tid) in child_taffy_ids.iter().enumerate() {
-                    if let Some(child_node) = self.tree.get(children[i]) {
-                        let wants_fill = child_node.modifier.fill_max
-                            || child_node.modifier.fill_max_h;
-                        if !wants_fill {
-                            if let Ok(cs) = self.taffy.style(child_tid) {
-                                let mut new_cs = cs.clone();
-                                new_cs.size.height = Dimension::auto();
-                                let _ = self.taffy.set_style(child_tid, new_cs);
-                            }
-                        }
+                for &child_tid in &child_taffy_ids {
+                    if let Ok(cs) = self.taffy.style(child_tid) {
+                        let mut new_cs = cs.clone();
+                        new_cs.size.height = Dimension::auto();
+                        new_cs.min_size.height = Dimension::percent(1.0);
+                        new_cs.flex_shrink = 0.0;
+                        let _ = self.taffy.set_style(child_tid, new_cs);
                     }
                 }
             }
@@ -493,20 +490,17 @@ impl LayoutEngine {
                 }
             }
         }
-        // ScrollV/ScrollXY: unbounded height for scrollability, unless
-        // child explicitly uses fill_max (wants to fill the viewport).
+        // ScrollV/ScrollXY children: auto height for scrollability
+        // with min-height to fill the viewport, and flex_shrink 0 to
+        // prevent Taffy from shrinking content below its natural height
         if is_scroll {
-            for (i, &child_tid) in child_taffy_ids.iter().enumerate() {
-                if let Some(child_node) = self.tree.get(children[i]) {
-                    let wants_fill = child_node.modifier.fill_max
-                        || child_node.modifier.fill_max_h;
-                    if !wants_fill {
-                        if let Ok(cs) = self.taffy.style(child_tid) {
-                            let mut new_cs = cs.clone();
-                            new_cs.size.height = Dimension::auto();
-                            let _ = self.taffy.set_style(child_tid, new_cs);
-                        }
-                    }
+            for &child_tid in &child_taffy_ids {
+                if let Ok(cs) = self.taffy.style(child_tid) {
+                    let mut new_cs = cs.clone();
+                    new_cs.size.height = Dimension::auto();
+                    new_cs.min_size.height = Dimension::percent(1.0);
+                    new_cs.flex_shrink = 0.0;
+                    let _ = self.taffy.set_style(child_tid, new_cs);
                 }
             }
         }
@@ -874,7 +868,11 @@ impl LayoutEngine {
 
                 let (lines, line_ranges): (Vec<String>, Vec<(usize, usize)>) = if *soft_wrap {
                     let (ranges, _) = repose_text::wrap_line_ranges(
-                        text, size_px_val, wrap_w_px, *max_lines, true,
+                        text,
+                        size_px_val,
+                        wrap_w_px,
+                        *max_lines,
+                        true,
                     );
                     let lns: Vec<String> = ranges
                         .iter()
@@ -1530,7 +1528,12 @@ impl LayoutEngine {
             } => {
                 let tl = self.text_cache.get(&node_id);
                 let (size_px, line_h_px, lines, line_ranges) = if let Some(tl) = tl {
-                    (tl.size_px, tl.line_h_px, tl.lines.clone(), Some(tl.line_ranges.clone()))
+                    (
+                        tl.size_px,
+                        tl.line_h_px,
+                        tl.lines.clone(),
+                        Some(tl.line_ranges.clone()),
+                    )
                 } else {
                     let px = font_px(*font_size);
                     (px, px * 1.3, vec![text.clone()], None)
@@ -1548,17 +1551,20 @@ impl LayoutEngine {
                     });
                 }
 
-                let has_annotations = annotations
-                    .as_ref()
-                    .map(|a| !a.is_empty())
-                    .unwrap_or(false);
+                let has_annotations = annotations.as_ref().map(|a| !a.is_empty()).unwrap_or(false);
 
                 if has_annotations {
                     // Emit one SceneNode::Text per styled segment per line
                     let annos = annotations.as_ref().unwrap();
                     for (i, ln) in lines.iter().enumerate() {
-                        let line_start = line_ranges.as_ref().and_then(|r| r.get(i).map(|&(s, _)| s)).unwrap_or(0);
-                        let line_end = line_ranges.as_ref().and_then(|r| r.get(i).map(|&(_, e)| e)).unwrap_or(ln.len());
+                        let line_start = line_ranges
+                            .as_ref()
+                            .and_then(|r| r.get(i).map(|&(s, _)| s))
+                            .unwrap_or(0);
+                        let line_end = line_ranges
+                            .as_ref()
+                            .and_then(|r| r.get(i).map(|&(_, e)| e))
+                            .unwrap_or(ln.len());
 
                         // Find spans that overlap this line's byte range
                         let mut segments: Vec<(usize, usize, Color, f32)> = Vec::new();
@@ -1591,7 +1597,8 @@ impl LayoutEngine {
                         }
 
                         // Measure and emit each segment
-                        let seg_font_px = |dp: f32| dp_to_px(dp) * repose_core::locals::text_scale().0;
+                        let seg_font_px =
+                            |dp: f32| dp_to_px(dp) * repose_core::locals::text_scale().0;
                         let mut seg_x = content_rect.x;
                         for (seg_start, seg_end, seg_color, seg_font_dp) in &segments {
                             let seg_text = &text[*seg_start..*seg_end];
