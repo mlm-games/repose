@@ -414,13 +414,20 @@ impl LayoutEngine {
                     }
                 }
             }
-            // ScrollV/ScrollXY children should use unbounded height
+            // ScrollV/ScrollXY: unbounded height for scrollability, unless
+            // child explicitly uses fill_max (wants to fill the viewport).
             if is_scroll {
-                for &child_tid in &child_taffy_ids {
-                    if let Ok(cs) = self.taffy.style(child_tid) {
-                        let mut new_cs = cs.clone();
-                        new_cs.size.height = Dimension::auto();
-                        let _ = self.taffy.set_style(child_tid, new_cs);
+                for (i, &child_tid) in child_taffy_ids.iter().enumerate() {
+                    if let Some(child_node) = self.tree.get(children[i]) {
+                        let wants_fill = child_node.modifier.fill_max
+                            || child_node.modifier.fill_max_h;
+                        if !wants_fill {
+                            if let Ok(cs) = self.taffy.style(child_tid) {
+                                let mut new_cs = cs.clone();
+                                new_cs.size.height = Dimension::auto();
+                                let _ = self.taffy.set_style(child_tid, new_cs);
+                            }
+                        }
                     }
                 }
             }
@@ -486,13 +493,20 @@ impl LayoutEngine {
                 }
             }
         }
-        // ScrollV/ScrollXY children: unbounded height for scrollability.
+        // ScrollV/ScrollXY: unbounded height for scrollability, unless
+        // child explicitly uses fill_max (wants to fill the viewport).
         if is_scroll {
-            for &child_tid in &child_taffy_ids {
-                if let Ok(cs) = self.taffy.style(child_tid) {
-                    let mut new_cs = cs.clone();
-                    new_cs.size.height = Dimension::auto();
-                    let _ = self.taffy.set_style(child_tid, new_cs);
+            for (i, &child_tid) in child_taffy_ids.iter().enumerate() {
+                if let Some(child_node) = self.tree.get(children[i]) {
+                    let wants_fill = child_node.modifier.fill_max
+                        || child_node.modifier.fill_max_h;
+                    if !wants_fill {
+                        if let Ok(cs) = self.taffy.style(child_tid) {
+                            let mut new_cs = cs.clone();
+                            new_cs.size.height = Dimension::auto();
+                            let _ = self.taffy.set_style(child_tid, new_cs);
+                        }
+                    }
                 }
             }
         }
