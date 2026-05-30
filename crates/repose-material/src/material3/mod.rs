@@ -1977,61 +1977,75 @@ pub fn NavigationRail(
     .with_children(rail_children)
 }
 
-/// State for `SwipeToDismiss` — tracks swipe offset with snap animation.
+/// State for `SwipeToDismiss` — tracks swipe offset with spring animation.
 pub struct SwipeToDismissState {
-    /// Animated offset: driven by target + AnimatedValue for spring snap.
-    anim_state: Rc<RefCell<SwipAnimState>>,
-    target: Signal<f32>,
-}
-
-struct SwipAnimState {
-    anim: AnimatedValue<f32>,
+    anim: Rc<RefCell<AnimatedValue<f32>>>,
+    /// Set when `dismiss()` starts the spring; checked when the spring settles
+    /// to fire `on_dismiss` exactly once per dismiss gesture.
+    dismiss_handled: Rc<RefCell<bool>>,
 }
 
 impl SwipeToDismissState {
     pub fn new() -> Self {
         Self {
-            anim_state: Rc::new(RefCell::new(SwipAnimState {
-                anim: AnimatedValue::new(0.0, AnimationSpec::spring_gentle()),
-            })),
-            target: signal(0.0),
+            anim: Rc::new(RefCell::new(AnimatedValue::new(
+                0.0,
+                AnimationSpec::spring_gentle(),
+            ))),
+            dismiss_handled: Rc::new(RefCell::new(true)),
         }
     }
 
+    /// Read and tick the animated offset.  Call every frame that needs the value.
+    /// Requests a re-draw while the spring is still running.
     pub fn offset(&self) -> f32 {
-        let mut s = self.anim_state.borrow_mut();
-        let target = self.target.get();
-        s.anim.set_spec(AnimationSpec::spring_gentle());
-        s.anim.set_target(target);
-        if s.anim.update() {
+        let mut anim = self.anim.borrow_mut();
+        if anim.update() {
             request_frame();
         }
-        *s.anim.get()
+        *anim.get()
     }
 
-    /// Set the offset instantly (used during active drag).
+    /// Snap instantly to an offset (used during active drag).
     pub fn set_offset_instant(&self, off: f32) {
-        self.target.set(off);
-        self.anim_state.borrow_mut().anim = AnimatedValue::new(off, AnimationSpec::spring_gentle());
+        self.anim.borrow_mut().snap_to(off);
+        request_frame();
     }
 
+    /// Whether the current position is past the dismiss threshold.
     pub fn is_dismissed(&self) -> bool {
-        self.target.get() < -250.0
+        *self.anim.borrow().get() < -250.0
     }
 
-    /// Snap to dismissed position.
+    /// Animate to the dismissed position.
     pub fn dismiss(&self) {
-        self.target.set(-300.0);
+        *self.dismiss_handled.borrow_mut() = false;
+        self.anim.borrow_mut().set_target(-300.0);
+        request_frame();
     }
 
-    /// Snap back to origin.
+    /// Animate back to origin.
     pub fn reset(&self) {
-        self.target.set(0.0);
+        *self.dismiss_handled.borrow_mut() = true;
+        self.anim.borrow_mut().set_target(0.0);
+        request_frame();
+    }
+
+    /// Fire the dismiss callback once when the spring settles past threshold.
+    fn try_handle_dismiss(&self, on_dismiss: &Option<Rc<dyn Fn()>>) {
+        let anim = self.anim.borrow();
+        if !anim.is_animating() && !*self.dismiss_handled.borrow() && *anim.get() < -150.0 {
+            *self.dismiss_handled.borrow_mut() = true;
+            if let Some(cb) = on_dismiss {
+                cb();
+            }
+        }
     }
 }
 
 /// M3 SwipeToDismiss — wraps content that can be swiped left to reveal
-/// a `background` action view. On swipe past threshold, `on_dismiss` fires.
+/// a `background` action view.  On release past the threshold the content
+/// springs to the dismissed position and `on_dismiss` fires **once**.
 pub fn SwipeToDismiss(
     state: Rc<SwipeToDismissState>,
     on_dismiss: Option<Rc<dyn Fn()>>,
@@ -2040,13 +2054,7 @@ pub fn SwipeToDismiss(
     modifier: Modifier,
 ) -> View {
     let offset = state.offset();
-    let threshold = 150.0;
-
-    if offset < -threshold {
-        if let Some(ref cb) = on_dismiss {
-            cb();
-        }
-    }
+    state.try_handle_dismiss(&on_dismiss);
 
     let drag_start_x = remember_with_key("swipe_drag_start", || RefCell::new(None::<f32>));
     let drag_base = remember_with_key("swipe_drag_base", || RefCell::new(0.0f32));
@@ -2057,7 +2065,7 @@ pub fn SwipeToDismiss(
         let base = drag_base.clone();
         move |e: PointerEvent| {
             *d.borrow_mut() = Some(e.position.x);
-            *base.borrow_mut() = st.offset();
+            *base.borrow_mut() = *st.anim.borrow().get();
         }
     };
 
@@ -2078,7 +2086,8 @@ pub fn SwipeToDismiss(
         let d = drag_start_x.clone();
         move |_e: PointerEvent| {
             *d.borrow_mut() = None;
-            if st.offset() > -50.0 {
+            let off = *st.anim.borrow().get();
+            if off > -50.0 {
                 st.reset();
             } else {
                 st.dismiss();
@@ -2092,7 +2101,7 @@ pub fn SwipeToDismiss(
         Box(Modifier::new().fill_max_width()).child(background),
         Box(Modifier::new()
             .fill_max_width()
-            .offset(Some(display_offset), Some(0.0), None, None)
+            .translate(display_offset, 0.0)
             .on_pointer_down(on_down)
             .on_pointer_move(on_move)
             .on_pointer_up(on_up))

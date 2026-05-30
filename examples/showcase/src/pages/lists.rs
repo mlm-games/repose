@@ -161,6 +161,7 @@ pub fn screen() -> View {
                             .fill_max_height()
                             .background(th.error)
                             .padding(16.0)
+                            .justify_content(JustifyContent::End)
                             .align_items(AlignItems::Center))
                         .child(Text("Delete").color(th.on_error).size(16.0)),
                         // Foreground content (draggable)
