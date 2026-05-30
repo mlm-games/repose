@@ -134,6 +134,8 @@ pub struct AnimationSpec {
     pub delay: Duration,
     /// If set, use true physical spring simulation (duration is ignored, emergent from physics).
     pub spring: Option<SpringSpec>,
+    /// If set, wrap the animation in repeat behavior (n iterations, optional ping-pong).
+    pub repeat: Option<RepeatableSpec>,
 }
 
 impl Default for AnimationSpec {
@@ -143,6 +145,7 @@ impl Default for AnimationSpec {
             easing: Easing::EaseInOut,
             delay: Duration::ZERO,
             spring: None,
+            repeat: None,
         }
     }
 }
@@ -154,6 +157,7 @@ impl AnimationSpec {
             easing,
             delay: Duration::ZERO,
             spring: None,
+            repeat: None,
         }
     }
     /// True physical spring simulation - duration is emergent, no fixed duration needed.
@@ -163,6 +167,7 @@ impl AnimationSpec {
             easing: Easing::Linear,
             delay: Duration::ZERO,
             spring: Some(spring),
+            repeat: None,
         }
     }
     /// Gentle underdamped preset (small overshoot). Uses true spring physics.
@@ -184,6 +189,7 @@ impl AnimationSpec {
             easing: Easing::EaseOut,
             delay: Duration::ZERO,
             spring: None,
+            repeat: None,
         }
     }
 
@@ -193,6 +199,7 @@ impl AnimationSpec {
             easing: Easing::EaseInOut,
             delay: Duration::ZERO,
             spring: None,
+            repeat: None,
         }
     }
 
@@ -203,6 +210,7 @@ impl AnimationSpec {
             easing: Easing::FastOutSlowIn,
             delay: Duration::ZERO,
             spring: None,
+            repeat: None,
         }
     }
 
@@ -213,7 +221,15 @@ impl AnimationSpec {
             easing: Easing::EaseOut,
             delay: Duration::ZERO,
             spring: None,
+            repeat: None,
         }
+    }
+
+    /// Wrap this spec in a repeatable animation.
+    /// Pass `RepeatableSpec::infinite()` for infinite repeats.
+    pub fn repeated(mut self, repeat: RepeatableSpec) -> Self {
+        self.repeat = Some(repeat);
+        self
     }
 }
 
@@ -476,6 +492,8 @@ pub struct AnimatedValue<T: Interpolate + Clone> {
     target: T,
     start: T,
     spec: AnimationSpec,
+    keyframes: Option<KeyframesSpec<T>>,
+    iteration: u32,
     start_time: Option<Instant>,
     // Spring simulation state (progress-based, works for any T: Interpolate)
     progress: f32,
@@ -490,6 +508,8 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             target: initial.clone(),
             start: initial,
             spec,
+            keyframes: None,
+            iteration: 0,
             start_time: None,
             progress: 1.0,
             velocity: 0.0,
@@ -501,14 +521,25 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
         self.spec = spec;
     }
 
+    /// Set a keyframes spec for multi-stage animation.
+    /// When set, `set_target` is ignored and the value is driven by the keyframe sequence.
+    pub fn set_keyframes(&mut self, keyframes: KeyframesSpec<T>) {
+        self.keyframes = Some(keyframes);
+        self.start_time = Some(now());
+        self.last_update = None;
+        self.iteration = 0;
+    }
+
     pub fn set_target(&mut self, target: T) {
         if self.start_time.is_some() {
             self.update();
         }
+        self.keyframes = None;
         self.start = self.current.clone();
         self.target = target;
         self.start_time = Some(now());
         self.last_update = None;
+        self.iteration = 0;
         if self.spec.spring.is_some() {
             // Spring mode: start progress at 0 (the current value), carry velocity forward
             self.progress = 0.0;
@@ -520,6 +551,7 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
         self.current = value.clone();
         self.target = value.clone();
         self.start = value;
+        self.keyframes = None;
         self.start_time = None;
         self.progress = 1.0;
         self.velocity = 0.0;
@@ -527,13 +559,59 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
     }
 
     pub fn update(&mut self) -> bool {
-        // Clone the spring spec to avoid borrowing self.spec during mutable self access
         let spring_spec = self.spec.spring;
-        if let Some(spring) = spring_spec {
+        let still = if let Some(spring) = spring_spec {
             self.update_spring(&spring)
+        } else if self.keyframes.is_some() {
+            self.update_keyframes()
         } else {
             self.update_tween()
+        };
+
+        if !still {
+            // Check if we should repeat
+            if let Some(repeat) = &self.spec.repeat {
+                let maxed = repeat.iterations.map_or(false, |max| self.iteration + 1 >= max);
+                if !maxed {
+                    self.iteration += 1;
+                    if repeat.reverse {
+                        std::mem::swap(&mut self.start, &mut self.target);
+                    }
+                    self.progress = 0.0;
+                    self.velocity = 0.0;
+                    self.start_time = Some(now());
+                    self.last_update = None;
+                    return true;
+                }
+            }
         }
+
+        still
+    }
+
+    fn update_keyframes(&mut self) -> bool {
+        let start = match self.start_time {
+            Some(s) => s,
+            None => return false,
+        };
+        let elapsed = now().saturating_duration_since(start);
+        if elapsed < self.spec.delay {
+            return true;
+        }
+        let animation_time = elapsed - self.spec.delay;
+        if animation_time >= self.spec.duration {
+            if let Some(ref kf) = self.keyframes {
+                self.current = kf.evaluate(1.0);
+            }
+            self.start_time = None;
+            return false;
+        }
+        let t = (animation_time.as_secs_f32() / self.spec.duration.as_secs_f32()).clamp(0.0, 1.0);
+        let eased_t = self.spec.easing.interpolate(t).clamp(0.0, 1.0);
+        if let Some(ref kf) = self.keyframes {
+            self.current = kf.evaluate(eased_t);
+        }
+        true
     }
 
     fn update_spring(&mut self, spring: &SpringSpec) -> bool {
@@ -620,5 +698,9 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
 
     pub fn is_animating(&self) -> bool {
         self.start_time.is_some()
+    }
+
+    pub fn has_keyframes(&self) -> bool {
+        self.keyframes.is_some()
     }
 }

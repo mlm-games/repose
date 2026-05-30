@@ -1,4 +1,7 @@
+use std::rc::Rc;
+
 use repose_core::prelude::*;
+use repose_material::material3::{PullToRefresh, PullToRefreshState};
 use repose_ui::scroll::{NestedScrollConnection, ScrollArea, remember_scroll_state};
 use repose_ui::*;
 
@@ -9,6 +12,7 @@ pub fn screen() -> View {
         flow_row_demo(),
         overscroll_demo(),
         nested_scroll_demo(),
+        pull_to_refresh_demo(),
     ))
 }
 
@@ -61,6 +65,97 @@ fn overscroll_demo() -> View {
                     .collect::<Vec<_>>(),
             ),
         ),
+    )
+}
+
+fn pull_to_refresh_demo() -> View {
+    let scroll_state = remember_scroll_state("ptr_demo");
+    let ptr_rc = remember(|| Rc::new(PullToRefreshState::new()));
+    ptr_rc.set_scroll_state(scroll_state.clone());
+    let count = remember(|| signal(0u32));
+    let refreshing = remember(|| signal(false));
+    let frame_counter = remember(|| std::cell::Cell::new(0u32));
+    let ptr_inner: &Rc<PullToRefreshState> = &*ptr_rc;
+
+    // Auto-complete refresh after ~120 frames (≈2s at 60fps)
+    if ptr_inner.is_refreshing() {
+        let c = frame_counter.get() + 1;
+        frame_counter.set(c);
+        if c > 120 {
+            ptr_inner.set_refreshing(false);
+            frame_counter.set(0);
+            refreshing.set(true);
+        } else {
+            request_frame();
+        }
+    } else {
+        frame_counter.set(0);
+    }
+
+    // Simulate new data arriving when refresh completes
+    let items: Vec<View> = if refreshing.get() {
+        refreshing.set(false);
+        // Regenerate items with a timestamp
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        (0..20).map(|i| {
+            let label = if i == 0 {
+                format!("✓ Refreshed at {}", ts % 100000)
+            } else {
+                format!("List item {}", i)
+            };
+            Box(Modifier::new()
+                .fill_max_width()
+                .padding(12.0)
+                .background(theme().surface)
+                .border(1.0, theme().outline, 8.0)
+                .clip_rounded(8.0))
+            .child(Text(label).size(14.0).color(theme().on_surface))
+        }).collect()
+    } else {
+        (0..20).map(|i| {
+            Box(Modifier::new()
+                .fill_max_width()
+                .padding(12.0)
+                .background(theme().surface)
+                .border(1.0, theme().outline, 8.0)
+                .clip_rounded(8.0))
+            .child(Text(format!("List item {i}")).size(14.0).color(theme().on_surface))
+        }).collect()
+    };
+
+    Section(
+        "PullToRefresh - pull down to refresh",
+        Column(Modifier::new().padding(12.0)).child((
+            Text(format!("Refreshed {} times", count.get())).size(14.0).color(theme().on_surface_variant),
+            Box(Modifier::new().height(4.0).width(1.0)),
+            ScrollArea(
+                Modifier::new()
+                    .height(250.0)
+                    .fill_max_width()
+                    .border(1.0, theme().outline, 12.0)
+                    .clip_rounded(12.0),
+                scroll_state,
+                PullToRefresh(
+                    ptr_inner.clone(),
+                    Modifier::new().fill_max_width(),
+                    Rc::new({
+                        let c = count.clone();
+                        let p = ptr_inner.clone();
+                        let f = frame_counter.clone();
+                        move || {
+                            c.update(|x| *x += 1);
+                            p.set_refreshing(true);
+                            f.set(0);
+                            request_frame();
+                        }
+                    }),
+                    Column(Modifier::new().fill_max_width().gap(4.0).padding(4.0)).child(items),
+                ),
+            ),
+        )),
     )
 }
 

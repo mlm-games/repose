@@ -1,6 +1,6 @@
 use repose_core::Color;
 use repose_core::{
-    animation::{AnimatedValue, AnimationSpec},
+    animation::{AnimatedValue, AnimationSpec, Easing, KeyframesSpec},
     remember_state_with_key, request_frame,
 };
 
@@ -75,4 +75,38 @@ pub fn animate_color_from(
 /// Animate Color to the given target; starts at the target on first mount (legacy behavior).
 pub fn animate_color(key: impl Into<String>, target: Color, spec: AnimationSpec) -> Color {
     animate_color_from(key, target, target, spec)
+}
+
+/// Animate f32 through a sequence of keyframes.
+///
+/// The keyframe timestamps range from 0.0 to 1.0, mapped across `spec`'s duration.
+/// The animation loops if `repeat` is set on the spec.
+///
+/// Example:
+/// ```ignore
+/// let val = animate_keyframes("bounce", KeyframesSpec::new(vec![
+///     (0.0, 0.0),
+///     (0.3, 100.0),
+///     (0.6, 80.0),
+///     (1.0, 100.0),
+/// ]), AnimationSpec::tween(Duration::from_millis(600), Easing::EaseOut));
+/// ```
+pub fn animate_keyframes(
+    key: impl Into<String>,
+    keyframes: KeyframesSpec<f32>,
+    spec: AnimationSpec,
+) -> f32 {
+    let key = key.into();
+    let anim = remember_state_with_key(format!("anim:kf:{key}"), || {
+        AnimatedValue::new(0.0, spec)
+    });
+    let mut a = anim.borrow_mut();
+    if !a.has_keyframes() {
+        a.set_keyframes(keyframes);
+    }
+    let still = a.update();
+    if still {
+        request_frame();
+    }
+    *a.get()
 }

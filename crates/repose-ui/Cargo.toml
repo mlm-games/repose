@@ -8,7 +8,7 @@ description = "UI widgets and libs for Repose"
 [dependencies]
 repose-core.workspace = true
 repose-text.workspace = true
-repose-tree.workspace = true # NEW
+repose-tree.workspace = true
 taffy = { workspace = true }
 fontdb = { workspace = true }
 ab_glyph = { workspace = true }

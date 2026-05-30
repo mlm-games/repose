@@ -1110,10 +1110,15 @@ pub fn run_desktop_app_with_snackbar(
                             && !key_event.repeat
                             && let Some(f) = &self.frame_cache
                         {
-                            if let Some(next) = rc::focus_next_in_chain(
+                            if let Some(next) = rc::focus_in_direction(
                                 &f.focus_chain,
+                                &f.hit_regions,
                                 self.sched.focused,
-                                self.modifiers.shift,
+                                if self.modifiers.shift {
+                                    FocusDirection::Previous
+                                } else {
+                                    FocusDirection::Next
+                                },
                             ) {
                                 // If a button was "pressed" via keyboard, clear it when we move focus
                                 if let Some(active) = self.key_pressed_active.take() {

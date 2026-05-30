@@ -1,9 +1,11 @@
-use repose_core::{prelude::*, signal};
+use repose_core::prelude::*;
+use repose_core::signal;
 use repose_material::material3::{ElevatedButton, FilledButton, TextButton};
-use repose_ui::anim::animate_f32;
+use repose_ui::anim::{animate_f32, animate_f32_from, animate_keyframes};
 use repose_ui::anim_ext::{AnimatedContent, Crossfade, EnterTransition, ExitTransition};
 use repose_ui::scroll::{ScrollArea, remember_scroll_state};
 use repose_ui::*;
+use web_time::Duration;
 
 use crate::ui::Section;
 
@@ -37,7 +39,25 @@ pub fn screen() -> View {
     let transition_kind = remember(|| signal(0u8)); // 0=fade, 1=slide, 2=scale
 
     let long_text = remember(|| signal(false));
-
+    let bounce_anim = animate_keyframes(
+        "kf_bounce",
+        KeyframesSpec::new(vec![
+            (0.0, 20.0),
+            (0.4, 140.0),
+            (0.6, 80.0),
+            (0.8, 120.0),
+            (1.0, 100.0),
+        ]),
+        AnimationSpec::tween(Duration::from_millis(800), Easing::EaseOut)
+            .repeated(RepeatableSpec::infinite()),
+    );
+    let repeated_anim = animate_f32_from(
+        "rep_pulse",
+        1.0,
+        0.5,
+        AnimationSpec::tween(Duration::from_millis(600), Easing::EaseInOut)
+            .repeated(RepeatableSpec::infinite().reverse()),
+    );
     let scroll = remember_scroll_state("animation_scroll");
 
     ScrollArea(Modifier::new().fill_max_size(), scroll, Column(Modifier::new().padding(8.0)).child((
@@ -108,6 +128,33 @@ pub fn screen() -> View {
             ))
         }),
 
+
+        // Section("Keyframes (bounce)", {
+        //     Column(Modifier::new().padding(12.0)).child((
+        //         Text("A bar bouncing in width via 5 keyframe stops")
+        //             .size(14.0).color(theme().on_surface_variant),
+        //         Box(Modifier::new().height(8.0).width(1.0)),
+        //         Box(Modifier::new()
+        //             .size(bounce_anim + 20.0, 24.0)
+        //             .background(theme().primary)
+        //             .clip_rounded(4.0)),
+        //     ))
+        // }),
+
+        Section("Repeated Pulse (infinite + reverse)", {
+            Column(Modifier::new().padding(12.0)).child((
+                Text("A pulsing box using repeated animation spec")
+                    .size(14.0).color(theme().on_surface_variant),
+                Box(Modifier::new().height(8.0).width(1.0)),
+                Box(Modifier::new()
+                    .size(120.0 * repeated_anim, 120.0 * repeated_anim)
+                    .background(theme().tertiary)
+                    .clip_rounded(16.0)
+                    .align_items(AlignItems::Center)
+                    .justify_content(JustifyContent::Center))
+                .child(Text("Pulse").color(theme().on_tertiary).size(16.0)),
+            ))
+        }),
 
         Section("AnimatedContent", {
             let enter = match transition_kind.get() {

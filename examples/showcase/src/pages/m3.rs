@@ -6,7 +6,7 @@ use repose_material::material3::{
     FilledButton, MenuState, ModalBottomSheet, NavigationRail, NavRailItem,
     SheetState, TextButton, TimePicker, TimePickerState,
 };
-use repose_ui::{anim::animate_f32, overlay::OverlayHandle, *};
+use repose_ui::{anim::{animate_f32, animate_keyframes}, overlay::OverlayHandle, *};
 use web_time::Duration;
 
 use crate::ui::Section;
@@ -30,7 +30,20 @@ pub fn screen(overlay: OverlayHandle) -> View {
     let show_time_picker = remember(|| signal(false));
     let time_result = remember(|| signal("Not set".to_string()));
 
+    use repose_core::animation::KeyframesSpec;
     // Animation keyframes demo
+    let kf_val = animate_keyframes(
+        "m3_kf",
+        KeyframesSpec::new(vec![
+            (0.0, 20.0),
+            (0.25, 120.0),
+            (0.5, 60.0),
+            (0.75, 140.0),
+            (1.0, 100.0),
+        ]),
+        AnimationSpec::tween(Duration::from_millis(800), Easing::EaseOut)
+            .repeated(RepeatableSpec::infinite()),
+    );
     let anim_target = remember(|| signal(0.0f32));
     let anim_val = animate_f32(
         "m3_demo_anim",
@@ -284,7 +297,18 @@ pub fn screen(overlay: OverlayHandle) -> View {
             )),
         ),
         Section(
-            "Animation: Keyframes (via animate_f32)",
+            "Animation: Keyframes (animate_keyframes)",
+            Column(Modifier::new().padding(12.0)).child((
+                Text("Keyframe animation bouncing between sizes")
+                    .size(14.0).color(th.on_surface_variant),
+                Box(Modifier::new()
+                    .size(kf_val, 24.0)
+                    .background(th.primary)
+                    .clip_rounded(4.0)),
+            )),
+        ),
+        Section(
+            "Animation: Tween (animate_f32)",
             Column(Modifier::new().padding(12.0)).child((
                 FilledButton(Modifier::new(), {
                     let t = anim_target.clone();
@@ -292,7 +316,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 }, || Text("Animate to random")),
                 Box(Modifier::new()
                     .size(anim_val * 100.0 + 20.0, 20.0)
-                    .background(th.primary)
+                    .background(th.tertiary)
                     .clip_rounded(4.0)),
             )),
         ),

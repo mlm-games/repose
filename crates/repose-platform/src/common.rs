@@ -216,103 +216,15 @@ pub(crate) fn touch_slop_px(scale: f32) -> f32 {
     6.0 * scale
 }
 
-pub(crate) fn focus_next_in_chain(chain: &[u64], current: Option<u64>, shift: bool) -> Option<u64> {
-    if chain.is_empty() {
-        return None;
-    }
-
-    let next = if let Some(cur) = current {
-        if let Some(idx) = chain.iter().position(|&id| id == cur) {
-            if shift {
-                if idx == 0 {
-                    chain[chain.len() - 1]
-                } else {
-                    chain[idx - 1]
-                }
-            } else {
-                chain[(idx + 1) % chain.len()]
-            }
-        } else {
-            chain[0]
-        }
-    } else {
-        chain[0]
-    };
-
-    Some(next)
-}
-
-/// Find the next focusable element in a given spatial direction.
-///
-/// Uses the rects from `hit_regions` to determine which element is "next" in the
-/// given direction from the currently focused element. Implements a simple weighted
-/// closest-element heuristic.
+/// Delegate focus movement to the core spatial focus algorithm.
+/// Now lives in `repose_core::spatial_focus_next`.
 pub(crate) fn focus_in_direction(
     chain: &[u64],
     hit_regions: &[HitRegion],
     current: Option<u64>,
     dir: FocusDirection,
 ) -> Option<u64> {
-    if chain.is_empty() {
-        return None;
-    }
-
-    let current_rect = current.and_then(|id| {
-        hit_regions.iter().find(|h| h.id == id).map(|h| h.rect)
-    });
-
-    let current_center = current_rect.map(|r| ((r.x + r.w / 2.0), (r.y + r.h / 2.0)));
-
-    // For Next/Previous, use tab-order navigation
-    match dir {
-        FocusDirection::Next | FocusDirection::Previous => {
-            return focus_next_in_chain(chain, current, dir == FocusDirection::Previous);
-        }
-        _ => {}
-    }
-
-    let (cx, cy) = match current_center {
-        Some(c) => c,
-        None => return chain.first().copied(),
-    };
-
-    let mut best: Option<(u64, f32)> = None;
-
-    for &id in chain {
-        if Some(id) == current {
-            continue;
-        }
-        let Some(hr) = hit_regions.iter().find(|h| h.id == id) else {
-            continue;
-        };
-        let r = hr.rect;
-        let other_cx = r.x + r.w / 2.0;
-        let other_cy = r.y + r.h / 2.0;
-        let dx = other_cx - cx;
-        let dy = other_cy - cy;
-
-        let in_direction = match dir {
-            FocusDirection::Left => dx < 0.0 && dy.abs() <= r.h.max(1.0),
-            FocusDirection::Right => dx > 0.0 && dy.abs() <= r.h.max(1.0),
-            FocusDirection::Up => dy < 0.0 && dx.abs() <= r.w.max(1.0),
-            FocusDirection::Down => dy > 0.0 && dx.abs() <= r.w.max(1.0),
-            _ => false,
-        };
-
-        if !in_direction {
-            continue;
-        }
-
-        let dist = dx * dx + dy * dy;
-        let weight = dist / (r.w * r.h + 1.0).max(1.0);
-
-        match best {
-            Some((_, best_weight)) if weight >= best_weight => {}
-            _ => best = Some((id, weight)),
-        }
-    }
-
-    best.map(|(id, _)| id)
+    repose_core::spatial_focus_next(chain, hit_regions, current, dir)
 }
 
 pub(crate) fn is_dnd_target(hit: &HitRegion) -> bool {

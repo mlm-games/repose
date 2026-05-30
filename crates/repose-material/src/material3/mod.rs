@@ -3,7 +3,7 @@
 mod components;
 pub use components::*;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use repose_core::*;
@@ -1448,19 +1448,36 @@ pub fn ModalBottomSheet(
 }
 
 /// State for `PullToRefresh` - tracks pull progress and refresh trigger.
+///
+/// Connect to a [`ScrollState`](repose_ui::scroll::ScrollState) via
+/// [`set_scroll_state`](PullToRefreshState::set_scroll_state) so that the
+/// pull offset is automatically driven by scroll overscroll.
 pub struct PullToRefreshState {
     refreshing: Signal<bool>,
-    pull_offset: Signal<f32>,
-    enabled: bool,
+    scroll_state: RefCell<Option<Rc<repose_ui::scroll::ScrollState>>>,
+    threshold: f32,
+    triggered: Cell<bool>,
 }
 
 impl PullToRefreshState {
     pub fn new() -> Self {
         Self {
             refreshing: signal(false),
-            pull_offset: signal(0.0),
-            enabled: true,
+            scroll_state: RefCell::new(None),
+            threshold: 64.0,
+            triggered: Cell::new(false),
         }
+    }
+
+    /// Connect this PullToRefresh state to a scroll state.
+    /// The pull offset is then derived from the scroll state's overscroll.
+    pub fn set_scroll_state(&self, state: Rc<repose_ui::scroll::ScrollState>) {
+        *self.scroll_state.borrow_mut() = Some(state);
+    }
+
+    /// Set the overscroll threshold that triggers a refresh (default 64px).
+    pub fn set_threshold(&mut self, px: f32) {
+        self.threshold = px;
     }
 
     pub fn is_refreshing(&self) -> bool {
@@ -1469,10 +1486,27 @@ impl PullToRefreshState {
 
     pub fn set_refreshing(&self, v: bool) {
         self.refreshing.set(v);
+        if !v {
+            // Reset overscroll so the content snaps back
+            if let Some(sc) = self.scroll_state.borrow().as_ref() {
+                sc.set_overscroll(0.0);
+            }
+            self.triggered.set(false);
+        }
     }
 
+    /// Read the current pull offset from the connected scroll state's overscroll.
     pub fn pull_offset(&self) -> f32 {
-        self.pull_offset.get()
+        if let Some(sc) = self.scroll_state.borrow().as_ref() {
+            let os = sc.overscroll_offset();
+            if os < 0.0 {
+                -os
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        }
     }
 }
 
@@ -1480,6 +1514,10 @@ impl PullToRefreshState {
 ///
 /// Renders a small spinner at the top when the user pulls down past a threshold,
 /// or shows the current pull offset as a visual indicator.
+///
+/// The `state` must be connected to a [`ScrollState`](repose_ui::scroll::ScrollState)
+/// via [`set_scroll_state`](PullToRefreshState::set_scroll_state) for the pull
+/// offset to be derived from the scroll overscroll automatically.
 pub fn PullToRefresh(
     state: Rc<PullToRefreshState>,
     modifier: Modifier,
@@ -1487,39 +1525,37 @@ pub fn PullToRefresh(
     content: View,
 ) -> View {
     let th = theme();
-    let pull = state.pull_offset.get();
+    let pull = state.pull_offset();
     let refreshing = state.is_refreshing();
 
-    Stack(modifier).child((
-        // Indicator area (hidden behind content via z-ordering)
+    // Trigger refresh when pull exceeds threshold and we haven't triggered yet
+    if !refreshing && !state.triggered.get() && pull >= state.threshold {
+        state.triggered.set(true);
+        state.refreshing.set(true);
+        (on_refresh)();
+    }
+
+    // Indicator at top (pushed into view by overscroll) + content below.
+    let indicator_h = if refreshing { state.threshold } else { pull };
+    Column(modifier).child((
         if pull > 0.0 || refreshing {
             Box(Modifier::new()
                 .fill_max_width()
-                .height(pull.clamp(0.0, 64.0))
-                .absolute()
-                .offset(None, Some(-pull), None, None)
+                .height(indicator_h)
                 .align_items(AlignItems::Center)
                 .justify_content(JustifyContent::Center))
             .child(if refreshing {
-                Text("↻")
-                    .size(24.0)
-                    .color(th.primary)
-                    .modifier(Modifier::new())
+                Text("↻").size(24.0).color(th.primary)
             } else {
-                let p = (pull / 64.0).min(1.0);
+                let p = (pull / state.threshold).min(1.0);
                 Text("↓")
                     .size((16.0 + p * 8.0).min(24.0))
                     .color(th.primary.with_alpha_f32(p))
-                    .modifier(Modifier::new())
             })
         } else {
             Box(Modifier::new())
         },
-        // Content shifted down by pull offset
-        Box(Modifier::new()
-            .absolute()
-            .offset(None, Some(pull), None, None))
-        .child(content),
+        content,
     ))
 }
 
@@ -1559,7 +1595,64 @@ fn days_in_month(year: i32, month: u32) -> u32 {
     }
 }
 
-/// M3 Date Picker dialog - a simple date picker with month navigation.
+/// Day of week for the first day of the given month/year.
+/// Returns 0=Mon ... 6=Sun using Zeller-like formula for Gregorian calendar.
+fn first_day_of_month(year: i32, month: u32) -> u32 {
+    let m = month as i32;
+    let (y, adj_m) = if m <= 2 {
+        (year - 1, m + 12)
+    } else {
+        (year, m)
+    };
+    let k = y % 100;
+    let j = y / 100;
+    let h = (1 + (13 * (adj_m + 1)) / 5 + k + k / 4 + j / 4 + 5 * j) % 7;
+    // Convert Zeller's Saturday=0 to Monday=0, Sunday=6
+    ((h + 5) % 7) as u32
+}
+
+/// Simple calendar date for today-highlighting in DatePicker.
+struct ReposeDate {
+    year: i32,
+    month: u32,
+    day: u32,
+}
+
+impl ReposeDate {
+    /// Compute today's date from the system clock.
+    fn now() -> Self {
+        let duration = web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
+            .unwrap_or_default();
+        let days = (duration.as_secs() / 86_400) as i64;
+        // Howard Hinnant's civil_from_days
+        let z = days + 719468;
+        let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+        let doe = (z - era * 146_097) as u64;
+        let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+        let y = (yoe as i64) + era as i64 * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        let y = if m <= 2 { y + 1 } else { y };
+        Self {
+            year: y as i32,
+            month: m as u32,
+            day: d as u32,
+        }
+    }
+}
+
+const MONTH_NAMES: [&str; 12] = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+];
+
+const DOW_HEADERS: [&str; 7] = ["M", "T", "W", "T", "F", "S", "S"];
+
+/// M3 Date Picker dialog with month/year navigation, proper calendar grid,
+/// today indicator, and confirm/cancel actions.
 pub fn DatePicker(
     state: Rc<DatePickerState>,
     on_confirm: Rc<dyn Fn(i32, u32, u32)>,
@@ -1568,23 +1661,30 @@ pub fn DatePicker(
     let th = theme();
     let (year, month, day) = state.selected_date();
     let dim = days_in_month(year, month);
+    let start_dow = first_day_of_month(year, month);
 
-    let month_names = [
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
-    ];
+    // Year step helpers
+    let prev_year = {
+        let s = state.clone();
+        move || {
+            s.year.set(s.year.get() - 1);
+            let d = days_in_month(s.year.get(), s.month.get());
+            if s.day.get() > d {
+                s.day.set(d);
+            }
+        }
+    };
+    let next_year = {
+        let s = state.clone();
+        move || {
+            s.year.set(s.year.get() + 1);
+            let d = days_in_month(s.year.get(), s.month.get());
+            if s.day.get() > d {
+                s.day.set(d);
+            }
+        }
+    };
 
-    // Previous month
     let prev_month = {
         let s = state.clone();
         move || {
@@ -1601,7 +1701,6 @@ pub fn DatePicker(
         }
     };
 
-    // Next month
     let next_month = {
         let s = state.clone();
         move || {
@@ -1618,6 +1717,10 @@ pub fn DatePicker(
         }
     };
 
+    // Determine today for highlight
+    let now = ReposeDate::now();
+    let today = (now.year, now.month, now.day);
+
     Surface(
         Modifier::new()
             .width(328.0)
@@ -1625,7 +1728,7 @@ pub fn DatePicker(
             .clip_rounded(th.shapes.extra_large)
             .padding(16.0),
         Column(Modifier::new()).child((
-            // Month/Year header with nav
+            // Month header
             Row(Modifier::new()
                 .fill_max_width()
                 .align_items(AlignItems::Center))
@@ -1635,21 +1738,36 @@ pub fn DatePicker(
                     prev_month,
                 ),
                 Spacer(),
-                Text(format!("{} {}", month_names[(month - 1) as usize], year))
-                    .size(th.typography.title_medium)
-                    .color(th.on_surface),
+                Column(Modifier::new().align_items(AlignItems::Center)).child((
+                    Text(format!("{}", MONTH_NAMES[(month - 1) as usize]))
+                        .size(th.typography.title_medium)
+                        .color(th.on_surface),
+                    Row(Modifier::new().gap(8.0).align_items(AlignItems::Center)).child((
+                        IconButton(
+                            Box(Modifier::new()).child(Text("‹").color(th.on_surface_variant).size(14.0)),
+                            prev_year,
+                        ),
+                        Text(year.to_string())
+                            .size(th.typography.body_small)
+                            .color(th.on_surface_variant),
+                        IconButton(
+                            Box(Modifier::new()).child(Text("›").color(th.on_surface_variant).size(14.0)),
+                            next_year,
+                        ),
+                    )),
+                )),
                 Spacer(),
                 IconButton(
                     Box(Modifier::new()).child(Text("▶").color(th.on_surface).size(16.0)),
                     next_month,
                 ),
             )),
-            Box(Modifier::new().size(1.0, 16.0)),
+            Box(Modifier::new().size(1.0, 12.0)),
             // Day grid
             Column(Modifier::new()).child({
                 let mut rows: Vec<View> = Vec::new();
                 // Day-of-week headers
-                let dow_headers: Vec<View> = ["M", "T", "W", "T", "F", "S", "S"]
+                let dow_headers: Vec<View> = DOW_HEADERS
                     .iter()
                     .map(|d| {
                         Box(Modifier::new()
@@ -1666,52 +1784,84 @@ pub fn DatePicker(
                     .collect();
                 rows.push(Row(Modifier::new()).with_children(dow_headers));
 
-                // Simple grid: 6 rows of 7 days
-                for w in 0..6 {
+                // Proper calendar grid: offset by start_dow, 6 rows
+                let total_cells = start_dow + dim;
+                let num_rows = ((total_cells + 6) / 7).min(6);
+                for w in 0..num_rows {
                     let mut week: Vec<View> = Vec::new();
                     for d in 0..7 {
-                        let day_num = w * 7 + d + 1;
-                        if day_num <= dim as i32 {
-                            let is_selected = day_num == day as i32;
-                            let s = state.clone();
-                            let on_confirm = on_confirm.clone();
-                            let on_dismiss_fn = on_dismiss.clone();
-                            week.push(
-                                Box(Modifier::new()
-                                    .width(40.0)
-                                    .height(40.0)
-                                    .background(if is_selected {
-                                        th.primary
-                                    } else {
-                                        Color::TRANSPARENT
-                                    })
-                                    .clip_rounded(20.0)
-                                    .align_items(AlignItems::Center)
-                                    .justify_content(JustifyContent::Center)
-                                    .clickable()
-                                    .on_pointer_down(move |_| {
-                                        s.day.set(day_num as u32);
-                                        on_confirm(s.year.get(), s.month.get(), day_num as u32);
-                                        on_dismiss_fn();
-                                    }))
-                                .child(
-                                    Text(day_num.to_string())
-                                        .size(th.typography.body_medium)
-                                        .color(if is_selected {
-                                            th.on_primary
-                                        } else {
-                                            th.on_surface
-                                        }),
-                                ),
-                            );
-                        } else {
+                        let cell_idx = w * 7 + d;
+                        if cell_idx < start_dow {
                             week.push(Box(Modifier::new().width(40.0).height(40.0)));
+                        } else {
+                            let day_num = (cell_idx - start_dow + 1) as i32;
+                            if day_num <= dim as i32 {
+                                let is_selected = day_num == day as i32;
+                                let is_today = today.0 == year && today.1 == month && today.2 == day_num as u32;
+                                let s = state.clone();
+                                let on_confirm = on_confirm.clone();
+                                let on_dismiss_fn = on_dismiss.clone();
+                                week.push(
+                                    Box(Modifier::new()
+                                        .width(40.0)
+                                        .height(40.0)
+                                        .background(if is_selected {
+                                            th.primary
+                                        } else {
+                                            Color::TRANSPARENT
+                                        })
+                                        .clip_rounded(20.0)
+                                        .align_items(AlignItems::Center)
+                                        .justify_content(JustifyContent::Center)
+                                        .clickable()
+                                        .on_pointer_down(move |_| {
+                                            s.day.set(day_num as u32);
+                                            on_confirm(s.year.get(), s.month.get(), day_num as u32);
+                                            on_dismiss_fn();
+                                        }))
+                                    .child({
+                                        let mut t = Text(day_num.to_string())
+                                            .size(th.typography.body_medium)
+                                            .color(if is_selected {
+                                                th.on_primary
+                                            } else {
+                                                th.on_surface
+                                            });
+                                        if is_today && !is_selected {
+                                            t = t.modifier(Modifier::new().border(1.0, th.primary, 10.0));
+                                        }
+                                        t
+                                    }),
+                                );
+                            } else {
+                                week.push(Box(Modifier::new().width(40.0).height(40.0)));
+                            }
                         }
                     }
                     rows.push(Row(Modifier::new()).with_children(week));
                 }
                 rows
             }),
+            Box(Modifier::new().size(1.0, 12.0)),
+            // Cancel / Confirm
+            Row(Modifier::new()
+                .fill_max_width()
+                .justify_content(JustifyContent::End)
+                .gap(8.0))
+            .child((
+                TextButton(Modifier::new(), {
+                    let on_dismiss = on_dismiss.clone();
+                    move || (on_dismiss)()
+                }, || Text("Cancel").size(14.0)),
+                FilledButton(Modifier::new(), {
+                    let on_confirm = on_confirm.clone();
+                    let s = state.clone();
+                    move || {
+                        let (y, m, d) = s.selected_date();
+                        on_confirm(y, m, d);
+                    }
+                }, || Text("OK").size(14.0)),
+            )),
         )),
     )
 }

@@ -86,8 +86,20 @@ impl FocusManager {
             FocusDirection::Next | FocusDirection::Previous => {
                 self.move_tab(dir == FocusDirection::Previous)
             }
-            _ => None, // spatial navigation not implemented at the core level
+            _ => None, // use move_focus_spatial when hit regions are available
         }
+    }
+
+    /// Spatial focus navigation: find the closest focusable element in a given
+    /// direction using bounding rect geometry.
+    pub fn move_focus_spatial(
+        &mut self,
+        dir: FocusDirection,
+        hit_regions: &[HitRegion],
+    ) -> Option<u64> {
+        let next = spatial_focus_next(&self.chain, hit_regions, self.focused, dir)?;
+        self.focused = Some(next);
+        Some(next)
     }
 
     /// Tab forward or backward in the focus chain.
@@ -120,6 +132,78 @@ impl FocusManager {
     pub fn set_requester_target(requester: &FocusRequester, id: u64) {
         *requester.target.borrow_mut() = Some(id);
     }
+}
+
+/// Find the next focusable element in a given spatial direction.
+///
+/// Uses the bounding rects from `hit_regions` to determine which element is
+/// "next" in the given direction from the currently focused element.
+pub fn spatial_focus_next(
+    chain: &[u64],
+    hit_regions: &[HitRegion],
+    current: Option<u64>,
+    dir: FocusDirection,
+) -> Option<u64> {
+    if chain.is_empty() {
+        return None;
+    }
+
+    let current_rect = current.and_then(|id| hit_regions.iter().find(|h| h.id == id).map(|h| h.rect));
+
+    // For Next/Previous, use tab-order navigation
+    match dir {
+        FocusDirection::Next | FocusDirection::Previous => {
+            let mut fm = FocusManager {
+                chain: chain.to_vec(),
+                focused: current,
+            };
+            return fm.move_tab(dir == FocusDirection::Previous);
+        }
+        _ => {}
+    }
+
+    let (cx, cy) = match current_rect {
+        Some(r) => (r.x + r.w / 2.0, r.y + r.h / 2.0),
+        None => return chain.first().copied(),
+    };
+
+    let mut best: Option<(u64, f32)> = None;
+
+    for &id in chain {
+        if Some(id) == current {
+            continue;
+        }
+        let Some(hr) = hit_regions.iter().find(|h| h.id == id) else {
+            continue;
+        };
+        let r = hr.rect;
+        let other_cx = r.x + r.w / 2.0;
+        let other_cy = r.y + r.h / 2.0;
+        let dx = other_cx - cx;
+        let dy = other_cy - cy;
+
+        let in_direction = match dir {
+            FocusDirection::Left => dx < 0.0 && dy.abs() <= r.h.max(1.0),
+            FocusDirection::Right => dx > 0.0 && dy.abs() <= r.h.max(1.0),
+            FocusDirection::Up => dy < 0.0 && dx.abs() <= r.w.max(1.0),
+            FocusDirection::Down => dy > 0.0 && dx.abs() <= r.w.max(1.0),
+            _ => false,
+        };
+
+        if !in_direction {
+            continue;
+        }
+
+        let dist = dx * dx + dy * dy;
+        let weight = dist / (r.w * r.h + 1.0).max(1.0);
+
+        match best {
+            Some((_, best_weight)) if weight >= best_weight => {}
+            _ => best = Some((id, weight)),
+        }
+    }
+
+    best.map(|(id, _)| id)
 }
 
 #[derive(Default)]

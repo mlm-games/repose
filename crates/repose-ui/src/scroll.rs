@@ -226,6 +226,11 @@ impl ScrollState {
         self.content_height.set(h.max(0.0));
         self.clamp_offset();
     }
+    /// Set the overscroll value directly. Used by pull-to-refresh to
+    /// reset overscroll when the refresh completes.
+    pub fn set_overscroll(&self, val: f32) {
+        self.overscroll.set(val);
+    }
     pub fn set_offset(&self, off: f32) {
         let vh = self.viewport_height.get();
         let ch = self.content_height.get();
@@ -415,6 +420,9 @@ impl HorizontalScrollState {
     pub fn set_content_width(&self, w: f32) {
         self.content_width.set(w.max(0.0));
         self.clamp();
+    }
+    pub fn set_overscroll(&self, val: f32) {
+        self.overscroll.set(val);
     }
     pub fn set_offset(&self, off: f32) {
         let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
