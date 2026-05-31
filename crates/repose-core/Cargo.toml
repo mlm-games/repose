@@ -19,4 +19,4 @@ log = { workspace = true }
 thiserror = { workspace = true }
 taffy.workspace = true
 web-time.workspace = true
-repose-macros = { path = "../repose-macros" }
+repose-macros.workspace = true

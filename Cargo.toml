@@ -37,7 +37,7 @@ bitflags = "2.11.1"
 unicode-segmentation = "1.13"
 clipawl = { version = "0.2.1" }
 
-# Common (used across multiple crates)
+# Common
 serde_json = "1"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
@@ -86,3 +86,4 @@ repose-render-wgpu = { path = "crates/repose-render-wgpu", version = "0.17.0" }
 repose-platform = { path = "crates/repose-platform", version = "0.17.0" }
 repose-tree = { path = "crates/repose-tree", version = "0.17.0" }
 repose-docking = { path = "crates/repose-docking", version = "0.17.0" }
+repose-macros = { path = "crates/repose-macros", version = "0.17.0" }

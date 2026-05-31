@@ -33,13 +33,11 @@ pub fn screen() -> View {
                             Box(Modifier::new()
                                 .size(8.0, 8.0)
                                 .margin(4.0)
-                                .background(
-                                    if i == h_page {
-                                        colors[i]
-                                    } else {
-                                        theme().outline_variant
-                                    },
-                                )
+                                .background(if i == h_page {
+                                    colors[i]
+                                } else {
+                                    theme().outline_variant
+                                })
                                 .clip_rounded(4.0))
                         })
                         .collect::<Vec<_>>(),
@@ -63,9 +61,9 @@ pub fn screen() -> View {
                             )
                             .child((
                                 Text(format!("Page {}", p + 1)).size(48.0).color(color),
-                                Text("Swipe left/right").size(16.0).color(
-                                    theme().on_surface.with_alpha(180),
-                                ),
+                                Text("Swipe left/right")
+                                    .size(16.0)
+                                    .color(theme().on_surface.with_alpha(180)),
                             )),
                         )
                     },
@@ -101,13 +99,11 @@ pub fn screen() -> View {
                             Box(Modifier::new()
                                 .size(8.0, 8.0)
                                 .margin(4.0)
-                                .background(
-                                    if i == v_page {
-                                        colors[i]
-                                    } else {
-                                        theme().outline_variant
-                                    },
-                                )
+                                .background(if i == v_page {
+                                    colors[i]
+                                } else {
+                                    theme().outline_variant
+                                })
                                 .clip_rounded(4.0))
                         })
                         .collect::<Vec<_>>(),
@@ -131,9 +127,9 @@ pub fn screen() -> View {
                             )
                             .child((
                                 Text(format!("Page {}", p + 1)).size(48.0).color(color),
-                                Text("Swipe up/down").size(16.0).color(
-                                    theme().on_surface.with_alpha(180),
-                                ),
+                                Text("Swipe up/down")
+                                    .size(16.0)
+                                    .color(theme().on_surface.with_alpha(180)),
                             )),
                         )
                     },
