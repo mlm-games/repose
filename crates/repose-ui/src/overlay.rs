@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc;
 
@@ -6,6 +6,18 @@ use repose_core::{Modifier, View, ViewKind, request_frame};
 
 thread_local! {
     static SNACKBAR_TICKS: RefCell<Vec<Rc<dyn Fn(u32)>>> = RefCell::new(Vec::new());
+    static SNACKBAR_DISMISSING: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Set whether the current frame's snackbar is in the exit-animation phase.
+/// Called by the overlay builder before rendering the snackbar view.
+pub fn snackbar_set_dismissing(v: bool) {
+    SNACKBAR_DISMISSING.with(|c| c.set(v));
+}
+
+/// Read by the Snackbar component to decide its exit animation target.
+pub fn snackbar_is_dismissing() -> bool {
+    SNACKBAR_DISMISSING.with(|c| c.get())
 }
 
 #[derive(Clone)]
@@ -145,6 +157,8 @@ struct ActiveSnackbar {
     message: String,
     action: Option<SnackbarAction>,
     remaining_ms: u32,
+    dismiss_started: Rc<Cell<bool>>,
+    dismiss_elapsed: u32,
 }
 
 impl SnackbarController {
@@ -175,19 +189,26 @@ impl SnackbarController {
 
     pub fn show(&self, request: SnackbarRequest) {
         let mut inner = self.inner.borrow_mut();
-        inner.queue.push_back(request.clone());
-        if inner.active.is_none() {
+        if let Some(_) = inner.active {
+            inner.queue.push_back(request);
+        } else {
             drop(inner);
-            self.activate_next((request.builder)(), request);
+            self.activate_next(request);
         }
     }
 
     pub fn tick(&self, elapsed_ms: u32) {
         let mut inner = self.inner.borrow_mut();
         if let Some(active) = inner.active.as_mut() {
-            if elapsed_ms >= active.remaining_ms {
-                self.overlay.dismiss(active.id);
-                inner.active = None;
+            if active.dismiss_started.get() {
+                active.dismiss_elapsed += elapsed_ms;
+                if active.dismiss_elapsed >= 200 {
+                    self.overlay.dismiss(active.id);
+                    inner.active = None;
+                }
+            } else if elapsed_ms >= active.remaining_ms {
+                active.dismiss_started.set(true);
+                request_frame();
             } else {
                 active.remaining_ms -= elapsed_ms;
             }
@@ -198,11 +219,12 @@ impl SnackbarController {
 
     pub fn dismiss(&self) {
         let mut inner = self.inner.borrow_mut();
-        if let Some(active) = inner.active.take() {
-            self.overlay.dismiss(active.id);
+        if let Some(active) = inner.active.as_mut() {
+            if !active.dismiss_started.get() {
+                active.dismiss_started.set(true);
+                request_frame();
+            }
         }
-        drop(inner);
-        self.activate_next_if_needed();
     }
 
     pub fn current(&self) -> Option<(String, Option<SnackbarAction>)> {
@@ -214,31 +236,37 @@ impl SnackbarController {
     }
 
     fn activate_next_if_needed(&self) {
-        let (view, req) = {
-            let mut inner = self.inner.borrow_mut();
-            if inner.active.is_some() {
-                return;
-            }
-            let Some(req) = inner.queue.pop_front() else {
-                return;
-            };
-            let view = (req.builder)();
-            (view, req)
-        };
-        self.activate_next(view, req);
-    }
-
-    fn activate_next(&self, view: View, req: SnackbarRequest) {
         let mut inner = self.inner.borrow_mut();
         if inner.active.is_some() {
             return;
         }
-        let id = self.overlay.show_with(view, 900.0, true);
+        let Some(req) = inner.queue.pop_front() else {
+            return;
+        };
+        drop(inner);
+        self.activate_next(req);
+    }
+
+    fn activate_next(&self, req: SnackbarRequest) {
+        let mut inner = self.inner.borrow_mut();
+        if inner.active.is_some() {
+            return;
+        }
+        let dismiss_flag = Rc::new(Cell::new(false));
+        let flag_for_builder = dismiss_flag.clone();
+        let original_builder = req.builder.clone();
+        let wrapped_builder: Rc<dyn Fn() -> View> = Rc::new(move || {
+            snackbar_set_dismissing(flag_for_builder.get());
+            (original_builder)()
+        });
+        let id = self.overlay.show_entry(wrapped_builder, 900.0, true);
         inner.active = Some(ActiveSnackbar {
             id,
             message: req.message,
             action: req.action,
             remaining_ms: req.duration_ms.max(1),
+            dismiss_started: dismiss_flag,
+            dismiss_elapsed: 0,
         });
     }
 }

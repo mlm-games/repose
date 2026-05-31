@@ -17,6 +17,7 @@ use repose_ui::{
     anim::{animate_color, animate_f32, animate_f32_from},
     overlay::OverlayHandle,
     overlay::SnackbarAction,
+    overlay::snackbar_is_dismissing,
 };
 
 pub fn AlertDialog(
@@ -283,7 +284,7 @@ pub fn ClickableOutlinedCard(
 pub fn Snackbar(
     message: impl Into<String>,
     action: Option<SnackbarAction>,
-    base_modifier: Modifier,
+    modifier: Modifier,
 ) -> View {
     let msg = message.into();
     let th = theme();
@@ -291,22 +292,39 @@ pub fn Snackbar(
     let fg = th.inverse_on_surface;
     let action_color = th.inverse_primary;
 
-    let modifier = Modifier::new()
-        .background(bg)
-        .clip_rounded(th.shapes.small)
-        .then(base_modifier)
-        .padding_values(PaddingValues {
-            left: 16.0,
-            right: 16.0,
-            top: 12.0,
-            bottom: 12.0,
-        })
-        .min_height(48.0)
-        .min_width(280.0)
-        .max_width(600.0);
+    let dismissing = snackbar_is_dismissing();
 
-    Surface(
-        modifier,
+    let slide_target = if dismissing { 80.0 } else { 0.0 };
+    let slide = animate_f32_from(
+        "snackbar_slide",
+        80.0,
+        slide_target,
+        th.motion.overlay,
+    );
+
+    let alpha_target = if dismissing { 0.0 } else { 1.0 };
+    let alpha = animate_f32_from(
+        "snackbar_alpha",
+        0.0,
+        alpha_target,
+        th.motion.overlay,
+    );
+
+    let snackbar = Surface(
+        Modifier::new()
+            .translate(0.0, slide)
+            .alpha(alpha)
+            .background(bg)
+            .clip_rounded(th.shapes.small)
+            .padding_values(PaddingValues {
+                left: 16.0,
+                right: 16.0,
+                top: 12.0,
+                bottom: 12.0,
+            })
+            .min_height(48.0)
+            .min_width(280.0)
+            .max_width(600.0),
         Row(Modifier::new().align_items(repose_core::AlignItems::Center)).child((
             Text(msg)
                 .color(fg)
@@ -336,7 +354,15 @@ pub fn Snackbar(
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
-    )
+    );
+
+    Box(Modifier::new()
+        .absolute()
+        .offset_bottom(0.0)
+        .fill_max_width()
+        .justify_content(repose_core::JustifyContent::Center)
+        .then(modifier),
+    ).child(snackbar)
 }
 
 pub fn FilterChip(
