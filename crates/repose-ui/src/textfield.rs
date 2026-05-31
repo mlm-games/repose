@@ -425,6 +425,7 @@ pub fn TextField(
             on_change: on_change.map(|f| std::rc::Rc::new(f) as _),
             on_submit: on_submit.map(|f| std::rc::Rc::new(f) as _),
             multiline: false,
+            focus_tracker: None,
         },
     )
     .modifier(modifier)
@@ -453,6 +454,7 @@ pub fn TextArea(
             multiline: true,
             on_change: on_change.map(|f| std::rc::Rc::new(f) as _),
             on_submit: on_submit.map(|f| std::rc::Rc::new(f) as _),
+            focus_tracker: None,
         },
     )
     .modifier(modifier)

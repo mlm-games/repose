@@ -1,6 +1,7 @@
+use std::rc::Rc;
 use repose_core::{prelude::*, signal};
 use repose_material::{Icon, material_symbols};
-use repose_material::material3::FilledButton;
+use repose_material::material3::{FilledButton, OutlinedTextField, OutlinedTextFieldConfig};
 use repose_ui::*;
 
 use crate::ui::Section;
@@ -13,6 +14,7 @@ material_symbols! {
 }
 
 pub fn screen() -> View {
+    let single_text = remember_with_key("text_single_value", || signal(String::new()));
     let last_submit_single = remember_with_key("text_last_submit_single", || signal(String::new()));
     let last_change_single = remember_with_key("text_last_change_single", || signal(String::new()));
     let last_submit_multi = remember_with_key("text_last_submit_multi", || signal(String::new()));
@@ -24,22 +26,25 @@ pub fn screen() -> View {
             Section(
                 "TextField (single-line)",
                 Column(Modifier::new().padding(12.0)).child((
-                    TextField(
-                        "Type here",
-                        Modifier::new()
-                            .height(40.0)
-                            .fill_max_width()
-                            .background(theme().surface)
-                            .border(1.0, theme().outline, 10.0)
-                            .clip_rounded(10.0),
-                        Some({
+                    OutlinedTextField(
+                        Modifier::new().fill_max_width(),
+                        single_text.get(),
+                        {
                             let last_change = last_change_single.clone();
-                            move |s| last_change.set(s)
-                        }),
-                        Some({
-                            let last_submit = last_submit_single.clone();
-                            move |s| last_submit.set(s)
-                        }),
+                            let t = single_text.clone();
+                            move |v| {
+                                t.set(v.clone());
+                                last_change.set(v);
+                            }
+                        },
+                        OutlinedTextFieldConfig {
+                            label: Some("Type here".into()),
+                            on_submit: Some(Rc::new({
+                                let last_submit = last_submit_single.clone();
+                                move |s| last_submit.set(s)
+                            })),
+                            ..Default::default()
+                        },
                     ),
                     Box(Modifier::new().height(8.0).width(1.0)),
                     Text("Single-line: Enter submits.")

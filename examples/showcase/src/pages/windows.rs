@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_core::prelude::*;
-use repose_material::material3::{FilledButton, TextButton};
+use repose_material::material3::{FilledButton, OutlinedTextField, OutlinedTextFieldConfig, TextButton};
 use repose_ui::scroll::{ScrollArea, remember_scroll_state};
 use repose_ui::windowing::{FloatingWindow, WindowAction, WindowHost, WindowManagerState};
 use repose_ui::*;
@@ -231,26 +231,32 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
         }
     };
 
+    let palette_text = remember_with_key("palette_text", || signal(String::new()));
     let open_palette = {
         let windows = windows.clone();
+        let palette_text = palette_text.clone();
         move || {
+            let palette_text = palette_text.clone();
             let mut st = windows.borrow_mut();
             let id = st.alloc_id();
             st.open(
                 FloatingWindow::new(
                     id,
                     "Palette",
-                    Rc::new(|| {
+                    Rc::new(move || {
                         Column(Modifier::new().fill_max_size()).child((
                             Text("Command Palette")
                                 .size(13.0)
                                 .color(theme().on_surface_variant),
                             Box(Modifier::new().height(6.0).width(1.0)),
-                            TextField(
-                                "Type a command",
+                            OutlinedTextField(
                                 Modifier::new().fill_max_width(),
-                                None::<fn(String)>,
-                                None::<fn(String)>,
+                                palette_text.get(),
+                                { let t = palette_text.clone(); move |v| t.set(v) },
+                                OutlinedTextFieldConfig {
+                                    placeholder: Some("Type a command".into()),
+                                    ..Default::default()
+                                },
                             ),
                             Box(Modifier::new().height(12.0).width(1.0)),
                             Column(Modifier::new().fill_max_width()).child(

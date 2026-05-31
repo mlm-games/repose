@@ -1714,9 +1714,13 @@ impl LayoutEngine {
                 multiline,
                 on_change,
                 on_submit,
-                ..
+                focus_tracker,
             } => {
                 let tf_key = if *state_key != 0 { *state_key } else { view_id };
+
+                if let Some(cell) = focus_tracker.as_ref() {
+                    cell.set(is_focused);
+                }
 
                 let pad_x = dp_to_px(TF_PADDING_X_DP);
                 let inner = repose_core::Rect {

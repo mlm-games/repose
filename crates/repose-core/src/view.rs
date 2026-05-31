@@ -1,5 +1,5 @@
 use crate::{Brush, Color, Modifier, Rect, TextSpan, Transform};
-use std::{rc::Rc, sync::Arc};
+use std::{cell::Cell, rc::Rc, sync::Arc};
 
 pub type ViewId = u64;
 
@@ -66,6 +66,9 @@ pub enum ViewKind {
         multiline: bool,
         on_change: Option<Rc<dyn Fn(String)>>,
         on_submit: Option<Rc<dyn Fn(String)>>,
+        /// Set by the component (e.g. OutlinedTextField) to receive focus-change
+        /// signals from the layout/paint phase.
+        focus_tracker: Option<Rc<Cell<bool>>>,
     },
     Checkbox {
         checked: bool,

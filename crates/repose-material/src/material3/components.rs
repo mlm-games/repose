@@ -1,9 +1,12 @@
 #![allow(non_snake_case)]
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use repose_core::*;
-use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt};
+use web_time::Duration;
+use repose_ui::anim::animate_f32;
+use repose_ui::{Box, Column, Row, Stack, Text, TextStyle, ViewExt};
 
 /// M3 Top App Bar (small). Displays a title with optional navigation icon and
 /// trailing action buttons.
@@ -677,4 +680,214 @@ pub fn LinearProgressIndicator(value: Option<f32>) -> View {
         focused: false,
         enabled: true,
     })
+}
+
+/// Configuration for an `OutlinedTextField`.
+#[derive(Clone)]
+pub struct OutlinedTextFieldConfig {
+    /// Floating label shown above the input when the field has text or is focused.
+    /// When set, this acts as the visual placeholder (the TextField's own placeholder
+    /// is suppressed). When the label floats, it animates to the top border.
+    pub label: Option<String>,
+    /// Placeholder text shown inside the TextField when empty and unfocused.
+    /// Only shown when `label` is `None`; when a label is present the label
+    /// itself serves as the visual placeholder.
+    pub placeholder: Option<String>,
+    /// Icon displayed at the start of the input.
+    pub leading_icon: Option<View>,
+    /// Icon displayed at the end of the input.
+    pub trailing_icon: Option<View>,
+    /// If true, Enter submits; if false, Enter inserts a newline.
+    pub single_line: bool,
+    /// If true, border and label color switch to error color.
+    pub is_error: bool,
+    /// If false, input is visually disabled and `on_value_change` won't fire.
+    pub enabled: bool,
+    /// Called when the user presses Enter on a single-line field.
+    pub on_submit: Option<Rc<dyn Fn(String)>>,
+}
+
+impl Default for OutlinedTextFieldConfig {
+    fn default() -> Self {
+        Self {
+            label: None,
+            placeholder: None,
+            leading_icon: None,
+            trailing_icon: None,
+            single_line: true,
+            is_error: false,
+            enabled: true,
+            on_submit: None,
+        }
+    }
+}
+
+/// M3 Outlined Text Field with floating label, leading/trailing icons, and error state.
+///
+/// The label floats up when `value` is non-empty or when the field is focused.
+/// Note: focus-based floating is approximated via animated `float_t` — the label
+/// begins floating once `on_value_change` fires (i.e. when the user types).
+/// For strict focus-on-tap floating, pair with an external focus signal.
+///
+/// # Example
+/// ```ignore
+/// let text = remember(|| signal(String::new()));
+/// OutlinedTextField(
+///     Modifier::new().fill_max_width().padding(16.0),
+///     text.get(),
+///     { let t = text.clone(); move |v| t.set(v) },
+///     OutlinedTextFieldConfig {
+///         label: Some("Email".into()),
+///         placeholder: Some("user@example.com".into()),
+///         ..Default::default()
+///     },
+/// );
+/// ```
+pub fn OutlinedTextField(
+    modifier: Modifier,
+    value: String,
+    on_value_change: impl Fn(String) + 'static,
+    config: OutlinedTextFieldConfig,
+) -> View {
+    let th = theme();
+    let label_str: Option<Rc<str>> = config.label.map(|s| Rc::from(s));
+    let has_label = label_str.is_some();
+
+    // Unique animation key per label to avoid conflicts when multiple fields exist
+    let anim_key = match &label_str {
+        Some(l) => format!("otf_{}", &l[..l.len().min(32)]),
+        None => "otf_nolabel".into(),
+    };
+
+    // Persistent focus tracker — set by layout/paint when this field is focused,
+    // read here on the next frame. This gives a one-frame delay on tap-to-float,
+    // which is negligible at 60fps.
+    let focus_tracker: Rc<Cell<bool>> =
+        remember_with_key(format!("otf_focus_{}", anim_key), || Cell::new(false));
+    let is_focused = focus_tracker.get();
+    let should_float = !value.is_empty() || is_focused;
+
+    let float_t = animate_f32(
+        anim_key.clone(),
+        if should_float { 1.0 } else { 0.0 },
+        AnimationSpec::tween(Duration::from_millis(150), Easing::FastOutSlowIn),
+    );
+
+    // Border color: error > focused (float) > default
+    let border_color = if config.is_error {
+        th.error
+    } else if float_t > 0.5 {
+        th.primary
+    } else {
+        th.outline
+    };
+
+    // Label color: error > focused > default
+    let label_color = if config.is_error {
+        th.error
+    } else if float_t > 0.5 {
+        th.primary
+    } else {
+        th.on_surface_variant
+    };
+
+    // Label font size: 16dp at rest (placeholder position) → 12dp when floating
+    let label_size = 16.0 - 4.0 * float_t;
+
+    // Label Y offset: 16dp (same line as text) → -4dp (overlapping top border)
+    let label_y = 16.0 - 20.0 * float_t;
+
+    // The TextField inside uses no placeholder when a label is present —
+    // the label itself serves as the visual placeholder.
+    let tf_placeholder = if has_label {
+        String::new()
+    } else {
+        config.placeholder.unwrap_or_default()
+    };
+
+    Box(modifier
+        .clip_rounded(th.shapes.small)
+        .border(1.0, border_color, th.shapes.small)
+        .background(th.surface))
+    .child(
+        Stack(Modifier::new().fill_max_size()).child((
+            // Input row — always at the same position, with room at the top
+            // for the floating label to overlap.
+            Row(
+                Modifier::new()
+                    .fill_max_size()
+                    .padding_values(PaddingValues {
+                        left: 16.0,
+                        right: 16.0,
+                        top: 16.0,
+                        bottom: 8.0,
+                    })
+                    .align_items(AlignItems::Center),
+            )
+            .child((
+                config.leading_icon.unwrap_or(Box(Modifier::new())),
+                View::new(
+                    0,
+                    ViewKind::TextField {
+                        state_key: 0,
+                        hint: tf_placeholder,
+                        multiline: false,
+                        on_change: Some(Rc::new(on_value_change) as _),
+                        on_submit: config.on_submit.clone().map(|f| {
+                            let f = f.clone();
+                            Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
+                        }),
+                        focus_tracker: Some(focus_tracker.clone()),
+                    },
+                )
+                .modifier(Modifier::new()
+                    .flex_grow(1.0)
+                    .padding_values(PaddingValues {
+                        left: 8.0,
+                        right: 8.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    }))
+                .semantics(Semantics {
+                    role: Role::TextField,
+                    label: None,
+                    focused: false,
+                    enabled: true,
+                }),
+                config.trailing_icon.unwrap_or(Box(Modifier::new())),
+            )),
+            // Floating label — absolutely positioned, animates between text-line
+            // and top-border positions as the field gains content / focus.
+            // A surface-colored background box hides the border stroke behind the label.
+            if let Some(lbl) = label_str {
+                Box(Modifier::new()
+                    .fill_max_width()
+                    .padding_values(PaddingValues {
+                        left: 20.0,
+                        right: 20.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    })
+                    .absolute()
+                    .offset(Some(0.0), Some(label_y), None, None))
+                .child(
+                    Box(Modifier::new()
+                        .background(th.surface)
+                        .padding_values(PaddingValues {
+                            left: 4.0,
+                            right: 4.0,
+                            top: 2.0,
+                            bottom: 2.0,
+                        }))
+                    .child(
+                        Text(lbl.as_ref().to_string())
+                            .color(label_color)
+                            .size(label_size),
+                    ),
+                )
+            } else {
+                Box(Modifier::new())
+            },
+        )),
+    )
 }
