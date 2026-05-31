@@ -16,7 +16,7 @@ use web_time::Instant;
 #[cfg(all(feature = "android", target_os = "android"))]
 pub mod android;
 
-#[cfg(all(target_arch = "wasm32"))]
+#[cfg(all(feature = "web", target_arch = "wasm32"))]
 pub mod web;
 
 pub mod a11y;

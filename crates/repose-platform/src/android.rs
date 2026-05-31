@@ -1004,10 +1004,11 @@ pub fn run_android_app_with_options(
                     if matches!(key_event.physical_key, PhysicalKey::Code(KeyCode::Tab)) {
                         if key_event.state == ElementState::Pressed && !key_event.repeat {
                             if let Some(f) = &self.frame_cache {
-                                if let Some(next) = rc::focus_next_in_chain(
+                                if let Some(next) = rc::focus_in_direction(
                                     &f.focus_chain,
+                                    &f.hit_regions,
                                     self.sched.focused,
-                                    self.modifiers.shift,
+                                    if self.modifiers.shift { FocusDirection::Previous } else { FocusDirection::Next },
                                 ) {
                                     self.sched.focused = Some(next);
                                     if let Some(win) = &self.window {
