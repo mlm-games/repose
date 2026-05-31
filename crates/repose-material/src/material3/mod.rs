@@ -8,12 +8,15 @@ pub use dialog::*;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
 use repose_ui::lazy::{LazyRow, LazyRowState};
 use repose_ui::{
     Box, Column, Row, Spacer, Stack, Surface, Text, TextField, TextStyle, ViewExt,
-    anim::animate_f32, overlay::OverlayHandle, overlay::SnackbarAction,
+    anim::{animate_color, animate_f32, animate_f32_from},
+    overlay::OverlayHandle,
+    overlay::SnackbarAction,
 };
 use web_time::Duration;
 
@@ -98,17 +101,72 @@ pub fn BottomSheet(
     ))
 }
 
+static NAVBAR_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// M3 Navigation Bar — a bottom navigation bar with animated selection.
+/// Colors and indicator background transition with 200ms FastOutSlowIn.
 pub fn NavigationBar(selected_index: usize, items: Vec<NavItem>) -> View {
+    let th = theme();
+    let id = remember(|| NAVBAR_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let spec = AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn);
     Row(Modifier::new()
         .fill_max_size()
         .min_height(80.0)
-        .background(theme().surface_container)
+        .background(th.surface_container)
         .padding(8.0))
     .child(
         items
             .into_iter()
             .enumerate()
-            .map(|(i, item)| NavigationBarItem(item, i == selected_index))
+            .map(|(i, item)| {
+                let selected = i == selected_index;
+                let fg = animate_color(
+                    format!("nb_fg_{}_{}", id, i),
+                    if selected {
+                        th.primary
+                    } else {
+                        th.on_surface_variant
+                    },
+                    spec,
+                );
+                let bg_alpha = animate_f32(
+                    format!("nb_bg_{}_{}", id, i),
+                    if selected { 1.0 } else { 0.0 },
+                    spec,
+                );
+                let indicator_bg = th.primary.with_alpha_f32(bg_alpha * 0.12);
+                let cb = item.on_click.clone();
+
+                Column(
+                    Modifier::new()
+                        .flex_grow(1.0)
+                        .padding_values(PaddingValues {
+                            left: 4.0,
+                            right: 4.0,
+                            top: 6.0,
+                            bottom: 6.0,
+                        })
+                        .align_items(AlignItems::Center)
+                        .justify_content(JustifyContent::Center)
+                        .background(indicator_bg)
+                        .clip_rounded(16.0)
+                        .state_colors(StateColors {
+                            default: Color::TRANSPARENT,
+                            hovered: th.on_surface.with_alpha_f32(0.08),
+                            pressed: th.on_surface.with_alpha_f32(0.12),
+                            disabled: Color::TRANSPARENT,
+                        })
+                        .clickable()
+                        .on_pointer_down(move |_| cb()),
+                )
+                .child((
+                    item.icon,
+                    Text(item.label)
+                        .color(fg)
+                        .size(th.typography.label_medium)
+                        .single_line(),
+                ))
+            })
             .collect::<Vec<_>>(),
     )
 }
@@ -117,29 +175,6 @@ pub struct NavItem {
     pub icon: View,
     pub label: String,
     pub on_click: Rc<dyn Fn()>,
-}
-
-fn NavigationBarItem(item: NavItem, selected: bool) -> View {
-    let th = theme();
-    let color = if selected {
-        th.primary
-    } else {
-        th.on_surface_variant
-    };
-
-    Column(
-        Modifier::new()
-            .flex_grow(1.0)
-            .clickable()
-            .on_pointer_down(move |_| (item.on_click)()),
-    )
-    .child((
-        item.icon,
-        Text(item.label)
-            .color(color)
-            .size(th.typography.label_medium)
-            .single_line(),
-    ))
 }
 
 pub fn Card(modifier: Modifier, content: View) -> View {
@@ -587,8 +622,16 @@ pub fn Scaffold(
         Box(Modifier::new()
             .fill_max_size()
             .padding_values(PaddingValues {
-                top: if top_bar.is_some() { 64.0 + insets.top } else { 0.0 },
-                bottom: if bottom_bar.is_some() { 80.0 + insets.bottom + insets.ime_bottom } else { insets.bottom + insets.ime_bottom },
+                top: if top_bar.is_some() {
+                    64.0 + insets.top
+                } else {
+                    0.0
+                },
+                bottom: if bottom_bar.is_some() {
+                    80.0 + insets.bottom + insets.ime_bottom
+                } else {
+                    insets.bottom + insets.ime_bottom
+                },
                 ..Default::default()
             }))
         .child(content(content_padding)),
@@ -601,17 +644,23 @@ pub fn Scaffold(
             Box(Modifier::new())
         },
         if let Some(bar) = bottom_bar {
-            Box(Modifier::new()
-                .absolute()
-                .offset(Some(0.0), None, Some(insets.bottom + insets.ime_bottom), Some(0.0)))
+            Box(Modifier::new().absolute().offset(
+                Some(0.0),
+                None,
+                Some(insets.bottom + insets.ime_bottom),
+                Some(0.0),
+            ))
             .child(bar)
         } else {
             Box(Modifier::new())
         },
         if let Some(fab) = floating_action_button {
-            Box(Modifier::new()
-                .absolute()
-                .offset(None, None, Some(16.0 + insets.bottom + insets.ime_bottom), Some(16.0)))
+            Box(Modifier::new().absolute().offset(
+                None,
+                None,
+                Some(16.0 + insets.bottom + insets.ime_bottom),
+                Some(16.0),
+            ))
             .child(fab)
         } else {
             Box(Modifier::new())
@@ -883,10 +932,13 @@ impl MenuState {
     }
 }
 
+static DROPDOWN_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 /// M3 Dropdown Menu anchored to a trigger element.
 ///
 /// Renders a full-screen scrim in the overlay (to dismiss taps outside the card)
 /// while keeping the menu positioned inline below the trigger for correct position.
+/// The menu card fades and scales in/out with a 120ms FastOutSlowIn animation.
 /// Items can be `DropdownMenuItem` or `MenuDivider`.
 pub fn DropdownMenu(
     state: Rc<MenuState>,
@@ -896,9 +948,37 @@ pub fn DropdownMenu(
     items: Vec<DropdownMenuEntry>,
 ) -> View {
     let th = theme();
-    let overlay_id = remember_with_key("ddm_oid", || signal(0u64));
+    let ddm_id = remember(|| DROPDOWN_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let overlay_id = remember_with_key(format!("ddm_oid_{}", ddm_id), || signal(0u64));
 
-    if state.is_open() {
+    // Animated open/close progress
+    let anim = remember_state_with_key(format!("ddm_anim_{}", ddm_id), || {
+        AnimatedValue::new(
+            0.0,
+            AnimationSpec::tween(Duration::from_millis(120), Easing::FastOutSlowIn),
+        )
+    });
+    let last_target = remember_state_with_key(format!("ddm_lt_{}", ddm_id), || f32::NAN);
+    let anim_target = if state.is_open() { 1.0 } else { 0.0 };
+
+    {
+        let mut a = anim.borrow_mut();
+        let mut lt = last_target.borrow_mut();
+        if lt.is_nan() || (*lt - anim_target).abs() > 1e-6 {
+            a.set_target(anim_target);
+            *lt = anim_target;
+        }
+        drop(lt);
+        if a.update() {
+            request_frame();
+        }
+    }
+
+    let progress = *anim.borrow().get();
+    let menu_visible = state.is_open() || progress > 0.01;
+
+    // Scrim overlay — keep alive during exit animation
+    if menu_visible {
         if overlay_id.get() == 0 {
             let scrim = Box(Modifier::new().fill_max_size().absolute().on_pointer_down({
                 let s = state.clone();
@@ -915,13 +995,18 @@ pub fn DropdownMenu(
         }
     }
 
+    let scale = 0.92 + 0.08 * progress;
+    let alpha = progress;
+
     Stack(modifier).child((
         trigger,
-        if state.is_open() {
+        if menu_visible {
             Box(Modifier::new()
                 .absolute()
                 .offset(None, Some(40.0), None, None)
-                .render_z_index(900.0))
+                .render_z_index(900.0)
+                .scale(scale)
+                .alpha(alpha))
             .child(render_dropdown_menu_content(&th, &items, state.clone()))
         } else {
             Box(Modifier::new())
@@ -1503,11 +1588,9 @@ impl PullToRefreshState {
     pub fn set_refreshing(&self, v: bool) {
         self.refreshing.set(v);
         if !v {
-            // Reset overscroll so the content snaps back
             if let Some(sc) = self.scroll_state.borrow().as_ref() {
                 sc.set_overscroll(0.0);
             }
-            self.triggered.set(false);
         }
     }
 
@@ -1515,11 +1598,7 @@ impl PullToRefreshState {
     pub fn pull_offset(&self) -> f32 {
         if let Some(sc) = self.scroll_state.borrow().as_ref() {
             let os = sc.overscroll_offset();
-            if os < 0.0 {
-                -os
-            } else {
-                0.0
-            }
+            if os < 0.0 { -os } else { 0.0 }
         } else {
             0.0
         }
@@ -1544,17 +1623,35 @@ pub fn PullToRefresh(
     let pull = state.pull_offset();
     let refreshing = state.is_refreshing();
 
-    // Trigger refresh when pull exceeds threshold and we haven't triggered yet
+    if state.triggered.get() && !refreshing && pull < state.threshold {
+        state.triggered.set(false);
+    }
+
     if !refreshing && !state.triggered.get() && pull >= state.threshold {
         state.triggered.set(true);
         state.refreshing.set(true);
         (on_refresh)();
     }
 
+    let frac_key = format!("ptr_frac_{}", Rc::as_ptr(&state) as u64);
+    let raw_frac = if refreshing {
+        1.0
+    } else if pull > 0.0 {
+        (pull / state.threshold).min(1.0)
+    } else {
+        0.0
+    };
+    let distance_fraction = animate_f32_from(
+        frac_key,
+        0.0,
+        raw_frac,
+        AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn),
+    );
+
     // Indicator at top (pushed into view by overscroll) + content below.
-    let indicator_h = if refreshing { state.threshold } else { pull };
+    let indicator_h = distance_fraction * state.threshold;
     Column(modifier).child((
-        if pull > 0.0 || refreshing {
+        if distance_fraction > 0.01 {
             Box(Modifier::new()
                 .fill_max_width()
                 .height(indicator_h)
@@ -1563,10 +1660,9 @@ pub fn PullToRefresh(
             .child(if refreshing {
                 Text("↻").size(24.0).color(th.primary)
             } else {
-                let p = (pull / state.threshold).min(1.0);
                 Text("↓")
-                    .size((16.0 + p * 8.0).min(24.0))
-                    .color(th.primary.with_alpha_f32(p))
+                    .size((16.0 + distance_fraction * 8.0).min(24.0))
+                    .color(th.primary.with_alpha_f32(distance_fraction.min(1.0)))
             })
         } else {
             Box(Modifier::new())
@@ -1661,8 +1757,18 @@ impl ReposeDate {
 }
 
 const MONTH_NAMES: [&str; 12] = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
 ];
 
 const DOW_HEADERS: [&str; 7] = ["M", "T", "W", "T", "F", "S", "S"];
@@ -1760,14 +1866,16 @@ pub fn DatePicker(
                         .color(th.on_surface),
                     Row(Modifier::new().gap(8.0).align_items(AlignItems::Center)).child((
                         IconButton(
-                            Box(Modifier::new()).child(Text("‹").color(th.on_surface_variant).size(14.0)),
+                            Box(Modifier::new())
+                                .child(Text("‹").color(th.on_surface_variant).size(14.0)),
                             prev_year,
                         ),
                         Text(year.to_string())
                             .size(th.typography.body_small)
                             .color(th.on_surface_variant),
                         IconButton(
-                            Box(Modifier::new()).child(Text("›").color(th.on_surface_variant).size(14.0)),
+                            Box(Modifier::new())
+                                .child(Text("›").color(th.on_surface_variant).size(14.0)),
                             next_year,
                         ),
                     )),
@@ -1813,7 +1921,9 @@ pub fn DatePicker(
                             let day_num = (cell_idx - start_dow + 1) as i32;
                             if day_num <= dim as i32 {
                                 let is_selected = day_num == day as i32;
-                                let is_today = today.0 == year && today.1 == month && today.2 == day_num as u32;
+                                let is_today = today.0 == year
+                                    && today.1 == month
+                                    && today.2 == day_num as u32;
                                 let s = state.clone();
                                 let on_confirm = on_confirm.clone();
                                 let on_dismiss_fn = on_dismiss.clone();
@@ -1844,7 +1954,9 @@ pub fn DatePicker(
                                                 th.on_surface
                                             });
                                         if is_today && !is_selected {
-                                            t = t.modifier(Modifier::new().border(1.0, th.primary, 10.0));
+                                            t = t.modifier(
+                                                Modifier::new().border(1.0, th.primary, 10.0),
+                                            );
                                         }
                                         t
                                     }),
@@ -1865,18 +1977,26 @@ pub fn DatePicker(
                 .justify_content(JustifyContent::End)
                 .gap(8.0))
             .child((
-                TextButton(Modifier::new(), {
-                    let on_dismiss = on_dismiss.clone();
-                    move || (on_dismiss)()
-                }, || Text("Cancel").size(14.0)),
-                FilledButton(Modifier::new(), {
-                    let on_confirm = on_confirm.clone();
-                    let s = state.clone();
-                    move || {
-                        let (y, m, d) = s.selected_date();
-                        on_confirm(y, m, d);
-                    }
-                }, || Text("OK").size(14.0)),
+                TextButton(
+                    Modifier::new(),
+                    {
+                        let on_dismiss = on_dismiss.clone();
+                        move || (on_dismiss)()
+                    },
+                    || Text("Cancel").size(14.0),
+                ),
+                FilledButton(
+                    Modifier::new(),
+                    {
+                        let on_confirm = on_confirm.clone();
+                        let s = state.clone();
+                        move || {
+                            let (y, m, d) = s.selected_date();
+                            on_confirm(y, m, d);
+                        }
+                    },
+                    || Text("OK").size(14.0),
+                ),
             )),
         )),
     )

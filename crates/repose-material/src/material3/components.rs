@@ -2,9 +2,10 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
-use repose_ui::anim::animate_f32;
+use repose_ui::anim::{animate_color, animate_f32};
 use repose_ui::{Box, Button, Column, Row, Stack, Text, TextStyle, ViewExt};
 use web_time::Duration;
 
@@ -514,9 +515,14 @@ pub struct Tab {
     pub on_click: Rc<dyn Fn()>,
 }
 
+static TABROW_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 /// M3 Tab Row - a horizontal row of tabs with an active indicator.
+/// Text colors and indicator height animate with 150ms FastOutSlowIn.
 pub fn TabRow(selected_index: usize, tabs: Vec<Tab>) -> View {
     let th = theme();
+    let id = remember(|| TABROW_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let spec = AnimationSpec::tween(Duration::from_millis(150), Easing::FastOutSlowIn);
     Column(Modifier::new().fill_max_width()).child((
         Row(Modifier::new()
             .fill_max_width()
@@ -527,11 +533,16 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>) -> View {
                 .enumerate()
                 .map(|(i, tab)| {
                     let selected = i == selected_index;
-                    let color = if selected {
-                        th.primary
-                    } else {
-                        th.on_surface_variant
-                    };
+                    let color = animate_color(
+                        format!("tab_clr_{}_{}", id, i),
+                        if selected { th.primary } else { th.on_surface_variant },
+                        spec,
+                    );
+                    let indicator_h = animate_f32(
+                        format!("tab_ind_{}_{}", id, i),
+                        if selected { 3.0 } else { 0.0 },
+                        spec,
+                    );
                     let cb = tab.on_click.clone();
 
                     Column(
@@ -555,15 +566,11 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>) -> View {
                             .color(color)
                             .size(th.typography.title_small)
                             .single_line(),
-                        if selected {
-                            Box(Modifier::new()
-                                .fill_max_width()
-                                .height(3.0)
-                                .background(th.primary)
-                                .clip_rounded(1.5))
-                        } else {
-                            Box(Modifier::new().height(3.0))
-                        },
+                        Box(Modifier::new()
+                            .fill_max_width()
+                            .height(indicator_h)
+                            .background(th.primary)
+                            .clip_rounded(1.5)),
                     ))
                 })
                 .collect::<Vec<_>>(),
@@ -896,32 +903,48 @@ pub fn OutlinedTextField(
 
 /// M3 Checkbox.
 /// Renders a 40dp touch-target with an 18dp check box inside.
+/// Fill, border, and check mark animate with 100ms FastOutSlowIn.
+static CHECKBOX_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
     let th = theme();
     let sz = 18.0;
-    let bg = if checked {
-        th.primary
-    } else {
-        Color::TRANSPARENT
-    };
-    let bd_w = if checked { 0.0 } else { 2.0 };
-    let bd = if checked {
-        Color::TRANSPARENT
-    } else {
-        th.on_surface_variant
-    };
-    let ck = th.on_primary;
+
+    let id = remember(|| CHECKBOX_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let spec = AnimationSpec::tween(Duration::from_millis(100), Easing::FastOutSlowIn);
+
+    let fill = animate_color(
+        format!("cb_fill_{}", id),
+        if checked { th.primary } else { Color::TRANSPARENT },
+        spec,
+    );
+    let bd_w = animate_f32(
+        format!("cb_bw_{}", id),
+        if checked { 0.0 } else { 2.0 },
+        spec,
+    );
+    let bd = animate_color(
+        format!("cb_bd_{}", id),
+        if checked { Color::TRANSPARENT } else { th.on_surface_variant },
+        spec,
+    );
+    let check_alpha = animate_f32(
+        format!("cb_ca_{}", id),
+        if checked { 1.0 } else { 0.0 },
+        spec,
+    );
 
     Button(
         Box(Modifier::new()
             .size(sz, sz)
-            .background(bg)
+            .background(fill)
             .border(bd_w, bd, 2.0)
             .clip_rounded(2.0)
             .align_items(AlignItems::Center)
             .justify_content(JustifyContent::Center))
-        .child(if checked {
-            Icon(Symbol::new("done", '\u{E876}')).color(ck).size(14.0)
+        .child(if check_alpha > 0.01 {
+            Box(Modifier::new().alpha(check_alpha)).child(
+                Icon(Symbol::new("done", '\u{E876}')).color(th.on_primary).size(14.0),
+            )
         } else {
             Box(Modifier::new())
         }),
@@ -939,27 +962,39 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
 
 /// M3 RadioButton.
 /// Renders a 40dp touch-target with a 20dp outer circle + inner dot.
+/// Ring color animates with 100ms FastOutSlowIn; dot size animates with spring.
+static RADIO_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub fn RadioButton(selected: bool, on_select: impl Fn() + 'static) -> View {
     let th = theme();
     let d = 20.0;
-    let ring_color = if selected {
-        th.primary
-    } else {
-        th.on_surface_variant
-    };
+
+    let id = remember(|| RADIO_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let color_spec = AnimationSpec::tween(Duration::from_millis(100), Easing::FastOutSlowIn);
+    let spring = AnimationSpec::spring_gentle();
+
+    let ring_col = animate_color(
+        format!("rb_ring_{}", id),
+        if selected { th.primary } else { th.on_surface_variant },
+        color_spec,
+    );
+    let dot_size = animate_f32(
+        format!("rb_dot_{}", id),
+        if selected { 10.0 } else { 0.0 },
+        spring,
+    );
 
     Button(
         Box(Modifier::new()
             .size(d, d)
-            .border(2.0, ring_color, d * 0.5)
+            .border(2.0, ring_col, d * 0.5)
             .clip_rounded(d * 0.5)
             .align_items(AlignItems::Center)
             .justify_content(JustifyContent::Center))
-        .child(if selected {
+        .child(if dot_size > 0.5 {
             Box(Modifier::new()
-                .size(10.0, 10.0)
+                .size(dot_size, dot_size)
                 .background(th.primary)
-                .clip_rounded(5.0))
+                .clip_rounded(dot_size * 0.5))
         } else {
             Box(Modifier::new())
         }),
@@ -977,33 +1012,52 @@ pub fn RadioButton(selected: bool, on_select: impl Fn() + 'static) -> View {
 
 /// M3 Switch.
 /// Renders a pill track with an animated thumb knob.
-/// Thumb is 24dp when checked, 16dp when unchecked.
+/// Thumb position, size, and colors animate with spring/tween physics.
+static SWITCH_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
     let th = theme();
     let track_w = 52.0;
     let track_h = 32.0;
-    let thumb_d = if checked { 24.0 } else { 16.0 };
-    let thumb_left = if checked { track_w - 24.0 - 4.0 } else { 8.0 };
+
+    let id = remember(|| SWITCH_COUNTER.fetch_add(1, Ordering::Relaxed));
+
+    // Thumb: spring-animated position and size
+    let thumb_target_pos = if checked { track_w - 24.0 - 4.0 } else { 8.0 };
+    let thumb_target_d = if checked { 24.0 } else { 16.0 };
+    let spring = AnimationSpec::spring_gentle();
+
+    let thumb_left = animate_f32(format!("sw_pos_{}", id), thumb_target_pos, spring);
+    let thumb_d = animate_f32(format!("sw_d_{}", id), thumb_target_d, spring);
     let thumb_top = (track_h - thumb_d) * 0.5;
 
-    let track_bg = if checked {
-        th.primary
-    } else {
-        th.surface_container_highest
-    };
-    let thumb_bg = if checked { th.on_primary } else { th.outline };
-    let track_border = if checked { 0.0 } else { 2.0 };
-    let track_border_color = if checked {
-        Color::TRANSPARENT
-    } else {
-        th.outline
-    };
+    // Colors: 100ms FastOutSlowIn per M3 spec
+    let color_spec = AnimationSpec::tween(Duration::from_millis(100), Easing::FastOutSlowIn);
+    let track_bg = animate_color(
+        format!("sw_tbg_{}", id),
+        if checked { th.primary } else { th.surface_container_highest },
+        color_spec,
+    );
+    let thumb_bg = animate_color(
+        format!("sw_tmbg_{}", id),
+        if checked { th.on_primary } else { th.outline },
+        color_spec,
+    );
+    let track_border = animate_f32(
+        format!("sw_tb_{}", id),
+        if checked { 0.0 } else { 2.0 },
+        color_spec,
+    );
+    let border_color = animate_color(
+        format!("sw_bc_{}", id),
+        if checked { Color::TRANSPARENT } else { th.outline },
+        color_spec,
+    );
 
     Button(
         Box(Modifier::new()
             .size(track_w, track_h)
             .background(track_bg)
-            .border(track_border, track_border_color, track_h * 0.5)
+            .border(track_border, border_color, track_h * 0.5)
             .clip_rounded(track_h * 0.5))
         .child(Box(Modifier::new()
             .size(thumb_d, thumb_d)
