@@ -9,6 +9,7 @@ use repose_ui::textfield::{
 };
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use web_time::Instant;
 
@@ -35,6 +36,88 @@ use common_android as rc_android;
 use common_web as rc_web;
 
 pub use render::{ImageHandleGuard, RenderCommand, RenderContext};
+
+#[cfg(feature = "desktop")]
+use winit::window::Window;
+
+#[cfg(feature = "desktop")]
+use std::sync::OnceLock;
+
+#[cfg(feature = "desktop")]
+static APP_WINDOW: OnceLock<Arc<Window>> = OnceLock::new();
+
+#[cfg(feature = "desktop")]
+static WINDOW_VISIBLE: AtomicBool = AtomicBool::new(true);
+
+#[cfg(feature = "desktop")]
+static CLOSE_TO_TRAY: AtomicBool = AtomicBool::new(false);
+
+#[cfg(feature = "desktop")]
+static EVENT_LOOP_PROXY: OnceLock<winit::event_loop::EventLoopProxy<()>> = OnceLock::new();
+
+/// Store the application window handle (called once during app setup).
+#[cfg(feature = "desktop")]
+pub fn set_app_window(window: Arc<Window>) {
+    let _ = APP_WINDOW.set(window);
+}
+
+/// Store the event loop proxy so tray commands can wake the event loop.
+#[cfg(feature = "desktop")]
+pub fn set_event_loop_proxy(proxy: winit::event_loop::EventLoopProxy<()>) {
+    let _ = EVENT_LOOP_PROXY.set(proxy);
+}
+
+/// Wake the winit event loop from another thread (e.g. tray's GTK thread).
+#[cfg(feature = "desktop")]
+pub fn wake_event_loop() {
+    if let Some(proxy) = EVENT_LOOP_PROXY.get() {
+        let _ = proxy.send_event(());
+    }
+}
+
+/// Hide the application window (minimize to tray / taskbar).
+///
+/// On Wayland: `set_minimized(true)` minimizes to taskbar (winit limitation?)
+#[cfg(feature = "desktop")]
+pub fn hide_app_window() {
+    WINDOW_VISIBLE.store(false, Ordering::Relaxed);
+    if let Some(w) = APP_WINDOW.get() {
+        let _ = w.set_visible(false);
+        w.set_minimized(true);
+        w.request_redraw();
+    }
+    repose_core::frame_clock::request_frame();
+    wake_event_loop();
+}
+
+/// Show the application window.
+///
+/// On Wayland, unminimizing might not be supported by the protocol?
+#[cfg(feature = "desktop")]
+pub fn show_app_window() {
+    WINDOW_VISIBLE.store(true, Ordering::Relaxed);
+    if let Some(w) = APP_WINDOW.get() {
+        let _ = w.set_visible(true);
+        #[allow(deprecated)]
+        w.focus_window();
+        w.request_redraw();
+    }
+    repose_core::frame_clock::request_frame();
+    wake_event_loop();
+}
+
+/// Returns whether the application window is currently visible.
+#[cfg(feature = "desktop")]
+pub fn window_is_visible() -> bool {
+    WINDOW_VISIBLE.load(Ordering::Relaxed)
+}
+
+/// On Wayland, ``set_visible(false)` is a no-op, so the close button would appear
+/// to do nothing. The tray "Quit" action still exits the process regardless.
+#[cfg(feature = "desktop")]
+pub fn set_close_to_tray(enabled: bool) {
+    CLOSE_TO_TRAY.store(enabled, Ordering::Relaxed);
+}
 
 #[derive(Clone)]
 struct DragSession {
@@ -140,7 +223,7 @@ pub fn run_desktop_app_with_snackbar(
     use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
     use winit::event_loop::EventLoop;
     use winit::keyboard::{KeyCode, PhysicalKey};
-    use winit::window::{ImePurpose, Window, WindowAttributes};
+    use winit::window::{Window, WindowAttributes};
 
     use crate::a11y::A11yTree;
 
@@ -532,6 +615,7 @@ pub fn run_desktop_app_with_snackbar(
                         match repose_render_wgpu::WgpuBackend::new(w.clone()) {
                             Ok(b) => {
                                 self.backend = Some(b);
+                                set_app_window(w.clone());
                                 self.window = Some(w);
                                 self.request_redraw();
                             }
@@ -562,7 +646,15 @@ pub fn run_desktop_app_with_snackbar(
 
             match event {
                 WindowEvent::CloseRequested => {
-                    el.exit();
+                    if CLOSE_TO_TRAY.load(Ordering::Relaxed) {
+                        if let Some(w) = &self.window {
+                            let _ = w.set_visible(false);
+                            w.set_minimized(true);
+                        }
+                        WINDOW_VISIBLE.store(false, Ordering::Relaxed);
+                    } else {
+                        el.exit();
+                    }
                 }
 
                 WindowEvent::Focused(false) => {
@@ -1726,7 +1818,9 @@ pub fn run_desktop_app_with_snackbar(
             _: winit::event::StartCause,
         ) {
         }
-        fn user_event(&mut self, _: &winit::event_loop::ActiveEventLoop, _: ()) {}
+        fn user_event(&mut self, _: &winit::event_loop::ActiveEventLoop, _: ()) {
+            self.pending_redraw = true;
+        }
         fn device_event(
             &mut self,
             _: &winit::event_loop::ActiveEventLoop,
@@ -2091,6 +2185,7 @@ pub fn run_desktop_app_with_snackbar(
     }
 
     let event_loop = EventLoop::new()?;
+    set_event_loop_proxy(event_loop.create_proxy());
     let mut app = App::new_with_snackbar(Box::new(root), snackbar_tick);
     // Install system clock once
     repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
