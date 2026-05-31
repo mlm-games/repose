@@ -1,7 +1,8 @@
 use std::rc::Rc;
 
 use repose_core::{prelude::*, signal};
-use repose_material::material3::{AssistChip, FilterChip, InputChip, SuggestionChip, TextButton};
+use repose_material::material3::{AssistChip, FilterChip, InputChip, M3RangeSlider, M3Slider, SuggestionChip, TextButton};
+use repose_material::material3::{Checkbox, RadioButton, Switch};
 use repose_material::{Icon, material_symbols};
 use repose_ui::*;
 
@@ -69,12 +70,12 @@ pub fn screen() -> View {
         Section(
             "Sliders + Progress",
             Column(Modifier::new().padding(12.0)).child((
-                Slider(s_val.get(), (0.0, 1.0), Some(0.01), {
+                M3Slider(s_val.get(), (0.0, 1.0), Some(0.01), {
                     let s = s_val.clone();
                     move |v| s.set(v)
                 }),
                 Box(Modifier::new().height(12.0).width(1.0)),
-                RangeSlider(r_a.get(), r_b.get(), (0.0, 1.0), Some(0.01), {
+                M3RangeSlider(r_a.get(), r_b.get(), (0.0, 1.0), Some(0.01), {
                     let a = r_a.clone();
                     let b = r_b.clone();
                     move |x0, x1| {

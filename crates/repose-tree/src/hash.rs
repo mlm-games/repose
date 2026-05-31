@@ -68,15 +68,6 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             state_key.hash(hasher);
             hint.hash(hasher);
         }
-        ViewKind::Checkbox { checked, .. } => {
-            checked.hash(hasher);
-        }
-        ViewKind::RadioButton { selected, .. } => {
-            selected.hash(hasher);
-        }
-        ViewKind::Switch { checked, .. } => {
-            checked.hash(hasher);
-        }
         ViewKind::Slider {
             value,
             min,

@@ -4,9 +4,11 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use repose_core::*;
-use web_time::Duration;
 use repose_ui::anim::animate_f32;
-use repose_ui::{Box, Column, Row, Stack, Text, TextStyle, ViewExt};
+use repose_ui::{Box, Button, Column, Row, Stack, Text, TextStyle, ViewExt};
+use web_time::Duration;
+
+use crate::{Icon, Symbol};
 
 /// M3 Top App Bar (small). Displays a title with optional navigation icon and
 /// trailing action buttons.
@@ -813,17 +815,15 @@ pub fn OutlinedTextField(
         Stack(Modifier::new().fill_max_size()).child((
             // Input row — always at the same position, with room at the top
             // for the floating label to overlap.
-            Row(
-                Modifier::new()
-                    .fill_max_size()
-                    .padding_values(PaddingValues {
-                        left: 16.0,
-                        right: 16.0,
-                        top: 16.0,
-                        bottom: 8.0,
-                    })
-                    .align_items(AlignItems::Center),
-            )
+            Row(Modifier::new()
+                .fill_max_size()
+                .padding_values(PaddingValues {
+                    left: 16.0,
+                    right: 16.0,
+                    top: 16.0,
+                    bottom: 8.0,
+                })
+                .align_items(AlignItems::Center))
             .child((
                 config.leading_icon.unwrap_or(Box(Modifier::new())),
                 View::new(
@@ -840,14 +840,16 @@ pub fn OutlinedTextField(
                         focus_tracker: Some(focus_tracker.clone()),
                     },
                 )
-                .modifier(Modifier::new()
-                    .flex_grow(1.0)
-                    .padding_values(PaddingValues {
-                        left: 8.0,
-                        right: 8.0,
-                        top: 0.0,
-                        bottom: 0.0,
-                    }))
+                .modifier(
+                    Modifier::new()
+                        .flex_grow(1.0)
+                        .padding_values(PaddingValues {
+                            left: 8.0,
+                            right: 8.0,
+                            top: 0.0,
+                            bottom: 0.0,
+                        }),
+                )
                 .semantics(Semantics {
                     role: Role::TextField,
                     label: None,
@@ -890,4 +892,188 @@ pub fn OutlinedTextField(
             },
         )),
     )
+}
+
+/// M3 Checkbox.
+/// Renders a 40dp touch-target with an 18dp check box inside.
+pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
+    let th = theme();
+    let sz = 18.0;
+    let bg = if checked {
+        th.primary
+    } else {
+        Color::TRANSPARENT
+    };
+    let bd_w = if checked { 0.0 } else { 2.0 };
+    let bd = if checked {
+        Color::TRANSPARENT
+    } else {
+        th.on_surface_variant
+    };
+    let ck = th.on_primary;
+
+    Button(
+        Box(Modifier::new()
+            .size(sz, sz)
+            .background(bg)
+            .border(bd_w, bd, 2.0)
+            .clip_rounded(2.0)
+            .align_items(AlignItems::Center)
+            .justify_content(JustifyContent::Center))
+        .child(if checked {
+            Icon(Symbol::new("done", '\u{E876}')).color(ck).size(14.0)
+        } else {
+            Box(Modifier::new())
+        }),
+        move || on_change(!checked),
+    )
+    .modifier(
+        Modifier::new()
+            .width(40.0)
+            .height(40.0)
+            .padding(0.0)
+            .clip_rounded(20.0)
+            .background(Color::TRANSPARENT),
+    )
+}
+
+/// M3 RadioButton.
+/// Renders a 40dp touch-target with a 20dp outer circle + inner dot.
+pub fn RadioButton(selected: bool, on_select: impl Fn() + 'static) -> View {
+    let th = theme();
+    let d = 20.0;
+    let ring_color = if selected {
+        th.primary
+    } else {
+        th.on_surface_variant
+    };
+
+    Button(
+        Box(Modifier::new()
+            .size(d, d)
+            .border(2.0, ring_color, d * 0.5)
+            .clip_rounded(d * 0.5)
+            .align_items(AlignItems::Center)
+            .justify_content(JustifyContent::Center))
+        .child(if selected {
+            Box(Modifier::new()
+                .size(10.0, 10.0)
+                .background(th.primary)
+                .clip_rounded(5.0))
+        } else {
+            Box(Modifier::new())
+        }),
+        on_select,
+    )
+    .modifier(
+        Modifier::new()
+            .width(40.0)
+            .height(40.0)
+            .padding(0.0)
+            .clip_rounded(20.0)
+            .background(Color::TRANSPARENT),
+    )
+}
+
+/// M3 Switch.
+/// Renders a pill track with an animated thumb knob.
+/// Thumb is 24dp when checked, 16dp when unchecked.
+pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
+    let th = theme();
+    let track_w = 52.0;
+    let track_h = 32.0;
+    let thumb_d = if checked { 24.0 } else { 16.0 };
+    let thumb_left = if checked { track_w - 24.0 - 4.0 } else { 8.0 };
+    let thumb_top = (track_h - thumb_d) * 0.5;
+
+    let track_bg = if checked {
+        th.primary
+    } else {
+        th.surface_container_highest
+    };
+    let thumb_bg = if checked { th.on_primary } else { th.outline };
+    let track_border = if checked { 0.0 } else { 2.0 };
+    let track_border_color = if checked {
+        Color::TRANSPARENT
+    } else {
+        th.outline
+    };
+
+    Button(
+        Box(Modifier::new()
+            .size(track_w, track_h)
+            .background(track_bg)
+            .border(track_border, track_border_color, track_h * 0.5)
+            .clip_rounded(track_h * 0.5))
+        .child(Box(Modifier::new()
+            .size(thumb_d, thumb_d)
+            .background(thumb_bg)
+            .clip_rounded(thumb_d * 0.5)
+            .absolute()
+            .offset(Some(thumb_left), Some(thumb_top), None, None))),
+        move || on_change(!checked),
+    )
+    .modifier(
+        Modifier::new()
+            .size(track_w, track_h)
+            .padding(0.0)
+            .clip_rounded(track_h * 0.5)
+            .background(Color::TRANSPARENT),
+    )
+}
+
+/// M3 Slider.
+/// Wraps the low-level `ViewKind::Slider` with M3 sizing and theme colors.
+pub fn M3Slider(
+    value: f32,
+    range: (f32, f32),
+    step: Option<f32>,
+    on_change: impl Fn(f32) + 'static,
+) -> View {
+    View::new(
+        0,
+        ViewKind::Slider {
+            value,
+            min: range.0,
+            max: range.1,
+            step,
+            on_change: Some(Rc::new(on_change)),
+        },
+    )
+    .modifier(Modifier::new().height(28.0))
+    .semantics(Semantics {
+        role: Role::Slider,
+        label: None,
+        focused: false,
+        enabled: true,
+    })
+}
+
+/// M3 RangeSlider.
+/// Wraps the low-level `ViewKind::RangeSlider` with M3 sizing and theme colors.
+pub fn M3RangeSlider(
+    start: f32,
+    end: f32,
+    range: (f32, f32),
+    step: Option<f32>,
+    on_change: impl Fn(f32, f32) + 'static,
+) -> View {
+    View::new(
+        0,
+        ViewKind::RangeSlider {
+            start,
+            end,
+            min: range.0,
+            max: range.1,
+            step,
+            on_change: Some(Rc::new(on_change)),
+        },
+    )
+    .modifier(Modifier::new().height(28.0))
+    .semantics(Semantics {
+        role: Role::Slider,
+        label: None,
+        focused: false,
+        enabled: true,
+    })
 }

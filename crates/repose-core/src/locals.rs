@@ -90,8 +90,6 @@ pub fn set_density_default(d: Density) {
     };
 }
 
-// ---- Units ----
-
 /// density‑independent pixels (dp)
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Dp(pub f32);
@@ -602,8 +600,7 @@ pub fn set_ime_inset(height_px: f32) {
 
 /// Query current window insets.
 pub fn window_insets() -> WindowInsets {
-    get_local::<WindowInsets>()
-        .unwrap_or_else(|| defaults().read().window_insets)
+    get_local::<WindowInsets>().unwrap_or_else(|| defaults().read().window_insets)
 }
 
 macro_rules! def_local_getter {

@@ -145,9 +145,6 @@ enum NodeContext {
     TextField {
         multiline: bool,
     },
-    Checkbox,
-    Radio,
-    Switch,
     Slider,
     Range,
     Progress,
@@ -561,10 +558,7 @@ impl LayoutEngine {
 
         if matches!(
             kind,
-            ViewKind::Checkbox { .. }
-                | ViewKind::RadioButton { .. }
-                | ViewKind::Switch { .. }
-                | ViewKind::Slider { .. }
+            ViewKind::Slider { .. }
                 | ViewKind::RangeSlider { .. }
                 | ViewKind::Image { .. }
         ) {
@@ -799,9 +793,6 @@ impl LayoutEngine {
             ViewKind::TextField { multiline, .. } => NodeContext::TextField {
                 multiline: *multiline,
             },
-            ViewKind::Checkbox { .. } => NodeContext::Checkbox,
-            ViewKind::RadioButton { .. } => NodeContext::Radio,
-            ViewKind::Switch { .. } => NodeContext::Switch,
             ViewKind::Slider { .. } => NodeContext::Slider,
             ViewKind::RangeSlider { .. } => NodeContext::Range,
             ViewKind::ProgressBar { .. } => NodeContext::Progress,
@@ -930,18 +921,6 @@ impl LayoutEngine {
                 } else {
                     px(36.0)
                 },
-            },
-            Some(NodeContext::Checkbox) => taffy::geometry::Size {
-                width: known.width.unwrap_or(px(24.0)),
-                height: px(24.0),
-            },
-            Some(NodeContext::Radio) => taffy::geometry::Size {
-                width: known.width.unwrap_or(px(18.0)),
-                height: px(18.0),
-            },
-            Some(NodeContext::Switch) => taffy::geometry::Size {
-                width: known.width.unwrap_or(px(46.0)),
-                height: px(28.0),
             },
             Some(NodeContext::Slider) => taffy::geometry::Size {
                 width: known.width.unwrap_or(px(200.0)),
@@ -1487,9 +1466,6 @@ impl LayoutEngine {
             kind,
             ViewKind::Button { .. }
                 | ViewKind::TextField { .. }
-                | ViewKind::Checkbox { .. }
-                | ViewKind::RadioButton { .. }
-                | ViewKind::Switch { .. }
                 | ViewKind::Slider { .. }
                 | ViewKind::RangeSlider { .. }
                 | ViewKind::ScrollV { .. }
@@ -2022,185 +1998,6 @@ impl LayoutEngine {
                     enabled: true,
                 });
                 next_sem_parent = Some(view_id);
-            }
-            ViewKind::Checkbox { checked, on_change } => {
-                let th = locals::theme();
-                let sz = dp_to_px(18.0);
-                let bx = rect.x;
-                let by = rect.y + (rect.h - sz) * 0.5;
-                scene.nodes.push(SceneNode::Rect {
-                    rect: repose_core::Rect {
-                        x: bx,
-                        y: by,
-                        w: sz,
-                        h: sz,
-                    },
-                    brush: Brush::Solid(if *checked { th.primary } else { th.surface }),
-                    radius: dp_to_px(3.0),
-                });
-                scene.nodes.push(SceneNode::Border {
-                    rect: repose_core::Rect {
-                        x: bx,
-                        y: by,
-                        w: sz,
-                        h: sz,
-                    },
-                    color: th.outline,
-                    width: dp_to_px(1.0),
-                    radius: dp_to_px(3.0),
-                });
-                if *checked {
-                    scene.nodes.push(SceneNode::Text {
-                        rect: repose_core::Rect {
-                            x: bx + dp_to_px(3.0),
-                            y: rect.y + rect.h * 0.5 - font_px(16.0) * 0.6,
-                            w: sz,
-                            h: font_px(16.0),
-                        },
-                        text: Arc::from("✓"),
-                        color: th.on_primary,
-                        size: font_px(16.0),
-                        font_family: None,
-                    });
-                }
-                let toggled = !*checked;
-                let on_click = on_change.as_ref().map(|cb| {
-                    let cb = cb.clone();
-                    Rc::new(move || cb(toggled)) as Rc<dyn Fn()>
-                });
-                hits.push(HitRegion {
-                    id: view_id,
-                    rect,
-                    on_click,
-                    focusable: true,
-                    z_index: modifier.z_index,
-                    ..HitRegion::from_modifier(view_id, rect, &modifier)
-                });
-                sems.push(SemNode {
-                    id: view_id,
-                    parent: sem_parent,
-                    role: Role::Checkbox,
-                    label: None,
-                    rect,
-                    focused: is_focused,
-                    enabled: true,
-                });
-                next_sem_parent = Some(view_id);
-                if is_focused {
-                    push_focus_ring(scene, rect, 6.0);
-                }
-            }
-            ViewKind::RadioButton {
-                selected,
-                on_select,
-            } => {
-                let th = locals::theme();
-                let d = dp_to_px(18.0);
-                let cy = rect.y + (rect.h - d) * 0.5;
-                scene.nodes.push(SceneNode::Border {
-                    rect: repose_core::Rect {
-                        x: rect.x,
-                        y: cy,
-                        w: d,
-                        h: d,
-                    },
-                    color: th.outline,
-                    width: dp_to_px(1.5),
-                    radius: d * 0.5,
-                });
-                if *selected {
-                    scene.nodes.push(SceneNode::Rect {
-                        rect: repose_core::Rect {
-                            x: rect.x + dp_to_px(4.0),
-                            y: cy + dp_to_px(4.0),
-                            w: d - dp_to_px(8.0),
-                            h: d - dp_to_px(8.0),
-                        },
-                        brush: Brush::Solid(th.primary),
-                        radius: (d - dp_to_px(8.0)) * 0.5,
-                    });
-                }
-                if !modifier.hit_passthrough {
-                    hits.push(HitRegion {
-                        id: view_id,
-                        rect,
-                        on_click: on_select.clone(),
-                        focusable: true,
-                        z_index: modifier.z_index,
-                        ..HitRegion::from_modifier(view_id, rect, &modifier)
-                    });
-                }
-                sems.push(SemNode {
-                    id: view_id,
-                    parent: sem_parent,
-                    role: Role::RadioButton,
-                    label: None,
-                    rect,
-                    focused: is_focused,
-                    enabled: true,
-                });
-                next_sem_parent = Some(view_id);
-                if is_focused {
-                    push_focus_ring(scene, rect, 6.0);
-                }
-            }
-            ViewKind::Switch { checked, on_change } => {
-                let th = locals::theme();
-                let tw = dp_to_px(46.0);
-                let th_h = dp_to_px(26.0);
-                let ty = rect.y + (rect.h - th_h) * 0.5;
-                scene.nodes.push(SceneNode::Rect {
-                    rect: repose_core::Rect {
-                        x: rect.x,
-                        y: ty,
-                        w: tw,
-                        h: th_h,
-                    },
-                    brush: Brush::Solid(if *checked { th.primary } else { th.outline }),
-                    radius: th_h * 0.5,
-                });
-                let kw = dp_to_px(22.0);
-                let kx = if *checked {
-                    rect.x + tw - kw - dp_to_px(2.0)
-                } else {
-                    rect.x + dp_to_px(2.0)
-                };
-                scene.nodes.push(SceneNode::Rect {
-                    rect: repose_core::Rect {
-                        x: kx,
-                        y: ty + (th_h - kw) * 0.5,
-                        w: kw,
-                        h: kw,
-                    },
-                    brush: Brush::Solid(th.on_surface),
-                    radius: kw * 0.5,
-                });
-                let t = !*checked;
-                let on_click = on_change.as_ref().map(|cb| {
-                    let cb = cb.clone();
-                    Rc::new(move || cb(t)) as Rc<dyn Fn()>
-                });
-                hits.push(HitRegion {
-                    id: view_id,
-                    rect,
-                    on_click,
-                    focusable: true,
-                    z_index: modifier.z_index,
-                    ..HitRegion::from_modifier(view_id, rect, &modifier)
-                });
-                sems.push(SemNode {
-                    id: view_id,
-                    parent: sem_parent,
-                    role: Role::Switch,
-                    label: None,
-                    rect,
-                    focused: is_focused,
-                    enabled: true,
-                });
-                next_sem_parent = Some(view_id);
-                if is_focused {
-                    push_focus_ring(scene, rect, 6.0);
-                }
             }
             ViewKind::Slider {
                 value,

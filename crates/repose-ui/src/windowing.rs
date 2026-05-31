@@ -786,9 +786,6 @@ fn kind_handles_hit(kind: &ViewKind) -> bool {
         kind,
         ViewKind::Button { .. }
             | ViewKind::TextField { .. }
-            | ViewKind::Checkbox { .. }
-            | ViewKind::RadioButton { .. }
-            | ViewKind::Switch { .. }
             | ViewKind::Slider { .. }
             | ViewKind::RangeSlider { .. }
             | ViewKind::ScrollV { .. }

@@ -2,7 +2,7 @@
 
 use repose_core::prelude::*;
 use repose_material::{Icon, material_symbols};
-use repose_material::material3::{Card, ElevatedCard, IconButton};
+use repose_material::material3::{Card, ElevatedCard, IconButton, M3Slider, Switch};
 use repose_material::material3::dialog::{Dialog, DialogState};
 use repose_navigation::Navigator;
 use repose_ui::overlay::OverlayHandle;
@@ -208,6 +208,6 @@ pub fn LabeledSlider(
             .size(14.0)
             .color(th.on_surface_variant),
         Box(Modifier::new().height(6.0).width(1.0)),
-        Slider(value, range, step, on_change),
+        M3Slider(value, range, step, on_change),
     ))
 }

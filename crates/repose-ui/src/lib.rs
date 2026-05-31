@@ -272,53 +272,6 @@ pub fn Button(content: impl IntoChildren, on_click: impl Fn() + 'static) -> View
     })
 }
 
-pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
-    View::new(
-        0,
-        ViewKind::Checkbox {
-            checked,
-            on_change: Some(Rc::new(on_change)),
-        },
-    )
-    .semantics(Semantics {
-        role: Role::Checkbox,
-        label: None,
-        focused: false,
-        enabled: true,
-    })
-}
-
-pub fn RadioButton(selected: bool, on_select: impl Fn() + 'static) -> View {
-    View::new(
-        0,
-        ViewKind::RadioButton {
-            selected,
-            on_select: Some(Rc::new(on_select)),
-        },
-    )
-    .semantics(Semantics {
-        role: Role::RadioButton,
-        label: None,
-        focused: false,
-        enabled: true,
-    })
-}
-
-pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
-    View::new(
-        0,
-        ViewKind::Switch {
-            checked,
-            on_change: Some(Rc::new(on_change)),
-        },
-    )
-    .semantics(Semantics {
-        role: Role::Switch,
-        label: None,
-        focused: false,
-        enabled: true,
-    })
-}
 pub fn Slider(
     value: f32,
     range: (f32, f32),

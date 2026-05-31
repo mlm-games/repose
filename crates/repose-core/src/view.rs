@@ -70,18 +70,6 @@ pub enum ViewKind {
         /// signals from the layout/paint phase.
         focus_tracker: Option<Rc<Cell<bool>>>,
     },
-    Checkbox {
-        checked: bool,
-        on_change: Option<Rc<dyn Fn(bool)>>,
-    },
-    RadioButton {
-        selected: bool,
-        on_select: Option<Callback>,
-    },
-    Switch {
-        checked: bool,
-        on_change: Option<Rc<dyn Fn(bool)>>,
-    },
     Slider {
         value: f32,
         min: f32,
@@ -136,9 +124,6 @@ impl std::fmt::Debug for ViewKind {
             Self::EllipseBorder { .. } => f.write_str("EllipseBorder"),
             Self::Text { text, .. } => write!(f, "Text({:?})", text),
             Self::TextField { hint, .. } => write!(f, "TextField({:?})", hint),
-            Self::Checkbox { checked, .. } => write!(f, "Checkbox({})", checked),
-            Self::RadioButton { selected, .. } => write!(f, "Radio({})", selected),
-            Self::Switch { checked, .. } => write!(f, "Switch({})", checked),
             Self::Slider { value, .. } => write!(f, "Slider({})", value),
             Self::RangeSlider { start, end, .. } => write!(f, "Range({}..{})", start, end),
             Self::ProgressBar { value, .. } => write!(f, "Progress({})", value),

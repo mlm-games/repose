@@ -222,7 +222,6 @@ impl ViewTree {
             node.view_id = view_id;
         } // Mutable borrow of node ends here
 
-        // --- MUTABLE SELF CALLS ---
         if subtree_changed {
             self.mark_dirty(node_id);
         }
