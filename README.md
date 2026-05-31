@@ -127,7 +127,7 @@ back::set(Some(Rc::new(move || navigator.pop())));
 
 ## Inspiration
 
-Wanted an UI which was short and easy to understand by looking at the code (essentially declaritive, helps balance out rust ig :), similar to Compose, and liked the design of Jetpack Compose too (like Iced, which was, similarly, based on elm-ui)
+Wanted an UI which was short and easy to understand by looking at the code (essentially declaritive, helps balance out rust ig :), while being similar to Compose, (since i personally like the design of Jetpack Compose. Similar to Iced, which was also based on elm-ui)
 
 
 ## Architecture
