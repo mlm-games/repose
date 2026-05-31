@@ -7,7 +7,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use repose_core::*;
 use repose_ui::overlay::OverlayHandle;
 use repose_ui::{Box, Column, Row, Spacer, Stack, Surface, ViewExt};
-use web_time::Duration;
 
 static DIALOG_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -60,12 +59,9 @@ pub fn Dialog(
     let current_content = remember_state_with_key(state.key("c"), || Box(Modifier::new()));
     *current_content.borrow_mut() = content;
 
-    // Animated scale/alpha for enter/exit (redundant/removed)
+    // Animated scale/alpha for enter/exit
     let anim = remember_state_with_key(state.key("anim"), || {
-        AnimatedValue::new(
-            0.0,
-            AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn),
-        )
+        AnimatedValue::new(0.0, theme().motion.overlay)
     });
     let last_target = remember_state_with_key(state.key("atarget"), || f32::NAN);
     let anim_target = if state.is_visible() { 1.0 } else { 0.0 };

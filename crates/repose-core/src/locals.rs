@@ -21,6 +21,8 @@ use std::sync::OnceLock;
 use parking_lot::RwLock;
 
 use crate::Color;
+use crate::animation::{AnimationSpec, Easing};
+use web_time::Duration;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum TextDirection {
@@ -416,20 +418,43 @@ impl Default for Elevation {
     }
 }
 
+/// Centralized animation specs for M3 motion design.
 #[derive(Clone, Copy, Debug)]
 #[must_use]
-pub struct Motion {
-    pub fast_ms: u32,
-    pub medium_ms: u32,
-    pub slow_ms: u32,
+pub struct MotionScheme {
+    /// Shape / size / bounds transitions (e.g., indicator position, elevation).
+    /// M3 standard: 200 ms FastOutSlowIn.
+    pub shape: AnimationSpec,
+    /// Color state transitions (e.g., label, tab text, selection).
+    /// M3 standard: 150 ms FastOutSlowIn.
+    pub color: AnimationSpec,
+    /// Quick color changes (e.g., checkbox fill, switch track, radio ring).
+    /// M3 standard: 100 ms FastOutSlowIn.
+    pub color_fast: AnimationSpec,
+    /// Overlay / popup enter‑exit (menus, dialogs, tooltips).
+    /// M3 standard: 120 ms FastOutSlowIn.
+    pub overlay: AnimationSpec,
+    /// Spring‑based positional animation (sheets, drawers, swipe‑to‑dismiss).
+    /// M3 standard: gentle spring (ζ = 0.5, k = 200).
+    pub spring: AnimationSpec,
+    /// Expanding containers (search bar, docked search suggestions).
+    /// M3 standard: 250 ms FastOutSlowIn.
+    pub expand: AnimationSpec,
+    /// Large layout transitions (bottom sheet height, scaffold reflow).
+    /// M3 standard: 300 ms EaseOut.
+    pub layout: AnimationSpec,
 }
 
-impl Default for Motion {
+impl Default for MotionScheme {
     fn default() -> Self {
         Self {
-            fast_ms: 120,
-            medium_ms: 240,
-            slow_ms: 360,
+            shape: AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn),
+            color: AnimationSpec::tween(Duration::from_millis(150), Easing::FastOutSlowIn),
+            color_fast: AnimationSpec::tween(Duration::from_millis(100), Easing::FastOutSlowIn),
+            overlay: AnimationSpec::tween(Duration::from_millis(120), Easing::FastOutSlowIn),
+            spring: AnimationSpec::spring_gentle(),
+            expand: AnimationSpec::tween(Duration::from_millis(250), Easing::FastOutSlowIn),
+            layout: AnimationSpec::tween(Duration::from_millis(300), Easing::EaseOut),
         }
     }
 }
@@ -442,7 +467,7 @@ pub struct Theme {
     pub shapes: Shapes,
     pub spacing: Spacing,
     pub elevation: Elevation,
-    pub motion: Motion,
+    pub motion: MotionScheme,
 
     pub focus: Color,
     pub scrollbar_track: Color,
@@ -468,7 +493,7 @@ impl Default for Theme {
             shapes: Shapes::default(),
             spacing: Spacing::default(),
             elevation: Elevation::default(),
-            motion: Motion::default(),
+            motion: MotionScheme::default(),
             focus: colors.focus,
             scrollbar_track: Color(0xDD, 0xDD, 0xDD, 32),
             scrollbar_thumb: Color(0xDD, 0xDD, 0xDD, 140),

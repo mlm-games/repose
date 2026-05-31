@@ -203,28 +203,6 @@ impl AnimationSpec {
         }
     }
 
-    /// 120ms FastOutSlowIn
-    pub fn m3_elevation_in() -> Self {
-        Self {
-            duration: Duration::from_millis(120),
-            easing: Easing::FastOutSlowIn,
-            delay: Duration::ZERO,
-            spring: None,
-            repeat: None,
-        }
-    }
-
-    /// 150ms with standard deceleration bezier
-    pub fn m3_elevation_out() -> Self {
-        Self {
-            duration: Duration::from_millis(150),
-            easing: Easing::EaseOut,
-            delay: Duration::ZERO,
-            spring: None,
-            repeat: None,
-        }
-    }
-
     /// Wrap this spec in a repeatable animation.
     /// Pass `RepeatableSpec::infinite()` for infinite repeats.
     pub fn repeated(mut self, repeat: RepeatableSpec) -> Self {

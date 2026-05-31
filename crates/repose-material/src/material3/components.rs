@@ -7,7 +7,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use repose_core::*;
 use repose_ui::anim::{animate_color, animate_f32};
 use repose_ui::{Box, Button, Column, Row, Stack, Text, TextStyle, ViewExt};
-use web_time::Duration;
 
 use crate::{Icon, Symbol};
 
@@ -522,7 +521,7 @@ static TABROW_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub fn TabRow(selected_index: usize, tabs: Vec<Tab>) -> View {
     let th = theme();
     let id = remember(|| TABROW_COUNTER.fetch_add(1, Ordering::Relaxed));
-    let spec = AnimationSpec::tween(Duration::from_millis(150), Easing::FastOutSlowIn);
+    let spec = th.motion.color;
     Column(Modifier::new().fill_max_width()).child((
         Row(Modifier::new()
             .fill_max_width()
@@ -589,11 +588,15 @@ pub struct Segment {
     pub on_click: Rc<dyn Fn()>,
 }
 
+static SEGBUTTON_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 /// M3 Segmented Button - a row of toggle segments. `selected` contains the
 /// indices of selected segments (single-select: pass a single-element set).
 pub fn SegmentedButton(selected: &[usize], segments: Vec<Segment>) -> View {
     let th = theme();
     let count = segments.len();
+    let id = remember(|| SEGBUTTON_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let spec = th.motion.color;
 
     Row(Modifier::new()
         .height(40.0)
@@ -605,16 +608,26 @@ pub fn SegmentedButton(selected: &[usize], segments: Vec<Segment>) -> View {
             .enumerate()
             .map(|(i, seg)| {
                 let is_selected = selected.contains(&i);
-                let bg = if is_selected {
-                    th.secondary_container
-                } else {
-                    Color::TRANSPARENT
-                };
-                let fg = if is_selected {
-                    th.on_secondary_container
-                } else {
-                    th.on_surface
-                };
+
+                let bg = animate_color(
+                    format!("sb_bg_{}_{}", id, i),
+                    if is_selected {
+                        th.secondary_container
+                    } else {
+                        Color::TRANSPARENT
+                    },
+                    spec,
+                );
+                let fg = animate_color(
+                    format!("sb_fg_{}_{}", id, i),
+                    if is_selected {
+                        th.on_secondary_container
+                    } else {
+                        th.on_surface
+                    },
+                    spec,
+                );
+
                 let cb = seg.on_click.clone();
 
                 let mut modifier = Modifier::new()
@@ -779,7 +792,7 @@ pub fn OutlinedTextField(
     let float_t = animate_f32(
         anim_key.clone(),
         if should_float { 1.0 } else { 0.0 },
-        AnimationSpec::tween(Duration::from_millis(150), Easing::FastOutSlowIn),
+        th.motion.color,
     );
 
     // Border color: error > focused (float) > default
@@ -910,7 +923,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
     let sz = 18.0;
 
     let id = remember(|| CHECKBOX_COUNTER.fetch_add(1, Ordering::Relaxed));
-    let spec = AnimationSpec::tween(Duration::from_millis(100), Easing::FastOutSlowIn);
+    let spec = th.motion.color_fast;
 
     let fill = animate_color(
         format!("cb_fill_{}", id),
@@ -969,8 +982,8 @@ pub fn RadioButton(selected: bool, on_select: impl Fn() + 'static) -> View {
     let d = 20.0;
 
     let id = remember(|| RADIO_COUNTER.fetch_add(1, Ordering::Relaxed));
-    let color_spec = AnimationSpec::tween(Duration::from_millis(100), Easing::FastOutSlowIn);
-    let spring = AnimationSpec::spring_gentle();
+    let color_spec = th.motion.color_fast;
+    let spring = th.motion.spring;
 
     let ring_col = animate_color(
         format!("rb_ring_{}", id),
@@ -1024,14 +1037,13 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
     // Thumb: spring-animated position and size
     let thumb_target_pos = if checked { track_w - 24.0 - 4.0 } else { 8.0 };
     let thumb_target_d = if checked { 24.0 } else { 16.0 };
-    let spring = AnimationSpec::spring_gentle();
+    let spring = th.motion.spring;
 
     let thumb_left = animate_f32(format!("sw_pos_{}", id), thumb_target_pos, spring);
     let thumb_d = animate_f32(format!("sw_d_{}", id), thumb_target_d, spring);
     let thumb_top = (track_h - thumb_d) * 0.5;
 
-    // Colors: 100ms FastOutSlowIn per M3 spec
-    let color_spec = AnimationSpec::tween(Duration::from_millis(100), Easing::FastOutSlowIn);
+    let color_spec = th.motion.color_fast;
     let track_bg = animate_color(
         format!("sw_tbg_{}", id),
         if checked { th.primary } else { th.surface_container_highest },

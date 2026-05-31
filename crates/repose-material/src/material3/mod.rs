@@ -18,7 +18,6 @@ use repose_ui::{
     overlay::OverlayHandle,
     overlay::SnackbarAction,
 };
-use web_time::Duration;
 
 pub fn AlertDialog(
     visible: bool,
@@ -70,7 +69,7 @@ pub fn BottomSheet(
     let max_h = animate_f32(
         "sheet_height",
         if visible { 500.0 } else { 0.0 },
-        AnimationSpec::tween(Duration::from_millis(300), Easing::EaseOut),
+        theme().motion.layout,
     );
 
     Column(Modifier::new()).child((
@@ -108,7 +107,7 @@ static NAVBAR_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub fn NavigationBar(selected_index: usize, items: Vec<NavItem>) -> View {
     let th = theme();
     let id = remember(|| NAVBAR_COUNTER.fetch_add(1, Ordering::Relaxed));
-    let spec = AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn);
+    let spec = th.motion.shape;
     Row(Modifier::new()
         .fill_max_size()
         .min_height(80.0)
@@ -348,26 +347,36 @@ pub fn FilterChip(
     trailing_icon: Option<View>,
 ) -> View {
     let th = theme();
-    let bg = if selected {
-        th.secondary_container
-    } else {
-        th.surface
-    };
-    let label_color = if selected {
-        th.on_secondary_container
-    } else {
-        th.on_surface_variant
-    };
-    let leading_color = if selected {
-        th.on_secondary_container
-    } else {
-        th.primary
-    };
-    let trailing_color = if selected {
-        th.on_secondary_container
-    } else {
-        th.on_surface_variant
-    };
+    let id = remember(|| FILTERCHIP_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let spec = th.motion.color;
+
+    let bg = animate_color(
+        format!("fc_bg_{}", id),
+        if selected {
+            th.secondary_container
+        } else {
+            th.surface
+        },
+        spec,
+    );
+    let label_color = animate_color(
+        format!("fc_lc_{}", id),
+        if selected {
+            th.on_secondary_container
+        } else {
+            th.on_surface_variant
+        },
+        spec,
+    );
+    let leading_color = animate_color(
+        format!("fc_lic_{}", id),
+        if selected {
+            th.on_secondary_container
+        } else {
+            th.primary
+        },
+        spec,
+    );
 
     Surface(
         Modifier::new()
@@ -417,7 +426,7 @@ pub fn FilterChip(
                         top: 0.0,
                         bottom: 0.0,
                     }))
-                    .child(with_content_color(trailing_color, move || v))
+                    .child(with_content_color(th.on_surface_variant, move || v))
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
@@ -522,26 +531,36 @@ pub fn InputChip(
     trailing_icon: Option<View>,
 ) -> View {
     let th = theme();
-    let bg = if selected {
-        th.secondary_container
-    } else {
-        th.surface
-    };
-    let label_color = if selected {
-        th.on_secondary_container
-    } else {
-        th.on_surface_variant
-    };
-    let leading_color = if selected {
-        th.primary
-    } else {
-        th.on_surface_variant
-    };
-    let trailing_color = if selected {
-        th.on_secondary_container
-    } else {
-        th.on_surface_variant
-    };
+    let id = remember(|| FILTERCHIP_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let spec = th.motion.color;
+
+    let bg = animate_color(
+        format!("ic_bg_{}", id),
+        if selected {
+            th.secondary_container
+        } else {
+            th.surface
+        },
+        spec,
+    );
+    let label_color = animate_color(
+        format!("ic_lc_{}", id),
+        if selected {
+            th.on_secondary_container
+        } else {
+            th.on_surface_variant
+        },
+        spec,
+    );
+    let leading_color = animate_color(
+        format!("ic_lic_{}", id),
+        if selected {
+            th.primary
+        } else {
+            th.on_surface_variant
+        },
+        spec,
+    );
 
     Surface(
         Modifier::new()
@@ -592,7 +611,7 @@ pub fn InputChip(
                         top: 0.0,
                         bottom: 0.0,
                     }))
-                    .child(with_content_color(trailing_color, move || v))
+                    .child(with_content_color(th.on_surface_variant, move || v))
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
@@ -711,34 +730,44 @@ pub fn TooltipBox(
 ) -> View {
     let text: Rc<str> = Rc::from(text.into());
     let th = theme();
+    let spec = th.motion.overlay;
 
-    let tooltip = state.is_visible().then(|| {
-        let bg = th.inverse_surface;
-        let fg = th.inverse_on_surface;
-        Box(Modifier::new()
-            .background(bg)
-            .clip_rounded(th.shapes.extra_small)
-            .padding_values(PaddingValues {
-                left: 8.0,
-                right: 8.0,
-                top: 4.0,
-                bottom: 4.0,
-            })
-            .absolute()
-            .offset(None, Some(-28.0), None, None)
-            .align_self(AlignSelf::Center)
-            .render_z_index(10000.0))
-        .child(
-            Text((*text).to_string())
-                .color(fg)
-                .size(th.typography.label_medium)
-                .single_line(),
-        )
-    });
+    let alpha = animate_f32(
+        "tooltip_alpha",
+        if state.is_visible() { 1.0 } else { 0.0 },
+        spec,
+    );
+
+    let tooltip_visible = state.is_visible() || alpha > 0.01;
+    let scale = 0.92 + 0.08 * alpha;
 
     Stack(modifier).child((
         Box(Modifier::new().fill_max_size()).child(content),
-        tooltip.unwrap_or(Box(Modifier::new())),
+        if tooltip_visible {
+            Box(Modifier::new()
+                .background(th.inverse_surface)
+                .clip_rounded(th.shapes.extra_small)
+                .padding_values(PaddingValues {
+                    left: 8.0,
+                    right: 8.0,
+                    top: 4.0,
+                    bottom: 4.0,
+                })
+                .absolute()
+                .offset(None, Some(-28.0), None, None)
+                .align_self(AlignSelf::Center)
+                .render_z_index(10000.0)
+                .alpha(alpha)
+                .scale(scale))
+            .child(
+                Text((*text).to_string())
+                    .color(th.inverse_on_surface)
+                    .size(th.typography.label_medium)
+                    .single_line(),
+            )
+        } else {
+            Box(Modifier::new())
+        },
     ))
 }
 
@@ -778,7 +807,7 @@ pub fn ModalNavigationDrawer(
     let drawer_offset = animate_f32(
         "modal_drawer_offset",
         if drawer_state.is_open() { 0.0 } else { -360.0 },
-        AnimationSpec::spring_gentle(),
+        theme().motion.spring,
     );
 
     Stack(Modifier::new().fill_max_size()).child((
@@ -816,16 +845,26 @@ pub fn NavigationDrawerItem(
     badge: Option<View>,
 ) -> View {
     let th = theme();
-    let bg = if selected {
-        th.secondary_container
-    } else {
-        Color::TRANSPARENT
-    };
-    let fg = if selected {
-        th.on_secondary_container
-    } else {
-        th.on_surface_variant
-    };
+    let id = remember(|| FILTERCHIP_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let spec = th.motion.color;
+    let bg = animate_color(
+        format!("ndi_bg_{}", id),
+        if selected {
+            th.secondary_container
+        } else {
+            Color::TRANSPARENT
+        },
+        spec,
+    );
+    let fg = animate_color(
+        format!("ndi_fg_{}", id),
+        if selected {
+            th.on_secondary_container
+        } else {
+            th.on_surface_variant
+        },
+        spec,
+    );
 
     Surface(
         Modifier::new()
@@ -953,10 +992,7 @@ pub fn DropdownMenu(
 
     // Animated open/close progress
     let anim = remember_state_with_key(format!("ddm_anim_{}", ddm_id), || {
-        AnimatedValue::new(
-            0.0,
-            AnimationSpec::tween(Duration::from_millis(120), Easing::FastOutSlowIn),
-        )
+        AnimatedValue::new(0.0, theme().motion.overlay)
     });
     let last_target = remember_state_with_key(format!("ddm_lt_{}", ddm_id), || f32::NAN);
     let anim_target = if state.is_open() { 1.0 } else { 0.0 };
@@ -1172,7 +1208,7 @@ pub fn SearchBar(
     let width = animate_f32(
         "searchbar_width",
         if expanded { 360.0 } else { 240.0 },
-        AnimationSpec::tween(Duration::from_millis(200), Easing::EaseOut),
+        theme().motion.expand,
     );
 
     let input_field: View = if active {
@@ -1284,12 +1320,12 @@ pub fn DockedSearchBar(
     let content_height = animate_f32(
         "docked_sh",
         content_target,
-        AnimationSpec::tween(Duration::from_millis(250), Easing::FastOutSlowIn),
+        theme().motion.expand,
     );
     let content_alpha = animate_f32(
         "docked_sa",
         if expanded { 1.0 } else { 0.0 },
-        AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn),
+        theme().motion.color,
     );
 
     let input_field: View = if active {
@@ -1461,7 +1497,7 @@ pub fn ModalBottomSheet(
 
     // Animated offset: 600px (off-screen) → 0px (visible)
     let anim = remember_state_with_key("mbs_anim", || {
-        AnimatedValue::new(600.0, AnimationSpec::spring_gentle())
+        AnimatedValue::new(600.0, theme().motion.spring)
     });
     let last_target = remember_state_with_key("mbs_anim_target", || f32::NAN);
     let anim_target = if state.is_visible() { 0.0 } else { 600.0 };
@@ -1645,7 +1681,7 @@ pub fn PullToRefresh(
         frac_key,
         0.0,
         raw_frac,
-        AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn),
+        theme().motion.color,
     );
 
     // Indicator at top (pushed into view by overscroll) + content below.
@@ -2189,10 +2225,13 @@ pub struct NavRailItem {
     pub badge: Option<View>,
 }
 
+static NAVRAIL_COUNTER: AtomicU64 = AtomicU64::new(0);
+static FILTERCHIP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 /// M3 Navigation Rail — a compact vertical navigation sidebar.
 ///
 /// Typically placed on the left side of the screen. Contains navigation items
-/// (icon + label) and optional header / FAB sections.
+/// (icon + label) with animated selection indicator.
 pub fn NavigationRail(
     selected_index: usize,
     items: Vec<NavRailItem>,
@@ -2200,6 +2239,8 @@ pub fn NavigationRail(
     fab: Option<View>,
 ) -> View {
     let th = theme();
+    let id = remember(|| NAVRAIL_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let spec = th.motion.shape;
 
     let mut rail_children: Vec<View> = Vec::new();
 
@@ -2244,16 +2285,26 @@ pub fn NavigationRail(
 
     for (i, item) in items.into_iter().enumerate() {
         let selected = i == selected_index;
-        let fg = if selected {
-            th.on_secondary_container
-        } else {
-            th.on_surface_variant
-        };
-        let bg = if selected {
-            th.secondary_container
-        } else {
-            Color::TRANSPARENT
-        };
+
+        let fg = animate_color(
+            format!("nr_fg_{}_{}", id, i),
+            if selected {
+                th.on_secondary_container
+            } else {
+                th.on_surface_variant
+            },
+            spec,
+        );
+        let bg = animate_color(
+            format!("nr_bg_{}_{}", id, i),
+            if selected {
+                th.secondary_container
+            } else {
+                Color::TRANSPARENT
+            },
+            spec,
+        );
+
         let cb = item.on_click.clone();
 
         rail_children.push(
@@ -2268,6 +2319,7 @@ pub fn NavigationRail(
                     })
                     .align_items(AlignItems::Center)
                     .justify_content(JustifyContent::Center)
+                    .background(bg)
                     .state_colors(StateColors {
                         default: Color::TRANSPARENT,
                         hovered: th.on_surface.with_alpha_f32(0.08),

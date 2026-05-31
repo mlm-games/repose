@@ -1378,15 +1378,11 @@ impl LayoutEngine {
             } else {
                 se.default
             };
-            let elev_slot = remember_state_with_key(format!("m3_elev_last:{view_id}"), || target);
-            let prev = *elev_slot.borrow();
-            let spec = if target > prev {
-                AnimationSpec::m3_elevation_in()
-            } else {
-                AnimationSpec::m3_elevation_out()
-            };
-            *elev_slot.borrow_mut() = target;
-            let elev = animate_f32(format!("m3_elev:{view_id}"), target, spec);
+            let elev = animate_f32(
+                format!("m3_elev:{view_id}"),
+                target,
+                locals::theme().motion.shape,
+            );
             if elev > 0.5 {
                 let shadow_offset = elev * 0.5;
                 let shadow_alpha = ((elev / 24.0).clamp(0.0, 1.0) * 0.25 * 255.0) as u8;
@@ -1423,7 +1419,7 @@ impl LayoutEngine {
             } else {
                 sc.default
             };
-            let overlay = animate_color(format!("m3_sc:{view_id}"), target, AnimationSpec::fast());
+            let overlay = animate_color(format!("m3_sc:{view_id}"), target, locals::theme().motion.color);
             if overlay.3 > 0 {
                 scene.nodes.push(SceneNode::Rect {
                     rect,
