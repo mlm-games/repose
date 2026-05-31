@@ -3,6 +3,9 @@
 mod components;
 pub use components::*;
 
+pub mod dialog;
+pub use dialog::*;
+
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 

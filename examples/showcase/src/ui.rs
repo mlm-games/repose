@@ -1,16 +1,24 @@
 #![allow(non_snake_case)]
 
 use repose_core::prelude::*;
-use repose_material::material3::{Card, ElevatedCard};
+use repose_material::{Icon, material_symbols};
+use repose_material::material3::{Card, ElevatedCard, IconButton};
+use repose_material::material3::dialog::{Dialog, DialogState};
 use repose_navigation::Navigator;
+use repose_ui::overlay::OverlayHandle;
 use repose_ui::scroll::{ScrollArea, remember_scroll_state};
 use repose_ui::*;
 
 use crate::app::Route;
 
+material_symbols! {
+    settings : '\u{E8B8}',
+}
+
 pub fn AppShell(
     current: Route,
     nav: Navigator<Route>,
+    overlay: OverlayHandle,
     dark: bool,
     on_dark: impl Fn(bool) + 'static,
     rtl: bool,
@@ -27,6 +35,7 @@ pub fn AppShell(
             .background(theme().background),
         Column(Modifier::new().fill_max_size()).child((
             TopBar(
+                overlay,
                 dark,
                 on_dark,
                 rtl,
@@ -54,6 +63,7 @@ pub fn AppShell(
 }
 
 pub fn TopBar(
+    overlay: OverlayHandle,
     dark: bool,
     on_dark: impl Fn(bool) + 'static,
     rtl: bool,
@@ -63,26 +73,41 @@ pub fn TopBar(
     text_scale: f32,
     on_text_scale: impl Fn(f32) + 'static,
 ) -> View {
+    let settings_state = remember(|| DialogState::new());
     let th = theme();
 
     Row(Modifier::new()
         .padding(12.0)
         .background(th.surface)
-        .border(1.0, th.outline, 0.0))
+        .border(1.0, th.outline, 0.0)
+        .align_items(AlignItems::Center))
     .child((
         Text("Repose Showcase").size(18.0).color(th.on_surface),
         Spacer(),
-        Row(Modifier::new().align_items(AlignItems::Center)).child((
-            LabeledSwitch("Dark", dark, on_dark),
-            Box(Modifier::new().width(12.0).height(1.0)),
-            LabeledSwitch("RTL", rtl, on_rtl),
-            Box(Modifier::new().width(16.0).height(1.0)),
-            LabeledSlider("Density", density, (0.75, 2.0), Some(0.05), on_density)
-                .modifier(Modifier::new().width(220.0)),
-            Box(Modifier::new().width(16.0).height(1.0)),
-            LabeledSlider("Text", text_scale, (0.75, 2.0), Some(0.05), on_text_scale)
-                .modifier(Modifier::new().width(220.0)),
-        )),
+        IconButton(
+            Icon(Symbols::settings).size(20.0).color(th.on_surface_variant),
+            {
+                let s = settings_state.clone();
+                move || s.show()
+            },
+        ),
+        // Overlay-based settings dialog (renders nothing in the layout)
+        Dialog(
+            settings_state.clone(),
+            overlay.clone(),
+            Modifier::new(),
+            Column(Modifier::new().padding(24.0).min_width(320.0)).with_children(vec![
+                Text("Settings").size(20.0).color(th.on_surface),
+                Box(Modifier::new().size(1.0, 16.0)),
+                LabeledSwitch("Dark Mode", dark, on_dark),
+                Box(Modifier::new().size(1.0, 12.0)),
+                LabeledSwitch("RTL Layout", rtl, on_rtl),
+                Box(Modifier::new().size(1.0, 12.0)),
+                LabeledSlider("Density", density, (0.75, 2.0), Some(0.05), on_density),
+                Box(Modifier::new().size(1.0, 12.0)),
+                LabeledSlider("Text Scale", text_scale, (0.75, 2.0), Some(0.05), on_text_scale),
+            ]),
+        ),
     ))
 }
 

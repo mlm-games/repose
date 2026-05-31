@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use repose_core::prelude::*;
+use repose_material::material3::dialog::{Dialog, DialogState};
 use repose_material::material3::{
     BottomSheet, DatePicker, DatePickerState, DropdownMenu, DropdownMenuEntry, DropdownMenuItem,
     FilledButton, MenuState, ModalBottomSheet, NavigationRail, NavRailItem,
@@ -161,65 +162,62 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 Text(format!("Time: {}", time_result.get()))
                     .color(th.on_surface)
                     .size(th.typography.body_medium),
-                // DatePicker popup
-                if show_date_picker.get() {
-                    Stack(Modifier::new().fill_max_size()).child((
-                        Box(Modifier::new()
-                            .fill_max_size()
-                            .background(th.scrim.with_alpha(170))
-                            .clickable()
-                            .on_pointer_down({
-                                let s = show_date_picker.clone();
-                                move |_| s.set(false)
-                            })),
+                // DatePicker dialog (overlay-based, never clipped by parents)
+                {
+                    let dp_state = remember(|| DialogState::new());
+                    if show_date_picker.get() {
+                        dp_state.show();
+                        show_date_picker.set(false);
+                    }
+                    Dialog(
+                        dp_state.clone(),
+                        overlay.clone(),
+                        Modifier::new(),
                         DatePicker(
                             date_state.clone(),
                             Rc::new({
                                 let r = date_result.clone();
-                                let s = show_date_picker.clone();
+                                let dp_state = dp_state.clone();
                                 move |y, m, d| {
                                     r.set(format!("{}-{:02}-{:02}", y, m, d));
-                                    s.set(false);
+                                    dp_state.dismiss();
                                 }
                             }),
                             Rc::new({
-                                let s = show_date_picker.clone();
-                                move || s.set(false)
+                                let dp_state = dp_state.clone();
+                                move || dp_state.dismiss()
                             }),
                         ),
-                    ))
-                } else {
-                    Box(Modifier::new())
+                    )
                 },
-                // TimePicker popup
-                if show_time_picker.get() {
-                    Stack(Modifier::new().fill_max_size()).child((
-                        Box(Modifier::new()
-                            .fill_max_size()
-                            .background(th.scrim.with_alpha(170))
-                            .clickable()
-                            .on_pointer_down({
-                                let s = show_time_picker.clone();
-                                move |_| s.set(false)
-                            })),
+                Box(Modifier::new().height(8.0).width(1.0)),
+                // TimePicker dialog (overlay-based)
+                {
+                    let tp_state = remember(|| DialogState::new());
+                    if show_time_picker.get() {
+                        tp_state.show();
+                        show_time_picker.set(false);
+                    }
+                    Dialog(
+                        tp_state.clone(),
+                        overlay.clone(),
+                        Modifier::new(),
                         TimePicker(
                             time_state.clone(),
                             Rc::new({
                                 let r = time_result.clone();
-                                let s = show_time_picker.clone();
+                                let tp_state = tp_state.clone();
                                 move |h, m| {
                                     r.set(format!("{:02}:{:02}", h, m));
-                                    s.set(false);
+                                    tp_state.dismiss();
                                 }
                             }),
                             Rc::new({
-                                let s = show_time_picker.clone();
-                                move || s.set(false)
+                                let tp_state = tp_state.clone();
+                                move || tp_state.dismiss()
                             }),
                         ),
-                    ))
-                } else {
-                    Box(Modifier::new())
+                    )
                 },
             )),
         ),

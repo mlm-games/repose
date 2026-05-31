@@ -159,6 +159,7 @@ pub fn app(_s: &mut Scheduler) -> View {
     let content = ui::AppShell(
         current,
         navigator.clone(),
+        (*overlay).clone(),
         dark.get(),
         {
             let dark = dark.clone();
