@@ -1,6 +1,9 @@
+use crate::anim::animate_f32_from;
 use crate::scroll::ScrollPhysics;
+use crate::ViewExt;
 use repose_core::*;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 pub struct LazyColumnState {
@@ -65,28 +68,41 @@ impl LazyColumnState {
     }
 }
 
-/// Virtualized list - only renders visible items
+struct AnimState<T> {
+    prev_keys: Vec<u64>,
+    exiting: Vec<(u64, usize, T, u64)>,
+    item_cache: HashMap<u64, T>,
+}
+
+/// Virtualized list — only renders visible items.
+///
+/// Optionally animates item enter/exit when items are added or removed.
+/// Provide `get_key` for stable item identity and `animate_spec` to enable
+/// fade-in for new items and fade-out for removed items.
+///
+/// When `animate_spec` is `None`, behavior is identical to the original
+/// (no item animations).
 #[allow(non_snake_case)]
-pub fn LazyColumn<T, F>(
+pub fn LazyColumn<T, F, K>(
     items: Vec<T>,
-    item_height_dp: f32, // logical dp
+    item_height_dp: f32,
     state: Rc<LazyColumnState>,
     modifier: Modifier,
+    get_key: K,
+    animate_spec: Option<AnimationSpec>,
     item_builder: F,
 ) -> View
 where
     T: Clone + 'static,
     F: Fn(T, usize) -> View + 'static,
+    K: Fn(&T) -> u64 + 'static,
 {
-    // Convert once: internal math uses px
     let item_h_px = dp_to_px(item_height_dp).max(1.0);
     let content_height_px = items.len() as f32 * item_h_px;
 
-    // Signals are px (fed by ScrollV)
     let scroll_offset_px = state.scroll_offset.get();
     let viewport_height_px = state.viewport_height.get();
 
-    // NOTE: needed for full list traversal
     let actual_content_h_px = if state.content_height.get() > 0.0 {
         state.content_height.get()
     } else {
@@ -101,28 +117,151 @@ where
     let buffer = 2usize;
     let first_with_buffer = first_visible.saturating_sub(buffer);
 
-    let mut children = Vec::new();
+    let mut combined_children: Vec<View> = Vec::new();
 
     // Top spacer (dp; converted by layout)
     if first_with_buffer > 0 {
-        children.push(crate::Box(
+        combined_children.push(crate::Box(
             Modifier::new().size(1.0, first_with_buffer as f32 * item_height_dp),
         ));
     }
 
-    for i in first_with_buffer..last_visible {
-        if let Some(item) = items.get(i) {
-            children.push(item_builder(item.clone(), i));
+    let total_slots: usize;
+    if let Some(spec) = animate_spec {
+        // Stable per-call-site ID for animation key namespacing.
+        let inst = remember(|| std::cell::Cell::new(0u64));
+        if inst.get() == 0 {
+            static CTR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+            inst.set(CTR.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
         }
+        let aid = inst.get();
+
+        let state_slot: Rc<RefCell<AnimState<T>>> = remember(|| {
+            RefCell::new(AnimState {
+                prev_keys: Vec::new(),
+                exiting: Vec::new(),
+                item_cache: HashMap::new(),
+            })
+        });
+
+        let mut s = state_slot.borrow_mut();
+
+        let curr_keys: Vec<u64> = items.iter().map(|it| get_key(it)).collect();
+
+        // Find added and removed keys
+        let added: Vec<u64> = curr_keys
+            .iter()
+            .filter(|k| !s.prev_keys.contains(k))
+            .copied()
+            .collect();
+        let removed: Vec<(usize, u64)> = s
+            .prev_keys
+            .iter()
+            .enumerate()
+            .filter(|(_, k)| !curr_keys.contains(k))
+            .map(|(i, k)| (i, *k))
+            .collect();
+
+        let had_prev = !s.prev_keys.is_empty();
+
+        // Add removed items to exiting list
+        if had_prev && !removed.is_empty() {
+            for (old_idx, key) in &removed {
+                if let Some(old_item) = s.item_cache.get(key) {
+                    let v = s.exiting.len() as u64;
+                    let cloned = old_item.clone();
+                    s.exiting.push((*key, *old_idx, cloned, v));
+                }
+            }
+        }
+
+        // Update item cache with current items
+        for item in &items {
+            s.item_cache.insert(get_key(item), item.clone());
+        }
+
+        // Process exiting items — only keep those still fading
+        let mut still_exiting: Vec<(u64, usize, T, u64)> = Vec::new();
+        for (key, old_idx, old_item, version) in s.exiting.iter() {
+            let exit_key = format!("_lz_x:{aid}:{key}:v{version}");
+            let alpha = animate_f32_from(exit_key, 1.0, 0.0, spec);
+            if alpha > 0.005 {
+                still_exiting.push((*key, *old_idx, old_item.clone(), *version));
+            }
+        }
+
+        // Extend visible range to cover exiting items' positions
+        let max_exit_slot = still_exiting
+            .iter()
+            .map(|(_, i, _, _)| *i)
+            .max()
+            .unwrap_or(0);
+        let vis_end = last_visible.max(max_exit_slot + 1 + buffer);
+        total_slots = items.len().max(max_exit_slot + 1);
+
+        // Build combined children: interleave exiting items at their old indices
+        // with normal items filling remaining slots in order
+        let mut normal_ptr = 0usize;
+        for visual_i in first_with_buffer..vis_end {
+            let entry = still_exiting.iter().find(|(_, oi, _, _)| *oi == visual_i);
+            if let Some((key, old_idx, old_item, version)) = entry {
+                let ek = format!("_lz_x:{aid}:{key}:v{version}");
+                let alpha = animate_f32_from(ek, 1.0, 0.0, spec);
+                let item_top_px = *old_idx as f32 * item_h_px;
+                let item_bottom_px = item_top_px + item_h_px;
+                let in_view = item_bottom_px > scroll_offset_px
+                    && item_top_px < scroll_offset_px + viewport_height_px;
+                if in_view {
+                    let exit_view = item_builder(old_item.clone(), *old_idx);
+                    combined_children.push(
+                        crate::Box(
+                            Modifier::new()
+                                .fill_max_width()
+                                .height(item_height_dp)
+                                .alpha(alpha),
+                        )
+                        .child(exit_view),
+                    );
+                }
+            } else if let Some(item) = items.get(normal_ptr) {
+                let key = get_key(item);
+                if had_prev && added.contains(&key) {
+                    let enter_key = format!("_lz_n:{aid}:{key}");
+                    let alpha = animate_f32_from(enter_key, 0.0, 1.0, spec);
+                    combined_children.push(
+                        crate::Box(Modifier::new().fill_max_width().alpha(alpha))
+                            .child(item_builder(item.clone(), normal_ptr)),
+                    );
+                } else {
+                    combined_children.push(item_builder(item.clone(), normal_ptr));
+                }
+                normal_ptr += 1;
+            }
+        }
+
+        s.exiting = still_exiting;
+        s.prev_keys = curr_keys;
+    } else {
+        // No animation: render items normally
+        for i in first_with_buffer..last_visible {
+            if let Some(item) = items.get(i) {
+                combined_children.push(item_builder(item.clone(), i));
+            }
+        }
+        total_slots = items.len();
     }
 
     // Bottom spacer (dp; converted by layout)
-    if last_visible < items.len() {
-        let remaining = items.len() - last_visible;
-        children.push(crate::Box(
+    let has_top = first_with_buffer > 0;
+    let rendered_items = combined_children.len() - if has_top { 1 } else { 0 };
+    if first_with_buffer + rendered_items < total_slots {
+        let remaining = total_slots - (first_with_buffer + rendered_items);
+        combined_children.push(crate::Box(
             Modifier::new().size(1.0, remaining as f32 * item_height_dp),
         ));
     }
+
+    let content = crate::View::new(0, ViewKind::Column).with_children(combined_children);
 
     // Scroll callbacks (px)
     let on_scroll = {
@@ -164,8 +303,6 @@ where
             st.set_offset(st.scroll_offset.get(), h_px);
         })
     };
-
-    let content = crate::Column(Modifier::new()).with_children(children);
 
     repose_core::View::new(
         0,
@@ -304,11 +441,11 @@ where
     state.tick(actual_content_h_px);
 
     let buffer_rows = 2usize;
-    let first_row = ((scroll_offset_px / item_h_px)
-        .floor()
-        .max(0.0)) as usize;
+    let first_row = ((scroll_offset_px / item_h_px).floor().max(0.0)) as usize;
     let first_row = first_row.saturating_sub(buffer_rows);
-    let last_row = (((scroll_offset_px + viewport_height_px) / item_h_px).ceil() as usize + buffer_rows).min(total_rows);
+    let last_row = (((scroll_offset_px + viewport_height_px) / item_h_px).ceil() as usize
+        + buffer_rows)
+        .min(total_rows);
 
     let first_item = first_row * columns;
     let last_item = (last_row * columns).min(total_items);
@@ -317,7 +454,9 @@ where
 
     // Top spacer
     if first_row > 0 {
-        children.push(crate::Box(Modifier::new().size(1.0, first_row as f32 * item_height_dp)));
+        children.push(crate::Box(
+            Modifier::new().size(1.0, first_row as f32 * item_height_dp),
+        ));
     }
 
     // Visible items arranged in a Taffy CSS grid
@@ -329,15 +468,15 @@ where
         // Extract gap settings from the parent modifier so the inner grid uses them
         let rg = modifier.row_gap.or(modifier.gap).unwrap_or(0.0);
         let cg = modifier.column_gap.or(modifier.gap).unwrap_or(0.0);
-        let grid_mod = Modifier::new()
-            .grid(columns, rg, cg)
-            .fill_max_width();
+        let grid_mod = Modifier::new().grid(columns, rg, cg).fill_max_width();
         children.push(crate::Column(grid_mod).with_children(visible_items));
     }
 
     // Bottom spacer
     if last_row < total_rows {
-        children.push(crate::Box(Modifier::new().size(1.0, (total_rows - last_row) as f32 * item_height_dp)));
+        children.push(crate::Box(
+            Modifier::new().size(1.0, (total_rows - last_row) as f32 * item_height_dp),
+        ));
     }
 
     let on_scroll = {
@@ -345,7 +484,10 @@ where
         Rc::new(move |d: Vec2| -> Vec2 {
             let ch = st.content_height.get();
             let ch = if ch > 0.0 { ch } else { content_height_px };
-            Vec2 { x: d.x, y: st.scroll_immediate(d.y, ch) }
+            Vec2 {
+                x: d.x,
+                y: st.scroll_immediate(d.y, ch),
+            }
         })
     };
 
@@ -522,7 +664,10 @@ where
         Rc::new(move |d: Vec2| -> Vec2 {
             let cw = st.content_width.get();
             let cw = if cw > 0.0 { cw } else { content_width_px };
-            Vec2 { x: st.scroll_immediate(d.x, cw), y: d.y }
+            Vec2 {
+                x: st.scroll_immediate(d.x, cw),
+                y: d.y,
+            }
         })
     };
 

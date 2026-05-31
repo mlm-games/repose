@@ -1,8 +1,9 @@
 use repose_core::prelude::*;
 use repose_core::signal;
 use repose_material::material3::{ElevatedButton, FilledButton, TextButton};
-use repose_ui::anim::{animate_f32, animate_f32_from, animate_keyframes};
+use repose_ui::anim::{animate_f32, animate_f32_from};
 use repose_ui::anim_ext::{AnimatedContent, Crossfade, EnterTransition, ExitTransition};
+use repose_ui::lazy::{LazyColumn, LazyColumnState};
 use repose_ui::scroll::{ScrollArea, remember_scroll_state};
 use repose_ui::*;
 use web_time::Duration;
@@ -29,6 +30,13 @@ enum ContentState {
     Third,
 }
 
+#[derive(Clone, Debug)]
+struct ListItem {
+    id: u64,
+    label: String,
+    color_idx: u8,
+}
+
 pub fn screen() -> View {
     let mode = remember(|| signal(SpringMode::Gentle));
     let visible = remember(|| signal(true));
@@ -36,21 +44,9 @@ pub fn screen() -> View {
     let cross = remember(|| signal(CrossfadeState::A));
 
     let content_state = remember(|| signal(ContentState::First));
-    let transition_kind = remember(|| signal(0u8)); // 0=fade, 1=slide, 2=scale
+    let transition_kind = remember(|| signal(0u8));
 
     let long_text = remember(|| signal(false));
-    let bounce_anim = animate_keyframes(
-        "kf_bounce",
-        KeyframesSpec::new(vec![
-            (0.0, 20.0),
-            (0.4, 140.0),
-            (0.6, 80.0),
-            (0.8, 120.0),
-            (1.0, 100.0),
-        ]),
-        AnimationSpec::tween(Duration::from_millis(800), Easing::EaseOut)
-            .repeated(RepeatableSpec::infinite()),
-    );
     let repeated_anim = animate_f32_from(
         "rep_pulse",
         1.0,
@@ -58,6 +54,23 @@ pub fn screen() -> View {
         AnimationSpec::tween(Duration::from_millis(600), Easing::EaseInOut)
             .repeated(RepeatableSpec::infinite().reverse()),
     );
+
+    // LazyColumnAnimated state
+    let list_items = remember(|| {
+        signal(
+            (0u64..6)
+                .map(|id| ListItem {
+                    id,
+                    label: format!("Item {id}"),
+                    color_idx: (id % 4) as u8,
+                })
+                .collect::<Vec<_>>(),
+        )
+    });
+    let list_state = remember(|| LazyColumnState::new());
+    let next_id = remember(|| signal(6u64));
+    let list_anim_spec = remember(|| signal(0u8));
+
     let scroll = remember_scroll_state("animation_scroll");
 
     ScrollArea(Modifier::new().fill_max_size(), scroll, Column(Modifier::new().padding(8.0)).child((
@@ -200,7 +213,111 @@ pub fn screen() -> View {
             ))
         }),
 
+        Section("LazyColumn Item Animations (fade-in/out)", {
+            let items = list_items.get();
+            let spec = match list_anim_spec.get() {
+                0 => AnimationSpec::fast(),
+                1 => AnimationSpec::tween(Duration::from_millis(350), Easing::EaseInOut),
+                _ => AnimationSpec::spring_gentle(),
+            };
+            let colors = [theme().primary, theme().tertiary, theme().secondary, theme().error];
 
+            Column(Modifier::new().padding(12.0)).child((
+                // Controls
+                Row(Modifier::new().align_items(AlignItems::Center).gap(6.0)).child((
+                    FilledButton(Modifier::new(), {
+                        let li = list_items.clone();
+                        let nid = next_id.clone();
+                        move || {
+                            let mut v = li.get();
+                            let id = nid.get();
+                            v.push(ListItem { id, label: format!("Item {id}"), color_idx: (id % 4) as u8 });
+                            li.set(v);
+                            nid.set(id + 1);
+                        }
+                    }, || Text("Add")),
+                    FilledButton(Modifier::new(), {
+                        let li = list_items.clone();
+                        move || {
+                            let mut v = li.get();
+                            if !v.is_empty() {
+                                v.remove(0);
+                                li.set(v);
+                            }
+                        }
+                    }, || Text("Pop First")),
+                    FilledButton(Modifier::new(), {
+                        let li = list_items.clone();
+                        move || {
+                            let mut v = li.get();
+                            if !v.is_empty() {
+                                v.pop();
+                                li.set(v);
+                            }
+                        }
+                    }, || Text("Pop Last")),
+                    Spacer(),
+                )),
+                Box(Modifier::new().height(6.0).width(1.0)),
+                Row(Modifier::new().align_items(AlignItems::Center).gap(6.0)).child((
+                    TextButton(Modifier::new(), { let s = list_anim_spec.clone(); move || s.set(0) }, || Text("Fast")),
+                    TextButton(Modifier::new(), { let s = list_anim_spec.clone(); move || s.set(1) }, || Text("Tween")),
+                    TextButton(Modifier::new(), { let s = list_anim_spec.clone(); move || s.set(2) }, || Text("Spring")),
+                    Spacer(),
+                    Text("Count: ").size(13.0).color(theme().on_surface_variant),
+                    Text(items.len().to_string()).size(13.0).color(theme().on_surface),
+                )),
+                Box(Modifier::new().height(8.0).width(1.0)),
+                // Animated list
+                Box(Modifier::new()
+                    .max_width(600.0)
+                    .max_height(220.0)
+                    .border(1.0, theme().outline_variant, 8.0)
+                    .clip_rounded(8.0)
+                ).child(
+                    LazyColumn(
+                        items,
+                        44.0,
+                        list_state.clone(),
+                        Modifier::new().fill_max_size(),
+                        |item: &ListItem| item.id,
+                        Some(spec),
+                        move |item: ListItem, _idx| {
+                            let c = colors[item.color_idx as usize % colors.len()];
+                            Row(Modifier::new()
+                                .padding(12.0)
+                                .fill_max_width()
+                                .height(44.0)
+                                .align_items(AlignItems::Center)
+                            ).child((
+                                Box(Modifier::new()
+                                    .size(24.0, 24.0)
+                                    .background(c)
+                                    .clip_rounded(12.0)
+                                    .flex_shrink(0.0)
+                                ),
+                                Box(Modifier::new().width(10.0).height(1.0).flex_shrink(0.0)),
+                                Column(Modifier::new()).child((
+                                    Text(item.label).size(14.0).color(theme().on_surface),
+                                    Text(format!("id={}", item.id))
+                                        .size(11.0).color(theme().on_surface_variant),
+                                )),
+                                Spacer(),
+                                TextButton(Modifier::new(), {
+                                    let li = list_items.clone();
+                                    let target_id = item.id;
+                                    move || {
+                                        let mut v = li.get();
+                                        v.retain(|x| x.id != target_id);
+                                        li.set(v);
+                                    }
+                                }, || Text("✕")),
+                            ))
+                        },
+                    )
+                ),
+            ))
+        }),
 
     )))
 }

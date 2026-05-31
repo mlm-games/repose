@@ -47,7 +47,9 @@ pub fn screen() -> View {
         )
     });
     let dismiss_states = remember_with_key("dismiss_states", || {
-        (0..10).map(|_| Rc::new(SwipeToDismissState::new())).collect::<Vec<_>>()
+        (0..10)
+            .map(|_| Rc::new(SwipeToDismissState::new()))
+            .collect::<Vec<_>>()
     });
     let dismissed = remember_with_key("dismissed", || signal(vec![false; 10]));
 
@@ -60,6 +62,8 @@ pub fn screen() -> View {
                 48.0,
                 scroll,
                 Modifier::new().max_width(1200.0).max_height(400.0),
+                |it: &Item| it.id as u64,
+                None,
                 move |it, _| {
                     let th = theme();
                     let done_tint = th.primary.with_alpha(48);
@@ -175,7 +179,9 @@ pub fn screen() -> View {
                                 Text("🔔").size(20.0),
                                 Box(Modifier::new().width(12.0).height(1.0)),
                                 Column(Modifier::new()).child((
-                                    Text(msg).size(th.typography.body_large).color(th.on_surface),
+                                    Text(msg)
+                                        .size(th.typography.body_large)
+                                        .color(th.on_surface),
                                     Text("Swipe left to dismiss")
                                         .size(th.typography.body_small)
                                         .color(th.on_surface_variant),
@@ -188,7 +194,12 @@ pub fn screen() -> View {
                 .collect();
 
             if vis.is_empty() {
-                Column(Modifier::new().padding(24.0).align_items(AlignItems::Center)).child(
+                Column(
+                    Modifier::new()
+                        .padding(24.0)
+                        .align_items(AlignItems::Center),
+                )
+                .child(
                     Text("All dismissed! 🎉")
                         .size(18.0)
                         .color(th.on_surface_variant),
