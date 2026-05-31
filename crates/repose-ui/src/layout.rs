@@ -1298,61 +1298,45 @@ impl LayoutEngine {
         let push_round_clip = round_clip_px > 0.5 && rect.w > 0.5 && rect.h > 0.5;
 
         if let Some(anim_spec) = &modifier.animate_content_size {
-            let target_w = rect.w;
-            let target_h = rect.h;
+            let target = repose_core::Size { width: rect.w, height: rect.h };
 
-            let anim_w = remember_state_with_key(format!("anim_cs_w:{view_id}"), || {
-                AnimatedValue::new(target_w, *anim_spec)
-            });
-            let anim_h = remember_state_with_key(format!("anim_cs_h:{view_id}"), || {
-                AnimatedValue::new(target_h, *anim_spec)
+            let anim = remember_state_with_key(format!("anim_cs:{view_id}"), || {
+                AnimatedValue::new(target, *anim_spec)
             });
             let last_target =
-                remember_state_with_key(format!("anim_cs_last:{view_id}"), || (target_w, target_h));
+                remember_state_with_key(format!("anim_cs_last:{view_id}"), || repose_core::Size::default());
 
             // Check if target changed, and re-start animation from current value
             let mut lt = last_target.borrow_mut();
-            let w_changed = (lt.0 - target_w).abs() > 0.5;
-            let h_changed = (lt.1 - target_h).abs() > 0.5;
-            if w_changed || h_changed {
-                *lt = (target_w, target_h);
+            if (lt.width - target.width).abs() > 0.5 || (lt.height - target.height).abs() > 0.5 {
+                *lt = target;
                 drop(lt);
-                if w_changed {
-                    let mut a = anim_w.borrow_mut();
-                    a.set_spec(*anim_spec);
-                    a.set_target(target_w);
-                }
-                if h_changed {
-                    let mut a = anim_h.borrow_mut();
-                    a.set_spec(*anim_spec);
-                    a.set_target(target_h);
-                }
+                let mut a = anim.borrow_mut();
+                a.set_spec(*anim_spec);
+                a.set_target(target);
             } else {
                 drop(lt);
             }
 
             let mut still = false;
-            let aw = {
-                let mut a = anim_w.borrow_mut();
+            let animated = {
+                let mut a = anim.borrow_mut();
                 still |= a.update();
-                *a.get()
-            };
-            let ah = {
-                let mut a = anim_h.borrow_mut();
-                still |= a.update();
-                *a.get()
+                let s = *a.get();
+                repose_core::Size {
+                    width: s.width.max(1.0),
+                    height: s.height.max(1.0),
+                }
             };
             if still {
                 request_frame();
             }
 
             // Override rect and content_rect dimensions with animated values
-            let aw = aw.max(1.0);
-            let ah = ah.max(1.0);
-            let dw = rect.w - aw;
-            let dh = rect.h - ah;
-            rect.w = aw;
-            rect.h = ah;
+            let dw = rect.w - animated.width;
+            let dh = rect.h - animated.height;
+            rect.w = animated.width;
+            rect.h = animated.height;
             content_rect.w = (content_rect.w - dw).max(0.0);
             content_rect.h = (content_rect.h - dh).max(0.0);
         }

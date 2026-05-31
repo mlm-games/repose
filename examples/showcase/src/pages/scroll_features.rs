@@ -96,40 +96,50 @@ fn pull_to_refresh_demo() -> View {
     let items: Vec<View> = if refreshing.get() {
         refreshing.set(false);
         // Regenerate items with a timestamp
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
+        let ts = web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        (0..20).map(|i| {
-            let label = if i == 0 {
-                format!("✓ Refreshed at {}", ts % 100000)
-            } else {
-                format!("List item {}", i)
-            };
-            Box(Modifier::new()
-                .fill_max_width()
-                .padding(12.0)
-                .background(theme().surface)
-                .border(1.0, theme().outline, 8.0)
-                .clip_rounded(8.0))
-            .child(Text(label).size(14.0).color(theme().on_surface))
-        }).collect()
+        (0..20)
+            .map(|i| {
+                let label = if i == 0 {
+                    format!("✓ Refreshed at {}", ts % 100000)
+                } else {
+                    format!("List item {}", i)
+                };
+                Box(Modifier::new()
+                    .fill_max_width()
+                    .padding(12.0)
+                    .background(theme().surface)
+                    .border(1.0, theme().outline, 8.0)
+                    .clip_rounded(8.0))
+                .child(Text(label).size(14.0).color(theme().on_surface))
+            })
+            .collect()
     } else {
-        (0..20).map(|i| {
-            Box(Modifier::new()
-                .fill_max_width()
-                .padding(12.0)
-                .background(theme().surface)
-                .border(1.0, theme().outline, 8.0)
-                .clip_rounded(8.0))
-            .child(Text(format!("List item {i}")).size(14.0).color(theme().on_surface))
-        }).collect()
+        (0..20)
+            .map(|i| {
+                Box(Modifier::new()
+                    .fill_max_width()
+                    .padding(12.0)
+                    .background(theme().surface)
+                    .border(1.0, theme().outline, 8.0)
+                    .clip_rounded(8.0))
+                .child(
+                    Text(format!("List item {i}"))
+                        .size(14.0)
+                        .color(theme().on_surface),
+                )
+            })
+            .collect()
     };
 
     Section(
         "PullToRefresh - pull down to refresh",
         Column(Modifier::new().padding(12.0)).child((
-            Text(format!("Refreshed {} times", count.get())).size(14.0).color(theme().on_surface_variant),
+            Text(format!("Refreshed {} times", count.get()))
+                .size(14.0)
+                .color(theme().on_surface_variant),
             Box(Modifier::new().height(4.0).width(1.0)),
             ScrollArea(
                 Modifier::new()

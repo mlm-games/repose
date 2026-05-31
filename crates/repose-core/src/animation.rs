@@ -422,6 +422,35 @@ impl Interpolate for crate::Color {
     }
 }
 
+impl Interpolate for crate::Vec2 {
+    fn interpolate(&self, other: &Self, t: f32) -> Self {
+        crate::Vec2 {
+            x: self.x.interpolate(&other.x, t),
+            y: self.y.interpolate(&other.y, t),
+        }
+    }
+}
+
+impl Interpolate for crate::Size {
+    fn interpolate(&self, other: &Self, t: f32) -> Self {
+        crate::Size {
+            width: self.width.interpolate(&other.width, t),
+            height: self.height.interpolate(&other.height, t),
+        }
+    }
+}
+
+impl Interpolate for crate::Rect {
+    fn interpolate(&self, other: &Self, t: f32) -> Self {
+        crate::Rect {
+            x: self.x.interpolate(&other.x, t),
+            y: self.y.interpolate(&other.y, t),
+            w: self.w.interpolate(&other.w, t),
+            h: self.h.interpolate(&other.h, t),
+        }
+    }
+}
+
 // Animation clock
 pub trait Clock: Send + Sync + 'static {
     fn now(&self) -> Instant;

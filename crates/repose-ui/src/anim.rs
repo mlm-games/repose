@@ -1,7 +1,11 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use repose_core::Color;
 use repose_core::{
-    animation::{AnimatedValue, AnimationSpec, Easing, KeyframesSpec},
-    remember_state_with_key, request_frame,
+    Rect, Size, Vec2,
+    animation::{AnimatedValue, AnimationSpec, Easing, KeyframesSpec, RepeatableSpec},
+    remember_state_with_key, remember_with_key, request_frame,
 };
 
 /// Animate f32 from an explicit initial value to a target.
@@ -97,9 +101,7 @@ pub fn animate_keyframes(
     spec: AnimationSpec,
 ) -> f32 {
     let key = key.into();
-    let anim = remember_state_with_key(format!("anim:kf:{key}"), || {
-        AnimatedValue::new(0.0, spec)
-    });
+    let anim = remember_state_with_key(format!("anim:kf:{key}"), || AnimatedValue::new(0.0, spec));
     let mut a = anim.borrow_mut();
     if !a.has_keyframes() {
         a.set_keyframes(keyframes);
@@ -109,4 +111,341 @@ pub fn animate_keyframes(
         request_frame();
     }
     *a.get()
+}
+
+/// Animate Vec2 from an explicit initial value to a target.
+pub fn animate_vec2_from(
+    key: impl Into<String>,
+    initial: Vec2,
+    target: Vec2,
+    spec: AnimationSpec,
+) -> Vec2 {
+    let key = key.into();
+    let anim = remember_state_with_key(format!("anim:vec2:{key}"), || {
+        AnimatedValue::new(initial, spec)
+    });
+    let last = remember_state_with_key(format!("anim:vec2_last:{key}"), || None::<Vec2>);
+
+    let mut a = anim.borrow_mut();
+    let mut lt = last.borrow_mut();
+    if lt.is_none() || lt.as_ref().unwrap() != &target {
+        a.set_spec(spec);
+        a.set_target(target);
+        *lt = Some(target);
+    }
+    drop(lt);
+
+    let still_animating = a.update();
+    if still_animating {
+        request_frame();
+    }
+
+    *a.get()
+}
+
+/// Animate Vec2 to the given target; starts at the target on first mount.
+pub fn animate_vec2(key: impl Into<String>, target: Vec2, spec: AnimationSpec) -> Vec2 {
+    animate_vec2_from(key, target, target, spec)
+}
+
+/// Animate Size from an explicit initial value to a target.
+pub fn animate_size_from(
+    key: impl Into<String>,
+    initial: Size,
+    target: Size,
+    spec: AnimationSpec,
+) -> Size {
+    let key = key.into();
+    let anim = remember_state_with_key(format!("anim:size:{key}"), || {
+        AnimatedValue::new(initial, spec)
+    });
+    let last = remember_state_with_key(format!("anim:size_last:{key}"), || None::<Size>);
+
+    let mut a = anim.borrow_mut();
+    let mut lt = last.borrow_mut();
+    if lt.is_none() || lt.as_ref().unwrap() != &target {
+        a.set_spec(spec);
+        a.set_target(target);
+        *lt = Some(target);
+    }
+    drop(lt);
+
+    let still_animating = a.update();
+    if still_animating {
+        request_frame();
+    }
+
+    *a.get()
+}
+
+/// Animate Size to the given target; starts at the target on first mount.
+pub fn animate_size(key: impl Into<String>, target: Size, spec: AnimationSpec) -> Size {
+    animate_size_from(key, target, target, spec)
+}
+
+/// Animate Rect from an explicit initial value to a target.
+pub fn animate_rect_from(
+    key: impl Into<String>,
+    initial: Rect,
+    target: Rect,
+    spec: AnimationSpec,
+) -> Rect {
+    let key = key.into();
+    let anim = remember_state_with_key(format!("anim:rect:{key}"), || {
+        AnimatedValue::new(initial, spec)
+    });
+    let last = remember_state_with_key(format!("anim:rect_last:{key}"), || None::<Rect>);
+
+    let mut a = anim.borrow_mut();
+    let mut lt = last.borrow_mut();
+    if lt.is_none() || lt.as_ref().unwrap() != &target {
+        a.set_spec(spec);
+        a.set_target(target);
+        *lt = Some(target);
+    }
+    drop(lt);
+
+    let still_animating = a.update();
+    if still_animating {
+        request_frame();
+    }
+
+    *a.get()
+}
+
+/// Animate Rect to the given target; starts at the target on first mount.
+pub fn animate_rect(key: impl Into<String>, target: Rect, spec: AnimationSpec) -> Rect {
+    animate_rect_from(key, target, target, spec)
+}
+
+fn with_infinite_repeat(spec: AnimationSpec) -> AnimationSpec {
+    if spec.repeat.is_none() {
+        spec.repeated(RepeatableSpec::infinite().reverse())
+    } else {
+        spec
+    }
+}
+
+/// A scoped API for continuous/repeating animations.
+///
+/// All child animations created via this transition loop indefinitely
+/// between the given initial and target values (ping-pong with `reverse`).
+///
+/// If you need a custom repeat configuration, pass an `AnimationSpec` that
+/// already has `.repeated(...)` set — the transition will respect it instead
+/// of applying the default infinite reverse.
+pub struct InfiniteTransition {
+    _private: (),
+}
+
+/// Creates an `InfiniteTransition` scoped to the current composition slot.
+///
+/// Use its `animate_float`, `animate_color`, `animate_vec2`, `animate_size`,
+/// and `animate_rect` methods for continuous looping animations.
+///
+/// # Example
+///
+/// ```ignore
+/// let t = remember_infinite_transition();
+/// let pulse = t.animate_float("pulse", 0.0, 1.0,
+///     AnimationSpec::tween(Duration::from_millis(600), Easing::EaseInOut));
+/// ```
+pub fn remember_infinite_transition() -> InfiniteTransition {
+    InfiniteTransition { _private: () }
+}
+
+impl InfiniteTransition {
+    /// Animate an f32 value continuously between `initial` and `target`.
+    pub fn animate_float(
+        &self,
+        key: impl Into<String>,
+        initial: f32,
+        target: f32,
+        spec: AnimationSpec,
+    ) -> f32 {
+        let key = key.into();
+        animate_f32_from(
+            format!("inf:{key}"),
+            initial,
+            target,
+            with_infinite_repeat(spec),
+        )
+    }
+
+    /// Animate a Color value continuously between `initial` and `target`.
+    pub fn animate_color(
+        &self,
+        key: impl Into<String>,
+        initial: Color,
+        target: Color,
+        spec: AnimationSpec,
+    ) -> Color {
+        let key = key.into();
+        animate_color_from(
+            format!("inf:{key}"),
+            initial,
+            target,
+            with_infinite_repeat(spec),
+        )
+    }
+
+    /// Animate a Vec2 value continuously between `initial` and `target`.
+    pub fn animate_vec2(
+        &self,
+        key: impl Into<String>,
+        initial: Vec2,
+        target: Vec2,
+        spec: AnimationSpec,
+    ) -> Vec2 {
+        let key = key.into();
+        animate_vec2_from(
+            format!("inf:{key}"),
+            initial,
+            target,
+            with_infinite_repeat(spec),
+        )
+    }
+
+    /// Animate a Size value continuously between `initial` and `target`.
+    pub fn animate_size(
+        &self,
+        key: impl Into<String>,
+        initial: Size,
+        target: Size,
+        spec: AnimationSpec,
+    ) -> Size {
+        let key = key.into();
+        animate_size_from(
+            format!("inf:{key}"),
+            initial,
+            target,
+            with_infinite_repeat(spec),
+        )
+    }
+
+    /// Animate a Rect value continuously between `initial` and `target`.
+    pub fn animate_rect(
+        &self,
+        key: impl Into<String>,
+        initial: Rect,
+        target: Rect,
+        spec: AnimationSpec,
+    ) -> Rect {
+        let key = key.into();
+        animate_rect_from(
+            format!("inf:{key}"),
+            initial,
+            target,
+            with_infinite_repeat(spec),
+        )
+    }
+}
+
+/// A scope for multi-target animations driven by a changing state.
+///
+/// When the target state changes (detected via `PartialEq`), all child
+/// animations registered via `animate_float`, `animate_color`, etc.
+/// automatically animate from their current value toward the new mapped
+/// target value.
+///
+/// # Example
+///
+/// ```ignore
+/// let t = update_transition("panel", is_expanded, AnimationSpec::spring_gentle());
+/// let h  = t.animate_float("height", |e| if *e { 200.0 } else { 48.0 });
+/// let bg = t.animate_color("bg", |e| if *e { theme().primary } else { theme().surface });
+/// ```
+pub struct TransitionScope<T> {
+    key: String,
+    spec: AnimationSpec,
+    state: Rc<RefCell<T>>,
+}
+
+/// Creates a `TransitionScope` keyed to the given state.
+///
+/// Whenever `target_state` differs from the previous call (via `PartialEq`),
+/// all child animation targets are updated and the transition animates toward
+/// the new values.
+pub fn update_transition<T>(
+    key: impl Into<String>,
+    target_state: T,
+    spec: AnimationSpec,
+) -> TransitionScope<T>
+where
+    T: PartialEq + Clone + 'static,
+{
+    let key = key.into();
+    let state: Rc<RefCell<T>> =
+        remember_state_with_key(format!("tr_state:{key}"), || target_state.clone());
+    if *state.borrow() != target_state {
+        *state.borrow_mut() = target_state;
+    }
+    TransitionScope { key, spec, state }
+}
+
+impl<T> TransitionScope<T> {
+    /// Animate an f32 value derived from the current state.
+    pub fn animate_float<F>(&self, child_key: impl Into<String>, map: F) -> f32
+    where
+        F: Fn(&T) -> f32,
+    {
+        let target = map(&*self.state.borrow());
+        animate_f32(
+            format!("tr:{}:{}", self.key, child_key.into()),
+            target,
+            self.spec,
+        )
+    }
+
+    /// Animate a `Color` value derived from the current state.
+    pub fn animate_color<F>(&self, child_key: impl Into<String>, map: F) -> Color
+    where
+        F: Fn(&T) -> Color,
+    {
+        let target = map(&*self.state.borrow());
+        animate_color(
+            format!("tr:{}:{}", self.key, child_key.into()),
+            target,
+            self.spec,
+        )
+    }
+
+    /// Animate a `Vec2` value derived from the current state.
+    pub fn animate_vec2<F>(&self, child_key: impl Into<String>, map: F) -> Vec2
+    where
+        F: Fn(&T) -> Vec2,
+    {
+        let target = map(&*self.state.borrow());
+        animate_vec2(
+            format!("tr:{}:{}", self.key, child_key.into()),
+            target,
+            self.spec,
+        )
+    }
+
+    /// Animate a `Size` value derived from the current state.
+    pub fn animate_size<F>(&self, child_key: impl Into<String>, map: F) -> Size
+    where
+        F: Fn(&T) -> Size,
+    {
+        let target = map(&*self.state.borrow());
+        animate_size(
+            format!("tr:{}:{}", self.key, child_key.into()),
+            target,
+            self.spec,
+        )
+    }
+
+    /// Animate a `Rect` value derived from the current state.
+    pub fn animate_rect<F>(&self, child_key: impl Into<String>, map: F) -> Rect
+    where
+        F: Fn(&T) -> Rect,
+    {
+        let target = map(&*self.state.borrow());
+        animate_rect(
+            format!("tr:{}:{}", self.key, child_key.into()),
+            target,
+            self.spec,
+        )
+    }
 }

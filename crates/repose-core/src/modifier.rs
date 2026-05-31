@@ -670,6 +670,9 @@ impl Modifier {
         self.transform = Some(t.combine(&Transform::translate(x, y)));
         self
     }
+    pub fn translate_vec2(mut self, v: Vec2) -> Self {
+        self.translate(v.x, v.y)
+    }
     pub fn rotate(mut self, radians: f32) -> Self {
         let mut t = self.transform.unwrap_or_else(Transform::identity);
         t.rotate += radians;

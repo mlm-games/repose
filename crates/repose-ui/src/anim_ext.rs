@@ -5,6 +5,7 @@ use repose_core::*;
 
 use crate::anim::animate_f32;
 use crate::anim::animate_f32_from;
+use crate::anim::animate_vec2_from;
 
 /// Describes how content enters the screen.
 #[derive(Clone, Debug)]
@@ -177,19 +178,13 @@ fn apply_enter(
             Box(Modifier::new().fill_max_size().alpha(val)).child(view)
         }
         EnterTransition::SlideIn { offset_x, offset_y } => {
-            let val_x = animate_f32_from(
-                format!("{key}:v{version}:enter:slide_x"),
-                dp_to_px(*offset_x),
-                0.0,
+            let offset = animate_vec2_from(
+                format!("{key}:v{version}:enter:slide"),
+                Vec2 { x: dp_to_px(*offset_x), y: dp_to_px(*offset_y) },
+                Vec2::default(),
                 *spec,
             );
-            let val_y = animate_f32_from(
-                format!("{key}:v{version}:enter:slide_y"),
-                dp_to_px(*offset_y),
-                0.0,
-                *spec,
-            );
-            Box(Modifier::new().fill_max_size().translate(val_x, val_y)).child(view)
+            Box(Modifier::new().fill_max_size().translate_vec2(offset)).child(view)
         }
         EnterTransition::ScaleIn { initial } => {
             let s = animate_f32_from(
@@ -224,19 +219,13 @@ fn apply_enter_single(
             Box(Modifier::new().fill_max_size().alpha(val)).child(view)
         }
         EnterTransition::SlideIn { offset_x, offset_y } => {
-            let val_x = animate_f32_from(
-                format!("{key}:v{version}:enter:slide_x"),
-                dp_to_px(*offset_x),
-                0.0,
+            let offset = animate_vec2_from(
+                format!("{key}:v{version}:enter:slide"),
+                Vec2 { x: dp_to_px(*offset_x), y: dp_to_px(*offset_y) },
+                Vec2::default(),
                 *spec,
             );
-            let val_y = animate_f32_from(
-                format!("{key}:v{version}:enter:slide_y"),
-                dp_to_px(*offset_y),
-                0.0,
-                *spec,
-            );
-            Box(Modifier::new().fill_max_size().translate(val_x, val_y)).child(view)
+            Box(Modifier::new().fill_max_size().translate_vec2(offset)).child(view)
         }
         EnterTransition::ScaleIn { initial } => {
             let s = animate_f32_from(
@@ -270,19 +259,13 @@ fn apply_exit(
             Box(Modifier::new().fill_max_size().alpha(val)).child(view)
         }
         ExitTransition::SlideOut { offset_x, offset_y } => {
-            let val_x = animate_f32_from(
-                format!("{key}:v{version}:exit:slide_x"),
-                0.0,
-                dp_to_px(*offset_x),
+            let offset = animate_vec2_from(
+                format!("{key}:v{version}:exit:slide"),
+                Vec2::default(),
+                Vec2 { x: dp_to_px(*offset_x), y: dp_to_px(*offset_y) },
                 *spec,
             );
-            let val_y = animate_f32_from(
-                format!("{key}:v{version}:exit:slide_y"),
-                0.0,
-                dp_to_px(*offset_y),
-                *spec,
-            );
-            Box(Modifier::new().fill_max_size().translate(val_x, val_y)).child(view)
+            Box(Modifier::new().fill_max_size().translate_vec2(offset)).child(view)
         }
         ExitTransition::ScaleOut { target } => {
             let s = animate_f32_from(format!("{key}:v{version}:exit:scale"), 1.0, *target, *spec);
@@ -312,19 +295,13 @@ fn apply_exit_single(
             Box(Modifier::new().fill_max_size().alpha(val)).child(view)
         }
         ExitTransition::SlideOut { offset_x, offset_y } => {
-            let val_x = animate_f32_from(
-                format!("{key}:v{version}:exit:slide_x"),
-                0.0,
-                dp_to_px(*offset_x),
+            let offset = animate_vec2_from(
+                format!("{key}:v{version}:exit:slide"),
+                Vec2::default(),
+                Vec2 { x: dp_to_px(*offset_x), y: dp_to_px(*offset_y) },
                 *spec,
             );
-            let val_y = animate_f32_from(
-                format!("{key}:v{version}:exit:slide_y"),
-                0.0,
-                dp_to_px(*offset_y),
-                *spec,
-            );
-            Box(Modifier::new().fill_max_size().translate(val_x, val_y)).child(view)
+            Box(Modifier::new().fill_max_size().translate_vec2(offset)).child(view)
         }
         ExitTransition::ScaleOut { target } => {
             let s = animate_f32_from(format!("{key}:v{version}:exit:scale"), 1.0, *target, *spec);
@@ -354,6 +331,18 @@ fn read_anim_value(key: &str, default: f32) -> Option<f32> {
     }
 }
 
+fn read_anim_vec2_value(key: &str, default: Vec2) -> Option<Vec2> {
+    let anim = remember_state_with_key::<AnimatedValue<Vec2>>(format!("anim:vec2:{key}"), || {
+        AnimatedValue::new(default, AnimationSpec::default())
+    });
+    let a = anim.borrow();
+    if a.is_animating() {
+        None
+    } else {
+        Some(*a.get())
+    }
+}
+
 /// Check whether an exit animation has completed (read-only, no advancement).
 fn exit_animation_done(key: &str, version: u64, exit: &ExitTransition) -> bool {
     match exit {
@@ -361,13 +350,10 @@ fn exit_animation_done(key: &str, version: u64, exit: &ExitTransition) -> bool {
             .map(|v| v < 0.005)
             .unwrap_or(false),
         ExitTransition::SlideOut { offset_x, offset_y } => {
-            let done_x = read_anim_value(&format!("{key}:v{version}:exit:slide_x"), 0.0)
-                .map(|v| (v - dp_to_px(*offset_x)).abs() < 0.5)
-                .unwrap_or(false);
-            let done_y = read_anim_value(&format!("{key}:v{version}:exit:slide_y"), 0.0)
-                .map(|v| (v - dp_to_px(*offset_y)).abs() < 0.5)
-                .unwrap_or(false);
-            done_x && done_y
+            let target = Vec2 { x: dp_to_px(*offset_x), y: dp_to_px(*offset_y) };
+            read_anim_vec2_value(&format!("{key}:v{version}:exit:slide"), Vec2::default())
+                .map(|v| (v.x - target.x).abs() < 0.5 && (v.y - target.y).abs() < 0.5)
+                .unwrap_or(false)
         }
         ExitTransition::ScaleOut { target } => {
             let done_scale = read_anim_value(&format!("{key}:v{version}:exit:scale"), 1.0)
@@ -382,23 +368,69 @@ fn exit_animation_done(key: &str, version: u64, exit: &ExitTransition) -> bool {
     }
 }
 
-pub fn AnimatedVisibility(key: impl Into<String>, visible: bool, content: View) -> View {
+/// Shows or hides content with animated enter/exit transitions.
+///
+/// When `visible` becomes `true`, the content enters using the specified `enter`
+/// transition. When it becomes `false`, the content exits using the specified `exit`
+/// transition.
+///
+/// # Default transitions
+///
+/// If called with only `(key, visible, content)`, defaults to `FadeIn` / `FadeOut`
+/// with `AnimationSpec::default()`.
+pub fn AnimatedVisibility(
+    key: impl Into<String>,
+    visible: bool,
+    enter: EnterTransition,
+    exit: ExitTransition,
+    spec: AnimationSpec,
+    content: View,
+) -> View {
     let key = key.into();
-    let alpha = animate_f32(
-        format!("visibility_alpha:{key}"),
-        if visible { 1.0 } else { 0.0 },
-        AnimationSpec::default(),
-    );
 
-    let scale = animate_f32(
-        format!("visibility_scale:{key}"),
-        if visible { 1.0 } else { 0.8 },
-        AnimationSpec::default(),
-    );
+    let old_content =
+        remember_with_key(format!("av_old:{key}"), || RefCell::new(None::<View>));
+    let version = remember_with_key(format!("av_ver:{key}"), || RefCell::new(0u64));
+    let prev = remember_with_key(format!("av_prev:{key}"), || RefCell::new(visible));
 
-    if alpha > 0.01 {
-        Box(Modifier::new().alpha(alpha).scale(scale)).child(content)
+    // Detect transition
+    if *prev.borrow() != visible {
+        if !visible {
+            // Going hidden: capture current content for exit animation
+            old_content.borrow_mut().replace(content.clone());
+        }
+        *version.borrow_mut() += 1;
+        prev.borrow_mut().clone_from(&visible);
+    }
+
+    let v = *version.borrow();
+
+    // Handle exiting old content
+    let exiting = {
+        let mut oc = old_content.borrow_mut();
+        if let Some(ref old) = *oc {
+            if exit_animation_done(&key, v, &exit) {
+                *oc = None;
+                None
+            } else {
+                Some(apply_exit(&key, v, &exit, &spec, old.clone()))
+            }
+        } else {
+            None
+        }
+    };
+
+    if visible {
+        let entering = if v > 0 {
+            apply_enter(&key, v, &enter, &spec, content)
+        } else {
+            content
+        };
+        match exiting {
+            Some(old) => Stack(Modifier::new().fill_max_size()).child((old, entering)),
+            None => entering,
+        }
     } else {
-        Box(Modifier::new())
+        exiting.unwrap_or_else(|| Box(Modifier::new()))
     }
 }
