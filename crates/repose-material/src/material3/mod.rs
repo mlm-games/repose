@@ -567,19 +567,32 @@ pub fn Scaffold(
     floating_action_button: Option<View>,
     content: impl Fn(PaddingValues) -> View,
 ) -> View {
+    let insets = window_insets();
+
+    let content_padding = PaddingValues {
+        top: if top_bar.is_some() { 64.0 } else { insets.top },
+        bottom: if bottom_bar.is_some() {
+            80.0 + insets.bottom + insets.ime_bottom
+        } else {
+            insets.bottom + insets.ime_bottom
+        },
+        left: insets.left,
+        right: insets.right,
+    };
+
     Stack(Modifier::new().fill_max_size()).child((
         Box(Modifier::new()
             .fill_max_size()
             .padding_values(PaddingValues {
-                top: if top_bar.is_some() { 64.0 } else { 0.0 },
-                bottom: if bottom_bar.is_some() { 80.0 } else { 0.0 },
+                top: if top_bar.is_some() { 64.0 + insets.top } else { 0.0 },
+                bottom: if bottom_bar.is_some() { 80.0 + insets.bottom + insets.ime_bottom } else { insets.bottom + insets.ime_bottom },
                 ..Default::default()
             }))
-        .child(content(PaddingValues::default())),
+        .child(content(content_padding)),
         if let Some(bar) = top_bar {
             Box(Modifier::new()
                 .absolute()
-                .offset(Some(0.0), Some(0.0), Some(0.0), None))
+                .offset(Some(0.0), Some(insets.top), Some(0.0), None))
             .child(bar)
         } else {
             Box(Modifier::new())
@@ -587,7 +600,7 @@ pub fn Scaffold(
         if let Some(bar) = bottom_bar {
             Box(Modifier::new()
                 .absolute()
-                .offset(Some(0.0), None, Some(0.0), Some(0.0)))
+                .offset(Some(0.0), None, Some(insets.bottom + insets.ime_bottom), Some(0.0)))
             .child(bar)
         } else {
             Box(Modifier::new())
@@ -595,7 +608,7 @@ pub fn Scaffold(
         if let Some(fab) = floating_action_button {
             Box(Modifier::new()
                 .absolute()
-                .offset(None, None, Some(16.0), Some(16.0)))
+                .offset(None, None, Some(16.0 + insets.bottom + insets.ime_bottom), Some(16.0)))
             .child(fab)
         } else {
             Box(Modifier::new())

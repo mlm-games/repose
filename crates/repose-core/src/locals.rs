@@ -574,18 +574,30 @@ pub fn content_color() -> Color {
         .unwrap_or_else(|| theme().on_surface)
 }
 
-/// System window insets (status bar, navigation bar, etc.)
+/// System window insets (status bar, navigation bar, IME keyboard, etc.)
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct WindowInsets {
     pub top: f32,
     pub bottom: f32,
     pub left: f32,
     pub right: f32,
+    /// Soft keyboard (IME) inset from bottom of screen. Set by platform runner
+    /// when the keyboard opens/closes. Used by `imePadding()` modifier.
+    pub ime_bottom: f32,
 }
 
 /// Set the global default window insets (platform should call this when insets change).
 pub fn set_window_insets_default(insets: WindowInsets) {
     defaults().write().window_insets = insets;
+}
+
+/// Update just the IME bottom inset (keyboard height in px). Platform runners
+/// call this when the soft keyboard opens/closes.
+pub fn set_ime_inset(height_px: f32) {
+    let mut insets = defaults().write().window_insets;
+    insets.ime_bottom = height_px;
+    // Also immediately set the thread-local so it's visible to the current frame
+    set_local_boxed(TypeId::of::<WindowInsets>(), Box::new(insets));
 }
 
 /// Query current window insets.

@@ -361,6 +361,40 @@ impl Modifier {
         self.padding_values = Some(padding);
         self
     }
+    /// Add padding equal to the current IME (soft keyboard) bottom inset.
+    /// Combine with `system_bars_padding()` to handle both system bars and keyboard.
+    pub fn ime_padding(mut self) -> Self {
+        let insets = crate::locals::window_insets();
+        let mut p = self.padding_values.unwrap_or_default();
+        p.bottom += insets.ime_bottom;
+        self.padding_values = Some(p);
+        self
+    }
+    /// Add padding equal to the current system bar insets (status bar top, nav bar bottom).
+    pub fn system_bars_padding(mut self) -> Self {
+        let insets = crate::locals::window_insets();
+        let mut p = self.padding_values.unwrap_or_default();
+        p.top += insets.top;
+        p.bottom += insets.bottom;
+        self.padding_values = Some(p);
+        self
+    }
+    /// Add status bar inset as top padding.
+    pub fn status_bars_padding(mut self) -> Self {
+        let insets = crate::locals::window_insets();
+        let mut p = self.padding_values.unwrap_or_default();
+        p.top += insets.top;
+        self.padding_values = Some(p);
+        self
+    }
+    /// Add navigation bar inset as bottom padding.
+    pub fn navigation_bars_padding(mut self) -> Self {
+        let insets = crate::locals::window_insets();
+        let mut p = self.padding_values.unwrap_or_default();
+        p.bottom += insets.bottom;
+        self.padding_values = Some(p);
+        self
+    }
     pub fn min_size(mut self, w: f32, h: f32) -> Self {
         self.min_width = Some(w);
         self.min_height = Some(h);

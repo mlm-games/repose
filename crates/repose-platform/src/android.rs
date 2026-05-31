@@ -38,6 +38,11 @@ pub struct AndroidOptions {
     /// If true, runner wraps the app root in a ScrollV container.
     /// Useful for "webpage-like" apps; off by default to avoid nested scroll surprises.
     pub auto_root_scroll: bool,
+
+    /// IME (soft keyboard) inset height in physical pixels.
+    /// When the keyboard opens on Android, `set_ime_inset()` is called with this value.
+    /// If `None`, the runner estimates ~40% of the window's shorter dimension.
+    pub ime_height_px: Option<f32>,
 }
 
 impl Default for AndroidOptions {
@@ -46,6 +51,7 @@ impl Default for AndroidOptions {
             // Keep behavior close to your original runner: always ticking.
             continuous_redraw: true,
             auto_root_scroll: false,
+            ime_height_px: None,
         }
     }
 }
@@ -96,6 +102,9 @@ pub fn run_android_app_with_options(
         // auto root scroll state
         root_scroll: Rc<RefCell<rc::RootScrollState>>,
 
+        // IME (soft keyboard) tracking
+        ime_visible: bool,
+
         // redraw control
         dirty: bool,
 
@@ -139,6 +148,7 @@ pub fn run_android_app_with_options(
                 ime_preedit: false,
 
                 root_scroll: Rc::new(RefCell::new(rc::RootScrollState::default())),
+                ime_visible: false,
                 dirty: true,
 
                 clipboard: None,
@@ -245,11 +255,26 @@ pub fn run_android_app_with_options(
             rc::tf_ensure_caret_visible(st, is_multiline);
         }
 
+        fn update_ime_inset(&self) {
+            let h = if self.ime_visible {
+                self.options.ime_height_px.unwrap_or_else(|| {
+                    // Estimate ~40% of window's shorter dimension as default IME height
+                    let size = self.window.as_ref().map(|w| w.inner_size()).unwrap_or_default();
+                    (size.width.min(size.height) as f32 * 0.4).max(200.0)
+                })
+            } else {
+                0.0
+            };
+            set_ime_inset(h);
+        }
+
         fn sync_window_size(&mut self, size: PhysicalSize<u32>) {
             self.sched.size = (size.width, size.height);
             if let Some(b) = &mut self.backend {
                 b.configure_surface(size.width, size.height);
             }
+            // Recompute IME inset estimate when window size changes
+            self.update_ime_inset();
         }
 
         fn copy_to_clipboard(&mut self, text: &str) {
@@ -1031,6 +1056,10 @@ pub fn run_android_app_with_options(
                             match ime {
                                 Ime::Enabled => {
                                     self.ime_preedit = false;
+                                    if !self.ime_visible {
+                                        self.ime_visible = true;
+                                        self.update_ime_inset();
+                                    }
                                 }
                                 Ime::Preedit(text, cursor) => {
                                     let cursor_usize =
@@ -1080,6 +1109,10 @@ pub fn run_android_app_with_options(
                                 }
                                 Ime::Disabled => {
                                     self.ime_preedit = false;
+                                    if self.ime_visible {
+                                        self.ime_visible = false;
+                                        self.update_ime_inset();
+                                    }
                                     if state.composition.is_some() {
                                         state.cancel_composition();
                                         self.notify_text_change(focused_id, state.text.clone());

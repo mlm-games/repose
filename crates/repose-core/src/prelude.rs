@@ -11,7 +11,7 @@ pub use crate::geometry::{Rect, Size, Vec2};
 pub use crate::input::*;
 pub use crate::locals::{
     Density, Dp, TextDirection, TextScale, Theme, UiScale, WindowInsets, density, dp_to_px,
-    text_direction, text_scale, theme, ui_scale, window_insets, with_density,
+    set_ime_inset, text_direction, text_scale, theme, ui_scale, window_insets, with_density,
     with_text_direction, with_text_scale, with_theme, with_ui_scale, with_window_insets,
 };
 pub use crate::modifier::Modifier;
