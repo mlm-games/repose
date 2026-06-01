@@ -43,6 +43,7 @@ struct Defaults {
     text_scale: TextScale,
     density: Density,
     window_insets: WindowInsets,
+    window_size_class: WindowSizeClass,
 }
 
 impl Default for Defaults {
@@ -54,6 +55,7 @@ impl Default for Defaults {
             text_scale: TextScale::default(),
             density: Density::default(),
             window_insets: WindowInsets::default(),
+            window_size_class: WindowSizeClass::default(),
         }
     }
 }
@@ -628,6 +630,118 @@ pub fn window_insets() -> WindowInsets {
     get_local::<WindowInsets>().unwrap_or_else(|| defaults().read().window_insets)
 }
 
+/// Coarse width category for a window, computed from its current size.
+///
+/// Thresholds (in dp) match the Material 3 adaptive spec:
+///
+/// - [`WidthClass::Compact`]  : width < 600 dp
+/// - [`WidthClass::Medium`]   : 600 dp <= width < 840 dp
+/// - [`WidthClass::Expanded`] : width >= 840 dp
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum WidthClass {
+    Compact,
+    Medium,
+    Expanded,
+}
+
+impl Default for WidthClass {
+    fn default() -> Self {
+        WidthClass::Compact
+    }
+}
+
+/// Coarse height category for a window, computed from its current size.
+///
+/// Thresholds (in dp) match the Material 3 adaptive spec:
+///
+/// - [`HeightClass::Compact`]  : height < 480 dp
+/// - [`HeightClass::Medium`]   : 480 dp <= height < 900 dp
+/// - [`HeightClass::Expanded`] : height >= 900 dp
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum HeightClass {
+    Compact,
+    Medium,
+    Expanded,
+}
+
+impl Default for HeightClass {
+    fn default() -> Self {
+        HeightClass::Compact
+    }
+}
+
+/// Snapshot of the current window's size category.
+///
+/// The `LayoutEngine` updates the `WindowSizeClass` default local every time
+/// the window is resized, so UI can read it via [`window_size_class()`] during
+/// composition.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+pub struct WindowSizeClass {
+    pub width: WidthClass,
+    pub height: HeightClass,
+}
+
+impl WindowSizeClass {
+    /// `true` when there is enough horizontal space for multi-pane layouts.
+    pub fn is_expanded_width(&self) -> bool {
+        matches!(self.width, WidthClass::Expanded)
+    }
+    /// `true` when there is enough horizontal space for a two-pane layout
+    /// (list + detail). Per M3 this is Medium or wider.
+    pub fn is_at_least_medium_width(&self) -> bool {
+        matches!(self.width, WidthClass::Medium | WidthClass::Expanded)
+    }
+}
+
+/// Compute a [`WindowSizeClass`] from a window size in physical pixels and
+/// the current dp→px density scale (`Density.scale * UiScale.0`).
+pub fn calculate_window_size_class(
+    width_px: u32,
+    height_px: u32,
+    density_scale: f32,
+) -> WindowSizeClass {
+    let density = density_scale.max(0.0001);
+    let width_dp = (width_px as f32) / density;
+    let height_dp = (height_px as f32) / density;
+
+    let width = if width_dp < 600.0 {
+        WidthClass::Compact
+    } else if width_dp < 840.0 {
+        WidthClass::Medium
+    } else {
+        WidthClass::Expanded
+    };
+    let height = if height_dp < 480.0 {
+        HeightClass::Compact
+    } else if height_dp < 900.0 {
+        HeightClass::Medium
+    } else {
+        HeightClass::Expanded
+    };
+
+    WindowSizeClass { width, height }
+}
+
+/// Set the global default window size class used when no local is active.
+/// Called by the `LayoutEngine` on resize.
+pub fn set_window_size_class_default(class: WindowSizeClass) {
+    defaults().write().window_size_class = class;
+}
+
+/// Override the window size class for a subtree of the composition.
+pub fn with_window_size_class<R>(class: WindowSizeClass, f: impl FnOnce() -> R) -> R {
+    with_locals_frame(|| {
+        set_local_boxed(TypeId::of::<WindowSizeClass>(), Box::new(class));
+        f()
+    })
+}
+
+/// Query current window size class. Returns a default-initialized
+/// `WindowSizeClass` (Compact/Compact) if nothing has been set yet.
+pub fn window_size_class() -> WindowSizeClass {
+    get_local::<WindowSizeClass>().unwrap_or_else(|| defaults().read().window_size_class)
+}
+
 macro_rules! def_local_getter {
     ($fn_name:ident, $ty:ty, $default_field:ident) => {
         pub fn $fn_name() -> $ty {
@@ -641,3 +755,56 @@ def_local_getter!(density, Density, density);
 def_local_getter!(ui_scale, UiScale, ui_scale);
 def_local_getter!(text_scale, TextScale, text_scale);
 def_local_getter!(text_direction, TextDirection, text_direction);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn width_class_thresholds_match_m3() {
+        // Density 1.0 (1 dp = 1 px) for clarity.
+        assert_eq!(calculate_window_size_class(100, 100, 1.0).width, WidthClass::Compact);
+        assert_eq!(calculate_window_size_class(599, 100, 1.0).width, WidthClass::Compact);
+        assert_eq!(calculate_window_size_class(600, 100, 1.0).width, WidthClass::Medium);
+        assert_eq!(calculate_window_size_class(839, 100, 1.0).width, WidthClass::Medium);
+        assert_eq!(calculate_window_size_class(840, 100, 1.0).width, WidthClass::Expanded);
+        assert_eq!(calculate_window_size_class(2000, 100, 1.0).width, WidthClass::Expanded);
+    }
+
+    #[test]
+    fn height_class_thresholds_match_m3() {
+        assert_eq!(calculate_window_size_class(100, 100, 1.0).height, HeightClass::Compact);
+        assert_eq!(calculate_window_size_class(100, 479, 1.0).height, HeightClass::Compact);
+        assert_eq!(calculate_window_size_class(100, 480, 1.0).height, HeightClass::Medium);
+        assert_eq!(calculate_window_size_class(100, 899, 1.0).height, HeightClass::Medium);
+        assert_eq!(calculate_window_size_class(100, 900, 1.0).height, HeightClass::Expanded);
+    }
+
+    #[test]
+    fn density_scales_thresholds() {
+        // 2.0x density: 600 dp = 1200 px.
+        let c = calculate_window_size_class(1199, 100, 2.0);
+        assert_eq!(c.width, WidthClass::Compact);
+        let c = calculate_window_size_class(1200, 100, 2.0);
+        assert_eq!(c.width, WidthClass::Medium);
+    }
+
+    #[test]
+    fn is_at_least_medium_width() {
+        let c = WindowSizeClass {
+            width: WidthClass::Compact,
+            height: HeightClass::Compact,
+        };
+        assert!(!c.is_at_least_medium_width());
+        let c = WindowSizeClass {
+            width: WidthClass::Medium,
+            height: HeightClass::Compact,
+        };
+        assert!(c.is_at_least_medium_width());
+        let c = WindowSizeClass {
+            width: WidthClass::Expanded,
+            height: HeightClass::Compact,
+        };
+        assert!(c.is_at_least_medium_width());
+    }
+}

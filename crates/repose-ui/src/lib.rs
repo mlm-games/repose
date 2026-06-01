@@ -102,11 +102,13 @@
 //! Because layout + paint are separate from the platform runner, you can reuse
 //! the same UI code on desktop, Android, and other platforms.
 
+pub mod adaptive;
 pub mod anim;
 pub mod anim_ext;
 pub mod gestures;
 pub mod layout;
 pub mod lazy;
+pub mod selection;
 pub use lazy::{LazyColumn, LazyColumnState, LazyGridState, LazyRow, LazyRowState, LazyVerticalGrid, SimpleList};
 pub mod navigation;
 pub mod overlay;
@@ -126,6 +128,7 @@ use taffy::{Overflow, Point};
 pub mod textfield;
 use crate::textfield::{TF_FONT_DP, TF_PADDING_X_DP, byte_to_char_index, measure_text};
 use repose_core::locals;
+pub use selection::SelectableText;
 pub use textfield::{TextArea, TextField, TextFieldState};
 
 thread_local! {

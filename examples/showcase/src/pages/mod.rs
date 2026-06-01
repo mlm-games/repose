@@ -1,3 +1,4 @@
+pub mod adaptive;
 pub mod animation;
 pub mod canvas;
 pub mod dnd;

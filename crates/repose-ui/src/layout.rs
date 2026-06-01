@@ -242,6 +242,15 @@ impl LayoutEngine {
 
         // 2. Determine layout need
         let size_changed = self.last_size_px != Some(size_px);
+        // 2a. Publish the current window size class as a default local so that
+        //     `window_size_class()` returns an up-to-date value even outside
+        //     a `with_window_size_class { ... }` scope. We only touch the
+        //     default when it actually changes to keep the lock uncontended.
+        let density_scale = locals::density().scale * locals::ui_scale().0;
+        let class = locals::calculate_window_size_class(size_px.0, size_px.1, density_scale);
+        if class != locals::window_size_class() {
+            locals::set_window_size_class_default(class);
+        }
         let has_tree_mutation =
             !self.tree.dirty_nodes().is_empty() || !self.tree.removed_ids.is_empty();
         let need_layout = size_changed || !self.layout_valid || has_tree_mutation || locals_changed;

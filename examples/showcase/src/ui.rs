@@ -114,7 +114,7 @@ pub fn TopBar(
 pub fn NavRail(current: Route, nav: Navigator<Route>) -> View {
     let th = theme();
 
-    let routes: [Route; 16] = [
+    let routes: [Route; 17] = [
         Route::Home,
         Route::Layout,
         Route::Widgets,
@@ -131,6 +131,7 @@ pub fn NavRail(current: Route, nav: Navigator<Route>) -> View {
         Route::Errors,
         Route::Windows,
         Route::M3,
+        Route::Adaptive,
     ];
 
     Card(

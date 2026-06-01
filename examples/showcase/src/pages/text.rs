@@ -209,5 +209,26 @@ pub fn screen() -> View {
                 FilledButton(Modifier::new(), { let t = toggle.clone(); move || t.update(|x| *x = !*x) }, || Text("Toggle")),
             ))
         }),
+
+        Section("Selectable Text", {
+            let sel = remember_with_key("text_selectable_range", || signal("none".to_string()));
+            let sel2 = sel.clone();
+            Column(Modifier::new().padding(8.0).gap(8.0)).child((
+                SelectableText(
+                    "Try clicking and dragging to select text in this paragraph.",
+                    16.0,
+                    move |range| {
+                        sel2.set(match range {
+                            Some((a, b)) if a != b => format!("{}..{}", a.min(b), a.max(b)),
+                            Some((a, _)) => format!("caret at {a}"),
+                            None => "cleared".into(),
+                        });
+                    },
+                ),
+                Text(format!("Selection: {}", sel.get()))
+                    .size(12.0)
+                    .color(theme().on_surface_variant),
+            ))
+        }),
     ])
 }

@@ -33,6 +33,7 @@ pub enum Route {
     Errors,
     Windows,
     M3,
+    Adaptive,
 }
 
 impl Route {
@@ -54,6 +55,7 @@ impl Route {
             Route::Errors => "Errors",
             Route::Windows => "Windows",
             Route::M3 => "M3 Components",
+            Route::Adaptive => "Adaptive",
         }
     }
     pub fn id(self) -> u64 {
@@ -74,6 +76,7 @@ impl Route {
             Route::Errors => 14,
             Route::Windows => 15,
             Route::M3 => 16,
+            Route::Adaptive => 17,
         }
     }
 }
@@ -140,6 +143,7 @@ pub fn app(_s: &mut Scheduler) -> View {
             Route::Errors => pages::errors::screen(),
             Route::Windows => pages::windows::screen(global_windows.clone()),
             Route::M3 => pages::m3::screen((*overlay).clone()),
+            Route::Adaptive => pages::adaptive::screen(),
         }
     });
 
