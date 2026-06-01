@@ -28,7 +28,8 @@ pub use crate::shortcuts;
 pub use crate::text::{AnnotatedString, AnnotatedStringBuilder, SpanStyle, TextSpan, build_annotated_string};
 pub use crate::signal::{Signal, signal};
 pub use crate::view::{
-    ImageFit, ImageHandle, Scene, SceneNode, TextOverflow, View, ViewId, ViewKind,
+    BoxWithConstraintsScope, ImageFit, ImageHandle, Scene, SceneNode, SubcomposeScope,
+    TextOverflow, View, ViewId, ViewKind,
 };
 pub use taffy::{
     AlignContent, AlignItems, AlignSelf, FlexDirection, FlexWrap, JustifyContent, JustifyItems,

@@ -237,6 +237,11 @@ impl LayoutEngine {
         }
 
         // 1. Update tree
+        let density_scale = locals::density().scale.max(0.0001);
+        let max_w_dp = size_px.0 as f32 / density_scale;
+        let max_h_dp = size_px.1 as f32 / density_scale;
+        self.tree
+            .set_subcompose_scope(repose_core::SubcomposeScope::new(0.0, max_w_dp, 0.0, max_h_dp));
         let root_node_id = self.tree.update(root);
         self.stats.tree = self.tree.stats.clone();
 
@@ -807,6 +812,7 @@ impl LayoutEngine {
             ViewKind::ProgressBar { .. } => NodeContext::Progress,
             ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. } => NodeContext::ScrollContainer,
             ViewKind::OverlayHost => NodeContext::Container,
+            ViewKind::SubcomposeLayout { .. } => NodeContext::Container,
             _ => NodeContext::Container,
         }
     }
@@ -3294,5 +3300,123 @@ mod tests {
             rects.len(),
             rects
         );
+    }
+
+    #[test]
+    fn test_subcompose_layout_runs_closure_and_lays_out() {
+        use crate::subcompose::SubcomposeLayout;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let red = Color::from_rgb(255, 0, 0);
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let count_clone = call_count.clone();
+
+        let sub = SubcomposeLayout(Modifier::new().size(200.0, 100.0), move |scope| {
+            count_clone.fetch_add(1, Ordering::SeqCst);
+            assert!(scope.max_width > 0.0, "scope.max_width should be positive");
+            RBox(Modifier::new().size(100.0, 50.0).background(red))
+        });
+
+        let root = Column(Modifier::new()).child(sub);
+
+        let mut engine = LayoutEngine::new();
+        let (scene, _hits, _sems) = engine.layout_frame(
+            &root,
+            (400, 400),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        );
+
+        assert!(
+            call_count.load(Ordering::SeqCst) >= 1,
+            "SubcomposeLayout closure should have been invoked"
+        );
+
+        let has_red_rect = scene.nodes.iter().any(|n| {
+            matches!(n, SceneNode::Rect { brush: Brush::Solid(c), .. } if *c == red)
+        });
+        assert!(
+            has_red_rect,
+            "Subcomposed child (red box) should produce a Rect scene node"
+        );
+    }
+
+    #[test]
+    fn test_subcompose_layout_caches_closure_across_frames() {
+        use crate::subcompose::SubcomposeLayout;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let count_clone = call_count.clone();
+
+        let sub = SubcomposeLayout(Modifier::new().size(200.0, 100.0), move |_scope| {
+            count_clone.fetch_add(1, Ordering::SeqCst);
+            RBox(Modifier::new().size(50.0, 50.0))
+        });
+
+        let root = Column(Modifier::new()).child(sub);
+        let mut engine = LayoutEngine::new();
+
+        // First frame - closure runs.
+        let _ = engine.layout_frame(
+            &root,
+            (400, 400),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        );
+        let after_first = call_count.load(Ordering::SeqCst);
+        assert_eq!(after_first, 1, "closure should run once on first frame");
+
+        // Subsequent frames with no changes - closure stays cached.
+        for _ in 0..10 {
+            let _ = engine.layout_frame(
+                &root,
+                (400, 400),
+                &HashMap::new(),
+                &Interactions::default(),
+                None,
+            );
+        }
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            1,
+            "closure should NOT re-run when content and scope are stable"
+        );
+    }
+
+    #[test]
+    fn test_subcompose_layout_ancestor_modifier_narrows_scope_through_engine() {
+        use crate::subcompose::SubcomposeLayout;
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Arc;
+
+        let captured_max_w = Arc::new(AtomicU32::new(0));
+        let cap = captured_max_w.clone();
+
+        // Box(width=320) -> SubcomposeLayout(closure) - closure should see
+        // max_width == 320.0, not the window's 800.0.
+        let sub = SubcomposeLayout(Modifier::new(), move |scope| {
+            cap.store(scope.max_width.to_bits(), Ordering::SeqCst);
+            RBox(Modifier::new().size(100.0, 50.0))
+        });
+        let root = Column(Modifier::new()).child(
+            crate::Box(Modifier::new().width(320.0)).child(sub),
+        );
+
+        let mut engine = LayoutEngine::new();
+        let _ = engine.layout_frame(
+            &root,
+            (800, 600),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        );
+
+        let observed = f32::from_bits(captured_max_w.load(Ordering::SeqCst));
+        assert_eq!(observed, 320.0, "ancestor width should propagate to scope");
     }
 }

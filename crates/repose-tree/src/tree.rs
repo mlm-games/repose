@@ -5,10 +5,11 @@ use crate::{
     node::{LayoutCache, LayoutConstraints, NodeId, TreeNode, TreeStats},
     reconcile::ReconcileContext,
 };
-use repose_core::{Rect, View, ViewId};
+use repose_core::{Modifier, Rect, SubcomposeScope, View, ViewId, ViewKind};
 use rustc_hash::{FxHashMap, FxHashSet};
 use slotmap::SlotMap;
 use smallvec::SmallVec;
+use std::sync::Arc;
 
 /// A persistent view tree that supports incremental updates.
 pub struct ViewTree {
@@ -33,11 +34,22 @@ pub struct ViewTree {
     /// Map from user key to NodeId (for stable identity in dynamic lists).
     key_map: FxHashMap<(NodeId, u64), NodeId>, // (parent, key) -> child
 
-    /// Statistics for the last reconcile operation.
+    /// Statistics from the last reconcile operation.
     pub stats: TreeStats,
 
     /// Nodes removed during the last update (needed to sync external systems like Taffy).
     pub removed_ids: Vec<NodeId>,
+
+    /// Root constraints to use when calling a `SubcomposeLayout`'s content
+    /// closure during this frame. Set via [`ViewTree::set_subcompose_scope`]
+    /// before calling [`ViewTree::update`].
+    subcompose_scope: SubcomposeScope,
+
+    /// Cache of (scope, subcomposed slots) for each `SubcomposeLayout` node.
+    /// The closure is re-invoked only when the ancestor-derived scope
+    /// changes or the node's content changes. Each cached slot view has its
+    /// `Modifier::key` overwritten with its slot id.
+    subcompose_cache: FxHashMap<NodeId, (SubcomposeScope, Vec<(u64, View)>)>,
 }
 
 impl Default for ViewTree {
@@ -59,6 +71,104 @@ impl ViewTree {
             key_map: FxHashMap::default(),
             stats: TreeStats::default(),
             removed_ids: Vec::new(),
+            subcompose_scope: SubcomposeScope::UNBOUNDED,
+            subcompose_cache: FxHashMap::default(),
+        }
+    }
+
+    /// Set the constraints that will be passed to any `SubcomposeLayout`
+    /// content closures during the next [`update`](Self::update) call.
+    /// The scope is read once per reconcile of a `SubcomposeLayout` node; if
+    /// you need different scopes at different depths, the closure itself is
+    /// responsible for narrowing the values it receives.
+    pub fn set_subcompose_scope(&mut self, scope: SubcomposeScope) {
+        self.subcompose_scope = scope;
+    }
+
+    /// Get the currently-set subcompose scope.
+    pub fn subcompose_scope(&self) -> SubcomposeScope {
+        self.subcompose_scope
+    }
+
+    /// Run a `SubcomposeLayout`'s content closure, returning the cached list
+    /// of `(slot_id, view)` pairs when the scope is unchanged for this node.
+    /// The caller is responsible for ensuring the cache is invalidated (e.g.
+    /// on content change) via [`ViewTree::invalidate_subcompose_cache`].
+    ///
+    /// The scope is computed by walking the node's ancestor chain and
+    /// intersecting the root scope with each ancestor's `Modifier` width /
+    /// height / min / max fields. The SubcomposeLayout's own modifier is
+    /// included as the last intersection.
+    fn run_subcompose(
+        &mut self,
+        node_id: NodeId,
+        content: &Arc<dyn Fn(&SubcomposeScope) -> Vec<(u64, View)>>,
+    ) -> Vec<(u64, View)> {
+        let scope = self.compute_scope_for_node(node_id);
+        if let Some((cached_scope, cached_slots)) = self.subcompose_cache.get(&node_id) {
+            if *cached_scope == scope {
+                return cached_slots.clone();
+            }
+        }
+        let mut slots = content(&scope);
+        for (slot_id, view) in slots.iter_mut() {
+            view.modifier.key = Some(*slot_id);
+        }
+        self.subcompose_cache
+            .insert(node_id, (scope, slots.clone()));
+        slots
+    }
+
+    /// Compute the `SubcomposeScope` visible to a `SubcomposeLayout` at
+    /// `node_id`. Starts with the user-set root scope and intersects each
+    /// ancestor's `Modifier` width / height / min / max fields in root-to-leaf
+    /// order. The SubcomposeLayout node itself is included.
+    fn compute_scope_for_node(&self, node_id: NodeId) -> SubcomposeScope {
+        let mut scope = self.subcompose_scope;
+        let mut chain: Vec<NodeId> = Vec::new();
+        let mut current = Some(node_id);
+        while let Some(id) = current {
+            chain.push(id);
+            match self.nodes.get(id) {
+                Some(node) => current = node.parent,
+                None => break,
+            }
+        }
+        chain.reverse();
+        for ancestor_id in chain {
+            if let Some(node) = self.nodes.get(ancestor_id) {
+                scope = intersect_scope_with_modifier(scope, &node.modifier);
+            }
+        }
+        scope
+    }
+
+    /// Drop the cached subcomposed view for a single node. Call this when the
+    /// `SubcomposeLayout`'s modifier or identity changes so the next
+    /// reconciliation re-invokes the closure.
+    pub fn invalidate_subcompose_cache(&mut self, node_id: NodeId) {
+        self.subcompose_cache.remove(&node_id);
+    }
+
+    /// Drop the cached subcomposed views for a list of nodes (used by garbage
+    /// collection).
+    fn drop_subcompose_cache_for(&mut self, ids: &[NodeId]) {
+        for id in ids {
+            self.subcompose_cache.remove(id);
+        }
+    }
+
+    /// Recursively drop cached subcomposed views for a subtree rooted at
+    /// `node_id`. Called when the node is being removed.
+    fn collect_subcompose_cache(&mut self, node_id: &NodeId) {
+        self.subcompose_cache.remove(node_id);
+        let children: Vec<NodeId> = self
+            .nodes
+            .get(*node_id)
+            .map(|n| n.children.iter().copied().collect())
+            .unwrap_or_default();
+        for child in children {
+            self.collect_subcompose_cache(&child);
         }
     }
 
@@ -181,7 +291,17 @@ impl ViewTree {
             .content_hash;
         let content_changed = old_hash != content_hash;
 
-        let new_children_hashes = self.reconcile_children(node_id, &view.children, depth, ctx);
+        if content_changed {
+            self.invalidate_subcompose_cache(node_id);
+        }
+
+        let new_children_hashes = if let ViewKind::SubcomposeLayout { content } = &view.kind {
+            let subcomposed = self.run_subcompose(node_id, content);
+            let slot_views: Vec<View> = subcomposed.into_iter().map(|(_, v)| v).collect();
+            self.reconcile_children(node_id, &slot_views, depth, ctx)
+        } else {
+            self.reconcile_children(node_id, &view.children, depth, ctx)
+        };
 
         let new_subtree_hash = hash_subtree(content_hash, &new_children_hashes);
 
@@ -362,7 +482,15 @@ impl ViewTree {
         let child_depth = depth + 1;
         let mut child_ids: SmallVec<[NodeId; 4]> = SmallVec::new();
         let mut child_hashes: Vec<u64> = Vec::with_capacity(view.children.len());
-        for (i, child_view) in view.children.iter().enumerate() {
+        let children_to_create: Vec<View> = if let ViewKind::SubcomposeLayout { content } = &view.kind {
+            self.run_subcompose(node_id, content)
+                .into_iter()
+                .map(|(_, v)| v)
+                .collect()
+        } else {
+            view.children.clone()
+        };
+        for (i, child_view) in children_to_create.iter().enumerate() {
             let child_id = self.create_node(child_view, Some(node_id), child_depth, i as u32, ctx);
             child_ids.push(child_id);
             child_hashes.push(
@@ -425,18 +553,24 @@ impl ViewTree {
 
     /// Mark a node and its descendants for removal.
     fn mark_for_removal(&mut self, node_id: NodeId, ctx: &mut ReconcileContext) {
-        if let Some(node) = self.nodes.get(node_id) {
-            // Remove from view_id map
-            self.view_id_map.remove(&node.view_id);
-
-            // Recursively mark children
-            let children: SmallVec<[NodeId; 4]> = node.children.clone();
-            for child_id in children {
-                self.mark_for_removal(child_id, ctx);
+        // Gather what we need from the node first so the immutable borrow ends
+        // before we mutate other state.
+        let (view_id, children) = {
+            let node = self.nodes.get(node_id);
+            match node {
+                Some(n) => (n.view_id, n.children.clone()),
+                None => return,
             }
-
-            ctx.removed += 1;
+        };
+        self.view_id_map.remove(&view_id);
+        self.subcompose_cache.remove(&node_id);
+        for child_id in children.iter() {
+            self.collect_subcompose_cache(child_id);
         }
+        for child_id in children {
+            self.mark_for_removal(child_id, ctx);
+        }
+        ctx.removed += 1;
 
         // Mark the node's generation as old so it gets collected
         if let Some(node) = self.nodes.get_mut(node_id) {
@@ -528,10 +662,40 @@ impl ViewTree {
     }
 }
 
+/// Intersect a `SubcomposeScope` with a `Modifier`'s width / height / min /
+/// max fields. `Modifier::width` / `Modifier::height` are treated as exact
+/// sizes (the resulting min and max both equal that value). `fill_max_w` /
+/// `fill_max_h` and `padding` are not consulted.
+fn intersect_scope_with_modifier(scope: SubcomposeScope, modifier: &Modifier) -> SubcomposeScope {
+    let mut s = scope;
+    if let Some(w) = modifier.width {
+        s.min_width = s.min_width.max(w);
+        s.max_width = s.max_width.min(w);
+    }
+    if let Some(h) = modifier.height {
+        s.min_height = s.min_height.max(h);
+        s.max_height = s.max_height.min(h);
+    }
+    if let Some(mw) = modifier.min_width {
+        s.min_width = s.min_width.max(mw);
+    }
+    if let Some(mh) = modifier.min_height {
+        s.min_height = s.min_height.max(mh);
+    }
+    if let Some(mw) = modifier.max_width {
+        s.max_width = s.max_width.min(mw);
+    }
+    if let Some(mh) = modifier.max_height {
+        s.max_height = s.max_height.min(mh);
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use repose_core::{Color, Modifier, View, ViewKind};
+    use repose_core::{Color, Modifier, SubcomposeScope, View, ViewKind};
+    use std::sync::Arc;
 
     fn text_view(text: &str) -> View {
         View::new(
@@ -630,5 +794,320 @@ mod tests {
         // B should have same view_id (key-based stability)
         // Note: Implementation detail - the node may be reused
         assert_eq!(tree.len(), 4); // Still 4 nodes (box + 3 text)
+    }
+
+    fn subcompose_view<F>(f: F) -> View
+    where
+        F: Fn(&SubcomposeScope) -> View + 'static,
+    {
+        let content: Arc<dyn Fn(&SubcomposeScope) -> Vec<(u64, View)>> =
+            Arc::new(move |scope| vec![(0, f(scope))]);
+        View {
+            id: 0,
+            kind: ViewKind::SubcomposeLayout { content },
+            modifier: Modifier::default(),
+            children: Vec::new(),
+            semantics: None,
+        }
+    }
+
+    #[test]
+    fn test_subcompose_invokes_content() {
+        let mut tree = ViewTree::new();
+        let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter2 = counter.clone();
+
+        let root = box_view().with_children(vec![subcompose_view(move |_scope| {
+            counter2.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            text_view("from subcompose")
+        })]);
+
+        tree.update(&root);
+
+        assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(tree.len(), 3); // box + subcompose + text
+    }
+
+    #[test]
+    fn test_subcompose_receives_scope() {
+        let mut tree = ViewTree::new();
+        let captured = Arc::new(std::sync::Mutex::new(None));
+        let captured2 = captured.clone();
+
+        let root = box_view().with_children(vec![subcompose_view(move |scope| {
+            *captured2.lock().unwrap() = Some(*scope);
+            text_view("hi")
+        })]);
+
+        tree.set_subcompose_scope(SubcomposeScope::new(0.0, 360.0, 0.0, 640.0));
+        tree.update(&root);
+
+        let observed = captured.lock().unwrap().expect("scope captured");
+        assert_eq!(observed.max_width, 360.0);
+        assert_eq!(observed.max_height, 640.0);
+        assert_eq!(observed.min_width, 0.0);
+        assert_eq!(observed.min_height, 0.0);
+    }
+
+    #[test]
+    fn test_subcompose_re_invokes_on_update() {
+        let mut tree = ViewTree::new();
+        let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter2 = counter.clone();
+
+        let root = box_view().with_children(vec![subcompose_view(move |_scope| {
+            counter2.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            text_view("hi")
+        })]);
+
+        tree.update(&root);
+        tree.update(&root);
+        tree.update(&root);
+
+        // Closure should run only on the first update; subsequent updates hit
+        // the cache because the scope and content are unchanged.
+        assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_subcompose_reruns_on_scope_change() {
+        let mut tree = ViewTree::new();
+        let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter2 = counter.clone();
+
+        let root = box_view().with_children(vec![subcompose_view(move |_scope| {
+            counter2.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            text_view("hi")
+        })]);
+
+        tree.set_subcompose_scope(SubcomposeScope::new(0.0, 100.0, 0.0, 100.0));
+        tree.update(&root);
+        assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // Same scope: cache hit.
+        tree.update(&root);
+        assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // Scope changed: closure re-runs.
+        tree.set_subcompose_scope(SubcomposeScope::new(0.0, 200.0, 0.0, 200.0));
+        tree.update(&root);
+        assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn test_subcompose_reruns_on_content_change() {
+        let mut tree = ViewTree::new();
+        let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let c1 = counter.clone();
+
+        let root1 = box_view().with_children(vec![subcompose_view(move |_scope| {
+            c1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            text_view("hi")
+        })]);
+
+        tree.update(&root1);
+        assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // Same content: cache hit.
+        tree.update(&root1);
+        assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // Changed modifier: closure re-runs.
+        let c2 = counter.clone();
+        let root2 = box_view().with_children(vec![subcompose_view(move |_scope| {
+            c2.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            text_view("hi")
+        })
+        .modifier(Modifier::new().padding(4.0))]);
+
+        tree.update(&root2);
+        assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn test_subcompose_cache_drops_on_node_removal() {
+        let mut tree = ViewTree::new();
+        tree.set_subcompose_scope(SubcomposeScope::new(0.0, 100.0, 0.0, 100.0));
+
+        // First root has a SubcomposeLayout child.
+        let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let c1 = counter.clone();
+        let root_with_sub = box_view().with_children(vec![subcompose_view(move |_scope| {
+            c1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            text_view("hi")
+        })]);
+
+        tree.update(&root_with_sub);
+        assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        // Swap to a root without the SubcomposeLayout - the old node should be
+        // garbage-collected and its cache entry dropped.
+        let root_no_sub = box_view().with_children(vec![text_view("plain")]);
+        tree.update(&root_no_sub);
+        assert_eq!(tree.len(), 2);
+
+        // Bring the SubcomposeLayout back - it must run the closure again
+        // because the cache entry was dropped during GC.
+        let c2 = counter.clone();
+        let root_with_sub_again = box_view().with_children(vec![subcompose_view(move |_scope| {
+            c2.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            text_view("hi")
+        })]);
+
+        tree.update(&root_with_sub_again);
+        assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    fn multi_slot_view<F>(f: F) -> View
+    where
+        F: Fn(&SubcomposeScope) -> Vec<(u64, View)> + 'static,
+    {
+        let content: Arc<dyn Fn(&SubcomposeScope) -> Vec<(u64, View)>> = Arc::new(f);
+        View {
+            id: 0,
+            kind: ViewKind::SubcomposeLayout { content },
+            modifier: Modifier::default(),
+            children: Vec::new(),
+            semantics: None,
+        }
+    }
+
+    #[test]
+    fn test_subcompose_multi_slot_produces_multiple_children() {
+        let mut tree = ViewTree::new();
+        let root = box_view().with_children(vec![multi_slot_view(|_scope| {
+            vec![(0, text_view("a")), (1, text_view("b")), (2, text_view("c"))]
+        })]);
+
+        tree.update(&root);
+
+        // box + subcompose + 3 texts
+        assert_eq!(tree.len(), 5);
+        let sub_id = tree
+            .root()
+            .and_then(|r| tree.children(r))
+            .and_then(|c| c.first().copied())
+            .expect("subcompose node");
+        let sub_children = tree.children(sub_id).expect("subcompose has children");
+        assert_eq!(sub_children.len(), 3);
+    }
+
+    #[test]
+    fn test_subcompose_multi_slot_preserves_identity_across_removal() {
+        let mut tree = ViewTree::new();
+
+        // 3 slots: 0, 1, 2
+        let root3 = box_view().with_children(vec![multi_slot_view(|_scope| {
+            vec![(0, text_view("a")), (1, text_view("b")), (2, text_view("c"))]
+        })]);
+        tree.update(&root3);
+
+        let sub_id = tree
+            .root()
+            .and_then(|r| tree.children(r))
+            .and_then(|c| c.first().copied())
+            .expect("subcompose node");
+        let before = tree.children(sub_id).expect("children").to_vec();
+        let a_node = before[0];
+        let b_node = before[1];
+        let c_node = before[2];
+
+        // 2 slots: 0, 2 (middle removed). The Modifier change (padding) forces
+        // the subcompose cache to invalidate so the new closure runs.
+        let root2 = box_view().with_children(vec![multi_slot_view(|_scope| {
+            vec![(0, text_view("a")), (2, text_view("c"))]
+        })
+        .modifier(Modifier::new().padding(4.0))]);
+        tree.update(&root2);
+
+        let after = tree.children(sub_id).expect("children after");
+        assert_eq!(after.len(), 2);
+        // Slot 0 (a) and slot 2 (c) should keep their NodeId.
+        assert_eq!(after[0], a_node);
+        assert_eq!(after[1], c_node);
+        // Slot 1 (b) should be gone.
+        assert!(tree.get(b_node).is_none());
+    }
+
+    #[test]
+    fn test_subcompose_ancestor_modifier_narrows_scope() {
+        let mut tree = ViewTree::new();
+        tree.set_subcompose_scope(SubcomposeScope::new(0.0, 1000.0, 0.0, 1000.0));
+
+        let captured = Arc::new(std::sync::Mutex::new(SubcomposeScope::UNBOUNDED));
+        let cap2 = captured.clone();
+
+        // SubcomposeLayout inside a Box with width(200.dp) - the closure should
+        // see max_width == 200.
+        let sub = multi_slot_view(move |scope| {
+            *cap2.lock().unwrap() = *scope;
+            vec![(0, text_view("hi"))]
+        });
+        let root = box_view()
+            .modifier(Modifier::new().width(200.0))
+            .with_children(vec![sub]);
+
+        tree.update(&root);
+
+        let observed = *captured.lock().unwrap();
+        assert_eq!(observed.max_width, 200.0);
+    }
+
+    #[test]
+    fn test_subcompose_chained_ancestor_constraints_intersect() {
+        let mut tree = ViewTree::new();
+        tree.set_subcompose_scope(SubcomposeScope::new(0.0, 1000.0, 0.0, 1000.0));
+
+        let captured = Arc::new(std::sync::Mutex::new(SubcomposeScope::UNBOUNDED));
+        let cap2 = captured.clone();
+
+        let sub = multi_slot_view(move |scope| {
+            *cap2.lock().unwrap() = *scope;
+            vec![(0, text_view("hi"))]
+        });
+        // Box(width=400) -> Box(max_width=300) -> SubcomposeLayout.
+        // The intersection should give max_width = 300.
+        let root = box_view()
+            .modifier(Modifier::new().width(400.0))
+            .with_children(vec![box_view()
+                .modifier(Modifier::new().max_width(300.0))
+                .with_children(vec![sub])]);
+
+        tree.update(&root);
+
+        let observed = *captured.lock().unwrap();
+        assert_eq!(observed.max_width, 300.0);
+    }
+
+    #[test]
+    fn test_subcompose_nested_layouts_inherit_narrowed_scope() {
+        let mut tree = ViewTree::new();
+        tree.set_subcompose_scope(SubcomposeScope::new(0.0, 1000.0, 0.0, 1000.0));
+
+        let outer_captured = Arc::new(std::sync::Mutex::new(SubcomposeScope::UNBOUNDED));
+        let inner_captured = Arc::new(std::sync::Mutex::new(SubcomposeScope::UNBOUNDED));
+        let outer2 = outer_captured.clone();
+        let inner2 = inner_captured.clone();
+
+        // Outer SubcomposeLayout(width=400) hosts an inner SubcomposeLayout.
+        // The inner closure should observe max_width = 400, not 1000.
+        let inner = Arc::new(multi_slot_view(move |scope| {
+            *inner2.lock().unwrap() = *scope;
+            vec![(0, text_view("inner"))]
+        }));
+        let inner_clone = inner.clone();
+        let outer = multi_slot_view(move |scope| {
+            *outer2.lock().unwrap() = *scope;
+            vec![(0, (*inner_clone).clone())]
+        })
+        .modifier(Modifier::new().width(400.0));
+        let root = box_view().with_children(vec![outer]);
+
+        tree.update(&root);
+
+        let outer_obs = *outer_captured.lock().unwrap();
+        let inner_obs = *inner_captured.lock().unwrap();
+        assert_eq!(outer_obs.max_width, 400.0);
+        assert_eq!(inner_obs.max_width, 400.0);
     }
 }

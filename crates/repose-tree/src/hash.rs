@@ -130,6 +130,10 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
         | ViewKind::Stack => {
             // These are just containers, discriminant is enough
         }
+        ViewKind::SubcomposeLayout { .. } => {
+            // Closure contents are not part of the hash; the content closure
+            // is re-invoked on every reconcile of a SubcomposeLayout.
+        }
     }
 }
 

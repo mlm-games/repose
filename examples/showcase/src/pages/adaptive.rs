@@ -2,7 +2,7 @@ use repose_core::prelude::*;
 use repose_ui::adaptive::{
     ListDetailPaneScaffold, ListDetailPaneValue, PaneScaffoldDirective,
 };
-use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt};
+use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt, subcompose_layout_with_slots};
 
 use crate::ui::Section;
 
@@ -70,6 +70,7 @@ pub fn screen() -> View {
                             Modifier::new()
                                 .fill_max_width()
                                 .padding(12.0)
+                                .gap(2.0)
                                 .background(bg)
                                 .clip_rounded(8.0)
                                 .clickable()
@@ -128,9 +129,70 @@ pub fn screen() -> View {
         move || detail_pane.clone(),
     );
 
+    let main_col = Column(Modifier::new().flex_grow(1.0).fill_max_height().gap(12.0))
+        .child((
+            Section("ListDetailPaneScaffold", scaffold),
+            multi_slot_demo(),
+        ));
+
     Row(Modifier::new().fill_max_size().padding(12.0).gap(12.0)).child((
         Box(Modifier::new().width(280.0).fill_max_height()).child(header),
-        Box(Modifier::new().flex_grow(1.0).fill_max_height())
-            .child(Section("ListDetailPaneScaffold", scaffold)),
+        main_col,
     ))
+}
+
+/// A multi-slot `SubcomposeLayout` with a stable "header" slot and a "body"
+/// slot that re-lays-out based on the available width. Slot identity survives
+/// across width-driven slot re-runs.
+fn multi_slot_demo() -> View {
+    let th = theme();
+    Section(
+        "Multi-slot SubcomposeLayout",
+        subcompose_layout_with_slots(
+            Modifier::new().fill_max_width().padding(8.0),
+            move |scope| {
+                let wide = scope.max_width.is_finite() && scope.max_width >= 480.0;
+                let header = Box(Modifier::new()
+                    .fill_max_width()
+                    .padding(8.0)
+                    .background(th.surface_container)
+                    .clip_rounded(6.0))
+                    .child(Text("slot 0: header (stable)")
+                        .size(12.0)
+                        .color(th.on_surface));
+                let body = if wide {
+                    Row(Modifier::new().fill_max_width().gap(8.0)).child((
+                        Box(Modifier::new()
+                            .flex_grow(1.0)
+                            .padding(8.0)
+                            .background(th.surface_container_high)
+                            .clip_rounded(6.0))
+                            .child(Text("slot 1: wide left").size(12.0).color(th.on_surface)),
+                        Box(Modifier::new()
+                            .flex_grow(1.0)
+                            .padding(8.0)
+                            .background(th.surface_container_high)
+                            .clip_rounded(6.0))
+                            .child(Text("slot 1: wide right").size(12.0).color(th.on_surface)),
+                    ))
+                } else {
+                    Column(Modifier::new().fill_max_width().gap(8.0)).child((
+                        Box(Modifier::new()
+                            .fill_max_width()
+                            .padding(8.0)
+                            .background(th.surface_container_high)
+                            .clip_rounded(6.0))
+                            .child(Text("slot 1: stacked top").size(12.0).color(th.on_surface)),
+                        Box(Modifier::new()
+                            .fill_max_width()
+                            .padding(8.0)
+                            .background(th.surface_container_high)
+                            .clip_rounded(6.0))
+                            .child(Text("slot 1: stacked bottom").size(12.0).color(th.on_surface)),
+                    ))
+                };
+                vec![(0, header), (1, body)]
+            },
+        ),
+    )
 }
