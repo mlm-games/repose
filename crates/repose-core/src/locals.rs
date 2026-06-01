@@ -110,6 +110,12 @@ pub fn dp_to_px(dp: f32) -> f32 {
     Dp(dp).to_px()
 }
 
+/// Convenience: convert a raw px scalar into dp using current Density * UiScale.
+pub fn px_to_dp(px: f32) -> f32 {
+    let scale = density().scale * ui_scale().0;
+    if scale <= 0.0 { 0.0 } else { px / scale }
+}
+
 fn with_locals_frame<R>(f: impl FnOnce() -> R) -> R {
     struct Guard;
     impl Drop for Guard {

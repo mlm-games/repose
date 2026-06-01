@@ -17,7 +17,6 @@ pub struct StateColors {
 }
 
 /// State-driven elevation for interactive components.
-/// The layout engine animates elevation changes on interaction.
 #[derive(Clone, Copy, Debug)]
 pub struct StateElevation {
     pub default: f32,

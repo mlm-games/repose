@@ -107,6 +107,7 @@ pub mod anim;
 pub mod anim_ext;
 pub mod gestures;
 pub mod layout;
+pub use layout::IntrinsicSizeMode;
 pub mod lazy;
 pub mod selection;
 pub mod subcompose;

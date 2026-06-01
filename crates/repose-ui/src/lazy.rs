@@ -6,6 +6,22 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+pub trait ItemHeight<T> {
+    fn get(&self, item: &T) -> f32;
+}
+
+impl<T> ItemHeight<T> for f32 {
+    fn get(&self, _item: &T) -> f32 {
+        *self
+    }
+}
+
+impl<T, F: Fn(&T) -> f32> ItemHeight<T> for F {
+    fn get(&self, item: &T) -> f32 {
+        (self)(item)
+    }
+}
+
 pub struct LazyColumnState {
     scroll_offset: Signal<f32>,   // px
     viewport_height: Signal<f32>, // px
@@ -76,6 +92,10 @@ struct AnimState<T> {
 
 /// Virtualized list — only renders visible items.
 ///
+/// `item_height` may be a uniform `f32` (dp) or a per-item closure. For
+/// heterogeneous heights, pass `|item| item.height_dp` to compute each
+/// item's height from its data.
+///
 /// Optionally animates item enter/exit when items are added or removed.
 /// Provide `get_key` for stable item identity and `animate_spec` to enable
 /// fade-in for new items and fade-out for removed items.
@@ -83,9 +103,9 @@ struct AnimState<T> {
 /// When `animate_spec` is `None`, behavior is identical to the original
 /// (no item animations).
 #[allow(non_snake_case)]
-pub fn LazyColumn<T, F, K>(
+pub fn LazyColumn<T, F, K, H>(
     items: Vec<T>,
-    item_height_dp: f32,
+    item_height: H,
     state: Rc<LazyColumnState>,
     modifier: Modifier,
     get_key: K,
@@ -96,9 +116,20 @@ where
     T: Clone + 'static,
     F: Fn(T, usize) -> View + 'static,
     K: Fn(&T) -> u64 + 'static,
+    H: ItemHeight<T>,
 {
-    let item_h_px = dp_to_px(item_height_dp).max(1.0);
-    let content_height_px = items.len() as f32 * item_h_px;
+    let heights_dp: Vec<f32> = items.iter().map(|it| item_height.get(it).max(1.0)).collect();
+    let cumulative_px: Vec<f32> = {
+        let mut cum = Vec::with_capacity(heights_dp.len() + 1);
+        cum.push(0.0);
+        let mut acc = 0.0_f32;
+        for h in &heights_dp {
+            acc += dp_to_px(*h);
+            cum.push(acc);
+        }
+        cum
+    };
+    let content_height_px = *cumulative_px.last().unwrap_or(&0.0);
 
     let scroll_offset_px = state.scroll_offset.get();
     let viewport_height_px = state.viewport_height.get();
@@ -110,20 +141,33 @@ where
     };
     state.tick(actual_content_h_px);
 
-    // Visible range (px)
-    let first_visible = (scroll_offset_px / item_h_px).floor().max(0.0) as usize;
-    let last_visible = ((scroll_offset_px + viewport_height_px) / item_h_px).ceil() as usize + 2;
+    let first_visible = match cumulative_px
+        .binary_search_by(|p| p.partial_cmp(&scroll_offset_px).unwrap_or(std::cmp::Ordering::Equal))
+    {
+        Ok(i) => i,
+        Err(i) => i.saturating_sub(1),
+    };
+    let viewport_end_px = scroll_offset_px + viewport_height_px;
+    let last_visible = match cumulative_px
+        .binary_search_by(|p| p.partial_cmp(&viewport_end_px).unwrap_or(std::cmp::Ordering::Equal))
+    {
+        Ok(i) => (i + 1).min(items.len()),
+        Err(i) => i.min(items.len()),
+    };
 
     let buffer = 2usize;
     let first_with_buffer = first_visible.saturating_sub(buffer);
+    let last_with_buffer = (last_visible + buffer).min(items.len());
 
     let mut combined_children: Vec<View> = Vec::new();
 
-    // Top spacer (dp; converted by layout)
     if first_with_buffer > 0 {
-        combined_children.push(crate::Box(
-            Modifier::new().size(1.0, first_with_buffer as f32 * item_height_dp),
-        ));
+        let top_spacer_px = cumulative_px[first_with_buffer];
+        if top_spacer_px > 0.0 {
+            combined_children.push(crate::Box(
+                Modifier::new().size(1.0, px_to_dp(top_spacer_px).max(0.0)),
+            ));
+        }
     }
 
     let total_slots: usize;
@@ -196,7 +240,7 @@ where
             .map(|(_, i, _, _)| *i)
             .max()
             .unwrap_or(0);
-        let vis_end = last_visible.max(max_exit_slot + 1 + buffer);
+        let vis_end = last_with_buffer.max(max_exit_slot + 1 + buffer);
         total_slots = items.len().max(max_exit_slot + 1);
 
         // Build combined children: interleave exiting items at their old indices
@@ -207,17 +251,24 @@ where
             if let Some((key, old_idx, old_item, version)) = entry {
                 let ek = format!("_lz_x:{aid}:{key}:v{version}");
                 let alpha = animate_f32_from(ek, 1.0, 0.0, spec);
-                let item_top_px = *old_idx as f32 * item_h_px;
-                let item_bottom_px = item_top_px + item_h_px;
-                let in_view = item_bottom_px > scroll_offset_px
-                    && item_top_px < scroll_offset_px + viewport_height_px;
+                let exit_top_px = cumulative_px
+                    .get(*old_idx)
+                    .copied()
+                    .unwrap_or(*old_idx as f32 * 1.0);
+                let exit_h_dp = heights_dp
+                    .get(*old_idx)
+                    .copied()
+                    .unwrap_or(1.0);
+                let exit_bottom_px = exit_top_px + dp_to_px(exit_h_dp);
+                let in_view = exit_bottom_px > scroll_offset_px
+                    && exit_top_px < scroll_offset_px + viewport_height_px;
                 if in_view {
                     let exit_view = item_builder(old_item.clone(), *old_idx);
                     combined_children.push(
                         crate::Box(
                             Modifier::new()
                                 .fill_max_width()
-                                .height(item_height_dp)
+                                .height(exit_h_dp)
                                 .alpha(alpha),
                         )
                         .child(exit_view),
@@ -243,9 +294,13 @@ where
         s.prev_keys = curr_keys;
     } else {
         // No animation: render items normally
-        for i in first_with_buffer..last_visible {
+        for i in first_with_buffer..last_with_buffer {
             if let Some(item) = items.get(i) {
-                combined_children.push(item_builder(item.clone(), i));
+                let h_dp = item_height.get(item).max(1.0);
+                combined_children.push(
+                    crate::Box(Modifier::new().fill_max_width().height(h_dp))
+                        .child(item_builder(item.clone(), i)),
+                );
             }
         }
         total_slots = items.len();
@@ -255,10 +310,16 @@ where
     let has_top = first_with_buffer > 0;
     let rendered_items = combined_children.len() - if has_top { 1 } else { 0 };
     if first_with_buffer + rendered_items < total_slots {
-        let remaining = total_slots - (first_with_buffer + rendered_items);
-        combined_children.push(crate::Box(
-            Modifier::new().size(1.0, remaining as f32 * item_height_dp),
-        ));
+        let end_px = cumulative_px
+            .get(first_with_buffer + rendered_items)
+            .copied()
+            .unwrap_or(content_height_px);
+        let remaining_px = (content_height_px - end_px).max(0.0);
+        if remaining_px > 0.0 {
+            combined_children.push(crate::Box(
+                Modifier::new().size(1.0, px_to_dp(remaining_px).max(0.0)),
+            ));
+        }
     }
 
     let content = crate::View::new(0, ViewKind::Column).with_children(combined_children);
@@ -714,4 +775,59 @@ where
     )
     .modifier(modifier)
     .with_children(vec![content])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn builder(_item: i32, _idx: usize) -> View {
+        crate::Box(Modifier::new().size(10.0, 10.0))
+    }
+
+    #[test]
+    fn test_item_height_uniform_f32() {
+        let f: f32 = 50.0;
+        let item = 7;
+        assert_eq!(f.get(&item), 50.0);
+    }
+
+    #[test]
+    fn test_item_height_per_item_closure() {
+        let items: Vec<i32> = vec![1, 2, 3, 4, 5];
+        let h = |i: &i32| 30.0 + (*i as f32) * 10.0;
+        let sum_dp: f32 = items.iter().map(|i| h.get(i)).sum();
+        let expected_sum: f32 = items.iter().map(|i| 30.0 + (*i as f32) * 10.0).sum();
+        assert!((sum_dp - expected_sum).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_lazy_column_uniform_height_compiles() {
+        let state = Rc::new(LazyColumnState::new());
+        let v = LazyColumn(
+            vec![1, 2, 3],
+            48.0_f32,
+            state,
+            Modifier::new().size(200.0, 400.0),
+            |it: &i32| *it as u64,
+            None,
+            builder,
+        );
+        let _ = v;
+    }
+
+    #[test]
+    fn test_lazy_column_heterogeneous_heights_compiles() {
+        let state = Rc::new(LazyColumnState::new());
+        let v = LazyColumn(
+            vec![1, 2, 3, 4, 5],
+            |it: &i32| 30.0 + (*it as f32) * 12.0,
+            state,
+            Modifier::new().size(200.0, 400.0),
+            |it: &i32| *it as u64,
+            None,
+            builder,
+        );
+        let _ = v;
+    }
 }

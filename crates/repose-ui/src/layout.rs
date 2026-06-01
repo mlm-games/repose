@@ -126,6 +126,15 @@ struct PaintCacheEntry {
     sems: Arc<Vec<SemNode>>,
 }
 
+/// Selects the intrinsic sizing mode for [`LayoutEngine::intrinsic_size`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IntrinsicSizeMode {
+    /// Smallest size at which the view's content does not overflow.
+    MinContent,
+    /// Largest size the view's content would take if unconstrained.
+    MaxContent,
+}
+
 /// Context stored with each Taffy node.
 #[derive(Clone)]
 enum NodeContext {
@@ -338,6 +347,91 @@ impl LayoutEngine {
         (scene, hits, sems)
     }
 
+    /// Compute the intrinsic size of a view in pixels. The view is laid out
+    /// in an isolated taffy tree, so calling this does not disturb the
+    /// layout cache for the main `layout_frame` pass.
+    pub fn intrinsic_size(
+        &mut self,
+        view: &View,
+        mode: IntrinsicSizeMode,
+    ) -> (f32, f32) {
+        let px_closure = |dp_val: f32| dp_to_px(dp_val);
+        let font_px_closure = |dp_font: f32| dp_to_px(dp_font) * locals::text_scale().0;
+
+        let mut temp_taffy = taffy::TaffyTree::new();
+        let root_tid = self.build_taffy_subtree(
+            view,
+            &mut temp_taffy,
+            &font_px_closure,
+        );
+
+        let avail = match mode {
+            IntrinsicSizeMode::MinContent => taffy::geometry::Size {
+                width: taffy::style::AvailableSpace::MinContent,
+                height: taffy::style::AvailableSpace::MinContent,
+            },
+            IntrinsicSizeMode::MaxContent => taffy::geometry::Size {
+                width: taffy::style::AvailableSpace::MaxContent,
+                height: taffy::style::AvailableSpace::MaxContent,
+            },
+        };
+
+        let mut text_cache: FxHashMap<NodeId, TextLayout> = FxHashMap::default();
+        let reverse_map: FxHashMap<taffy::NodeId, NodeId> = FxHashMap::default();
+
+        let _ = temp_taffy.compute_layout_with_measure(
+            root_tid,
+            avail,
+            |known, avail, taffy_node, ctx, _style| {
+                Self::measure_node(
+                    known,
+                    avail,
+                    taffy_node,
+                    ctx.as_deref(),
+                    &mut text_cache,
+                    &reverse_map,
+                    &self.tree,
+                    &font_px_closure,
+                    &px_closure,
+                )
+            },
+        );
+
+        let layout = temp_taffy.layout(root_tid).ok();
+        match layout {
+            Some(l) => (l.size.width, l.size.height),
+            None => (0.0, 0.0),
+        }
+    }
+
+    /// Build a taffy subtree from a `&View`. Used by [`Self::intrinsic_size`]
+    /// to lay out a view in isolation. The `font_px` closure converts dp font
+    /// sizes to physical pixels.
+    fn build_taffy_subtree(
+        &self,
+        view: &View,
+        taffy: &mut taffy::TaffyTree<NodeContext>,
+        font_px: &dyn Fn(f32) -> f32,
+    ) -> taffy::NodeId {
+        let style = self.style_from_kind(&view.kind, &view.modifier, font_px);
+        let ctx = self.context_from_kind(&view.kind);
+
+        let child_tids: Vec<taffy::NodeId> = view
+            .children
+            .iter()
+            .map(|c| self.build_taffy_subtree(c, taffy, font_px))
+            .collect();
+
+        let tid = if child_tids.is_empty() {
+            taffy.new_leaf_with_context(style, ctx).unwrap()
+        } else {
+            let t = taffy.new_with_children(style, &child_tids).unwrap();
+            let _ = taffy.set_node_context(t, Some(ctx));
+            t
+        };
+        tid
+    }
+
     fn sync_taffy_tree(&mut self, root_id: NodeId, font_px: &dyn Fn(f32) -> f32) {
         // Removals
         for &node_id in &self.tree.removed_ids {
@@ -520,8 +614,10 @@ impl LayoutEngine {
     }
 
     fn style_from_node(&self, node: &TreeNode, font_px: &dyn Fn(f32) -> f32) -> taffy::Style {
-        let m = &node.modifier;
-        let kind = &node.kind;
+        self.style_from_kind(&node.kind, &node.modifier, font_px)
+    }
+
+    fn style_from_kind(&self, kind: &ViewKind, m: &repose_core::Modifier, font_px: &dyn Fn(f32) -> f32) -> taffy::Style {
         let px = |dp_val: f32| dp_to_px(dp_val);
         let mut s = taffy::Style::default();
 
@@ -780,7 +876,11 @@ impl LayoutEngine {
     }
 
     fn context_from_node(&self, node: &TreeNode) -> NodeContext {
-        match &node.kind {
+        self.context_from_kind(&node.kind)
+    }
+
+    fn context_from_kind(&self, kind: &ViewKind) -> NodeContext {
+        match kind {
             ViewKind::Text {
                 text,
                 color,
@@ -925,30 +1025,69 @@ impl LayoutEngine {
                     height: line_h_px_val * lines.len().max(1) as f32,
                 }
             }
-            Some(NodeContext::Button { label }) => taffy::geometry::Size {
-                width: (label.len() as f32 * font_px(16.0) * 0.6) + px(24.0),
-                height: px(36.0),
-            },
-            Some(NodeContext::TextField { multiline }) => taffy::geometry::Size {
-                width: known.width.unwrap_or(px(160.0)),
-                height: if *multiline {
-                    known.height.unwrap_or(px(140.0))
-                } else {
-                    px(36.0)
-                },
-            },
-            Some(NodeContext::Slider) => taffy::geometry::Size {
-                width: known.width.unwrap_or(px(200.0)),
-                height: px(28.0),
-            },
-            Some(NodeContext::Range) => taffy::geometry::Size {
-                width: known.width.unwrap_or(px(220.0)),
-                height: px(28.0),
-            },
-            Some(NodeContext::Progress) => taffy::geometry::Size {
-                width: known.width.unwrap_or(px(200.0)),
-                height: px(12.0),
-            },
+            Some(NodeContext::Button { label }) => {
+                let natural_w = (label.len() as f32 * font_px(16.0) * 0.6) + px(24.0);
+                let width = match avail.width {
+                    AvailableSpace::Definite(w) if w > 0.5 => w,
+                    AvailableSpace::MinContent => px(48.0).max(natural_w),
+                    _ => natural_w,
+                };
+                taffy::geometry::Size {
+                    width,
+                    height: px(36.0),
+                }
+            }
+            Some(NodeContext::TextField { multiline }) => {
+                let natural_w = px(160.0);
+                let width = match avail.width {
+                    AvailableSpace::Definite(w) if w > 0.5 => w,
+                    AvailableSpace::MinContent => px(48.0).max(natural_w),
+                    _ => known.width.unwrap_or(natural_w),
+                };
+                let natural_h = if *multiline { px(140.0) } else { px(36.0) };
+                let height = match avail.height {
+                    AvailableSpace::Definite(h) if h > 0.5 => h,
+                    AvailableSpace::MinContent => px(28.0).max(natural_h),
+                    _ => known.height.unwrap_or(natural_h),
+                };
+                taffy::geometry::Size { width, height }
+            }
+            Some(NodeContext::Slider) => {
+                let natural_w = px(200.0);
+                let width = match avail.width {
+                    AvailableSpace::Definite(w) if w > 0.5 => w,
+                    AvailableSpace::MinContent => px(48.0),
+                    _ => known.width.unwrap_or(natural_w),
+                };
+                taffy::geometry::Size {
+                    width,
+                    height: px(28.0),
+                }
+            }
+            Some(NodeContext::Range) => {
+                let natural_w = px(220.0);
+                let width = match avail.width {
+                    AvailableSpace::Definite(w) if w > 0.5 => w,
+                    AvailableSpace::MinContent => px(96.0),
+                    _ => known.width.unwrap_or(natural_w),
+                };
+                taffy::geometry::Size {
+                    width,
+                    height: px(28.0),
+                }
+            }
+            Some(NodeContext::Progress) => {
+                let natural_w = px(200.0);
+                let width = match avail.width {
+                    AvailableSpace::Definite(w) if w > 0.5 => w,
+                    AvailableSpace::MinContent => px(32.0),
+                    _ => known.width.unwrap_or(natural_w),
+                };
+                taffy::geometry::Size {
+                    width,
+                    height: px(12.0),
+                }
+            }
             _ => taffy::geometry::Size::ZERO,
         }
     }
@@ -2932,7 +3071,7 @@ fn apply_step(v: f32, dir: i32, min: f32, max: f32, step: Option<f32>) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Box as RBox, Column, Stack, ViewExt};
+    use crate::{Box as RBox, Column, Stack, Text, ViewExt};
 
     fn font_px(dp: f32) -> f32 {
         dp // 1:1 for tests
@@ -3418,5 +3557,52 @@ mod tests {
 
         let observed = f32::from_bits(captured_max_w.load(Ordering::SeqCst));
         assert_eq!(observed, 320.0, "ancestor width should propagate to scope");
+    }
+
+    fn make_engine() -> LayoutEngine {
+        LayoutEngine::new()
+    }
+
+    #[test]
+    fn test_intrinsic_size_text_max_content() {
+        let mut eng = make_engine();
+        let v = Stack(Modifier::new()).child(Text("Hello"));
+        let (w, h) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
+        assert!(w > 0.0 && h > 0.0, "text must have positive size, got ({}, {})", w, h);
+    }
+
+    #[test]
+    fn test_intrinsic_size_min_content_shrinks() {
+        let mut eng = make_engine();
+        let v = Stack(Modifier::new()).child(Text("Hello"));
+        let (min_w, _) = eng.intrinsic_size(&v, IntrinsicSizeMode::MinContent);
+        let (max_w, _) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
+        assert!(
+            min_w <= max_w,
+            "min-content width should be <= max-content width (min={}, max={})",
+            min_w,
+            max_w
+        );
+    }
+
+    #[test]
+    fn test_intrinsic_size_column_uses_max_child_width() {
+        let mut eng = make_engine();
+        let v = Column(Modifier::new())
+            .child(Text("Hi"))
+            .child(Text("Hello world"));
+        let (max_w, _) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
+        let single_w = eng
+            .intrinsic_size(
+                &Stack(Modifier::new()).child(Text("Hello world")),
+                IntrinsicSizeMode::MaxContent,
+            )
+            .0;
+        assert!(
+            (max_w - single_w).abs() < 1.0,
+            "column max-content width should match widest child (col={}, single={})",
+            max_w,
+            single_w
+        );
     }
 }

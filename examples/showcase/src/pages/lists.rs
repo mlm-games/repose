@@ -79,6 +79,37 @@ pub fn screen() -> View {
                 },
             )
         }),
+        Section("LazyColumn (Heterogeneous heights)", {
+            let hetero_items: Vec<Item> = (0..200)
+                .map(|i| Item {
+                    id: i + 10_000,
+                    title: format!("Row #{}", i + 1),
+                    done: i % 2 == 0,
+                })
+                .collect();
+            let hetero_scroll = remember_with_key("lazy_hetero", LazyColumnState::new);
+            LazyColumn(
+                hetero_items,
+                |it: &Item| 48.0 + (it.id % 5) as f32 * 16.0,
+                hetero_scroll,
+                Modifier::new().max_width(1200.0).max_height(400.0),
+                |it: &Item| it.id as u64,
+                None,
+                move |it, _| {
+                    let th = theme();
+                    let bg = if it.done { th.primary.with_alpha(48) } else { th.surface_container };
+                    let h = 48.0 + (it.id % 5) as f32 * 16.0;
+                    Box(Modifier::new()
+                        .fill_max_width()
+                        .height(h)
+                        .background(bg)
+                        .border(1.0, th.outline_variant, 0.0)
+                        .padding(12.0)
+                        .justify_content(JustifyContent::Center))
+                    .child(Text(format!("{} (height = {}dp)", it.title, h as i32)))
+                },
+            )
+        }),
         Section("LazyRow (Horizontal)", {
             LazyRow(
                 row_items.get(),
