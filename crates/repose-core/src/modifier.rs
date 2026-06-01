@@ -103,6 +103,19 @@ pub struct GridConfig {
     pub column_gap: f32,
 }
 
+/// Drop-shadow parameters applied to a graphics layer.
+///
+/// `blur_radius` is the Gaussian blur radius in dp (1.0 = subtle, 8.0 = soft,
+/// 16.0 = very diffuse). `offset_y` is the vertical offset of the shadow in dp
+/// (positive = below the layer). `color` is the shadow color (premultiplied
+/// alpha controls shadow darkness).
+#[derive(Clone, Copy, Debug)]
+pub struct ShadowSpec {
+    pub blur_radius: f32,
+    pub offset_y: f32,
+    pub color: Color,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum PositionType {
     Relative,
@@ -168,6 +181,8 @@ pub struct Modifier {
     pub on_pointer_leave: Option<Rc<dyn Fn(PointerEvent)>>,
     pub semantics: Option<crate::Semantics>,
     pub alpha: Option<f32>,
+    pub graphics_layer: Option<f32>,
+    pub shadow: Option<ShadowSpec>,
     pub transform: Option<Transform>,
     pub grid: Option<GridConfig>,
     pub grid_col_span: Option<u16>,
@@ -574,6 +589,49 @@ impl Modifier {
     }
     pub fn alpha(mut self, a: f32) -> Self {
         self.alpha = Some(a);
+        self
+    }
+    /// Render this subtree into an offscreen texture, then composite it
+    /// back into the parent with the given group `alpha` (0.0..=1.0).
+    /// Allows correct blending when children overlap inside the layer, and
+    /// sets up the architecture for future layer effects (shadow, blur, clip).
+    pub fn graphics_layer(mut self, alpha: f32) -> Self {
+        self.graphics_layer = Some(alpha.clamp(0.0, 1.0));
+        self
+    }
+    /// Drop shadow with the given `blur_radius` (dp) and vertical `offset_y` (dp).
+    /// The shadow color defaults to black with alpha 64 (~25%). Combines with
+    /// [`Modifier::graphics_layer`] to draw a shadow underneath the layer.
+    pub fn shadow(mut self, blur_radius: f32, offset_y: f32) -> Self {
+        self.shadow = Some(ShadowSpec {
+            blur_radius: blur_radius.max(0.0),
+            offset_y,
+            color: Color(0, 0, 0, 64),
+        });
+        self
+    }
+    /// Drop shadow with a custom color. Alpha 0..=255.
+    pub fn shadow_with_color(mut self, blur_radius: f32, offset_y: f32, color: Color) -> Self {
+        self.shadow = Some(ShadowSpec {
+            blur_radius: blur_radius.max(0.0),
+            offset_y,
+            color,
+        });
+        self
+    }
+    /// Material-style elevation. Auto-scales blur and offset by `level` (dp)
+    /// and uses a default shadow color. Level 0 = no shadow; 4 = subtle;
+    /// 16 = strong. Requires [`Modifier::graphics_layer`] to take effect.
+    pub fn elevation(mut self, level: f32) -> Self {
+        if level <= 0.0 {
+            self.shadow = None;
+            return self;
+        }
+        self.shadow = Some(ShadowSpec {
+            blur_radius: level * 2.0,
+            offset_y: level * 0.5,
+            color: Color(0, 0, 0, (level * 8.0).clamp(8.0, 80.0) as u8),
+        });
         self
     }
     pub fn transform(mut self, t: Transform) -> Self {

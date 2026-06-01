@@ -81,6 +81,9 @@ pub struct LayoutEngine {
     slider_dragging: Rc<RefCell<FxHashSet<u64>>>,
     /// Range slider active thumb - false=start, true=end.
     range_active_thumb: Rc<RefCell<FxHashMap<u64, bool>>>,
+
+    /// Monotonic counter for graphics layer ids, assigned during paint.
+    layer_id_counter: u32,
 }
 
 /// Statistics about layout performance.
@@ -195,6 +198,7 @@ impl LayoutEngine {
             next_view_id: 1,
             slider_dragging: Rc::new(RefCell::new(FxHashSet::default())),
             range_active_thumb: Rc::new(RefCell::new(FxHashMap::default())),
+            layer_id_counter: 0,
         }
     }
 
@@ -2555,6 +2559,27 @@ impl LayoutEngine {
 
         // Children
         let child_offset_px = base_px;
+        let layer_id = if let Some(layer_alpha) = modifier.graphics_layer {
+            let id = self.layer_id_counter;
+            self.layer_id_counter = self.layer_id_counter.wrapping_add(1);
+            scene.nodes.push(SceneNode::BeginLayer {
+                rect,
+                layer_id: id,
+                alpha: layer_alpha,
+            });
+            scene.nodes.push(SceneNode::PushTransform {
+                transform: Transform {
+                    translate_x: -rect.x,
+                    translate_y: -rect.y,
+                    scale_x: 1.0,
+                    scale_y: 1.0,
+                    rotate: 0.0,
+                },
+            });
+            Some(id)
+        } else {
+            None
+        };
         match &kind {
             ViewKind::ScrollV {
                 on_scroll,
@@ -2816,6 +2841,19 @@ impl LayoutEngine {
                         skip_defer,
                     );
                 }
+            }
+        }
+
+        if let Some(id) = layer_id {
+            scene.nodes.push(SceneNode::PopTransform);
+            scene.nodes.push(SceneNode::EndLayer { layer_id: id });
+            if let Some(shadow) = &modifier.shadow {
+                scene.nodes.push(SceneNode::CompositeShadow {
+                    layer_id: id,
+                    blur_px: dp_to_px(shadow.blur_radius),
+                    offset_px: (0.0, dp_to_px(shadow.offset_y)),
+                    color: shadow.color,
+                });
             }
         }
 
@@ -3604,5 +3642,204 @@ mod tests {
             max_w,
             single_w
         );
+    }
+}
+
+#[cfg(test)]
+mod layer_tests {
+    use super::*;
+    use crate::{Stack, Text, ViewExt};
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::rc::Rc;
+
+    fn collect_nodes(view: &View, _font_px: &dyn Fn(f32) -> f32) -> Vec<SceneNode> {
+        let mut engine = LayoutEngine::new();
+        let state: HashMap<u64, Rc<RefCell<crate::TextFieldState>>> = HashMap::new();
+        let interactions = crate::Interactions::default();
+        let (scene, _, _) = engine.layout_frame(view, (400, 400), &state, &interactions, None);
+        scene.nodes
+    }
+
+    #[test]
+    fn test_graphics_layer_emits_begin_end() {
+        let view = Stack(Modifier::new().graphics_layer(0.5)).child(Text("hello"));
+        let nodes = collect_nodes(&view, &|d| d);
+        let begin_count = nodes
+            .iter()
+            .filter(|n| matches!(n, SceneNode::BeginLayer { .. }))
+            .count();
+        let end_count = nodes
+            .iter()
+            .filter(|n| matches!(n, SceneNode::EndLayer { .. }))
+            .count();
+        assert_eq!(begin_count, 1, "expected exactly one BeginLayer, got {}", begin_count);
+        assert_eq!(end_count, 1, "expected exactly one EndLayer, got {}", end_count);
+    }
+
+    #[test]
+    fn test_no_graphics_layer_means_no_begin_end() {
+        let view = Stack(Modifier::new()).child(Text("hello"));
+        let nodes = collect_nodes(&view, &|d| d);
+        let begin_count = nodes
+            .iter()
+            .filter(|n| matches!(n, SceneNode::BeginLayer { .. }))
+            .count();
+        let end_count = nodes
+            .iter()
+            .filter(|n| matches!(n, SceneNode::EndLayer { .. }))
+            .count();
+        assert_eq!(begin_count, 0);
+        assert_eq!(end_count, 0);
+    }
+
+    #[test]
+    fn test_nested_graphics_layers_emit_nested_pairs() {
+        let view = Stack(Modifier::new().graphics_layer(0.9))
+            .child(Stack(Modifier::new().graphics_layer(0.5)).child(Text("nested")));
+        let nodes = collect_nodes(&view, &|d| d);
+        let begin_count = nodes
+            .iter()
+            .filter(|n| matches!(n, SceneNode::BeginLayer { .. }))
+            .count();
+        let end_count = nodes
+            .iter()
+            .filter(|n| matches!(n, SceneNode::EndLayer { .. }))
+            .count();
+        assert_eq!(begin_count, 2, "expected two BeginLayer nodes for nested layers");
+        assert_eq!(end_count, 2, "expected two EndLayer nodes for nested layers");
+    }
+
+    #[test]
+    fn test_begin_end_are_balanced() {
+        // Walk through nodes; BeginLayer +1, EndLayer -1; final depth should be 0.
+        let view = Stack(Modifier::new().graphics_layer(0.7))
+            .child(Stack(Modifier::new()).child(Text("inner")));
+        let nodes = collect_nodes(&view, &|d| d);
+        let mut depth: i32 = 0;
+        for n in &nodes {
+            match n {
+                SceneNode::BeginLayer { .. } => depth += 1,
+                SceneNode::EndLayer { .. } => depth -= 1,
+                _ => {}
+            }
+        }
+        assert_eq!(depth, 0, "Begin/EndLayer must be balanced");
+    }
+
+    #[test]
+    fn test_graphics_layer_passes_alpha_through() {
+        let view = Stack(Modifier::new().graphics_layer(0.42)).child(Text("x"));
+        let nodes = collect_nodes(&view, &|d| d);
+        let begin = nodes.iter().find_map(|n| match n {
+            SceneNode::BeginLayer { alpha, .. } => Some(*alpha),
+            _ => None,
+        });
+        assert_eq!(begin, Some(0.42), "graphics_layer alpha should pass through");
+    }
+
+    #[test]
+    fn test_graphics_layer_alpha_is_clamped() {
+        let m = Modifier::new().graphics_layer(2.0);
+        assert_eq!(m.graphics_layer, Some(1.0), "alpha above 1.0 should clamp to 1.0");
+        let m = Modifier::new().graphics_layer(-0.5);
+        assert_eq!(m.graphics_layer, Some(0.0), "negative alpha should clamp to 0.0");
+    }
+}
+
+#[cfg(test)]
+mod shadow_tests {
+    use super::*;
+    use crate::{Stack, Text, ViewExt};
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::rc::Rc;
+
+    fn collect_nodes(view: &View) -> Vec<SceneNode> {
+        let mut engine = LayoutEngine::new();
+        let state: HashMap<u64, Rc<RefCell<crate::TextFieldState>>> = HashMap::new();
+        let interactions = crate::Interactions::default();
+        let (scene, _, _) = engine.layout_frame(view, (400, 400), &state, &interactions, None);
+        scene.nodes
+    }
+
+    #[test]
+    fn test_shadow_alone_does_not_emit_composite_shadow() {
+        // Shadow without graphics_layer: nothing to composite.
+        let view = Stack(Modifier::new().shadow(8.0, 4.0)).child(Text("x"));
+        let nodes = collect_nodes(&view);
+        let count = nodes
+            .iter()
+            .filter(|n| matches!(n, SceneNode::CompositeShadow { .. }))
+            .count();
+        assert_eq!(count, 0, "shadow without layer must not emit CompositeShadow");
+    }
+
+    #[test]
+    fn test_layer_with_shadow_emits_composite_shadow() {
+        let view = Stack(Modifier::new()
+            .graphics_layer(1.0)
+            .shadow(8.0, 4.0))
+        .child(Text("x"));
+        let nodes = collect_nodes(&view);
+        let count = nodes
+            .iter()
+            .filter(|n| matches!(n, SceneNode::CompositeShadow { .. }))
+            .count();
+        assert_eq!(count, 1, "expected one CompositeShadow");
+    }
+
+    #[test]
+    fn test_shadow_appears_after_end_layer() {
+        // Order: BeginLayer, ...content..., EndLayer, CompositeShadow, (any)CompositeLayer.
+        let view = Stack(Modifier::new()
+            .graphics_layer(1.0)
+            .shadow(8.0, 4.0))
+        .child(Text("x"));
+        let nodes = collect_nodes(&view);
+        let end_idx = nodes
+            .iter()
+            .position(|n| matches!(n, SceneNode::EndLayer { .. }))
+            .expect("EndLayer should be present");
+        let shadow_idx = nodes
+            .iter()
+            .position(|n| matches!(n, SceneNode::CompositeShadow { .. }))
+            .expect("CompositeShadow should be present");
+        assert!(
+            shadow_idx > end_idx,
+            "CompositeShadow (idx {}) should come after EndLayer (idx {})",
+            shadow_idx,
+            end_idx
+        );
+    }
+
+    #[test]
+    fn test_shadow_passes_through_blur_and_offset() {
+        let view = Stack(Modifier::new()
+            .graphics_layer(1.0)
+            .shadow(10.0, 6.0))
+        .child(Text("x"));
+        let nodes = collect_nodes(&view);
+        let shadow = nodes
+            .iter()
+            .find_map(|n| match n {
+                SceneNode::CompositeShadow { blur_px, offset_px, .. } => {
+                    Some((*blur_px, *offset_px))
+                }
+                _ => None,
+            })
+            .expect("CompositeShadow present");
+        let (blur, offset) = shadow;
+        // 1 dp = 1 px in tests (density scale = 1).
+        assert!(blur > 0.0, "blur should be > 0, got {}", blur);
+        assert!(offset.1 > 0.0, "offset_y should be > 0, got {}", offset.1);
+    }
+
+    #[test]
+    fn test_elevation_helper_sets_shadow() {
+        let m4 = Modifier::new().elevation(4.0);
+        assert!(m4.shadow.is_some(), "elevation(4) should set shadow");
+        let m0 = Modifier::new().elevation(0.0);
+        assert!(m0.shadow.is_none(), "elevation(0) should not set shadow");
     }
 }

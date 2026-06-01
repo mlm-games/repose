@@ -294,6 +294,28 @@ pub enum SceneNode {
         elevation: f32,
         color: Color,
     },
+    /// Mark the start of a graphics layer: the contained subtree is rendered
+    /// into an offscreen texture and then composited back into the parent.
+    /// `alpha` is the group-compositing alpha applied at composite time.
+    BeginLayer {
+        rect: Rect,
+        layer_id: u32,
+        alpha: f32,
+    },
+    /// Closes the graphics layer opened by the matching `BeginLayer`.
+    EndLayer {
+        layer_id: u32,
+    },
+    /// Draws a blurred drop shadow underneath a previously-rendered layer.
+    /// Emitted between `EndLayer` and the layer's `CompositeLayer`. The
+    /// quad samples the layer's texture with a 3x3 Gaussian blur and an
+    /// optional vertical offset.
+    CompositeShadow {
+        layer_id: u32,
+        blur_px: f32,
+        offset_px: (f32, f32),
+        color: Color,
+    },
 }
 
 pub type CallbackF32 = Rc<dyn Fn(f32)>;

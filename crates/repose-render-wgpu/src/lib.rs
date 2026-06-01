@@ -57,16 +57,14 @@ impl UploadRing {
 }
 
 struct InstancedPipe<I: bytemuck::Pod> {
-    pipeline: wgpu::RenderPipeline,
     ring: UploadRing,
     stride: u64,
     _marker: std::marker::PhantomData<I>,
 }
 
 impl<I: bytemuck::Pod> InstancedPipe<I> {
-    fn new(pipeline: wgpu::RenderPipeline, ring: UploadRing) -> Self {
+    fn new(ring: UploadRing) -> Self {
         Self {
-            pipeline,
             ring,
             stride: std::mem::size_of::<I>() as u64,
             _marker: std::marker::PhantomData,
@@ -89,13 +87,6 @@ impl<I: bytemuck::Pod> InstancedPipe<I> {
         Some((off, data.len() as u32))
     }
 
-    fn bind<'a>(&'a self, rpass: &mut wgpu::RenderPass<'a>, off: u64, cnt: u32) {
-        let bytes = (cnt as u64) * self.stride;
-        rpass.set_pipeline(&self.pipeline);
-        rpass.set_vertex_buffer(0, self.ring.buf.slice(off..off + bytes));
-        rpass.draw(0..6, 0..cnt);
-    }
-
     fn reset(&mut self) {
         self.ring.reset();
     }
@@ -114,7 +105,12 @@ pub struct WgpuBackend {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
 
-    // Instanced draw pipes
+    // Render pipelines. Two sets: one for the MSAA surface pass, one for
+    // graphics-layer render-to-texture passes (sample_count = 1).
+    surface_pipes: Pipelines,
+    layer_pipes: Pipelines,
+
+    // Instanced draw rings
     rects: InstancedPipe<RectInstance>,
     borders: InstancedPipe<BorderInstance>,
     ellipses: InstancedPipe<EllipseInstance>,
@@ -122,21 +118,20 @@ pub struct WgpuBackend {
     glyph_mask: InstancedPipe<GlyphInstance>,
     glyph_color: InstancedPipe<GlyphInstance>,
 
-    // Not instanced
-    image_pipeline_rgba: wgpu::RenderPipeline,
-    image_pipeline_nv12: wgpu::RenderPipeline,
+    // Image bind layouts and shared sampler
     image_bind_layout_rgba: wgpu::BindGroupLayout,
     image_bind_layout_nv12: wgpu::BindGroupLayout,
     image_sampler: wgpu::Sampler,
 
+    // Blur composite ring (for graphics-layer drop shadows)
+    blur_ring: UploadRing,
+
     text_bind_layout: wgpu::BindGroupLayout,
 
-    // Stencil clip pipelines
-    clip_pipeline_a2c: wgpu::RenderPipeline,
-    clip_pipeline_bin: wgpu::RenderPipeline,
+    // Stencil clip ring
     clip_ring: UploadRing,
 
-    // Instanced
+    // Instanced NV12 ring
     nv12: InstancedPipe<Nv12Instance>,
 
     msaa_samples: u32,
@@ -166,6 +161,581 @@ pub struct WgpuBackend {
     image_bytes_total: u64,
     image_evict_after_frames: u64,
     image_budget_bytes: u64,
+
+    // Graphics layer pool. Maps `SceneNode::BeginLayer::layer_id` to a
+    // cached offscreen render target.
+    layer_pool: HashMap<u32, LayerTarget>,
+}
+
+#[derive(Clone)]
+struct LayerTarget {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    bind: wgpu::BindGroup,
+    depth_stencil_tex: wgpu::Texture,
+    depth_stencil_view: wgpu::TextureView,
+    width: u32,
+    height: u32,
+    rect_px: (f32, f32, f32, f32),
+}
+
+/// Identifies which render target a `Pass` draws into.
+#[derive(Clone, Copy)]
+enum PassTarget {
+    Surface,
+    Layer(u32),
+}
+
+/// A bundle of render pipelines for a single sample-count target. Created
+/// twice: once with `sample_count = msaa_samples` for the surface pass, and
+/// once with `sample_count = 1` for graphics-layer render-to-texture passes
+/// (where MSAA is wasted).
+struct Pipelines {
+    rects: wgpu::RenderPipeline,
+    borders: wgpu::RenderPipeline,
+    ellipses: wgpu::RenderPipeline,
+    ellipse_borders: wgpu::RenderPipeline,
+    text_mask: wgpu::RenderPipeline,
+    text_color: wgpu::RenderPipeline,
+    image_rgba: wgpu::RenderPipeline,
+    image_nv12: wgpu::RenderPipeline,
+    blur: wgpu::RenderPipeline,
+    clip_a2c: wgpu::RenderPipeline,
+    clip_bin: wgpu::RenderPipeline,
+}
+
+impl Pipelines {
+    fn create(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        sample_count: u32,
+        globals_layout: &wgpu::BindGroupLayout,
+        text_bind_layout: &wgpu::BindGroupLayout,
+        image_bind_layout_nv12: &wgpu::BindGroupLayout,
+        clip_pipeline_layout: &wgpu::PipelineLayout,
+        stencil_for_content: &wgpu::DepthStencilState,
+        stencil_for_clip_inc: &wgpu::DepthStencilState,
+        clip_color_target: &wgpu::ColorTargetState,
+        clip_vertex_layout: &wgpu::VertexBufferLayout,
+    ) -> Self {
+        let msaa_state = wgpu::MultisampleState {
+            count: sample_count,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        };
+
+        // Rect
+        let rect_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("rect.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/rect.wgsl"))),
+        });
+        let rect_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("rect pipeline layout"),
+            bind_group_layouts: &[Some(globals_layout)],
+            immediate_size: 0,
+        });
+        let rects = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("rect pipeline"),
+            layout: Some(&rect_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &rect_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<RectInstance>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32 },
+                        wgpu::VertexAttribute { shader_location: 2, offset: 20, format: wgpu::VertexFormat::Uint32 },
+                        wgpu::VertexAttribute { shader_location: 3, offset: 24, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute { shader_location: 4, offset: 40, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute { shader_location: 5, offset: 56, format: wgpu::VertexFormat::Float32x2 },
+                        wgpu::VertexAttribute { shader_location: 6, offset: 64, format: wgpu::VertexFormat::Float32x2 },
+                    ],
+                }],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &rect_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(stencil_for_content.clone()),
+            multisample: msaa_state,
+            multiview_mask: None,
+            cache: None,
+        });
+
+        // Border
+        let border_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("border.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/border.wgsl"))),
+        });
+        let border_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("border pipeline layout"),
+                bind_group_layouts: &[Some(globals_layout)],
+                immediate_size: 0,
+            });
+        let borders = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("border pipeline"),
+            layout: Some(&border_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &border_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<BorderInstance>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32 },
+                        wgpu::VertexAttribute { shader_location: 2, offset: 20, format: wgpu::VertexFormat::Float32 },
+                        wgpu::VertexAttribute { shader_location: 3, offset: 24, format: wgpu::VertexFormat::Float32x4 },
+                    ],
+                }],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &border_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(stencil_for_content.clone()),
+            multisample: msaa_state,
+            multiview_mask: None,
+            cache: None,
+        });
+
+        // Ellipse
+        let ellipse_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("ellipse.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/ellipse.wgsl"))),
+        });
+        let ellipse_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("ellipse pipeline layout"),
+                bind_group_layouts: &[Some(globals_layout)],
+                immediate_size: 0,
+            });
+        let ellipses = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("ellipse pipeline"),
+            layout: Some(&ellipse_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &ellipse_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<EllipseInstance>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32x4 },
+                    ],
+                }],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &ellipse_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(stencil_for_content.clone()),
+            multisample: msaa_state,
+            multiview_mask: None,
+            cache: None,
+        });
+
+        // Ellipse Border
+        let ellipse_border_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("ellipse_border.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                "shaders/ellipse_border.wgsl"
+            ))),
+        });
+        let ellipse_border_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("ellipse border layout"),
+                bind_group_layouts: &[Some(globals_layout)],
+                immediate_size: 0,
+            });
+        let ellipse_borders = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("ellipse border pipeline"),
+            layout: Some(&ellipse_border_layout),
+            vertex: wgpu::VertexState {
+                module: &ellipse_border_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<EllipseBorderInstance>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32 },
+                        wgpu::VertexAttribute { shader_location: 2, offset: 20, format: wgpu::VertexFormat::Float32x4 },
+                    ],
+                }],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &ellipse_border_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(stencil_for_content.clone()),
+            multisample: msaa_state,
+            multiview_mask: None,
+            cache: None,
+        });
+
+        // Text (mask)
+        let text_mask_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("text.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/text.wgsl"))),
+        });
+        // Text (color)
+        let text_color_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("text_color.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                "shaders/text_color.wgsl"
+            ))),
+        });
+        let text_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("text pipeline layout"),
+            bind_group_layouts: &[Some(globals_layout), Some(text_bind_layout)],
+            immediate_size: 0,
+        });
+        let glyph_vertex = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<GlyphInstance>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
+                wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32x4 },
+                wgpu::VertexAttribute { shader_location: 2, offset: 32, format: wgpu::VertexFormat::Float32x4 },
+            ],
+        };
+        let text_mask = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("text pipeline (mask)"),
+            layout: Some(&text_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &text_mask_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[glyph_vertex.clone()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &text_mask_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(stencil_for_content.clone()),
+            multisample: msaa_state,
+            multiview_mask: None,
+            cache: None,
+        });
+        let text_color = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("text pipeline (color)"),
+            layout: Some(&text_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &text_color_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[glyph_vertex],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &text_color_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(stencil_for_content.clone()),
+            multisample: msaa_state,
+            multiview_mask: None,
+            cache: None,
+        });
+        // image_rgba reuses the text color pipeline (same vertex/bindings).
+        let image_rgba = text_color.clone();
+
+        // Blur composite pipeline (graphics-layer drop shadow)
+        let blur_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("blur_shadow.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                "shaders/blur_shadow.wgsl"
+            ))),
+        });
+        let blur_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("blur pipeline layout"),
+            bind_group_layouts: &[Some(globals_layout), Some(text_bind_layout)],
+            immediate_size: 0,
+        });
+        let blur = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("blur pipeline"),
+            layout: Some(&blur_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &blur_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<BlurInstance>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute { shader_location: 2, offset: 32, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute { shader_location: 3, offset: 48, format: wgpu::VertexFormat::Float32x2 },
+                    ],
+                }],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &blur_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(stencil_for_content.clone()),
+            multisample: msaa_state,
+            multiview_mask: None,
+            cache: None,
+        });
+
+        // NV12 Image Pipeline
+        let image_nv12_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("image_nv12.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                "shaders/image_nv12.wgsl"
+            ))),
+        });
+        let image_nv12_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("image nv12 pipeline layout"),
+            bind_group_layouts: &[Some(globals_layout), Some(image_bind_layout_nv12)],
+            immediate_size: 0,
+        });
+        let image_nv12 = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("image nv12 pipeline"),
+            layout: Some(&image_nv12_layout),
+            vertex: wgpu::VertexState {
+                module: &image_nv12_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Nv12Instance>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute { shader_location: 2, offset: 32, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute { shader_location: 3, offset: 48, format: wgpu::VertexFormat::Float32 },
+                    ],
+                }],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &image_nv12_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(stencil_for_content.clone()),
+            multisample: msaa_state,
+            multiview_mask: None,
+            cache: None,
+        });
+
+        // Clipping
+        let clip_shader_a2c = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("clip_round_rect_a2c.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                "shaders/clip_round_rect_a2c.wgsl"
+            ))),
+        });
+        let clip_shader_bin = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("clip_round_rect_bin.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                "shaders/clip_round_rect_bin.wgsl"
+            ))),
+        });
+        let clip_a2c = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("clip pipeline (a2c)"),
+            layout: Some(clip_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &clip_shader_a2c,
+                entry_point: Some("vs_main"),
+                buffers: &[clip_vertex_layout.clone()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &clip_shader_a2c,
+                entry_point: Some("fs_main"),
+                targets: &[Some(clip_color_target.clone())],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(stencil_for_clip_inc.clone()),
+            multisample: wgpu::MultisampleState {
+                count: sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: sample_count > 1,
+            },
+            multiview_mask: None,
+            cache: None,
+        });
+        let clip_bin = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("clip pipeline (bin)"),
+            layout: Some(clip_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &clip_shader_bin,
+                entry_point: Some("vs_main"),
+                buffers: &[clip_vertex_layout.clone()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &clip_shader_bin,
+                entry_point: Some("fs_main"),
+                targets: &[Some(clip_color_target.clone())],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(stencil_for_clip_inc.clone()),
+            multisample: wgpu::MultisampleState {
+                count: sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview_mask: None,
+            cache: None,
+        });
+
+        Self {
+            rects,
+            borders,
+            ellipses,
+            ellipse_borders,
+            text_mask,
+            text_color,
+            image_rgba,
+            image_nv12,
+            blur,
+            clip_a2c,
+            clip_bin,
+        }
+    }
+}
+
+/// A segment of the frame that draws into a single render target.
+struct Pass {
+    target: PassTarget,
+    /// The initial scissor to apply to the rpass when it is opened.
+    initial_scissor: (u32, u32, u32, u32),
+    /// `None` means `LoadOp::Load` (resume existing content);
+    /// `Some(c)` means `LoadOp::Clear(c)`.
+    clear_color: Option<[f32; 4]>,
+    cmds: Vec<Cmd>,
+}
+
+#[allow(non_snake_case)]
+enum Cmd {
+    ClipPush {
+        off: u64,
+        cnt: u32,
+        scissor: (u32, u32, u32, u32),
+    },
+    ClipPop {
+        scissor: (u32, u32, u32, u32),
+    },
+    Rect {
+        off: u64,
+        cnt: u32,
+    },
+    Border {
+        off: u64,
+        cnt: u32,
+    },
+    Ellipse {
+        off: u64,
+        cnt: u32,
+    },
+    EllipseBorder {
+        off: u64,
+        cnt: u32,
+    },
+    GlyphsMask {
+        off: u64,
+        cnt: u32,
+    },
+    GlyphsColor {
+        off: u64,
+        cnt: u32,
+    },
+    ImageRgba {
+        off: u64,
+        cnt: u32,
+        handle: u64,
+    },
+    ImageNv12 {
+        off: u64,
+        cnt: u32,
+        handle: u64,
+    },
+    PushTransform(Transform),
+    PopTransform,
+    /// Composite a previously-rendered graphics layer back into the
+    /// current target as a textured quad. The quad's vertex buffer
+    /// lives in `self.glyph_color.ring` (a `GlyphInstance`).
+    CompositeLayer {
+        off: u64,
+        cnt: u32,
+        layer_id: u32,
+        alpha: f32,
+    },
+    /// Composite a blurred drop shadow of a previously-rendered graphics
+    /// layer. The quad's vertex buffer lives in `self.blur_ring` (a
+    /// `BlurInstance`).
+    CompositeShadow {
+        off: u64,
+        cnt: u32,
+        layer_id: u32,
+    },
 }
 
 enum ImageTex {
@@ -270,6 +840,15 @@ struct GlyphInstance {
     xywh: [f32; 4],
     uv: [f32; 4],
     color: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct BlurInstance {
+    xywh: [f32; 4],
+    uv: [f32; 4],
+    color: [f32; 4],
+    blur_uv: [f32; 2],
 }
 
 #[repr(C)]
@@ -475,269 +1054,6 @@ impl WgpuBackend {
 
         // PIPELINES
 
-        // Rect
-        let rect_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("rect.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/rect.wgsl"))),
-        });
-        let rect_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("rect pipeline layout"),
-            bind_group_layouts: &[Some(&globals_layout)],
-            immediate_size: 0,
-        });
-        let rect_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("rect pipeline"),
-            layout: Some(&rect_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &rect_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<RectInstance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            shader_location: 0,
-                            offset: 0,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 1,
-                            offset: 16,
-                            format: wgpu::VertexFormat::Float32,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 2,
-                            offset: 20,
-                            format: wgpu::VertexFormat::Uint32,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 3,
-                            offset: 24,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 4,
-                            offset: 40,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 5,
-                            offset: 56,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 6,
-                            offset: 64,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                    ],
-                }],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &rect_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(stencil_for_content.clone()),
-            multisample: multisample_state,
-            multiview_mask: None,
-            cache: None,
-        });
-
-        // Border
-        let border_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("border.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/border.wgsl"))),
-        });
-        let border_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("border pipeline layout"),
-                bind_group_layouts: &[Some(&globals_layout)],
-                immediate_size: 0,
-            });
-        let border_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("border pipeline"),
-            layout: Some(&border_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &border_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<BorderInstance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            shader_location: 0,
-                            offset: 0,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 1,
-                            offset: 16,
-                            format: wgpu::VertexFormat::Float32,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 2,
-                            offset: 20,
-                            format: wgpu::VertexFormat::Float32,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 3,
-                            offset: 24,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                    ],
-                }],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &border_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(stencil_for_content.clone()),
-            multisample: multisample_state,
-            multiview_mask: None,
-            cache: None,
-        });
-
-        // Ellipse
-        let ellipse_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("ellipse.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/ellipse.wgsl"))),
-        });
-        let ellipse_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("ellipse pipeline layout"),
-                bind_group_layouts: &[Some(&globals_layout)],
-                immediate_size: 0,
-            });
-        let ellipse_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("ellipse pipeline"),
-            layout: Some(&ellipse_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &ellipse_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<EllipseInstance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            shader_location: 0,
-                            offset: 0,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 1,
-                            offset: 16,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                    ],
-                }],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &ellipse_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(stencil_for_content.clone()),
-            multisample: multisample_state,
-            multiview_mask: None,
-            cache: None,
-        });
-
-        // Ellipse Border
-        let ellipse_border_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("ellipse_border.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "shaders/ellipse_border.wgsl"
-            ))),
-        });
-        let ellipse_border_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("ellipse border layout"),
-                bind_group_layouts: &[Some(&globals_layout)],
-                immediate_size: 0,
-            });
-        let ellipse_border_pipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("ellipse border pipeline"),
-                layout: Some(&ellipse_border_layout),
-                vertex: wgpu::VertexState {
-                    module: &ellipse_border_shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<EllipseBorderInstance>() as u64,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &[
-                            wgpu::VertexAttribute {
-                                shader_location: 0,
-                                offset: 0,
-                                format: wgpu::VertexFormat::Float32x4,
-                            },
-                            wgpu::VertexAttribute {
-                                shader_location: 1,
-                                offset: 16,
-                                format: wgpu::VertexFormat::Float32,
-                            },
-                            wgpu::VertexAttribute {
-                                shader_location: 2,
-                                offset: 20,
-                                format: wgpu::VertexFormat::Float32x4,
-                            },
-                        ],
-                    }],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &ellipse_border_shader,
-                    entry_point: Some("fs_main"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: config.format,
-                        blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                }),
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: Some(stencil_for_content.clone()),
-                multisample: multisample_state,
-                multiview_mask: None,
-                cache: None,
-            });
-
-        // TEXT & IMAGES
-
-        let text_mask_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("text.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/text.wgsl"))),
-        });
-        let text_color_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("text_color.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "shaders/text_color.wgsl"
-            ))),
-        });
-
         // Single shared sampler for images/text
         let image_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("image/text sampler"),
@@ -811,193 +1127,12 @@ impl WgpuBackend {
                 ],
             });
 
-        let text_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("text pipeline layout"),
-            bind_group_layouts: &[Some(&globals_layout), Some(&text_bind_layout)],
-            immediate_size: 0,
-        });
-
-        let text_pipeline_mask = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("text pipeline (mask)"),
-            layout: Some(&text_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &text_mask_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<GlyphInstance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            shader_location: 0,
-                            offset: 0,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 1,
-                            offset: 16,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 2,
-                            offset: 32,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                    ],
-                }],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &text_mask_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(stencil_for_content.clone()),
-            multisample: multisample_state,
-            multiview_mask: None,
-            cache: None,
-        });
-
-        let text_pipeline_color = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("text pipeline (color)"),
-            layout: Some(&text_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &text_color_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<GlyphInstance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            shader_location: 0,
-                            offset: 0,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 1,
-                            offset: 16,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 2,
-                            offset: 32,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                    ],
-                }],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &text_color_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(stencil_for_content.clone()),
-            multisample: multisample_state,
-            multiview_mask: None,
-            cache: None,
-        });
-
-        // Reuse text color pipeline for RGBA images (same vertex struct and bindings)
-        let image_pipeline_rgba = text_pipeline_color.clone(); // In real wgpu handle clone is cheap
-
-        // NV12 Image Pipeline
-        let image_nv12_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("image_nv12.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "shaders/image_nv12.wgsl"
-            ))),
-        });
-
-        let image_nv12_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("image nv12 pipeline layout"),
-            bind_group_layouts: &[Some(&globals_layout), Some(&image_bind_layout_nv12)],
-            immediate_size: 0,
-        });
-
-        let image_pipeline_nv12 = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("image nv12 pipeline"),
-            layout: Some(&image_nv12_layout),
-            vertex: wgpu::VertexState {
-                module: &image_nv12_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<Nv12Instance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            shader_location: 0,
-                            offset: 0,
-                            format: wgpu::VertexFormat::Float32x4,
-                        }, // xywh
-                        wgpu::VertexAttribute {
-                            shader_location: 1,
-                            offset: 16,
-                            format: wgpu::VertexFormat::Float32x4,
-                        }, // uv
-                        wgpu::VertexAttribute {
-                            shader_location: 2,
-                            offset: 32,
-                            format: wgpu::VertexFormat::Float32x4,
-                        }, // tint
-                        wgpu::VertexAttribute {
-                            shader_location: 3,
-                            offset: 48,
-                            format: wgpu::VertexFormat::Float32,
-                        }, // full_range
-                    ],
-                }],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &image_nv12_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(stencil_for_content.clone()),
-            multisample: multisample_state,
-            multiview_mask: None,
-            cache: None,
-        });
-
-        // CLIPPING
-
-        let clip_shader_a2c = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("clip_round_rect_a2c.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "shaders/clip_round_rect_a2c.wgsl"
-            ))),
-        });
-        let clip_shader_bin = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("clip_round_rect_bin.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "shaders/clip_round_rect_bin.wgsl"
-            ))),
-        });
-
+        // Clipping layout
         let clip_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("clip pipeline layout"),
             bind_group_layouts: &[Some(&globals_layout)],
             immediate_size: 0,
         });
-
         let clip_vertex_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<ClipInstance>() as u64,
             step_mode: wgpu::VertexStepMode::Instance,
@@ -1014,64 +1149,48 @@ impl WgpuBackend {
                 },
             ],
         };
-
         let clip_color_target = wgpu::ColorTargetState {
             format: config.format,
             blend: None,
             write_mask: wgpu::ColorWrites::empty(),
         };
 
-        let clip_pipeline_a2c = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("clip pipeline (a2c)"),
-            layout: Some(&clip_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &clip_shader_a2c,
-                entry_point: Some("vs_main"),
-                buffers: &[clip_vertex_layout.clone()],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &clip_shader_a2c,
-                entry_point: Some("fs_main"),
-                targets: &[Some(clip_color_target.clone())],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(stencil_for_clip_inc.clone()),
-            multisample: wgpu::MultisampleState {
-                count: msaa_samples,
-                mask: !0,
-                alpha_to_coverage_enabled: msaa_samples > 1,
-            },
-            multiview_mask: None,
-            cache: None,
-        });
+        // Two sets of pipelines: one for the MSAA surface pass, one for layer
+        // render-to-texture passes (sample_count = 1).
+        let surface_pipes = Pipelines::create(
+            &device,
+            config.format,
+            msaa_samples,
+            &globals_layout,
+            &text_bind_layout,
+            &image_bind_layout_nv12,
+            &clip_pipeline_layout,
+            &stencil_for_content,
+            &stencil_for_clip_inc,
+            &clip_color_target,
+            &clip_vertex_layout,
+        );
+        let layer_pipes = Pipelines::create(
+            &device,
+            config.format,
+            1,
+            &globals_layout,
+            &text_bind_layout,
+            &image_bind_layout_nv12,
+            &clip_pipeline_layout,
+            &stencil_for_content,
+            &stencil_for_clip_inc,
+            &clip_color_target,
+            &clip_vertex_layout,
+        );
 
-        let clip_pipeline_bin = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("clip pipeline (bin)"),
-            layout: Some(&clip_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &clip_shader_bin,
-                entry_point: Some("vs_main"),
-                buffers: &[clip_vertex_layout],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &clip_shader_bin,
-                entry_point: Some("fs_main"),
-                targets: &[Some(clip_color_target)],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(stencil_for_clip_inc),
-            multisample: wgpu::MultisampleState {
-                count: msaa_samples,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview_mask: None,
-            cache: None,
-        });
+        // Blur composite ring (for graphics-layer drop shadows)
+        let blur_ring = UploadRing::new(
+            &device,
+            "blur ring",
+            1024 * 1024,
+        );
+
 
         // Atlases
         let atlas_mask = Self::init_atlas_mask(&device)?;
@@ -1111,26 +1230,27 @@ impl WgpuBackend {
             queue,
             config,
 
-            rects: InstancedPipe::new(rect_pipeline, ring_rect),
-            borders: InstancedPipe::new(border_pipeline, ring_border),
-            ellipses: InstancedPipe::new(ellipse_pipeline, ring_ellipse),
-            ellipse_borders: InstancedPipe::new(ellipse_border_pipeline, ring_ellipse_border),
-            glyph_mask: InstancedPipe::new(text_pipeline_mask, ring_glyph_mask),
-            glyph_color: InstancedPipe::new(text_pipeline_color, ring_glyph_color),
+            surface_pipes,
+            layer_pipes,
+
+            rects: InstancedPipe::new(ring_rect),
+            borders: InstancedPipe::new(ring_border),
+            ellipses: InstancedPipe::new(ring_ellipse),
+            ellipse_borders: InstancedPipe::new(ring_ellipse_border),
+            glyph_mask: InstancedPipe::new(ring_glyph_mask),
+            glyph_color: InstancedPipe::new(ring_glyph_color),
 
             text_bind_layout,
 
-            image_pipeline_rgba,
-            image_pipeline_nv12: image_pipeline_nv12.clone(),
             image_bind_layout_rgba,
             image_bind_layout_nv12,
             image_sampler,
 
-            clip_pipeline_a2c,
-            clip_pipeline_bin,
+            blur_ring,
+
             clip_ring: ring_clip,
 
-            nv12: InstancedPipe::new(image_pipeline_nv12, ring_nv12),
+            nv12: InstancedPipe::new(ring_nv12),
 
             msaa_samples,
             depth_stencil_tex,
@@ -1151,6 +1271,7 @@ impl WgpuBackend {
             image_bytes_total: 0,
             image_evict_after_frames: 600,         // ~10s @ 60fps
             image_budget_bytes: 512 * 1024 * 1024, // 512 MB
+            layer_pool: HashMap::new(),
         };
 
         backend.recreate_msaa_and_depth_stencil();
@@ -1661,6 +1782,80 @@ impl WgpuBackend {
         })
     }
 
+    fn get_or_create_layer(
+        &mut self,
+        layer_id: u32,
+        width: u32,
+        height: u32,
+        rect: repose_core::Rect,
+    ) {
+        let needs_alloc = match self.layer_pool.get(&layer_id) {
+            Some(lt) => lt.width != width || lt.height != height,
+            None => true,
+        };
+        if !needs_alloc {
+            return;
+        }
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("graphics layer"),
+            size: wgpu::Extent3d {
+                width: width.max(1),
+                height: height.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("layer bind"),
+            layout: &self.image_bind_layout_rgba,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.image_sampler),
+                },
+            ],
+        });
+        let depth_stencil_tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("graphics layer depth-stencil"),
+            size: wgpu::Extent3d {
+                width: width.max(1),
+                height: height.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth24PlusStencil8,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let depth_stencil_view = depth_stencil_tex
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        self.layer_pool.insert(
+            layer_id,
+            LayerTarget {
+                texture: tex,
+                view,
+                bind,
+                depth_stencil_tex,
+                depth_stencil_view,
+                width,
+                height,
+                rect_px: (rect.x, rect.y, rect.w, rect.h),
+            },
+        );
+    }
+
     fn atlas_bind_group_mask(&self) -> wgpu::BindGroup {
         self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("atlas bind"),
@@ -1965,6 +2160,8 @@ impl RenderBackend for WgpuBackend {
         if self.config.width == 0 || self.config.height == 0 {
             return;
         }
+        let mut retries = 0u32;
+        const MAX_RETRIES: u32 = 4;
         let frame = loop {
             match self.surface.get_current_texture() {
                 wgpu::CurrentSurfaceTexture::Success(f) => break f,
@@ -1982,12 +2179,15 @@ impl RenderBackend for WgpuBackend {
                     self.surface.configure(&self.device, &self.config);
                 }
                 wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
-                    // Skip frame if surface is not ready
                     return;
                 }
                 wgpu::CurrentSurfaceTexture::Validation => {
-                    log::error!("surface validation error");
-                    return;
+                    retries += 1;
+                    if retries >= MAX_RETRIES {
+                        log::warn!("surface validation persisted after {MAX_RETRIES} retries; skipping frame");
+                        return;
+                    }
+                    self.surface.configure(&self.device, &self.config);
                 }
             }
         };
@@ -2028,54 +2228,21 @@ impl RenderBackend for WgpuBackend {
         self.queue
             .write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&globals));
 
-        enum Cmd {
-            ClipPush {
-                off: u64,
-                cnt: u32,
-                scissor: (u32, u32, u32, u32),
-            },
-            ClipPop {
-                scissor: (u32, u32, u32, u32),
-            },
-            Rect {
-                off: u64,
-                cnt: u32,
-            },
-            Border {
-                off: u64,
-                cnt: u32,
-            },
-            Ellipse {
-                off: u64,
-                cnt: u32,
-            },
-            EllipseBorder {
-                off: u64,
-                cnt: u32,
-            },
-            GlyphsMask {
-                off: u64,
-                cnt: u32,
-            },
-            GlyphsColor {
-                off: u64,
-                cnt: u32,
-            },
-            ImageRgba {
-                off: u64,
-                cnt: u32,
-                handle: u64,
-            },
-            ImageNv12 {
-                off: u64,
-                cnt: u32,
-                handle: u64,
-            },
-            PushTransform(Transform),
-            PopTransform,
-        }
-
-        let mut cmds: Vec<Cmd> = Vec::with_capacity(scene.nodes.len());
+        let mut passes: Vec<Pass> = Vec::with_capacity(1);
+        let mut current_pass: Pass = Pass {
+            target: PassTarget::Surface,
+            initial_scissor: (0, 0, self.config.width, self.config.height),
+            clear_color: Some([
+                scene.clear_color.0 as f32 / 255.0,
+                scene.clear_color.1 as f32 / 255.0,
+                scene.clear_color.2 as f32 / 255.0,
+                scene.clear_color.3 as f32 / 255.0,
+            ]),
+            cmds: Vec::with_capacity(scene.nodes.len()),
+        };
+        let mut target_stack: Vec<PassTarget> = Vec::new();
+        let mut layer_alphas: Vec<(u32, f32, (u32, u32, u32, u32))> = Vec::new();
+        let mut current_target_size: (f32, f32) = (fb_w, fb_h);
 
         struct Batch {
             rects: Vec<RectInstance>,
@@ -2220,7 +2387,7 @@ impl RenderBackend for WgpuBackend {
                         &mut self.nv12,
                         &self.device,
                         &self.queue,
-                        &mut cmds,
+                        &mut current_pass.cmds,
                     )
                 }
                 current_prim = None;
@@ -2247,8 +2414,8 @@ impl RenderBackend for WgpuBackend {
                             transformed_rect.y,
                             transformed_rect.w,
                             transformed_rect.h,
-                            fb_w,
-                            fb_h,
+                            current_target_size.0,
+                            current_target_size.1,
                         ),
                         radius: *radius,
                         brush_type,
@@ -2272,8 +2439,8 @@ impl RenderBackend for WgpuBackend {
                             transformed_rect.y,
                             transformed_rect.w,
                             transformed_rect.h,
-                            fb_w,
-                            fb_h,
+                            current_target_size.0,
+                            current_target_size.1,
                         ),
                         radius: *radius,
                         stroke: *width,
@@ -2290,8 +2457,8 @@ impl RenderBackend for WgpuBackend {
                             transformed.y,
                             transformed.w,
                             transformed.h,
-                            fb_w,
-                            fb_h,
+                            current_target_size.0,
+                            current_target_size.1,
                         ),
                         color,
                     });
@@ -2305,8 +2472,8 @@ impl RenderBackend for WgpuBackend {
                             transformed.y,
                             transformed.w,
                             transformed.h,
-                            fb_w,
-                            fb_h,
+                            current_target_size.0,
+                            current_target_size.1,
                         ),
                         stroke: *width,
                         color: color.to_linear(),
@@ -2330,7 +2497,7 @@ impl RenderBackend for WgpuBackend {
                             let x = transformed_rect.x + sg.x + sg.bearing_x;
                             let y = transformed_rect.y + sg.y - sg.bearing_y;
                             batch.colors.push(GlyphInstance {
-                                xywh: to_ndc(x, y, info.w, info.h, fb_w, fb_h),
+                                xywh: to_ndc(x, y, info.w, info.h, current_target_size.0, current_target_size.1),
                                 uv: [info.u0, info.v1, info.u1, info.v0],
                                 color: color.to_linear(),
                             });
@@ -2338,7 +2505,7 @@ impl RenderBackend for WgpuBackend {
                             let x = transformed_rect.x + sg.x + sg.bearing_x;
                             let y = transformed_rect.y + sg.y - sg.bearing_y;
                             batch.masks.push(GlyphInstance {
-                                xywh: to_ndc(x, y, info.w, info.h, fb_w, fb_h),
+                                xywh: to_ndc(x, y, info.w, info.h, current_target_size.0, current_target_size.1),
                                 uv: [info.u0, info.v1, info.u1, info.v0],
                                 color: color.to_linear(),
                             });
@@ -2383,51 +2550,52 @@ impl RenderBackend for WgpuBackend {
 
                     let src_w = img_w as f32;
                     let src_h = img_h as f32;
-                    let dst_w = rect.w.max(0.0);
-                    let dst_h = rect.h.max(0.0);
+                    let transformed = current_transform.apply_to_rect(*rect);
+                    let dst_w = transformed.w.max(0.0);
+                    let dst_h = transformed.h.max(0.0);
                     if dst_w <= 0.0 || dst_h <= 0.0 {
                         continue;
                     }
 
-                    let (xywh_ndc, uv_rect) = match fit {
-                        repose_core::view::ImageFit::Contain => {
-                            let scale = (dst_w / src_w).min(dst_h / src_h);
-                            let w = src_w * scale;
-                            let h = src_h * scale;
-                            let x = rect.x + (dst_w - w) * 0.5;
-                            let y = rect.y + (dst_h - h) * 0.5;
-                            (to_ndc(x, y, w, h, fb_w, fb_h), [0.0, 1.0, 1.0, 0.0])
-                        }
-                        repose_core::view::ImageFit::Cover => {
-                            let scale = (dst_w / src_w).max(dst_h / src_h);
-                            let content_w = src_w * scale;
-                            let content_h = src_h * scale;
-                            let overflow_x = (content_w - dst_w) * 0.5;
-                            let overflow_y = (content_h - dst_h) * 0.5;
-                            let u0 = (overflow_x / content_w).clamp(0.0, 1.0);
-                            let v0 = (overflow_y / content_h).clamp(0.0, 1.0);
-                            let u1 = ((overflow_x + dst_w) / content_w).clamp(0.0, 1.0);
-                            let v1 = ((overflow_y + dst_h) / content_h).clamp(0.0, 1.0);
-                            (
-                                to_ndc(rect.x, rect.y, dst_w, dst_h, fb_w, fb_h),
-                                [u0, 1.0 - v1, u1, 1.0 - v0],
-                            )
-                        }
-                        repose_core::view::ImageFit::FitWidth => {
-                            let scale = dst_w / src_w;
-                            let w = dst_w;
-                            let h = src_h * scale;
-                            let y = rect.y + (dst_h - h) * 0.5;
-                            (to_ndc(rect.x, y, w, h, fb_w, fb_h), [0.0, 1.0, 1.0, 0.0])
-                        }
-                        repose_core::view::ImageFit::FitHeight => {
-                            let scale = dst_h / src_h;
-                            let w = src_w * scale;
-                            let h = dst_h;
-                            let x = rect.x + (dst_w - w) * 0.5;
-                            (to_ndc(x, rect.y, w, h, fb_w, fb_h), [0.0, 1.0, 1.0, 0.0])
-                        }
-                    };
+                            let (xywh_ndc, uv_rect) = match fit {
+                                repose_core::view::ImageFit::Contain => {
+                                    let scale = (dst_w / src_w).min(dst_h / src_h);
+                                    let w = src_w * scale;
+                                    let h = src_h * scale;
+                                    let x = transformed.x + (dst_w - w) * 0.5;
+                                    let y = transformed.y + (dst_h - h) * 0.5;
+                                    (to_ndc(x, y, w, h, current_target_size.0, current_target_size.1), [0.0, 1.0, 1.0, 0.0])
+                                }
+                                repose_core::view::ImageFit::Cover => {
+                                    let scale = (dst_w / src_w).max(dst_h / src_h);
+                                    let content_w = src_w * scale;
+                                    let content_h = src_h * scale;
+                                    let overflow_x = (content_w - dst_w) * 0.5;
+                                    let overflow_y = (content_h - dst_h) * 0.5;
+                                    let u0 = (overflow_x / content_w).clamp(0.0, 1.0);
+                                    let v0 = (overflow_y / content_h).clamp(0.0, 1.0);
+                                    let u1 = ((overflow_x + dst_w) / content_w).clamp(0.0, 1.0);
+                                    let v1 = ((overflow_y + dst_h) / content_h).clamp(0.0, 1.0);
+                                    (
+                                        to_ndc(transformed.x, transformed.y, dst_w, dst_h, current_target_size.0, current_target_size.1),
+                                        [u0, 1.0 - v1, u1, 1.0 - v0],
+                                    )
+                                }
+                                repose_core::view::ImageFit::FitWidth => {
+                                    let scale = dst_w / src_w;
+                                    let w = dst_w;
+                                    let h = src_h * scale;
+                                    let y = transformed.y + (dst_h - h) * 0.5;
+                                    (to_ndc(transformed.x, y, w, h, current_target_size.0, current_target_size.1), [0.0, 1.0, 1.0, 0.0])
+                                }
+                                repose_core::view::ImageFit::FitHeight => {
+                                    let scale = dst_h / src_h;
+                                    let w = src_w * scale;
+                                    let h = dst_h;
+                                    let x = transformed.x + (dst_w - w) * 0.5;
+                                    (to_ndc(x, transformed.y, w, h, current_target_size.0, current_target_size.1), [0.0, 1.0, 1.0, 0.0])
+                                }
+                            };
 
                     if is_nv12 {
                         let full_range = if let Some(ImageTex::Nv12 { full_range, .. }) =
@@ -2447,7 +2615,7 @@ impl RenderBackend for WgpuBackend {
                         };
                         if let Some((off, _)) = self.nv12.upload(&self.device, &self.queue, &[inst])
                         {
-                            cmds.push(Cmd::ImageNv12 {
+                            current_pass.cmds.push(Cmd::ImageNv12 {
                                 off,
                                 cnt: 1,
                                 handle: *handle,
@@ -2463,7 +2631,7 @@ impl RenderBackend for WgpuBackend {
                         if let Some((off, _)) =
                             self.glyph_color.upload(&self.device, &self.queue, &[inst])
                         {
-                            cmds.push(Cmd::ImageRgba {
+                            current_pass.cmds.push(Cmd::ImageRgba {
                                 off,
                                 cnt: 1,
                                 handle: *handle,
@@ -2481,7 +2649,11 @@ impl RenderBackend for WgpuBackend {
                     let top = scissor_stack.last().copied().unwrap_or(root_clip_rect);
                     let next_scissor = intersect(top, transformed);
                     scissor_stack.push(next_scissor);
-                    let scissor = to_scissor(&next_scissor, self.config.width, self.config.height);
+                    let scissor = to_scissor(
+                        &next_scissor,
+                        current_target_size.0 as u32,
+                        current_target_size.1 as u32,
+                    );
 
                     let inst = ClipInstance {
                         xywh: to_ndc(
@@ -2489,8 +2661,8 @@ impl RenderBackend for WgpuBackend {
                             transformed.y,
                             transformed.w,
                             transformed.h,
-                            fb_w,
-                            fb_h,
+                            current_target_size.0,
+                            current_target_size.1,
                         ),
                         radius: *radius,
                         _pad: [0.0; 3],
@@ -2499,7 +2671,7 @@ impl RenderBackend for WgpuBackend {
                     self.clip_ring.grow_to_fit(&self.device, bytes.len() as u64);
                     let (off, _) = self.clip_ring.alloc_write(&self.queue, bytes);
 
-                    cmds.push(Cmd::ClipPush {
+                    current_pass.cmds.push(Cmd::ClipPush {
                         off,
                         cnt: 1,
                         scissor,
@@ -2515,8 +2687,12 @@ impl RenderBackend for WgpuBackend {
                     }
 
                     let top = scissor_stack.last().copied().unwrap_or(root_clip_rect);
-                    let scissor = to_scissor(&top, self.config.width, self.config.height);
-                    cmds.push(Cmd::ClipPop { scissor });
+                    let scissor = to_scissor(
+                        &top,
+                        current_target_size.0 as u32,
+                        current_target_size.1 as u32,
+                    );
+                    current_pass.cmds.push(Cmd::ClipPop { scissor });
                 }
                 SceneNode::Shadow {
                     rect,
@@ -2534,8 +2710,8 @@ impl RenderBackend for WgpuBackend {
                             transformed_rect.y,
                             transformed_rect.w,
                             transformed_rect.h,
-                            fb_w,
-                            fb_h,
+                            current_target_size.0,
+                            current_target_size.1,
                         ),
                         radius: *radius,
                         brush_type,
@@ -2561,10 +2737,126 @@ impl RenderBackend for WgpuBackend {
                     flush_batch!(); // flush before transform change
                     transform_stack.pop();
                 }
+                SceneNode::BeginLayer { rect, layer_id, alpha } => {
+                    flush_batch!();
+                    let w = (rect.w.max(1.0)).ceil() as u32;
+                    let h = (rect.h.max(1.0)).ceil() as u32;
+                    // Close out the current pass, start a new one for the layer.
+                    let prev_target = current_pass.target;
+                    let prev_scissor = current_pass.initial_scissor;
+                    let saved = std::mem::replace(
+                        &mut current_pass,
+                        Pass {
+                            target: PassTarget::Layer(*layer_id),
+                            initial_scissor: (0, 0, w, h),
+                            clear_color: Some([0.0, 0.0, 0.0, 0.0]),
+                            cmds: Vec::new(),
+                        },
+                    );
+                    passes.push(saved);
+                    target_stack.push(prev_target);
+                    let _ = prev_scissor; // initial_scissor of resumed pass is restored at EndLayer
+                    // Get or create the layer's offscreen texture now so that
+                    // subsequent scissor ops / draws have a valid target.
+                    self.get_or_create_layer(*layer_id, w, h, *rect);
+                    current_target_size = (w as f32, h as f32);
+                    layer_alphas.push((
+                        *layer_id,
+                        *alpha,
+                        current_pass.initial_scissor,
+                    ));
+                }
+                SceneNode::EndLayer { layer_id } => {
+                    flush_batch!();
+                    // Finish the layer's pass, start a new one on the previous target.
+                    let saved = std::mem::replace(
+                        &mut current_pass,
+                        Pass {
+                            target: target_stack.pop().unwrap_or(PassTarget::Surface),
+                            initial_scissor: (0, 0, self.config.width, self.config.height),
+                            clear_color: None, // LoadOp::Load — don't wipe earlier surface content
+                            cmds: Vec::new(),
+                        },
+                    );
+                    passes.push(saved);
+                    current_target_size = (fb_w, fb_h);
+                    // Issue a composite quad for the just-finished layer in the new pass.
+                    if let Some((_, layer_alpha, _)) = layer_alphas
+                        .iter()
+                        .find(|(id, _, _)| id == layer_id)
+                        .copied()
+                    {
+                        let layer = self.layer_pool.get(layer_id).expect("layer target");
+                        let inst = GlyphInstance {
+                            xywh: to_ndc(
+                                layer.rect_px.0,
+                                layer.rect_px.1,
+                                layer.rect_px.2,
+                                layer.rect_px.3,
+                                fb_w,
+                                fb_h,
+                            ),
+                            uv: [0.0, 1.0, 1.0, 0.0],
+                            color: [1.0, 1.0, 1.0, layer_alpha],
+                        };
+                        if let Some((off, cnt)) =
+                            self.glyph_color.upload(&self.device, &self.queue, &[inst])
+                        {
+                            current_pass.cmds.push(Cmd::CompositeLayer {
+                                off,
+                                cnt,
+                                layer_id: *layer_id,
+                                alpha: layer_alpha,
+                            });
+                        }
+                    }
+                }
+                SceneNode::CompositeShadow {
+                    layer_id,
+                    blur_px,
+                    offset_px,
+                    color,
+                } => {
+                    flush_batch!();
+                    if let Some(layer) = self.layer_pool.get(layer_id).cloned() {
+                        // Shadow rect = layer rect + offset.
+                        let sx = layer.rect_px.0 + offset_px.0;
+                        let sy = layer.rect_px.1 + offset_px.1;
+                        let sw = layer.rect_px.2;
+                        let sh = layer.rect_px.3;
+                        // The blur in UV space is 1.5 * blur_px / texture_size
+                        // (the 1.5 matches the 3x3 Gaussian span).
+                        let bw_uv = (blur_px * 1.5) / layer.width.max(1) as f32;
+                        let bh_uv = (blur_px * 1.5) / layer.height.max(1) as f32;
+                        let inst = BlurInstance {
+                            xywh: to_ndc(sx, sy, sw, sh, fb_w, fb_h),
+                            uv: [0.0, 0.0, 1.0, 1.0],
+                            color: [
+                                color.0 as f32 / 255.0,
+                                color.1 as f32 / 255.0,
+                                color.2 as f32 / 255.0,
+                                color.3 as f32 / 255.0,
+                            ],
+                            blur_uv: [bw_uv, bh_uv],
+                        };
+                        self.blur_ring
+                            .grow_to_fit(&self.device, std::mem::size_of::<BlurInstance>() as u64);
+                        let bytes = bytemuck::bytes_of(&inst);
+                        let (off, _) = self.blur_ring.alloc_write(&self.queue, bytes);
+                        current_pass.cmds.push(Cmd::CompositeShadow {
+                            off,
+                            cnt: 1,
+                            layer_id: *layer_id,
+                        });
+                    }
+                }
             }
         }
 
         flush_batch!();
+
+        // Push the final pass.
+        passes.push(current_pass);
 
         let mut encoder = self
             .device
@@ -2572,38 +2864,71 @@ impl RenderBackend for WgpuBackend {
                 label: Some("frame encoder"),
             });
 
-        {
-            let swap_view = frame
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_mask = self.atlas_bind_group_mask();
+        let bind_color = self.atlas_bind_group_color();
+        let mut clip_depth: u32 = 0;
 
-            let (color_view, resolve_target) = if let Some(msaa_view) = &self.msaa_view {
-                (msaa_view, Some(&swap_view))
+        for pass in std::mem::take(&mut passes) {
+            let (color_view, resolve_target, depth_stencil_view, is_layer) = match pass.target {
+                PassTarget::Surface => {
+                    let swap_view = frame
+                        .texture
+                        .create_view(&wgpu::TextureViewDescriptor::default());
+                    let (color, resolve) = if let Some(msaa_view) = &self.msaa_view {
+                        (msaa_view.clone(), Some(swap_view))
+                    } else {
+                        (swap_view, None)
+                    };
+                    (color, resolve, self.depth_stencil_view.clone(), false)
+                }
+                PassTarget::Layer(layer_id) => {
+                    if let Some(lt) = self.layer_pool.get(&layer_id) {
+                        (lt.view.clone(), None, lt.depth_stencil_view.clone(), true)
+                    } else {
+                        log::warn!("missing layer target {layer_id}");
+                        continue;
+                    }
+                }
+            };
+
+            if is_layer {
+                clip_depth = 0;
+            }
+
+            let pipes: &Pipelines = if is_layer {
+                &self.layer_pipes
             } else {
-                (&swap_view, None)
+                &self.surface_pipes
             };
 
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("main pass"),
+                label: Some("pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color_view,
-                    resolve_target,
+                    view: &color_view,
+                    resolve_target: resolve_target.as_ref(),
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: scene.clear_color.0 as f64 / 255.0,
-                            g: scene.clear_color.1 as f64 / 255.0,
-                            b: scene.clear_color.2 as f64 / 255.0,
-                            a: scene.clear_color.3 as f64 / 255.0,
-                        }),
+                        load: match pass.clear_color {
+                            Some(c) => wgpu::LoadOp::Clear(wgpu::Color {
+                                r: c[0] as f64,
+                                g: c[1] as f64,
+                                b: c[2] as f64,
+                                a: c[3] as f64,
+                            }),
+                            None => wgpu::LoadOp::Load,
+                        },
                         store: wgpu::StoreOp::Store,
                     },
                     depth_slice: None,
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_stencil_view,
+                    view: &depth_stencil_view,
                     depth_ops: None,
                     stencil_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(0),
+                        load: if is_layer || pass.clear_color.is_some() {
+                            wgpu::LoadOp::Clear(0)
+                        } else {
+                            wgpu::LoadOp::Load
+                        },
                         store: wgpu::StoreOp::Store,
                     }),
                 }),
@@ -2612,15 +2937,16 @@ impl RenderBackend for WgpuBackend {
                 multiview_mask: None,
             });
 
-            let mut clip_depth: u32 = 0;
             rpass.set_bind_group(0, &self.globals_bind, &[]);
             rpass.set_stencil_reference(clip_depth);
-            rpass.set_scissor_rect(0, 0, self.config.width, self.config.height);
+            rpass.set_scissor_rect(
+                pass.initial_scissor.0,
+                pass.initial_scissor.1,
+                pass.initial_scissor.2,
+                pass.initial_scissor.3,
+            );
 
-            let bind_mask = self.atlas_bind_group_mask();
-            let bind_color = self.atlas_bind_group_color();
-
-            for cmd in cmds {
+            for cmd in pass.cmds {
                 match cmd {
                     Cmd::ClipPush {
                         off,
@@ -2630,10 +2956,10 @@ impl RenderBackend for WgpuBackend {
                         rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                         rpass.set_stencil_reference(clip_depth);
 
-                        if self.msaa_samples > 1 {
-                            rpass.set_pipeline(&self.clip_pipeline_a2c);
+                        if self.msaa_samples > 1 && !is_layer {
+                            rpass.set_pipeline(&pipes.clip_a2c);
                         } else {
-                            rpass.set_pipeline(&self.clip_pipeline_bin);
+                            rpass.set_pipeline(&pipes.clip_bin);
                         }
 
                         let bytes = (n as u64) * std::mem::size_of::<ClipInstance>() as u64;
@@ -2651,21 +2977,21 @@ impl RenderBackend for WgpuBackend {
                     }
 
                     Cmd::Rect { off, cnt: n } => {
-                        rpass.set_pipeline(&self.rects.pipeline);
+                        rpass.set_pipeline(&pipes.rects);
                         let bytes = (n as u64) * std::mem::size_of::<RectInstance>() as u64;
                         rpass.set_vertex_buffer(0, self.rects.ring.buf.slice(off..off + bytes));
                         rpass.draw(0..6, 0..n);
                     }
 
                     Cmd::Border { off, cnt: n } => {
-                        rpass.set_pipeline(&self.borders.pipeline);
+                        rpass.set_pipeline(&pipes.borders);
                         let bytes = (n as u64) * std::mem::size_of::<BorderInstance>() as u64;
                         rpass.set_vertex_buffer(0, self.borders.ring.buf.slice(off..off + bytes));
                         rpass.draw(0..6, 0..n);
                     }
 
                     Cmd::GlyphsMask { off, cnt: n } => {
-                        rpass.set_pipeline(&self.glyph_mask.pipeline);
+                        rpass.set_pipeline(&pipes.text_mask);
                         rpass.set_bind_group(1, &bind_mask, &[]);
                         let bytes = (n as u64) * std::mem::size_of::<GlyphInstance>() as u64;
                         rpass
@@ -2674,7 +3000,7 @@ impl RenderBackend for WgpuBackend {
                     }
 
                     Cmd::GlyphsColor { off, cnt: n } => {
-                        rpass.set_pipeline(&self.glyph_color.pipeline);
+                        rpass.set_pipeline(&pipes.text_color);
                         rpass.set_bind_group(1, &bind_color, &[]);
                         let bytes = (n as u64) * std::mem::size_of::<GlyphInstance>() as u64;
                         rpass.set_vertex_buffer(
@@ -2690,7 +3016,7 @@ impl RenderBackend for WgpuBackend {
                         handle,
                     } => {
                         if let Some(ImageTex::Rgba { bind, .. }) = self.images.get(&handle) {
-                            rpass.set_pipeline(&self.image_pipeline_rgba);
+                            rpass.set_pipeline(&pipes.image_rgba);
                             rpass.set_bind_group(1, bind, &[]);
                             let bytes = (n as u64) * std::mem::size_of::<GlyphInstance>() as u64;
                             rpass.set_vertex_buffer(
@@ -2707,7 +3033,7 @@ impl RenderBackend for WgpuBackend {
                         handle,
                     } => {
                         if let Some(ImageTex::Nv12 { bind, .. }) = self.images.get(&handle) {
-                            rpass.set_pipeline(&self.nv12.pipeline);
+                            rpass.set_pipeline(&pipes.image_nv12);
                             rpass.set_bind_group(1, bind, &[]);
                             let bytes = (n as u64) * std::mem::size_of::<Nv12Instance>() as u64;
                             rpass.set_vertex_buffer(0, self.nv12.ring.buf.slice(off..off + bytes));
@@ -2716,14 +3042,14 @@ impl RenderBackend for WgpuBackend {
                     }
 
                     Cmd::Ellipse { off, cnt: n } => {
-                        rpass.set_pipeline(&self.ellipses.pipeline);
+                        rpass.set_pipeline(&pipes.ellipses);
                         let bytes = (n as u64) * std::mem::size_of::<EllipseInstance>() as u64;
                         rpass.set_vertex_buffer(0, self.ellipses.ring.buf.slice(off..off + bytes));
                         rpass.draw(0..6, 0..n);
                     }
 
                     Cmd::EllipseBorder { off, cnt: n } => {
-                        rpass.set_pipeline(&self.ellipse_borders.pipeline);
+                        rpass.set_pipeline(&pipes.ellipse_borders);
                         let bytes =
                             (n as u64) * std::mem::size_of::<EllipseBorderInstance>() as u64;
                         rpass.set_vertex_buffer(
@@ -2735,6 +3061,41 @@ impl RenderBackend for WgpuBackend {
 
                     Cmd::PushTransform(_) => {}
                     Cmd::PopTransform => {}
+                    Cmd::CompositeLayer {
+                        off,
+                        cnt: n,
+                        layer_id,
+                        alpha: _,
+                    } => {
+                        if let Some(lt) = self.layer_pool.get(&layer_id).cloned() {
+                            rpass.set_pipeline(&pipes.image_rgba);
+                            rpass.set_bind_group(1, &lt.bind, &[]);
+                            let bytes =
+                                (n as u64) * std::mem::size_of::<GlyphInstance>() as u64;
+                            rpass.set_vertex_buffer(
+                                0,
+                                self.glyph_color.ring.buf.slice(off..off + bytes),
+                            );
+                            rpass.draw(0..6, 0..n);
+                        }
+                    }
+                    Cmd::CompositeShadow {
+                        off,
+                        cnt: n,
+                        layer_id,
+                    } => {
+                        if let Some(lt) = self.layer_pool.get(&layer_id).cloned() {
+                            rpass.set_pipeline(&pipes.blur);
+                            rpass.set_bind_group(1, &lt.bind, &[]);
+                            let bytes =
+                                (n as u64) * std::mem::size_of::<BlurInstance>() as u64;
+                            rpass.set_vertex_buffer(
+                                0,
+                                self.blur_ring.buf.slice(off..off + bytes),
+                            );
+                            rpass.draw(0..6, 0..n);
+                        }
+                    }
                 }
             }
         }
