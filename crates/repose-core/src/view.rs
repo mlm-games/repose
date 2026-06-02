@@ -81,6 +81,7 @@ pub enum ViewKind {
     Row,
     Column,
     Stack,
+    ZStack,
     OverlayHost,
     ScrollV {
         on_scroll: Option<ScrollCallback>,
@@ -180,6 +181,7 @@ impl std::fmt::Debug for ViewKind {
             Self::Row => f.write_str("Row"),
             Self::Column => f.write_str("Column"),
             Self::Stack => f.write_str("Stack"),
+            Self::ZStack => f.write_str("ZStack"),
             Self::OverlayHost => f.write_str("OverlayHost"),
             Self::ScrollV { .. } => f.write_str("ScrollV"),
             Self::ScrollXY { .. } => f.write_str("ScrollXY"),

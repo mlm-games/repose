@@ -254,9 +254,7 @@ impl LayoutEngine {
         let max_w_dp = size_px.0 as f32 / density_scale;
         let max_h_dp = size_px.1 as f32 / density_scale;
         self.tree
-            .set_subcompose_scope(repose_core::SubcomposeScope::new(
-                0.0, max_w_dp, 0.0, max_h_dp,
-            ));
+            .set_subcompose_scope(repose_core::SubcomposeScope::new(0.0, max_w_dp, 0.0, max_h_dp));
         let root_node_id = self.tree.update(root);
         self.stats.tree = self.tree.stats.clone();
 
@@ -356,12 +354,20 @@ impl LayoutEngine {
     /// Compute the intrinsic size of a view in pixels. The view is laid out
     /// in an isolated taffy tree, so calling this does not disturb the
     /// layout cache for the main `layout_frame` pass.
-    pub fn intrinsic_size(&mut self, view: &View, mode: IntrinsicSizeMode) -> (f32, f32) {
+    pub fn intrinsic_size(
+        &mut self,
+        view: &View,
+        mode: IntrinsicSizeMode,
+    ) -> (f32, f32) {
         let px_closure = |dp_val: f32| dp_to_px(dp_val);
         let font_px_closure = |dp_font: f32| dp_to_px(dp_font) * locals::text_scale().0;
 
         let mut temp_taffy = taffy::TaffyTree::new();
-        let root_tid = self.build_taffy_subtree(view, &mut temp_taffy, &font_px_closure);
+        let root_tid = self.build_taffy_subtree(
+            view,
+            &mut temp_taffy,
+            &font_px_closure,
+        );
 
         let avail = match mode {
             IntrinsicSizeMode::MinContent => taffy::geometry::Size {
@@ -472,13 +478,13 @@ impl LayoutEngine {
             return t_id;
         }
 
-        let (style, ctx, children, is_stack, is_scroll) = {
+        let (style, ctx, children, is_zstack, is_scroll) = {
             let node = self.tree.get(node_id).expect("Node missing in update");
             (
                 self.style_from_node(node, font_px),
                 self.context_from_node(node),
                 node.children.clone(),
-                matches!(node.kind, ViewKind::Stack),
+                matches!(node.kind, ViewKind::ZStack),
                 matches!(
                     node.kind,
                     ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }
@@ -499,20 +505,17 @@ impl LayoutEngine {
                 .new_with_children(style, &child_taffy_ids)
                 .unwrap();
             let _ = self.taffy.set_node_context(t, Some(ctx));
-            // Stack children must all occupy the same grid cell to overlap.
-            // Using explicit Line(2) for the end ensures all children are
-            // placed in a single cell
-            if is_stack {
+            // ZStack children must all overlap. Setting position to Absolute
+            // removes them from the grid flow and positions each at (0,0) of
+            // the ZStack's content box. The default `inset: auto` together
+            // with the child's existing size (e.g. percent(1.0) from
+            // fill_max_size) makes each child fill the ZStack, so they
+            // overlap exactly.
+            if is_zstack {
                 for &child_tid in &child_taffy_ids {
                     if let Ok(cs) = self.taffy.style(child_tid) {
                         let mut new_cs = cs.clone();
-                        let start = line::<GridPlacement>(1);
-                        let end = line::<GridPlacement>(2);
-                        new_cs.grid_row = Line {
-                            start: start.clone(),
-                            end: end.clone(),
-                        };
-                        new_cs.grid_column = Line { start, end };
+                        new_cs.position = Position::Absolute;
                         let _ = self.taffy.set_style(child_tid, new_cs);
                     }
                 }
@@ -549,13 +552,13 @@ impl LayoutEngine {
         // Ensure this node has a stable view id
         let _ = self.ensure_view_id(node_id);
 
-        let (new_style, new_ctx, children, is_stack, is_scroll) = {
+        let (new_style, new_ctx, children, is_zstack, is_scroll) = {
             let node = self.tree.get(node_id).unwrap();
             (
                 self.style_from_node(node, font_px),
                 self.context_from_node(node),
                 node.children.clone(),
-                matches!(node.kind, ViewKind::Stack),
+                matches!(node.kind, ViewKind::ZStack),
                 matches!(
                     node.kind,
                     ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }
@@ -566,30 +569,43 @@ impl LayoutEngine {
         let _ = self.taffy.set_style(taffy_id, new_style);
         let _ = self.taffy.set_node_context(taffy_id, Some(new_ctx));
 
+        // If this node's parent is a ZStack, style_from_node just set
+        // position back to Relative (the default), clobbering the
+        // Absolute that the parent's is_zstack block originally applied.
+        // Re-apply Absolute here so the child stays in the overlap layer
+        // even when only the child is dirty (e.g. during a dialog's
+        // fade/scale animation).
+        let parent_is_zstack = {
+            let node = self.tree.get(node_id).unwrap();
+            node.parent
+                .and_then(|pid| self.tree.get(pid))
+                .map_or(false, |p| matches!(p.kind, ViewKind::ZStack))
+        };
+        if parent_is_zstack {
+            if let Ok(cs) = self.taffy.style(taffy_id) {
+                let mut new_cs = cs.clone();
+                new_cs.position = Position::Absolute;
+                let _ = self.taffy.set_style(taffy_id, new_cs);
+            }
+        }
+
         let child_taffy_ids: Vec<taffy::NodeId> = children
             .iter()
             .map(|&child_id| self.update_taffy_node(child_id, font_px))
             .collect();
         let _ = self.taffy.set_children(taffy_id, &child_taffy_ids);
 
-        // Stack children must all occupy the same grid cell (row 1, col 1)
-        // so they overlap. Using explicit Line(2) for the above reason (prev. comment)
-        if is_stack {
+        // ZStack children must all overlap. Setting position to Absolute
+        // removes them from the grid flow and positions each at (0,0) of
+        // the ZStack's content box. The default `inset: auto` together
+        // with the child's existing size (e.g. percent(1.0) from
+        // fill_max_size) makes each child fill the ZStack, so they
+        // overlap exactly.
+        if is_zstack {
             for &child_tid in &child_taffy_ids {
                 if let Ok(cs) = self.taffy.style(child_tid) {
                     let mut new_cs = cs.clone();
-                    let row_start = line::<GridPlacement>(1);
-                    let row_end = line::<GridPlacement>(2);
-                    let col_start = line::<GridPlacement>(1);
-                    let col_end = line::<GridPlacement>(2);
-                    new_cs.grid_row = Line {
-                        start: row_start,
-                        end: row_end,
-                    };
-                    new_cs.grid_column = Line {
-                        start: col_start,
-                        end: col_end,
-                    };
+                    new_cs.position = Position::Absolute;
                     let _ = self.taffy.set_style(child_tid, new_cs);
                 }
             }
@@ -616,12 +632,7 @@ impl LayoutEngine {
         self.style_from_kind(&node.kind, &node.modifier, font_px)
     }
 
-    fn style_from_kind(
-        &self,
-        kind: &ViewKind,
-        m: &repose_core::Modifier,
-        font_px: &dyn Fn(f32) -> f32,
-    ) -> taffy::Style {
+    fn style_from_kind(&self, kind: &ViewKind, m: &repose_core::Modifier, font_px: &dyn Fn(f32) -> f32) -> taffy::Style {
         let px = |dp_val: f32| dp_to_px(dp_val);
         let mut s = taffy::Style::default();
 
@@ -653,7 +664,7 @@ impl LayoutEngine {
                     s.flex_direction = FlexDirection::Column;
                 }
             }
-            ViewKind::Stack => s.display = Display::Grid,
+            ViewKind::Stack | ViewKind::ZStack => s.display = Display::Grid,
             _ => {}
         }
 
@@ -672,7 +683,9 @@ impl LayoutEngine {
 
         if matches!(
             kind,
-            ViewKind::Slider { .. } | ViewKind::RangeSlider { .. } | ViewKind::Image { .. }
+            ViewKind::Slider { .. }
+                | ViewKind::RangeSlider { .. }
+                | ViewKind::Image { .. }
         ) {
             s.flex_shrink = 0.0;
         } else {
@@ -1454,17 +1467,13 @@ impl LayoutEngine {
         let push_round_clip = round_clip_px > 0.5 && rect.w > 0.5 && rect.h > 0.5;
 
         if let Some(anim_spec) = &modifier.animate_content_size {
-            let target = repose_core::Size {
-                width: rect.w,
-                height: rect.h,
-            };
+            let target = repose_core::Size { width: rect.w, height: rect.h };
 
             let anim = remember_state_with_key(format!("anim_cs:{view_id}"), || {
                 AnimatedValue::new(target, *anim_spec)
             });
-            let last_target = remember_state_with_key(format!("anim_cs_last:{view_id}"), || {
-                repose_core::Size::default()
-            });
+            let last_target =
+                remember_state_with_key(format!("anim_cs_last:{view_id}"), || repose_core::Size::default());
 
             // Check if target changed, and re-start animation from current value
             let mut lt = last_target.borrow_mut();
@@ -1563,11 +1572,7 @@ impl LayoutEngine {
             } else {
                 sc.default
             };
-            let overlay = animate_color(
-                format!("m3_sc:{view_id}"),
-                target,
-                locals::theme().motion.color,
-            );
+            let overlay = animate_color(format!("m3_sc:{view_id}"), target, locals::theme().motion.color);
             if overlay.3 > 0 {
                 scene.nodes.push(SceneNode::Rect {
                     rect,
@@ -3488,8 +3493,8 @@ mod tests {
     #[test]
     fn test_subcompose_layout_runs_closure_and_lays_out() {
         use crate::subcompose::SubcomposeLayout;
-        use std::sync::Arc;
         use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
 
         let red = Color::from_rgb(255, 0, 0);
         let call_count = Arc::new(AtomicUsize::new(0));
@@ -3517,10 +3522,9 @@ mod tests {
             "SubcomposeLayout closure should have been invoked"
         );
 
-        let has_red_rect = scene
-            .nodes
-            .iter()
-            .any(|n| matches!(n, SceneNode::Rect { brush: Brush::Solid(c), .. } if *c == red));
+        let has_red_rect = scene.nodes.iter().any(|n| {
+            matches!(n, SceneNode::Rect { brush: Brush::Solid(c), .. } if *c == red)
+        });
         assert!(
             has_red_rect,
             "Subcomposed child (red box) should produce a Rect scene node"
@@ -3530,8 +3534,8 @@ mod tests {
     #[test]
     fn test_subcompose_layout_caches_closure_across_frames() {
         use crate::subcompose::SubcomposeLayout;
-        use std::sync::Arc;
         use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
 
         let call_count = Arc::new(AtomicUsize::new(0));
         let count_clone = call_count.clone();
@@ -3575,8 +3579,8 @@ mod tests {
     #[test]
     fn test_subcompose_layout_ancestor_modifier_narrows_scope_through_engine() {
         use crate::subcompose::SubcomposeLayout;
-        use std::sync::Arc;
         use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Arc;
 
         let captured_max_w = Arc::new(AtomicU32::new(0));
         let cap = captured_max_w.clone();
@@ -3587,8 +3591,9 @@ mod tests {
             cap.store(scope.max_width.to_bits(), Ordering::SeqCst);
             RBox(Modifier::new().size(100.0, 50.0))
         });
-        let root =
-            Column(Modifier::new()).child(crate::Box(Modifier::new().width(320.0)).child(sub));
+        let root = Column(Modifier::new()).child(
+            crate::Box(Modifier::new().width(320.0)).child(sub),
+        );
 
         let mut engine = LayoutEngine::new();
         let _ = engine.layout_frame(
@@ -3612,12 +3617,7 @@ mod tests {
         let mut eng = make_engine();
         let v = Stack(Modifier::new()).child(Text("Hello"));
         let (w, h) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
-        assert!(
-            w > 0.0 && h > 0.0,
-            "text must have positive size, got ({}, {})",
-            w,
-            h
-        );
+        assert!(w > 0.0 && h > 0.0, "text must have positive size, got ({}, {})", w, h);
     }
 
     #[test]
@@ -3684,16 +3684,8 @@ mod layer_tests {
             .iter()
             .filter(|n| matches!(n, SceneNode::EndLayer { .. }))
             .count();
-        assert_eq!(
-            begin_count, 1,
-            "expected exactly one BeginLayer, got {}",
-            begin_count
-        );
-        assert_eq!(
-            end_count, 1,
-            "expected exactly one EndLayer, got {}",
-            end_count
-        );
+        assert_eq!(begin_count, 1, "expected exactly one BeginLayer, got {}", begin_count);
+        assert_eq!(end_count, 1, "expected exactly one EndLayer, got {}", end_count);
     }
 
     #[test]
@@ -3725,14 +3717,8 @@ mod layer_tests {
             .iter()
             .filter(|n| matches!(n, SceneNode::EndLayer { .. }))
             .count();
-        assert_eq!(
-            begin_count, 2,
-            "expected two BeginLayer nodes for nested layers"
-        );
-        assert_eq!(
-            end_count, 2,
-            "expected two EndLayer nodes for nested layers"
-        );
+        assert_eq!(begin_count, 2, "expected two BeginLayer nodes for nested layers");
+        assert_eq!(end_count, 2, "expected two EndLayer nodes for nested layers");
     }
 
     #[test]
@@ -3760,27 +3746,15 @@ mod layer_tests {
             SceneNode::BeginLayer { alpha, .. } => Some(*alpha),
             _ => None,
         });
-        assert_eq!(
-            begin,
-            Some(0.42),
-            "graphics_layer alpha should pass through"
-        );
+        assert_eq!(begin, Some(0.42), "graphics_layer alpha should pass through");
     }
 
     #[test]
     fn test_graphics_layer_alpha_is_clamped() {
         let m = Modifier::new().graphics_layer(2.0);
-        assert_eq!(
-            m.graphics_layer,
-            Some(1.0),
-            "alpha above 1.0 should clamp to 1.0"
-        );
+        assert_eq!(m.graphics_layer, Some(1.0), "alpha above 1.0 should clamp to 1.0");
         let m = Modifier::new().graphics_layer(-0.5);
-        assert_eq!(
-            m.graphics_layer,
-            Some(0.0),
-            "negative alpha should clamp to 0.0"
-        );
+        assert_eq!(m.graphics_layer, Some(0.0), "negative alpha should clamp to 0.0");
     }
 }
 
@@ -3809,15 +3783,15 @@ mod shadow_tests {
             .iter()
             .filter(|n| matches!(n, SceneNode::CompositeShadow { .. }))
             .count();
-        assert_eq!(
-            count, 0,
-            "shadow without layer must not emit CompositeShadow"
-        );
+        assert_eq!(count, 0, "shadow without layer must not emit CompositeShadow");
     }
 
     #[test]
     fn test_layer_with_shadow_emits_composite_shadow() {
-        let view = Stack(Modifier::new().graphics_layer(1.0).shadow(8.0, 4.0)).child(Text("x"));
+        let view = Stack(Modifier::new()
+            .graphics_layer(1.0)
+            .shadow(8.0, 4.0))
+        .child(Text("x"));
         let nodes = collect_nodes(&view);
         let count = nodes
             .iter()
@@ -3829,7 +3803,10 @@ mod shadow_tests {
     #[test]
     fn test_shadow_appears_after_end_layer() {
         // Order: BeginLayer, ...content..., EndLayer, CompositeShadow, (any)CompositeLayer.
-        let view = Stack(Modifier::new().graphics_layer(1.0).shadow(8.0, 4.0)).child(Text("x"));
+        let view = Stack(Modifier::new()
+            .graphics_layer(1.0)
+            .shadow(8.0, 4.0))
+        .child(Text("x"));
         let nodes = collect_nodes(&view);
         let end_idx = nodes
             .iter()
@@ -3849,14 +3826,17 @@ mod shadow_tests {
 
     #[test]
     fn test_shadow_passes_through_blur_and_offset() {
-        let view = Stack(Modifier::new().graphics_layer(1.0).shadow(10.0, 6.0)).child(Text("x"));
+        let view = Stack(Modifier::new()
+            .graphics_layer(1.0)
+            .shadow(10.0, 6.0))
+        .child(Text("x"));
         let nodes = collect_nodes(&view);
         let shadow = nodes
             .iter()
             .find_map(|n| match n {
-                SceneNode::CompositeShadow {
-                    blur_px, offset_px, ..
-                } => Some((*blur_px, *offset_px)),
+                SceneNode::CompositeShadow { blur_px, offset_px, .. } => {
+                    Some((*blur_px, *offset_px))
+                }
                 _ => None,
             })
             .expect("CompositeShadow present");

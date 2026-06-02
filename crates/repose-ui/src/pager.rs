@@ -116,7 +116,7 @@ pub fn HorizontalPager(
         move |p| page_builder(p),
     );
 
-    crate::Stack(Modifier::new().fill_max_size().then(modifier)).with_children(vec![
+    crate::ZStack(Modifier::new().fill_max_size().then(modifier)).with_children(vec![
         crate::Box(Modifier::new().fill_max_size()).with_children(vec![content]),
         crate::Box(
             Modifier::new()
@@ -195,7 +195,7 @@ pub fn VerticalPager(
         move |p| page_builder(p),
     );
 
-    crate::Stack(Modifier::new().fill_max_size().then(modifier)).with_children(vec![
+    crate::ZStack(Modifier::new().fill_max_size().then(modifier)).with_children(vec![
         crate::Box(Modifier::new().fill_max_size()).with_children(vec![content]),
         crate::Box(
             Modifier::new()

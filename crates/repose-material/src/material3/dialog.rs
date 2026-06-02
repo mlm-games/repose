@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
 use repose_ui::overlay::OverlayHandle;
-use repose_ui::{Box, Column, Row, Spacer, Stack, Surface, ViewExt};
+use repose_ui::{Box, Column, Row, Spacer, Stack, Surface, ViewExt, ZStack};
 
 static DIALOG_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -115,7 +115,7 @@ pub fn Dialog(
                             move |_| s.dismiss()
                         }));
 
-                    Stack(Modifier::new().fill_max_size().absolute()).child((
+                    ZStack(Modifier::new().fill_max_size().absolute()).child((
                         scrim,
                         Box(Modifier::new()
                             .fill_max_size()

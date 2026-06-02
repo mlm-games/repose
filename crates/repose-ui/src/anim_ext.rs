@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use crate::{Box, Stack, ViewExt};
+use crate::{Box, Stack, ViewExt, ZStack};
 use repose_core::*;
 
 use crate::anim::animate_f32;
@@ -92,7 +92,7 @@ where
     let enter_alpha = animate_f32_from(format!("cf_enter:{key}:v{v}"), 0.0, 1.0, spec);
 
     match old_view {
-        Some(ov) => Stack(Modifier::new().fill_max_size()).child((
+        Some(ov) => ZStack(Modifier::new().fill_max_size()).child((
             ov,
             Box(Modifier::new().fill_max_size().alpha(enter_alpha)).child(new_view),
         )),
@@ -160,7 +160,7 @@ where
     };
 
     match old_view {
-        Some(ov) => Stack(Modifier::new().fill_max_size()).child((ov, new_view)),
+        Some(ov) => ZStack(Modifier::new().fill_max_size()).child((ov, new_view)),
         None => new_view,
     }
 }
@@ -427,7 +427,7 @@ pub fn AnimatedVisibility(
             content
         };
         match exiting {
-            Some(old) => Stack(Modifier::new().fill_max_size()).child((old, entering)),
+            Some(old) => ZStack(Modifier::new().fill_max_size()).child((old, entering)),
             None => entering,
         }
     } else {

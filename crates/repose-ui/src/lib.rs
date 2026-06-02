@@ -187,6 +187,10 @@ pub fn Stack(modifier: Modifier) -> View {
     View::new(0, ViewKind::Stack).modifier(modifier)
 }
 
+pub fn ZStack(modifier: Modifier) -> View {
+    View::new(0, ViewKind::ZStack).modifier(modifier)
+}
+
 pub fn OverlayHost(modifier: Modifier) -> View {
     View::new(0, ViewKind::OverlayHost).modifier(modifier)
 }

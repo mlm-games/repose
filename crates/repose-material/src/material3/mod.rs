@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use repose_core::*;
 use repose_ui::lazy::{LazyRow, LazyRowState};
 use repose_ui::{
-    Box, Column, Row, Spacer, Stack, Surface, Text, TextField, TextStyle, ViewExt,
+    Box, Column, Row, Spacer, Stack, Surface, Text, TextField, TextStyle, ViewExt, ZStack,
     anim::{animate_color, animate_f32, animate_f32_from},
     overlay::OverlayHandle,
     overlay::SnackbarAction,
@@ -1592,7 +1592,7 @@ pub fn ModalBottomSheet(
                         Box(Modifier::new())
                     };
 
-                    Stack(Modifier::new().fill_max_size().absolute()).child((scrim, sheet))
+                    ZStack(Modifier::new().fill_max_size().absolute()).child((scrim, sheet))
                 }
             });
 
