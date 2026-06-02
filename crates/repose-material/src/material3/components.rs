@@ -534,7 +534,11 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>) -> View {
                     let selected = i == selected_index;
                     let color = animate_color(
                         format!("tab_clr_{}_{}", id, i),
-                        if selected { th.primary } else { th.on_surface_variant },
+                        if selected {
+                            th.primary
+                        } else {
+                            th.on_surface_variant
+                        },
                         spec,
                     );
                     let indicator_h = animate_f32(
@@ -927,7 +931,11 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
 
     let fill = animate_color(
         format!("cb_fill_{}", id),
-        if checked { th.primary } else { Color::TRANSPARENT },
+        if checked {
+            th.primary
+        } else {
+            Color::TRANSPARENT
+        },
         spec,
     );
     let bd_w = animate_f32(
@@ -937,7 +945,11 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
     );
     let bd = animate_color(
         format!("cb_bd_{}", id),
-        if checked { Color::TRANSPARENT } else { th.on_surface_variant },
+        if checked {
+            Color::TRANSPARENT
+        } else {
+            th.on_surface_variant
+        },
         spec,
     );
     let check_alpha = animate_f32(
@@ -956,7 +968,9 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
             .justify_content(JustifyContent::Center))
         .child(if check_alpha > 0.01 {
             Box(Modifier::new().alpha(check_alpha)).child(
-                Icon(Symbol::new("done", '\u{E876}')).color(th.on_primary).size(14.0),
+                Icon(Symbol::new("done", '\u{E876}'))
+                    .color(th.on_primary)
+                    .size(14.0),
             )
         } else {
             Box(Modifier::new())
@@ -987,7 +1001,11 @@ pub fn RadioButton(selected: bool, on_select: impl Fn() + 'static) -> View {
 
     let ring_col = animate_color(
         format!("rb_ring_{}", id),
-        if selected { th.primary } else { th.on_surface_variant },
+        if selected {
+            th.primary
+        } else {
+            th.on_surface_variant
+        },
         color_spec,
     );
     let dot_size = animate_f32(
@@ -1046,7 +1064,11 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
     let color_spec = th.motion.color_fast;
     let track_bg = animate_color(
         format!("sw_tbg_{}", id),
-        if checked { th.primary } else { th.surface_container_highest },
+        if checked {
+            th.primary
+        } else {
+            th.surface_container_highest
+        },
         color_spec,
     );
     let thumb_bg = animate_color(
@@ -1061,7 +1083,11 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
     );
     let border_color = animate_color(
         format!("sw_bc_{}", id),
-        if checked { Color::TRANSPARENT } else { th.outline },
+        if checked {
+            Color::TRANSPARENT
+        } else {
+            th.outline
+        },
         color_spec,
     );
 

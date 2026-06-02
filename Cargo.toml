@@ -55,7 +55,7 @@ getrandom = "0.3"
 bytemuck = { version = "1.25.0", features = ["derive"] }
 
 # Layout
-taffy = { version = "=0.10.1-experimental-cache-fix.1", default-features = true }
+taffy = { version = "=0.11.0-experimental-cache-fix.3", default-features = true }
 
 # Platform + GPU
 winit = { version = "0.30", default-features = true }
