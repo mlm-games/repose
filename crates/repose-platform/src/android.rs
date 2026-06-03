@@ -575,6 +575,11 @@ pub fn run_android_app_with_options(
     }
 
     impl ApplicationHandler<()> for AppState {
+        fn suspended(&mut self, _el: &winit::event_loop::ActiveEventLoop) {
+            self.backend = None;
+            self.window = None;
+        }
+
         fn resumed(&mut self, el: &winit::event_loop::ActiveEventLoop) {
             if self.window.is_some() {
                 return;

@@ -33,7 +33,7 @@ env_logger = "0.11"
 parking_lot = "0.12"
 smallvec = "1.15"
 slotmap = "1.1"
-bitflags = "2.11.1"
+bitflags = "2.12"
 unicode-segmentation = "1.13"
 clipawl = { version = "0.2.1" }
 
