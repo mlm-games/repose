@@ -1,5 +1,129 @@
 use crate::Color;
+use std::rc::Rc;
 use std::sync::Arc;
+
+/// Transforms the visual representation of a text field's text without changing
+/// the underlying value. For example, password masking.
+pub trait VisualTransformation: std::fmt::Debug + Send + Sync + 'static {
+    /// Transform the text for display. Returns the transformed text and an
+    /// offset-translation function that maps offsets in the display text back
+    /// to the original text.
+    fn filter(&self, text: &str) -> TransformedText;
+}
+
+/// The result of applying a `VisualTransformation`.
+pub struct TransformedText {
+    /// The text to display (e.g., "•••••" for a password).
+    pub text: String,
+    /// Maps an offset in `text` back to the original offset.
+    pub offset_map: Rc<dyn Fn(usize) -> usize>,
+}
+
+impl Clone for TransformedText {
+    fn clone(&self) -> Self {
+        Self {
+            text: self.text.clone(),
+            offset_map: self.offset_map.clone(),
+        }
+    }
+}
+
+impl std::fmt::Debug for TransformedText {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TransformedText")
+            .field("text", &self.text)
+            .finish()
+    }
+}
+
+/// No visual transformation - text is displayed as-is.
+#[derive(Clone, Copy, Debug)]
+pub struct NoVisualTransformation;
+
+impl VisualTransformation for NoVisualTransformation {
+    fn filter(&self, text: &str) -> TransformedText {
+        let len = text.len();
+        TransformedText {
+            text: text.to_string(),
+            offset_map: Rc::new(move |offset| offset.min(len)),
+        }
+    }
+}
+
+/// A `VisualTransformation` that masks all characters with `*`.
+#[derive(Clone, Copy, Debug)]
+pub struct PasswordVisualTransformation {
+    /// The replacement character (default `*`).
+    pub mask_char: char,
+}
+
+impl Default for PasswordVisualTransformation {
+    fn default() -> Self {
+        Self { mask_char: '*' }
+    }
+}
+
+impl VisualTransformation for PasswordVisualTransformation {
+    fn filter(&self, text: &str) -> TransformedText {
+        let masked: String = text.chars().map(|_| self.mask_char).collect();
+        let len = text.len();
+        TransformedText {
+            text: masked,
+            offset_map: Rc::new(move |offset| offset.min(len)),
+        }
+    }
+}
+
+/// Convert a byte offset in the original text to the corresponding byte offset
+/// in the visually-transformed display text, assuming each original character
+/// maps to one or more display characters starting at a predictable position.
+pub fn original_offset_to_display(original: &str, display: &str, original_byte: usize) -> usize {
+    let char_idx = original[..original_byte.min(original.len())]
+        .chars()
+        .count();
+    display
+        .char_indices()
+        .nth(char_idx)
+        .map(|(i, _)| i)
+        .unwrap_or(display.len())
+}
+
+/// Hints the platform about the type of keyboard to show.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeyboardType {
+    Text,
+    Ascii,
+    Number,
+    Phone,
+    Email,
+    Uri,
+    Decimal,
+}
+
+impl Default for KeyboardType {
+    fn default() -> Self {
+        Self::Text
+    }
+}
+
+/// The action button on the IME (soft keyboard).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImeAction {
+    Unspecified,
+    None,
+    Go,
+    Search,
+    Send,
+    Next,
+    Done,
+    Previous,
+}
+
+impl Default for ImeAction {
+    fn default() -> Self {
+        Self::Unspecified
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpanStyle {

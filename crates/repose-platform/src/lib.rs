@@ -803,11 +803,11 @@ pub fn run_desktop_app_with_snackbar(
                                     dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
 
                                 let idx = if hit.tf_multiline {
-                                    index_for_xy_bytes(
-                                        &st.text, font_px, inner_w, content_x, content_y,
+                                    rc::index_for_xy_bytes_vt(
+                                        &st, font_px, inner_w, content_x, content_y,
                                     )
                                 } else {
-                                    index_for_x_bytes(&st.text, font_px, content_x)
+                                    rc::index_for_x_bytes_vt(&st, font_px, content_x)
                                 };
 
                                 st.drag_to(idx);
@@ -987,15 +987,15 @@ pub fn run_desktop_app_with_snackbar(
                                         * repose_core::locals::text_scale().0;
 
                                     let idx = if hit.tf_multiline {
-                                        textfield::index_for_xy_bytes(
-                                            &st.text,
+                                        rc::index_for_xy_bytes_vt(
+                                            &st,
                                             font_px,
                                             hit.rect.w - 2.0 * pad,
                                             content_x,
                                             content_y,
                                         )
                                     } else {
-                                        textfield::index_for_x_bytes(&st.text, font_px, content_x)
+                                        rc::index_for_x_bytes_vt(&st, font_px, content_x)
                                     };
 
                                     st.begin_drag(idx, self.modifiers.shift);

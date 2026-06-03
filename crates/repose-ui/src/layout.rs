@@ -20,6 +20,7 @@ use crate::anim::{animate_color, animate_f32};
 use crate::textfield::{
     TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, byte_to_char_index, measure_text,
 };
+use repose_core::VisualTransformation;
 
 fn push_focus_ring(scene: &mut Scene, rect: repose_core::Rect, radius_dp: f32) {
     scene.nodes.push(SceneNode::Border {
@@ -69,6 +70,12 @@ pub struct LayoutEngine {
 
     /// Statistics from the last frame.
     pub stats: LayoutStats,
+
+    /// Tracks the previously focused view ID to detect focus changes.
+    prev_focused: Option<u64>,
+
+    /// Callbacks registered via `on_focus_changed` modifier, keyed by view ID.
+    focus_callbacks: FxHashMap<u64, Rc<dyn Fn(bool)>>,
 
     /// Last "locals" stamp used for layout decisions (density/text scale/dir).
     last_locals_stamp: Option<u64>,
@@ -199,6 +206,8 @@ impl LayoutEngine {
             slider_dragging: Rc::new(RefCell::new(FxHashSet::default())),
             range_active_thumb: Rc::new(RefCell::new(FxHashMap::default())),
             layer_id_counter: 0,
+            prev_focused: None,
+            focus_callbacks: FxHashMap::default(),
         }
     }
 
@@ -348,6 +357,28 @@ impl LayoutEngine {
             focused,
             &font_px,
         );
+
+        // Fire focus change callbacks
+        if self.prev_focused != focused {
+            if let Some(old_id) = self.prev_focused {
+                if let Some(cb) = self.focus_callbacks.get(&old_id) {
+                    (cb)(false);
+                }
+            }
+            if let Some(new_id) = focused {
+                if let Some(cb) = self.focus_callbacks.get(&new_id) {
+                    (cb)(true);
+                }
+            }
+            self.prev_focused = focused;
+        }
+
+        // Clean up callbacks for removed nodes
+        for &node_id in &self.tree.removed_ids {
+            if let Some(&vid) = self.view_ids.get(&node_id) {
+                self.focus_callbacks.remove(&vid);
+            }
+        }
 
         self.tree.clear_dirty();
         (scene, hits, sems)
@@ -1840,6 +1871,9 @@ impl LayoutEngine {
                 on_submit,
                 focus_tracker,
                 value,
+                visual_transformation,
+                keyboard_type: _,
+                ime_action: _,
             } => {
                 let tf_key = if *state_key != 0 { *state_key } else { view_id };
 
@@ -1926,29 +1960,77 @@ impl LayoutEngine {
                     push_focus_ring(scene, rect, focus_radius(&modifier));
                 }
 
+                // Apply visual transformation to text for display.
+                let (display_text, offset_map): (Box<dyn Fn(&str) -> String>, _) =
+                    if let Some(vt) = visual_transformation.as_ref() {
+                        let tfmd = vt.filter("");
+                        let om = tfmd.offset_map.clone();
+                        let vt2 = vt.clone();
+                        (
+                            Box::new(move |original: &str| vt2.filter(original).text),
+                            Some(om),
+                        )
+                    } else {
+                        (Box::new(|original: &str| original.to_string()), None)
+                    };
+
                 if let Some(state_rc) = textfield_states.get(&tf_key) {
+                    // Store VT and offset_map on the state for platform to use
                     {
                         let mut st = state_rc.borrow_mut();
                         st.set_inner_width(inner.w);
                         st.set_inner_height(inner.h);
+                        if let Some(vt) = visual_transformation.as_ref() {
+                            st.offset_map = offset_map.clone();
+                            st.visual_transformation = Some(vt.clone());
+                        } else {
+                            st.offset_map = None;
+                            st.visual_transformation = None;
+                        }
                     }
 
                     let st = state_rc.borrow();
                     let font_val = font_px(TF_FONT_DP);
 
                     if !*multiline {
-                        let m = measure_text(&st.text, font_val, None);
+                        // When VT is active, measure display text for caret/selection
+                        let measure_for = if visual_transformation.is_some() && !st.text.is_empty()
+                        {
+                            display_text(&st.text)
+                        } else {
+                            st.text.clone()
+                        };
+                        let has_vt = visual_transformation.is_some();
+                        let m = measure_text(&measure_for, font_val, None);
 
                         if st.selection.start != st.selection.end {
+                            let start_off = if has_vt {
+                                repose_core::original_offset_to_display(
+                                    &st.text,
+                                    &measure_for,
+                                    st.selection.start,
+                                )
+                            } else {
+                                st.selection.start
+                            };
+                            let end_off = if has_vt {
+                                repose_core::original_offset_to_display(
+                                    &st.text,
+                                    &measure_for,
+                                    st.selection.end,
+                                )
+                            } else {
+                                st.selection.end
+                            };
                             let sx = m
                                 .positions
-                                .get(byte_to_char_index(&m, st.selection.start))
+                                .get(byte_to_char_index(&m, start_off))
                                 .copied()
                                 .unwrap_or(0.0)
                                 - st.scroll_offset;
                             let ex = m
                                 .positions
-                                .get(byte_to_char_index(&m, st.selection.end))
+                                .get(byte_to_char_index(&m, end_off))
                                 .copied()
                                 .unwrap_or(sx)
                                 - st.scroll_offset;
@@ -1974,6 +2056,11 @@ impl LayoutEngine {
                             th.on_surface
                         };
 
+                        let render_txt = if st.text.is_empty() {
+                            hint.clone()
+                        } else {
+                            display_text(&st.text)
+                        };
                         scene.nodes.push(SceneNode::Text {
                             rect: repose_core::Rect {
                                 x: inner.x - st.scroll_offset,
@@ -1981,11 +2068,7 @@ impl LayoutEngine {
                                 w: inner.w,
                                 h: inner.h,
                             },
-                            text: Arc::from(if st.text.is_empty() {
-                                hint.clone()
-                            } else {
-                                st.text.clone()
-                            }),
+                            text: Arc::from(render_txt),
                             color: txt_col,
                             size: font_val,
                             font_family: None,
@@ -1995,9 +2078,18 @@ impl LayoutEngine {
                             && st.selection.start == st.selection.end
                             && st.caret_visible()
                         {
+                            let caret_off = if has_vt {
+                                repose_core::original_offset_to_display(
+                                    &st.text,
+                                    &measure_for,
+                                    st.selection.end,
+                                )
+                            } else {
+                                st.selection.end
+                            };
                             let cx = m
                                 .positions
-                                .get(byte_to_char_index(&m, st.selection.end))
+                                .get(byte_to_char_index(&m, caret_off))
                                 .copied()
                                 .unwrap_or(0.0)
                                 - st.scroll_offset;
@@ -2046,8 +2138,9 @@ impl LayoutEngine {
                                 font_family: None,
                             });
                         } else {
+                            let display_full = display_text(&st.text);
                             for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
-                                let ln = &st.text[s..e];
+                                let ln = display_full[s..e].to_string();
                                 let draw_y = inner.y + (i as f32) * line_h - st.scroll_offset_y;
                                 if draw_y + line_h < inner.y - 1.0
                                     || draw_y > inner.y + inner.h + 1.0
@@ -2061,7 +2154,7 @@ impl LayoutEngine {
                                         w: inner.w,
                                         h: line_h,
                                     },
-                                    text: Arc::<str>::from(ln.to_string()),
+                                    text: Arc::<str>::from(ln),
                                     color: locals::theme().on_surface,
                                     size: font_val,
                                     font_family: None,
@@ -2154,8 +2247,9 @@ impl LayoutEngine {
                         let layout =
                             crate::textfield::layout_text_area(value, font_val, inner.w.max(1.0));
                         let line_h = layout.line_h_px;
+                        let display_full = display_text(value);
                         for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
-                            let ln = &value[s..e];
+                            let ln = display_full[s..e].to_string();
                             let draw_y = inner.y + (i as f32) * line_h;
                             if draw_y + line_h < inner.y - 1.0 || draw_y > inner.y + inner.h + 1.0 {
                                 continue;
@@ -2167,7 +2261,7 @@ impl LayoutEngine {
                                     w: inner.w,
                                     h: line_h,
                                 },
-                                text: Arc::<str>::from(ln.to_string()),
+                                text: Arc::<str>::from(ln),
                                 color: th.on_surface,
                                 size: font_val,
                                 font_family: None,
@@ -2176,7 +2270,7 @@ impl LayoutEngine {
                     } else {
                         scene.nodes.push(SceneNode::Text {
                             rect: inner,
-                            text: Arc::from(value.clone()),
+                            text: Arc::from(display_text(value)),
                             color: th.on_surface,
                             size: font_val,
                             font_family: None,
@@ -2926,6 +3020,10 @@ impl LayoutEngine {
 
         // Wire up FocusRequester if present on the modifier
         set_focus_requester(&modifier, view_id);
+
+        if let Some(cb) = &modifier.on_focus_changed {
+            self.focus_callbacks.insert(view_id, cb.clone());
+        }
     }
 }
 

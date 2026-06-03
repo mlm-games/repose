@@ -701,8 +701,8 @@ pub fn run_android_app_with_options(
                                                 pos_px.0 - inner_x_px + st.scroll_offset;
                                             let font_px = dp_to_px(TF_FONT_DP)
                                                 * repose_core::locals::text_scale().0;
-                                            let idx = index_for_x_bytes(
-                                                &st.text,
+                                            let idx = rc::index_for_x_bytes_vt(
+                                                &st,
                                                 font_px,
                                                 content_x_px.max(0.0),
                                             );

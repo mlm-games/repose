@@ -232,7 +232,7 @@ fn with_infinite_repeat(spec: AnimationSpec) -> AnimationSpec {
 /// between the given initial and target values (ping-pong with `reverse`).
 ///
 /// If you need a custom repeat configuration, pass an `AnimationSpec` that
-/// already has `.repeated(...)` set — the transition will respect it instead
+/// already has `.repeated(...)` set - the transition will respect it instead
 /// of applying the default infinite reverse.
 pub struct InfiniteTransition {
     _private: (),

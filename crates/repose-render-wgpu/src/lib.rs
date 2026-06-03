@@ -250,13 +250,41 @@ impl Pipelines {
                     array_stride: std::mem::size_of::<RectInstance>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
-                        wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
-                        wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32 },
-                        wgpu::VertexAttribute { shader_location: 2, offset: 20, format: wgpu::VertexFormat::Uint32 },
-                        wgpu::VertexAttribute { shader_location: 3, offset: 24, format: wgpu::VertexFormat::Float32x4 },
-                        wgpu::VertexAttribute { shader_location: 4, offset: 40, format: wgpu::VertexFormat::Float32x4 },
-                        wgpu::VertexAttribute { shader_location: 5, offset: 56, format: wgpu::VertexFormat::Float32x2 },
-                        wgpu::VertexAttribute { shader_location: 6, offset: 64, format: wgpu::VertexFormat::Float32x2 },
+                        wgpu::VertexAttribute {
+                            shader_location: 0,
+                            offset: 0,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 1,
+                            offset: 16,
+                            format: wgpu::VertexFormat::Float32,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 2,
+                            offset: 20,
+                            format: wgpu::VertexFormat::Uint32,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 3,
+                            offset: 24,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 4,
+                            offset: 40,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 5,
+                            offset: 56,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 6,
+                            offset: 64,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
                     ],
                 }],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -299,10 +327,26 @@ impl Pipelines {
                     array_stride: std::mem::size_of::<BorderInstance>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
-                        wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
-                        wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32 },
-                        wgpu::VertexAttribute { shader_location: 2, offset: 20, format: wgpu::VertexFormat::Float32 },
-                        wgpu::VertexAttribute { shader_location: 3, offset: 24, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute {
+                            shader_location: 0,
+                            offset: 0,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 1,
+                            offset: 16,
+                            format: wgpu::VertexFormat::Float32,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 2,
+                            offset: 20,
+                            format: wgpu::VertexFormat::Float32,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 3,
+                            offset: 24,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
                     ],
                 }],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -345,8 +389,16 @@ impl Pipelines {
                     array_stride: std::mem::size_of::<EllipseInstance>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
-                        wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
-                        wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute {
+                            shader_location: 0,
+                            offset: 0,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 1,
+                            offset: 16,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
                     ],
                 }],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -391,9 +443,21 @@ impl Pipelines {
                     array_stride: std::mem::size_of::<EllipseBorderInstance>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
-                        wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
-                        wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32 },
-                        wgpu::VertexAttribute { shader_location: 2, offset: 20, format: wgpu::VertexFormat::Float32x4 },
+                        wgpu::VertexAttribute {
+                            shader_location: 0,
+                            offset: 0,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 1,
+                            offset: 16,
+                            format: wgpu::VertexFormat::Float32,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 2,
+                            offset: 20,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
                     ],
                 }],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -436,9 +500,21 @@ impl Pipelines {
             array_stride: std::mem::size_of::<GlyphInstance>() as u64,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
-                wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
-                wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32x4 },
-                wgpu::VertexAttribute { shader_location: 2, offset: 32, format: wgpu::VertexFormat::Float32x4 },
+                wgpu::VertexAttribute {
+                    shader_location: 0,
+                    offset: 0,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 1,
+                    offset: 16,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 2,
+                    offset: 32,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
             ],
         };
         let text_mask = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -516,10 +592,26 @@ impl Pipelines {
                     array_stride: std::mem::size_of::<BlurInstance>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
-                        wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
-                        wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32x4 },
-                        wgpu::VertexAttribute { shader_location: 2, offset: 32, format: wgpu::VertexFormat::Float32x4 },
-                        wgpu::VertexAttribute { shader_location: 3, offset: 48, format: wgpu::VertexFormat::Float32x2 },
+                        wgpu::VertexAttribute {
+                            shader_location: 0,
+                            offset: 0,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 1,
+                            offset: 16,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 2,
+                            offset: 32,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 3,
+                            offset: 48,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
                     ],
                 }],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -563,10 +655,26 @@ impl Pipelines {
                     array_stride: std::mem::size_of::<Nv12Instance>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
-                        wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
-                        wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32x4 },
-                        wgpu::VertexAttribute { shader_location: 2, offset: 32, format: wgpu::VertexFormat::Float32x4 },
-                        wgpu::VertexAttribute { shader_location: 3, offset: 48, format: wgpu::VertexFormat::Float32 },
+                        wgpu::VertexAttribute {
+                            shader_location: 0,
+                            offset: 0,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 1,
+                            offset: 16,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 2,
+                            offset: 32,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 3,
+                            offset: 48,
+                            format: wgpu::VertexFormat::Float32,
+                        },
                     ],
                 }],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -1191,12 +1299,7 @@ impl WgpuBackend {
         );
 
         // Blur composite ring (for graphics-layer drop shadows)
-        let blur_ring = UploadRing::new(
-            &device,
-            "blur ring",
-            1024 * 1024,
-        );
-
+        let blur_ring = UploadRing::new(&device, "blur ring", 1024 * 1024);
 
         // Atlases
         let atlas_mask = Self::init_atlas_mask(&device)?;
@@ -1845,8 +1948,8 @@ impl WgpuBackend {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
-        let depth_stencil_view = depth_stencil_tex
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let depth_stencil_view =
+            depth_stencil_tex.create_view(&wgpu::TextureViewDescriptor::default());
         self.layer_pool.insert(
             layer_id,
             LayerTarget {
@@ -2190,7 +2293,9 @@ impl RenderBackend for WgpuBackend {
                 wgpu::CurrentSurfaceTexture::Validation => {
                     retries += 1;
                     if retries >= MAX_RETRIES {
-                        log::warn!("surface validation persisted after {MAX_RETRIES} retries; skipping frame");
+                        log::warn!(
+                            "surface validation persisted after {MAX_RETRIES} retries; skipping frame"
+                        );
                         return;
                     }
                     self.surface.configure(&self.device, &self.config);
@@ -2504,7 +2609,14 @@ impl RenderBackend for WgpuBackend {
                             let x = transformed_rect.x + sg.x + sg.bearing_x;
                             let y = transformed_rect.y + sg.y - sg.bearing_y;
                             batch.colors.push(GlyphInstance {
-                                xywh: to_ndc(x, y, info.w, info.h, current_target_size.0, current_target_size.1),
+                                xywh: to_ndc(
+                                    x,
+                                    y,
+                                    info.w,
+                                    info.h,
+                                    current_target_size.0,
+                                    current_target_size.1,
+                                ),
                                 uv: [info.u0, info.v1, info.u1, info.v0],
                                 color: color.to_linear(),
                             });
@@ -2512,7 +2624,14 @@ impl RenderBackend for WgpuBackend {
                             let x = transformed_rect.x + sg.x + sg.bearing_x;
                             let y = transformed_rect.y + sg.y - sg.bearing_y;
                             batch.masks.push(GlyphInstance {
-                                xywh: to_ndc(x, y, info.w, info.h, current_target_size.0, current_target_size.1),
+                                xywh: to_ndc(
+                                    x,
+                                    y,
+                                    info.w,
+                                    info.h,
+                                    current_target_size.0,
+                                    current_target_size.1,
+                                ),
                                 uv: [info.u0, info.v1, info.u1, info.v0],
                                 color: color.to_linear(),
                             });
@@ -2564,45 +2683,75 @@ impl RenderBackend for WgpuBackend {
                         continue;
                     }
 
-                            let (xywh_ndc, uv_rect) = match fit {
-                                repose_core::view::ImageFit::Contain => {
-                                    let scale = (dst_w / src_w).min(dst_h / src_h);
-                                    let w = src_w * scale;
-                                    let h = src_h * scale;
-                                    let x = transformed.x + (dst_w - w) * 0.5;
-                                    let y = transformed.y + (dst_h - h) * 0.5;
-                                    (to_ndc(x, y, w, h, current_target_size.0, current_target_size.1), [0.0, 1.0, 1.0, 0.0])
-                                }
-                                repose_core::view::ImageFit::Cover => {
-                                    let scale = (dst_w / src_w).max(dst_h / src_h);
-                                    let content_w = src_w * scale;
-                                    let content_h = src_h * scale;
-                                    let overflow_x = (content_w - dst_w) * 0.5;
-                                    let overflow_y = (content_h - dst_h) * 0.5;
-                                    let u0 = (overflow_x / content_w).clamp(0.0, 1.0);
-                                    let v0 = (overflow_y / content_h).clamp(0.0, 1.0);
-                                    let u1 = ((overflow_x + dst_w) / content_w).clamp(0.0, 1.0);
-                                    let v1 = ((overflow_y + dst_h) / content_h).clamp(0.0, 1.0);
-                                    (
-                                        to_ndc(transformed.x, transformed.y, dst_w, dst_h, current_target_size.0, current_target_size.1),
-                                        [u0, 1.0 - v1, u1, 1.0 - v0],
-                                    )
-                                }
-                                repose_core::view::ImageFit::FitWidth => {
-                                    let scale = dst_w / src_w;
-                                    let w = dst_w;
-                                    let h = src_h * scale;
-                                    let y = transformed.y + (dst_h - h) * 0.5;
-                                    (to_ndc(transformed.x, y, w, h, current_target_size.0, current_target_size.1), [0.0, 1.0, 1.0, 0.0])
-                                }
-                                repose_core::view::ImageFit::FitHeight => {
-                                    let scale = dst_h / src_h;
-                                    let w = src_w * scale;
-                                    let h = dst_h;
-                                    let x = transformed.x + (dst_w - w) * 0.5;
-                                    (to_ndc(x, transformed.y, w, h, current_target_size.0, current_target_size.1), [0.0, 1.0, 1.0, 0.0])
-                                }
-                            };
+                    let (xywh_ndc, uv_rect) = match fit {
+                        repose_core::view::ImageFit::Contain => {
+                            let scale = (dst_w / src_w).min(dst_h / src_h);
+                            let w = src_w * scale;
+                            let h = src_h * scale;
+                            let x = transformed.x + (dst_w - w) * 0.5;
+                            let y = transformed.y + (dst_h - h) * 0.5;
+                            (
+                                to_ndc(x, y, w, h, current_target_size.0, current_target_size.1),
+                                [0.0, 1.0, 1.0, 0.0],
+                            )
+                        }
+                        repose_core::view::ImageFit::Cover => {
+                            let scale = (dst_w / src_w).max(dst_h / src_h);
+                            let content_w = src_w * scale;
+                            let content_h = src_h * scale;
+                            let overflow_x = (content_w - dst_w) * 0.5;
+                            let overflow_y = (content_h - dst_h) * 0.5;
+                            let u0 = (overflow_x / content_w).clamp(0.0, 1.0);
+                            let v0 = (overflow_y / content_h).clamp(0.0, 1.0);
+                            let u1 = ((overflow_x + dst_w) / content_w).clamp(0.0, 1.0);
+                            let v1 = ((overflow_y + dst_h) / content_h).clamp(0.0, 1.0);
+                            (
+                                to_ndc(
+                                    transformed.x,
+                                    transformed.y,
+                                    dst_w,
+                                    dst_h,
+                                    current_target_size.0,
+                                    current_target_size.1,
+                                ),
+                                [u0, 1.0 - v1, u1, 1.0 - v0],
+                            )
+                        }
+                        repose_core::view::ImageFit::FitWidth => {
+                            let scale = dst_w / src_w;
+                            let w = dst_w;
+                            let h = src_h * scale;
+                            let y = transformed.y + (dst_h - h) * 0.5;
+                            (
+                                to_ndc(
+                                    transformed.x,
+                                    y,
+                                    w,
+                                    h,
+                                    current_target_size.0,
+                                    current_target_size.1,
+                                ),
+                                [0.0, 1.0, 1.0, 0.0],
+                            )
+                        }
+                        repose_core::view::ImageFit::FitHeight => {
+                            let scale = dst_h / src_h;
+                            let w = src_w * scale;
+                            let h = dst_h;
+                            let x = transformed.x + (dst_w - w) * 0.5;
+                            (
+                                to_ndc(
+                                    x,
+                                    transformed.y,
+                                    w,
+                                    h,
+                                    current_target_size.0,
+                                    current_target_size.1,
+                                ),
+                                [0.0, 1.0, 1.0, 0.0],
+                            )
+                        }
+                    };
 
                     if is_nv12 {
                         let full_range = if let Some(ImageTex::Nv12 { full_range, .. }) =
@@ -2744,7 +2893,11 @@ impl RenderBackend for WgpuBackend {
                     flush_batch!(); // flush before transform change
                     transform_stack.pop();
                 }
-                SceneNode::BeginLayer { rect, layer_id, alpha } => {
+                SceneNode::BeginLayer {
+                    rect,
+                    layer_id,
+                    alpha,
+                } => {
                     flush_batch!();
                     let w = (rect.w.max(1.0)).ceil() as u32;
                     let h = (rect.h.max(1.0)).ceil() as u32;
@@ -2767,11 +2920,7 @@ impl RenderBackend for WgpuBackend {
                     // subsequent scissor ops / draws have a valid target.
                     self.get_or_create_layer(*layer_id, w, h, *rect);
                     current_target_size = (w as f32, h as f32);
-                    layer_alphas.push((
-                        *layer_id,
-                        *alpha,
-                        current_pass.initial_scissor,
-                    ));
+                    layer_alphas.push((*layer_id, *alpha, current_pass.initial_scissor));
                 }
                 SceneNode::EndLayer { layer_id } => {
                     flush_batch!();
@@ -2781,7 +2930,7 @@ impl RenderBackend for WgpuBackend {
                         Pass {
                             target: target_stack.pop().unwrap_or(PassTarget::Surface),
                             initial_scissor: (0, 0, self.config.width, self.config.height),
-                            clear_color: None, // LoadOp::Load — don't wipe earlier surface content
+                            clear_color: None, // LoadOp::Load - don't wipe earlier surface content
                             cmds: Vec::new(),
                         },
                     );
@@ -3077,8 +3226,7 @@ impl RenderBackend for WgpuBackend {
                         if let Some(lt) = self.layer_pool.get(&layer_id).cloned() {
                             rpass.set_pipeline(&pipes.image_rgba);
                             rpass.set_bind_group(1, &lt.bind, &[]);
-                            let bytes =
-                                (n as u64) * std::mem::size_of::<GlyphInstance>() as u64;
+                            let bytes = (n as u64) * std::mem::size_of::<GlyphInstance>() as u64;
                             rpass.set_vertex_buffer(
                                 0,
                                 self.glyph_color.ring.buf.slice(off..off + bytes),
@@ -3094,12 +3242,8 @@ impl RenderBackend for WgpuBackend {
                         if let Some(lt) = self.layer_pool.get(&layer_id).cloned() {
                             rpass.set_pipeline(&pipes.blur);
                             rpass.set_bind_group(1, &lt.bind, &[]);
-                            let bytes =
-                                (n as u64) * std::mem::size_of::<BlurInstance>() as u64;
-                            rpass.set_vertex_buffer(
-                                0,
-                                self.blur_ring.buf.slice(off..off + bytes),
-                            );
+                            let bytes = (n as u64) * std::mem::size_of::<BlurInstance>() as u64;
+                            rpass.set_vertex_buffer(0, self.blur_ring.buf.slice(off..off + bytes));
                             rpass.draw(0..6, 0..n);
                         }
                     }

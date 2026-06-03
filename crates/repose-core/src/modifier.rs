@@ -66,7 +66,7 @@ macro_rules! impl_option_fields {
                     margin_left, margin_right, margin_top, margin_bottom,
                     aspect_ratio, painter,
                     on_drag_start, on_drag_end, on_drag_enter, on_drag_over, on_drag_leave, on_drop,
-                    on_action, cursor, animate_content_size, focus_requester,
+                    on_action, cursor, animate_content_size, focus_requester, on_focus_changed,
                 );
                 merge_flags!(self, other;
                     fill_max, fill_max_w, fill_max_h,
@@ -220,6 +220,10 @@ pub struct Modifier {
     /// When the requester's `request_focus()` is called, keyboard focus will
     /// move to this view.
     pub focus_requester: Option<crate::runtime::FocusRequester>,
+
+    /// Called when this view gains or loses focus. The boolean parameter is
+    /// `true` when focused, `false` when unfocused.
+    pub on_focus_changed: Option<Rc<dyn Fn(bool)>>,
 }
 
 impl std::fmt::Debug for Modifier {
@@ -300,6 +304,7 @@ impl std::fmt::Debug for Modifier {
             on_drag_leave,
             on_drop,
             on_action,
+            on_focus_changed,
         );
 
         macro_rules! flag {
@@ -814,6 +819,13 @@ impl Modifier {
     /// with the view's focusable element, allowing programmatic focus requests.
     pub fn focus_requester(mut self, fr: crate::runtime::FocusRequester) -> Self {
         self.focus_requester = Some(fr);
+        self
+    }
+
+    /// Register a callback that fires when this view gains or loses keyboard focus.
+    /// The argument is `true` when the view receives focus, `false` when it loses it.
+    pub fn on_focus_changed(mut self, f: impl Fn(bool) + 'static) -> Self {
+        self.on_focus_changed = Some(Rc::new(f));
         self
     }
 }

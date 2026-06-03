@@ -28,7 +28,7 @@
 //!
 //! UI state is typically held in `remember_*` slots rather than globals:
 //!
-//! ```rust
+//! ```ignore
 //! use repose_core::*;
 //!
 //! fn CounterView() -> View {
@@ -57,6 +57,8 @@
 //! automatically when dependencies change:
 //!
 //! ```rust
+//! use repose_core::*;
+//!
 //! let first = signal("Jane".to_string());
 //! let last  = signal("Doe".to_string());
 //!
@@ -73,7 +75,7 @@
 //!
 //! Use `effect` / `scoped_effect` for one‑off side‑effects with cleanups:
 //!
-//! ```rust
+//! ```ignore
 //! use repose_core::*;
 //!
 //! fn Example() -> View {

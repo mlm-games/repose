@@ -993,16 +993,17 @@ impl ApplicationHandler<()> for App {
                                 dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
 
                             let idx = if hit.tf_multiline {
-                                index_for_xy_bytes(
-                                    &state.text,
+                                rc::index_for_xy_bytes_vt(
+                                    &state,
                                     font_px,
                                     hit.rect.w - 2.0 * pad,
                                     content_x_px,
                                     content_y_px,
                                 )
                             } else {
-                                index_for_x_bytes(&state.text, font_px, content_x_px)
+                                rc::index_for_x_bytes_vt(&state, font_px, content_x_px)
                             };
+
                             state.drag_to(idx);
 
                             // Ensure caret visible

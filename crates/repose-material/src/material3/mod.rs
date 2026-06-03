@@ -103,7 +103,7 @@ pub fn BottomSheet(
 
 static NAVBAR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// M3 Navigation Bar — a bottom navigation bar with animated selection.
+/// M3 Navigation Bar - a bottom navigation bar with animated selection.
 /// Colors and indicator background transition with 200ms FastOutSlowIn.
 pub fn NavigationBar(selected_index: usize, items: Vec<NavItem>) -> View {
     let th = theme();
@@ -295,20 +295,10 @@ pub fn Snackbar(
     let dismissing = snackbar_is_dismissing();
 
     let slide_target = if dismissing { 80.0 } else { 0.0 };
-    let slide = animate_f32_from(
-        "snackbar_slide",
-        80.0,
-        slide_target,
-        th.motion.overlay,
-    );
+    let slide = animate_f32_from("snackbar_slide", 80.0, slide_target, th.motion.overlay);
 
     let alpha_target = if dismissing { 0.0 } else { 1.0 };
-    let alpha = animate_f32_from(
-        "snackbar_alpha",
-        0.0,
-        alpha_target,
-        th.motion.overlay,
-    );
+    let alpha = animate_f32_from("snackbar_alpha", 0.0, alpha_target, th.motion.overlay);
 
     let snackbar = Surface(
         Modifier::new()
@@ -361,8 +351,8 @@ pub fn Snackbar(
         .offset_bottom(0.0)
         .fill_max_width()
         .justify_content(repose_core::JustifyContent::Center)
-        .then(modifier),
-    ).child(snackbar)
+        .then(modifier))
+    .child(snackbar)
 }
 
 pub fn FilterChip(
@@ -1039,7 +1029,7 @@ pub fn DropdownMenu(
     let progress = *anim.borrow().get();
     let menu_visible = state.is_open() || progress > 0.01;
 
-    // Scrim overlay — keep alive during exit animation
+    // Scrim overlay - keep alive during exit animation
     if menu_visible {
         if overlay_id.get() == 0 {
             let scrim = Box(Modifier::new().fill_max_size().absolute().on_pointer_down({
@@ -1344,11 +1334,7 @@ pub fn DockedSearchBar(
     let active = state.is_active();
 
     let content_target = if expanded { 400.0 } else { 0.0 };
-    let content_height = animate_f32(
-        "docked_sh",
-        content_target,
-        theme().motion.expand,
-    );
+    let content_height = animate_f32("docked_sh", content_target, theme().motion.expand);
     let content_alpha = animate_f32(
         "docked_sa",
         if expanded { 1.0 } else { 0.0 },
@@ -1705,12 +1691,7 @@ pub fn PullToRefresh(
     } else {
         0.0
     };
-    let distance_fraction = animate_f32_from(
-        frac_key,
-        0.0,
-        raw_frac,
-        theme().motion.color,
-    );
+    let distance_fraction = animate_f32_from(frac_key, 0.0, raw_frac, theme().motion.color);
 
     // Indicator at top (pushed into view by overscroll) + content below.
     let indicator_h = distance_fraction * state.threshold;
@@ -2256,7 +2237,7 @@ pub struct NavRailItem {
 static NAVRAIL_COUNTER: AtomicU64 = AtomicU64::new(0);
 static FILTERCHIP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// M3 Navigation Rail — a compact vertical navigation sidebar.
+/// M3 Navigation Rail - a compact vertical navigation sidebar.
 ///
 /// Typically placed on the left side of the screen. Contains navigation items
 /// (icon + label) with animated selection indicator.
@@ -2390,16 +2371,18 @@ pub fn NavigationRail(
     .child((
         Column(Modifier::new()).with_children(top_children),
         Box(Modifier::new().flex_grow(1.0)).child(
-            Column(Modifier::new()
-                .fill_max_size()
-                .justify_content(JustifyContent::SpaceBetween)
-                .align_items(AlignItems::Center))
+            Column(
+                Modifier::new()
+                    .fill_max_size()
+                    .justify_content(JustifyContent::SpaceBetween)
+                    .align_items(AlignItems::Center),
+            )
             .with_children(item_views),
         ),
     ))
 }
 
-/// State for `SwipeToDismiss` — tracks swipe offset with spring animation.
+/// State for `SwipeToDismiss` - tracks swipe offset with spring animation.
 pub struct SwipeToDismissState {
     anim: Rc<RefCell<AnimatedValue<f32>>>,
     /// Set when `dismiss()` starts the spring; checked when the spring settles
@@ -2465,7 +2448,7 @@ impl SwipeToDismissState {
     }
 }
 
-/// M3 SwipeToDismiss — wraps content that can be swiped left to reveal
+/// M3 SwipeToDismiss - wraps content that can be swiped left to reveal
 /// a `background` action view.  On release past the threshold the content
 /// springs to the dismissed position and `on_dismiss` fires **once**.
 pub fn SwipeToDismiss(
@@ -2520,10 +2503,7 @@ pub fn SwipeToDismiss(
     let display_offset = offset.max(-300.0).min(0.0);
 
     Stack(modifier.fill_max_width()).child((
-        Box(Modifier::new()
-            .fill_max_size()
-            .absolute())
-        .child(background),
+        Box(Modifier::new().fill_max_size().absolute()).child(background),
         Box(Modifier::new()
             .fill_max_width()
             .translate(display_offset, 0.0)
@@ -2534,7 +2514,7 @@ pub fn SwipeToDismiss(
     ))
 }
 
-/// M3 Carousel — a horizontally scrolling container with peek edges.
+/// M3 Carousel - a horizontally scrolling container with peek edges.
 ///
 /// Uses a `LazyRow` internally. The first and last items are partially visible
 /// (peek) to indicate there is more scrollable content.

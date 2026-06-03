@@ -7,6 +7,29 @@ use repose_ui::textfield::{
     measure_text,
 };
 
+/// Like `index_for_x_bytes` but applies visual transformation if active on the state.
+/// The returned offset is in the original text's byte space.
+pub(crate) fn index_for_x_bytes_vt(state: &TextFieldState, font_px: f32, x_px: f32) -> usize {
+    if let Some(vt) = &state.visual_transformation {
+        let tfmd = vt.filter(&state.text);
+        let display_idx = index_for_x_bytes(&tfmd.text, font_px, x_px);
+        (tfmd.offset_map)(display_idx)
+    } else {
+        index_for_x_bytes(&state.text, font_px, x_px)
+    }
+}
+
+/// Like `index_for_xy_bytes` but applies visual transformation if active on the state.
+pub(crate) fn index_for_xy_bytes_vt(state: &TextFieldState, font_px: f32, wrap_w: f32, x_px: f32, y_px: f32) -> usize {
+    if let Some(vt) = &state.visual_transformation {
+        let tfmd = vt.filter(&state.text);
+        let display_idx = index_for_xy_bytes(&tfmd.text, font_px, wrap_w, x_px, y_px);
+        (tfmd.offset_map)(display_idx)
+    } else {
+        index_for_xy_bytes(&state.text, font_px, wrap_w, x_px, y_px)
+    }
+}
+
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -158,8 +181,16 @@ pub(crate) fn tf_ensure_caret_visible(state: &mut TextFieldState, is_multiline: 
         let ih = state.inner_height;
         state.ensure_caret_visible_xy(cx, cy, iw, ih, dp_to_px(2.0));
     } else {
-        let m = measure_text(&state.text, font_px, None);
-        let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
+        let caret_idx = state.caret_index();
+        let (display, caret_display_off) = if let Some(vt) = &state.visual_transformation {
+            let tfmd = vt.filter(&state.text);
+            let off = repose_core::original_offset_to_display(&state.text, &tfmd.text, caret_idx);
+            (tfmd.text, off)
+        } else {
+            (state.text.clone(), caret_idx)
+        };
+        let m = measure_text(&display, font_px, None);
+        let caret_x_px = m.positions.get(caret_display_off).copied().unwrap_or(0.0);
         state.ensure_caret_visible(caret_x_px, wrap_width, dp_to_px(2.0));
     }
 }
@@ -185,15 +216,15 @@ pub(crate) fn tf_place_caret_at_pointer(
     let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
 
     let idx = if is_multiline {
-        index_for_xy_bytes(
-            &state.text,
+        index_for_xy_bytes_vt(
+            state,
             font_px,
             hit_rect.w - 2.0 * padding_px,
             content_x_px,
             content_y_px,
         )
     } else {
-        index_for_x_bytes(&state.text, font_px, content_x_px)
+        index_for_x_bytes_vt(state, font_px, content_x_px)
     };
     state.begin_drag(idx, shift);
 
@@ -206,8 +237,15 @@ pub(crate) fn tf_place_caret_at_pointer(
         let ih = state.inner_height;
         state.ensure_caret_visible_xy(cx, cy, iw, ih, 2.0 * scale);
     } else {
-        let m = measure_text(&state.text, font_px, None);
-        let cx = m.positions.get(caret_idx).copied().unwrap_or(0.0);
+        let (display, caret_display_off) = if let Some(vt) = &state.visual_transformation {
+            let tfmd = vt.filter(&state.text);
+            let off = repose_core::original_offset_to_display(&state.text, &tfmd.text, caret_idx);
+            (tfmd.text, off)
+        } else {
+            (state.text.clone(), caret_idx)
+        };
+        let m = measure_text(&display, font_px, None);
+        let cx = m.positions.get(caret_display_off).copied().unwrap_or(0.0);
         state.ensure_caret_visible(cx, wrap_w, 2.0 * scale);
     }
 }

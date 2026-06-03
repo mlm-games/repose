@@ -751,7 +751,7 @@ impl Default for OutlinedTextFieldConfig {
 /// M3 Outlined Text Field with floating label, leading/trailing icons, and error state.
 ///
 /// The label floats up when `value` is non-empty or when the field is focused.
-/// Note: focus-based floating is approximated via animated `float_t` — the label
+/// Note: focus-based floating is approximated via animated `float_t` - the label
 /// begins floating once `on_value_change` fires (i.e. when the user types).
 /// For strict focus-on-tap floating, pair with an external focus signal.
 ///
@@ -785,7 +785,7 @@ pub fn OutlinedTextField(
         None => "otf_nolabel".into(),
     };
 
-    // Persistent focus tracker — set by layout/paint when this field is focused,
+    // Persistent focus tracker - set by layout/paint when this field is focused,
     // read here on the next frame. This gives a one-frame delay on tap-to-float,
     // which is negligible at 60fps.
     let focus_tracker: Rc<Cell<bool>> =
@@ -823,7 +823,7 @@ pub fn OutlinedTextField(
     // Label Y offset: 16dp (same line as text) → -4dp (overlapping top border)
     let label_y = 16.0 - 20.0 * float_t;
 
-    // The TextField inside uses no placeholder when a label is present —
+    // The TextField inside uses no placeholder when a label is present -
     // the label itself serves as the visual placeholder.
     let tf_placeholder = if has_label {
         String::new()
@@ -837,7 +837,7 @@ pub fn OutlinedTextField(
         .background(th.surface))
     .child(
         Stack(Modifier::new().fill_max_size()).child((
-            // Input row — always at the same position, with room at the top
+            // Input row - always at the same position, with room at the top
             // for the floating label to overlap.
             Row(Modifier::new()
                 .fill_max_size()
@@ -863,6 +863,9 @@ pub fn OutlinedTextField(
                         }),
                         focus_tracker: Some(focus_tracker.clone()),
                         value: value.clone(),
+                        visual_transformation: None,
+                        keyboard_type: None,
+                        ime_action: None,
                     },
                 )
                 .modifier(
@@ -883,7 +886,7 @@ pub fn OutlinedTextField(
                 }),
                 config.trailing_icon.unwrap_or(Box(Modifier::new())),
             )),
-            // Floating label — absolutely positioned, animates between text-line
+            // Floating label - absolutely positioned, animates between text-line
             // and top-border positions as the field gains content / focus.
             // A surface-colored background box hides the border stroke behind the label.
             if let Some(lbl) = label_str {

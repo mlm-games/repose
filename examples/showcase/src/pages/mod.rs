@@ -12,6 +12,7 @@ pub mod m3;
 pub mod pager;
 pub mod scroll;
 pub mod scroll_features;
+pub mod staggered_grid;
 pub mod text;
 pub mod widgets;
 pub mod windows;

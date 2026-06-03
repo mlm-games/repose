@@ -39,6 +39,7 @@
 
 use repose_core::*;
 use std::ops::Range;
+use std::rc::Rc;
 use web_time::Duration;
 use web_time::Instant;
 
@@ -46,6 +47,22 @@ use unicode_segmentation::UnicodeSegmentation;
 
 /// Logical font size for TextField in dp (converted to px at measure/paint time).
 pub const TF_FONT_DP: f32 = 16.0;
+
+/// Configures the keyboard for a text field.
+#[derive(Clone, Copy, Debug)]
+pub struct KeyboardOptions {
+    pub keyboard_type: repose_core::KeyboardType,
+    pub autocorrect: bool,
+}
+
+impl Default for KeyboardOptions {
+    fn default() -> Self {
+        Self {
+            keyboard_type: repose_core::KeyboardType::default(),
+            autocorrect: true,
+        }
+    }
+}
 /// Horizontal padding inside the TextField in dp.
 pub const TF_PADDING_X_DP: f32 = 8.0;
 
@@ -110,7 +127,7 @@ fn next_grapheme_boundary(text: &str, byte: usize) -> usize {
     text.len()
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct TextFieldState {
     pub text: String,
     pub selection: Range<usize>,
@@ -122,6 +139,30 @@ pub struct TextFieldState {
     pub inner_width: f32,                  // px
     pub inner_height: f32,                 // px
     pub preferred_x_px: Option<f32>,       // for Up/Down caret movement in multiline
+    /// When a visual transformation is active, this maps offsets in the
+    /// display text back to offsets in the original text.
+    pub offset_map: Option<Rc<dyn Fn(usize) -> usize>>,
+    /// The active visual transformation, set during layout.
+    pub visual_transformation: Option<Rc<dyn VisualTransformation>>,
+}
+
+impl std::fmt::Debug for TextFieldState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TextFieldState")
+            .field("text", &self.text)
+            .field("selection", &self.selection)
+            .field("composition", &self.composition)
+            .field("scroll_offset", &self.scroll_offset)
+            .field("scroll_offset_y", &self.scroll_offset_y)
+            .field("drag_anchor", &self.drag_anchor)
+            .field("blink_start", &self.blink_start)
+            .field("inner_width", &self.inner_width)
+            .field("inner_height", &self.inner_height)
+            .field("preferred_x_px", &self.preferred_x_px)
+            .field("offset_map", &self.offset_map.as_ref().map(|_| "<fn>"))
+            .field("visual_transformation", &self.visual_transformation.as_ref().map(|_| "<vt>"))
+            .finish()
+    }
 }
 
 impl Default for TextFieldState {
@@ -143,6 +184,8 @@ impl TextFieldState {
             inner_width: 0.0,
             inner_height: 0.0,
             preferred_x_px: None,
+            offset_map: None,
+            visual_transformation: None,
         }
     }
 
@@ -418,25 +461,103 @@ pub fn TextField(
     on_change: Option<impl Fn(String) + 'static>,
     on_submit: Option<impl Fn(String) + 'static>,
 ) -> repose_core::View {
-    repose_core::View::new(
-        0,
-        repose_core::ViewKind::TextField {
-            state_key: 0,
+    TextFieldEx {
+        hint: hint.into(),
+        value,
+        modifier,
+        on_change: on_change.map(|f| Rc::new(f) as _),
+        on_submit: on_submit.map(|f| Rc::new(f) as _),
+        visual_transformation: None,
+        keyboard_options: None,
+        ime_action: None,
+    }
+    .build()
+}
+
+/// Extended TextField with optional visual transformation, keyboard options, and IME action.
+pub struct TextFieldEx {
+    pub hint: String,
+    pub value: String,
+    pub modifier: repose_core::Modifier,
+    pub on_change: Option<Rc<dyn Fn(String)>>,
+    pub on_submit: Option<Rc<dyn Fn(String)>>,
+    /// Optional visual transformation (e.g., password masking).
+    pub visual_transformation: Option<Rc<dyn repose_core::VisualTransformation>>,
+    /// Platform keyboard configuration hints.
+    pub keyboard_options: Option<KeyboardOptions>,
+    /// IME action button configuration.
+    pub ime_action: Option<repose_core::ImeAction>,
+}
+
+impl TextFieldEx {
+    pub fn new(hint: impl Into<String>, value: String, modifier: repose_core::Modifier) -> Self {
+        Self {
             hint: hint.into(),
-            on_change: on_change.map(|f| std::rc::Rc::new(f) as _),
-            on_submit: on_submit.map(|f| std::rc::Rc::new(f) as _),
-            multiline: false,
-            focus_tracker: None,
             value,
-        },
-    )
-    .modifier(modifier)
-    .semantics(repose_core::Semantics {
-        role: repose_core::Role::TextField,
-        label: None,
-        focused: false,
-        enabled: true,
-    })
+            modifier,
+            on_change: None,
+            on_submit: None,
+            visual_transformation: None,
+            keyboard_options: None,
+            ime_action: None,
+        }
+    }
+
+    pub fn on_change(mut self, f: impl Fn(String) + 'static) -> Self {
+        self.on_change = Some(Rc::new(f));
+        self
+    }
+
+    pub fn on_submit(mut self, f: impl Fn(String) + 'static) -> Self {
+        self.on_submit = Some(Rc::new(f));
+        self
+    }
+
+    pub fn visual_transformation(mut self, vt: impl repose_core::VisualTransformation) -> Self {
+        self.visual_transformation = Some(Rc::new(vt));
+        self
+    }
+
+    pub fn keyboard_options(mut self, opts: KeyboardOptions) -> Self {
+        self.keyboard_options = Some(opts);
+        self
+    }
+
+    pub fn ime_action(mut self, action: repose_core::ImeAction) -> Self {
+        self.ime_action = Some(action);
+        self
+    }
+
+    pub fn password(mut self) -> Self {
+        self.visual_transformation =
+            Some(Rc::new(repose_core::PasswordVisualTransformation::default()));
+        self
+    }
+
+    pub fn build(self) -> repose_core::View {
+        repose_core::View::new(
+            0,
+            repose_core::ViewKind::TextField {
+                state_key: 0,
+                hint: self.hint,
+                on_change: self.on_change,
+                on_submit: self.on_submit,
+                multiline: false,
+                focus_tracker: None,
+                value: self.value,
+                visual_transformation: self.visual_transformation,
+                keyboard_type: self.keyboard_options.map(|o| o.keyboard_type),
+                ime_action: self.ime_action,
+            },
+        )
+        .modifier(self.modifier)
+        .semantics(repose_core::Semantics {
+            role: repose_core::Role::TextField,
+            label: None,
+            focused: false,
+            enabled: true,
+        })
+    }
 }
 
 /// Platform-managed view: multiline text input.
@@ -449,25 +570,94 @@ pub fn TextArea(
     on_change: Option<impl Fn(String) + 'static>,
     on_submit: Option<impl Fn(String) + 'static>,
 ) -> repose_core::View {
-    repose_core::View::new(
-        0,
-        repose_core::ViewKind::TextField {
-            state_key: 0,
+    TextAreaEx {
+        hint: hint.into(),
+        value,
+        modifier,
+        on_change: on_change.map(|f| Rc::new(f) as _),
+        on_submit: on_submit.map(|f| Rc::new(f) as _),
+        visual_transformation: None,
+        keyboard_options: None,
+        ime_action: None,
+    }
+    .build()
+}
+
+/// Extended TextArea with optional visual transformation, keyboard options, and IME action.
+pub struct TextAreaEx {
+    pub hint: String,
+    pub value: String,
+    pub modifier: repose_core::Modifier,
+    pub on_change: Option<Rc<dyn Fn(String)>>,
+    pub on_submit: Option<Rc<dyn Fn(String)>>,
+    pub visual_transformation: Option<Rc<dyn repose_core::VisualTransformation>>,
+    pub keyboard_options: Option<KeyboardOptions>,
+    pub ime_action: Option<repose_core::ImeAction>,
+}
+
+impl TextAreaEx {
+    pub fn new(hint: impl Into<String>, value: String, modifier: repose_core::Modifier) -> Self {
+        Self {
             hint: hint.into(),
-            multiline: true,
-            on_change: on_change.map(|f| std::rc::Rc::new(f) as _),
-            on_submit: on_submit.map(|f| std::rc::Rc::new(f) as _),
-            focus_tracker: None,
             value,
-        },
-    )
-    .modifier(modifier)
-    .semantics(repose_core::Semantics {
-        role: repose_core::Role::TextField,
-        label: None,
-        focused: false,
-        enabled: true,
-    })
+            modifier,
+            on_change: None,
+            on_submit: None,
+            visual_transformation: None,
+            keyboard_options: None,
+            ime_action: None,
+        }
+    }
+
+    pub fn on_change(mut self, f: impl Fn(String) + 'static) -> Self {
+        self.on_change = Some(Rc::new(f));
+        self
+    }
+
+    pub fn on_submit(mut self, f: impl Fn(String) + 'static) -> Self {
+        self.on_submit = Some(Rc::new(f));
+        self
+    }
+
+    pub fn visual_transformation(mut self, vt: impl repose_core::VisualTransformation) -> Self {
+        self.visual_transformation = Some(Rc::new(vt));
+        self
+    }
+
+    pub fn keyboard_options(mut self, opts: KeyboardOptions) -> Self {
+        self.keyboard_options = Some(opts);
+        self
+    }
+
+    pub fn ime_action(mut self, action: repose_core::ImeAction) -> Self {
+        self.ime_action = Some(action);
+        self
+    }
+
+    pub fn build(self) -> repose_core::View {
+        repose_core::View::new(
+            0,
+            repose_core::ViewKind::TextField {
+                state_key: 0,
+                hint: self.hint,
+                on_change: self.on_change,
+                on_submit: self.on_submit,
+                multiline: true,
+                focus_tracker: None,
+                value: self.value,
+                visual_transformation: self.visual_transformation,
+                keyboard_type: self.keyboard_options.map(|o| o.keyboard_type),
+                ime_action: self.ime_action,
+            },
+        )
+        .modifier(self.modifier)
+        .semantics(repose_core::Semantics {
+            role: repose_core::Role::TextField,
+            label: None,
+            focused: false,
+            enabled: true,
+        })
+    }
 }
 
 #[derive(Clone, Debug)]

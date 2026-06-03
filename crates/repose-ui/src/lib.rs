@@ -111,7 +111,7 @@ pub use layout::IntrinsicSizeMode;
 pub mod lazy;
 pub mod selection;
 pub mod subcompose;
-pub use lazy::{LazyColumn, LazyColumnState, LazyGridState, LazyRow, LazyRowState, LazyVerticalGrid, SimpleList};
+pub use lazy::{LazyColumn, LazyColumnState, LazyGridState, LazyRow, LazyRowState, LazyVerticalGrid, LazyVerticalStaggeredGrid, LazyVerticalStaggeredGridState, SimpleList};
 pub use subcompose::{
     BoxWithConstraints, SubcomposeLayout, box_with_constraints_with_key, subcompose_hash_key,
     subcompose_layout_with_slots, subcompose_with_key, subcompose_with_key_slots,
@@ -135,7 +135,7 @@ pub mod textfield;
 use crate::textfield::{TF_FONT_DP, TF_PADDING_X_DP, byte_to_char_index, measure_text};
 use repose_core::locals;
 pub use selection::SelectableText;
-pub use textfield::{TextArea, TextField, TextFieldState};
+pub use textfield::{TextArea, TextAreaEx, TextField, TextFieldEx, TextFieldState, KeyboardOptions};
 
 thread_local! {
     static LAYOUT_ENGINE: RefCell<layout::LayoutEngine> =

@@ -130,7 +130,7 @@ pub fn HorizontalPager(
 
 /// A vertically swipable pager with animated page transitions.
 ///
-/// Mirror of `HorizontalPager` — drag up/down to flip pages.
+/// Mirror of `HorizontalPager` - drag up/down to flip pages.
 #[allow(non_snake_case)]
 pub fn VerticalPager(
     key: impl Into<String>,

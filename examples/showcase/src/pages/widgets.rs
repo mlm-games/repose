@@ -1,7 +1,9 @@
 use std::rc::Rc;
 
 use repose_core::{prelude::*, signal};
-use repose_material::material3::{AssistChip, FilterChip, InputChip, M3RangeSlider, M3Slider, SuggestionChip, TextButton};
+use repose_material::material3::{
+    AssistChip, FilterChip, InputChip, M3RangeSlider, M3Slider, SuggestionChip, TextButton,
+};
 use repose_material::material3::{Checkbox, RadioButton, Switch};
 use repose_material::{Icon, material_symbols};
 use repose_ui::*;
@@ -111,29 +113,64 @@ pub fn screen() -> View {
             "Spatial Focus (arrow keys)",
             Column(Modifier::new().padding(12.0)).child((
                 Text("Navigate the 3×3 grid with arrow keys")
-                    .size(14.0).color(theme().on_surface_variant),
+                    .size(14.0)
+                    .color(theme().on_surface_variant),
                 Box(Modifier::new().height(8.0).width(1.0)),
                 Column(Modifier::new().gap(6.0).align_items(AlignItems::Center)).child(
-                    (0..3).map(|row| {
-                        Row(Modifier::new().gap(6.0).justify_content(JustifyContent::Center)).child(
-                            (0..3).map(|col| {
-                                let idx = row * 3 + col;
-                                let item = Box(Modifier::new()
-                                    .clickable()
-                                    .padding(16.0)
-                                    .background(theme().surface)
-                                    .border(1.0, theme().outline, 8.0)
-                                    .clip_rounded(8.0)
-                                    .on_pointer_down(move |_| {
-                                        log::info!("Clicked item {idx}");
-                                    }))
-                                .child(Text(format!("{idx}")).size(18.0).color(theme().on_surface));
-                                item
-                            }).collect::<Vec<_>>()
-                        )
-                    }).collect::<Vec<_>>()
+                    (0..3)
+                        .map(|row| {
+                            Row(Modifier::new()
+                                .gap(6.0)
+                                .justify_content(JustifyContent::Center))
+                            .child(
+                                (0..3)
+                                    .map(|col| {
+                                        let idx = row * 3 + col;
+                                        let item = Box(Modifier::new()
+                                            .clickable()
+                                            .padding(16.0)
+                                            .background(theme().surface)
+                                            .border(1.0, theme().outline, 8.0)
+                                            .clip_rounded(8.0)
+                                            .on_pointer_down(move |_| {
+                                                log::info!("Clicked item {idx}");
+                                            }))
+                                        .child(
+                                            Text(format!("{idx}"))
+                                                .size(18.0)
+                                                .color(theme().on_surface),
+                                        );
+                                        item
+                                    })
+                                    .collect::<Vec<_>>(),
+                            )
+                        })
+                        .collect::<Vec<_>>(),
                 ),
-            ))
+                Box(Modifier::new().height(8.0).width(1.0)),
+                Text("Focus callback (check console):")
+                    .size(14.0)
+                    .color(theme().on_surface_variant),
+                Box(Modifier::new().height(4.0).width(1.0)),
+                Row(Modifier::new().gap(6.0)).child(
+                    (0..3)
+                        .map(|i| {
+                            let lbl = format!("btn{i}");
+                            let lbl2 = lbl.clone();
+                            Box(Modifier::new()
+                                .clickable()
+                                .padding(12.0)
+                                .background(theme().surface)
+                                .border(1.0, theme().outline, 8.0)
+                                .clip_rounded(8.0)
+                                .on_focus_changed(move |focused| {
+                                    log::warn!("{lbl} focus: {focused}");
+                                }))
+                            .child(Text(lbl2).size(14.0).color(theme().on_surface))
+                        })
+                        .collect::<Vec<_>>(),
+                ),
+            )),
         ),
         Section(
             "Chips",

@@ -125,6 +125,12 @@ pub enum ViewKind {
         focus_tracker: Option<Rc<Cell<bool>>>,
         /// Current text content, supplied by the caller. The platform syncs
         value: String,
+        /// Optional text display transformation (e.g., password masking).
+        visual_transformation: Option<Rc<dyn crate::text::VisualTransformation>>,
+        /// Keyboard type hint for the platform IME.
+        keyboard_type: Option<crate::text::KeyboardType>,
+        /// IME action button configuration.
+        ime_action: Option<crate::text::ImeAction>,
     },
     Slider {
         value: f32,
@@ -193,7 +199,26 @@ impl std::fmt::Debug for ViewKind {
             Self::EllipseBorder { .. } => f.write_str("EllipseBorder"),
             Self::SubcomposeLayout { .. } => f.write_str("SubcomposeLayout"),
             Self::Text { text, .. } => write!(f, "Text({:?})", text),
-            Self::TextField { hint, .. } => write!(f, "TextField({:?})", hint),
+            Self::TextField {
+                hint,
+                visual_transformation,
+                keyboard_type,
+                ime_action,
+                ..
+            } => {
+                let mut s = f.debug_struct("TextField");
+                s.field("hint", hint);
+                if visual_transformation.is_some() {
+                    s.field("visual_transformation", &"…");
+                }
+                if let Some(kt) = keyboard_type {
+                    s.field("keyboard_type", kt);
+                }
+                if let Some(ia) = ime_action {
+                    s.field("ime_action", ia);
+                }
+                s.finish()
+            }
             Self::Slider { value, .. } => write!(f, "Slider({})", value),
             Self::RangeSlider { start, end, .. } => write!(f, "Range({}..{})", start, end),
             Self::ProgressBar { value, .. } => write!(f, "Progress({})", value),

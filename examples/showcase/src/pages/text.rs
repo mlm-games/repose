@@ -86,6 +86,31 @@ pub fn screen() -> View {
             .modifier(Modifier::new().flex_grow(1.0)),
         )),
         Section(
+            "Password TextField",
+            {
+                let pw = remember_with_key("pw_value", || signal(String::new()));
+                Column(Modifier::new().padding(12.0)).child((
+                    TextFieldEx::new("Password", pw.get(), Modifier::new().fill_max_width())
+                        .password()
+                        .on_change({
+                            let p = pw.clone();
+                            move |v| p.set(v)
+                        })
+                        .build(),
+                    Box(Modifier::new().height(8.0).width(1.0)),
+                    Text("Text is masked with • (value: ")
+                        .size(14.0)
+                        .color(theme().on_surface_variant),
+                    Text(pw.get())
+                        .size(14.0)
+                        .color(theme().primary),
+                    Text(")")
+                        .size(14.0)
+                        .color(theme().on_surface_variant),
+                ))
+            }
+        ),
+        Section(
 
             "TextArea (multi-line)",
             Column(Modifier::new().padding(12.0)).child((
