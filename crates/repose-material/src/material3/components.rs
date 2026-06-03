@@ -862,6 +862,7 @@ pub fn OutlinedTextField(
                             Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
                         }),
                         focus_tracker: Some(focus_tracker.clone()),
+                        value: value.clone(),
                     },
                 )
                 .modifier(

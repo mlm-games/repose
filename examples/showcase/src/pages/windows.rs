@@ -26,6 +26,7 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                     let hint = note_text.get();
                     TextArea(
                         hint,
+                        note_text.get(),
                         Modifier::new().fill_max_size(),
                         Some({
                             let note_text = note_text.clone();
@@ -132,6 +133,7 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                         let hint = note_text.get();
                         TextArea(
                             hint,
+                            note_text.get(),
                             Modifier::new().fill_max_size(),
                             Some({
                                 let note_text = note_text.clone();

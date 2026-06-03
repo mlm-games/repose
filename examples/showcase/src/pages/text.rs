@@ -17,6 +17,7 @@ pub fn screen() -> View {
     let single_text = remember_with_key("text_single_value", || signal(String::new()));
     let last_submit_single = remember_with_key("text_last_submit_single", || signal(String::new()));
     let last_change_single = remember_with_key("text_last_change_single", || signal(String::new()));
+    let multi_text = remember_with_key("text_multi_value", || signal(String::new()));
     let last_submit_multi = remember_with_key("text_last_submit_multi", || signal(String::new()));
     let last_change_multi = remember_with_key("text_last_change_multi", || signal(String::new()));
     let toggle = remember(|| signal(false));
@@ -90,6 +91,7 @@ pub fn screen() -> View {
             Column(Modifier::new().padding(12.0)).child((
                 TextArea(
                     "Write notes…",
+                    multi_text.get(),
                     Modifier::new()
                         .height(180.0)
                         .fill_max_width()
@@ -97,8 +99,12 @@ pub fn screen() -> View {
                         .border(1.0, theme().outline, 10.0)
                         .clip_rounded(10.0),
                     Some({
+                        let t = multi_text.clone();
                         let last_change = last_change_multi.clone();
-                        move |s| last_change.set(s)
+                        move |s: String| {
+                            t.set(s.clone());
+                            last_change.set(s);
+                        }
                     }),
                     Some({
                         let last_submit = last_submit_multi.clone();

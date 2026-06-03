@@ -1240,6 +1240,7 @@ pub fn SearchBar(
     let input_field: View = if active {
         TextField(
             placeholder.clone(),
+            query.clone(),
             Modifier::new().flex_grow(1.0).padding(4.0),
             Some({
                 let s = state.clone();
@@ -1357,6 +1358,7 @@ pub fn DockedSearchBar(
     let input_field: View = if active {
         TextField(
             placeholder.clone(),
+            query.clone(),
             Modifier::new().flex_grow(1.0),
             Some({
                 let s = state.clone();

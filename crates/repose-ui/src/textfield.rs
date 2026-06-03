@@ -410,9 +410,10 @@ impl TextFieldState {
     }
 }
 
-// Platform-managed view: hint only.
+// Platform-managed view: hint shown only when `value` is empty.
 pub fn TextField(
     hint: impl Into<String>,
+    value: String,
     modifier: repose_core::Modifier,
     on_change: Option<impl Fn(String) + 'static>,
     on_submit: Option<impl Fn(String) + 'static>,
@@ -426,6 +427,7 @@ pub fn TextField(
             on_submit: on_submit.map(|f| std::rc::Rc::new(f) as _),
             multiline: false,
             focus_tracker: None,
+            value,
         },
     )
     .modifier(modifier)
@@ -442,6 +444,7 @@ pub fn TextField(
 /// - Renders wrapped lines + vertical scrolling
 pub fn TextArea(
     hint: impl Into<String>,
+    value: String,
     modifier: repose_core::Modifier,
     on_change: Option<impl Fn(String) + 'static>,
     on_submit: Option<impl Fn(String) + 'static>,
@@ -455,6 +458,7 @@ pub fn TextArea(
             on_change: on_change.map(|f| std::rc::Rc::new(f) as _),
             on_submit: on_submit.map(|f| std::rc::Rc::new(f) as _),
             focus_tracker: None,
+            value,
         },
     )
     .modifier(modifier)

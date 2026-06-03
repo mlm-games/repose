@@ -123,6 +123,8 @@ pub enum ViewKind {
         /// Set by the component (e.g. OutlinedTextField) to receive focus-change
         /// signals from the layout/paint phase.
         focus_tracker: Option<Rc<Cell<bool>>>,
+        /// Current text content, supplied by the caller. The platform syncs
+        value: String,
     },
     Slider {
         value: f32,

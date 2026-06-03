@@ -1839,11 +1839,27 @@ impl LayoutEngine {
                 on_change,
                 on_submit,
                 focus_tracker,
+                value,
             } => {
                 let tf_key = if *state_key != 0 { *state_key } else { view_id };
 
                 if let Some(cell) = focus_tracker.as_ref() {
                     cell.set(is_focused);
+                }
+
+                if let Some(state_rc) = textfield_states.get(&tf_key) {
+                    let mut st = state_rc.borrow_mut();
+                    if st.text != *value {
+                        st.text = value.clone();
+                        st.composition = None;
+                        st.drag_anchor = None;
+                        let len = st.text.len();
+                        let ns = st.selection.start.min(len);
+                        let ne = st.selection.end.min(len);
+                        if ns != st.selection.start || ne != st.selection.end {
+                            st.selection = ns..ne;
+                        }
+                    }
                 }
 
                 let pad_x = dp_to_px(TF_PADDING_X_DP);
@@ -2125,13 +2141,47 @@ impl LayoutEngine {
                     }
                 } else {
                     let th = locals::theme();
-                    scene.nodes.push(SceneNode::Text {
-                        rect: inner,
-                        text: Arc::from(hint.clone()),
-                        color: th.on_surface_variant,
-                        size: font_px(TF_FONT_DP),
-                        font_family: None,
-                    });
+                    let font_val = font_px(TF_FONT_DP);
+                    if value.is_empty() {
+                        scene.nodes.push(SceneNode::Text {
+                            rect: inner,
+                            text: Arc::from(hint.clone()),
+                            color: th.on_surface_variant,
+                            size: font_val,
+                            font_family: None,
+                        });
+                    } else if *multiline {
+                        let layout =
+                            crate::textfield::layout_text_area(value, font_val, inner.w.max(1.0));
+                        let line_h = layout.line_h_px;
+                        for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
+                            let ln = &value[s..e];
+                            let draw_y = inner.y + (i as f32) * line_h;
+                            if draw_y + line_h < inner.y - 1.0 || draw_y > inner.y + inner.h + 1.0 {
+                                continue;
+                            }
+                            scene.nodes.push(SceneNode::Text {
+                                rect: repose_core::Rect {
+                                    x: inner.x,
+                                    y: draw_y,
+                                    w: inner.w,
+                                    h: line_h,
+                                },
+                                text: Arc::<str>::from(ln.to_string()),
+                                color: th.on_surface,
+                                size: font_val,
+                                font_family: None,
+                            });
+                        }
+                    } else {
+                        scene.nodes.push(SceneNode::Text {
+                            rect: inner,
+                            text: Arc::from(value.clone()),
+                            color: th.on_surface,
+                            size: font_val,
+                            font_family: None,
+                        });
+                    }
                 }
 
                 scene.nodes.push(SceneNode::PopClip);

@@ -63,10 +63,14 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             // We rely on the closure being recreated each frame anyway
         }
         ViewKind::TextField {
-            state_key, hint, ..
+            state_key,
+            hint,
+            value,
+            ..
         } => {
             state_key.hash(hasher);
             hint.hash(hasher);
+            value.hash(hasher);
         }
         ViewKind::Slider {
             value,
