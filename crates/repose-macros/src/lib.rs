@@ -1,9 +1,9 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    braced,
+    Expr, Ident, Token, braced,
     parse::{Parse, ParseStream},
-    parse_macro_input, Expr, Ident, Token,
+    parse_macro_input,
 };
 
 struct ViewMacro {
@@ -132,10 +132,7 @@ fn expand_view(m: ViewMacro) -> proc_macro2::TokenStream {
         return quote!({});
     }
 
-    let layout_name = layout
-        .as_ref()
-        .map(|i| i.to_string())
-        .unwrap_or_default();
+    let layout_name = layout.as_ref().map(|i| i.to_string()).unwrap_or_default();
 
     let mod_calls = modifiers.iter().map(|(name, value)| {
         if let Some(val) = value {

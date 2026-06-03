@@ -29,7 +29,12 @@ pub fn screen() -> View {
         it,
         |item| item.height,
         state,
-        Modifier::new().fill_max_width().max_width(800.0).fill_max_height().max_height(500.0).gap(8.0),
+        Modifier::new()
+            .fill_max_width()
+            .max_width(800.0)
+            .fill_max_height()
+            .max_height(500.0)
+            .gap(8.0),
         move |item, _| {
             let th = theme();
             let bg = if item.id % 3 == 0 {
@@ -52,9 +57,7 @@ pub fn screen() -> View {
                         .align_items(AlignItems::Center),
                 )
                 .child((
-                    Text(item.label)
-                        .size(20.0)
-                        .color(th.on_primary_container),
+                    Text(item.label).size(20.0).color(th.on_primary_container),
                     Text(format!("h: {:.0}", item.height))
                         .size(12.0)
                         .color(th.on_primary_container.with_alpha(180)),

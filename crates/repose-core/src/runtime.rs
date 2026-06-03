@@ -148,7 +148,8 @@ pub fn spatial_focus_next(
         return None;
     }
 
-    let current_rect = current.and_then(|id| hit_regions.iter().find(|h| h.id == id).map(|h| h.rect));
+    let current_rect =
+        current.and_then(|id| hit_regions.iter().find(|h| h.id == id).map(|h| h.rect));
 
     // For Next/Previous, use tab-order navigation
     match dir {

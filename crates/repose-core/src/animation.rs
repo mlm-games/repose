@@ -578,7 +578,9 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
         if !still {
             // Check if we should repeat
             if let Some(repeat) = &self.spec.repeat {
-                let maxed = repeat.iterations.map_or(false, |max| self.iteration + 1 >= max);
+                let maxed = repeat
+                    .iterations
+                    .map_or(false, |max| self.iteration + 1 >= max);
                 if !maxed {
                     self.iteration += 1;
                     if repeat.reverse {

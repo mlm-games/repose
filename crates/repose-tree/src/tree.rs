@@ -482,14 +482,15 @@ impl ViewTree {
         let child_depth = depth + 1;
         let mut child_ids: SmallVec<[NodeId; 4]> = SmallVec::new();
         let mut child_hashes: Vec<u64> = Vec::with_capacity(view.children.len());
-        let children_to_create: Vec<View> = if let ViewKind::SubcomposeLayout { content } = &view.kind {
-            self.run_subcompose(node_id, content)
-                .into_iter()
-                .map(|(_, v)| v)
-                .collect()
-        } else {
-            view.children.clone()
-        };
+        let children_to_create: Vec<View> =
+            if let ViewKind::SubcomposeLayout { content } = &view.kind {
+                self.run_subcompose(node_id, content)
+                    .into_iter()
+                    .map(|(_, v)| v)
+                    .collect()
+            } else {
+                view.children.clone()
+            };
         for (i, child_view) in children_to_create.iter().enumerate() {
             let child_id = self.create_node(child_view, Some(node_id), child_depth, i as u32, ctx);
             child_ids.push(child_id);
@@ -914,11 +915,13 @@ mod tests {
 
         // Changed modifier: closure re-runs.
         let c2 = counter.clone();
-        let root2 = box_view().with_children(vec![subcompose_view(move |_scope| {
-            c2.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            text_view("hi")
-        })
-        .modifier(Modifier::new().padding(4.0))]);
+        let root2 = box_view().with_children(vec![
+            subcompose_view(move |_scope| {
+                c2.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                text_view("hi")
+            })
+            .modifier(Modifier::new().padding(4.0)),
+        ]);
 
         tree.update(&root2);
         assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 2);
@@ -976,7 +979,11 @@ mod tests {
     fn test_subcompose_multi_slot_produces_multiple_children() {
         let mut tree = ViewTree::new();
         let root = box_view().with_children(vec![multi_slot_view(|_scope| {
-            vec![(0, text_view("a")), (1, text_view("b")), (2, text_view("c"))]
+            vec![
+                (0, text_view("a")),
+                (1, text_view("b")),
+                (2, text_view("c")),
+            ]
         })]);
 
         tree.update(&root);
@@ -998,7 +1005,11 @@ mod tests {
 
         // 3 slots: 0, 1, 2
         let root3 = box_view().with_children(vec![multi_slot_view(|_scope| {
-            vec![(0, text_view("a")), (1, text_view("b")), (2, text_view("c"))]
+            vec![
+                (0, text_view("a")),
+                (1, text_view("b")),
+                (2, text_view("c")),
+            ]
         })]);
         tree.update(&root3);
 
@@ -1014,10 +1025,10 @@ mod tests {
 
         // 2 slots: 0, 2 (middle removed). The Modifier change (padding) forces
         // the subcompose cache to invalidate so the new closure runs.
-        let root2 = box_view().with_children(vec![multi_slot_view(|_scope| {
-            vec![(0, text_view("a")), (2, text_view("c"))]
-        })
-        .modifier(Modifier::new().padding(4.0))]);
+        let root2 = box_view().with_children(vec![
+            multi_slot_view(|_scope| vec![(0, text_view("a")), (2, text_view("c"))])
+                .modifier(Modifier::new().padding(4.0)),
+        ]);
         tree.update(&root2);
 
         let after = tree.children(sub_id).expect("children after");
@@ -1069,9 +1080,11 @@ mod tests {
         // The intersection should give max_width = 300.
         let root = box_view()
             .modifier(Modifier::new().width(400.0))
-            .with_children(vec![box_view()
-                .modifier(Modifier::new().max_width(300.0))
-                .with_children(vec![sub])]);
+            .with_children(vec![
+                box_view()
+                    .modifier(Modifier::new().max_width(300.0))
+                    .with_children(vec![sub]),
+            ]);
 
         tree.update(&root);
 

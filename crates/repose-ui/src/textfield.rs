@@ -160,7 +160,10 @@ impl std::fmt::Debug for TextFieldState {
             .field("inner_height", &self.inner_height)
             .field("preferred_x_px", &self.preferred_x_px)
             .field("offset_map", &self.offset_map.as_ref().map(|_| "<fn>"))
-            .field("visual_transformation", &self.visual_transformation.as_ref().map(|_| "<vt>"))
+            .field(
+                "visual_transformation",
+                &self.visual_transformation.as_ref().map(|_| "<vt>"),
+            )
             .finish()
     }
 }

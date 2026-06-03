@@ -22,9 +22,8 @@ pub fn SelectableText(
     let text_for_handlers = text.clone();
     let text_for_paint = text.clone();
 
-    let selection: Rc<RefCell<Option<(usize, usize)>>> = remember_with_key("sel:range", || {
-        RefCell::new(None)
-    });
+    let selection: Rc<RefCell<Option<(usize, usize)>>> =
+        remember_with_key("sel:range", || RefCell::new(None));
     let anchor: Rc<RefCell<usize>> = remember_with_key("sel:anchor", || RefCell::new(0));
     let dragging: Rc<RefCell<bool>> = remember_with_key("sel:dragging", || RefCell::new(false));
     let last_rect: Rc<RefCell<Rect>> =
@@ -101,7 +100,11 @@ pub fn SelectableText(
 
             let (s, e) = match *selection.borrow() {
                 Some((a, b)) if a != b => {
-                    if a < b { (a, b) } else { (b, a) }
+                    if a < b {
+                        (a, b)
+                    } else {
+                        (b, a)
+                    }
                 }
                 _ => return,
             };
@@ -121,7 +124,12 @@ pub fn SelectableText(
                 let x = sx.min(ex);
                 let w = (ex - sx).abs().max(2.0);
                 scene.nodes.push(SceneNode::Rect {
-                    rect: Rect { x: rect.x + x, y: rect.y + sy, w, h: line_h },
+                    rect: Rect {
+                        x: rect.x + x,
+                        y: rect.y + sy,
+                        w,
+                        h: line_h,
+                    },
                     brush,
                     radius: 0.0,
                 });

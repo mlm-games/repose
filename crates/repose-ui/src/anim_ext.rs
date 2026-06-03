@@ -180,7 +180,10 @@ fn apply_enter(
         EnterTransition::SlideIn { offset_x, offset_y } => {
             let offset = animate_vec2_from(
                 format!("{key}:v{version}:enter:slide"),
-                Vec2 { x: dp_to_px(*offset_x), y: dp_to_px(*offset_y) },
+                Vec2 {
+                    x: dp_to_px(*offset_x),
+                    y: dp_to_px(*offset_y),
+                },
                 Vec2::default(),
                 *spec,
             );
@@ -221,7 +224,10 @@ fn apply_enter_single(
         EnterTransition::SlideIn { offset_x, offset_y } => {
             let offset = animate_vec2_from(
                 format!("{key}:v{version}:enter:slide"),
-                Vec2 { x: dp_to_px(*offset_x), y: dp_to_px(*offset_y) },
+                Vec2 {
+                    x: dp_to_px(*offset_x),
+                    y: dp_to_px(*offset_y),
+                },
                 Vec2::default(),
                 *spec,
             );
@@ -262,7 +268,10 @@ fn apply_exit(
             let offset = animate_vec2_from(
                 format!("{key}:v{version}:exit:slide"),
                 Vec2::default(),
-                Vec2 { x: dp_to_px(*offset_x), y: dp_to_px(*offset_y) },
+                Vec2 {
+                    x: dp_to_px(*offset_x),
+                    y: dp_to_px(*offset_y),
+                },
                 *spec,
             );
             Box(Modifier::new().fill_max_size().translate_vec2(offset)).child(view)
@@ -298,7 +307,10 @@ fn apply_exit_single(
             let offset = animate_vec2_from(
                 format!("{key}:v{version}:exit:slide"),
                 Vec2::default(),
-                Vec2 { x: dp_to_px(*offset_x), y: dp_to_px(*offset_y) },
+                Vec2 {
+                    x: dp_to_px(*offset_x),
+                    y: dp_to_px(*offset_y),
+                },
                 *spec,
             );
             Box(Modifier::new().fill_max_size().translate_vec2(offset)).child(view)
@@ -350,7 +362,10 @@ fn exit_animation_done(key: &str, version: u64, exit: &ExitTransition) -> bool {
             .map(|v| v < 0.005)
             .unwrap_or(false),
         ExitTransition::SlideOut { offset_x, offset_y } => {
-            let target = Vec2 { x: dp_to_px(*offset_x), y: dp_to_px(*offset_y) };
+            let target = Vec2 {
+                x: dp_to_px(*offset_x),
+                y: dp_to_px(*offset_y),
+            };
             read_anim_vec2_value(&format!("{key}:v{version}:exit:slide"), Vec2::default())
                 .map(|v| (v.x - target.x).abs() < 0.5 && (v.y - target.y).abs() < 0.5)
                 .unwrap_or(false)
@@ -388,8 +403,7 @@ pub fn AnimatedVisibility(
 ) -> View {
     let key = key.into();
 
-    let old_content =
-        remember_with_key(format!("av_old:{key}"), || RefCell::new(None::<View>));
+    let old_content = remember_with_key(format!("av_old:{key}"), || RefCell::new(None::<View>));
     let version = remember_with_key(format!("av_ver:{key}"), || RefCell::new(0u64));
     let prev = remember_with_key(format!("av_prev:{key}"), || RefCell::new(visible));
 

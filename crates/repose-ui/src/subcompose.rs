@@ -149,8 +149,8 @@ mod tests {
     use crate::layout::LayoutEngine;
     use crate::{Column, Interactions, ViewExt};
     use std::collections::HashMap;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn text_view(text: &str) -> View {
         use repose_core::{Color, TextOverflow, ViewKind};
@@ -180,8 +180,14 @@ mod tests {
     fn subcompose_hash_key_is_deterministic_and_distinguishes_values() {
         assert_eq!(subcompose_hash_key(&"hello"), subcompose_hash_key(&"hello"));
         assert_ne!(subcompose_hash_key(&"hello"), subcompose_hash_key(&"world"));
-        assert_eq!(subcompose_hash_key(&(1u32, 2u32)), subcompose_hash_key(&(1u32, 2u32)));
-        assert_ne!(subcompose_hash_key(&(1u32, 2u32)), subcompose_hash_key(&(1u32, 3u32)));
+        assert_eq!(
+            subcompose_hash_key(&(1u32, 2u32)),
+            subcompose_hash_key(&(1u32, 2u32))
+        );
+        assert_ne!(
+            subcompose_hash_key(&(1u32, 2u32)),
+            subcompose_hash_key(&(1u32, 3u32))
+        );
     }
 
     #[test]
@@ -241,14 +247,10 @@ mod tests {
     #[test]
     fn box_with_constraints_with_key_forwards_scope() {
         use crate::Box as RBox;
-        let sub = box_with_constraints_with_key(
-            42u64,
-            Modifier::new(),
-            |scope| {
-                assert!(scope.max_width > 0.0);
-                RBox(Modifier::new())
-            },
-        );
+        let sub = box_with_constraints_with_key(42u64, Modifier::new(), |scope| {
+            assert!(scope.max_width > 0.0);
+            RBox(Modifier::new())
+        });
         // Smoke check: builds a valid View with the SubcomposeLayout kind.
         match sub.kind {
             ViewKind::SubcomposeLayout { .. } => {}

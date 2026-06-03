@@ -259,7 +259,11 @@ pub fn run_android_app_with_options(
             let h = if self.ime_visible {
                 self.options.ime_height_px.unwrap_or_else(|| {
                     // Estimate ~40% of window's shorter dimension as default IME height
-                    let size = self.window.as_ref().map(|w| w.inner_size()).unwrap_or_default();
+                    let size = self
+                        .window
+                        .as_ref()
+                        .map(|w| w.inner_size())
+                        .unwrap_or_default();
                     (size.width.min(size.height) as f32 * 0.4).max(200.0)
                 })
             } else {
@@ -1013,7 +1017,11 @@ pub fn run_android_app_with_options(
                                     &f.focus_chain,
                                     &f.hit_regions,
                                     self.sched.focused,
-                                    if self.modifiers.shift { FocusDirection::Previous } else { FocusDirection::Next },
+                                    if self.modifiers.shift {
+                                        FocusDirection::Previous
+                                    } else {
+                                        FocusDirection::Next
+                                    },
                                 ) {
                                     self.sched.focused = Some(next);
                                     if let Some(win) = &self.window {

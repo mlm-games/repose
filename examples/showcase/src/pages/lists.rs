@@ -97,7 +97,11 @@ pub fn screen() -> View {
                 None,
                 move |it, _| {
                     let th = theme();
-                    let bg = if it.done { th.primary.with_alpha(48) } else { th.surface_container };
+                    let bg = if it.done {
+                        th.primary.with_alpha(48)
+                    } else {
+                        th.surface_container
+                    };
                     let h = 48.0 + (it.id % 5) as f32 * 16.0;
                     Box(Modifier::new()
                         .fill_max_width()

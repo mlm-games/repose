@@ -2,7 +2,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_core::prelude::*;
-use repose_material::material3::{FilledButton, OutlinedTextField, OutlinedTextFieldConfig, TextButton};
+use repose_material::material3::{
+    FilledButton, OutlinedTextField, OutlinedTextFieldConfig, TextButton,
+};
 use repose_ui::scroll::{ScrollArea, remember_scroll_state};
 use repose_ui::windowing::{FloatingWindow, WindowAction, WindowHost, WindowManagerState};
 use repose_ui::*;
@@ -254,7 +256,10 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                             OutlinedTextField(
                                 Modifier::new().fill_max_width(),
                                 palette_text.get(),
-                                { let t = palette_text.clone(); move |v| t.set(v) },
+                                {
+                                    let t = palette_text.clone();
+                                    move |v| t.set(v)
+                                },
                                 OutlinedTextFieldConfig {
                                     placeholder: Some("Type a command".into()),
                                     ..Default::default()

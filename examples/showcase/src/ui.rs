@@ -1,9 +1,9 @@
 #![allow(non_snake_case)]
 
 use repose_core::prelude::*;
-use repose_material::{Icon, material_symbols};
-use repose_material::material3::{Card, ElevatedCard, IconButton, M3Slider, Switch};
 use repose_material::material3::dialog::{Dialog, DialogState};
+use repose_material::material3::{Card, ElevatedCard, IconButton, M3Slider, Switch};
+use repose_material::{Icon, material_symbols};
 use repose_navigation::Navigator;
 use repose_ui::overlay::OverlayHandle;
 use repose_ui::scroll::{ScrollArea, remember_scroll_state};
@@ -85,7 +85,9 @@ pub fn TopBar(
         Text("Repose Showcase").size(18.0).color(th.on_surface),
         Spacer(),
         IconButton(
-            Icon(Symbols::settings).size(20.0).color(th.on_surface_variant),
+            Icon(Symbols::settings)
+                .size(20.0)
+                .color(th.on_surface_variant),
             {
                 let s = settings_state.clone();
                 move || s.show()
@@ -105,7 +107,13 @@ pub fn TopBar(
                 Box(Modifier::new().size(1.0, 12.0)),
                 LabeledSlider("Density", density, (0.75, 2.0), Some(0.05), on_density),
                 Box(Modifier::new().size(1.0, 12.0)),
-                LabeledSlider("Text Scale", text_scale, (0.75, 2.0), Some(0.05), on_text_scale),
+                LabeledSlider(
+                    "Text Scale",
+                    text_scale,
+                    (0.75, 2.0),
+                    Some(0.05),
+                    on_text_scale,
+                ),
             ]),
         ),
     ))

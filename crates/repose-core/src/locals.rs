@@ -769,21 +769,54 @@ mod tests {
     #[test]
     fn width_class_thresholds_match_m3() {
         // Density 1.0 (1 dp = 1 px) for clarity.
-        assert_eq!(calculate_window_size_class(100, 100, 1.0).width, WidthClass::Compact);
-        assert_eq!(calculate_window_size_class(599, 100, 1.0).width, WidthClass::Compact);
-        assert_eq!(calculate_window_size_class(600, 100, 1.0).width, WidthClass::Medium);
-        assert_eq!(calculate_window_size_class(839, 100, 1.0).width, WidthClass::Medium);
-        assert_eq!(calculate_window_size_class(840, 100, 1.0).width, WidthClass::Expanded);
-        assert_eq!(calculate_window_size_class(2000, 100, 1.0).width, WidthClass::Expanded);
+        assert_eq!(
+            calculate_window_size_class(100, 100, 1.0).width,
+            WidthClass::Compact
+        );
+        assert_eq!(
+            calculate_window_size_class(599, 100, 1.0).width,
+            WidthClass::Compact
+        );
+        assert_eq!(
+            calculate_window_size_class(600, 100, 1.0).width,
+            WidthClass::Medium
+        );
+        assert_eq!(
+            calculate_window_size_class(839, 100, 1.0).width,
+            WidthClass::Medium
+        );
+        assert_eq!(
+            calculate_window_size_class(840, 100, 1.0).width,
+            WidthClass::Expanded
+        );
+        assert_eq!(
+            calculate_window_size_class(2000, 100, 1.0).width,
+            WidthClass::Expanded
+        );
     }
 
     #[test]
     fn height_class_thresholds_match_m3() {
-        assert_eq!(calculate_window_size_class(100, 100, 1.0).height, HeightClass::Compact);
-        assert_eq!(calculate_window_size_class(100, 479, 1.0).height, HeightClass::Compact);
-        assert_eq!(calculate_window_size_class(100, 480, 1.0).height, HeightClass::Medium);
-        assert_eq!(calculate_window_size_class(100, 899, 1.0).height, HeightClass::Medium);
-        assert_eq!(calculate_window_size_class(100, 900, 1.0).height, HeightClass::Expanded);
+        assert_eq!(
+            calculate_window_size_class(100, 100, 1.0).height,
+            HeightClass::Compact
+        );
+        assert_eq!(
+            calculate_window_size_class(100, 479, 1.0).height,
+            HeightClass::Compact
+        );
+        assert_eq!(
+            calculate_window_size_class(100, 480, 1.0).height,
+            HeightClass::Medium
+        );
+        assert_eq!(
+            calculate_window_size_class(100, 899, 1.0).height,
+            HeightClass::Medium
+        );
+        assert_eq!(
+            calculate_window_size_class(100, 900, 1.0).height,
+            HeightClass::Expanded
+        );
     }
 
     #[test]

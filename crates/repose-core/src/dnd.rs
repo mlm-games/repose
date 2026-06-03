@@ -63,11 +63,9 @@ where
     T: 'static,
     F: Fn(&DropEvent, &T) -> bool + 'static,
 {
-    modifier = modifier.on_drop(move |ev| {
-        match downcast_drag_payload::<T>(&ev.payload) {
-            Some(v) => on_drop(&ev, v),
-            None => false,
-        }
+    modifier = modifier.on_drop(move |ev| match downcast_drag_payload::<T>(&ev.payload) {
+        Some(v) => on_drop(&ev, v),
+        None => false,
     });
     modifier
 }

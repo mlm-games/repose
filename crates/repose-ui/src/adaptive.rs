@@ -66,7 +66,9 @@ where
     if directive.max_horizontal_partitions >= 2 {
         let spacing = directive.horizontal_part_spacing;
         let list_mod = if directive.list_pane_width > 0.0 {
-            Modifier::new().width(directive.list_pane_width).fill_max_height()
+            Modifier::new()
+                .width(directive.list_pane_width)
+                .fill_max_height()
         } else {
             Modifier::new().flex_grow(1.0).fill_max_height()
         };
@@ -105,12 +107,16 @@ pub fn TwoPaneTopBar(title: &str, leading: Option<View>, trailing: Option<View>)
         }))
     .child((
         leading,
-        Column(Modifier::new().flex_grow(1.0).padding_values(PaddingValues {
-            left: 16.0,
-            right: 16.0,
-            top: 0.0,
-            bottom: 0.0,
-        }))
+        Column(
+            Modifier::new()
+                .flex_grow(1.0)
+                .padding_values(PaddingValues {
+                    left: 16.0,
+                    right: 16.0,
+                    top: 0.0,
+                    bottom: 0.0,
+                }),
+        )
         .child(Text(title)),
         trailing,
     ))

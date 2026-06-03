@@ -1462,7 +1462,11 @@ impl ApplicationHandler<()> for App {
                                 &f.focus_chain,
                                 &f.hit_regions,
                                 self.sched.focused,
-                                if self.modifiers.shift { FocusDirection::Previous } else { FocusDirection::Next },
+                                if self.modifiers.shift {
+                                    FocusDirection::Previous
+                                } else {
+                                    FocusDirection::Next
+                                },
                             ) {
                                 // If a button was "pressed" via keyboard, clear it when we move focus
                                 if let Some(active) = self.key_pressed_active.take() {

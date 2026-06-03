@@ -20,7 +20,13 @@ pub(crate) fn index_for_x_bytes_vt(state: &TextFieldState, font_px: f32, x_px: f
 }
 
 /// Like `index_for_xy_bytes` but applies visual transformation if active on the state.
-pub(crate) fn index_for_xy_bytes_vt(state: &TextFieldState, font_px: f32, wrap_w: f32, x_px: f32, y_px: f32) -> usize {
+pub(crate) fn index_for_xy_bytes_vt(
+    state: &TextFieldState,
+    font_px: f32,
+    wrap_w: f32,
+    x_px: f32,
+    y_px: f32,
+) -> usize {
     if let Some(vt) = &state.visual_transformation {
         let tfmd = vt.filter(&state.text);
         let display_idx = index_for_xy_bytes(&tfmd.text, font_px, wrap_w, x_px, y_px);
