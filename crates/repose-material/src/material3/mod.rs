@@ -33,7 +33,7 @@ pub fn AlertDialog(
     }
 
     let th = theme();
-    Stack(Modifier::new().fill_max_size()).child((
+    ZStack(Modifier::new().fill_max_size()).child((
         Box(Modifier::new()
             .fill_max_size()
             .background(th.scrim.with_alpha(170))
@@ -836,7 +836,7 @@ pub fn ModalNavigationDrawer(
         theme().motion.spring,
     );
 
-    Stack(Modifier::new().fill_max_size()).child((
+    ZStack(Modifier::new().fill_max_size()).child((
         Box(Modifier::new().fill_max_size()).child(content),
         if drawer_state.is_open() {
             Box(Modifier::new()
@@ -2270,13 +2270,14 @@ pub fn NavigationRail(
     let id = remember(|| NAVRAIL_COUNTER.fetch_add(1, Ordering::Relaxed));
     let spec = th.motion.shape;
 
-    let mut rail_children: Vec<View> = Vec::new();
+    let mut top_children: Vec<View> = Vec::new();
+    let mut item_views: Vec<View> = Vec::new();
 
     let has_header = header.is_some();
     let has_fab = fab.is_some();
 
     if let Some(h) = header {
-        rail_children.push(
+        top_children.push(
             Box(Modifier::new()
                 .padding_values(PaddingValues {
                     left: 12.0,
@@ -2290,7 +2291,7 @@ pub fn NavigationRail(
     }
 
     if let Some(f) = fab {
-        rail_children.push(
+        top_children.push(
             Box(Modifier::new()
                 .padding_values(PaddingValues {
                     left: 12.0,
@@ -2303,9 +2304,8 @@ pub fn NavigationRail(
         );
     }
 
-    // Divider after header/FAB area
     if has_header || has_fab {
-        rail_children.push(Box(Modifier::new()
+        top_children.push(Box(Modifier::new()
             .size(80.0, 1.0)
             .fill_max_width()
             .background(th.outline_variant)));
@@ -2335,7 +2335,7 @@ pub fn NavigationRail(
 
         let cb = item.on_click.clone();
 
-        rail_children.push(
+        item_views.push(
             Column(
                 Modifier::new()
                     .fill_max_width()
@@ -2387,7 +2387,16 @@ pub fn NavigationRail(
             .background(th.surface)
             .align_items(AlignItems::Center),
     )
-    .with_children(rail_children)
+    .child((
+        Column(Modifier::new()).with_children(top_children),
+        Box(Modifier::new().flex_grow(1.0)).child(
+            Column(Modifier::new()
+                .fill_max_size()
+                .justify_content(JustifyContent::SpaceBetween)
+                .align_items(AlignItems::Center))
+            .with_children(item_views),
+        ),
+    ))
 }
 
 /// State for `SwipeToDismiss` — tracks swipe offset with spring animation.
@@ -2510,7 +2519,7 @@ pub fn SwipeToDismiss(
 
     let display_offset = offset.max(-300.0).min(0.0);
 
-    Stack(modifier.fill_max_width()).child((
+    ZStack(modifier.fill_max_width()).child((
         Box(Modifier::new().fill_max_width()).child(background),
         Box(Modifier::new()
             .fill_max_width()

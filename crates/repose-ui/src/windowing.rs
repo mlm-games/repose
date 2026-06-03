@@ -6,7 +6,7 @@ use repose_core::{
     Rect, Size, Vec2, View, ViewKind, request_frame,
 };
 
-use crate::{Box, Column, Row, Spacer, Stack, Surface, Text, TextStyle, ViewExt};
+use crate::{Box, Column, Row, Spacer, Stack, Surface, Text, TextStyle, ViewExt, ZStack};
 
 const TITLE_BAR_HEIGHT_DP: f32 = 32.0;
 const WINDOW_PADDING_DP: f32 = 8.0;
@@ -531,7 +531,7 @@ pub fn WindowHost(
                     .clip_rounded(10.0)
                     .z_index(-1.0)
                     .on_pointer_down(focus_on_pointer_down),
-                Stack(Modifier::new().fill_max_size()).child((column, resize_handles)),
+                ZStack(Modifier::new().fill_max_size()).child((column, resize_handles)),
             );
             window_view = apply_z_offset(window_view, z_base);
             window_view
