@@ -349,7 +349,7 @@ impl DecayAnimationSpec {
 impl AnimatedValue<f32> {
     /// Tick the decay animation. Returns `true` if still animating.
     pub fn update_decay(&mut self, friction: f32, stop_threshold: f32) -> bool {
-        let start = match self.start_time {
+        let _start = match self.start_time {
             Some(s) => s,
             None => return false,
         };
@@ -580,7 +580,7 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             if let Some(repeat) = &self.spec.repeat {
                 let maxed = repeat
                     .iterations
-                    .map_or(false, |max| self.iteration + 1 >= max);
+                    .is_some_and(|max| self.iteration + 1 >= max);
                 if !maxed {
                     self.iteration += 1;
                     if repeat.reverse {

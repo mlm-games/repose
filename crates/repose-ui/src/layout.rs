@@ -360,16 +360,14 @@ impl LayoutEngine {
 
         // Fire focus change callbacks
         if self.prev_focused != focused {
-            if let Some(old_id) = self.prev_focused {
-                if let Some(cb) = self.focus_callbacks.get(&old_id) {
+            if let Some(old_id) = self.prev_focused
+                && let Some(cb) = self.focus_callbacks.get(&old_id) {
                     (cb)(false);
                 }
-            }
-            if let Some(new_id) = focused {
-                if let Some(cb) = self.focus_callbacks.get(&new_id) {
+            if let Some(new_id) = focused
+                && let Some(cb) = self.focus_callbacks.get(&new_id) {
                     (cb)(true);
                 }
-            }
             self.prev_focused = focused;
         }
 
@@ -451,14 +449,14 @@ impl LayoutEngine {
             .map(|c| self.build_taffy_subtree(c, taffy, font_px))
             .collect();
 
-        let tid = if child_tids.is_empty() {
+        
+        if child_tids.is_empty() {
             taffy.new_leaf_with_context(style, ctx).unwrap()
         } else {
             let t = taffy.new_with_children(style, &child_tids).unwrap();
             let _ = taffy.set_node_context(t, Some(ctx));
             t
-        };
-        tid
+        }
     }
 
     fn sync_taffy_tree(&mut self, root_id: NodeId, font_px: &dyn Fn(f32) -> f32) {
@@ -601,15 +599,14 @@ impl LayoutEngine {
             let node = self.tree.get(node_id).unwrap();
             node.parent
                 .and_then(|pid| self.tree.get(pid))
-                .map_or(false, |p| matches!(p.kind, ViewKind::ZStack))
+                .is_some_and(|p| matches!(p.kind, ViewKind::ZStack))
         };
-        if parent_is_zstack {
-            if let Ok(cs) = self.taffy.style(taffy_id) {
+        if parent_is_zstack
+            && let Ok(cs) = self.taffy.style(taffy_id) {
                 let mut new_cs = cs.clone();
                 new_cs.position = Position::Absolute;
                 let _ = self.taffy.set_style(taffy_id, new_cs);
             }
-        }
 
         let child_taffy_ids: Vec<taffy::NodeId> = children
             .iter()
@@ -655,7 +652,7 @@ impl LayoutEngine {
         &self,
         kind: &ViewKind,
         m: &repose_core::Modifier,
-        font_px: &dyn Fn(f32) -> f32,
+        _font_px: &dyn Fn(f32) -> f32,
     ) -> taffy::Style {
         let px = |dp_val: f32| dp_to_px(dp_val);
         let mut s = taffy::Style::default();
@@ -974,7 +971,7 @@ impl LayoutEngine {
                 max_lines,
                 overflow,
                 font_family,
-                annotations,
+                annotations: _,
             }) => {
                 let size_px_val = font_px(*font_dp);
                 let line_h_px_val = size_px_val * 1.3;
@@ -1175,11 +1172,10 @@ impl LayoutEngine {
                 w: layout.size.width,
                 h: layout.size.height,
             };
-            if let Some(node) = self.tree.get(node_id) {
-                if node.modifier.input_blocker && !node.modifier.hit_passthrough {
+            if let Some(node) = self.tree.get(node_id)
+                && node.modifier.input_blocker && !node.modifier.hit_passthrough {
                     deferred_blockers.push((z, rect));
                 }
-            }
             self.walk_paint(
                 node_id,
                 &mut scene,
@@ -1361,15 +1357,13 @@ impl LayoutEngine {
         let view_id = *self.view_ids.get(&node_id).unwrap_or(&0);
 
         // Check if this node should be deferred for later painting
-        if !skip_defer {
-            if let Some(render_z) = modifier.render_z_index {
-                if !deferred.is_empty() || render_z != 0.0 {
+        if !skip_defer
+            && let Some(render_z) = modifier.render_z_index
+                && (!deferred.is_empty() || render_z != 0.0) {
                     // Defer this node - it will be painted later based on render_z_index
                     deferred.push((node_id, parent_offset_px, alpha_accum, sem_parent, render_z));
                     return;
                 }
-            }
-        }
         debug_assert!(view_id != 0);
 
         let taffy_id = self.taffy_map[&node_id];
@@ -1426,8 +1420,8 @@ impl LayoutEngine {
                 sem_parent,
                 alpha_accum,
             );
-            if let Some(entry) = self.paint_cache.get(&node_id) {
-                if entry.subtree_hash == subtree_hash
+            if let Some(entry) = self.paint_cache.get(&node_id)
+                && entry.subtree_hash == subtree_hash
                     && entry.stamp == stamp
                     && entry.rect == rect
                     && entry.sem_parent == sem_parent
@@ -1439,7 +1433,6 @@ impl LayoutEngine {
                     sems.extend(entry.sems.iter().cloned());
                     return;
                 }
-            }
             self.stats.paint_cache_misses += 1;
             let mut local_scene = Scene {
                 clear_color: scene.clear_color,
@@ -3032,11 +3025,10 @@ fn infer_label(tree: &ViewTree, node_id: NodeId) -> Option<String> {
     let mut stack = vec![node_id];
     while let Some(id) = stack.pop() {
         let n = tree.get(id)?;
-        if let ViewKind::Text { text, .. } = &n.kind {
-            if !text.is_empty() {
+        if let ViewKind::Text { text, .. } = &n.kind
+            && !text.is_empty() {
                 return Some(text.clone());
             }
-        }
         for &ch in n.children.iter().rev() {
             stack.push(ch);
         }

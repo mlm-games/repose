@@ -73,7 +73,7 @@ pub fn TopBar(
     text_scale: f32,
     on_text_scale: impl Fn(f32) + 'static,
 ) -> View {
-    let settings_state = remember(|| DialogState::new());
+    let settings_state = remember(DialogState::new);
     let th = theme();
 
     Row(Modifier::new()

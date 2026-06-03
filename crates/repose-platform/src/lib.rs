@@ -4,8 +4,7 @@ use accesskit_winit::Adapter;
 use repose_core::locals::dp_to_px;
 use repose_core::*;
 use repose_ui::textfield::{
-    self, TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, caret_xy_for_byte, index_for_x_bytes,
-    index_for_xy_bytes, measure_text,
+    self, TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, caret_xy_for_byte, measure_text,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -82,7 +81,7 @@ pub fn wake_event_loop() {
 pub fn hide_app_window() {
     WINDOW_VISIBLE.store(false, Ordering::Relaxed);
     if let Some(w) = APP_WINDOW.get() {
-        let _ = w.set_visible(false);
+        w.set_visible(false);
         w.set_minimized(true);
         w.request_redraw();
     }
@@ -97,7 +96,7 @@ pub fn hide_app_window() {
 pub fn show_app_window() {
     WINDOW_VISIBLE.store(true, Ordering::Relaxed);
     if let Some(w) = APP_WINDOW.get() {
-        let _ = w.set_visible(true);
+        w.set_visible(true);
         #[allow(deprecated)]
         w.focus_window();
         w.request_redraw();
@@ -136,7 +135,7 @@ pub fn compose_frame<F>(
     hover_id: Option<u64>,
     pressed_ids: &std::collections::HashSet<u64>,
     tf_states: &std::collections::HashMap<u64, Rc<RefCell<repose_ui::TextFieldState>>>,
-    focused: Option<u64>,
+    _focused: Option<u64>,
 ) -> Frame
 where
     F: FnMut(&mut Scheduler) -> View,
@@ -304,12 +303,11 @@ pub fn run_desktop_app_with_snackbar(
                 let target_id = req.target_node.0;
                 match req.action {
                     accesskit::Action::Click => {
-                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == target_id) {
-                            if let Some(cb) = &hit.on_click {
+                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == target_id)
+                            && let Some(cb) = &hit.on_click {
                                 cb();
                                 self.request_redraw();
                             }
-                        }
                     }
                     accesskit::Action::Focus => {
                         self.sched.focused = Some(target_id);
@@ -482,9 +480,9 @@ pub fn run_desktop_app_with_snackbar(
             };
 
             // Highlight best drop target under cursor (if we have a frame)
-            if let Some(f) = &self.frame_cache {
-                if let Some(tid) = rc::dnd_target_id_at(f, pos) {
-                    if let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid) {
+            if let Some(f) = &self.frame_cache
+                && let Some(tid) = rc::dnd_target_id_at(f, pos)
+                    && let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid) {
                         let color = if dragging_files {
                             Color::from_hex("#FFAA00")
                         } else {
@@ -497,8 +495,6 @@ pub fn run_desktop_app_with_snackbar(
                             radius: dp_to_px(8.0),
                         });
                     }
-                }
-            }
 
             // Cursor badge
             let label = if dragging_files {
@@ -648,7 +644,7 @@ pub fn run_desktop_app_with_snackbar(
                 WindowEvent::CloseRequested => {
                     if CLOSE_TO_TRAY.load(Ordering::Relaxed) {
                         if let Some(w) = &self.window {
-                            let _ = w.set_visible(false);
+                            w.set_visible(false);
                             w.set_minimized(true);
                         }
                         WINDOW_VISIBLE.store(false, Ordering::Relaxed);
@@ -779,8 +775,7 @@ pub fn run_desktop_app_with_snackbar(
                     // TextField/TextArea drag selection (if captured)
                     if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id)
                         && self.is_textfield(cid)
-                    {
-                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
+                        && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
                             let key = self.tf_key_of(cid);
                             if let Some(state_rc) = self.textfield_states.get(&key) {
                                 let mut st = state_rc.borrow_mut();
@@ -837,7 +832,6 @@ pub fn run_desktop_app_with_snackbar(
                                 self.request_redraw();
                             }
                         }
-                    }
 
                     // Pointer routing: hover + move/capture
                     if let Some(f) = &self.frame_cache {
@@ -1103,9 +1097,9 @@ pub fn run_desktop_app_with_snackbar(
                         self.request_redraw();
                     }
 
-                    if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
-                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
-                            if let Some(cb) = &hit.on_pointer_up {
+                    if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id)
+                        && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
+                            && let Some(cb) = &hit.on_pointer_up {
                                 let pos = Vec2 {
                                     x: self.mouse_pos_px.0,
                                     y: self.mouse_pos_px.1,
@@ -1122,8 +1116,6 @@ pub fn run_desktop_app_with_snackbar(
                                 };
                                 cb(pe);
                             }
-                        }
-                    }
 
                     // Click on release if pointer is still over the captured hit region
                     if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
@@ -1201,8 +1193,7 @@ pub fn run_desktop_app_with_snackbar(
                         if key_event.state == ElementState::Pressed
                             && !key_event.repeat
                             && let Some(f) = &self.frame_cache
-                        {
-                            if let Some(next) = rc::focus_in_direction(
+                            && let Some(next) = rc::focus_in_direction(
                                 &f.focus_chain,
                                 &f.hit_regions,
                                 self.sched.focused,
@@ -1230,7 +1221,6 @@ pub fn run_desktop_app_with_snackbar(
                                 self.announce_focus_change();
                                 self.request_redraw();
                             }
-                        }
                         return; // swallow Tab
                     }
 
@@ -1244,8 +1234,8 @@ pub fn run_desktop_app_with_snackbar(
                             _ => None,
                         };
                         if let Some(dir) = nav_dir {
-                            if let Some(f) = &self.frame_cache {
-                                if let Some(next) = rc::focus_in_direction(
+                            if let Some(f) = &self.frame_cache
+                                && let Some(next) = rc::focus_in_direction(
                                     &f.focus_chain,
                                     &f.hit_regions,
                                     self.sched.focused,
@@ -1266,24 +1256,21 @@ pub fn run_desktop_app_with_snackbar(
                                     self.announce_focus_change();
                                     self.request_redraw();
                                 }
-                            }
                             return; // swallow arrow key
                         }
                     }
 
-                    if key_event.state == ElementState::Pressed && !key_event.repeat {
-                        if let Some(action) = repose_core::shortcuts::resolve_action(
+                    if key_event.state == ElementState::Pressed && !key_event.repeat
+                        && let Some(action) = repose_core::shortcuts::resolve_action(
                             repose_core::shortcuts::KeyChord::new(
                                 rc::map_key(key_event.physical_key),
                                 self.modifiers,
                             ),
-                        ) {
-                            if self.dispatch_action(action) {
+                        )
+                            && self.dispatch_action(action) {
                                 self.request_redraw();
                                 return;
                             }
-                        }
-                    }
 
                     if let Some(fid) = self.sched.focused {
                         // If focused is NOT a TextField, allow Space/Enter activation
@@ -1412,9 +1399,9 @@ pub fn run_desktop_app_with_snackbar(
                                         self.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::ArrowUp) => {
-                                        if self.is_multiline_id(focused_id) {
-                                            if let Some(f) = &self.frame_cache {
-                                                if let Some(hit) = f
+                                        if self.is_multiline_id(focused_id)
+                                            && let Some(f) = &self.frame_cache
+                                                && let Some(hit) = f
                                                     .hit_regions
                                                     .iter()
                                                     .find(|h| h.id == focused_id)
@@ -1456,13 +1443,11 @@ pub fn run_desktop_app_with_snackbar(
                                                     );
                                                     self.request_redraw();
                                                 }
-                                            }
-                                        }
                                     }
                                     PhysicalKey::Code(KeyCode::ArrowDown) => {
-                                        if self.is_multiline_id(focused_id) {
-                                            if let Some(f) = &self.frame_cache {
-                                                if let Some(hit) = f
+                                        if self.is_multiline_id(focused_id)
+                                            && let Some(f) = &self.frame_cache
+                                                && let Some(hit) = f
                                                     .hit_regions
                                                     .iter()
                                                     .find(|h| h.id == focused_id)
@@ -1504,8 +1489,6 @@ pub fn run_desktop_app_with_snackbar(
                                                     );
                                                     self.request_redraw();
                                                 }
-                                            }
-                                        }
                                     }
                                     PhysicalKey::Code(KeyCode::Home) => {
                                         state.selection = 0..0;
@@ -1545,7 +1528,7 @@ pub fn run_desktop_app_with_snackbar(
                                             if let Some(state) = self.textfield_states.get(&key) {
                                                 let txt = state.borrow().selected_text();
                                                 if !txt.is_empty() {
-                                                    let _ = self.copy_to_clipboard(txt);
+                                                    self.copy_to_clipboard(txt);
                                                 }
                                             }
                                         }
@@ -1561,7 +1544,7 @@ pub fn run_desktop_app_with_snackbar(
                                                 let txt = state_rc.borrow().selected_text();
                                                 if !txt.is_empty() {
                                                     {
-                                                        let _ = self.copy_to_clipboard(txt.clone());
+                                                        self.copy_to_clipboard(txt.clone());
                                                     }
                                                     // Cut (delete selection)
                                                     {
@@ -1683,8 +1666,8 @@ pub fn run_desktop_app_with_snackbar(
                 WindowEvent::Ime(ime) => {
                     if let Some(focused_id) = self.sched.focused {
                         let key = self.tf_key_of(focused_id);
-                        if let Some(state_rc) = self.textfield_states.get(&key) {
-                            if let Some(f) = &self.frame_cache
+                        if let Some(state_rc) = self.textfield_states.get(&key)
+                            && let Some(f) = &self.frame_cache
                                 && let Some(hit) = f.hit_regions.iter().find(|h| h.id == focused_id)
                             {
                                 let mut state = state_rc.borrow_mut();
@@ -1704,7 +1687,6 @@ pub fn run_desktop_app_with_snackbar(
                                 );
                                 self.request_redraw();
                             }
-                        }
                     }
                 }
 
@@ -1863,15 +1845,12 @@ pub fn run_desktop_app_with_snackbar(
         fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
             use repose_core::shortcuts;
 
-            if let (Some(f), Some(fid)) = (&self.frame_cache, self.sched.focused) {
-                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
-                    if let Some(cb) = &hit.on_action {
-                        if cb(action.clone()) {
+            if let (Some(f), Some(fid)) = (&self.frame_cache, self.sched.focused)
+                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
+                    && let Some(cb) = &hit.on_action
+                        && cb(action.clone()) {
                             return true;
                         }
-                    }
-                }
-            }
 
             if shortcuts::handle(action.clone()) {
                 return true;
@@ -1969,9 +1948,9 @@ pub fn run_desktop_app_with_snackbar(
             let new_over = rc::dnd_target_id_at(f, pos);
 
             if new_over != session.over_id {
-                if let Some(prev) = session.over_id {
-                    if let Some(hit) = f.hit_regions.iter().find(|h| h.id == prev) {
-                        if let Some(cb) = &hit.on_drag_leave {
+                if let Some(prev) = session.over_id
+                    && let Some(hit) = f.hit_regions.iter().find(|h| h.id == prev)
+                        && let Some(cb) = &hit.on_drag_leave {
                             cb(repose_core::dnd::DragOver {
                                 source_id: session.source_id,
                                 target_id: prev,
@@ -1980,12 +1959,10 @@ pub fn run_desktop_app_with_snackbar(
                                 payload: session.payload.clone(),
                             });
                         }
-                    }
-                }
 
-                if let Some(now) = new_over {
-                    if let Some(hit) = f.hit_regions.iter().find(|h| h.id == now) {
-                        if let Some(cb) = &hit.on_drag_enter {
+                if let Some(now) = new_over
+                    && let Some(hit) = f.hit_regions.iter().find(|h| h.id == now)
+                        && let Some(cb) = &hit.on_drag_enter {
                             cb(repose_core::dnd::DragOver {
                                 source_id: session.source_id,
                                 target_id: now,
@@ -1994,15 +1971,13 @@ pub fn run_desktop_app_with_snackbar(
                                 payload: session.payload.clone(),
                             });
                         }
-                    }
-                }
 
                 session.over_id = new_over;
             }
 
-            if let Some(over) = session.over_id {
-                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == over) {
-                    if let Some(cb) = &hit.on_drag_over {
+            if let Some(over) = session.over_id
+                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == over)
+                    && let Some(cb) = &hit.on_drag_over {
                         cb(repose_core::dnd::DragOver {
                             source_id: session.source_id,
                             target_id: over,
@@ -2011,8 +1986,6 @@ pub fn run_desktop_app_with_snackbar(
                             payload: session.payload.clone(),
                         });
                     }
-                }
-            }
         }
 
         fn dnd_try_begin(&mut self, pos: Vec2) -> bool {
@@ -2087,9 +2060,9 @@ pub fn run_desktop_app_with_snackbar(
 
             if accept_if_possible {
                 let drop_target = rc::dnd_target_id_at(f, pos);
-                if let Some(tid) = drop_target {
-                    if let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid) {
-                        if let Some(cb) = &hit.on_drop {
+                if let Some(tid) = drop_target
+                    && let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid)
+                        && let Some(cb) = &hit.on_drop {
                             accepted = cb(repose_core::dnd::DropEvent {
                                 source_id: session.source_id,
                                 target_id: tid,
@@ -2098,16 +2071,13 @@ pub fn run_desktop_app_with_snackbar(
                                 payload: session.payload.clone(),
                             });
                         }
-                    }
-                }
             }
 
             // Notify source end
-            if let Some(source_hit) = f.hit_regions.iter().find(|h| h.id == session.source_id) {
-                if let Some(cb) = &source_hit.on_drag_end {
+            if let Some(source_hit) = f.hit_regions.iter().find(|h| h.id == session.source_id)
+                && let Some(cb) = &source_hit.on_drag_end {
                     cb(repose_core::dnd::DragEnd { accepted });
                 }
-            }
 
             self.capture_id = None;
             self.mouse_down_pos_px = None;
@@ -2160,8 +2130,8 @@ pub fn run_desktop_app_with_snackbar(
                 return;
             };
 
-            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == target_id) {
-                if let Some(cb) = &hit.on_drop {
+            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == target_id)
+                && let Some(cb) = &hit.on_drop {
                     let accepted = cb(repose_core::dnd::DropEvent {
                         source_id: 0, // external source (OS)
                         target_id,
@@ -2170,14 +2140,12 @@ pub fn run_desktop_app_with_snackbar(
                         payload: payload.clone(),
                     });
 
-                    if accepted {
-                        if let Some(node) = f.semantics_nodes.iter().find(|n| n.id == target_id) {
+                    if accepted
+                        && let Some(node) = f.semantics_nodes.iter().find(|n| n.id == target_id) {
                             let label = node.label.as_deref().unwrap_or("");
                             self.a11y.announce(&format!("Dropped files on {}", label));
                         }
-                    }
                 }
-            }
 
             self.pending_drop_pos_px = None;
             self.request_redraw();

@@ -4,8 +4,8 @@ use std::rc::Rc;
 use repose_core::Color;
 use repose_core::{
     Rect, Size, Vec2,
-    animation::{AnimatedValue, AnimationSpec, Easing, KeyframesSpec, RepeatableSpec},
-    remember_state_with_key, remember_with_key, request_frame,
+    animation::{AnimatedValue, AnimationSpec, KeyframesSpec, RepeatableSpec},
+    remember_state_with_key, request_frame,
 };
 
 /// Animate f32 from an explicit initial value to a target.

@@ -1,7 +1,6 @@
 use repose_core::prelude::*;
 use repose_ui::*;
 
-use crate::app::Route;
 use crate::ui::Section;
 
 pub fn screen() -> View {

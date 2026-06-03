@@ -560,12 +560,11 @@ pub fn wrap_line_ranges(
             }
             line0_start = i + 1;
 
-            if let Some(ml) = max_lines {
-                if out.len() >= ml {
+            if let Some(ml) = max_lines
+                && out.len() >= ml {
                     truncated = true;
                     break;
                 }
-            }
         }
     }
     if !truncated {
@@ -642,22 +641,20 @@ fn wrap_one_hard_line_ranges(
                     break;
                 }
             }
-            if cut == line_start {
-                if let Some((ofs, gr)) = tok.grapheme_indices(true).next() {
+            if cut == line_start
+                && let Some((ofs, gr)) = tok.grapheme_indices(true).next() {
                     cut = tok_abs_start + ofs + gr.len();
                 }
-            }
             out.push((line_start, cut));
             line_start = cut;
         }
 
         // Max lines check
-        if let Some(ml) = max_lines {
-            if out.len() >= ml {
+        if let Some(ml) = max_lines
+            && out.len() >= ml {
                 t = true;
                 break;
             }
-        }
 
         best_break = line_start;
     }

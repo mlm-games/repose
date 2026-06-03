@@ -18,7 +18,7 @@ use crate::ui::Section;
 
 pub fn screen(overlay: OverlayHandle) -> View {
     // DropdownMenu state
-    let menu_state = remember(|| MenuState::new());
+    let menu_state = remember(MenuState::new);
     let menu_label = remember(|| signal("Choose…".to_string()));
 
     // BottomSheet state
@@ -191,7 +191,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                     .size(th.typography.body_medium),
                 // DatePicker dialog (overlay-based, never clipped by parents)
                 {
-                    let dp_state = remember(|| DialogState::new());
+                    let dp_state = remember(DialogState::new);
                     if show_date_picker.get() {
                         dp_state.show();
                         show_date_picker.set(false);
@@ -220,7 +220,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 Box(Modifier::new().height(8.0).width(1.0)),
                 // TimePicker dialog (overlay-based)
                 {
-                    let tp_state = remember(|| DialogState::new());
+                    let tp_state = remember(DialogState::new);
                     if show_time_picker.get() {
                         tp_state.show();
                         show_time_picker.set(false);

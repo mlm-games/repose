@@ -92,7 +92,7 @@ pub fn app(_s: &mut Scheduler) -> View {
     let ui_scale = remember(|| signal(1.0f32)); // extra scale multiplier
     let text_scale = remember(|| signal(1.0f32)); // font multiplier
 
-    let overlay = remember(|| OverlayHandle::new());
+    let overlay = remember(OverlayHandle::new);
     let snackbar = remember(|| SnackbarController::new((*overlay).clone()));
 
     // Theme presets
@@ -273,7 +273,9 @@ pub fn app(_s: &mut Scheduler) -> View {
         })
     });
 
-    let overlay_root = Stack(Modifier::new().fill_max_size()).child((
+    
+
+    Stack(Modifier::new().fill_max_size()).child((
         overlay_root,
         {
             let th = theme();
@@ -310,7 +312,5 @@ pub fn app(_s: &mut Scheduler) -> View {
                 .collect::<Vec<_>>(),
             ),
         ),
-    ));
-
-    overlay_root
+    ))
 }

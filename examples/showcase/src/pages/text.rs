@@ -143,7 +143,7 @@ pub fn screen() -> View {
                 Text(format!("last change: {}", last_change_multi.get()))
                     .size(12.0)
                     .color(theme().on_surface_variant),
-                Text(format!("{}", last_submit_multi.get()))
+                Text(last_submit_multi.get().to_string())
                     .size(12.0)
                     .color(theme().on_surface_variant),
             )),

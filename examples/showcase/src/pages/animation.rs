@@ -67,7 +67,7 @@ pub fn screen() -> View {
                 .collect::<Vec<_>>(),
         )
     });
-    let list_state = remember(|| LazyColumnState::new());
+    let list_state = remember(LazyColumnState::new);
     let next_id = remember(|| signal(6u64));
     let list_anim_spec = remember(|| signal(0u8));
 

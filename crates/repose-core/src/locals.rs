@@ -36,6 +36,7 @@ thread_local! {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[derive(Default)]
 struct Defaults {
     theme: Theme,
     text_direction: TextDirection,
@@ -46,19 +47,6 @@ struct Defaults {
     window_size_class: WindowSizeClass,
 }
 
-impl Default for Defaults {
-    fn default() -> Self {
-        Self {
-            theme: Theme::default(),
-            text_direction: TextDirection::default(),
-            ui_scale: UiScale::default(),
-            text_scale: TextScale::default(),
-            density: Density::default(),
-            window_insets: WindowInsets::default(),
-            window_size_class: WindowSizeClass::default(),
-        }
-    }
-}
 
 static DEFAULTS: OnceLock<RwLock<Defaults>> = OnceLock::new();
 
@@ -644,17 +632,14 @@ pub fn window_insets() -> WindowInsets {
 /// - [`WidthClass::Medium`]   : 600 dp <= width < 840 dp
 /// - [`WidthClass::Expanded`] : width >= 840 dp
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Default)]
 pub enum WidthClass {
+    #[default]
     Compact,
     Medium,
     Expanded,
 }
 
-impl Default for WidthClass {
-    fn default() -> Self {
-        WidthClass::Compact
-    }
-}
 
 /// Coarse height category for a window, computed from its current size.
 ///
@@ -664,17 +649,14 @@ impl Default for WidthClass {
 /// - [`HeightClass::Medium`]   : 480 dp <= height < 900 dp
 /// - [`HeightClass::Expanded`] : height >= 900 dp
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Default)]
 pub enum HeightClass {
+    #[default]
     Compact,
     Medium,
     Expanded,
 }
 
-impl Default for HeightClass {
-    fn default() -> Self {
-        HeightClass::Compact
-    }
-}
 
 /// Snapshot of the current window's size category.
 ///

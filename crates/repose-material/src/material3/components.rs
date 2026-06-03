@@ -51,7 +51,7 @@ pub fn TopAppBar(
 /// M3 Icon Button - a tappable circular container for an icon.
 pub fn IconButton(icon: View, on_click: impl Fn() + 'static) -> View {
     let th = theme();
-    let bg = Color::TRANSPARENT;
+    let _bg = Color::TRANSPARENT;
     Box(Modifier::new()
         .size(40.0, 40.0)
         .clip_rounded(20.0)
@@ -177,7 +177,7 @@ pub fn OutlinedButton(
 ) -> View {
     let th = theme();
     let content = with_content_color(th.on_surface, content);
-    let bg = Color::TRANSPARENT;
+    let _bg = Color::TRANSPARENT;
     Box(Modifier::new()
         .height(40.0)
         .min_width(48.0)
@@ -211,7 +211,7 @@ pub fn TextButton(
 ) -> View {
     let th = theme();
     let content = with_content_color(th.on_surface, content);
-    let bg = Color::TRANSPARENT;
+    let _bg = Color::TRANSPARENT;
     Box(Modifier::new()
         .height(40.0)
         .min_width(48.0)
@@ -776,7 +776,7 @@ pub fn OutlinedTextField(
     config: OutlinedTextFieldConfig,
 ) -> View {
     let th = theme();
-    let label_str: Option<Rc<str>> = config.label.map(|s| Rc::from(s));
+    let label_str: Option<Rc<str>> = config.label.map(Rc::from);
     let has_label = label_str.is_some();
 
     // Unique animation key per label to avoid conflicts when multiple fields exist

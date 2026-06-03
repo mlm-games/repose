@@ -113,7 +113,7 @@ pub fn HorizontalPager(
                 offset_y: 0.0,
             },
         ]),
-        move |p| page_builder(p),
+        page_builder,
     );
 
     crate::ZStack(Modifier::new().fill_max_size().then(modifier)).with_children(vec![
@@ -192,7 +192,7 @@ pub fn VerticalPager(
                 offset_y: -600.0,
             },
         ]),
-        move |p| page_builder(p),
+        page_builder,
     );
 
     crate::ZStack(Modifier::new().fill_max_size().then(modifier)).with_children(vec![

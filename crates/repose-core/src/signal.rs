@@ -109,7 +109,7 @@ impl<T> Signal<T> {
         if id < inner.subs.len() {
             inner.subs[id] = None;
             // prevents unbounded tombstone growth
-            while inner.subs.last().map_or(false, |s| s.is_none()) {
+            while inner.subs.last().is_some_and(|s| s.is_none()) {
                 inner.subs.pop();
             }
             true

@@ -105,11 +105,10 @@ impl ViewTree {
         content: &Arc<dyn Fn(&SubcomposeScope) -> Vec<(u64, View)>>,
     ) -> Vec<(u64, View)> {
         let scope = self.compute_scope_for_node(node_id);
-        if let Some((cached_scope, cached_slots)) = self.subcompose_cache.get(&node_id) {
-            if *cached_scope == scope {
+        if let Some((cached_scope, cached_slots)) = self.subcompose_cache.get(&node_id)
+            && *cached_scope == scope {
                 return cached_slots.clone();
             }
-        }
         let mut slots = content(&scope);
         for (slot_id, view) in slots.iter_mut() {
             view.modifier.key = Some(*slot_id);
@@ -523,7 +522,7 @@ impl ViewTree {
     fn compute_view_id(
         &self,
         view: &View,
-        node_id: NodeId,
+        _node_id: NodeId,
         parent: Option<NodeId>,
         index_in_parent: u32,
     ) -> ViewId {

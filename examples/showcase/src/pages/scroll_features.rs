@@ -75,7 +75,7 @@ fn pull_to_refresh_demo() -> View {
     let count = remember(|| signal(0u32));
     let refreshing = remember(|| signal(false));
     let frame_counter = remember(|| std::cell::Cell::new(0u32));
-    let ptr_inner: &Rc<PullToRefreshState> = &*ptr_rc;
+    let ptr_inner: &Rc<PullToRefreshState> = &ptr_rc;
 
     // Auto-complete refresh after ~120 frames (≈2s at 60fps)
     if ptr_inner.is_refreshing() {

@@ -125,17 +125,14 @@ pub mod pager;
 pub mod scroll;
 pub mod windowing;
 
-use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
-use std::{cell::RefCell, cmp::Ordering};
+use std::cell::RefCell;
 
 use repose_core::*;
 use taffy::style::FlexDirection;
-use taffy::{Overflow, Point};
 
 pub mod textfield;
-use crate::textfield::{TF_FONT_DP, TF_PADDING_X_DP, byte_to_char_index, measure_text};
 use repose_core::locals;
 pub use selection::SelectableText;
 pub use textfield::{

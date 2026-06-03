@@ -121,22 +121,19 @@ impl DockState {
     }
 
     pub fn set_active(&mut self, tabs_node_id: u64, pid: PanelId) {
-        if let Some(n) = find_node_mut(&mut self.root, tabs_node_id) {
-            if let DockKind::Tabs { tabs, active } = &mut n.kind {
-                if tabs.contains(&pid) {
+        if let Some(n) = find_node_mut(&mut self.root, tabs_node_id)
+            && let DockKind::Tabs { tabs, active } = &mut n.kind
+                && tabs.contains(&pid) {
                     *active = Some(pid);
                 }
-            }
-        }
     }
 
     pub fn set_split_ratio(&mut self, split_node_id: u64, ratio: f32) {
         let ratio = ratio.clamp(0.05, 0.95);
-        if let Some(n) = find_node_mut(&mut self.root, split_node_id) {
-            if let DockKind::Split { ratio: r, .. } = &mut n.kind {
+        if let Some(n) = find_node_mut(&mut self.root, split_node_id)
+            && let DockKind::Split { ratio: r, .. } = &mut n.kind {
                 *r = ratio;
             }
-        }
     }
 
     pub fn dock_panel(&mut self, target_node_id: u64, zone: DropZone, pid: PanelId) -> bool {
@@ -895,7 +892,7 @@ fn render_split(
     }
 }
 
-fn find_node_mut<'a>(node: &'a mut DockNode, id: u64) -> Option<&'a mut DockNode> {
+fn find_node_mut(node: &mut DockNode, id: u64) -> Option<&mut DockNode> {
     if node.id == id {
         return Some(node);
     }
@@ -939,10 +936,8 @@ fn normalize_node(node: &mut DockNode) {
         DockKind::Tabs { tabs, active } => {
             if tabs.is_empty() {
                 node.kind = DockKind::Empty;
-            } else {
-                if active.is_none() || !tabs.contains(&active.unwrap()) {
-                    *active = tabs.first().copied();
-                }
+            } else if active.is_none() || !tabs.contains(&active.unwrap()) {
+                *active = tabs.first().copied();
             }
         }
         DockKind::Split { a, b, ratio, .. } => {

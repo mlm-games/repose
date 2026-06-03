@@ -141,7 +141,7 @@ pub fn SelectableText(
                         w: (rect.w - sx).max(2.0),
                         h: line_h,
                     },
-                    brush: brush.clone(),
+                    brush: brush,
                     radius: 0.0,
                 });
                 if eli > sli + 1 {
@@ -152,7 +152,7 @@ pub fn SelectableText(
                             w: rect.w,
                             h: (eli as f32 - sli as f32 - 1.0) * line_h,
                         },
-                        brush: brush.clone(),
+                        brush: brush,
                         radius: 0.0,
                     });
                 }

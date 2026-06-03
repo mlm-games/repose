@@ -1,16 +1,17 @@
 use std::cell::RefCell;
 
-use crate::{Box, Stack, ViewExt, ZStack};
+use crate::{Box, ViewExt, ZStack};
 use repose_core::*;
 
-use crate::anim::animate_f32;
 use crate::anim::animate_f32_from;
 use crate::anim::animate_vec2_from;
 
 /// Describes how content enters the screen.
 #[derive(Clone, Debug)]
+#[derive(Default)]
 pub enum EnterTransition {
     /// Fade from alpha 0 to 1.
+    #[default]
     FadeIn,
     /// Slide from the given offset (dx, dy in dp) to position (0,0).
     SlideIn { offset_x: f32, offset_y: f32 },
@@ -20,16 +21,13 @@ pub enum EnterTransition {
     Composite(Vec<EnterTransition>),
 }
 
-impl Default for EnterTransition {
-    fn default() -> Self {
-        EnterTransition::FadeIn
-    }
-}
 
 /// Describes how content exits the screen.
 #[derive(Clone, Debug)]
+#[derive(Default)]
 pub enum ExitTransition {
     /// Fade from alpha 1 to 0.
+    #[default]
     FadeOut,
     /// Slide from position (0,0) to the given offset (dx, dy in dp).
     SlideOut { offset_x: f32, offset_y: f32 },
@@ -39,11 +37,6 @@ pub enum ExitTransition {
     Composite(Vec<ExitTransition>),
 }
 
-impl Default for ExitTransition {
-    fn default() -> Self {
-        ExitTransition::FadeOut
-    }
-}
 
 /// Crossfades between two pieces of content when `target` changes.
 ///

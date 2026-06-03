@@ -195,7 +195,7 @@ where
 
         let mut s = state_slot.borrow_mut();
 
-        let curr_keys: Vec<u64> = items.iter().map(|it| get_key(it)).collect();
+        let curr_keys: Vec<u64> = items.iter().map(&get_key).collect();
 
         // Find added and removed keys
         let added: Vec<u64> = curr_keys

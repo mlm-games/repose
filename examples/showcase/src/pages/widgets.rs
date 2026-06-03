@@ -1,8 +1,7 @@
-use std::rc::Rc;
 
 use repose_core::{prelude::*, signal};
 use repose_material::material3::{
-    AssistChip, FilterChip, InputChip, M3RangeSlider, M3Slider, SuggestionChip, TextButton,
+    AssistChip, FilterChip, M3RangeSlider, M3Slider, TextButton,
 };
 use repose_material::material3::{Checkbox, RadioButton, Switch};
 use repose_material::{Icon, material_symbols};
@@ -27,7 +26,7 @@ pub fn screen() -> View {
     let r_b = remember(|| signal(0.8f32));
     let prog = remember(|| signal(0.4f32));
     let filter_selected = remember(|| signal(false));
-    let input_selected = remember(|| signal(false));
+    let _input_selected = remember(|| signal(false));
 
     Column(Modifier::new().fill_max_width()).child((
         Section(
@@ -126,7 +125,8 @@ pub fn screen() -> View {
                                 (0..3)
                                     .map(|col| {
                                         let idx = row * 3 + col;
-                                        let item = Box(Modifier::new()
+                                        
+                                        Box(Modifier::new()
                                             .clickable()
                                             .padding(16.0)
                                             .background(theme().surface)
@@ -139,8 +139,7 @@ pub fn screen() -> View {
                                             Text(format!("{idx}"))
                                                 .size(18.0)
                                                 .color(theme().on_surface),
-                                        );
-                                        item
+                                        )
                                     })
                                     .collect::<Vec<_>>(),
                             )

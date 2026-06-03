@@ -16,7 +16,7 @@ pub(crate) fn handle_ime_event(
             *ime_preedit = false;
         }
         Ime::Preedit(text, cursor) => {
-            let cursor_usize = cursor.map(|(a, b)| (a as usize, b as usize));
+            let cursor_usize = cursor.map(|(a, b)| (a, b));
             state.set_composition(text.clone(), cursor_usize);
             *ime_preedit = !text.is_empty();
             ensure_caret_visible_in_hit(state, hit_rect);

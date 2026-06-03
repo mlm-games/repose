@@ -3,7 +3,6 @@ use quote::quote;
 use syn::{
     Expr, Ident, Token, braced,
     parse::{Parse, ParseStream},
-    parse_macro_input,
 };
 
 struct ViewMacro {

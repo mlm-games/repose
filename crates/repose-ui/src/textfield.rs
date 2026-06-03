@@ -697,11 +697,10 @@ fn locate_byte_in_ranges(ranges: &[(usize, usize)], b: usize) -> (usize, usize, 
             return (i, local, *s + local);
         }
         if b == *e {
-            if let Some((ns, _ne)) = ranges.get(i + 1) {
-                if *ns == b {
+            if let Some((ns, _ne)) = ranges.get(i + 1)
+                && *ns == b {
                     return (i + 1, 0, b);
                 }
-            }
             let local = e.saturating_sub(*s);
             return (i, local, *s + local);
         }

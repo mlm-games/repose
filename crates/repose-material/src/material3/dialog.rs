@@ -1,12 +1,11 @@
 #![allow(non_snake_case)]
 
-use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
 use repose_ui::overlay::OverlayHandle;
-use repose_ui::{Box, Column, Row, Spacer, Stack, Surface, ViewExt, ZStack};
+use repose_ui::{Box, Column, Row, Spacer, Surface, ViewExt, ZStack};
 
 static DIALOG_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -14,6 +13,12 @@ static DIALOG_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub struct DialogState {
     visible: Signal<bool>,
     id: u64,
+}
+
+impl Default for DialogState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DialogState {

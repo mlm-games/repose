@@ -4,7 +4,7 @@ use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc};
 use repose_core::*;
 use repose_ui::{
     Box as VBox, Stack, ViewExt,
-    anim::{animate_f32, animate_f32_from},
+    anim::animate_f32_from,
 };
 use serde::{Deserialize, Serialize};
 

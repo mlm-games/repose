@@ -101,7 +101,7 @@ pub type Handler = Rc<dyn Fn(Action) -> bool>;
 thread_local! {
     static HANDLER: RefCell<Option<Handler>> = RefCell::new(None);
     static DEFAULT_MAP: RefCell<ShortcutMap> = RefCell::new(default_map());
-    static SCOPES: RefCell<Vec<ShortcutMap>> = RefCell::new(Vec::new());
+    static SCOPES: RefCell<Vec<ShortcutMap>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Set/clear the global handler (prefer InstallShortcutHandler + scoped_effect).

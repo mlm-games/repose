@@ -1160,7 +1160,7 @@ impl WgpuBackend {
             bias: wgpu::DepthBiasState::default(),
         };
 
-        let multisample_state = wgpu::MultisampleState {
+        let _multisample_state = wgpu::MultisampleState {
             count: msaa_samples,
             mask: !0,
             alpha_to_coverage_enabled: false,
@@ -2010,10 +2010,7 @@ impl WgpuBackend {
             return None;
         }
 
-        let coverage = match swash_to_a8_coverage(gb.content, &gb.data) {
-            Some(c) => c,
-            None => return None,
-        };
+        let coverage = swash_to_a8_coverage(gb.content, &gb.data)?;
 
         let w = gb.w.max(1);
         let h = gb.h.max(1);

@@ -961,6 +961,12 @@ pub struct MenuState {
     anchor: Signal<Option<Vec2>>,
 }
 
+impl Default for MenuState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MenuState {
     pub fn new() -> Self {
         Self {
@@ -1158,6 +1164,12 @@ pub struct SearchBarState {
     pub query: Signal<String>,
     pub expanded: Signal<bool>,
     pub active: Signal<bool>,
+}
+
+impl Default for SearchBarState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SearchBarState {
@@ -1506,7 +1518,7 @@ pub fn ModalBottomSheet(
     content: View,
 ) -> View {
     let th = theme();
-    let peek = state.peek_height.get();
+    let _peek = state.peek_height.get();
     let overlay_id = remember_with_key("mbs_oid", || signal(0u64));
 
     // Animated offset: 600px (off-screen) → 0px (visible)
@@ -1540,7 +1552,7 @@ pub fn ModalBottomSheet(
                 let anim = anim.clone();
                 let modifier = modifier.clone();
                 let content = content.clone();
-                let th = th.clone();
+                let th = th;
                 move || {
                     let off = *anim.borrow().get();
                     let modif = modifier.clone();
@@ -1610,6 +1622,12 @@ pub struct PullToRefreshState {
     triggered: Cell<bool>,
 }
 
+impl Default for PullToRefreshState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PullToRefreshState {
     pub fn new() -> Self {
         Self {
@@ -1637,11 +1655,10 @@ impl PullToRefreshState {
 
     pub fn set_refreshing(&self, v: bool) {
         self.refreshing.set(v);
-        if !v {
-            if let Some(sc) = self.scroll_state.borrow().as_ref() {
+        if !v
+            && let Some(sc) = self.scroll_state.borrow().as_ref() {
                 sc.set_overscroll(0.0);
             }
-        }
     }
 
     /// Read the current pull offset from the connected scroll state's overscroll.
@@ -1787,7 +1804,7 @@ impl ReposeDate {
         let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
         let doe = (z - era * 146_097) as u64;
         let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-        let y = (yoe as i64) + era as i64 * 400;
+        let y = (yoe as i64) + era * 400;
         let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
         let mp = (5 * doy + 2) / 153;
         let d = doy - (153 * mp + 2) / 5 + 1;
@@ -1906,7 +1923,7 @@ pub fn DatePicker(
                 ),
                 Spacer(),
                 Column(Modifier::new().align_items(AlignItems::Center)).child((
-                    Text(format!("{}", MONTH_NAMES[(month - 1) as usize]))
+                    Text(MONTH_NAMES[(month - 1) as usize].to_string())
                         .size(th.typography.title_medium)
                         .color(th.on_surface),
                     Row(Modifier::new().gap(8.0).align_items(AlignItems::Center)).child((
@@ -1955,7 +1972,7 @@ pub fn DatePicker(
 
                 // Proper calendar grid: offset by start_dow, 6 rows
                 let total_cells = start_dow + dim;
-                let num_rows = ((total_cells + 6) / 7).min(6);
+                let num_rows = total_cells.div_ceil(7).min(6);
                 for w in 0..num_rows {
                     let mut week: Vec<View> = Vec::new();
                     for d in 0..7 {
@@ -2388,6 +2405,12 @@ pub struct SwipeToDismissState {
     /// Set when `dismiss()` starts the spring; checked when the spring settles
     /// to fire `on_dismiss` exactly once per dismiss gesture.
     dismiss_handled: Rc<RefCell<bool>>,
+}
+
+impl Default for SwipeToDismissState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SwipeToDismissState {
