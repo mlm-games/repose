@@ -2519,8 +2519,11 @@ pub fn SwipeToDismiss(
 
     let display_offset = offset.max(-300.0).min(0.0);
 
-    ZStack(modifier.fill_max_width()).child((
-        Box(Modifier::new().fill_max_width()).child(background),
+    Stack(modifier.fill_max_width()).child((
+        Box(Modifier::new()
+            .fill_max_size()
+            .absolute())
+        .child(background),
         Box(Modifier::new()
             .fill_max_width()
             .translate(display_offset, 0.0)
