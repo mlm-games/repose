@@ -2350,6 +2350,7 @@ impl RenderBackend for WgpuBackend {
         self.glyph_mask.reset();
         self.glyph_color.reset();
         self.clip_ring.reset();
+        self.blur_ring.reset();
         self.nv12.reset();
 
         let mut batch = Batch::new();
