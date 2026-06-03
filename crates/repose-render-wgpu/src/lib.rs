@@ -31,10 +31,11 @@ impl UploadRing {
     }
 
     fn grow_to_fit(&mut self, device: &wgpu::Device, needed: u64) {
-        if needed <= self.cap {
+        let start = (self.head + 3) & !3;
+        if start + needed <= self.cap {
             return;
         }
-        let new_cap = needed.next_power_of_two();
+        let new_cap = (start + needed).next_power_of_two();
         self.buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("upload ring (grown)"),
             size: new_cap,
@@ -42,7 +43,6 @@ impl UploadRing {
             mapped_at_creation: false,
         });
         self.cap = new_cap;
-        self.head = 0;
     }
 
     fn alloc_write(&mut self, queue: &wgpu::Queue, bytes: &[u8]) -> (u64, u64) {
@@ -165,6 +165,12 @@ pub struct WgpuBackend {
     // Graphics layer pool. Maps `SceneNode::BeginLayer::layer_id` to a
     // cached offscreen render target.
     layer_pool: HashMap<u32, LayerTarget>,
+}
+
+impl Drop for WgpuBackend {
+    fn drop(&mut self) {
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+    }
 }
 
 #[derive(Clone)]
