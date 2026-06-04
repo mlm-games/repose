@@ -98,7 +98,7 @@ pub fn screen() -> View {
                         })
                         .build(),
                     Box(Modifier::new().height(8.0).width(1.0)),
-                    Text("Text is masked with • (value: ")
+                    Text("(masked value: ")
                         .size(14.0)
                         .color(theme().on_surface_variant),
                     Text(pw.get())
