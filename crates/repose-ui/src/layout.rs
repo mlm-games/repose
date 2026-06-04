@@ -636,6 +636,7 @@ impl LayoutEngine {
                 if let Ok(cs) = self.taffy.style(child_tid) {
                     let mut new_cs = cs.clone();
                     new_cs.size.height = Dimension::auto();
+                    new_cs.min_size.height = percent(1.0);
                     new_cs.flex_shrink = 0.0;
                     let _ = self.taffy.set_style(child_tid, new_cs);
                 }
