@@ -75,11 +75,11 @@ impl Route {
             Route::StaggeredGrid => 11,
             Route::Pager => 12,
             Route::Dnd => 13,
-            Route::Docking => 13,
-            Route::Errors => 14,
-            Route::Windows => 15,
-            Route::M3 => 16,
-            Route::Adaptive => 17,
+            Route::Docking => 14,
+            Route::Errors => 15,
+            Route::Windows => 16,
+            Route::M3 => 17,
+            Route::Adaptive => 18,
         }
     }
 }
