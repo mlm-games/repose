@@ -68,6 +68,7 @@ pub fn screen() -> View {
                     let th = theme();
                     let done_tint = th.primary.with_alpha(48);
                     Row(Modifier::new()
+                        .fill_max_width()
                         .padding(12.0)
                         .background(if it.done { done_tint } else { th.surface })
                         .border(1.0, th.outline, 0.0))
