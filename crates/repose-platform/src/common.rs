@@ -370,6 +370,7 @@ pub(crate) fn wrap_root_scroll(child: View, st: Rc<RefCell<RootScrollState>>) ->
         }
     }) as Rc<dyn Fn(Vec2) -> Vec2>);
 
+    let bg = theme().background;
     View::new(
         0,
         ViewKind::ScrollV {
@@ -381,6 +382,6 @@ pub(crate) fn wrap_root_scroll(child: View, st: Rc<RefCell<RootScrollState>>) ->
             show_scrollbar: true,
         },
     )
-    .modifier(Modifier::new().fill_max_size())
+    .modifier(Modifier::new().fill_max_size().background(bg))
     .with_children(vec![child])
 }
