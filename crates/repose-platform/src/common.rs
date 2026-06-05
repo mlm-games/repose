@@ -386,6 +386,46 @@ pub(crate) fn wrap_root_scroll(child: View, st: Rc<RefCell<RootScrollState>>) ->
     .with_children(vec![child])
 }
 
+#[macro_export]
+macro_rules! handle_text_undo_redo {
+    ($app:expr, $key_event:expr) => {{
+        let mut __handled = false;
+        if $key_event.state == ElementState::Pressed && !$key_event.repeat && $app.modifiers.command
+        {
+            match $key_event.physical_key {
+                PhysicalKey::Code(KeyCode::KeyZ) if $app.modifiers.shift => {
+                    if let Some(fid) = $app.sched.focused {
+                        let key = $app.tf_key_of(fid);
+                        if let Some(state_rc) = $app.textfield_states.get(&key) {
+                            let mut st = state_rc.borrow_mut();
+                            if st.can_redo() {
+                                st.redo();
+                                $app.notify_text_change(fid, st.text.clone());
+                                __handled = true;
+                            }
+                        }
+                    }
+                }
+                PhysicalKey::Code(KeyCode::KeyZ) => {
+                    if let Some(fid) = $app.sched.focused {
+                        let key = $app.tf_key_of(fid);
+                        if let Some(state_rc) = $app.textfield_states.get(&key) {
+                            let mut st = state_rc.borrow_mut();
+                            if st.can_undo() {
+                                st.undo();
+                                $app.notify_text_change(fid, st.text.clone());
+                                __handled = true;
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        __handled
+    }};
+}
+
 /// Handle arrow key spatial focus navigation.
 ///
 /// Skips when the focused element is a TextField (those handle arrows for cursor movement)

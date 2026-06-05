@@ -45,6 +45,162 @@ use web_time::Instant;
 
 use unicode_segmentation::UnicodeSegmentation;
 
+/// Maximum number of undo/redo operations stored in history.
+const TEXT_UNDO_CAPACITY: usize = 100;
+
+/// Time window (ms) within which consecutive operations can be merged.
+const SNAPSHOTS_INTERVAL_MILLIS: u128 = 5000;
+
+/// Type of text edit operation.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum TextEditType {
+    Insert,
+    Delete,
+    Replace,
+}
+
+/// Direction of a deletion.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum TextDeleteType {
+    Start,  // backspace: cursor moving towards start
+    End,    // delete forward: cursor moving towards end
+    Inner,  // selection removed
+    NotByUser,
+}
+
+/// A single atomic text change that can be undone/redone.
+#[derive(Clone, Debug)]
+pub struct TextUndoOp {
+    /// Start point of the change in the text.
+    pub index: usize,
+    /// Text that was present before the change (being replaced/deleted).
+    pub pre_text: String,
+    /// Text that was inserted (replacing pre_text).
+    pub post_text: String,
+    /// Selection before the change.
+    pub pre_selection: Range<usize>,
+    /// Selection after the change.
+    pub post_selection: Range<usize>,
+    /// When this change was first committed.
+    pub time: Instant,
+    /// Whether this change can merge with adjacent operations.
+    pub can_merge: bool,
+}
+
+impl TextUndoOp {
+    fn edit_type(&self) -> TextEditType {
+        match (self.pre_text.is_empty(), self.post_text.is_empty()) {
+            (true, true) => unreachable!("Both pre and post text cannot be empty"),
+            (true, false) => TextEditType::Insert,
+            (false, true) => TextEditType::Delete,
+            (false, false) => TextEditType::Replace,
+        }
+    }
+
+    fn is_newline(&self) -> bool {
+        self.post_text == "\n" || self.post_text == "\r\n"
+    }
+
+    /// Try to merge `self` (earlier) with `next` (later). Returns merged op if merge is possible.
+    fn try_merge(&self, next: &TextUndoOp) -> Option<TextUndoOp> {
+        if !self.can_merge || !next.can_merge {
+            return None;
+        }
+
+        let elapsed = next.time.saturating_duration_since(self.time);
+        if elapsed.as_millis() >= SNAPSHOTS_INTERVAL_MILLIS {
+            return None;
+        }
+
+        if self.is_newline() || next.is_newline() {
+            return None;
+        }
+
+        let self_type = self.edit_type();
+        if self_type != next.edit_type() {
+            return None;
+        }
+
+        match self_type {
+            TextEditType::Insert => {
+                // Only merge if next insertion continues from the end of this one
+                if self.index + self.post_text.len() == next.index {
+                    Some(TextUndoOp {
+                        index: self.index,
+                        pre_text: String::new(),
+                        post_text: format!("{}{}", self.post_text, next.post_text),
+                        pre_selection: self.pre_selection.clone(),
+                        post_selection: next.post_selection.clone(),
+                        time: self.time,
+                        can_merge: true,
+                    })
+                } else {
+                    None
+                }
+            }
+            TextEditType::Delete => {
+                let self_del = self.deletion_type();
+                let next_del = next.deletion_type();
+                // Only merge consecutive deletions with same directionality
+                if self_del == next_del && (self_del == TextDeleteType::Start || self_del == TextDeleteType::End) {
+                    if self.index == next.index + next.pre_text.len() {
+                        // This op is after next (backspace: deleting right-to-left)
+                        Some(TextUndoOp {
+                            index: next.index,
+                            pre_text: format!("{}{}", next.pre_text, self.pre_text),
+                            post_text: String::new(),
+                            pre_selection: self.pre_selection.clone(),
+                            post_selection: next.post_selection.clone(),
+                            time: self.time,
+                            can_merge: true,
+                        })
+                    } else if self.index == next.index {
+                        // Same position (delete forward: deleting left-to-right)
+                        Some(TextUndoOp {
+                            index: self.index,
+                            pre_text: format!("{}{}", self.pre_text, next.pre_text),
+                            post_text: String::new(),
+                            pre_selection: self.pre_selection.clone(),
+                            post_selection: next.post_selection.clone(),
+                            time: self.time,
+                            can_merge: true,
+                        })
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            TextEditType::Replace => None,
+        }
+    }
+
+    /// Determine the deletion direction. Only meaningful when edit_type is Delete.
+    fn deletion_type(&self) -> TextDeleteType {
+        if self.edit_type() != TextEditType::Delete {
+            return TextDeleteType::NotByUser;
+        }
+        if !self.post_selection.start == self.post_selection.end {
+            return TextDeleteType::NotByUser;
+        }
+        if self.pre_selection.start == self.pre_selection.end {
+            // Collapsed selection before delete: cursor moved
+            if self.pre_selection.start > self.post_selection.start {
+                TextDeleteType::Start    // backspace
+            } else {
+                TextDeleteType::End      // delete forward
+            }
+        } else if self.pre_selection.start == self.post_selection.start
+            && self.pre_selection.start == self.index
+        {
+            TextDeleteType::Inner
+        } else {
+            TextDeleteType::NotByUser
+        }
+    }
+}
+
 /// Spring physics constants for smooth scroll animation.
 const SCROLL_STIFFNESS: f32 = 300.0;
 const SCROLL_DAMPING: f32 = 30.0;
@@ -158,6 +314,14 @@ pub struct TextFieldState {
     scroll_vel_y: f32,
     /// Last time tick_scroll_animation was called (for dt computation).
     last_scroll_tick: Option<Instant>,
+
+    // --- Undo/Redo ---
+    /// Stack of undo operations (most recent at end).
+    undo_stack: Vec<TextUndoOp>,
+    /// Stack of redo operations (most recent at end).
+    redo_stack: Vec<TextUndoOp>,
+    /// Staging area for the latest operation that may still merge.
+    staging_undo: Option<TextUndoOp>,
 }
 
 impl std::fmt::Debug for TextFieldState {
@@ -180,6 +344,10 @@ impl std::fmt::Debug for TextFieldState {
             )
             .field("scroll_target", &self.scroll_target)
             .field("scroll_target_y", &self.scroll_target_y)
+            .field("can_undo", &self.can_undo())
+            .field("can_redo", &self.can_redo())
+            .field("undo_count", &self.undo_stack.len())
+            .field("redo_count", &self.redo_stack.len())
             .finish()
     }
 }
@@ -210,18 +378,125 @@ impl TextFieldState {
             scroll_vel: 0.0,
             scroll_vel_y: 0.0,
             last_scroll_tick: None,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            staging_undo: None,
         }
     }
 
-    pub fn insert_text(&mut self, text: &str) {
+    // --- Undo/Redo ---
+
+    /// Whether there is an action to undo.
+    pub fn can_undo(&self) -> bool {
+        !self.undo_stack.is_empty() || self.staging_undo.is_some()
+    }
+
+    /// Whether there is an action to redo.
+    pub fn can_redo(&self) -> bool {
+        !self.redo_stack.is_empty()
+    }
+
+    /// Revert the latest edit. Returns true if an undo was performed.
+    pub fn undo(&mut self) -> bool {
+        self.flush_undo();
+        if let Some(op) = self.undo_stack.pop() {
+            let end = (op.index + op.post_text.len()).min(self.text.len());
+            self.text.replace_range(op.index..end, &op.pre_text);
+            self.selection = op.pre_selection.clone();
+            self.redo_stack.push(op);
+            self.preferred_x_px = None;
+            self.reset_caret_blink();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Re-apply a previously undone edit. Returns true if a redo was performed.
+    pub fn redo(&mut self) -> bool {
+        if let Some(op) = self.redo_stack.pop() {
+            let end = (op.index + op.pre_text.len()).min(self.text.len());
+            self.text.replace_range(op.index..end, &op.post_text);
+            self.selection = op.post_selection.clone();
+            self.undo_stack.push(op);
+            self.preferred_x_px = None;
+            self.reset_caret_blink();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Clear all undo/redo history.
+    pub fn clear_undo_history(&mut self) {
+        self.undo_stack.clear();
+        self.redo_stack.clear();
+        self.staging_undo = None;
+    }
+
+    /// Push a [TextUndoOp] to the staging area, possibly merging with the
+    /// previous staging operation. Flushes staging to the undo stack when
+    /// merge is not possible.
+    fn record_edit(&mut self, op: TextUndoOp) {
+        if let Some(staging) = self.staging_undo.take() {
+            if let Some(merged) = staging.try_merge(&op) {
+                self.staging_undo = Some(merged);
+                return;
+            }
+            // Can't merge: flush staging to undo stack
+            self.undo_stack.push(staging);
+            self.redo_stack.clear();
+            // Enforce capacity: drop oldest entries
+            while self.undo_stack.len() + 1 > TEXT_UNDO_CAPACITY {
+                self.undo_stack.remove(0);
+            }
+        }
+        self.staging_undo = Some(op);
+    }
+
+    /// Flush the staging operation into the undo stack.
+    fn flush_undo(&mut self) {
+        if let Some(op) = self.staging_undo.take() {
+            self.undo_stack.push(op);
+            self.redo_stack.clear();
+            while self.undo_stack.len() > TEXT_UNDO_CAPACITY {
+                self.undo_stack.remove(0);
+            }
+        }
+    }
+
+    fn insert_text_impl(&mut self, text: &str, can_merge: bool) {
         let start = self.selection.start.min(self.text.len());
         let end = self.selection.end.min(self.text.len());
+        let pre_text = self.text[start..end].to_string();
+        let pre_selection = self.selection.clone();
 
         self.text.replace_range(start..end, text);
         let new_pos = start + text.len();
         self.selection = new_pos..new_pos;
         self.preferred_x_px = None;
         self.reset_caret_blink();
+
+        if !pre_text.is_empty() || !text.is_empty() {
+            self.record_edit(TextUndoOp {
+                index: start,
+                pre_text,
+                post_text: text.to_string(),
+                pre_selection,
+                post_selection: self.selection.clone(),
+                time: Instant::now(),
+                can_merge,
+            });
+        }
+    }
+
+    pub fn insert_text(&mut self, text: &str) {
+        self.insert_text_impl(text, true);
+    }
+
+    /// Like `insert_text` but marks the operation as unmergeable (for cut/paste).
+    pub fn insert_text_atomic(&mut self, text: &str) {
+        self.insert_text_impl(text, false);
     }
 
     pub fn delete_backward(&mut self) {
@@ -229,11 +504,24 @@ impl TextFieldState {
             let pos = self.selection.start.min(self.text.len());
             if pos > 0 {
                 let prev = prev_grapheme_boundary(&self.text, pos);
+                let pre_text = self.text[prev..pos].to_string();
+                let pre_selection = self.selection.clone();
                 self.text.replace_range(prev..pos, "");
                 self.selection = prev..prev;
+                self.preferred_x_px = None;
+                self.reset_caret_blink();
+                self.record_edit(TextUndoOp {
+                    index: prev,
+                    pre_text,
+                    post_text: String::new(),
+                    pre_selection,
+                    post_selection: self.selection.clone(),
+                    time: Instant::now(),
+                    can_merge: true,
+                });
             }
         } else {
-            self.insert_text("");
+            self.insert_text_impl("", true);
         }
         self.preferred_x_px = None;
         self.reset_caret_blink();
@@ -244,10 +532,23 @@ impl TextFieldState {
             let pos = self.selection.start.min(self.text.len());
             if pos < self.text.len() {
                 let next = next_grapheme_boundary(&self.text, pos);
+                let pre_text = self.text[pos..next].to_string();
+                let pre_selection = self.selection.clone();
                 self.text.replace_range(pos..next, "");
+                self.preferred_x_px = None;
+                self.reset_caret_blink();
+                self.record_edit(TextUndoOp {
+                    index: pos,
+                    pre_text,
+                    post_text: String::new(),
+                    pre_selection,
+                    post_selection: self.selection.clone(),
+                    time: Instant::now(),
+                    can_merge: true,
+                });
             }
         } else {
-            self.insert_text("");
+            self.insert_text_impl("", true);
         }
         self.preferred_x_px = None;
         self.reset_caret_blink();
@@ -327,20 +628,46 @@ impl TextFieldState {
     }
 
     pub fn commit_composition(&mut self, text: String) {
+        let pre_selection = self.selection.clone();
         if let Some(r) = self.composition.take() {
             let s = clamp_to_char_boundary(&self.text, r.start.min(self.text.len()));
             let e = clamp_to_char_boundary(&self.text, r.end.min(self.text.len()));
+            let pre_text = self.text[s..e].to_string();
             self.text.replace_range(s..e, &text);
             let new_pos = s + text.len();
             self.selection = new_pos..new_pos;
+            self.preferred_x_px = None;
+            self.reset_caret_blink();
+            if !pre_text.is_empty() || !text.is_empty() {
+                self.record_edit(TextUndoOp {
+                    index: s,
+                    pre_text,
+                    post_text: text,
+                    pre_selection,
+                    post_selection: self.selection.clone(),
+                    time: Instant::now(),
+                    can_merge: true,
+                });
+            }
         } else {
             let pos = clamp_to_char_boundary(&self.text, self.selection.end.min(self.text.len()));
             self.text.insert_str(pos, &text);
             let new_pos = pos + text.len();
             self.selection = new_pos..new_pos;
+            self.preferred_x_px = None;
+            self.reset_caret_blink();
+            if !text.is_empty() {
+                self.record_edit(TextUndoOp {
+                    index: pos,
+                    pre_text: String::new(),
+                    post_text: text,
+                    pre_selection,
+                    post_selection: self.selection.clone(),
+                    time: Instant::now(),
+                    can_merge: true,
+                });
+            }
         }
-        self.preferred_x_px = None;
-        self.reset_caret_blink();
     }
 
     pub fn cancel_composition(&mut self) {

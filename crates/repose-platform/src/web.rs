@@ -1452,6 +1452,25 @@ impl ApplicationHandler<()> for App {
                             return;
                         }
                     }
+
+                    if handle_text_undo_redo!(self, key_event) {
+                        if let Some(fid) = self.sched.focused {
+                            let key = self.tf_key_of(fid);
+                            if let Some(state_rc) = self.textfield_states.get(&key) {
+                                let mut st = state_rc.borrow_mut();
+                                if let Some(f) = &self.frame_cache
+                                    && let Some(i) = rc::hit_index_by_id(f, fid)
+                                {
+                                    self.tf_ensure_caret_visible_in_hit(
+                                        &mut st,
+                                        f.hit_regions[i].tf_multiline,
+                                    );
+                                }
+                            }
+                        }
+                        self.request_redraw();
+                        return;
+                    }
                 }
 
                 // focus traversal: Tab / Shift+Tab

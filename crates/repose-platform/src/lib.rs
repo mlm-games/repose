@@ -1488,6 +1488,21 @@ pub fn run_desktop_app_with_snackbar(
                                     _ => {}
                                 }
                             }
+                            if handle_text_undo_redo!(self, key_event) {
+                                if let Some(fid) = self.sched.focused {
+                                    let key = self.tf_key_of(fid);
+                                    if let Some(state_rc) = self.textfield_states.get(&key) {
+                                        let mut st = state_rc.borrow_mut();
+                                        App::tf_ensure_caret_visible(
+                                            &mut st,
+                                            self.is_multiline_id(fid),
+                                        );
+                                    }
+                                }
+                                self.request_redraw();
+                                return;
+                            }
+
                             if self.modifiers.ctrl {
                                 match key_event.physical_key {
                                     PhysicalKey::Code(KeyCode::KeyC) => {
@@ -1848,6 +1863,34 @@ pub fn run_desktop_app_with_snackbar(
                     self.copy_to_clipboard(txt);
                     true
                 }
+                Action::Undo => {
+                    let mut st = state_rc.borrow_mut();
+                    if !st.can_undo() {
+                        return false;
+                    }
+                    st.undo();
+                    self.notify_text_change(fid, st.text.clone());
+                    if let Some(f) = &self.frame_cache
+                        && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
+                    {
+                        App::tf_ensure_caret_visible(&mut st, hit.tf_multiline);
+                    }
+                    true
+                }
+                Action::Redo => {
+                    let mut st = state_rc.borrow_mut();
+                    if !st.can_redo() {
+                        return false;
+                    }
+                    st.redo();
+                    self.notify_text_change(fid, st.text.clone());
+                    if let Some(f) = &self.frame_cache
+                        && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
+                    {
+                        App::tf_ensure_caret_visible(&mut st, hit.tf_multiline);
+                    }
+                    true
+                }
                 Action::Cut => {
                     let txt = state_rc.borrow().selected_text();
                     if txt.is_empty() {
@@ -1856,7 +1899,7 @@ pub fn run_desktop_app_with_snackbar(
                     self.copy_to_clipboard(txt);
                     {
                         let mut st = state_rc.borrow_mut();
-                        st.insert_text("");
+                        st.insert_text_atomic("");
                         self.notify_text_change(fid, st.text.clone());
                         if let Some(f) = &self.frame_cache
                             && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
@@ -1876,7 +1919,7 @@ pub fn run_desktop_app_with_snackbar(
                     }
                     {
                         let mut st = state_rc.borrow_mut();
-                        st.insert_text(&txt);
+                        st.insert_text_atomic(&txt);
                         self.notify_text_change(fid, st.text.clone());
                         if let Some(f) = &self.frame_cache
                             && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)

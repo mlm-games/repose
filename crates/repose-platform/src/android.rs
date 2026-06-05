@@ -1007,6 +1007,12 @@ pub fn run_android_app_with_options(
                                 return;
                             }
                         }
+
+                        if handle_text_undo_redo!(self, key_event) {
+                            self.dirty = true;
+                            self.request_redraw();
+                            return;
+                        }
                     }
 
                     // Tab traversal
