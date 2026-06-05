@@ -304,10 +304,11 @@ pub fn run_desktop_app_with_snackbar(
                 match req.action {
                     accesskit::Action::Click => {
                         if let Some(hit) = f.hit_regions.iter().find(|h| h.id == target_id)
-                            && let Some(cb) = &hit.on_click {
-                                cb();
-                                self.request_redraw();
-                            }
+                            && let Some(cb) = &hit.on_click
+                        {
+                            cb();
+                            self.request_redraw();
+                        }
                     }
                     accesskit::Action::Focus => {
                         self.sched.focused = Some(target_id);
@@ -482,19 +483,20 @@ pub fn run_desktop_app_with_snackbar(
             // Highlight best drop target under cursor (if we have a frame)
             if let Some(f) = &self.frame_cache
                 && let Some(tid) = rc::dnd_target_id_at(f, pos)
-                    && let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid) {
-                        let color = if dragging_files {
-                            Color::from_hex("#FFAA00")
-                        } else {
-                            Color::from_hex("#44AAFF")
-                        };
-                        scene.nodes.push(SceneNode::Border {
-                            rect: hit.rect,
-                            color,
-                            width: dp_to_px(2.0),
-                            radius: dp_to_px(8.0),
-                        });
-                    }
+                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid)
+            {
+                let color = if dragging_files {
+                    Color::from_hex("#FFAA00")
+                } else {
+                    Color::from_hex("#44AAFF")
+                };
+                scene.nodes.push(SceneNode::Border {
+                    rect: hit.rect,
+                    color,
+                    width: dp_to_px(2.0),
+                    radius: dp_to_px(8.0),
+                });
+            }
 
             // Cursor badge
             let label = if dragging_files {
@@ -775,63 +777,53 @@ pub fn run_desktop_app_with_snackbar(
                     // TextField/TextArea drag selection (if captured)
                     if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id)
                         && self.is_textfield(cid)
-                        && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
-                            let key = self.tf_key_of(cid);
-                            if let Some(state_rc) = self.textfield_states.get(&key) {
-                                let mut st = state_rc.borrow_mut();
+                        && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
+                    {
+                        let key = self.tf_key_of(cid);
+                        if let Some(state_rc) = self.textfield_states.get(&key) {
+                            let mut st = state_rc.borrow_mut();
 
-                                let pad_x = dp_to_px(TF_PADDING_X_DP);
-                                let inner_x = hit.rect.x + pad_x;
-                                let inner_y = hit.rect.y + dp_to_px(8.0);
-                                let inner_w = (hit.rect.w - 2.0 * pad_x).max(1.0);
-                                let inner_h = (hit.rect.h - dp_to_px(16.0)).max(1.0);
+                            let pad_x = dp_to_px(TF_PADDING_X_DP);
+                            let inner_x = hit.rect.x + pad_x;
+                            let inner_y = hit.rect.y + dp_to_px(8.0);
+                            let inner_w = (hit.rect.w - 2.0 * pad_x).max(1.0);
+                            let inner_h = (hit.rect.h - dp_to_px(16.0)).max(1.0);
 
-                                st.set_inner_width(inner_w);
-                                st.set_inner_height(inner_h);
+                            st.set_inner_width(inner_w);
+                            st.set_inner_height(inner_h);
 
-                                let content_x =
-                                    (self.mouse_pos_px.0 - inner_x + st.scroll_offset).max(0.0);
-                                let content_y =
-                                    (self.mouse_pos_px.1 - inner_y + st.scroll_offset_y).max(0.0);
+                            let content_x =
+                                (self.mouse_pos_px.0 - inner_x + st.scroll_offset).max(0.0);
+                            let content_y =
+                                (self.mouse_pos_px.1 - inner_y + st.scroll_offset_y).max(0.0);
 
-                                let font_px =
-                                    dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+                            let font_px =
+                                dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
 
-                                let idx = if hit.tf_multiline {
-                                    rc::index_for_xy_bytes_vt(
-                                        &st, font_px, inner_w, content_x, content_y,
-                                    )
-                                } else {
-                                    rc::index_for_x_bytes_vt(&st, font_px, content_x)
-                                };
+                            let idx = if hit.tf_multiline {
+                                rc::index_for_xy_bytes_vt(
+                                    &st, font_px, inner_w, content_x, content_y,
+                                )
+                            } else {
+                                rc::index_for_x_bytes_vt(&st, font_px, content_x)
+                            };
 
-                                st.drag_to(idx);
+                            st.drag_to(idx);
 
-                                // Ensure caret visible
-                                if hit.tf_multiline {
-                                    let (cx, cy, _) = caret_xy_for_byte(
-                                        &st.text,
-                                        font_px,
-                                        inner_w,
-                                        st.caret_index(),
-                                    );
-                                    st.ensure_caret_visible_xy(
-                                        cx,
-                                        cy,
-                                        inner_w,
-                                        inner_h,
-                                        dp_to_px(2.0),
-                                    );
-                                } else {
-                                    let m = measure_text(&st.text, font_px, None);
-                                    let cx =
-                                        m.positions.get(st.caret_index()).copied().unwrap_or(0.0);
-                                    st.ensure_caret_visible(cx, inner_w, dp_to_px(2.0));
-                                }
-
-                                self.request_redraw();
+                            // Ensure caret visible
+                            if hit.tf_multiline {
+                                let (cx, cy, _) =
+                                    caret_xy_for_byte(&st.text, font_px, inner_w, st.caret_index());
+                                st.ensure_caret_visible_xy(cx, cy, inner_w, inner_h, dp_to_px(2.0));
+                            } else {
+                                let m = measure_text(&st.text, font_px, None);
+                                let cx = m.positions.get(st.caret_index()).copied().unwrap_or(0.0);
+                                st.ensure_caret_visible(cx, inner_w, dp_to_px(2.0));
                             }
+
+                            self.request_redraw();
                         }
+                    }
 
                     // Pointer routing: hover + move/capture
                     if let Some(f) = &self.frame_cache {
@@ -1099,23 +1091,24 @@ pub fn run_desktop_app_with_snackbar(
 
                     if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id)
                         && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
-                            && let Some(cb) = &hit.on_pointer_up {
-                                let pos = Vec2 {
-                                    x: self.mouse_pos_px.0,
-                                    y: self.mouse_pos_px.1,
-                                };
-                                let pe = repose_core::input::PointerEvent {
-                                    id: repose_core::input::PointerId(0),
-                                    kind: repose_core::input::PointerKind::Mouse,
-                                    event: repose_core::input::PointerEventKind::Up(
-                                        repose_core::input::PointerButton::Primary,
-                                    ),
-                                    position: pos,
-                                    pressure: 1.0,
-                                    modifiers: self.modifiers,
-                                };
-                                cb(pe);
-                            }
+                        && let Some(cb) = &hit.on_pointer_up
+                    {
+                        let pos = Vec2 {
+                            x: self.mouse_pos_px.0,
+                            y: self.mouse_pos_px.1,
+                        };
+                        let pe = repose_core::input::PointerEvent {
+                            id: repose_core::input::PointerId(0),
+                            kind: repose_core::input::PointerKind::Mouse,
+                            event: repose_core::input::PointerEventKind::Up(
+                                repose_core::input::PointerButton::Primary,
+                            ),
+                            position: pos,
+                            pressure: 1.0,
+                            modifiers: self.modifiers,
+                        };
+                        cb(pe);
+                    }
 
                     // Click on release if pointer is still over the captured hit region
                     if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
@@ -1202,14 +1195,54 @@ pub fn run_desktop_app_with_snackbar(
                                 } else {
                                     FocusDirection::Next
                                 },
+                            )
+                        {
+                            // If a button was "pressed" via keyboard, clear it when we move focus
+                            if let Some(active) = self.key_pressed_active.take() {
+                                self.pressed_ids.remove(&active);
+                            }
+
+                            self.sched.focused = Some(next);
+
+                            // IME only for TextField
+                            if let Some(win) = &self.window {
+                                let is_textfield = f
+                                    .semantics_nodes
+                                    .iter()
+                                    .any(|n| n.id == next && n.role == Role::TextField);
+                                rc_web::set_ime_for_textfield(win, is_textfield);
+                            }
+                            self.announce_focus_change();
+                            self.request_redraw();
+                        }
+                        return; // swallow Tab
+                    }
+
+                    // Arrow key focus navigation (skip if focused on a TextField)
+                    if key_event.state == ElementState::Pressed && !key_event.repeat {
+                        let nav_dir = match key_event.physical_key {
+                            PhysicalKey::Code(KeyCode::ArrowLeft) => Some(FocusDirection::Left),
+                            PhysicalKey::Code(KeyCode::ArrowRight) => Some(FocusDirection::Right),
+                            PhysicalKey::Code(KeyCode::ArrowUp) => Some(FocusDirection::Up),
+                            PhysicalKey::Code(KeyCode::ArrowDown) => Some(FocusDirection::Down),
+                            _ => None,
+                        };
+                        if let Some(dir) = nav_dir
+                            && let Some(f) = &self.frame_cache
+                            && !f.semantics_nodes.iter().any(|n| {
+                                self.sched.focused == Some(n.id) && n.role == Role::TextField
+                            })
+                        {
+                            if let Some(next) = rc::focus_in_direction(
+                                &f.focus_chain,
+                                &f.hit_regions,
+                                self.sched.focused,
+                                dir,
                             ) {
-                                // If a button was "pressed" via keyboard, clear it when we move focus
                                 if let Some(active) = self.key_pressed_active.take() {
                                     self.pressed_ids.remove(&active);
                                 }
-
                                 self.sched.focused = Some(next);
-
                                 // IME only for TextField
                                 if let Some(win) = &self.window {
                                     let is_textfield = f
@@ -1221,56 +1254,23 @@ pub fn run_desktop_app_with_snackbar(
                                 self.announce_focus_change();
                                 self.request_redraw();
                             }
-                        return; // swallow Tab
-                    }
-
-                    // Arrow key focus navigation
-                    if key_event.state == ElementState::Pressed && !key_event.repeat {
-                        let nav_dir = match key_event.physical_key {
-                            PhysicalKey::Code(KeyCode::ArrowLeft) => Some(FocusDirection::Left),
-                            PhysicalKey::Code(KeyCode::ArrowRight) => Some(FocusDirection::Right),
-                            PhysicalKey::Code(KeyCode::ArrowUp) => Some(FocusDirection::Up),
-                            PhysicalKey::Code(KeyCode::ArrowDown) => Some(FocusDirection::Down),
-                            _ => None,
-                        };
-                        if let Some(dir) = nav_dir {
-                            if let Some(f) = &self.frame_cache
-                                && let Some(next) = rc::focus_in_direction(
-                                    &f.focus_chain,
-                                    &f.hit_regions,
-                                    self.sched.focused,
-                                    dir,
-                                ) {
-                                    if let Some(active) = self.key_pressed_active.take() {
-                                        self.pressed_ids.remove(&active);
-                                    }
-                                    self.sched.focused = Some(next);
-                                    // IME only for TextField
-                                    if let Some(win) = &self.window {
-                                        let is_textfield = f
-                                            .semantics_nodes
-                                            .iter()
-                                            .any(|n| n.id == next && n.role == Role::TextField);
-                                        rc_web::set_ime_for_textfield(win, is_textfield);
-                                    }
-                                    self.announce_focus_change();
-                                    self.request_redraw();
-                                }
                             return; // swallow arrow key
                         }
                     }
 
-                    if key_event.state == ElementState::Pressed && !key_event.repeat
+                    if key_event.state == ElementState::Pressed
+                        && !key_event.repeat
                         && let Some(action) = repose_core::shortcuts::resolve_action(
                             repose_core::shortcuts::KeyChord::new(
                                 rc::map_key(key_event.physical_key),
                                 self.modifiers,
                             ),
                         )
-                            && self.dispatch_action(action) {
-                                self.request_redraw();
-                                return;
-                            }
+                        && self.dispatch_action(action)
+                    {
+                        self.request_redraw();
+                        return;
+                    }
 
                     if let Some(fid) = self.sched.focused {
                         // If focused is NOT a TextField, allow Space/Enter activation
@@ -1401,94 +1401,90 @@ pub fn run_desktop_app_with_snackbar(
                                     PhysicalKey::Code(KeyCode::ArrowUp) => {
                                         if self.is_multiline_id(focused_id)
                                             && let Some(f) = &self.frame_cache
-                                                && let Some(hit) = f
-                                                    .hit_regions
-                                                    .iter()
-                                                    .find(|h| h.id == focused_id)
-                                                {
-                                                    let font_px = dp_to_px(TF_FONT_DP);
-                                                    let pad = self.padding_px();
-                                                    let wrap_w = hit.rect.w - 2.0 * pad;
-                                                    let cur = state.caret_index();
-                                                    let (new_pos, px) =
-                                                        repose_ui::textfield::move_caret_vertical(
-                                                            &state.text,
-                                                            font_px,
-                                                            wrap_w,
-                                                            cur,
-                                                            -1,
-                                                            state.preferred_x_px,
-                                                        );
-                                                    if self.modifiers.shift {
-                                                        state.selection.end = new_pos;
-                                                    } else {
-                                                        state.selection = new_pos..new_pos;
-                                                    }
-                                                    state.preferred_x_px = Some(px);
-                                                    // Use multiline-aware caret visibility
-                                                    let (cx, cy, _) = caret_xy_for_byte(
-                                                        &state.text,
-                                                        font_px,
-                                                        wrap_w,
-                                                        state.caret_index(),
-                                                    );
-                                                    let iw = state.inner_width;
-                                                    let ih = state.inner_height;
-                                                    state.ensure_caret_visible_xy(
-                                                        cx,
-                                                        cy,
-                                                        iw,
-                                                        ih,
-                                                        self.dp_px(2.0),
-                                                    );
-                                                    self.request_redraw();
-                                                }
+                                            && let Some(hit) =
+                                                f.hit_regions.iter().find(|h| h.id == focused_id)
+                                        {
+                                            let font_px = dp_to_px(TF_FONT_DP);
+                                            let pad = self.padding_px();
+                                            let wrap_w = hit.rect.w - 2.0 * pad;
+                                            let cur = state.caret_index();
+                                            let (new_pos, px) =
+                                                repose_ui::textfield::move_caret_vertical(
+                                                    &state.text,
+                                                    font_px,
+                                                    wrap_w,
+                                                    cur,
+                                                    -1,
+                                                    state.preferred_x_px,
+                                                );
+                                            if self.modifiers.shift {
+                                                state.selection.end = new_pos;
+                                            } else {
+                                                state.selection = new_pos..new_pos;
+                                            }
+                                            state.preferred_x_px = Some(px);
+                                            // Use multiline-aware caret visibility
+                                            let (cx, cy, _) = caret_xy_for_byte(
+                                                &state.text,
+                                                font_px,
+                                                wrap_w,
+                                                state.caret_index(),
+                                            );
+                                            let iw = state.inner_width;
+                                            let ih = state.inner_height;
+                                            state.ensure_caret_visible_xy(
+                                                cx,
+                                                cy,
+                                                iw,
+                                                ih,
+                                                self.dp_px(2.0),
+                                            );
+                                            self.request_redraw();
+                                        }
                                     }
                                     PhysicalKey::Code(KeyCode::ArrowDown) => {
                                         if self.is_multiline_id(focused_id)
                                             && let Some(f) = &self.frame_cache
-                                                && let Some(hit) = f
-                                                    .hit_regions
-                                                    .iter()
-                                                    .find(|h| h.id == focused_id)
-                                                {
-                                                    let font_px = dp_to_px(TF_FONT_DP);
-                                                    let pad = self.padding_px();
-                                                    let wrap_w = hit.rect.w - 2.0 * pad;
-                                                    let cur = state.caret_index();
-                                                    let (new_pos, px) =
-                                                        repose_ui::textfield::move_caret_vertical(
-                                                            &state.text,
-                                                            font_px,
-                                                            wrap_w,
-                                                            cur,
-                                                            1,
-                                                            state.preferred_x_px,
-                                                        );
-                                                    if self.modifiers.shift {
-                                                        state.selection.end = new_pos;
-                                                    } else {
-                                                        state.selection = new_pos..new_pos;
-                                                    }
-                                                    state.preferred_x_px = Some(px);
-                                                    // Use multiline-aware caret visibility
-                                                    let (cx, cy, _) = caret_xy_for_byte(
-                                                        &state.text,
-                                                        font_px,
-                                                        wrap_w,
-                                                        state.caret_index(),
-                                                    );
-                                                    let iw = state.inner_width;
-                                                    let ih = state.inner_height;
-                                                    state.ensure_caret_visible_xy(
-                                                        cx,
-                                                        cy,
-                                                        iw,
-                                                        ih,
-                                                        self.dp_px(2.0),
-                                                    );
-                                                    self.request_redraw();
-                                                }
+                                            && let Some(hit) =
+                                                f.hit_regions.iter().find(|h| h.id == focused_id)
+                                        {
+                                            let font_px = dp_to_px(TF_FONT_DP);
+                                            let pad = self.padding_px();
+                                            let wrap_w = hit.rect.w - 2.0 * pad;
+                                            let cur = state.caret_index();
+                                            let (new_pos, px) =
+                                                repose_ui::textfield::move_caret_vertical(
+                                                    &state.text,
+                                                    font_px,
+                                                    wrap_w,
+                                                    cur,
+                                                    1,
+                                                    state.preferred_x_px,
+                                                );
+                                            if self.modifiers.shift {
+                                                state.selection.end = new_pos;
+                                            } else {
+                                                state.selection = new_pos..new_pos;
+                                            }
+                                            state.preferred_x_px = Some(px);
+                                            // Use multiline-aware caret visibility
+                                            let (cx, cy, _) = caret_xy_for_byte(
+                                                &state.text,
+                                                font_px,
+                                                wrap_w,
+                                                state.caret_index(),
+                                            );
+                                            let iw = state.inner_width;
+                                            let ih = state.inner_height;
+                                            state.ensure_caret_visible_xy(
+                                                cx,
+                                                cy,
+                                                iw,
+                                                ih,
+                                                self.dp_px(2.0),
+                                            );
+                                            self.request_redraw();
+                                        }
                                     }
                                     PhysicalKey::Code(KeyCode::Home) => {
                                         state.selection = 0..0;
@@ -1668,25 +1664,25 @@ pub fn run_desktop_app_with_snackbar(
                         let key = self.tf_key_of(focused_id);
                         if let Some(state_rc) = self.textfield_states.get(&key)
                             && let Some(f) = &self.frame_cache
-                                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == focused_id)
-                            {
-                                let mut state = state_rc.borrow_mut();
-                                let hit_rect = hit.rect;
-                                let on_text_change = hit.on_text_change.clone();
-                                let mut notify = |text: String| {
-                                    if let Some(cb) = &on_text_change {
-                                        cb(text);
-                                    }
-                                };
-                                rc_android::handle_ime_event(
-                                    ime,
-                                    &mut state,
-                                    hit_rect,
-                                    &mut notify,
-                                    &mut self.ime_preedit,
-                                );
-                                self.request_redraw();
-                            }
+                            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == focused_id)
+                        {
+                            let mut state = state_rc.borrow_mut();
+                            let hit_rect = hit.rect;
+                            let on_text_change = hit.on_text_change.clone();
+                            let mut notify = |text: String| {
+                                if let Some(cb) = &on_text_change {
+                                    cb(text);
+                                }
+                            };
+                            rc_android::handle_ime_event(
+                                ime,
+                                &mut state,
+                                hit_rect,
+                                &mut notify,
+                                &mut self.ime_preedit,
+                            );
+                            self.request_redraw();
+                        }
                     }
                 }
 
@@ -1847,10 +1843,11 @@ pub fn run_desktop_app_with_snackbar(
 
             if let (Some(f), Some(fid)) = (&self.frame_cache, self.sched.focused)
                 && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
-                    && let Some(cb) = &hit.on_action
-                        && cb(action.clone()) {
-                            return true;
-                        }
+                && let Some(cb) = &hit.on_action
+                && cb(action.clone())
+            {
+                return true;
+            }
 
             if shortcuts::handle(action.clone()) {
                 return true;
@@ -1950,42 +1947,45 @@ pub fn run_desktop_app_with_snackbar(
             if new_over != session.over_id {
                 if let Some(prev) = session.over_id
                     && let Some(hit) = f.hit_regions.iter().find(|h| h.id == prev)
-                        && let Some(cb) = &hit.on_drag_leave {
-                            cb(repose_core::dnd::DragOver {
-                                source_id: session.source_id,
-                                target_id: prev,
-                                position: pos,
-                                modifiers: self.modifiers,
-                                payload: session.payload.clone(),
-                            });
-                        }
+                    && let Some(cb) = &hit.on_drag_leave
+                {
+                    cb(repose_core::dnd::DragOver {
+                        source_id: session.source_id,
+                        target_id: prev,
+                        position: pos,
+                        modifiers: self.modifiers,
+                        payload: session.payload.clone(),
+                    });
+                }
 
                 if let Some(now) = new_over
                     && let Some(hit) = f.hit_regions.iter().find(|h| h.id == now)
-                        && let Some(cb) = &hit.on_drag_enter {
-                            cb(repose_core::dnd::DragOver {
-                                source_id: session.source_id,
-                                target_id: now,
-                                position: pos,
-                                modifiers: self.modifiers,
-                                payload: session.payload.clone(),
-                            });
-                        }
+                    && let Some(cb) = &hit.on_drag_enter
+                {
+                    cb(repose_core::dnd::DragOver {
+                        source_id: session.source_id,
+                        target_id: now,
+                        position: pos,
+                        modifiers: self.modifiers,
+                        payload: session.payload.clone(),
+                    });
+                }
 
                 session.over_id = new_over;
             }
 
             if let Some(over) = session.over_id
                 && let Some(hit) = f.hit_regions.iter().find(|h| h.id == over)
-                    && let Some(cb) = &hit.on_drag_over {
-                        cb(repose_core::dnd::DragOver {
-                            source_id: session.source_id,
-                            target_id: over,
-                            position: pos,
-                            modifiers: self.modifiers,
-                            payload: session.payload.clone(),
-                        });
-                    }
+                && let Some(cb) = &hit.on_drag_over
+            {
+                cb(repose_core::dnd::DragOver {
+                    source_id: session.source_id,
+                    target_id: over,
+                    position: pos,
+                    modifiers: self.modifiers,
+                    payload: session.payload.clone(),
+                });
+            }
         }
 
         fn dnd_try_begin(&mut self, pos: Vec2) -> bool {
@@ -2062,22 +2062,24 @@ pub fn run_desktop_app_with_snackbar(
                 let drop_target = rc::dnd_target_id_at(f, pos);
                 if let Some(tid) = drop_target
                     && let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid)
-                        && let Some(cb) = &hit.on_drop {
-                            accepted = cb(repose_core::dnd::DropEvent {
-                                source_id: session.source_id,
-                                target_id: tid,
-                                position: pos,
-                                modifiers: self.modifiers,
-                                payload: session.payload.clone(),
-                            });
-                        }
+                    && let Some(cb) = &hit.on_drop
+                {
+                    accepted = cb(repose_core::dnd::DropEvent {
+                        source_id: session.source_id,
+                        target_id: tid,
+                        position: pos,
+                        modifiers: self.modifiers,
+                        payload: session.payload.clone(),
+                    });
+                }
             }
 
             // Notify source end
             if let Some(source_hit) = f.hit_regions.iter().find(|h| h.id == session.source_id)
-                && let Some(cb) = &source_hit.on_drag_end {
-                    cb(repose_core::dnd::DragEnd { accepted });
-                }
+                && let Some(cb) = &source_hit.on_drag_end
+            {
+                cb(repose_core::dnd::DragEnd { accepted });
+            }
 
             self.capture_id = None;
             self.mouse_down_pos_px = None;
@@ -2131,21 +2133,22 @@ pub fn run_desktop_app_with_snackbar(
             };
 
             if let Some(hit) = f.hit_regions.iter().find(|h| h.id == target_id)
-                && let Some(cb) = &hit.on_drop {
-                    let accepted = cb(repose_core::dnd::DropEvent {
-                        source_id: 0, // external source (OS)
-                        target_id,
-                        position: pos,
-                        modifiers: self.modifiers,
-                        payload: payload.clone(),
-                    });
+                && let Some(cb) = &hit.on_drop
+            {
+                let accepted = cb(repose_core::dnd::DropEvent {
+                    source_id: 0, // external source (OS)
+                    target_id,
+                    position: pos,
+                    modifiers: self.modifiers,
+                    payload: payload.clone(),
+                });
 
-                    if accepted
-                        && let Some(node) = f.semantics_nodes.iter().find(|n| n.id == target_id) {
-                            let label = node.label.as_deref().unwrap_or("");
-                            self.a11y.announce(&format!("Dropped files on {}", label));
-                        }
+                if accepted && let Some(node) = f.semantics_nodes.iter().find(|n| n.id == target_id)
+                {
+                    let label = node.label.as_deref().unwrap_or("");
+                    self.a11y.announce(&format!("Dropped files on {}", label));
                 }
+            }
 
             self.pending_drop_pos_px = None;
             self.request_redraw();
