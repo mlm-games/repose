@@ -865,9 +865,9 @@ pub fn run_desktop_app_with_snackbar(
                     let (dx_px, dy_px) = match delta {
                         MouseScrollDelta::LineDelta(x, y) => {
                             let unit_px = dp_to_px(60.0);
-                            (x * unit_px, y * unit_px)
+                            (-(x * unit_px), -(y * unit_px))
                         }
-                        MouseScrollDelta::PixelDelta(lp) => (lp.x as f32, lp.y as f32),
+                        MouseScrollDelta::PixelDelta(lp) => (-(lp.x as f32), -(lp.y as f32)),
                     };
                     log::debug!("MouseWheel: dx={}, dy={}", dx_px, dy_px);
 
