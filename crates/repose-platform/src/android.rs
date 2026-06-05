@@ -1035,6 +1035,39 @@ pub fn run_android_app_with_options(
                         return;
                     }
 
+                    // Arrow key focus navigation (skip if focused on a TextField;
+                    // TextField should handle arrows for cursor movement when supported)
+                    if key_event.state == ElementState::Pressed && !key_event.repeat {
+                        let nav_dir = match key_event.physical_key {
+                            PhysicalKey::Code(KeyCode::ArrowLeft) => Some(FocusDirection::Left),
+                            PhysicalKey::Code(KeyCode::ArrowRight) => Some(FocusDirection::Right),
+                            PhysicalKey::Code(KeyCode::ArrowUp) => Some(FocusDirection::Up),
+                            PhysicalKey::Code(KeyCode::ArrowDown) => Some(FocusDirection::Down),
+                            _ => None,
+                        };
+                        if let Some(dir) = nav_dir
+                            && let Some(f) = &self.frame_cache
+                            && !f.semantics_nodes.iter().any(|n| {
+                                self.sched.focused == Some(n.id) && n.role == Role::TextField
+                            })
+                        {
+                            if let Some(next) = rc::focus_in_direction(
+                                &f.focus_chain,
+                                &f.hit_regions,
+                                self.sched.focused,
+                                dir,
+                            ) {
+                                self.sched.focused = Some(next);
+                                if let Some(win) = &self.window {
+                                    win.set_ime_allowed(self.is_textfield(next));
+                                }
+                                self.dirty = true;
+                                self.request_redraw();
+                            }
+                            return; // swallow arrow key
+                        }
+                    }
+
                     // Enter submits focused TextField
                     if key_event.state == ElementState::Pressed && !key_event.repeat {
                         if let PhysicalKey::Code(KeyCode::Enter) = key_event.physical_key {
