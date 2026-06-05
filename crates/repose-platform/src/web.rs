@@ -117,7 +117,6 @@ pub fn run_web_app_with_snackbar(
     Ok(())
 }
 
-#[derive(Clone)]
 struct WebDropListeners {
     _drag_over: Closure<dyn FnMut(DragEvent)>,
     _drop: Closure<dyn FnMut(DragEvent)>,

@@ -22,7 +22,6 @@ use winit::platform::android::EventLoopBuilderExtAndroid;
 use winit::platform::android::activity::AndroidApp;
 use winit::window::{ImePurpose, Window, WindowAttributes};
 
-#[derive(Clone)]
 #[derive(Clone, Copy, Debug)]
 pub struct AndroidOptions {
     /// If true, runner keeps requesting frames (good for animations, costs battery).
