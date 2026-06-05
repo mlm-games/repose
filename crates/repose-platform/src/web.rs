@@ -1327,30 +1327,14 @@ impl ApplicationHandler<()> for App {
                             if dy_px.abs() > 0.0 {
                                 self.touch_scroll_accum_y_px += dy_px;
 
-                                // Only dispatch scroll once accumulated movement exceeds
-                                // the touch slop threshold. This prevents tiny finger
-                                // jitter during an intended tap from setting
-                                // touch_scrolled = true and suppressing click events.
-                                if self.touch_scroll_accum_y_px.abs()
-                                    > self.touch_slop_px(&window)
+                                let consumed =
+                                    rc::dispatch_scroll(f, pos, Vec2 { x: 0.0, y: -dy_px });
+
+                                if consumed
+                                    && self.touch_scroll_accum_y_px.abs()
+                                        > self.touch_slop_px(&window)
                                 {
-                                    if !self.touch_scrolled {
-                                        self.touch_scrolled = true;
-                                        rc::dispatch_scroll(
-                                            f,
-                                            pos,
-                                            Vec2 {
-                                                x: 0.0,
-                                                y: -self.touch_scroll_accum_y_px,
-                                            },
-                                        );
-                                    } else {
-                                        rc::dispatch_scroll(
-                                            f,
-                                            pos,
-                                            Vec2 { x: 0.0, y: -dy_px },
-                                        );
-                                    }
+                                    self.touch_scrolled = true;
                                 }
                             }
 
