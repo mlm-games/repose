@@ -1493,6 +1493,19 @@ impl ApplicationHandler<()> for App {
                                 }
 
                                 self.sched.focused = Some(next);
+
+                                let tf_state_key = f.hit_regions.iter()
+                                    .find(|h| h.id == next)
+                                    .and_then(|h| h.tf_state_key);
+                                if let Some(key) = tf_state_key {
+                                    self.textfield_states.entry(key).or_insert_with(|| {
+                                        Rc::new(RefCell::new(TextFieldState::new()))
+                                    });
+                                    if let Some(state_rc) = self.textfield_states.get(&key) {
+                                        state_rc.borrow_mut().reset_caret_blink();
+                                    }
+                                }
+
                                 rc_web::set_ime_for_textfield(&window, self.is_textfield(next));
                                 self.request_redraw();
                             }
@@ -1504,6 +1517,17 @@ impl ApplicationHandler<()> for App {
                 handle_arrow_key_spatial_nav!(self, key_event, f, next, {
                     if let Some(active) = self.key_pressed_active.take() {
                         self.pressed_ids.remove(&active);
+                    }
+                    let tf_state_key = f.hit_regions.iter()
+                        .find(|h| h.id == next)
+                        .and_then(|h| h.tf_state_key);
+                    if let Some(key) = tf_state_key {
+                        self.textfield_states.entry(key).or_insert_with(|| {
+                            Rc::new(RefCell::new(TextFieldState::new()))
+                        });
+                        if let Some(state_rc) = self.textfield_states.get(&key) {
+                            state_rc.borrow_mut().reset_caret_blink();
+                        }
                     }
                     rc_web::set_ime_for_textfield(&window, self.is_textfield(next));
                 });
@@ -1534,16 +1558,29 @@ impl ApplicationHandler<()> for App {
 
                                         // Execute click
                                         if let Some(f) = &self.frame_cache {
-                                            // Robust search: find a region with this ID that has a click handler.
-                                            // Search in reverse (top-to-bottom) to match mouse behavior.
                                             if let Some(hit) = f
                                                 .hit_regions
                                                 .iter()
                                                 .rev()
-                                                .find(|h| h.id == fid && h.on_click.is_some())
+                                                .find(|h| h.id == fid)
                                             {
                                                 if let Some(cb) = &hit.on_click {
                                                     cb();
+                                                } else if let Some(cb) = &hit.on_pointer_down {
+                                                    let pe = repose_core::input::PointerEvent {
+                                                        id: repose_core::input::PointerId(0),
+                                                        kind: repose_core::input::PointerKind::Mouse,
+                                                        event: repose_core::input::PointerEventKind::Down(
+                                                            repose_core::input::PointerButton::Primary,
+                                                        ),
+                                                        position: repose_core::Vec2 {
+                                                            x: 0.0,
+                                                            y: 0.0,
+                                                        },
+                                                        pressure: 1.0,
+                                                        modifiers: self.modifiers,
+                                                    };
+                                                    cb(pe);
                                                 }
                                             }
                                         }
@@ -1879,6 +1916,19 @@ impl ApplicationHandler<()> for App {
 
                 if let Some(backend) = self.backend.borrow_mut().as_mut() {
                     backend.frame(&frame.scene, GlyphRasterConfig { px: 18.0 * scale });
+                }
+
+                if let Some(fid) = self.sched.focused {
+                    if let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid)
+                        && let Some(key) = hit.tf_state_key
+                        && !self.textfield_states.contains_key(&key)
+                    {
+                        self.textfield_states
+                            .entry(key)
+                            .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())))
+                            .borrow_mut()
+                            .reset_caret_blink();
+                    }
                 }
 
                 self.frame_cache = Some(frame);

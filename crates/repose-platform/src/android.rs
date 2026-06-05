@@ -89,6 +89,7 @@ pub fn run_android_app_with_options(
         modifiers: Modifiers,
         capture_id: Option<u64>,
         pressed_ids: HashSet<u64>,
+        key_pressed_active: Option<u64>,
 
         // touch scroll cancel-click
         touch_scrolled: bool,
@@ -139,6 +140,7 @@ pub fn run_android_app_with_options(
                 modifiers: Modifiers::default(),
                 capture_id: None,
                 pressed_ids: HashSet::new(),
+                key_pressed_active: None,
 
                 touch_scrolled: false,
                 touch_scroll_accum_y_px: 0.0,
@@ -1030,6 +1032,19 @@ pub fn run_android_app_with_options(
                                     },
                                 ) {
                                     self.sched.focused = Some(next);
+
+                                    let tf_state_key = f.hit_regions.iter()
+                                        .find(|h| h.id == next)
+                                        .and_then(|h| h.tf_state_key);
+                                    if let Some(key) = tf_state_key {
+                                        self.textfield_states.entry(key).or_insert_with(|| {
+                                            Rc::new(RefCell::new(TextFieldState::new()))
+                                        });
+                                        if let Some(state_rc) = self.textfield_states.get(&key) {
+                                            state_rc.borrow_mut().reset_caret_blink();
+                                        }
+                                    }
+
                                     if let Some(win) = &self.window {
                                         win.set_ime_allowed(self.is_textfield(next));
                                     }
@@ -1042,11 +1057,78 @@ pub fn run_android_app_with_options(
                     }
 
                     handle_arrow_key_spatial_nav!(self, key_event, f, next, {
+                        let tf_state_key = f.hit_regions.iter()
+                            .find(|h| h.id == next)
+                            .and_then(|h| h.tf_state_key);
+                        if let Some(key) = tf_state_key {
+                            self.textfield_states.entry(key).or_insert_with(|| {
+                                Rc::new(RefCell::new(TextFieldState::new()))
+                            });
+                            if let Some(state_rc) = self.textfield_states.get(&key) {
+                                state_rc.borrow_mut().reset_caret_blink();
+                            }
+                        }
                         if let Some(win) = &self.window {
                             win.set_ime_allowed(self.is_textfield(next));
                         }
                         self.dirty = true;
                     });
+
+                    // Keyboard activation for focused buttons (Space/Enter)
+                    if let Some(fid) = self.sched.focused {
+                        let is_textfield = if let Some(f) = &self.frame_cache {
+                            f.semantics_nodes.iter()
+                                .any(|n| n.id == fid && n.role == Role::TextField)
+                        } else {
+                            false
+                        };
+                        if !is_textfield {
+                            match key_event.physical_key {
+                                PhysicalKey::Code(KeyCode::Space)
+                                | PhysicalKey::Code(KeyCode::Enter) => {
+                                    if key_event.state == ElementState::Pressed && !key_event.repeat {
+                                        self.pressed_ids.insert(fid);
+                                        self.key_pressed_active = Some(fid);
+                                        self.dirty = true;
+                                        self.request_redraw();
+                                        return;
+                                    } else if key_event.state == ElementState::Released {
+                                        if let Some(active_id) = self.key_pressed_active.take() {
+                                            self.pressed_ids.remove(&active_id);
+                                            if let Some(f) = &self.frame_cache
+                                                && let Some(hit) = f
+                                                    .hit_regions
+                                                    .iter()
+                                                    .find(|h| h.id == active_id)
+                                            {
+                                                if let Some(cb) = &hit.on_click {
+                                                    cb();
+                                                } else if let Some(cb) = &hit.on_pointer_down {
+                                                    let pe = repose_core::input::PointerEvent {
+                                                        id: repose_core::input::PointerId(0),
+                                                        kind: repose_core::input::PointerKind::Mouse,
+                                                        event: repose_core::input::PointerEventKind::Down(
+                                                            repose_core::input::PointerButton::Primary,
+                                                        ),
+                                                        position: repose_core::Vec2 {
+                                                            x: 0.0,
+                                                            y: 0.0,
+                                                        },
+                                                        pressure: 1.0,
+                                                        modifiers: self.modifiers,
+                                                    };
+                                                    cb(pe);
+                                                }
+                                            }
+                                            self.dirty = true;
+                                            self.request_redraw();
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
 
                     // Enter submits focused TextField
                     if key_event.state == ElementState::Pressed && !key_event.repeat {
@@ -1212,6 +1294,20 @@ pub fn run_android_app_with_options(
                     );
 
                     backend.frame(&frame.scene, GlyphRasterConfig { px: 18.0 * scale });
+
+                    if let Some(fid) = self.sched.focused {
+                        if let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid)
+                            && let Some(key) = hit.tf_state_key
+                            && !self.textfield_states.contains_key(&key)
+                        {
+                            self.textfield_states
+                                .entry(key)
+                                .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())))
+                                .borrow_mut()
+                                .reset_caret_blink();
+                        }
+                    }
+
                     self.frame_cache = Some(frame);
 
                     self.dirty = false;
