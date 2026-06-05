@@ -44,9 +44,6 @@ pub struct WebOptions {
     canvas_id: Option<String>,
     fullscreen: bool,
 
-    /// Wrap root in a scroll container (prevents offscreen content).
-    auto_root_scroll: bool,
-
     /// If true, request redraw continuously (needed for animations).
     continuous_redraw: bool,
 }
@@ -58,7 +55,6 @@ impl WebOptions {
         Self {
             canvas_id,
             fullscreen: true,
-            auto_root_scroll: false,
             continuous_redraw: true,
         }
     }
@@ -78,15 +74,7 @@ impl WebOptions {
         self.fullscreen = v;
     }
 
-    #[wasm_bindgen(getter)]
-    pub fn auto_root_scroll(&self) -> bool {
-        self.auto_root_scroll
-    }
-
-    #[wasm_bindgen(setter)]
-    pub fn set_auto_root_scroll(&mut self, v: bool) {
-        self.auto_root_scroll = v;
-    }
+}
 
     #[wasm_bindgen(getter)]
     pub fn continuous_redraw(&self) -> bool {
@@ -174,9 +162,6 @@ struct App {
     ime_preedit: bool,
     textfield_states: HashMap<u64, Rc<RefCell<TextFieldState>>>,
 
-    // runner-provided root scroll
-    root_scroll: Rc<RefCell<rc::RootScrollState>>,
-
     // clipboard async results
     clipboard_actions: Rc<RefCell<Vec<ClipboardAction>>>,
 
@@ -229,8 +214,6 @@ impl App {
 
             ime_preedit: false,
             textfield_states: HashMap::new(),
-
-            root_scroll: Rc::new(RefCell::new(rc::RootScrollState::default())),
 
             clipboard_actions: Rc::new(RefCell::new(Vec::new())),
 
@@ -1889,19 +1872,10 @@ impl ApplicationHandler<()> for App {
                 let size_px_u32 = self.sched.size;
                 let focused = self.sched.focused;
 
-                let auto_root_scroll = self.options.auto_root_scroll;
-                let root_scroll = self.root_scroll.clone();
                 let root_fn = &mut self.root;
                 let rc = self.render.clone();
 
-                let mut composed_root = move |s: &mut Scheduler| {
-                    let v = (root_fn)(s, &rc);
-                    if auto_root_scroll {
-                        rc::wrap_root_scroll(v, root_scroll.clone())
-                    } else {
-                        v
-                    }
-                };
+                let mut composed_root = move |s: &mut Scheduler| (root_fn)(s, &rc);
 
                 let frame = compose_frame(
                     &mut self.sched,

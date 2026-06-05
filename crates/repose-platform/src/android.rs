@@ -35,10 +35,6 @@ pub struct AndroidOptions {
     /// If true, runner keeps requesting frames (good for animations, costs battery).
     pub continuous_redraw: bool,
 
-    /// If true, runner wraps the app root in a ScrollV container.
-    /// Useful for "webpage-like" apps; off by default to avoid nested scroll surprises.
-    pub auto_root_scroll: bool,
-
     /// IME (soft keyboard) inset height in physical pixels.
     /// When the keyboard opens on Android, `set_ime_inset()` is called with this value.
     /// If `None`, the runner estimates ~40% of the window's shorter dimension.
@@ -50,7 +46,6 @@ impl Default for AndroidOptions {
         Self {
             // Keep behavior close to your original runner: always ticking.
             continuous_redraw: true,
-            auto_root_scroll: false,
             ime_height_px: None,
         }
     }
@@ -100,9 +95,6 @@ pub fn run_android_app_with_options(
         textfield_states: HashMap<u64, Rc<RefCell<TextFieldState>>>,
         ime_preedit: bool,
 
-        // auto root scroll state
-        root_scroll: Rc<RefCell<rc::RootScrollState>>,
-
         // IME (soft keyboard) tracking
         ime_visible: bool,
 
@@ -149,7 +141,6 @@ pub fn run_android_app_with_options(
                 textfield_states: HashMap::new(),
                 ime_preedit: false,
 
-                root_scroll: Rc::new(RefCell::new(rc::RootScrollState::default())),
                 ime_visible: false,
                 dirty: true,
 
@@ -1268,19 +1259,10 @@ pub fn run_android_app_with_options(
                     let size_px_u32 = self.sched.size;
                     let focused = self.sched.focused;
 
-                    let auto_root_scroll = self.options.auto_root_scroll;
-                    let root_scroll = self.root_scroll.clone();
                     let rc = self.render.clone();
                     let root_fn = &mut self.root;
 
-                    let mut composed_root = move |s: &mut Scheduler| {
-                        let v = (root_fn)(s, &rc);
-                        if auto_root_scroll {
-                            rc::wrap_root_scroll(v, root_scroll.clone())
-                        } else {
-                            v
-                        }
-                    };
+                    let mut composed_root = move |s: &mut Scheduler| (root_fn)(s, &rc);
 
                     let frame = compose_frame(
                         &mut self.sched,
