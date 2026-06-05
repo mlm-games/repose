@@ -46,11 +46,6 @@ impl<T> Signal<T> {
     }
 
     /// Set the signal value and notify subscribers + the reactive graph.
-    ///
-    /// Should never call into the reactive graph while holding a RefCell borrow.
-    /// It also calls subscribers under an *immutable* borrow so callbacks may read (`get()`)
-    /// without panicking. (Mutating the same signal inside its own subscriber is still
-    /// considered invalid and may panic, which is a reasonable constraint for a small core.)
     pub fn set(&self, v: T) {
         let id = {
             let mut inner = self.0.borrow_mut();
@@ -58,8 +53,9 @@ impl<T> Signal<T> {
             inner.id
         };
 
-        // Call subscribers under an immutable borrow (safe for reads).
-        {
+        // Call subscribers with CURRENT_OBSERVER cleared so subscriber reads
+        // don't register edges against the wrong observer.
+        reactive::without_observer(|| {
             let inner = self.0.borrow();
             let vref = &inner.value;
             for s in &inner.subs {
@@ -67,7 +63,7 @@ impl<T> Signal<T> {
                     cb(vref);
                 }
             }
-        }
+        });
 
         // Notify reactive graph after all borrows are dropped.
         reactive::signal_changed(id);
@@ -82,7 +78,7 @@ impl<T> Signal<T> {
             inner.id
         };
 
-        {
+        reactive::without_observer(|| {
             let inner = self.0.borrow();
             let vref = &inner.value;
             for s in &inner.subs {
@@ -90,7 +86,7 @@ impl<T> Signal<T> {
                     cb(vref);
                 }
             }
-        }
+        });
 
         reactive::signal_changed(id);
 

@@ -67,9 +67,10 @@ pub fn signal_changed(sig: SignalId) {
                 let g = gcell.borrow();
                 if let Some(obs_set) = g.edges.get(&sig) {
                     PENDING_OBSERVERS.with(|q| {
+                        let mut queue = q.borrow_mut();
                         for &obs in obs_set {
-                            if !g.running.contains(&obs) {
-                                q.borrow_mut().push_back(obs);
+                            if !g.running.contains(&obs) && !queue.contains(&obs) {
+                                queue.push_back(obs);
                             }
                         }
                     });
@@ -164,6 +165,17 @@ pub fn remove_observer(id: ObserverId) {
         let mut g = g.borrow_mut();
         g.remove_observer(id);
     });
+}
+
+/// Run a closure with `CURRENT_OBSERVER` cleared
+pub fn without_observer<R>(f: impl FnOnce() -> R) -> R {
+    CURRENT_OBSERVER.with(|co| {
+        let prev = *co.borrow();
+        *co.borrow_mut() = None;
+        let result = f();
+        *co.borrow_mut() = prev;
+        result
+    })
 }
 
 pub fn run_observer_now(id: ObserverId) {

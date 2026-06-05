@@ -144,10 +144,3 @@ pub use text::*;
 pub use view::*;
 
 pub use repose_macros::View;
-
-// Ensure a clock is installed even if platform didn't (tests, benches).
-#[doc(hidden)]
-#[allow(dead_code)]
-fn __ensure_clock() {
-    animation::ensure_system_clock();
-}

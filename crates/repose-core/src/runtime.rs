@@ -264,11 +264,16 @@ pub fn remember<T: 'static>(init: impl FnOnce() -> T) -> Rc<T> {
         if let Some(rc) = c.slots[cursor].downcast_ref::<Rc<T>>() {
             rc.clone()
         } else {
-            // replace (else panics)
             log::warn!(
-                "remember: slot {} type changed; replacing. \
-                 If this is due to conditional composition, prefer remember_with_key.",
-                cursor
+                "remember: slot {} type changed {}. \
+                 Use remember_with_key(key, || ...) for conditional branches.",
+                cursor,
+                std::any::type_name::<T>(),
+            );
+            debug_assert!(
+                false,
+                "remember slot {} type changed. This is likely a composition order bug.",
+                cursor,
             );
             let rc: Rc<T> = Rc::new(init());
             c.slots[cursor] = Box::new(rc.clone());
