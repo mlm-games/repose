@@ -230,254 +230,78 @@ impl Pipelines {
             alpha_to_coverage_enabled: false,
         };
 
-        // Rect
-        let rect_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("rect.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/rect.wgsl"))),
-        });
-        let rect_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("rect pipeline layout"),
-            bind_group_layouts: &[Some(globals_layout)],
-            immediate_size: 0,
-        });
-        let rects = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("rect pipeline"),
-            layout: Some(&rect_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &rect_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<RectInstance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            shader_location: 0,
-                            offset: 0,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 1,
-                            offset: 16,
-                            format: wgpu::VertexFormat::Float32,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 2,
-                            offset: 20,
-                            format: wgpu::VertexFormat::Uint32,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 3,
-                            offset: 24,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 4,
-                            offset: 40,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 5,
-                            offset: 56,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 6,
-                            offset: 64,
-                            format: wgpu::VertexFormat::Float32x2,
-                        },
-                    ],
-                }],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &rect_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(stencil_for_content.clone()),
-            multisample: msaa_state,
-            multiview_mask: None,
-            cache: None,
-        });
+        macro_rules! make_content_pipeline {
+            ($name:ident, $shader:literal, $inst_type:ty, $attrs:expr) => {
+                let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some(concat!($shader, ".wgsl")),
+                    source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(concat!("shaders/", $shader, ".wgsl")))),
+                });
+                let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some(concat!($shader, " pipeline layout")),
+                    bind_group_layouts: &[Some(globals_layout)],
+                    immediate_size: 0,
+                });
+                let $name = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some(concat!($shader, " pipeline")),
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader_module,
+                        entry_point: Some("vs_main"),
+                        buffers: &[wgpu::VertexBufferLayout {
+                            array_stride: std::mem::size_of::<$inst_type>() as u64,
+                            step_mode: wgpu::VertexStepMode::Instance,
+                            attributes: $attrs,
+                        }],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader_module,
+                        entry_point: Some("fs_main"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format,
+                            blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState::default(),
+                    depth_stencil: Some(stencil_for_content.clone()),
+                    multisample: msaa_state,
+                    multiview_mask: None,
+                    cache: None,
+                });
+            };
+        }
 
-        // Border
-        let border_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("border.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/border.wgsl"))),
-        });
-        let border_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("border pipeline layout"),
-                bind_group_layouts: &[Some(globals_layout)],
-                immediate_size: 0,
-            });
-        let borders = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("border pipeline"),
-            layout: Some(&border_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &border_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<BorderInstance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            shader_location: 0,
-                            offset: 0,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 1,
-                            offset: 16,
-                            format: wgpu::VertexFormat::Float32,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 2,
-                            offset: 20,
-                            format: wgpu::VertexFormat::Float32,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 3,
-                            offset: 24,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                    ],
-                }],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &border_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(stencil_for_content.clone()),
-            multisample: msaa_state,
-            multiview_mask: None,
-            cache: None,
-        });
+        let rect_attrs: &[wgpu::VertexAttribute] = &[
+            wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
+            wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32 },
+            wgpu::VertexAttribute { shader_location: 2, offset: 20, format: wgpu::VertexFormat::Uint32 },
+            wgpu::VertexAttribute { shader_location: 3, offset: 24, format: wgpu::VertexFormat::Float32x4 },
+            wgpu::VertexAttribute { shader_location: 4, offset: 40, format: wgpu::VertexFormat::Float32x4 },
+            wgpu::VertexAttribute { shader_location: 5, offset: 56, format: wgpu::VertexFormat::Float32x2 },
+            wgpu::VertexAttribute { shader_location: 6, offset: 64, format: wgpu::VertexFormat::Float32x2 },
+        ];
+        let border_attrs: &[wgpu::VertexAttribute] = &[
+            wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
+            wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32 },
+            wgpu::VertexAttribute { shader_location: 2, offset: 20, format: wgpu::VertexFormat::Float32 },
+            wgpu::VertexAttribute { shader_location: 3, offset: 24, format: wgpu::VertexFormat::Float32x4 },
+        ];
+        let ellipse_attrs: &[wgpu::VertexAttribute] = &[
+            wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
+            wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32x4 },
+        ];
+        let ellipse_border_attrs: &[wgpu::VertexAttribute] = &[
+            wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
+            wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32 },
+            wgpu::VertexAttribute { shader_location: 2, offset: 20, format: wgpu::VertexFormat::Float32x4 },
+        ];
 
-        // Ellipse
-        let ellipse_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("ellipse.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/ellipse.wgsl"))),
-        });
-        let ellipse_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("ellipse pipeline layout"),
-                bind_group_layouts: &[Some(globals_layout)],
-                immediate_size: 0,
-            });
-        let ellipses = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("ellipse pipeline"),
-            layout: Some(&ellipse_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &ellipse_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<EllipseInstance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            shader_location: 0,
-                            offset: 0,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 1,
-                            offset: 16,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                    ],
-                }],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &ellipse_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(stencil_for_content.clone()),
-            multisample: msaa_state,
-            multiview_mask: None,
-            cache: None,
-        });
-
-        // Ellipse Border
-        let ellipse_border_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("ellipse_border.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "shaders/ellipse_border.wgsl"
-            ))),
-        });
-        let ellipse_border_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("ellipse border layout"),
-                bind_group_layouts: &[Some(globals_layout)],
-                immediate_size: 0,
-            });
-        let ellipse_borders = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("ellipse border pipeline"),
-            layout: Some(&ellipse_border_layout),
-            vertex: wgpu::VertexState {
-                module: &ellipse_border_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<EllipseBorderInstance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            shader_location: 0,
-                            offset: 0,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 1,
-                            offset: 16,
-                            format: wgpu::VertexFormat::Float32,
-                        },
-                        wgpu::VertexAttribute {
-                            shader_location: 2,
-                            offset: 20,
-                            format: wgpu::VertexFormat::Float32x4,
-                        },
-                    ],
-                }],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &ellipse_border_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(stencil_for_content.clone()),
-            multisample: msaa_state,
-            multiview_mask: None,
-            cache: None,
-        });
+        make_content_pipeline!(rects, "rect", RectInstance, rect_attrs);
+        make_content_pipeline!(borders, "border", BorderInstance, border_attrs);
+        make_content_pipeline!(ellipses, "ellipse", EllipseInstance, ellipse_attrs);
+        make_content_pipeline!(ellipse_borders, "ellipse_border", EllipseBorderInstance, ellipse_border_attrs);
 
         // Text (mask)
         let text_mask_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -2407,45 +2231,26 @@ impl RenderBackend for WgpuBackend {
                 let (rects, borders, ellipses, e_borders) = pipes;
                 let (masks, colors) = glyph_pipes;
 
-                if !self.rects.is_empty() {
-                    if let Some((off, cnt)) = rects.upload(device, queue, &self.rects) {
-                        cmds.push(Cmd::Rect { off, cnt });
-                    }
-                    self.rects.clear();
+                macro_rules! flush_one {
+                    ($buf:ident, $pipe:expr, $variant:ident) => {
+                        if !self.$buf.is_empty() {
+                            if let Some((off, cnt)) = $pipe.upload(device, queue, &self.$buf) {
+                                cmds.push(Cmd::$variant { off, cnt });
+                            }
+                            self.$buf.clear();
+                        }
+                    };
                 }
-                if !self.borders.is_empty() {
-                    if let Some((off, cnt)) = borders.upload(device, queue, &self.borders) {
-                        cmds.push(Cmd::Border { off, cnt });
-                    }
-                    self.borders.clear();
-                }
-                if !self.ellipses.is_empty() {
-                    if let Some((off, cnt)) = ellipses.upload(device, queue, &self.ellipses) {
-                        cmds.push(Cmd::Ellipse { off, cnt });
-                    }
-                    self.ellipses.clear();
-                }
-                if !self.e_borders.is_empty() {
-                    if let Some((off, cnt)) = e_borders.upload(device, queue, &self.e_borders) {
-                        cmds.push(Cmd::EllipseBorder { off, cnt });
-                    }
-                    self.e_borders.clear();
-                }
-                if !self.masks.is_empty() {
-                    if let Some((off, cnt)) = masks.upload(device, queue, &self.masks) {
-                        cmds.push(Cmd::GlyphsMask { off, cnt });
-                    }
-                    self.masks.clear();
-                }
-                if !self.colors.is_empty() {
-                    if let Some((off, cnt)) = colors.upload(device, queue, &self.colors) {
-                        cmds.push(Cmd::GlyphsColor { off, cnt });
-                    }
-                    self.colors.clear();
-                }
+
+                flush_one!(rects, rects, Rect);
+                flush_one!(borders, borders, Border);
+                flush_one!(ellipses, ellipses, Ellipse);
+                flush_one!(e_borders, e_borders, EllipseBorder);
+                flush_one!(masks, masks, GlyphsMask);
+                flush_one!(colors, colors, GlyphsColor);
+
                 if !self.nv12s.is_empty() {
                     if let Some((off, cnt)) = nv12_pipe.upload(device, queue, &self.nv12s) {
-                        // NV12 instances are unused via this batch path currently
                         let _ = (off, cnt);
                     }
                     self.nv12s.clear();
@@ -3103,6 +2908,25 @@ impl RenderBackend for WgpuBackend {
                 pass.initial_scissor.3,
             );
 
+            macro_rules! draw_simple {
+                ($pipeline:expr, $ring:expr, $inst:ty, $off:ident, $n:ident) => {{
+                    rpass.set_pipeline($pipeline);
+                    let bytes = ($n as u64) * std::mem::size_of::<$inst>() as u64;
+                    rpass.set_vertex_buffer(0, $ring.buf.slice($off..$off + bytes));
+                    rpass.draw(0..6, 0..$n);
+                }};
+            }
+
+            macro_rules! draw_with_bind {
+                ($pipeline:expr, $ring:expr, $inst:ty, $bind:expr, $off:ident, $n:ident) => {{
+                    rpass.set_pipeline($pipeline);
+                    rpass.set_bind_group(1, $bind, &[]);
+                    let bytes = ($n as u64) * std::mem::size_of::<$inst>() as u64;
+                    rpass.set_vertex_buffer(0, $ring.buf.slice($off..$off + bytes));
+                    rpass.draw(0..6, 0..$n);
+                }};
+            }
+
             for cmd in pass.cmds {
                 match cmd {
                     Cmd::ClipPush {
@@ -3134,37 +2958,33 @@ impl RenderBackend for WgpuBackend {
                     }
 
                     Cmd::Rect { off, cnt: n } => {
-                        rpass.set_pipeline(&pipes.rects);
-                        let bytes = (n as u64) * std::mem::size_of::<RectInstance>() as u64;
-                        rpass.set_vertex_buffer(0, self.rects.ring.buf.slice(off..off + bytes));
-                        rpass.draw(0..6, 0..n);
+                        draw_simple!(&pipes.rects, self.rects.ring, RectInstance, off, n);
                     }
 
                     Cmd::Border { off, cnt: n } => {
-                        rpass.set_pipeline(&pipes.borders);
-                        let bytes = (n as u64) * std::mem::size_of::<BorderInstance>() as u64;
-                        rpass.set_vertex_buffer(0, self.borders.ring.buf.slice(off..off + bytes));
-                        rpass.draw(0..6, 0..n);
+                        draw_simple!(&pipes.borders, self.borders.ring, BorderInstance, off, n);
                     }
 
                     Cmd::GlyphsMask { off, cnt: n } => {
-                        rpass.set_pipeline(&pipes.text_mask);
-                        rpass.set_bind_group(1, &bind_mask, &[]);
-                        let bytes = (n as u64) * std::mem::size_of::<GlyphInstance>() as u64;
-                        rpass
-                            .set_vertex_buffer(0, self.glyph_mask.ring.buf.slice(off..off + bytes));
-                        rpass.draw(0..6, 0..n);
+                        draw_with_bind!(
+                            &pipes.text_mask,
+                            self.glyph_mask.ring,
+                            GlyphInstance,
+                            &bind_mask,
+                            off,
+                            n
+                        );
                     }
 
                     Cmd::GlyphsColor { off, cnt: n } => {
-                        rpass.set_pipeline(&pipes.text_color);
-                        rpass.set_bind_group(1, &bind_color, &[]);
-                        let bytes = (n as u64) * std::mem::size_of::<GlyphInstance>() as u64;
-                        rpass.set_vertex_buffer(
-                            0,
-                            self.glyph_color.ring.buf.slice(off..off + bytes),
+                        draw_with_bind!(
+                            &pipes.text_color,
+                            self.glyph_color.ring,
+                            GlyphInstance,
+                            &bind_color,
+                            off,
+                            n
                         );
-                        rpass.draw(0..6, 0..n);
                     }
 
                     Cmd::ImageRgba {
@@ -3173,14 +2993,14 @@ impl RenderBackend for WgpuBackend {
                         handle,
                     } => {
                         if let Some(ImageTex::Rgba { bind, .. }) = self.images.get(&handle) {
-                            rpass.set_pipeline(&pipes.image_rgba);
-                            rpass.set_bind_group(1, bind, &[]);
-                            let bytes = (n as u64) * std::mem::size_of::<GlyphInstance>() as u64;
-                            rpass.set_vertex_buffer(
-                                0,
-                                self.glyph_color.ring.buf.slice(off..off + bytes),
+                            draw_with_bind!(
+                                &pipes.image_rgba,
+                                self.glyph_color.ring,
+                                GlyphInstance,
+                                bind,
+                                off,
+                                n
                             );
-                            rpass.draw(0..6, 0..n);
                         }
                     }
 
@@ -3190,30 +3010,29 @@ impl RenderBackend for WgpuBackend {
                         handle,
                     } => {
                         if let Some(ImageTex::Nv12 { bind, .. }) = self.images.get(&handle) {
-                            rpass.set_pipeline(&pipes.image_nv12);
-                            rpass.set_bind_group(1, bind, &[]);
-                            let bytes = (n as u64) * std::mem::size_of::<Nv12Instance>() as u64;
-                            rpass.set_vertex_buffer(0, self.nv12.ring.buf.slice(off..off + bytes));
-                            rpass.draw(0..6, 0..n);
+                            draw_with_bind!(
+                                &pipes.image_nv12,
+                                self.nv12.ring,
+                                Nv12Instance,
+                                bind,
+                                off,
+                                n
+                            );
                         }
                     }
 
                     Cmd::Ellipse { off, cnt: n } => {
-                        rpass.set_pipeline(&pipes.ellipses);
-                        let bytes = (n as u64) * std::mem::size_of::<EllipseInstance>() as u64;
-                        rpass.set_vertex_buffer(0, self.ellipses.ring.buf.slice(off..off + bytes));
-                        rpass.draw(0..6, 0..n);
+                        draw_simple!(&pipes.ellipses, self.ellipses.ring, EllipseInstance, off, n);
                     }
 
                     Cmd::EllipseBorder { off, cnt: n } => {
-                        rpass.set_pipeline(&pipes.ellipse_borders);
-                        let bytes =
-                            (n as u64) * std::mem::size_of::<EllipseBorderInstance>() as u64;
-                        rpass.set_vertex_buffer(
-                            0,
-                            self.ellipse_borders.ring.buf.slice(off..off + bytes),
+                        draw_simple!(
+                            &pipes.ellipse_borders,
+                            self.ellipse_borders.ring,
+                            EllipseBorderInstance,
+                            off,
+                            n
                         );
-                        rpass.draw(0..6, 0..n);
                     }
 
                     Cmd::PushTransform(_) => {}
@@ -3225,14 +3044,14 @@ impl RenderBackend for WgpuBackend {
                         alpha: _,
                     } => {
                         if let Some(lt) = self.layer_pool.get(&layer_id).cloned() {
-                            rpass.set_pipeline(&pipes.image_rgba);
-                            rpass.set_bind_group(1, &lt.bind, &[]);
-                            let bytes = (n as u64) * std::mem::size_of::<GlyphInstance>() as u64;
-                            rpass.set_vertex_buffer(
-                                0,
-                                self.glyph_color.ring.buf.slice(off..off + bytes),
+                            draw_with_bind!(
+                                &pipes.image_rgba,
+                                self.glyph_color.ring,
+                                GlyphInstance,
+                                &lt.bind,
+                                off,
+                                n
                             );
-                            rpass.draw(0..6, 0..n);
                         }
                     }
                     Cmd::CompositeShadow {
@@ -3241,11 +3060,14 @@ impl RenderBackend for WgpuBackend {
                         layer_id,
                     } => {
                         if let Some(lt) = self.layer_pool.get(&layer_id).cloned() {
-                            rpass.set_pipeline(&pipes.blur);
-                            rpass.set_bind_group(1, &lt.bind, &[]);
-                            let bytes = (n as u64) * std::mem::size_of::<BlurInstance>() as u64;
-                            rpass.set_vertex_buffer(0, self.blur_ring.buf.slice(off..off + bytes));
-                            rpass.draw(0..6, 0..n);
+                            draw_with_bind!(
+                                &pipes.blur,
+                                self.blur_ring,
+                                BlurInstance,
+                                &lt.bind,
+                                off,
+                                n
+                            );
                         }
                     }
                 }

@@ -89,35 +89,35 @@ pub fn FilledIconButton(icon: View, on_click: impl Fn() + 'static) -> View {
     .child(icon)
 }
 
-/// M3 Filled Button - prominent action button with primary color fill.
-pub fn FilledButton(
+fn button_impl(
     modifier: Modifier,
     on_click: impl Fn() + 'static,
     content: impl FnOnce() -> View,
+    content_color: Color,
+    bg: Option<Color>,
+    state_colors: StateColors,
+    state_elevation: Option<StateElevation>,
+    border: Option<(f32, Color, f32)>,
+    padding_left: f32,
+    padding_right: f32,
 ) -> View {
-    let th = theme();
-    let content = with_content_color(th.on_primary, content);
-    let bg = th.primary;
-    Box(Modifier::new()
-        .height(40.0)
-        .min_width(48.0)
-        .background(bg)
-        .state_colors(StateColors {
-            default: Color::TRANSPARENT,
-            hovered: th.on_primary.with_alpha_f32(0.08),
-            pressed: th.on_primary.with_alpha_f32(0.12),
-            disabled: th.on_surface.with_alpha_f32(0.12),
-        })
-        .state_elevation(StateElevation {
-            default: 0.0,
-            hovered: 1.0,
-            pressed: 8.0,
-            disabled: 0.0,
-        })
+    let content = with_content_color(content_color, content);
+    let mut m = Modifier::new().height(40.0).min_width(48.0);
+    if let Some(bg) = bg {
+        m = m.background(bg);
+    }
+    m = m.state_colors(state_colors);
+    if let Some(se) = state_elevation {
+        m = m.state_elevation(se);
+    }
+    if let Some((w, c, r)) = border {
+        m = m.border(w, c, r);
+    }
+    m = m
         .clip_rounded(20.0)
         .padding_values(PaddingValues {
-            left: 24.0,
-            right: 24.0,
+            left: padding_left,
+            right: padding_right,
             top: 0.0,
             bottom: 0.0,
         })
@@ -125,8 +125,39 @@ pub fn FilledButton(
         .justify_content(JustifyContent::Center)
         .clickable()
         .on_pointer_down(move |_| on_click())
-        .then(modifier))
-    .child(content)
+        .then(modifier);
+    Box(m).child(content)
+}
+
+/// M3 Filled Button - prominent action button with primary color fill.
+pub fn FilledButton(
+    modifier: Modifier,
+    on_click: impl Fn() + 'static,
+    content: impl FnOnce() -> View,
+) -> View {
+    let th = theme();
+    button_impl(
+        modifier,
+        on_click,
+        content,
+        th.on_primary,
+        Some(th.primary),
+        StateColors {
+            default: Color::TRANSPARENT,
+            hovered: th.on_primary.with_alpha_f32(0.08),
+            pressed: th.on_primary.with_alpha_f32(0.12),
+            disabled: th.on_surface.with_alpha_f32(0.12),
+        },
+        Some(StateElevation {
+            default: 0.0,
+            hovered: 1.0,
+            pressed: 8.0,
+            disabled: 0.0,
+        }),
+        None,
+        24.0,
+        24.0,
+    )
 }
 
 /// M3 Filled Tonal Button - uses secondary container colors.
@@ -136,37 +167,28 @@ pub fn FilledTonalButton(
     content: impl FnOnce() -> View,
 ) -> View {
     let th = theme();
-    let content = with_content_color(th.on_secondary_container, content);
-    let bg = th.secondary_container;
-    Box(Modifier::new()
-        .height(40.0)
-        .min_width(48.0)
-        .background(bg)
-        .state_colors(StateColors {
+    button_impl(
+        modifier,
+        on_click,
+        content,
+        th.on_secondary_container,
+        Some(th.secondary_container),
+        StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_secondary_container.with_alpha_f32(0.08),
             pressed: th.on_secondary_container.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
-        })
-        .state_elevation(StateElevation {
+        },
+        Some(StateElevation {
             default: 0.0,
             hovered: 1.0,
             pressed: 8.0,
             disabled: 0.0,
-        })
-        .clip_rounded(20.0)
-        .padding_values(PaddingValues {
-            left: 24.0,
-            right: 24.0,
-            top: 0.0,
-            bottom: 0.0,
-        })
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
-        .clickable()
-        .on_pointer_down(move |_| on_click())
-        .then(modifier))
-    .child(content)
+        }),
+        None,
+        24.0,
+        24.0,
+    )
 }
 
 /// M3 Outlined Button - button with an outline border and no fill.
@@ -176,31 +198,23 @@ pub fn OutlinedButton(
     content: impl FnOnce() -> View,
 ) -> View {
     let th = theme();
-    let content = with_content_color(th.on_surface, content);
-    let _bg = Color::TRANSPARENT;
-    Box(Modifier::new()
-        .height(40.0)
-        .min_width(48.0)
-        .state_colors(StateColors {
+    button_impl(
+        modifier,
+        on_click,
+        content,
+        th.on_surface,
+        None,
+        StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
-        })
-        .border(1.0, th.outline_variant, 20.0)
-        .clip_rounded(20.0)
-        .padding_values(PaddingValues {
-            left: 24.0,
-            right: 24.0,
-            top: 0.0,
-            bottom: 0.0,
-        })
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
-        .clickable()
-        .on_pointer_down(move |_| on_click())
-        .then(modifier))
-    .child(content)
+        },
+        None,
+        Some((1.0, th.outline_variant, 20.0)),
+        24.0,
+        24.0,
+    )
 }
 
 /// M3 Text Button - a low-emphasis button.
@@ -210,30 +224,23 @@ pub fn TextButton(
     content: impl FnOnce() -> View,
 ) -> View {
     let th = theme();
-    let content = with_content_color(th.on_surface, content);
-    let _bg = Color::TRANSPARENT;
-    Box(Modifier::new()
-        .height(40.0)
-        .min_width(48.0)
-        .state_colors(StateColors {
+    button_impl(
+        modifier,
+        on_click,
+        content,
+        th.on_surface,
+        None,
+        StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
-        })
-        .clip_rounded(20.0)
-        .padding_values(PaddingValues {
-            left: 12.0,
-            right: 12.0,
-            top: 0.0,
-            bottom: 0.0,
-        })
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
-        .clickable()
-        .on_pointer_down(move |_| on_click())
-        .then(modifier))
-    .child(content)
+        },
+        None,
+        None,
+        12.0,
+        12.0,
+    )
 }
 
 /// M3 Elevated Button - uses `surface_container_low` background with elevation.
@@ -243,91 +250,63 @@ pub fn ElevatedButton(
     content: impl FnOnce() -> View,
 ) -> View {
     let th = theme();
-    let content = with_content_color(th.primary, content);
-    let bg = th.surface_container_low;
-    Box(Modifier::new()
-        .height(40.0)
-        .min_width(48.0)
-        .background(bg)
-        .state_colors(StateColors {
+    button_impl(
+        modifier,
+        on_click,
+        content,
+        th.primary,
+        Some(th.surface_container_low),
+        StateColors {
             default: Color::TRANSPARENT,
             hovered: th.primary.with_alpha_f32(0.08),
             pressed: th.primary.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
-        })
-        .state_elevation(StateElevation {
+        },
+        Some(StateElevation {
             default: th.elevation.level1,
             hovered: th.elevation.level2,
             pressed: th.elevation.level3,
             disabled: 0.0,
+        }),
+        None,
+        24.0,
+        24.0,
+    )
+}
+
+fn fab_impl(icon: View, on_click: impl Fn() + 'static, size: f32) -> View {
+    let th = theme();
+    Box(Modifier::new()
+        .size(size, size)
+        .background(th.primary_container)
+        .state_colors(StateColors {
+            default: Color::TRANSPARENT,
+            hovered: th.on_primary_container.with_alpha_f32(0.08),
+            pressed: th.on_primary_container.with_alpha_f32(0.12),
+            disabled: th.on_surface.with_alpha_f32(0.12),
         })
-        .clip_rounded(20.0)
-        .padding_values(PaddingValues {
-            left: 24.0,
-            right: 24.0,
-            top: 0.0,
-            bottom: 0.0,
+        .state_elevation(StateElevation {
+            default: 6.0,
+            hovered: 8.0,
+            pressed: 12.0,
+            disabled: 0.0,
         })
+        .clip_rounded(28.0)
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
         .clickable()
-        .on_pointer_down(move |_| on_click())
-        .then(modifier))
-    .child(content)
+        .on_pointer_down(move |_| on_click()))
+    .child(icon)
 }
 
 /// M3 Floating Action Button (regular, 56dp).
 pub fn FAB(icon: View, on_click: impl Fn() + 'static) -> View {
-    let th = theme();
-    let bg = th.primary_container;
-    Box(Modifier::new()
-        .size(56.0, 56.0)
-        .background(bg)
-        .state_colors(StateColors {
-            default: Color::TRANSPARENT,
-            hovered: th.on_primary_container.with_alpha_f32(0.08),
-            pressed: th.on_primary_container.with_alpha_f32(0.12),
-            disabled: th.on_surface.with_alpha_f32(0.12),
-        })
-        .state_elevation(StateElevation {
-            default: 6.0,
-            hovered: 8.0,
-            pressed: 12.0,
-            disabled: 0.0,
-        })
-        .clip_rounded(28.0)
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
-        .clickable()
-        .on_pointer_down(move |_| on_click()))
-    .child(icon)
+    fab_impl(icon, on_click, 56.0)
 }
 
 /// M3 Large FAB (96dp).
 pub fn LargeFAB(icon: View, on_click: impl Fn() + 'static) -> View {
-    let th = theme();
-    let bg = th.primary_container;
-    Box(Modifier::new()
-        .size(96.0, 96.0)
-        .background(bg)
-        .state_colors(StateColors {
-            default: Color::TRANSPARENT,
-            hovered: th.on_primary_container.with_alpha_f32(0.08),
-            pressed: th.on_primary_container.with_alpha_f32(0.12),
-            disabled: th.on_surface.with_alpha_f32(0.12),
-        })
-        .state_elevation(StateElevation {
-            default: 6.0,
-            hovered: 8.0,
-            pressed: 12.0,
-            disabled: 0.0,
-        })
-        .clip_rounded(28.0)
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
-        .clickable()
-        .on_pointer_down(move |_| on_click()))
-    .child(icon)
+    fab_impl(icon, on_click, 96.0)
 }
 
 /// M3 Extended FAB - FAB with icon + label.
