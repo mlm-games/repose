@@ -2033,11 +2033,13 @@ impl LayoutEngine {
 
                             let th = locals::theme();
                             let selection = mul_alpha_color(th.focus, 85.0 / 255.0);
+                            let vis_x = sx.max(0.0);
+                            let vis_ex = ex.max(0.0);
                             scene.nodes.push(SceneNode::Rect {
                                 rect: repose_core::Rect {
-                                    x: inner.x + sx.max(0.0),
+                                    x: inner.x + vis_x,
                                     y: inner.y,
-                                    w: (ex - sx).max(0.0),
+                                    w: (vis_ex - vis_x).max(0.0),
                                     h: inner.h,
                                 },
                                 brush: Brush::Solid(selection),
