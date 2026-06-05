@@ -58,7 +58,7 @@ impl WebOptions {
         Self {
             canvas_id,
             fullscreen: true,
-            auto_root_scroll: true,
+            auto_root_scroll: false,
             continuous_redraw: true,
         }
     }
