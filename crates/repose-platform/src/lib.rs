@@ -1204,6 +1204,21 @@ pub fn run_desktop_app_with_snackbar(
 
                             self.sched.focused = Some(next);
 
+                            // For when a TextField gains focus via keyboard
+                            let tf_state_key = f
+                                .hit_regions
+                                .iter()
+                                .find(|h| h.id == next)
+                                .and_then(|h| h.tf_state_key);
+                            if let Some(key) = tf_state_key {
+                                self.textfield_states.entry(key).or_insert_with(|| {
+                                    Rc::new(RefCell::new(repose_ui::TextFieldState::new()))
+                                });
+                                if let Some(state_rc) = self.textfield_states.get(&key) {
+                                    state_rc.borrow_mut().reset_caret_blink();
+                                }
+                            }
+
                             // IME only for TextField
                             if let Some(win) = &self.window {
                                 let is_textfield = f
@@ -1222,8 +1237,23 @@ pub fn run_desktop_app_with_snackbar(
                         if let Some(active) = self.key_pressed_active.take() {
                             self.pressed_ids.remove(&active);
                         }
+                        let tf_state_key = f
+                            .hit_regions
+                            .iter()
+                            .find(|h| h.id == next)
+                            .and_then(|h| h.tf_state_key);
+                        if let Some(key) = tf_state_key {
+                            self.textfield_states.entry(key).or_insert_with(|| {
+                                Rc::new(RefCell::new(repose_ui::TextFieldState::new()))
+                            });
+                            if let Some(state_rc) = self.textfield_states.get(&key) {
+                                state_rc.borrow_mut().reset_caret_blink();
+                            }
+                        }
                         if let Some(win) = &self.window {
-                            let is_textfield = f.semantics_nodes.iter()
+                            let is_textfield = f
+                                .semantics_nodes
+                                .iter()
                                 .any(|n| n.id == next && n.role == Role::TextField);
                             rc_web::set_ime_for_textfield(win, is_textfield);
                         }
@@ -1628,9 +1658,22 @@ pub fn run_desktop_app_with_snackbar(
                                     if let Some(f) = &self.frame_cache
                                         && let Some(hit) =
                                             f.hit_regions.iter().find(|h| h.id == active_id)
-                                        && let Some(cb) = &hit.on_click
                                     {
-                                        cb();
+                                        if let Some(cb) = &hit.on_click {
+                                            cb();
+                                        } else if let Some(cb) = &hit.on_pointer_down {
+                                            let pe = repose_core::input::PointerEvent {
+                                                id: repose_core::input::PointerId(0),
+                                                kind: repose_core::input::PointerKind::Mouse,
+                                                event: repose_core::input::PointerEventKind::Down(
+                                                    repose_core::input::PointerButton::Primary,
+                                                ),
+                                                position: repose_core::Vec2 { x: 0.0, y: 0.0 },
+                                                pressure: 1.0,
+                                                modifiers: self.modifiers,
+                                            };
+                                            cb(pe);
+                                        }
                                         if let Some(node) =
                                             f.semantics_nodes.iter().find(|n| n.id == active_id)
                                         {
@@ -1741,6 +1784,23 @@ pub fn run_desktop_app_with_snackbar(
                     let scale = win.scale_factor() as f32;
                     if let Some(backend) = self.backend.as_mut() {
                         backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
+                    }
+
+                    // Initialize TextFieldState for any focused TextField that
+                    // doesn't have one yet (e.g. after FocusRequester::request_focus)
+                    if let Some(fid) = self.sched.focused {
+                        if let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid)
+                            && let Some(key) = hit.tf_state_key
+                            && !self.textfield_states.contains_key(&key)
+                        {
+                            self.textfield_states
+                                .entry(key)
+                                .or_insert_with(|| {
+                                    Rc::new(RefCell::new(repose_ui::TextFieldState::new()))
+                                })
+                                .borrow_mut()
+                                .reset_caret_blink();
+                        }
                     }
 
                     self.frame_cache = Some(frame);
