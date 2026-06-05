@@ -118,14 +118,6 @@ pub fn set_close_to_tray(enabled: bool) {
     CLOSE_TO_TRAY.store(enabled, Ordering::Relaxed);
 }
 
-#[derive(Clone)]
-struct DragSession {
-    source_id: u64,
-    payload: repose_core::dnd::DragPayload,
-    start_px: (f32, f32),
-    over_id: Option<u64>,
-}
-
 /// Compose a single frame with density and text-scale applied, returning Frame.
 pub fn compose_frame<F>(
     sched: &mut Scheduler,
@@ -262,7 +254,7 @@ pub fn run_desktop_app_with_snackbar(
 
         // Drag & Drop (internal)
         mouse_down_pos_px: Option<(f32, f32)>,
-        drag: Option<DragSession>,
+        drag: Option<rc::DragSession>,
 
         // Files
         pending_dropped_files: Vec<std::path::PathBuf>,
@@ -423,40 +415,7 @@ pub fn run_desktop_app_with_snackbar(
             let Some(backend) = &mut self.backend else {
                 return;
             };
-
-            for cmd in self.render.drain() {
-                match cmd {
-                    RenderCommand::SetImageEncoded {
-                        handle,
-                        bytes,
-                        srgb,
-                    } => {
-                        let _ = backend.set_image_from_bytes(handle, &bytes, srgb);
-                    }
-                    RenderCommand::SetImageRgba8 {
-                        handle,
-                        w,
-                        h,
-                        rgba,
-                        srgb,
-                    } => {
-                        let _ = backend.set_image_rgba8(handle, w, h, &rgba, srgb);
-                    }
-                    RenderCommand::SetImageNv12 {
-                        handle,
-                        w,
-                        h,
-                        y,
-                        uv,
-                        full_range,
-                    } => {
-                        let _ = backend.set_image_nv12(handle, w, h, &y, &uv, full_range);
-                    }
-                    RenderCommand::RemoveImage { handle } => {
-                        backend.remove_image(handle);
-                    }
-                }
-            }
+            rc::process_render_commands(backend, self.render.drain());
         }
 
         fn reset_pointer_state(&mut self) {
@@ -2016,51 +1975,7 @@ pub fn run_desktop_app_with_snackbar(
             let Some(session) = self.drag.as_mut() else {
                 return;
             };
-
-            let new_over = rc::dnd_target_id_at(f, pos);
-
-            if new_over != session.over_id {
-                if let Some(prev) = session.over_id
-                    && let Some(hit) = f.hit_regions.iter().find(|h| h.id == prev)
-                    && let Some(cb) = &hit.on_drag_leave
-                {
-                    cb(repose_core::dnd::DragOver {
-                        source_id: session.source_id,
-                        target_id: prev,
-                        position: pos,
-                        modifiers: self.modifiers,
-                        payload: session.payload.clone(),
-                    });
-                }
-
-                if let Some(now) = new_over
-                    && let Some(hit) = f.hit_regions.iter().find(|h| h.id == now)
-                    && let Some(cb) = &hit.on_drag_enter
-                {
-                    cb(repose_core::dnd::DragOver {
-                        source_id: session.source_id,
-                        target_id: now,
-                        position: pos,
-                        modifiers: self.modifiers,
-                        payload: session.payload.clone(),
-                    });
-                }
-
-                session.over_id = new_over;
-            }
-
-            if let Some(over) = session.over_id
-                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == over)
-                && let Some(cb) = &hit.on_drag_over
-            {
-                cb(repose_core::dnd::DragOver {
-                    source_id: session.source_id,
-                    target_id: over,
-                    position: pos,
-                    modifiers: self.modifiers,
-                    payload: session.payload.clone(),
-                });
-            }
+            rc::dnd_update_over(f, session, self.modifiers, pos);
         }
 
         fn dnd_try_begin(&mut self, pos: Vec2) -> bool {
@@ -2105,7 +2020,7 @@ pub fn run_desktop_app_with_snackbar(
                 return false;
             };
 
-            self.drag = Some(DragSession {
+            self.drag = Some(rc::DragSession {
                 source_id: cid,
                 payload,
                 start_px: (sx, sy),
@@ -2131,31 +2046,7 @@ pub fn run_desktop_app_with_snackbar(
                 return;
             };
 
-            let mut accepted = false;
-
-            if accept_if_possible {
-                let drop_target = rc::dnd_target_id_at(f, pos);
-                if let Some(tid) = drop_target
-                    && let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid)
-                    && let Some(cb) = &hit.on_drop
-                {
-                    accepted = cb(repose_core::dnd::DropEvent {
-                        source_id: session.source_id,
-                        target_id: tid,
-                        position: pos,
-                        modifiers: self.modifiers,
-                        payload: session.payload.clone(),
-                    });
-                }
-            }
-
-            // Notify source end
-            if let Some(source_hit) = f.hit_regions.iter().find(|h| h.id == session.source_id)
-                && let Some(cb) = &source_hit.on_drag_end
-            {
-                cb(repose_core::dnd::DragEnd { accepted });
-            }
-
+            let _accepted = rc::dnd_finish(f, session, self.modifiers, pos, accept_if_possible);
             self.capture_id = None;
             self.mouse_down_pos_px = None;
             self.request_redraw();

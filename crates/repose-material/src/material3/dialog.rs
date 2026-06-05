@@ -162,16 +162,6 @@ pub fn AlertDialog(
         state,
         overlay,
         Modifier::new(),
-        Column(Modifier::new()).child((
-            title,
-            Box(Modifier::new().size(1.0, 16.0)),
-            text,
-            Spacer(),
-            Row(Modifier::new()).child((
-                dismiss_button.unwrap_or(Box(Modifier::new())),
-                Spacer(),
-                confirm_button,
-            )),
-        )),
+        super::alert_dialog_body(title, text, confirm_button, dismiss_button),
     )
 }

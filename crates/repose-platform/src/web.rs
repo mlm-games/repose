@@ -1,7 +1,7 @@
 //! Web runner (wasm32) using winit + repose-render-wgpu (async init).
 use crate::common as rc;
 use crate::common_web as rc_web;
-use crate::render::{RenderCommand, RenderContext};
+use crate::render::RenderContext;
 use crate::*;
 
 use std::cell::RefCell;
@@ -118,13 +118,6 @@ pub fn run_web_app_with_snackbar(
 }
 
 #[derive(Clone)]
-struct DragSession {
-    source_id: u64,
-    payload: repose_core::dnd::DragPayload,
-    start_px: (f32, f32),
-    over_id: Option<u64>,
-}
-
 struct WebDropListeners {
     _drag_over: Closure<dyn FnMut(DragEvent)>,
     _drop: Closure<dyn FnMut(DragEvent)>,
@@ -149,7 +142,7 @@ struct App {
     pressed_ids: HashSet<u64>,
 
     mouse_down_pos_px: Option<(f32, f32)>,
-    drag: Option<DragSession>,
+    drag: Option<rc::DragSession>,
 
     // touch click-cancel after scroll
     touch_scrolled: bool,
@@ -523,45 +516,11 @@ impl App {
         if cmds.is_empty() {
             return;
         }
-
         let mut backend_ref = self.backend.borrow_mut();
         let Some(backend) = backend_ref.as_mut() else {
             return;
         };
-
-        for cmd in cmds {
-            match cmd {
-                RenderCommand::SetImageEncoded {
-                    handle,
-                    bytes,
-                    srgb,
-                } => {
-                    let _ = backend.set_image_from_bytes(handle, &bytes, srgb);
-                }
-                RenderCommand::SetImageRgba8 {
-                    handle,
-                    w,
-                    h,
-                    rgba,
-                    srgb,
-                } => {
-                    let _ = backend.set_image_rgba8(handle, w, h, &rgba, srgb);
-                }
-                RenderCommand::SetImageNv12 {
-                    handle,
-                    w,
-                    h,
-                    y,
-                    uv,
-                    full_range,
-                } => {
-                    let _ = backend.set_image_nv12(handle, w, h, &y, &uv, full_range);
-                }
-                RenderCommand::RemoveImage { handle } => {
-                    backend.remove_image(handle);
-                }
-            }
-        }
+        rc::process_render_commands(backend, cmds);
     }
     fn dnd_slop_px(&self, window: &Window) -> f32 {
         rc::touch_slop_px(self.scale(window))
@@ -574,54 +533,7 @@ impl App {
         let Some(session) = self.drag.as_mut() else {
             return;
         };
-
-        let new_over = rc::dnd_target_id_at(f, pos);
-
-        if new_over != session.over_id {
-            if let Some(prev) = session.over_id {
-                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == prev) {
-                    if let Some(cb) = &hit.on_drag_leave {
-                        cb(repose_core::dnd::DragOver {
-                            source_id: session.source_id,
-                            target_id: prev,
-                            position: pos,
-                            modifiers: self.modifiers,
-                            payload: session.payload.clone(),
-                        });
-                    }
-                }
-            }
-
-            if let Some(now) = new_over {
-                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == now) {
-                    if let Some(cb) = &hit.on_drag_enter {
-                        cb(repose_core::dnd::DragOver {
-                            source_id: session.source_id,
-                            target_id: now,
-                            position: pos,
-                            modifiers: self.modifiers,
-                            payload: session.payload.clone(),
-                        });
-                    }
-                }
-            }
-
-            session.over_id = new_over;
-        }
-
-        if let Some(over) = session.over_id {
-            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == over) {
-                if let Some(cb) = &hit.on_drag_over {
-                    cb(repose_core::dnd::DragOver {
-                        source_id: session.source_id,
-                        target_id: over,
-                        position: pos,
-                        modifiers: self.modifiers,
-                        payload: session.payload.clone(),
-                    });
-                }
-            }
-        }
+        rc::dnd_update_over(f, session, self.modifiers, pos);
     }
 
     fn dnd_try_begin_mouse(&mut self, window: &Window, pos: Vec2) -> bool {
@@ -665,7 +577,7 @@ impl App {
             return false;
         };
 
-        self.drag = Some(DragSession {
+        self.drag = Some(rc::DragSession {
             source_id: cid,
             payload,
             start_px: (sx, sy),
@@ -689,30 +601,7 @@ impl App {
             return;
         };
 
-        let mut accepted = false;
-        if accept_if_possible {
-            let drop_target = rc::dnd_target_id_at(f, pos);
-            if let Some(tid) = drop_target {
-                if let Some(i) = rc::hit_index_by_id(f, tid) {
-                    if let Some(cb) = &f.hit_regions[i].on_drop {
-                        accepted = cb(repose_core::dnd::DropEvent {
-                            source_id: session.source_id,
-                            target_id: tid,
-                            position: pos,
-                            modifiers: self.modifiers,
-                            payload: session.payload.clone(),
-                        });
-                    }
-                }
-            }
-        }
-
-        if let Some(i) = rc::hit_index_by_id(f, session.source_id) {
-            if let Some(cb) = &f.hit_regions[i].on_drag_end {
-                cb(repose_core::dnd::DragEnd { accepted });
-            }
-        }
-
+        let _accepted = rc::dnd_finish(f, session, self.modifiers, pos, accept_if_possible);
         self.capture_id = None;
         self.mouse_down_pos_px = None;
         self.request_redraw();

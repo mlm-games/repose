@@ -20,6 +20,25 @@ use repose_ui::{
     overlay::snackbar_is_dismissing,
 };
 
+pub(crate) fn alert_dialog_body(
+    title: View,
+    text: View,
+    confirm_button: View,
+    dismiss_button: Option<View>,
+) -> View {
+    Column(Modifier::new()).child((
+        title,
+        Box(Modifier::new().size(1.0, 16.0)),
+        text,
+        Spacer(),
+        Row(Modifier::new()).child((
+            dismiss_button.unwrap_or(Box(Modifier::new())),
+            Spacer(),
+            confirm_button,
+        )),
+    ))
+}
+
 pub fn AlertDialog(
     visible: bool,
     on_dismiss: impl Fn() + 'static,
@@ -46,17 +65,7 @@ pub fn AlertDialog(
                 .background(th.surface_container_high)
                 .clip_rounded(th.shapes.extra_large)
                 .padding(24.0),
-            Column(Modifier::new()).child((
-                title,
-                Box(Modifier::new().size(1.0, 16.0)),
-                text,
-                Spacer(),
-                Row(Modifier::new()).child((
-                    dismiss_button.unwrap_or(Box(Modifier::new())),
-                    Spacer(),
-                    confirm_button,
-                )),
-            )),
+            alert_dialog_body(title, text, confirm_button, dismiss_button),
         ),
     ))
 }
