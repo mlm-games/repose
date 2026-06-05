@@ -11,4 +11,4 @@ rustc-hash = { workspace = true }
 smallvec = { workspace = true }
 slotmap = { workspace = true }
 log = { workspace = true }
-ahash = { workspace = true }
+rapidhash = { workspace = true }

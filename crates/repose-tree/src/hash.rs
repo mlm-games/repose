@@ -1,6 +1,6 @@
 //! Content hashing for change detection.
 
-use ahash::AHasher;
+use rapidhash::fast::RapidHasher;
 use repose_core::{
     Brush, Color, Modifier, TextOverflow, View, ViewKind,
     animation::{AnimationSpec, Easing},
@@ -10,7 +10,7 @@ use std::hash::{Hash, Hasher};
 /// Compute a content hash for a View's immediate properties.
 /// This does NOT include children - that's handled separately.
 pub fn hash_view_content(view: &View) -> u64 {
-    let mut hasher = AHasher::default();
+    let mut hasher = RapidHasher::default();
 
     // Hash the kind
     hash_view_kind(&view.kind, &mut hasher);
@@ -29,7 +29,7 @@ pub fn hash_view_content(view: &View) -> u64 {
 /// Compute a hash that includes the subtree structure.
 /// This combines the node's content hash with its children's subtree hashes.
 pub fn hash_subtree(content_hash: u64, children_hashes: &[u64]) -> u64 {
-    let mut hasher = AHasher::default();
+    let mut hasher = RapidHasher::default();
     content_hash.hash(&mut hasher);
     children_hashes.len().hash(&mut hasher);
     for &h in children_hashes {

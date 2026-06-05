@@ -1,4 +1,4 @@
-use ahash::{AHashMap, AHasher};
+use rapidhash::{HashMapExt, RapidHashMap, fast::RapidHasher};
 use cosmic_text::{
     Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, SwashCache, SwashContent,
 };
@@ -32,14 +32,14 @@ fn metrics_cache() -> &'static Mutex<Lru<(u64, u32, u64), TextMetrics>> {
 }
 
 struct Lru<K, V> {
-    map: AHashMap<K, V>,
+    map: RapidHashMap<K, V>,
     order: VecDeque<K>,
     cap: usize,
 }
 impl<K: std::hash::Hash + Eq + Clone, V> Lru<K, V> {
     fn new(cap: usize) -> Self {
         Self {
-            map: AHashMap::new(),
+            map: RapidHashMap::new(),
             order: VecDeque::new(),
             cap,
         }
@@ -97,7 +97,7 @@ fn ellip_cache() -> &'static Mutex<Lru<(u64, u32, u32), String>> {
 
 fn fast_hash(s: &str) -> u64 {
     use std::hash::{Hash, Hasher};
-    let mut h = AHasher::default();
+    let mut h = RapidHasher::default();
     s.hash(&mut h);
     h.finish()
 }
@@ -183,7 +183,7 @@ pub fn register_font_data(bytes: &'static [u8]) {
 
 // Utility: stable u64 key from a CacheKey using its Hash impl
 fn key_from_cachekey(k: &CacheKey) -> GlyphKey {
-    let mut h = AHasher::default();
+    let mut h = RapidHasher::default();
     k.hash(&mut h);
     GlyphKey(h.finish())
 }
