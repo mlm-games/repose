@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 
 use crate::effects::Dispose;
@@ -16,6 +16,7 @@ struct ScopeInner {
     disposers: RefCell<Vec<Box<dyn FnOnce()>>>,
     children: RefCell<Vec<Scope>>,
     memo_cache: RefCell<std::collections::HashMap<String, Box<dyn Any>>>,
+    disposed: Cell<bool>,
 }
 
 impl Default for Scope {
@@ -31,6 +32,7 @@ impl Scope {
                 disposers: RefCell::new(Vec::new()),
                 children: RefCell::new(Vec::new()),
                 memo_cache: RefCell::new(std::collections::HashMap::new()),
+                disposed: Cell::new(false),
             }),
         }
     }
@@ -56,6 +58,9 @@ impl Scope {
     }
 
     pub fn dispose(self) {
+        if self.inner.disposed.replace(true) {
+            return; // already disposed (or being dropped)
+        }
         // Dispose children first
         let children = std::mem::take(&mut *self.inner.children.borrow_mut());
         for child in children {
@@ -106,6 +111,9 @@ where
 
 impl Drop for ScopeInner {
     fn drop(&mut self) {
+        if self.disposed.replace(true) {
+            return; // already disposed via explicit dispose() call
+        }
         let children = std::mem::take(&mut *self.children.borrow_mut());
         for child in children {
             drop(child);

@@ -31,9 +31,6 @@ pub struct ViewTree {
     /// Map from user-facing ViewId to internal NodeId.
     view_id_map: FxHashMap<ViewId, NodeId>,
 
-    /// Map from user key to NodeId (for stable identity in dynamic lists).
-    key_map: FxHashMap<(NodeId, u64), NodeId>, // (parent, key) -> child
-
     /// Statistics from the last reconcile operation.
     pub stats: TreeStats,
 
@@ -68,7 +65,6 @@ impl ViewTree {
             paint_dirty: FxHashSet::default(),
             generation: 0,
             view_id_map: FxHashMap::default(),
-            key_map: FxHashMap::default(),
             stats: TreeStats::default(),
             removed_ids: Vec::new(),
             subcompose_scope: SubcomposeScope::UNBOUNDED,

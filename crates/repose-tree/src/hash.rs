@@ -1,7 +1,10 @@
 //! Content hashing for change detection.
 
 use ahash::AHasher;
-use repose_core::{Brush, Color, Modifier, TextOverflow, View, ViewKind};
+use repose_core::{
+    Brush, Color, Modifier, TextOverflow, View, ViewKind,
+    animation::{AnimationSpec, Easing},
+};
 use std::hash::{Hash, Hasher};
 
 /// Compute a content hash for a View's immediate properties.
@@ -48,7 +51,7 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             max_lines,
             overflow,
             font_family,
-            ..
+            annotations,
         } => {
             font_family.hash(hasher);
             text.hash(hasher);
@@ -57,6 +60,19 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             soft_wrap.hash(hasher);
             max_lines.hash(hasher);
             hash_text_overflow(overflow, hasher);
+            if let Some(annos) = annotations {
+                annos.len().hash(hasher);
+                for span in annos.iter() {
+                    span.start.hash(hasher);
+                    span.end.hash(hasher);
+                    if let Some(c) = &span.style.color {
+                        hash_color(c, hasher);
+                    }
+                    if let Some(fs) = span.style.font_size {
+                        ((fs * 100.0) as u32).hash(hasher);
+                    }
+                }
+            }
         }
         ViewKind::Button { .. } => {
             // on_click is a closure, can't hash it
@@ -139,6 +155,7 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             // Closure contents are not part of the hash; the content closure
             // is re-invoked on every reconcile of a SubcomposeLayout.
         }
+        _ => {} // Future ViewKind variants
     }
 }
 
@@ -244,6 +261,7 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
 
     // Clickable
     m.click.hash(hasher);
+    m.disabled.hash(hasher);
     (m.on_action.is_some()).hash(hasher);
 
     (m.on_drag_start.is_some()).hash(hasher);
@@ -252,6 +270,51 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     (m.on_drag_over.is_some()).hash(hasher);
     (m.on_drag_leave.is_some()).hash(hasher);
     (m.on_drop.is_some()).hash(hasher);
+
+    // State colors
+    if let Some(sc) = &m.state_colors {
+        hash_color(&sc.default, hasher);
+        hash_color(&sc.hovered, hasher);
+        hash_color(&sc.pressed, hasher);
+        hash_color(&sc.disabled, hasher);
+    }
+
+    if let Some(se) = &m.state_elevation {
+        ((se.default * 100.0) as i32).hash(hasher);
+        ((se.hovered * 100.0) as i32).hash(hasher);
+        ((se.pressed * 100.0) as i32).hash(hasher);
+        ((se.disabled * 100.0) as i32).hash(hasher);
+    }
+
+    if let Some(spec) = &m.animate_content_size {
+        hash_animation_spec(spec, hasher);
+    }
+
+    m.focus_requester.is_some().hash(hasher);
+
+    m.on_focus_changed.is_some().hash(hasher);
+}
+
+fn hash_animation_spec(spec: &AnimationSpec, hasher: &mut impl Hasher) {
+    spec.duration.as_millis().hash(hasher);
+    hash_easing(&spec.easing, hasher);
+    spec.delay.as_millis().hash(hasher);
+    if let Some(spring) = &spec.spring {
+        ((spring.damping_ratio * 100.0) as i32).hash(hasher);
+        ((spring.stiffness * 100.0) as i32).hash(hasher);
+    }
+    if let Some(repeat) = &spec.repeat {
+        repeat.iterations.hash(hasher);
+        repeat.reverse.hash(hasher);
+        repeat.delay_between.as_millis().hash(hasher);
+    }
+}
+
+fn hash_easing(easing: &Easing, hasher: &mut impl Hasher) {
+    std::mem::discriminant(easing).hash(hasher);
+    if let Easing::SpringCrit { omega } = easing {
+        ((omega * 100.0) as i32).hash(hasher);
+    }
 }
 
 fn hash_color(c: &Color, hasher: &mut impl Hasher) {
@@ -278,6 +341,7 @@ fn hash_brush(b: &Brush, hasher: &mut impl Hasher) {
             hash_color(start_color, hasher);
             hash_color(end_color, hasher);
         }
+        _ => {} // Future Brush variants
     }
 }
 

@@ -109,10 +109,27 @@ impl Transform {
         }
     }
 
+    /// Compose two transforms: `self` then `other` (post-multiply).
+    ///
+    /// Returns a transform such that `combined.apply_to_point(p) ==
+    /// other.apply_to_point(self.apply_to_point(p))`.
+    ///
+    /// **Limitation:** the T*R*S representation is not closed under matrix
+    /// multiplication when both transforms have rotation *and* non-uniform
+    /// scale. In that case the result is an approximation (off-diagonal
+    /// rotation/scale coupling is dropped). For UI use (uniform scale or no
+    /// rotation) this is exact.
     pub fn combine(&self, other: &Transform) -> Transform {
+        let c = self.rotate.cos();
+        let s = self.rotate.sin();
+
         Transform {
-            translate_x: self.translate_x + other.translate_x,
-            translate_y: self.translate_y + other.translate_y,
+            translate_x: other.translate_x * self.scale_x * c
+                - other.translate_y * self.scale_y * s
+                + self.translate_x,
+            translate_y: other.translate_x * self.scale_x * s
+                + other.translate_y * self.scale_y * c
+                + self.translate_y,
             scale_x: self.scale_x * other.scale_x,
             scale_y: self.scale_y * other.scale_y,
             rotate: self.rotate + other.rotate,

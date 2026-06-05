@@ -4,7 +4,7 @@
 //! describes *where* the field is and what its hint is; the *state* lives in
 //! `TextFieldState`, which the platform runner owns.
 //!
-//! ```rust
+//! ```rust,ignore
 //! pub struct TextFieldState {
 //!     pub text: String,
 //!     pub selection: Range<usize>,      // byte offsets

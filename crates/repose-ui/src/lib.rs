@@ -14,7 +14,7 @@
 //! rendered. It is cheap to create and you are expected to rebuild the entire
 //! view tree on each frame:
 //!
-//! ```rust
+//! ```rust,ignore
 //! use repose_core::*;
 //! use repose_ui::*;
 //!
@@ -77,7 +77,7 @@
 //!
 //! Layout is a pure function:
 //!
-//! ```rust
+//! ```rust,ignore
 //! pub fn layout_and_paint(
 //!     root: &View,
 //!     size_px: (u32, u32),

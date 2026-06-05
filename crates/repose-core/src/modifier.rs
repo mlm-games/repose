@@ -117,6 +117,7 @@ pub struct ShadowSpec {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub enum PositionType {
     Relative,
     Absolute,

@@ -58,6 +58,7 @@ pub type ViewId = u64;
 
 pub type ImageHandle = u64;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ImageFit {
     Contain,
     Cover,
@@ -75,6 +76,7 @@ pub struct OverlayEntry {
 }
 
 #[derive(Clone)]
+#[non_exhaustive]
 pub enum ViewKind {
     Surface,
     Box,
@@ -272,6 +274,7 @@ pub struct Scene {
 }
 
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum SceneNode {
     Rect {
         rect: Rect,
@@ -351,6 +354,7 @@ pub type CallbackF32 = Rc<dyn Fn(f32)>;
 pub type CallbackRange = Rc<dyn Fn(f32, f32)>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TextOverflow {
     Visible,
     Clip,

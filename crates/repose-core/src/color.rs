@@ -87,6 +87,7 @@ impl Color {
 /// widgets) should talk in terms of `Brush` rather than raw `Color` so that
 /// gradients and future brush types (radial, image) can share the same path.
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub enum Brush {
     /// Solid color fill
     Solid(Color),

@@ -3072,6 +3072,7 @@ fn mul_alpha_brush(b: Brush, a: f32) -> Brush {
             start_color: mul_alpha_color(start_color, a),
             end_color: mul_alpha_color(end_color, a),
         },
+        _ => b,
     }
 }
 

@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 
@@ -8,6 +8,8 @@ pub type ObserverId = usize;
 thread_local! {
     static CURRENT_OBSERVER: RefCell<Option<ObserverId>> = const { RefCell::new(None) };
     static GRAPH: RefCell<DepGraph> = RefCell::new(DepGraph::default());
+    static SIGNAL_DEPTH: Cell<u32> = Cell::new(0);
+    static PENDING_OBSERVERS: RefCell<VecDeque<ObserverId>> = const { RefCell::new(VecDeque::new()) };
 }
 
 #[derive(Default)]
@@ -56,6 +58,34 @@ pub fn register_signal_read(sig: SignalId) {
 }
 
 pub fn signal_changed(sig: SignalId) {
+    let is_outer = SIGNAL_DEPTH.with(|depth| {
+        let prev = depth.get();
+        depth.set(prev + 1);
+        if prev > 0 {
+            // Re-entrant: defer affected observers for later draining.
+            GRAPH.with(|gcell| {
+                let g = gcell.borrow();
+                if let Some(obs_set) = g.edges.get(&sig) {
+                    PENDING_OBSERVERS.with(|q| {
+                        for &obs in obs_set {
+                            if !g.running.contains(&obs) {
+                                q.borrow_mut().push_back(obs);
+                            }
+                        }
+                    });
+                }
+            });
+            false
+        } else {
+            true
+        }
+    });
+
+    if !is_outer {
+        SIGNAL_DEPTH.with(|d| d.set(d.get() - 1));
+        return;
+    }
+
     GRAPH.with(|gcell| {
         let mut g = gcell.borrow_mut();
         let mut queue: VecDeque<ObserverId> = g
@@ -85,6 +115,37 @@ pub fn signal_changed(sig: SignalId) {
             g.running.remove(&obs);
         }
     });
+
+    // Drain any observers that were deferred during re-entrant notifications.
+    SIGNAL_DEPTH.with(|depth| depth.set(0));
+    loop {
+        let obs = PENDING_OBSERVERS.with(|q| q.borrow_mut().pop_front());
+        match obs {
+            None => break,
+            Some(obs) => {
+                GRAPH.with(|gcell| {
+                    let mut g = gcell.borrow_mut();
+                    if g.running.contains(&obs) {
+                        return;
+                    }
+                    g.running.insert(obs);
+                    g.remove_all_edges_for(obs);
+                    let f = g.observers.get(&obs).cloned();
+                    drop(g);
+                    if let Some(f) = f {
+                        CURRENT_OBSERVER.with(|co| {
+                            let prev = *co.borrow();
+                            *co.borrow_mut() = Some(obs);
+                            f();
+                            *co.borrow_mut() = prev;
+                        });
+                    }
+                    g = gcell.borrow_mut();
+                    g.running.remove(&obs);
+                });
+            }
+        }
+    }
 }
 
 pub fn new_observer(f: impl Fn() + 'static) -> ObserverId {

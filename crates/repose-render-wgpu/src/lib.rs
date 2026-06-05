@@ -2238,6 +2238,7 @@ fn brush_to_instance_fields(brush: &Brush) -> (u32, [f32; 4], [f32; 4], [f32; 2]
             [start.x, start.y],
             [end.x, end.y],
         ),
+        _ => (0u32, [0.0; 4], [0.0; 4], [0.0; 2], [0.0; 2]),
     }
 }
 
@@ -2245,6 +2246,7 @@ fn brush_to_solid_color(brush: &Brush) -> [f32; 4] {
     match brush {
         Brush::Solid(c) => c.to_linear(),
         Brush::Linear { start_color, .. } => start_color.to_linear(),
+        _ => [0.0; 4],
     }
 }
 
@@ -2748,8 +2750,9 @@ impl RenderBackend for WgpuBackend {
                                 [0.0, 1.0, 1.0, 0.0],
                             )
                         }
+                        _ => ([0.0; 4], [0.0; 4]),
                     };
-
+ 
                     if is_nv12 {
                         let full_range = if let Some(ImageTex::Nv12 { full_range, .. }) =
                             self.images.get(handle)
@@ -3003,6 +3006,7 @@ impl RenderBackend for WgpuBackend {
                         });
                     }
                 }
+                _ => {}
             }
         }
 
