@@ -385,3 +385,40 @@ pub(crate) fn wrap_root_scroll(child: View, st: Rc<RefCell<RootScrollState>>) ->
     .modifier(Modifier::new().fill_max_size().background(bg))
     .with_children(vec![child])
 }
+
+/// Handle arrow key spatial focus navigation.
+///
+/// Skips when the focused element is a TextField (those handle arrows for cursor movement)
+#[macro_export]
+macro_rules! handle_arrow_key_spatial_nav {
+    ($app:expr, $key_event:expr, $f:ident, $next:ident, $on_focus:expr) => {
+        if $key_event.state == ElementState::Pressed && !$key_event.repeat {
+            let nav_dir = match $key_event.physical_key {
+                PhysicalKey::Code(KeyCode::ArrowLeft) => Some(FocusDirection::Left),
+                PhysicalKey::Code(KeyCode::ArrowRight) => Some(FocusDirection::Right),
+                PhysicalKey::Code(KeyCode::ArrowUp) => Some(FocusDirection::Up),
+                PhysicalKey::Code(KeyCode::ArrowDown) => Some(FocusDirection::Down),
+                _ => None,
+            };
+            if let Some(dir) = nav_dir
+                && let Some($f) = &$app.frame_cache
+                && !$f
+                    .semantics_nodes
+                    .iter()
+                    .any(|n| $app.sched.focused == Some(n.id) && n.role == Role::TextField)
+            {
+                if let Some($next) = $crate::common::focus_in_direction(
+                    &$f.focus_chain,
+                    &$f.hit_regions,
+                    $app.sched.focused,
+                    dir,
+                ) {
+                    $app.sched.focused = Some($next);
+                    $on_focus;
+                    $app.request_redraw();
+                }
+                return; // swallow arrow key
+            }
+        }
+    };
+}

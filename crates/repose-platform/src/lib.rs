@@ -1218,45 +1218,17 @@ pub fn run_desktop_app_with_snackbar(
                         return; // swallow Tab
                     }
 
-                    // Arrow key focus navigation (skip if focused on a TextField)
-                    if key_event.state == ElementState::Pressed && !key_event.repeat {
-                        let nav_dir = match key_event.physical_key {
-                            PhysicalKey::Code(KeyCode::ArrowLeft) => Some(FocusDirection::Left),
-                            PhysicalKey::Code(KeyCode::ArrowRight) => Some(FocusDirection::Right),
-                            PhysicalKey::Code(KeyCode::ArrowUp) => Some(FocusDirection::Up),
-                            PhysicalKey::Code(KeyCode::ArrowDown) => Some(FocusDirection::Down),
-                            _ => None,
-                        };
-                        if let Some(dir) = nav_dir
-                            && let Some(f) = &self.frame_cache
-                            && !f.semantics_nodes.iter().any(|n| {
-                                self.sched.focused == Some(n.id) && n.role == Role::TextField
-                            })
-                        {
-                            if let Some(next) = rc::focus_in_direction(
-                                &f.focus_chain,
-                                &f.hit_regions,
-                                self.sched.focused,
-                                dir,
-                            ) {
-                                if let Some(active) = self.key_pressed_active.take() {
-                                    self.pressed_ids.remove(&active);
-                                }
-                                self.sched.focused = Some(next);
-                                // IME only for TextField
-                                if let Some(win) = &self.window {
-                                    let is_textfield = f
-                                        .semantics_nodes
-                                        .iter()
-                                        .any(|n| n.id == next && n.role == Role::TextField);
-                                    rc_web::set_ime_for_textfield(win, is_textfield);
-                                }
-                                self.announce_focus_change();
-                                self.request_redraw();
-                            }
-                            return; // swallow arrow key
+                    handle_arrow_key_spatial_nav!(self, key_event, f, next, {
+                        if let Some(active) = self.key_pressed_active.take() {
+                            self.pressed_ids.remove(&active);
                         }
-                    }
+                        if let Some(win) = &self.window {
+                            let is_textfield = f.semantics_nodes.iter()
+                                .any(|n| n.id == next && n.role == Role::TextField);
+                            rc_web::set_ime_for_textfield(win, is_textfield);
+                        }
+                        self.announce_focus_change();
+                    });
 
                     if key_event.state == ElementState::Pressed
                         && !key_event.repeat

@@ -1482,38 +1482,12 @@ impl ApplicationHandler<()> for App {
                     return;
                 }
 
-                // Arrow key focus navigation (skip if focused on a TextField;
-                // TextField handles arrows for cursor movement below)
-                if key_event.state == ElementState::Pressed && !key_event.repeat {
-                    let nav_dir = match key_event.physical_key {
-                        PhysicalKey::Code(KeyCode::ArrowLeft) => Some(FocusDirection::Left),
-                        PhysicalKey::Code(KeyCode::ArrowRight) => Some(FocusDirection::Right),
-                        PhysicalKey::Code(KeyCode::ArrowUp) => Some(FocusDirection::Up),
-                        PhysicalKey::Code(KeyCode::ArrowDown) => Some(FocusDirection::Down),
-                        _ => None,
-                    };
-                    if let Some(dir) = nav_dir
-                        && let Some(f) = &self.frame_cache
-                        && !f.semantics_nodes.iter().any(|n| {
-                            self.sched.focused == Some(n.id) && n.role == Role::TextField
-                        })
-                    {
-                        if let Some(next) = rc::focus_in_direction(
-                            &f.focus_chain,
-                            &f.hit_regions,
-                            self.sched.focused,
-                            dir,
-                        ) {
-                            if let Some(active) = self.key_pressed_active.take() {
-                                self.pressed_ids.remove(&active);
-                            }
-                            self.sched.focused = Some(next);
-                            rc_web::set_ime_for_textfield(&window, self.is_textfield(next));
-                            self.request_redraw();
-                        }
-                        return; // swallow arrow key
+                handle_arrow_key_spatial_nav!(self, key_event, f, next, {
+                    if let Some(active) = self.key_pressed_active.take() {
+                        self.pressed_ids.remove(&active);
                     }
-                }
+                    rc_web::set_ime_for_textfield(&window, self.is_textfield(next));
+                });
 
                 if let Some(fid) = self.sched.focused {
                     // If focused is NOT a TextField, allow Space/Enter activation
