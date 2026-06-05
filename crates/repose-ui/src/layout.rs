@@ -1975,6 +1975,7 @@ impl LayoutEngine {
                         let mut st = state_rc.borrow_mut();
                         st.set_inner_width(inner.w);
                         st.set_inner_height(inner.h);
+                        st.tick_scroll_animation();
                         if let Some(vt) = visual_transformation.as_ref() {
                             st.offset_map = offset_map.clone();
                             st.visual_transformation = Some(vt.clone());

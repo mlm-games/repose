@@ -413,11 +413,13 @@ impl TextFieldState {
 
     /// Keep caret visible inside inner content width (px).
     /// `inset_px` is a small padding (px) to avoid hugging edges.
+    /// Sets the scroll target for smooth animated scrolling.
     pub fn ensure_caret_visible(&mut self, caret_x_px: f32, inner_width_px: f32, inset_px: f32) {
         self.ensure_caret_visible_xy(caret_x_px, 0.0, inner_width_px, 1.0, inset_px);
     }
 
     /// Keep caret visible inside an inner rect (for multiline).
+    /// Sets the scroll target for smooth animated scrolling.
     pub fn ensure_caret_visible_xy(
         &mut self,
         caret_x_px: f32,
@@ -428,17 +430,18 @@ impl TextFieldState {
     ) {
         let inset_px = inset_px.max(0.0);
 
-        // Compute target scroll
-        let left_px = self.scroll_target + inset_px;
-        let right_px = self.scroll_target + inner_w_px - inset_px;
+        // Compute target X scroll based on current display offset
+        let left_px = self.scroll_offset + inset_px;
+        let right_px = self.scroll_offset + inner_w_px - inset_px;
         if caret_x_px < left_px {
             self.scroll_target = (caret_x_px - inset_px).max(0.0);
         } else if caret_x_px > right_px {
             self.scroll_target = (caret_x_px - inner_w_px + inset_px).max(0.0);
         }
 
-        let top_px = self.scroll_target_y + inset_px;
-        let bot_px = self.scroll_target_y + inner_h_px - inset_px;
+        // Compute target Y scroll based on current display offset
+        let top_px = self.scroll_offset_y + inset_px;
+        let bot_px = self.scroll_offset_y + inner_h_px - inset_px;
         if caret_y_px < top_px {
             self.scroll_target_y = (caret_y_px - inset_px).max(0.0);
         } else if caret_y_px > bot_px {
@@ -482,6 +485,8 @@ impl TextFieldState {
     }
 
     /// Advance scroll animation by actual wall-clock dt using spring physics.
+    /// Call this once per frame before reading [scroll_offset] / [scroll_offset_y].
+    /// On the first call after a target change, snaps immediately to avoid 1-frame delay.
     pub fn tick_scroll_animation(&mut self) {
         let now = Instant::now();
         let dt = match self.last_scroll_tick {
@@ -489,37 +494,56 @@ impl TextFieldState {
                 let d = now.saturating_duration_since(prev).as_secs_f32();
                 d.min(0.05) // cap to 50ms to avoid jumps after pause
             }
-            None => 0.0,
+            None => {
+                // First tick: snap to target immediately, but record the time
+                // so subsequent ticks produce a smooth spring.
+                self.last_scroll_tick = Some(now);
+                self.scroll_offset = self.scroll_target;
+                self.scroll_vel = 0.0;
+                self.scroll_offset_y = self.scroll_target_y;
+                self.scroll_vel_y = 0.0;
+                return;
+            }
         };
         self.last_scroll_tick = Some(now);
 
-        if dt <= 0.0 {
-            return;
+        // X axis
+        if dt > 0.0 {
+            let dx = self.scroll_target - self.scroll_offset;
+            let near_x = dx.abs() < 0.5 && self.scroll_vel.abs() < 0.5;
+            if near_x {
+                self.scroll_offset = self.scroll_target;
+                self.scroll_vel = 0.0;
+            } else {
+                let force_x = SCROLL_STIFFNESS * dx - SCROLL_DAMPING * self.scroll_vel;
+                self.scroll_vel += force_x * dt;
+                self.scroll_offset += self.scroll_vel * dt;
+                // Overshoot protection: clamp to target if we'd pass it this frame
+                if (self.scroll_target - self.scroll_offset).signum() != dx.signum() && dx != 0.0 {
+                    self.scroll_offset = self.scroll_target;
+                    self.scroll_vel = 0.0;
+                }
+            }
         }
 
-        // spring
-        let dx = self.scroll_target - self.scroll_offset;
-        let force_x = SCROLL_STIFFNESS * dx - SCROLL_DAMPING * self.scroll_vel;
-        self.scroll_vel += force_x * dt;
-        self.scroll_offset += self.scroll_vel * dt;
-
-        let dy = self.scroll_target_y - self.scroll_offset_y;
-        let force_y = SCROLL_STIFFNESS * dy - SCROLL_DAMPING * self.scroll_vel_y;
-        self.scroll_vel_y += force_y * dt;
-        self.scroll_offset_y += self.scroll_vel_y * dt;
-
-        // Snap if very close to target and nearly stopped
-        let close_x =
-            (self.scroll_target - self.scroll_offset).abs() < 0.5 && self.scroll_vel.abs() < 0.5;
-        let close_y = (self.scroll_target_y - self.scroll_offset_y).abs() < 0.5
-            && self.scroll_vel_y.abs() < 0.5;
-        if close_x {
-            self.scroll_offset = self.scroll_target;
-            self.scroll_vel = 0.0;
-        }
-        if close_y {
-            self.scroll_offset_y = self.scroll_target_y;
-            self.scroll_vel_y = 0.0;
+        // Y axis
+        if dt > 0.0 {
+            let dy = self.scroll_target_y - self.scroll_offset_y;
+            let near_y = dy.abs() < 0.5 && self.scroll_vel_y.abs() < 0.5;
+            if near_y {
+                self.scroll_offset_y = self.scroll_target_y;
+                self.scroll_vel_y = 0.0;
+            } else {
+                let force_y = SCROLL_STIFFNESS * dy - SCROLL_DAMPING * self.scroll_vel_y;
+                self.scroll_vel_y += force_y * dt;
+                self.scroll_offset_y += self.scroll_vel_y * dt;
+                if (self.scroll_target_y - self.scroll_offset_y).signum() != dy.signum()
+                    && dy != 0.0
+                {
+                    self.scroll_offset_y = self.scroll_target_y;
+                    self.scroll_vel_y = 0.0;
+                }
+            }
         }
     }
 }
