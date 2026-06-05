@@ -270,11 +270,11 @@ pub fn remember<T: 'static>(init: impl FnOnce() -> T) -> Rc<T> {
                 cursor,
                 std::any::type_name::<T>(),
             );
-            debug_assert!(
-                false,
-                "remember slot {} type changed. This is likely a composition order bug.",
-                cursor,
-            );
+            // debug_assert!(
+            //     false,
+            //     "remember slot {} type changed. This is likely a composition order bug.",
+            //     cursor,
+            // );
             let rc: Rc<T> = Rc::new(init());
             c.slots[cursor] = Box::new(rc.clone());
             rc

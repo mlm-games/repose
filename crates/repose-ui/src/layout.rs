@@ -1894,9 +1894,9 @@ impl LayoutEngine {
                         let content_h = layout.ranges.len().max(1) as f32 * layout.line_h_px;
                         let max_y = (content_h - st.inner_height).max(0.0);
 
-                        let before = st.scroll_offset_y;
-                        let target = (st.scroll_offset_y - d.y).clamp(0.0, max_y);
-                        st.scroll_offset_y = target;
+                        let before = st.scroll_target_y;
+                        let target = (st.scroll_target_y - d.y).clamp(0.0, max_y);
+                        st.scroll_target_y = target;
 
                         let consumed = before - target;
                         Vec2 {
@@ -1948,7 +1948,7 @@ impl LayoutEngine {
                     };
 
                 if let Some(state_rc) = textfield_states.get(&tf_key) {
-                    // Store VT and offset_map on the state for platform to use
+                    // Store VT and offset_map on the state for platform to use, and tick scroll animation
                     {
                         let mut st = state_rc.borrow_mut();
                         st.set_inner_width(inner.w);

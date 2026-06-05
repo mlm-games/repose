@@ -956,9 +956,9 @@ impl ApplicationHandler<()> for App {
                 let (dx_px, dy_px) = match delta {
                     MouseScrollDelta::LineDelta(x, y) => {
                         let unit_px = 60.0 * scale;
-                        (-(x * unit_px), -(y * unit_px))
+                        (x * unit_px, y * unit_px)
                     }
-                    MouseScrollDelta::PixelDelta(p) => (-(p.x as f32), -(p.y as f32)),
+                    MouseScrollDelta::PixelDelta(p) => (p.x as f32, p.y as f32),
                 };
 
                 if let Some(f) = &self.frame_cache {
