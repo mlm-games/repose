@@ -52,7 +52,19 @@ impl<T> Signal<T> {
             inner.value = v;
             inner.id
         };
+        self.notify_and_request_frame(id);
+    }
 
+    pub fn update<F: FnOnce(&mut T)>(&self, f: F) {
+        let id = {
+            let mut inner = self.0.borrow_mut();
+            f(&mut inner.value);
+            inner.id
+        };
+        self.notify_and_request_frame(id);
+    }
+
+    fn notify_and_request_frame(&self, id: usize) {
         // Call subscribers with CURRENT_OBSERVER cleared so subscriber reads
         // don't register edges against the wrong observer.
         reactive::without_observer(|| {
@@ -65,31 +77,7 @@ impl<T> Signal<T> {
             }
         });
 
-        // Notify reactive graph after all borrows are dropped.
         reactive::signal_changed(id);
-
-        crate::request_frame();
-    }
-
-    pub fn update<F: FnOnce(&mut T)>(&self, f: F) {
-        let id = {
-            let mut inner = self.0.borrow_mut();
-            f(&mut inner.value);
-            inner.id
-        };
-
-        reactive::without_observer(|| {
-            let inner = self.0.borrow();
-            let vref = &inner.value;
-            for s in &inner.subs {
-                if let Some(cb) = s.as_ref() {
-                    cb(vref);
-                }
-            }
-        });
-
-        reactive::signal_changed(id);
-
         crate::request_frame();
     }
 

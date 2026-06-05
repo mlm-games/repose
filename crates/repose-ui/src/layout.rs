@@ -528,33 +528,8 @@ impl LayoutEngine {
                 .new_with_children(style, &child_taffy_ids)
                 .unwrap();
             let _ = self.taffy.set_node_context(t, Some(ctx));
-            // ZStack children must all overlap. Setting position to Absolute
-            // removes them from the grid flow and positions each at (0,0) of
-            // the ZStack's content box. The default `inset: auto` together
-            // with the child's existing size (e.g. percent(1.0) from
-            // fill_max_size) makes each child fill the ZStack, so they
-            // overlap exactly.
-            if is_zstack {
-                for &child_tid in &child_taffy_ids {
-                    if let Ok(cs) = self.taffy.style(child_tid) {
-                        let mut new_cs = cs.clone();
-                        new_cs.position = Position::Absolute;
-                        let _ = self.taffy.set_style(child_tid, new_cs);
-                    }
-                }
-            }
-
-            if is_scroll {
-                for &child_tid in &child_taffy_ids {
-                    if let Ok(cs) = self.taffy.style(child_tid) {
-                        let mut new_cs = cs.clone();
-                        new_cs.size.height = Dimension::auto();
-                        new_cs.min_size.height = percent(1.0);
-                        new_cs.flex_shrink = 0.0;
-                        let _ = self.taffy.set_style(child_tid, new_cs);
-                    }
-                }
-            }
+            self.make_children_absolute(is_zstack, &child_taffy_ids);
+            self.make_scroll_child(is_scroll, &child_taffy_ids);
             t
         };
 
@@ -615,35 +590,38 @@ impl LayoutEngine {
             .collect();
         let _ = self.taffy.set_children(taffy_id, &child_taffy_ids);
 
-        // ZStack children must all overlap. Setting position to Absolute
-        // removes them from the grid flow and positions each at (0,0) of
-        // the ZStack's content box. The default `inset: auto` together
-        // with the child's existing size (e.g. percent(1.0) from
-        // fill_max_size) makes each child fill the ZStack, so they
-        // overlap exactly.
-        if is_zstack {
-            for &child_tid in &child_taffy_ids {
-                if let Ok(cs) = self.taffy.style(child_tid) {
-                    let mut new_cs = cs.clone();
-                    new_cs.position = Position::Absolute;
-                    let _ = self.taffy.set_style(child_tid, new_cs);
-                }
-            }
-        }
-
-        if is_scroll {
-            for &child_tid in &child_taffy_ids {
-                if let Ok(cs) = self.taffy.style(child_tid) {
-                    let mut new_cs = cs.clone();
-                    new_cs.size.height = Dimension::auto();
-                    new_cs.min_size.height = percent(1.0);
-                    new_cs.flex_shrink = 0.0;
-                    let _ = self.taffy.set_style(child_tid, new_cs);
-                }
-            }
-        }
+        self.make_children_absolute(is_zstack, &child_taffy_ids);
+        self.make_scroll_child(is_scroll, &child_taffy_ids);
 
         self.stats.taffy_reused += 1;
+    }
+
+    fn make_children_absolute(&mut self, is_zstack: bool, child_taffy_ids: &[taffy::NodeId]) {
+        if !is_zstack {
+            return;
+        }
+        for &child_tid in child_taffy_ids {
+            if let Ok(cs) = self.taffy.style(child_tid) {
+                let mut new_cs = cs.clone();
+                new_cs.position = Position::Absolute;
+                let _ = self.taffy.set_style(child_tid, new_cs);
+            }
+        }
+    }
+
+    fn make_scroll_child(&mut self, is_scroll: bool, child_taffy_ids: &[taffy::NodeId]) {
+        if !is_scroll {
+            return;
+        }
+        for &child_tid in child_taffy_ids {
+            if let Ok(cs) = self.taffy.style(child_tid) {
+                let mut new_cs = cs.clone();
+                new_cs.size.height = Dimension::auto();
+                new_cs.min_size.height = percent(1.0);
+                new_cs.flex_shrink = 0.0;
+                let _ = self.taffy.set_style(child_tid, new_cs);
+            }
+        }
     }
 
     fn style_from_node(&self, node: &TreeNode, font_px: &dyn Fn(f32) -> f32) -> taffy::Style {
@@ -2803,16 +2781,7 @@ impl LayoutEngine {
                     );
                 }
 
-                // Clip hits to viewport
-                let mut i = hits_start;
-                while i < hits.len() {
-                    if let Some(r) = intersect_rect(hits[i].rect, vp) {
-                        hits[i].rect = r;
-                        i += 1;
-                    } else {
-                        hits.remove(i);
-                    }
-                }
+                clip_hits_to_viewport(hits, hits_start, vp);
 
                 if *show_scrollbar {
                     push_scrollbar(
@@ -3052,6 +3021,18 @@ fn intersect_rect(a: repose_core::Rect, b: repose_core::Rect) -> Option<repose_c
         None
     } else {
         Some(repose_core::Rect { x: x0, y: y0, w, h })
+    }
+}
+
+fn clip_hits_to_viewport(hits: &mut Vec<HitRegion>, start: usize, vp: repose_core::Rect) {
+    let mut i = start;
+    while i < hits.len() {
+        if let Some(r) = intersect_rect(hits[i].rect, vp) {
+            hits[i].rect = r;
+            i += 1;
+        } else {
+            hits.remove(i);
+        }
     }
 }
 
