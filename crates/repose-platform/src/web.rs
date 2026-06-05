@@ -74,8 +74,6 @@ impl WebOptions {
         self.fullscreen = v;
     }
 
-}
-
     #[wasm_bindgen(getter)]
     pub fn continuous_redraw(&self) -> bool {
         self.continuous_redraw
