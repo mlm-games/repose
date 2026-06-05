@@ -45,6 +45,10 @@ use web_time::Instant;
 
 use unicode_segmentation::UnicodeSegmentation;
 
+/// Spring physics constants for smooth scroll animation.
+const SCROLL_STIFFNESS: f32 = 300.0;
+const SCROLL_DAMPING: f32 = 30.0;
+
 /// Logical font size for TextField in dp (converted to px at measure/paint time).
 pub const TF_FONT_DP: f32 = 16.0;
 
@@ -132,8 +136,8 @@ pub struct TextFieldState {
     pub text: String,
     pub selection: Range<usize>,
     pub composition: Option<Range<usize>>, // IME composition range (byte offsets)
-    pub scroll_offset: f32,                // px (x)
-    pub scroll_offset_y: f32,              // px (y) for multiline
+    pub scroll_offset: f32,                // px (x) - current animated display value
+    pub scroll_offset_y: f32,              // px (y) for multiline - current animated display value
     pub drag_anchor: Option<usize>,        // byte index where drag began
     pub blink_start: Instant,              // caret blink timer
     pub inner_width: f32,                  // px
@@ -144,6 +148,16 @@ pub struct TextFieldState {
     pub offset_map: Option<Rc<dyn Fn(usize) -> usize>>,
     /// The active visual transformation, set during layout.
     pub visual_transformation: Option<Rc<dyn VisualTransformation>>,
+    /// Target horizontal scroll offset (where we're animating toward).
+    pub(crate) scroll_target: f32,
+    /// Target vertical scroll offset.
+    pub(crate) scroll_target_y: f32,
+    /// Spring velocity for horizontal scroll animation.
+    scroll_vel: f32,
+    /// Spring velocity for vertical scroll animation.
+    scroll_vel_y: f32,
+    /// Last time tick_scroll_animation was called (for dt computation).
+    last_scroll_tick: Option<Instant>,
 }
 
 impl std::fmt::Debug for TextFieldState {
@@ -164,6 +178,8 @@ impl std::fmt::Debug for TextFieldState {
                 "visual_transformation",
                 &self.visual_transformation.as_ref().map(|_| "<vt>"),
             )
+            .field("scroll_target", &self.scroll_target)
+            .field("scroll_target_y", &self.scroll_target_y)
             .finish()
     }
 }
@@ -189,6 +205,11 @@ impl TextFieldState {
             preferred_x_px: None,
             offset_map: None,
             visual_transformation: None,
+            scroll_target: 0.0,
+            scroll_target_y: 0.0,
+            scroll_vel: 0.0,
+            scroll_vel_y: 0.0,
+            last_scroll_tick: None,
         }
     }
 
@@ -407,30 +428,29 @@ impl TextFieldState {
     ) {
         let inset_px = inset_px.max(0.0);
 
-        // X
-        let left_px = self.scroll_offset + inset_px;
-        let right_px = self.scroll_offset + inner_w_px - inset_px;
+        // Compute target scroll
+        let left_px = self.scroll_target + inset_px;
+        let right_px = self.scroll_target + inner_w_px - inset_px;
         if caret_x_px < left_px {
-            self.scroll_offset = (caret_x_px - inset_px).max(0.0);
+            self.scroll_target = (caret_x_px - inset_px).max(0.0);
         } else if caret_x_px > right_px {
-            self.scroll_offset = (caret_x_px - inner_w_px + inset_px).max(0.0);
+            self.scroll_target = (caret_x_px - inner_w_px + inset_px).max(0.0);
         }
 
-        // Y
-        let top_px = self.scroll_offset_y + inset_px;
-        let bot_px = self.scroll_offset_y + inner_h_px - inset_px;
+        let top_px = self.scroll_target_y + inset_px;
+        let bot_px = self.scroll_target_y + inner_h_px - inset_px;
         if caret_y_px < top_px {
-            self.scroll_offset_y = (caret_y_px - inset_px).max(0.0);
+            self.scroll_target_y = (caret_y_px - inset_px).max(0.0);
         } else if caret_y_px > bot_px {
-            self.scroll_offset_y = (caret_y_px - inner_h_px + inset_px).max(0.0);
+            self.scroll_target_y = (caret_y_px - inner_h_px + inset_px).max(0.0);
         }
     }
 
     pub fn clamp_scroll(&mut self, content_h_px: f32) {
         let max_y = (content_h_px - self.inner_height).max(0.0);
-        self.scroll_offset_y = self.scroll_offset_y.clamp(0.0, max_y);
-        if self.scroll_offset_y.is_nan() {
-            self.scroll_offset_y = 0.0;
+        self.scroll_target_y = self.scroll_target_y.clamp(0.0, max_y);
+        if self.scroll_target_y.is_nan() {
+            self.scroll_target_y = 0.0;
         }
     }
 
@@ -447,11 +467,59 @@ impl TextFieldState {
         if self.scroll_offset.is_nan() {
             self.scroll_offset = 0.0;
         }
+        if self.scroll_target.is_nan() {
+            self.scroll_target = 0.0;
+        }
     }
     pub fn set_inner_height(&mut self, h_px: f32) {
         self.inner_height = h_px.max(0.0);
         if self.scroll_offset_y.is_nan() {
             self.scroll_offset_y = 0.0;
+        }
+        if self.scroll_target_y.is_nan() {
+            self.scroll_target_y = 0.0;
+        }
+    }
+
+    /// Advance scroll animation by actual wall-clock dt using spring physics.
+    pub fn tick_scroll_animation(&mut self) {
+        let now = Instant::now();
+        let dt = match self.last_scroll_tick {
+            Some(prev) => {
+                let d = now.saturating_duration_since(prev).as_secs_f32();
+                d.min(0.05) // cap to 50ms to avoid jumps after pause
+            }
+            None => 0.0,
+        };
+        self.last_scroll_tick = Some(now);
+
+        if dt <= 0.0 {
+            return;
+        }
+
+        // spring
+        let dx = self.scroll_target - self.scroll_offset;
+        let force_x = SCROLL_STIFFNESS * dx - SCROLL_DAMPING * self.scroll_vel;
+        self.scroll_vel += force_x * dt;
+        self.scroll_offset += self.scroll_vel * dt;
+
+        let dy = self.scroll_target_y - self.scroll_offset_y;
+        let force_y = SCROLL_STIFFNESS * dy - SCROLL_DAMPING * self.scroll_vel_y;
+        self.scroll_vel_y += force_y * dt;
+        self.scroll_offset_y += self.scroll_vel_y * dt;
+
+        // Snap if very close to target and nearly stopped
+        let close_x =
+            (self.scroll_target - self.scroll_offset).abs() < 0.5 && self.scroll_vel.abs() < 0.5;
+        let close_y = (self.scroll_target_y - self.scroll_offset_y).abs() < 0.5
+            && self.scroll_vel_y.abs() < 0.5;
+        if close_x {
+            self.scroll_offset = self.scroll_target;
+            self.scroll_vel = 0.0;
+        }
+        if close_y {
+            self.scroll_offset_y = self.scroll_target_y;
+            self.scroll_vel_y = 0.0;
         }
     }
 }
@@ -698,9 +766,10 @@ fn locate_byte_in_ranges(ranges: &[(usize, usize)], b: usize) -> (usize, usize, 
         }
         if b == *e {
             if let Some((ns, _ne)) = ranges.get(i + 1)
-                && *ns == b {
-                    return (i + 1, 0, b);
-                }
+                && *ns == b
+            {
+                return (i + 1, 0, b);
+            }
             let local = e.saturating_sub(*s);
             return (i, local, *s + local);
         }
