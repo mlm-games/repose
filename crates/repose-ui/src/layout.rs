@@ -1947,6 +1947,10 @@ impl LayoutEngine {
                         (Box::new(|original: &str| original.to_string()), None)
                     };
 
+                let font_val = font_px(TF_FONT_DP);
+                let line_h = font_val * 1.3;
+                let text_off_y = (inner.h - line_h) / 2.0;
+
                 if let Some(state_rc) = textfield_states.get(&tf_key) {
                     // Store VT and offset_map on the state for platform to use, and tick scroll animation
                     {
@@ -1964,7 +1968,6 @@ impl LayoutEngine {
                     }
 
                     let st = state_rc.borrow();
-                    let font_val = font_px(TF_FONT_DP);
 
                     if !*multiline {
                         // When VT is active, measure display text for caret/selection
@@ -2016,9 +2019,9 @@ impl LayoutEngine {
                             scene.nodes.push(SceneNode::Rect {
                                 rect: repose_core::Rect {
                                     x: inner.x + vis_x,
-                                    y: inner.y,
+                                    y: inner.y + text_off_y,
                                     w: (vis_ex - vis_x).max(0.0),
-                                    h: inner.h,
+                                    h: line_h,
                                 },
                                 brush: Brush::Solid(selection),
                                 radius: 0.0,
@@ -2040,9 +2043,9 @@ impl LayoutEngine {
                         scene.nodes.push(SceneNode::Text {
                             rect: repose_core::Rect {
                                 x: inner.x - st.scroll_offset,
-                                y: inner.y,
+                                y: inner.y + text_off_y,
                                 w: inner.w,
-                                h: inner.h,
+                                h: line_h,
                             },
                             text: Arc::from(render_txt),
                             color: txt_col,
@@ -2072,9 +2075,9 @@ impl LayoutEngine {
                             scene.nodes.push(SceneNode::Rect {
                                 rect: repose_core::Rect {
                                     x: inner.x + cx.max(0.0),
-                                    y: inner.y,
+                                    y: inner.y + text_off_y,
                                     w: dp_to_px(1.0),
-                                    h: inner.h,
+                                    h: line_h,
                                 },
                                 brush: Brush::Solid(th.on_surface),
                                 radius: 0.0,
@@ -2210,10 +2213,14 @@ impl LayoutEngine {
                     }
                 } else {
                     let th = locals::theme();
-                    let font_val = font_px(TF_FONT_DP);
                     if value.is_empty() {
                         scene.nodes.push(SceneNode::Text {
-                            rect: inner,
+                            rect: repose_core::Rect {
+                                x: inner.x,
+                                y: inner.y + text_off_y,
+                                w: inner.w,
+                                h: line_h,
+                            },
                             text: Arc::from(hint.clone()),
                             color: th.on_surface_variant,
                             size: font_val,
@@ -2245,7 +2252,12 @@ impl LayoutEngine {
                         }
                     } else {
                         scene.nodes.push(SceneNode::Text {
-                            rect: inner,
+                            rect: repose_core::Rect {
+                                x: inner.x,
+                                y: inner.y + text_off_y,
+                                w: inner.w,
+                                h: line_h,
+                            },
                             text: Arc::from(display_text(value)),
                             color: th.on_surface,
                             size: font_val,
