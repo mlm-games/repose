@@ -142,7 +142,7 @@ where
     // Use scheduler's focused state (which may have been updated by focus request)
     let current_focused = sched.focused;
 
-    sched.repose(
+    let frame = sched.repose(
         {
             let scale = scale;
             move |s: &mut Scheduler| with_density(Density { scale }, || (root_fn)(s))
@@ -167,7 +167,15 @@ where
                 })
             }
         },
-    )
+    );
+
+    if let Some(fid) = sched.focused {
+        if !frame.focus_chain.contains(&fid) {
+            sched.focused = None;
+        }
+    }
+
+    frame
 }
 
 /// Helper: ensure caret visibility for a TextFieldState inside a given rect (px).
@@ -1706,6 +1714,11 @@ pub fn run_desktop_app_with_snackbar(
                         &self.textfield_states,
                         focused,
                     );
+
+                    if focused.is_some() && self.sched.focused.is_none() && self.ime_preedit {
+                        rc_web::set_ime_for_textfield(win, false);
+                        self.ime_preedit = false;
+                    }
 
                     let build_layout_ms = (Instant::now() - t0).as_secs_f32() * 1000.0;
 

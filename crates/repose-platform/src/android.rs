@@ -1164,6 +1164,11 @@ pub fn run_android_app_with_options(
                         focused,
                     );
 
+                    if focused.is_some() && self.sched.focused.is_none() && self.ime_preedit {
+                        self.ime_preedit = false;
+                        win.set_ime_allowed(false);
+                    }
+
                     backend.frame(&frame.scene, GlyphRasterConfig { px: 18.0 * scale });
 
                     if let Some(fid) = self.sched.focused {

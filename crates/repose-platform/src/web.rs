@@ -1774,6 +1774,11 @@ impl ApplicationHandler<()> for App {
                     focused,
                 );
 
+                if focused.is_some() && self.sched.focused.is_none() && self.ime_preedit {
+                    rc_web::set_ime_for_textfield(&window, false);
+                    self.ime_preedit = false;
+                }
+
                 if let Some(backend) = self.backend.borrow_mut().as_mut() {
                     backend.frame(&frame.scene, GlyphRasterConfig { px: 18.0 * scale });
                 }
