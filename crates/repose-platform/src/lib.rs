@@ -54,6 +54,12 @@ static CLOSE_TO_TRAY: AtomicBool = AtomicBool::new(false);
 #[cfg(feature = "desktop")]
 static EVENT_LOOP_PROXY: OnceLock<winit::event_loop::EventLoopProxy<()>> = OnceLock::new();
 
+/// Optional callback invoked on every AboutToWait, regardless of redraw state.
+/// Used for draining cross-thread commands (e.g. tray toggles) that must be
+/// processed even when the window is hidden.
+#[cfg(feature = "desktop")]
+static ABOUT_TO_WAIT_CALLBACK: Mutex<Option<Box<dyn Fn() + Send>>> = Mutex::new(None);
+
 /// Store the application window handle (called once during app setup).
 #[cfg(feature = "desktop")]
 pub fn set_app_window(window: Arc<Window>) {
@@ -66,27 +72,18 @@ pub fn set_event_loop_proxy(proxy: winit::event_loop::EventLoopProxy<()>) {
     let _ = EVENT_LOOP_PROXY.set(proxy);
 }
 
+/// Register a callback invoked on every AboutToWait (used for draining tray commands).
+#[cfg(feature = "desktop")]
+pub fn set_about_to_wait_callback(cb: Box<dyn Fn() + Send>) {
+    *ABOUT_TO_WAIT_CALLBACK.lock().unwrap() = Some(cb);
+}
+
 /// Wake the winit event loop from another thread (e.g. tray's GTK thread).
 #[cfg(feature = "desktop")]
 pub fn wake_event_loop() {
     if let Some(proxy) = EVENT_LOOP_PROXY.get() {
         let _ = proxy.send_event(());
     }
-}
-
-/// Hide the application window (minimize to tray / taskbar).
-///
-/// On Wayland: `set_minimized(true)` minimizes to taskbar (winit limitation?)
-#[cfg(feature = "desktop")]
-pub fn hide_app_window() {
-    WINDOW_VISIBLE.store(false, Ordering::Relaxed);
-    if let Some(w) = APP_WINDOW.get() {
-        w.set_visible(false);
-        w.set_minimized(true);
-        w.request_redraw();
-    }
-    repose_core::frame_clock::request_frame();
-    wake_event_loop();
 }
 
 /// Show the application window.
@@ -96,10 +93,21 @@ pub fn hide_app_window() {
 pub fn show_app_window() {
     WINDOW_VISIBLE.store(true, Ordering::Relaxed);
     if let Some(w) = APP_WINDOW.get() {
+        log::info!("show_app_window: calling set_visible(true)");
         w.set_visible(true);
         #[allow(deprecated)]
         w.focus_window();
-        w.request_redraw();
+    }
+    repose_core::frame_clock::request_frame();
+    wake_event_loop();
+}
+
+#[cfg(feature = "desktop")]
+pub fn hide_app_window() {
+    WINDOW_VISIBLE.store(false, Ordering::Relaxed);
+    if let Some(w) = APP_WINDOW.get() {
+        log::info!("hide_app_window: calling set_visible(false)");
+        w.set_visible(false);
     }
     repose_core::frame_clock::request_frame();
     wake_event_loop();
@@ -111,8 +119,8 @@ pub fn window_is_visible() -> bool {
     WINDOW_VISIBLE.load(Ordering::Relaxed)
 }
 
-/// On Wayland, ``set_visible(false)` is a no-op, so the close button would appear
-/// to do nothing. The tray "Quit" action still exits the process regardless.
+/// The close button hides the window (via ``set_visible(false)``) instead of
+/// closing. The tray "Quit" action still exits the process regardless.
 #[cfg(feature = "desktop")]
 pub fn set_close_to_tray(enabled: bool) {
     CLOSE_TO_TRAY.store(enabled, Ordering::Relaxed);
@@ -420,7 +428,7 @@ pub fn run_desktop_app_with_snackbar(
         }
 
         fn process_render_commands(&mut self) {
-            let Some(backend) = &mut self.backend else {
+            let Some(backend) = self.backend.as_mut() else {
                 return;
             };
             rc::process_render_commands(backend, self.render.drain());
@@ -612,9 +620,10 @@ pub fn run_desktop_app_with_snackbar(
             match event {
                 WindowEvent::CloseRequested => {
                     if CLOSE_TO_TRAY.load(Ordering::Relaxed) {
+                        // Drop GPU backend before null-buffer unmap.
+                        self.backend = None;
                         if let Some(w) = &self.window {
                             w.set_visible(false);
-                            w.set_minimized(true);
                         }
                         WINDOW_VISIBLE.store(false, Ordering::Relaxed);
                     } else {
@@ -675,7 +684,7 @@ pub fn run_desktop_app_with_snackbar(
 
                 WindowEvent::Resized(size) => {
                     self.sched.size = (size.width, size.height);
-                    if let Some(b) = &mut self.backend {
+                    if let Some(b) = self.backend.as_mut() {
                         b.configure_surface(size.width, size.height);
                     }
                     if let Some(w) = &self.window {
@@ -1788,6 +1797,30 @@ pub fn run_desktop_app_with_snackbar(
         }
 
         fn about_to_wait(&mut self, el: &winit::event_loop::ActiveEventLoop) {
+            // Process cross-thread commands (e.g. tray toggles) before any
+            // redraw check, so hide/show commands work even when hidden
+            #[cfg(feature = "desktop")]
+            if let Some(cb) = ABOUT_TO_WAIT_CALLBACK.lock().unwrap().as_ref() {
+                cb();
+            }
+
+            // Free GPU resources when window is hidden
+            #[cfg(feature = "desktop")]
+            if !WINDOW_VISIBLE.load(Ordering::Relaxed) {
+                if self.backend.is_some() {
+                    log::info!("about_to_wait: window hidden, dropping GPU backend");
+                    self.backend = None;
+                }
+            } else if self.backend.is_none() {
+                if let Some(w) = &self.window {
+                    log::info!("about_to_wait: recreating GPU backend");
+                    match repose_render_wgpu::WgpuBackend::new(w.clone()) {
+                        Ok(b) => self.backend = Some(b),
+                        Err(e) => log::error!("about_to_wait: failed to recreate backend: {e:?}"),
+                    }
+                }
+            }
+
             if take_frame_request() {
                 self.pending_redraw = true;
             }
