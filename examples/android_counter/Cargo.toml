@@ -25,7 +25,7 @@ fullscreen = true
 [dependencies]
 repose-core.workspace = true
 repose-ui.workspace = true
-repose-platform = { workspace = true, features = ["android"] }
+repose-platform.workspace = true
 winit = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }

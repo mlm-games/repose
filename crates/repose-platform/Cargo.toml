@@ -5,27 +5,27 @@ edition.workspace = true
 license.workspace = true
 description = "Platform runners (winit Desktop, Android and Web)"
 
-[features]
-desktop = ["winit", "repose-render-wgpu"]
-android = ["winit/android-native-activity", "repose-render-wgpu"]
-web = ["repose-render-wgpu"]
-
-
 [dependencies]
 repose-core.workspace = true
 repose-ui.workspace = true
 repose-navigation.workspace = true
-repose-render-wgpu = { workspace = true, optional = true }
+repose-render-wgpu.workspace = true
 repose-devtools.workspace = true
-winit = { workspace = true, optional = true }
 log = { workspace = true }
 anyhow = { workspace = true }
 clipawl = { workspace = true, features = ["linux-wayland", "linux-x11"] }
 web-time.workspace = true
 pollster = { workspace = true }
 accesskit = "0.24"
-accesskit_winit = "0.33"                                                  # Compatible with winit 0.30
 rustc-hash = { workspace = true }
+
+[target.'cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))'.dependencies]
+winit = { workspace = true }
+accesskit_winit = "0.33"
+
+[target.'cfg(target_os = "android")'.dependencies]
+winit = { workspace = true, features = ["android-native-activity"] }
+accesskit_winit = "0.33"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }

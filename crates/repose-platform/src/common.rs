@@ -389,7 +389,6 @@ macro_rules! handle_arrow_key_spatial_nav {
     };
 }
 
-#[cfg(any(feature = "desktop", feature = "android", feature = "web"))]
 pub(crate) fn process_render_commands(
     backend: &mut repose_render_wgpu::WgpuBackend,
     cmds: Vec<RenderCommand>,

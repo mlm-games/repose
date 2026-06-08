@@ -1,5 +1,6 @@
 //! Platform runners
 use crate::a11y::ReposeActionHandler;
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 use accesskit_winit::Adapter;
 use repose_core::locals::dp_to_px;
 use repose_core::*;
@@ -12,74 +13,70 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use web_time::Instant;
 
-#[cfg(all(feature = "android", target_os = "android"))]
+#[cfg(target_os = "android")]
 pub mod android;
 
-#[cfg(all(feature = "web", target_arch = "wasm32"))]
+#[cfg(target_arch = "wasm32")]
 pub mod web;
 
 pub mod a11y;
-#[cfg(any(feature = "desktop", feature = "android", target_arch = "wasm32"))]
 mod common;
-#[cfg(any(feature = "desktop", all(feature = "android", target_os = "android")))]
+#[cfg(not(target_arch = "wasm32"))]
 mod common_android;
-#[cfg(any(feature = "desktop", feature = "android", target_arch = "wasm32"))]
 mod common_web;
 pub mod render;
 
-#[cfg(any(feature = "desktop", feature = "android", target_arch = "wasm32"))]
 use common as rc;
-#[cfg(any(feature = "desktop", all(feature = "android", target_os = "android")))]
+#[cfg(not(target_arch = "wasm32"))]
 use common_android as rc_android;
-#[cfg(any(feature = "desktop", feature = "android", target_arch = "wasm32"))]
 use common_web as rc_web;
 
 pub use render::{ImageHandleGuard, RenderCommand, RenderContext};
 
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 use winit::window::Window;
 
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 use std::sync::OnceLock;
 
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 static APP_WINDOW: OnceLock<Arc<Window>> = OnceLock::new();
 
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 static WINDOW_VISIBLE: AtomicBool = AtomicBool::new(true);
 
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 static CLOSE_TO_TRAY: AtomicBool = AtomicBool::new(false);
 
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 static EVENT_LOOP_PROXY: OnceLock<winit::event_loop::EventLoopProxy<()>> = OnceLock::new();
 
 /// Optional callback invoked on every AboutToWait, regardless of redraw state.
 /// Used for draining cross-thread commands (e.g. tray toggles) that must be
 /// processed even when the window is hidden.
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 static ABOUT_TO_WAIT_CALLBACK: Mutex<Option<Box<dyn Fn() + Send>>> = Mutex::new(None);
 
 /// Store the application window handle (called once during app setup).
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn set_app_window(window: Arc<Window>) {
     let _ = APP_WINDOW.set(window);
 }
 
 /// Store the event loop proxy so tray commands can wake the event loop.
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn set_event_loop_proxy(proxy: winit::event_loop::EventLoopProxy<()>) {
     let _ = EVENT_LOOP_PROXY.set(proxy);
 }
 
 /// Register a callback invoked on every AboutToWait (used for draining tray commands).
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn set_about_to_wait_callback(cb: Box<dyn Fn() + Send>) {
     *ABOUT_TO_WAIT_CALLBACK.lock().unwrap() = Some(cb);
 }
 
 /// Wake the winit event loop from another thread (e.g. tray's GTK thread).
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn wake_event_loop() {
     if let Some(proxy) = EVENT_LOOP_PROXY.get() {
         let _ = proxy.send_event(());
@@ -89,7 +86,7 @@ pub fn wake_event_loop() {
 /// Show the application window.
 ///
 /// On Wayland, unminimizing might not be supported by the protocol?
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn show_app_window() {
     WINDOW_VISIBLE.store(true, Ordering::Relaxed);
     if let Some(w) = APP_WINDOW.get() {
@@ -102,7 +99,7 @@ pub fn show_app_window() {
     wake_event_loop();
 }
 
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn hide_app_window() {
     WINDOW_VISIBLE.store(false, Ordering::Relaxed);
     if let Some(w) = APP_WINDOW.get() {
@@ -114,14 +111,14 @@ pub fn hide_app_window() {
 }
 
 /// Returns whether the application window is currently visible.
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn window_is_visible() -> bool {
     WINDOW_VISIBLE.load(Ordering::Relaxed)
 }
 
 /// The close button hides the window (via ``set_visible(false)``) instead of
 /// closing. The tray "Quit" action still exits the process regardless.
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn set_close_to_tray(enabled: bool) {
     CLOSE_TO_TRAY.store(enabled, Ordering::Relaxed);
 }
@@ -198,7 +195,7 @@ pub fn tf_ensure_visible_in_rect(state: &mut repose_ui::TextFieldState, inner_re
     );
 }
 
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 fn map_cursor(c: repose_core::CursorIcon) -> winit::window::CursorIcon {
     use winit::window::CursorIcon as W;
     match c {
@@ -212,14 +209,14 @@ fn map_cursor(c: repose_core::CursorIcon) -> winit::window::CursorIcon {
     }
 }
 
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn run_desktop_app(
     root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
 ) -> anyhow::Result<()> {
     run_desktop_app_with_snackbar(root, None)
 }
 
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn run_desktop_app_with_snackbar(
     root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
     snackbar_tick: Option<Rc<dyn Fn(u32)>>,
@@ -1799,13 +1796,13 @@ pub fn run_desktop_app_with_snackbar(
         fn about_to_wait(&mut self, el: &winit::event_loop::ActiveEventLoop) {
             // Process cross-thread commands (e.g. tray toggles) before any
             // redraw check, so hide/show commands work even when hidden
-            #[cfg(feature = "desktop")]
+            #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
             if let Some(cb) = ABOUT_TO_WAIT_CALLBACK.lock().unwrap().as_ref() {
                 cb();
             }
 
             // Free GPU resources when window is hidden
-            #[cfg(feature = "desktop")]
+            #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
             if !WINDOW_VISIBLE.load(Ordering::Relaxed) {
                 if self.backend.is_some() {
                     log::info!("about_to_wait: window hidden, dropping GPU backend");
@@ -2176,7 +2173,7 @@ pub fn run_desktop_app_with_snackbar(
     Ok(())
 }
 
-#[cfg(feature = "desktop")]
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn run_app_with_snackbar(
     root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
     snackbar_tick: Rc<dyn Fn(u32)>,

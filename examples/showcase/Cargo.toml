@@ -30,11 +30,9 @@ label = "Repose Showcase"
 fullscreen = true
 
 [target.'cfg(target_os = "android")'.dependencies]
-repose-platform = { workspace = true, features = ["android"] }
 android_logger = { workspace = true }
 
 [target.'cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))'.dependencies]
-repose-platform = { workspace = true, features = ["desktop"] }
 
 [dependencies]
 repose-core.workspace = true
@@ -43,6 +41,7 @@ repose-material.workspace = true
 repose-canvas.workspace = true
 repose-navigation.workspace = true
 repose-docking.workspace = true
+repose-platform.workspace = true
 
 winit = { workspace = true }
 env_logger = { workspace = true }
@@ -61,5 +60,5 @@ console_log = { workspace = true }
 log.workspace = true
 getrandom = { workspace = true, features = ["wasm_js"] }
 wgpu = { workspace = true, features = ["webgpu", "webgl"] }
-repose-platform = { workspace = true, features = ["web"] }
+repose-platform.workspace = true
 repose-render-wgpu.workspace = true
