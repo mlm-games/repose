@@ -60,6 +60,7 @@ pub fn run_android_app_with_options(
     let event_loop = winit::event_loop::EventLoopBuilder::new()
         .with_android_app(app)
         .build()?;
+    crate::set_event_loop_proxy(event_loop.create_proxy());
 
     struct AppState {
         root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>,
@@ -1197,6 +1198,7 @@ pub fn run_android_app_with_options(
         }
 
         fn about_to_wait(&mut self, _el: &winit::event_loop::ActiveEventLoop) {
+            crate::process_deeplinks();
             if self.options.continuous_redraw || self.dirty || take_frame_request() {
                 self.request_redraw();
             }

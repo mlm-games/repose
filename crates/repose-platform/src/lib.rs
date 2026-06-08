@@ -36,7 +36,7 @@ pub use render::{ImageHandleGuard, RenderCommand, RenderContext};
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 use winit::window::Window;
 
-#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::OnceLock;
 
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
@@ -48,7 +48,7 @@ static WINDOW_VISIBLE: AtomicBool = AtomicBool::new(true);
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 static CLOSE_TO_TRAY: AtomicBool = AtomicBool::new(false);
 
-#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
+#[cfg(not(target_arch = "wasm32"))]
 static EVENT_LOOP_PROXY: OnceLock<winit::event_loop::EventLoopProxy<()>> = OnceLock::new();
 
 /// Optional callback invoked on every AboutToWait, regardless of redraw state.
@@ -57,14 +57,48 @@ static EVENT_LOOP_PROXY: OnceLock<winit::event_loop::EventLoopProxy<()>> = OnceL
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 static ABOUT_TO_WAIT_CALLBACK: Mutex<Option<Box<dyn Fn() + Send>>> = Mutex::new(None);
 
+static DEEPLINK_CB: Mutex<Option<Box<dyn Fn(Vec<u8>) + Send>>> = Mutex::new(None);
+static PENDING_DEEPLINKS: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
+
+/// Register a callback to receive deeplink payloads (raw bytes)
+pub fn set_on_deeplink(callback: Box<dyn Fn(Vec<u8>) + Send>) {
+    *DEEPLINK_CB.lock().unwrap() = Some(callback);
+}
+
+/// Push a deeplink payload from any thread (JNI callback, CLI watcher, etc).
+pub fn push_deeplink(data: Vec<u8>) {
+    PENDING_DEEPLINKS.lock().unwrap().push(data);
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(proxy) = EVENT_LOOP_PROXY.get() {
+        let _ = proxy.send_event(());
+    }
+}
+
+/// Drain queued deeplinks and dispatch them to the registered callback.
+/// Called from each platform runner's `about_to_wait` handler.
+pub(crate) fn process_deeplinks() {
+    let mut queue = PENDING_DEEPLINKS.lock().unwrap();
+    if queue.is_empty() {
+        return;
+    }
+    let batch = std::mem::take(&mut *queue);
+    drop(queue);
+
+    if let Some(cb) = DEEPLINK_CB.lock().unwrap().as_ref() {
+        for data in batch {
+            cb(data);
+        }
+    }
+}
+
 /// Store the application window handle (called once during app setup).
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn set_app_window(window: Arc<Window>) {
     let _ = APP_WINDOW.set(window);
 }
 
-/// Store the event loop proxy so tray commands can wake the event loop.
-#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
+/// Store the event loop proxy so tray commands / deeplinks can wake the event loop.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn set_event_loop_proxy(proxy: winit::event_loop::EventLoopProxy<()>) {
     let _ = EVENT_LOOP_PROXY.set(proxy);
 }
@@ -75,8 +109,8 @@ pub fn set_about_to_wait_callback(cb: Box<dyn Fn() + Send>) {
     *ABOUT_TO_WAIT_CALLBACK.lock().unwrap() = Some(cb);
 }
 
-/// Wake the winit event loop from another thread (e.g. tray's GTK thread).
-#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
+/// Wake the winit event loop from another thread (e.g. tray's GTK thread, JNI callback).
+#[cfg(not(target_arch = "wasm32"))]
 pub fn wake_event_loop() {
     if let Some(proxy) = EVENT_LOOP_PROXY.get() {
         let _ = proxy.send_event(());
@@ -1794,12 +1828,13 @@ pub fn run_desktop_app_with_snackbar(
         }
 
         fn about_to_wait(&mut self, el: &winit::event_loop::ActiveEventLoop) {
-            // Process cross-thread commands (e.g. tray toggles) before any
+            // Process cross-thread commands (e.g. tray toggles, deeplinks) before any
             // redraw check, so hide/show commands work even when hidden
             #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
             if let Some(cb) = ABOUT_TO_WAIT_CALLBACK.lock().unwrap().as_ref() {
                 cb();
             }
+            process_deeplinks();
 
             // Free GPU resources when window is hidden
             #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
