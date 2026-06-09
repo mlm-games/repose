@@ -1836,14 +1836,10 @@ pub fn run_desktop_app_with_snackbar(
             }
             process_deeplinks();
 
-            // Free GPU resources when window is hidden
+            // On Wayland, wgpu creates an xdg_surface from the winit window and it shouldn't be recreated with a new id?
+            // It doesn't take a lot of resources anyway, so let the backend be present.
             #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
-            if !WINDOW_VISIBLE.load(Ordering::Relaxed) {
-                if self.backend.is_some() {
-                    log::info!("about_to_wait: window hidden, dropping GPU backend");
-                    self.backend = None;
-                }
-            } else if self.backend.is_none() {
+            if WINDOW_VISIBLE.load(Ordering::Relaxed) && self.backend.is_none() {
                 if let Some(w) = &self.window {
                     log::info!("about_to_wait: recreating GPU backend");
                     match repose_render_wgpu::WgpuBackend::new(w.clone()) {
