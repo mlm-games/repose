@@ -35,8 +35,7 @@ thread_local! {
     static LOCALS_STACK: RefCell<Vec<HashMap<TypeId, Box<dyn Any>>>> = RefCell::new(Vec::new());
 }
 
-#[derive(Clone, Copy, Debug)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default)]
 struct Defaults {
     theme: Theme,
     text_direction: TextDirection,
@@ -46,7 +45,6 @@ struct Defaults {
     window_insets: WindowInsets,
     window_size_class: WindowSizeClass,
 }
-
 
 static DEFAULTS: OnceLock<RwLock<Defaults>> = OnceLock::new();
 
@@ -608,6 +606,7 @@ pub struct WindowInsets {
 /// Set the global default window insets (platform should call this when insets change).
 pub fn set_window_insets_default(insets: WindowInsets) {
     defaults().write().window_insets = insets;
+    set_local_boxed(TypeId::of::<WindowInsets>(), Box::new(insets));
 }
 
 /// Update just the IME bottom inset (keyboard height in px). Platform runners
@@ -631,15 +630,13 @@ pub fn window_insets() -> WindowInsets {
 /// - [`WidthClass::Compact`]  : width < 600 dp
 /// - [`WidthClass::Medium`]   : 600 dp <= width < 840 dp
 /// - [`WidthClass::Expanded`] : width >= 840 dp
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum WidthClass {
     #[default]
     Compact,
     Medium,
     Expanded,
 }
-
 
 /// Coarse height category for a window, computed from its current size.
 ///
@@ -648,15 +645,13 @@ pub enum WidthClass {
 /// - [`HeightClass::Compact`]  : height < 480 dp
 /// - [`HeightClass::Medium`]   : 480 dp <= height < 900 dp
 /// - [`HeightClass::Expanded`] : height >= 900 dp
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum HeightClass {
     #[default]
     Compact,
     Medium,
     Expanded,
 }
-
 
 /// Snapshot of the current window's size category.
 ///
