@@ -241,6 +241,9 @@ pub fn run_android_app_with_options(
             rc::tf_ensure_caret_visible(st, is_multiline);
         }
 
+        // IME inset should be provided by the platform's OnApplyWindowInsetsListener
+        // via the nativeOnWindowInsets JNI callback, which gives the real
+        // keyboard height. This is just temporary, and should be replaced
         fn update_ime_inset(&self) {
             let h = if self.ime_visible {
                 self.options.ime_height_px.unwrap_or_else(|| {
@@ -914,7 +917,9 @@ pub fn run_android_app_with_options(
                                 ) {
                                     self.sched.focused = Some(next);
 
-                                    let tf_state_key = f.hit_regions.iter()
+                                    let tf_state_key = f
+                                        .hit_regions
+                                        .iter()
                                         .find(|h| h.id == next)
                                         .and_then(|h| h.tf_state_key);
                                     if let Some(key) = tf_state_key {
@@ -938,13 +943,15 @@ pub fn run_android_app_with_options(
                     }
 
                     handle_arrow_key_spatial_nav!(self, key_event, f, next, {
-                        let tf_state_key = f.hit_regions.iter()
+                        let tf_state_key = f
+                            .hit_regions
+                            .iter()
                             .find(|h| h.id == next)
                             .and_then(|h| h.tf_state_key);
                         if let Some(key) = tf_state_key {
-                            self.textfield_states.entry(key).or_insert_with(|| {
-                                Rc::new(RefCell::new(TextFieldState::new()))
-                            });
+                            self.textfield_states
+                                .entry(key)
+                                .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
                             if let Some(state_rc) = self.textfield_states.get(&key) {
                                 state_rc.borrow_mut().reset_caret_blink();
                             }
@@ -958,7 +965,8 @@ pub fn run_android_app_with_options(
                     // Keyboard activation for focused buttons (Space/Enter)
                     if let Some(fid) = self.sched.focused {
                         let is_textfield = if let Some(f) = &self.frame_cache {
-                            f.semantics_nodes.iter()
+                            f.semantics_nodes
+                                .iter()
                                 .any(|n| n.id == fid && n.role == Role::TextField)
                         } else {
                             false
@@ -967,7 +975,8 @@ pub fn run_android_app_with_options(
                             match key_event.physical_key {
                                 PhysicalKey::Code(KeyCode::Space)
                                 | PhysicalKey::Code(KeyCode::Enter) => {
-                                    if key_event.state == ElementState::Pressed && !key_event.repeat {
+                                    if key_event.state == ElementState::Pressed && !key_event.repeat
+                                    {
                                         self.pressed_ids.insert(fid);
                                         self.key_pressed_active = Some(fid);
                                         self.dirty = true;
@@ -977,10 +986,8 @@ pub fn run_android_app_with_options(
                                         if let Some(active_id) = self.key_pressed_active.take() {
                                             self.pressed_ids.remove(&active_id);
                                             if let Some(f) = &self.frame_cache
-                                                && let Some(hit) = f
-                                                    .hit_regions
-                                                    .iter()
-                                                    .find(|h| h.id == active_id)
+                                                && let Some(hit) =
+                                                    f.hit_regions.iter().find(|h| h.id == active_id)
                                             {
                                                 if let Some(cb) = &hit.on_click {
                                                     cb();
