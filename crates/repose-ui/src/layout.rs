@@ -830,6 +830,18 @@ impl LayoutEngine {
         // is correct - it prevents content from shrinking below its natural
         // size, which is essential for scroll containers to overflow properly.
 
+        if let ViewKind::TreeRow {
+            depth,
+            has_children,
+            ..
+        } = kind
+        {
+            // Indent leaves more than parent nodes for visual tree structure:
+            // depth * 16dp + chevron space if has_children.
+            let indent_dp = *depth as f32 * 16.0 + if *has_children { 16.0 } else { 24.0 };
+            s.padding.left = length(px(indent_dp));
+        }
+
         if matches!(kind, ViewKind::Button { .. }) {
             s.display = Display::Flex;
             s.flex_direction = if locals::text_direction() == locals::TextDirection::Rtl {
@@ -924,6 +936,7 @@ impl LayoutEngine {
             ViewKind::Slider { .. } => NodeContext::Slider,
             ViewKind::RangeSlider { .. } => NodeContext::Range,
             ViewKind::ProgressBar { .. } => NodeContext::Progress,
+            ViewKind::Expander { .. } => NodeContext::Container,
             ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. } => NodeContext::ScrollContainer,
             ViewKind::OverlayHost => NodeContext::Container,
             ViewKind::SubcomposeLayout { .. } => NodeContext::Container,
@@ -1622,6 +1635,8 @@ impl LayoutEngine {
                 | ViewKind::RangeSlider { .. }
                 | ViewKind::ScrollV { .. }
                 | ViewKind::ScrollXY { .. }
+                | ViewKind::Expander { .. }
+                | ViewKind::TreeRow { .. }
         );
 
         let needs_hit = !modifier.disabled
@@ -2696,6 +2711,112 @@ impl LayoutEngine {
                 });
                 next_sem_parent = Some(view_id);
             }
+            ViewKind::Expander { on_toggle, .. } => {
+                if let Some(cb) = on_toggle.clone() {
+                    hits.push(HitRegion {
+                        id: view_id,
+                        rect,
+                        on_click: Some(cb),
+                        focusable: true,
+                        z_index: modifier.z_index,
+                        ..HitRegion::from_modifier(view_id, rect, &modifier)
+                    });
+                }
+                sems.push(SemNode {
+                    id: view_id,
+                    parent: sem_parent,
+                    role: Role::Button,
+                    label: infer_label(&self.tree, node_id),
+                    rect,
+                    focused: is_focused,
+                    enabled: !modifier.disabled,
+                });
+                next_sem_parent = Some(view_id);
+            }
+            ViewKind::TreeRow {
+                depth,
+                has_children,
+                is_expanded,
+                is_selected,
+                on_toggle,
+                on_select,
+            } => {
+                let indent_px = dp_to_px(*depth as f32 * 16.0);
+                let chevron_w = if *has_children { dp_to_px(16.0) } else { 0.0 };
+
+                // Selection highlight
+                if *is_selected {
+                    let th = locals::theme();
+                    scene.nodes.push(SceneNode::Rect {
+                        rect,
+                        brush: Brush::Solid(th.primary.with_alpha_f32(0.15)),
+                        radius: 0.0,
+                    });
+                }
+
+                // Expand/collapse chevron
+                if *has_children {
+                    let chevron_text = if *is_expanded { "▼" } else { "▶" };
+                    let chevron_px = dp_to_px(12.0);
+                    scene.nodes.push(SceneNode::Text {
+                        rect: repose_core::Rect {
+                            x: rect.x + indent_px,
+                            y: rect.y + (rect.h - chevron_px) * 0.5,
+                            w: chevron_w,
+                            h: chevron_px,
+                        },
+                        text: Arc::from(chevron_text),
+                        color: mul_alpha_color(locals::theme().on_surface, alpha_accum),
+                        size: chevron_px,
+                        font_family: None,
+                    });
+
+                    // Toggle hit region (chevron area)
+                    if let Some(cb) = on_toggle.clone() {
+                        hits.push(HitRegion {
+                            id: view_id.wrapping_mul(2).wrapping_add(1),
+                            rect: repose_core::Rect {
+                                x: rect.x + indent_px,
+                                y: rect.y,
+                                w: chevron_w,
+                                h: rect.h,
+                            },
+                            on_click: Some(cb),
+                            focusable: false,
+                            z_index: modifier.z_index,
+                            ..HitRegion::from_modifier(view_id, rect, &modifier)
+                        });
+                    }
+                }
+
+                // Select hit region (label area)
+                if let Some(cb) = on_select.clone() {
+                    hits.push(HitRegion {
+                        id: view_id,
+                        rect: repose_core::Rect {
+                            x: rect.x + indent_px + chevron_w,
+                            y: rect.y,
+                            w: (rect.w - indent_px - chevron_w).max(0.0),
+                            h: rect.h,
+                        },
+                        on_click: Some(cb),
+                        focusable: true,
+                        z_index: modifier.z_index,
+                        ..HitRegion::from_modifier(view_id, rect, &modifier)
+                    });
+                }
+
+                sems.push(SemNode {
+                    id: view_id,
+                    parent: sem_parent,
+                    role: Role::Button,
+                    label: infer_label(&self.tree, node_id),
+                    rect,
+                    focused: is_focused,
+                    enabled: !modifier.disabled,
+                });
+                next_sem_parent = Some(view_id);
+            }
             _ => {}
         }
 
@@ -2953,6 +3074,48 @@ impl LayoutEngine {
                         deferred,
                         skip_defer,
                     );
+                }
+            }
+            ViewKind::Expander { expanded, .. } => {
+                // First child is always visible (the header)
+                if let Some(&first) = children.first() {
+                    self.walk_paint(
+                        first,
+                        scene,
+                        hits,
+                        sems,
+                        textfield_states,
+                        interactions,
+                        focused,
+                        child_offset_px,
+                        alpha_accum,
+                        next_sem_parent,
+                        font_px,
+                        allow_cache,
+                        deferred,
+                        skip_defer,
+                    );
+                }
+                // Remaining children visible only when expanded
+                if *expanded {
+                    for &child_id in children.iter().skip(1) {
+                        self.walk_paint(
+                            child_id,
+                            scene,
+                            hits,
+                            sems,
+                            textfield_states,
+                            interactions,
+                            focused,
+                            child_offset_px,
+                            alpha_accum,
+                            next_sem_parent,
+                            font_px,
+                            allow_cache,
+                            deferred,
+                            skip_defer,
+                        );
+                    }
                 }
             }
             _ => {

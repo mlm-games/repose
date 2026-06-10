@@ -125,9 +125,10 @@ pub mod pager;
 pub mod scroll;
 pub mod windowing;
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
-use std::cell::RefCell;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
 use taffy::style::FlexDirection;
@@ -373,6 +374,49 @@ pub fn ProgressBar(value: f32, range: (f32, f32)) -> View {
     })
 }
 
+/// A collapsible section with a clickable header.
+///
+/// The first child is rendered as the header with a chevron toggle arrow.
+/// Remaining children are shown only when `expanded` is true.
+pub fn Expander(modifier: Modifier, expanded: bool, on_toggle: impl Fn() + 'static) -> View {
+    View::new(
+        0,
+        ViewKind::Expander {
+            expanded,
+            on_toggle: Some(Rc::new(on_toggle)),
+        },
+    )
+    .modifier(modifier)
+}
+
+/// A single row in a tree view.
+///
+/// Renders with indentation based on `depth`, an expand/collapse arrow if
+/// `has_children` is true, and a highlight background if `is_selected`.
+/// The first child is the row's label/content.
+pub fn TreeRow(
+    modifier: Modifier,
+    depth: usize,
+    has_children: bool,
+    is_expanded: bool,
+    is_selected: bool,
+    on_toggle: impl Fn() + 'static,
+    on_select: impl Fn() + 'static,
+) -> View {
+    View::new(
+        0,
+        ViewKind::TreeRow {
+            depth,
+            has_children,
+            is_expanded,
+            is_selected,
+            on_toggle: Some(Rc::new(on_toggle)),
+            on_select: Some(Rc::new(on_select)),
+        },
+    )
+    .modifier(modifier)
+}
+
 /// A circular progress indicator (spinner).
 ///
 /// If `value` is `None`, renders an indeterminate spinner (filled circle).
@@ -389,6 +433,92 @@ pub fn CircularProgress(value: Option<f32>) -> View {
         },
     )
     .modifier(Modifier::new().width(48.0).height(48.0))
+}
+
+static DRAGVALUE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// A drag-to-change numeric value field (like egui's `DragValue`).
+///
+/// Click and drag left/right to change the value. Displays the current value
+/// as centered text in a bordered box.
+pub fn DragValue(
+    value: f32,
+    range: (f32, f32),
+    speed: f32,
+    on_change: impl Fn(f32) + 'static,
+) -> View {
+    let id = DRAGVALUE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let drag_start_x = remember_state_with_key(format!("dv_dsx_{}", id), || 0.0f32);
+    let drag_start_val = remember_state_with_key(format!("dv_dsv_{}", id), || 0.0f32);
+    let is_dragging = remember_state_with_key(format!("dv_drg_{}", id), || false);
+
+    let oc = Rc::new(on_change);
+    let min = range.0;
+    let max = range.1;
+    let cur = value;
+
+    let th = locals::theme();
+
+    Box(Modifier::new()
+        .min_width(48.0)
+        .height(28.0)
+        .background(th.surface_container)
+        .border(1.0, th.outline, 4.0)
+        .clip_rounded(4.0)
+        .padding_values(PaddingValues {
+            left: 4.0,
+            right: 4.0,
+            top: 0.0,
+            bottom: 0.0,
+        })
+        .on_pointer_down({
+            let dsx = drag_start_x.clone();
+            let dsv = drag_start_val.clone();
+            let drg = is_dragging.clone();
+            move |pe: PointerEvent| {
+                *drg.borrow_mut() = true;
+                *dsx.borrow_mut() = pe.position.x;
+                *dsv.borrow_mut() = cur;
+            }
+        })
+        .on_pointer_move({
+            let dsx = drag_start_x.clone();
+            let dsv = drag_start_val.clone();
+            let drg = is_dragging.clone();
+            let oc = oc.clone();
+            move |pe: PointerEvent| {
+                if !*drg.borrow() {
+                    return;
+                }
+                let dx = pe.position.x - *dsx.borrow();
+                let new_val = (*dsv.borrow() + dx * speed).clamp(min, max);
+                (oc)(new_val);
+            }
+        })
+        .on_pointer_up({
+            let drg = is_dragging.clone();
+            move |_pe: PointerEvent| {
+                *drg.borrow_mut() = false;
+            }
+        })
+        .cursor(CursorIcon::EwResize))
+    .child(
+        Text(format_value(value))
+            .size(13.0)
+            .color(th.on_surface)
+            .single_line()
+            .overflow_ellipsize(),
+    )
+}
+
+fn format_value(v: f32) -> String {
+    if (v - v.round()).abs() < 1e-6 {
+        format!("{}", v.round() as i64)
+    } else if (v * 10.0 - (v * 10.0).round()).abs() < 1e-6 {
+        format!("{:.1}", v)
+    } else {
+        format!("{:.2}", v)
+    }
 }
 
 pub fn Image(modifier: Modifier, handle: ImageHandle) -> View {
