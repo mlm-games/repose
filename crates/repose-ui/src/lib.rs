@@ -105,6 +105,7 @@
 pub mod adaptive;
 pub mod anim;
 pub mod anim_ext;
+pub mod color_picker;
 pub mod gestures;
 pub mod layout;
 pub use layout::IntrinsicSizeMode;
