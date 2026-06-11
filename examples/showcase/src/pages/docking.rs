@@ -5,7 +5,15 @@ use repose_core::prelude::*;
 use repose_docking::*;
 use repose_ui::*;
 
-use crate::ui::Section;
+use crate::ui::{Hint, Section, sp};
+
+fn panel(id: u64, title: &str, body: &'static str) -> DockPanel {
+    DockPanel {
+        id,
+        title: title.to_string(),
+        content: Rc::new(move || Text(body).size(16.0)),
+    }
+}
 
 pub fn screen() -> View {
     let state = remember_with_key("dock:state", || {
@@ -13,32 +21,15 @@ pub fn screen() -> View {
     });
 
     let panels = vec![
-        DockPanel {
-            id: 1,
-            title: "Inspector".to_string(),
-            content: Rc::new(|| Text("Inspector panel").size(16.0)),
-        },
-        DockPanel {
-            id: 2,
-            title: "Assets".to_string(),
-            content: Rc::new(|| Text("Assets panel").size(16.0)),
-        },
-        DockPanel {
-            id: 3,
-            title: "Scene".to_string(),
-            content: Rc::new(|| Text("Scene panel").size(16.0)),
-        },
+        panel(1, "Inspector", "Inspector panel"),
+        panel(2, "Assets", "Assets panel"),
+        panel(3, "Scene", "Scene panel"),
     ];
-
-    let callbacks = DockCallbacks::default();
 
     Section(
         "Docking",
-        Column(Modifier::new().padding(12.0)).child((
-            Text("Drag tabs to edges/center to dock. Drag splitters to resize.")
-                .size(14.0)
-                .color(theme().on_surface_variant),
-            Box(Modifier::new().height(12.0).width(1.0)),
+        Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
+            Hint("Drag tabs to edges/center to dock. Drag splitters to resize."),
             DockArea(
                 "showcase_dock",
                 Modifier::new()
@@ -48,7 +39,7 @@ pub fn screen() -> View {
                     .clip_rounded(12.0),
                 state,
                 panels,
-                callbacks,
+                DockCallbacks::default(),
             ),
         )),
     )

@@ -2,16 +2,13 @@ use repose_canvas::Canvas;
 use repose_core::prelude::*;
 use repose_ui::*;
 
-use crate::ui::Section;
+use crate::ui::{Hint, Section, sp};
 
 pub fn screen() -> View {
     Section(
         "Canvas",
-        Column(Modifier::new().padding(12.0)).child((
-            Text("Immediate-mode drawing recorded into SceneNodes.")
-                .size(14.0)
-                .color(theme().on_surface_variant),
-            Box(Modifier::new().height(12.0).width(1.0)),
+        Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
+            Hint("Immediate-mode drawing recorded into SceneNodes."),
             Canvas(
                 Modifier::new()
                     .size(520.0, 240.0)

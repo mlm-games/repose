@@ -2,7 +2,7 @@ use repose_core::{prelude::*, signal};
 use repose_material::material3::TextButton;
 use repose_ui::*;
 
-use crate::ui::Section;
+use crate::ui::{Section, sp};
 
 pub fn screen() -> View {
     let boom = remember(|| signal(false));
@@ -17,18 +17,17 @@ pub fn screen() -> View {
                     .background(th.error)
                     .border(1.0, th.outline, 12.0)
                     .clip_rounded(12.0)
-                    .padding(12.0))
+                    .padding(sp::MD))
                 .child(Text(format!("Recovered from panic: {}", info.message)))
             },
             move || {
-                Column(Modifier::new().padding(12.0)).child((
+                Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
                     if boom_for_view.get() {
                         panic!("Boom from demo component!");
                     } else {
                         Text("Press the button to throw.")
                     },
-                    Box(Modifier::new().height(12.0).width(1.0)),
-                    Row(Modifier::new()).child((
+                    Row(Modifier::new().gap(sp::MD)).child((
                         TextButton(
                             Modifier::new(),
                             {
@@ -37,7 +36,6 @@ pub fn screen() -> View {
                             },
                             || Text("Throw"),
                         ),
-                        Box(Modifier::new().width(12.0).height(1.0)),
                         TextButton(
                             Modifier::new(),
                             {

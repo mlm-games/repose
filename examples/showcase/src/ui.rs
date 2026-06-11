@@ -1,5 +1,7 @@
 #![allow(non_snake_case)]
 
+use std::rc::Rc;
+
 use repose_core::prelude::*;
 use repose_material::material3::dialog::{Dialog, DialogState};
 use repose_material::material3::{Card, ElevatedCard, IconButton, M3Slider, Switch};
@@ -15,18 +17,107 @@ material_symbols! {
     settings : '\u{E8B8}',
 }
 
+pub mod sp {
+    pub const XS: f32 = 4.0;
+    pub const SM: f32 = 8.0;
+    pub const MD: f32 = 12.0;
+    pub const LG: f32 = 16.0;
+    pub const XL: f32 = 24.0;
+}
+
+pub mod radius {
+    pub const SM: f32 = 6.0;
+    pub const MD: f32 = 10.0;
+    pub const LG: f32 = 12.0;
+}
+
+pub fn VSpace(h: f32) -> View {
+    Box(Modifier::new().height(h).width(1.0))
+}
+
+pub fn HSpace(w: f32) -> View {
+    Box(Modifier::new().width(w).height(1.0))
+}
+
+/// Secondary descriptive text, which replaces the repeated
+/// `.size(13/14).color(on_surface_variant)` pattern.
+pub fn Hint(text: impl Into<String>) -> View {
+    Text(text.into())
+        .size(13.0)
+        .color(theme().on_surface_variant)
+}
+
+pub fn Caption(text: impl Into<String>) -> View {
+    Text(text.into())
+        .size(12.0)
+        .color(theme().on_surface_variant)
+}
+
+/// Standard page container with consistent section rhythm.
+pub fn Page(children: Vec<View>) -> View {
+    Column(Modifier::new().fill_max_width().gap(sp::LG)).with_children(children)
+}
+
+/// Card-backed demo cell shared by grid / staggered-grid pages.
+pub fn DemoTile(
+    title: impl Into<String>,
+    subtitle: impl Into<String>,
+    bg: Color,
+    fg: Color,
+    height: f32,
+) -> View {
+    Surface(
+        Modifier::new()
+            .fill_max_width()
+            .height(height)
+            .background(bg)
+            .clip_rounded(radius::LG),
+        Column(
+            Modifier::new()
+                .fill_max_size()
+                .justify_content(JustifyContent::Center)
+                .align_items(AlignItems::Center),
+        )
+        .child((
+            Text(title.into()).size(20.0).color(fg),
+            Text(subtitle.into()).size(12.0).color(fg.with_alpha(180)),
+        )),
+    )
+}
+
+pub fn Section(title: &str, body: View) -> View {
+    SectionWith(title, None, body)
+}
+
+pub fn SectionWith(title: &str, subtitle: Option<&str>, body: View) -> View {
+    let th = theme();
+    let mut header: Vec<View> = vec![Text(title).size(18.0).color(th.on_surface)];
+    if let Some(s) = subtitle {
+        header.push(Hint(s));
+    }
+    Column(Modifier::new().padding(sp::SM).gap(sp::SM)).child((
+        Column(Modifier::new().padding(sp::SM).gap(2.0)).with_children(header),
+        ElevatedCard(Modifier::new().fill_max_width().padding(sp::LG), body),
+    ))
+}
+
+#[derive(Clone)]
+pub struct SettingsVm {
+    pub dark: bool,
+    pub on_dark: Rc<dyn Fn(bool)>,
+    pub rtl: bool,
+    pub on_rtl: Rc<dyn Fn(bool)>,
+    pub density: f32,
+    pub on_density: Rc<dyn Fn(f32)>,
+    pub text_scale: f32,
+    pub on_text_scale: Rc<dyn Fn(f32)>,
+}
+
 pub fn AppShell(
     current: Route,
     nav: Navigator<Route>,
     overlay: OverlayHandle,
-    dark: bool,
-    on_dark: impl Fn(bool) + 'static,
-    rtl: bool,
-    on_rtl: impl Fn(bool) + 'static,
-    density: f32,
-    on_density: impl Fn(f32) + 'static,
-    text_scale: f32,
-    on_text_scale: impl Fn(f32) + 'static,
+    settings: SettingsVm,
     content: View,
 ) -> View {
     Surface(
@@ -34,22 +125,11 @@ pub fn AppShell(
             .fill_max_size()
             .background(theme().background),
         Column(Modifier::new().fill_max_size()).child((
-            TopBar(
-                overlay,
-                dark,
-                on_dark,
-                rtl,
-                on_rtl,
-                density,
-                on_density,
-                text_scale,
-                on_text_scale,
-            ),
+            TopBar(overlay, settings),
             Row(Modifier::new().fill_max_size()).child((
                 NavRail(current, nav),
-                // Page container
                 ScrollArea(
-                    Modifier::new().fill_max_size().padding(16.0),
+                    Modifier::new().fill_max_size().padding(sp::LG),
                     {
                         let st = remember_scroll_state("page_scroll");
                         st.set_show_scrollbar(false);
@@ -62,22 +142,12 @@ pub fn AppShell(
     )
 }
 
-pub fn TopBar(
-    overlay: OverlayHandle,
-    dark: bool,
-    on_dark: impl Fn(bool) + 'static,
-    rtl: bool,
-    on_rtl: impl Fn(bool) + 'static,
-    density: f32,
-    on_density: impl Fn(f32) + 'static,
-    text_scale: f32,
-    on_text_scale: impl Fn(f32) + 'static,
-) -> View {
+pub fn TopBar(overlay: OverlayHandle, vm: SettingsVm) -> View {
     let settings_state = remember(DialogState::new);
     let th = theme();
 
     Row(Modifier::new()
-        .padding(12.0)
+        .padding(sp::MD)
         .background(th.surface)
         .border(1.0, th.outline, 0.0)
         .align_items(AlignItems::Center))
@@ -93,114 +163,90 @@ pub fn TopBar(
                 move || s.show()
             },
         ),
-        // Overlay-based settings dialog (renders nothing in the layout)
         Dialog(
             settings_state.clone(),
-            overlay.clone(),
+            overlay,
             Modifier::new(),
-            Column(Modifier::new().padding(24.0).min_width(320.0)).with_children(vec![
+            Column(Modifier::new().padding(sp::XL).min_width(320.0).gap(sp::MD)).child((
                 Text("Settings").size(20.0).color(th.on_surface),
-                Box(Modifier::new().size(1.0, 16.0)),
-                LabeledSwitch("Dark Mode", dark, on_dark),
-                Box(Modifier::new().size(1.0, 12.0)),
-                LabeledSwitch("RTL Layout", rtl, on_rtl),
-                Box(Modifier::new().size(1.0, 12.0)),
-                LabeledSlider("Density", density, (0.75, 2.0), Some(0.05), on_density),
-                Box(Modifier::new().size(1.0, 12.0)),
-                LabeledSlider(
-                    "Text Scale",
-                    text_scale,
-                    (0.75, 2.0),
-                    Some(0.05),
-                    on_text_scale,
-                ),
-            ]),
+                LabeledSwitch("Dark Mode", vm.dark, {
+                    let f = vm.on_dark.clone();
+                    move |v| f(v)
+                }),
+                LabeledSwitch("RTL Layout", vm.rtl, {
+                    let f = vm.on_rtl.clone();
+                    move |v| f(v)
+                }),
+                LabeledSlider("Density", vm.density, (0.75, 2.0), Some(0.05), {
+                    let f = vm.on_density.clone();
+                    move |v| f(v)
+                }),
+                LabeledSlider("Text Scale", vm.text_scale, (0.75, 2.0), Some(0.05), {
+                    let f = vm.on_text_scale.clone();
+                    move |v| f(v)
+                }),
+            )),
         ),
     ))
 }
 
 pub fn NavRail(current: Route, nav: Navigator<Route>) -> View {
     let th = theme();
-
-    let routes: [Route; 18] = [
-        Route::Home,
-        Route::Layout,
-        Route::Widgets,
-        Route::Text,
-        Route::Scroll,
-        Route::ScrollFeatures,
-        Route::Canvas,
-        Route::Lists,
-        Route::Grid,
-        Route::StaggeredGrid,
-        Route::Pager,
-        Route::Animation,
-        Route::Dnd,
-        Route::Docking,
-        Route::Errors,
-        Route::Windows,
-        Route::M3,
-        Route::Adaptive,
-    ];
-
     Card(
-        Modifier::new().width(220.0).fill_max_height().padding(8.0),
-        Column(Modifier::new().fill_max_size()).child((
-            Text("Navigation")
-                .size(14.0)
-                .color(th.on_surface_variant)
-                .modifier(Modifier::new().padding(8.0)),
-            Column(Modifier::new().fill_max_size()).child(
-                routes
-                    .iter()
-                    .map(|&r| {
-                        NavItem(r, r == current, {
-                            let nav = nav.clone();
-                            move || nav.push(r)
-                        })
-                    })
-                    .collect::<Vec<_>>(),
-            ),
-        )),
+        Modifier::new()
+            .width(220.0)
+            .fill_max_height()
+            .padding(sp::SM),
+        Column(Modifier::new().fill_max_size().gap(2.0)).child(
+            std::iter::once(
+                Text("Navigation")
+                    .size(13.0)
+                    .color(th.on_surface_variant)
+                    .modifier(Modifier::new().padding(sp::SM)),
+            )
+            .chain(Route::ALL.iter().map(|&r| {
+                NavItem(r, r == current, {
+                    let nav = nav.clone();
+                    move || nav.push(r)
+                })
+            }))
+            .collect::<Vec<_>>(),
+        ),
     )
 }
 
 fn NavItem(route: Route, selected: bool, on_click: impl Fn() + 'static) -> View {
     let th = theme();
-
-    let bg = if selected {
-        th.primary.with_alpha(48)
+    let (bg, fg) = if selected {
+        (th.secondary_container, th.on_secondary_container)
     } else {
-        th.surface
+        (th.surface, th.on_surface)
     };
+    let indicator = if selected { th.primary } else { bg };
 
-    let fg = if selected { th.primary } else { th.on_surface };
-
-    Button(Text(route.title()).size(16.0).color(fg), on_click).modifier(
+    Button(
+        Row(Modifier::new().align_items(AlignItems::Center).gap(sp::SM)).child((
+            Box(Modifier::new()
+                .size(3.0, 16.0)
+                .background(indicator)
+                .clip_rounded(2.0)),
+            Text(route.title()).size(15.0).color(fg),
+        )),
+        on_click,
+    )
+    .modifier(
         Modifier::new()
-            .key(route.id()) // stable identity for nav items
+            .key(route.id())
             .fill_max_width()
             .padding(6.0)
             .background(bg)
-            .clip_rounded(8.0),
+            .clip_rounded(radius::MD),
     )
 }
 
-pub fn Section(title: &str, body: View) -> View {
-    Column(Modifier::new().padding(8.0)).child((
-        Text(title)
-            .size(18.0)
-            .color(theme().on_surface)
-            .modifier(Modifier::new().padding(8.0)),
-        ElevatedCard(Modifier::new().fill_max_width().padding(16.0), body),
-    ))
-}
-
 pub fn LabeledSwitch(label: &str, checked: bool, on_change: impl Fn(bool) + 'static) -> View {
-    let th = theme();
-    Row(Modifier::new().align_items(AlignItems::Center)).child((
-        Text(label).size(14.0).color(th.on_surface_variant),
-        Box(Modifier::new().width(8.0).height(1.0)),
+    Row(Modifier::new().align_items(AlignItems::Center).gap(sp::SM)).child((
+        Text(label).size(14.0).color(theme().on_surface_variant),
         Switch(checked, on_change),
     ))
 }
@@ -212,12 +258,42 @@ pub fn LabeledSlider(
     step: Option<f32>,
     on_change: impl Fn(f32) + 'static,
 ) -> View {
-    let th = theme();
-    Column(Modifier::new().align_items(AlignItems::Stretch)).child((
-        Text(format!("{label}: {:.2}", value))
+    Column(Modifier::new().align_items(AlignItems::Stretch).gap(6.0)).child((
+        Text(format!("{label}: {value:.2}"))
             .size(14.0)
-            .color(th.on_surface_variant),
-        Box(Modifier::new().height(6.0).width(1.0)),
+            .color(theme().on_surface_variant),
         M3Slider(value, range, step, on_change),
     ))
+}
+
+/// Control + trailing label row (kills the Row/HSpace/Text triplets in widgets.rs).
+pub fn Labeled(control: View, label: &str) -> View {
+    Row(Modifier::new().align_items(AlignItems::Center).gap(10.0)).child((control, Text(label)))
+}
+
+pub fn ShortcutHud(note: String, fired: bool) -> View {
+    let th = theme();
+    Box(Modifier::new()
+        .absolute()
+        .offset(None, None, Some(16.0), Some(16.0))
+        .padding(10.0)
+        .background(th.surface.with_alpha(204))
+        .clip_rounded(radius::LG)
+        .hit_passthrough()
+        .render_z_index(1000.0))
+    .child(
+        Column(Modifier::new().gap(sp::XS)).child((
+            Text("Shortcut Overrides")
+                .size(12.0)
+                .color(th.on_surface.with_alpha(204)),
+            Text(note).size(12.0).color(th.on_surface.with_alpha(153)),
+            if fired {
+                Text("Snackbar triggered").size(12.0).color(th.primary)
+            } else {
+                Text("Snackbar idle")
+                    .size(12.0)
+                    .color(th.on_surface.with_alpha(102))
+            },
+        )),
+    )
 }

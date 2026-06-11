@@ -7,7 +7,7 @@ use repose_ui::{
     *,
 };
 
-use crate::ui::Section;
+use crate::ui::{Page, Section};
 
 #[derive(Clone)]
 struct Item {
@@ -23,22 +23,35 @@ fn make_items(count: usize) -> Vec<Item> {
             title: format!("Task #{}", i + 1),
             done: i % 3 == 0,
         })
-        .collect::<Vec<_>>()
+        .collect()
+}
+
+/// icon over title card
+fn cell_card(m: Modifier, icon: String, icon_size: f32, title: String, pad: f32) -> View {
+    Surface(
+        m,
+        Column(
+            Modifier::new()
+                .fill_max_size()
+                .justify_content(JustifyContent::Center)
+                .align_items(AlignItems::Center)
+                .padding(pad),
+        )
+        .child((
+            Text(icon).size(icon_size),
+            Text(title).size(14.0).single_line().overflow_ellipsize(),
+        )),
+    )
 }
 
 pub fn screen() -> View {
     let items = remember_with_key("items", || signal(make_items(1_000)));
     let scroll = remember_with_key("lazy", LazyColumnState::new);
-
-    // LazyRow state
     let row_items = remember_with_key("row_items", || signal(make_items(50)));
     let row_scroll = remember_with_key("lazy_row", LazyRowState::new);
-
-    // Carousel state
     let carousel_items = remember_with_key("carousel_items", || signal(make_items(20)));
     let carousel_scroll = remember_with_key("carousel_scroll", LazyRowState::new);
 
-    // SwipeToDismiss state
     let dismiss_items = remember_with_key("dismiss_items", || {
         signal(
             (0..10)
@@ -55,7 +68,7 @@ pub fn screen() -> View {
 
     let th = theme();
 
-    Column(Modifier::new().fill_max_width().gap(24.0)).child((
+    Page(vec![
         Section("LazyColumn (Vertical)", {
             LazyColumn(
                 items.get(),
@@ -123,25 +136,22 @@ pub fn screen() -> View {
                 Modifier::new().fill_max_width().height(160.0),
                 move |it, _| {
                     let th = theme();
-                    let tint = th.primary.with_alpha(48);
-                    Surface(
+                    let bg = if it.done {
+                        th.primary.with_alpha(48)
+                    } else {
+                        th.surface_container
+                    };
+                    cell_card(
                         Modifier::new()
                             .width(120.0)
                             .height(140.0)
-                            .background(if it.done { tint } else { th.surface_container })
+                            .background(bg)
                             .border(1.0, th.outline, 0.0)
                             .clip_rounded(12.0),
-                        Column(
-                            Modifier::new()
-                                .fill_max_size()
-                                .justify_content(JustifyContent::Center)
-                                .align_items(AlignItems::Center)
-                                .padding(8.0),
-                        )
-                        .child((
-                            Text(if it.done { "✓" } else { "○" }).size(24.0),
-                            Text(it.title).size(14.0).single_line().overflow_ellipsize(),
-                        )),
+                        (if it.done { "✓" } else { "○" }).to_string(),
+                        24.0,
+                        it.title,
+                        8.0,
                     )
                 },
             )
@@ -155,23 +165,16 @@ pub fn screen() -> View {
                 carousel_scroll,
                 move |it, _| {
                     let th = theme();
-                    Surface(
+                    cell_card(
                         Modifier::new()
                             .fill_max_width()
                             .height(160.0)
                             .background(th.primary.with_alpha(32))
                             .clip_rounded(16.0),
-                        Column(
-                            Modifier::new()
-                                .fill_max_size()
-                                .justify_content(JustifyContent::Center)
-                                .align_items(AlignItems::Center)
-                                .padding(12.0),
-                        )
-                        .child((
-                            Text(if it.done { "★" } else { "☆" }).size(32.0),
-                            Text(it.title).size(14.0).single_line().overflow_ellipsize(),
-                        )),
+                        (if it.done { "★" } else { "☆" }).to_string(),
+                        32.0,
+                        it.title,
+                        12.0,
                     )
                 },
             )
@@ -186,14 +189,11 @@ pub fn screen() -> View {
                     let state = dismiss_states[i].clone();
                     let is_dismissed = dismissed.clone();
                     SwipeToDismiss(
-                        state.clone(),
-                        Some(Rc::new({
-                            let is_dismissed = is_dismissed.clone();
-                            move || {
-                                let mut d = is_dismissed.get();
-                                d[i] = true;
-                                is_dismissed.set(d);
-                            }
+                        state,
+                        Some(Rc::new(move || {
+                            let mut d = is_dismissed.get();
+                            d[i] = true;
+                            is_dismissed.set(d);
                         })),
                         // Background (revealed behind content when swiping)
                         Box(Modifier::new()
@@ -244,5 +244,5 @@ pub fn screen() -> View {
                 Column(Modifier::new().fill_max_width()).with_children(vis)
             }
         }),
-    ))
+    ])
 }

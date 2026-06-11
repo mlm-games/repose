@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_core::{
@@ -10,10 +11,11 @@ use repose_navigation::{
 };
 use repose_ui::overlay::{OverlayHandle, SnackbarAction, SnackbarController, SnackbarRequest};
 use repose_ui::windowing::{WindowHost, WindowManagerState};
-use repose_ui::{Box, Column, Stack, Text, TextStyle, ViewExt};
+use repose_ui::{Stack, ViewExt};
 use serde::{Deserialize, Serialize};
 
-use crate::{pages, ui};
+use crate::pages::{self, PageCtx};
+use crate::ui::{self, SettingsVm};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Route {
@@ -38,6 +40,28 @@ pub enum Route {
 }
 
 impl Route {
+    /// Single source of truth for the nav rail (display order).
+    pub const ALL: [Route; 18] = [
+        Route::Home,
+        Route::Layout,
+        Route::Widgets,
+        Route::Text,
+        Route::Scroll,
+        Route::ScrollFeatures,
+        Route::Canvas,
+        Route::Lists,
+        Route::Grid,
+        Route::StaggeredGrid,
+        Route::Pager,
+        Route::Animation,
+        Route::Dnd,
+        Route::Docking,
+        Route::Errors,
+        Route::Windows,
+        Route::M3,
+        Route::Adaptive,
+    ];
+
     pub fn title(self) -> &'static str {
         match self {
             Route::Home => "Home",
@@ -60,49 +84,95 @@ impl Route {
             Route::Adaptive => "Adaptive",
         }
     }
+
+    /// Stable identity derived from the pages
     pub fn id(self) -> u64 {
-        match self {
-            Route::Home => 1,
-            Route::Layout => 2,
-            Route::Widgets => 3,
-            Route::Text => 4,
-            Route::Scroll => 5,
-            Route::ScrollFeatures => 6,
-            Route::Canvas => 7,
-            Route::Animation => 8,
-            Route::Lists => 9,
-            Route::Grid => 10,
-            Route::StaggeredGrid => 11,
-            Route::Pager => 12,
-            Route::Dnd => 13,
-            Route::Docking => 14,
-            Route::Errors => 15,
-            Route::Windows => 16,
-            Route::M3 => 17,
-            Route::Adaptive => 18,
-        }
+        self as u64 + 1
     }
+}
+
+fn light_theme() -> Theme {
+    let mut t = Theme::default().with_colors(ColorScheme::light());
+    t.scrollbar_track = t.on_surface.with_alpha(24);
+    t.scrollbar_thumb = t.on_surface.with_alpha(96);
+    t
+}
+
+/// One place that builds the "saved" snackbar; the undo action is shared
+/// between the request and the builder instead of being constructed 3 times.
+fn save_snackbar_request(snackbar: &SnackbarController) -> SnackbarRequest {
+    let undo: Rc<dyn Fn()> = Rc::new({
+        let s = snackbar.clone();
+        move || {
+            log::info!("Snackbar undo");
+            s.dismiss();
+        }
+    });
+    SnackbarRequest {
+        message: "Shortcut saved".into(),
+        action: Some(SnackbarAction {
+            label: "Undo".into(),
+            on_click: undo.clone(),
+        }),
+        duration_ms: 2500,
+        builder: Rc::new(move || {
+            material3::Snackbar(
+                "Shortcut saved",
+                Some(SnackbarAction {
+                    label: "Undo".into(),
+                    on_click: undo.clone(),
+                }),
+                Modifier::new(),
+            )
+        }),
+    }
+}
+
+fn install_save_shortcut(snackbar: SnackbarController, on_fire: Rc<dyn Fn()>) {
+    let mut map = shortcuts::ShortcutMap::new();
+    let mut mods = Modifiers {
+        command: true,
+        ..Modifiers::default()
+    };
+    if !cfg!(target_os = "macos") {
+        mods.ctrl = true;
+    }
+    map.insert(
+        Key::Character('s'),
+        mods,
+        shortcuts::Action::Custom("showcase.save".into()),
+    );
+
+    scoped_effect(move || {
+        let map_scope = shortcuts::InstallShortcutMap(map.clone());
+        let snackbar = snackbar.clone();
+        let on_fire = on_fire.clone();
+        let handler_scope = shortcuts::InstallShortcutHandler(Rc::new(move |action| {
+            log::info!("Shortcut action: {:?}", action);
+            if matches!(action, shortcuts::Action::Custom(key) if key.as_ref() == "showcase.save") {
+                on_fire();
+                snackbar.show(save_snackbar_request(&snackbar));
+                true
+            } else {
+                false
+            }
+        }));
+        Dispose::new(move || {
+            map_scope.run();
+            handler_scope.run();
+        })
+    });
 }
 
 pub fn app(_s: &mut Scheduler) -> View {
     // App state
     let dark = remember(|| signal(true));
     let rtl = remember(|| signal(false));
-
-    let ui_scale = remember(|| signal(1.0f32)); // extra scale multiplier
-    let text_scale = remember(|| signal(1.0f32)); // font multiplier
+    let ui_scale = remember(|| signal(1.0f32));
+    let text_scale = remember(|| signal(1.0f32));
 
     let overlay = remember(OverlayHandle::new);
     let snackbar = remember(|| SnackbarController::new((*overlay).clone()));
-
-    // Theme presets
-    let theme_light = {
-        let mut t = Theme::default().with_colors(ColorScheme::light());
-        t.scrollbar_track = t.on_surface.with_alpha(24);
-        t.scrollbar_thumb = t.on_surface.with_alpha(96);
-        t
-    };
-    let theme_dark = Theme::default();
 
     let stack = remember_back_stack(Route::Home);
     let navigator = Navigator {
@@ -110,90 +180,65 @@ pub fn app(_s: &mut Scheduler) -> View {
     };
 
     let global_windows = remember_with_key("showcase:global_windows", || {
-        std::cell::RefCell::new(WindowManagerState::new())
+        RefCell::new(WindowManagerState::new())
     });
 
-    // Back handler: set each frame (simple + robust).
     back::set(Some(Rc::new({
         let nav = navigator.clone();
         move || nav.pop()
     })));
 
-    let current = stack
-        .top()
-        .map(|(_, k, _saved, _scope)| k)
-        .unwrap_or(Route::Home);
+    let current = stack.top().map(|(_, k, _, _)| k).unwrap_or(Route::Home);
 
-    // Typed route -> page renderer
-    let overlay_clone = overlay.clone();
-    let render = renderer({
-        let global_windows = global_windows.clone();
-        let overlay = overlay_clone;
-        move |scope| match *scope.key() {
-            Route::Home => pages::home::screen(),
-            Route::Layout => pages::layout::screen(),
-            Route::Widgets => pages::widgets::screen(),
-            Route::Text => pages::text::screen(),
-            Route::Scroll => pages::scroll::screen(),
-            Route::ScrollFeatures => pages::scroll_features::screen(),
-            Route::Canvas => pages::canvas::screen(),
-            Route::Animation => pages::animation::screen(),
-            Route::Lists => pages::lists::screen(),
-            Route::Grid => pages::grid::screen(),
-            Route::StaggeredGrid => pages::staggered_grid::screen(),
-            Route::Pager => pages::pager::screen(),
-            Route::Dnd => pages::dnd::screen(),
-            Route::Docking => pages::docking::screen(),
-            Route::Errors => pages::errors::screen(),
-            Route::Windows => pages::windows::screen(global_windows.clone()),
-            Route::M3 => pages::m3::screen((*overlay).clone()),
-            Route::Adaptive => pages::adaptive::screen(),
-        }
+    let ctx = PageCtx {
+        overlay: (*overlay).clone(),
+        global_windows: global_windows.clone(),
+    };
+    let render = renderer(move |scope| pages::render(&ctx, *scope.key()));
+
+    // Environment defaults
+    set_theme_default(if dark.get() {
+        Theme::default()
+    } else {
+        light_theme()
     });
-
-    let dir = if rtl.get() {
+    set_text_direction_default(if rtl.get() {
         TextDirection::Rtl
     } else {
         TextDirection::Ltr
-    };
-
-    let chosen_theme = if dark.get() { theme_dark } else { theme_light };
-
-    set_theme_default(chosen_theme);
-    set_text_direction_default(dir);
+    });
     set_ui_scale_default(UiScale(ui_scale.get()));
     set_text_scale_default(TextScale(text_scale.get()));
 
+    let settings = SettingsVm {
+        dark: dark.get(),
+        on_dark: Rc::new({
+            let s = dark.clone();
+            move |v| s.set(v)
+        }),
+        rtl: rtl.get(),
+        on_rtl: Rc::new({
+            let s = rtl.clone();
+            move |v| s.set(v)
+        }),
+        density: ui_scale.get(),
+        on_density: Rc::new({
+            let s = ui_scale.clone();
+            move |v| s.set(v.clamp(0.75, 2.0))
+        }),
+        text_scale: text_scale.get(),
+        on_text_scale: Rc::new({
+            let s = text_scale.clone();
+            move |v| s.set(v.clamp(0.75, 2.0))
+        }),
+    };
+
     let content = ui::AppShell(
         current,
-        navigator.clone(),
+        navigator,
         (*overlay).clone(),
-        dark.get(),
-        {
-            let dark = dark.clone();
-            move |v| dark.set(v)
-        },
-        rtl.get(),
-        {
-            let rtl = rtl.clone();
-            move |v| rtl.set(v)
-        },
-        ui_scale.get(),
-        {
-            let ui_scale = ui_scale.clone();
-            move |v| ui_scale.set(v.clamp(0.75, 2.0))
-        },
-        text_scale.get(),
-        {
-            let text_scale = text_scale.clone();
-            move |v| text_scale.set(v.clamp(0.75, 2.0))
-        },
-        NavDisplay(
-            stack.clone(),
-            render.clone(),
-            None,
-            NavTransition::default(),
-        ),
+        settings,
+        NavDisplay(stack.clone(), render, None, NavTransition::default()),
     );
 
     let content = WindowHost(
@@ -202,115 +247,25 @@ pub fn app(_s: &mut Scheduler) -> View {
         global_windows,
         content,
     );
-
     let overlay_root = (*overlay).host(Modifier::new().fill_max_size(), content);
 
-    let snackbar = snackbar.clone();
+    // Ctrl/Cmd+S demo
     let shortcut_note = remember(|| signal("Press Ctrl+S to trigger".to_string()));
-    let shortcut_demo = remember(|| signal(false));
-
-    let mut map = shortcuts::ShortcutMap::new();
-    let mut save_mods = Modifiers {
-        command: true,
-        ..Modifiers::default()
-    };
-    if !cfg!(target_os = "macos") {
-        save_mods.ctrl = true;
-    }
-    map.insert(
-        Key::Character('s'),
-        save_mods,
-        shortcuts::Action::Custom("showcase.save".into()),
-    );
-    let snackbar = snackbar.clone();
-    let shortcut_note = shortcut_note.clone();
-    let shortcut_demo = shortcut_demo.clone();
-    let shortcut_note_clone = shortcut_note.clone();
-    let shortcut_demo_clone = shortcut_demo.clone();
-    scoped_effect(move || {
-        let _map_scope = shortcuts::InstallShortcutMap(map.clone());
-        let snackbar_for_handler = snackbar.clone();
-        let _handler_scope = shortcuts::InstallShortcutHandler(Rc::new(move |action| {
-            log::info!("Shortcut action: {:?}", action);
-            if matches!(action, shortcuts::Action::Custom(key) if key.as_ref() == "showcase.save") {
-                shortcut_note_clone.set("Shortcut override triggered".to_string());
-                shortcut_demo_clone.set(true);
-                let snackbar_for_action = snackbar_for_handler.clone();
-                let snackbar_for_builder = snackbar_for_handler.clone();
-                snackbar_for_handler.show(SnackbarRequest {
-                    message: "Shortcut saved".to_string(),
-                    action: Some(SnackbarAction {
-                        label: "Undo".to_string(),
-                        on_click: Rc::new(move || {
-                            log::info!("Snackbar undo");
-                            snackbar_for_action.dismiss();
-                        }),
-                    }),
-                    duration_ms: 2500,
-                    builder: Rc::new(move || {
-                        let snackbar_dismiss = snackbar_for_builder.clone();
-                        material3::Snackbar(
-                            "Shortcut saved",
-                            Some(SnackbarAction {
-                                label: "Undo".to_string(),
-                                on_click: Rc::new(move || {
-                                    log::info!("Snackbar undo");
-                                    snackbar_dismiss.dismiss();
-                                }),
-                            }),
-                            Modifier::new(),
-                        )
-                    }),
-                });
-                true
-            } else {
-                false
+    let shortcut_fired = remember(|| signal(false));
+    install_save_shortcut(
+        (*snackbar).clone(),
+        Rc::new({
+            let note = shortcut_note.clone();
+            let fired = shortcut_fired.clone();
+            move || {
+                note.set("Shortcut override triggered".to_string());
+                fired.set(true);
             }
-        }));
-        Dispose::new(move || {
-            _map_scope.run();
-            _handler_scope.run();
-        })
-    });
-
-    
+        }),
+    );
 
     Stack(Modifier::new().fill_max_size()).child((
         overlay_root,
-        {
-            let th = theme();
-            Box(Modifier::new()
-                .absolute()
-                .offset(None, None, Some(16.0), Some(16.0))
-                .padding(10.0)
-                .background(th.surface.with_alpha(204))
-                .clip_rounded(12.0)
-                .hit_passthrough()
-                .render_z_index(1000.0)) // Render on top of scroll content
-        }
-        .child(
-            Column(Modifier::new()).child(
-                std::iter::once(
-                    Text("Shortcut Overrides")
-                        .size(12.0)
-                        .color(theme().on_surface.with_alpha(204)),
-                )
-                .chain(std::iter::once(Box(Modifier::new().size(1.0, 6.0))))
-                .chain(std::iter::once(
-                    Text(shortcut_note.get())
-                        .size(12.0)
-                        .color(theme().on_surface.with_alpha(153)),
-                ))
-                .chain(std::iter::once(Box(Modifier::new().size(1.0, 4.0))))
-                .chain(std::iter::once(if shortcut_demo.get() {
-                    Text("Snackbar triggered").size(12.0).color(theme().primary)
-                } else {
-                    Text("Snackbar idle")
-                        .size(12.0)
-                        .color(theme().on_surface.with_alpha(102))
-                }))
-                .collect::<Vec<_>>(),
-            ),
-        ),
+        ui::ShortcutHud(shortcut_note.get(), shortcut_fired.get()),
     ))
 }

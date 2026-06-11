@@ -5,34 +5,35 @@ use repose_ui::scroll::{
 };
 use repose_ui::*;
 
-use crate::ui::Section;
+use crate::ui::{Page, Section};
+
+fn frame(height: f32) -> Modifier {
+    Modifier::new()
+        .height(height)
+        .fill_max_width()
+        .border(1.0, theme().outline, 12.0)
+        .clip_rounded(12.0)
+}
+
+fn tile(label: String, m: Modifier) -> View {
+    Box(m
+        .padding(10.0)
+        .background(theme().surface)
+        .border(1.0, theme().outline, 10.0)
+        .clip_rounded(10.0))
+    .child(Text(label))
+}
 
 pub fn screen() -> View {
-    let v_state = remember_scroll_state("scroll_v");
-    let h_state = remember_horizontal_scroll_state("scroll_h");
-    let xy_state = remember_scroll_state_xy("scroll_xy");
-
-    Column(Modifier::new().fill_max_width()).child((
+    Page(vec![
         Section(
             "Vertical ScrollArea",
             ScrollArea(
-                Modifier::new()
-                    .height(220.0)
-                    .fill_max_width()
-                    .border(1.0, theme().outline, 12.0)
-                    .clip_rounded(12.0),
-                v_state,
+                frame(220.0),
+                remember_scroll_state("scroll_v"),
                 Column(Modifier::new().fill_max_width()).child(
                     (0..40)
-                        .map(|i| {
-                            Box(Modifier::new()
-                                .fill_max_width()
-                                .padding(10.0)
-                                .background(theme().surface)
-                                .border(1.0, theme().outline, 10.0)
-                                .clip_rounded(10.0))
-                            .child(Text(format!("Row {i}")))
-                        })
+                        .map(|i| tile(format!("Row {i}"), Modifier::new().fill_max_width()))
                         .collect::<Vec<_>>(),
                 ),
             ),
@@ -40,50 +41,34 @@ pub fn screen() -> View {
         Section(
             "Horizontal ScrollArea",
             HorizontalScrollArea(
-                Modifier::new()
-                    .height(140.0)
-                    .fill_max_width()
-                    .border(1.0, theme().outline, 12.0)
-                    .clip_rounded(12.0),
-                h_state,
+                frame(140.0),
+                remember_horizontal_scroll_state("scroll_h"),
                 Row(Modifier::new()).child(
                     (0..30)
                         .map(|i| {
-                            Box(Modifier::new()
-                                .key(i as u64)
-                                .padding(10.0)
-                                .background(theme().surface)
-                                .border(1.0, theme().outline, 10.0)
-                                .clip_rounded(10.0)
-                                .size(140.0, 90.0))
-                            .child(Text(format!("Tile {i}")))
+                            tile(
+                                format!("Tile {i}"),
+                                Modifier::new().key(i as u64).size(140.0, 90.0),
+                            )
                         })
                         .collect::<Vec<_>>(),
                 ),
             ),
         ),
         Section(
-            "2D ScrollAreaXY (responsive width)", // Only works well with min size 0 for height, which breaks other containers...
+            "2D ScrollAreaXY (responsive width)",
             ScrollAreaXY(
-                Modifier::new()
-                    .height(220.0)
-                    .fill_max_width()
-                    .border(1.0, theme().outline, 12.0)
-                    .clip_rounded(12.0),
-                xy_state,
+                frame(220.0),
+                remember_scroll_state_xy("scroll_xy"),
                 Grid(
                     10,
                     Modifier::new(),
                     (0..140)
                         .map(|i| {
-                            Box(Modifier::new()
-                                .key(i as u64)
-                                .padding(8.0)
-                                .background(theme().surface)
-                                .border(1.0, theme().outline, 10.0)
-                                .clip_rounded(10.0)
-                                .size(120.0, 60.0))
-                            .child(Text(format!("{i}")))
+                            tile(
+                                format!("{i}"),
+                                Modifier::new().key(i as u64).size(120.0, 60.0),
+                            )
                         })
                         .collect(),
                     8.0,
@@ -91,5 +76,5 @@ pub fn screen() -> View {
                 ),
             ),
         ),
-    ))
+    ])
 }

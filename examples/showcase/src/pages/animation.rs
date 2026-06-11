@@ -8,7 +8,7 @@ use repose_ui::scroll::{ScrollArea, remember_scroll_state};
 use repose_ui::*;
 use web_time::Duration;
 
-use crate::ui::Section;
+use crate::ui::{Hint, Section, sp};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SpringMode {
@@ -37,16 +37,25 @@ struct ListItem {
     color_idx: u8,
 }
 
+/// The centered colored "state card" used by Crossfade + AnimatedContent.
+fn state_face(label: &'static str, bg: Color, fg: Color) -> View {
+    Box(Modifier::new()
+        .fill_max_size()
+        .background(bg)
+        .clip_rounded(12.0)
+        .align_items(AlignItems::Center)
+        .justify_content(JustifyContent::Center))
+    .child(Text(label).color(fg).size(18.0))
+}
+
 pub fn screen() -> View {
     let mode = remember(|| signal(SpringMode::Gentle));
     let visible = remember(|| signal(true));
-
     let cross = remember(|| signal(CrossfadeState::A));
-
     let content_state = remember(|| signal(ContentState::First));
     let transition_kind = remember(|| signal(0u8));
-
     let long_text = remember(|| signal(false));
+
     let repeated_anim = animate_f32_from(
         "rep_pulse",
         1.0,
@@ -55,7 +64,6 @@ pub fn screen() -> View {
             .repeated(RepeatableSpec::infinite().reverse()),
     );
 
-    // LazyColumnAnimated state
     let list_items = remember(|| {
         signal(
             (0u64..6)
@@ -73,7 +81,7 @@ pub fn screen() -> View {
 
     let scroll = remember_scroll_state("animation_scroll");
 
-    ScrollArea(Modifier::new().fill_max_size(), scroll, Column(Modifier::new().padding(8.0)).child((
+    ScrollArea(Modifier::new().fill_max_size(), scroll, Column(Modifier::new().padding(sp::SM).gap(sp::LG)).child((
 
         Section("Spring Animation", {
             let spec = match mode.get() {
@@ -81,20 +89,16 @@ pub fn screen() -> View {
                 SpringMode::Bouncy => AnimationSpec::spring_bouncy(),
                 SpringMode::Crit => AnimationSpec::spring_crit(8.0),
             };
-
             let t = animate_f32("demo_scale", if visible.get() { 1.0 } else { 0.75 }, spec);
-            Column(Modifier::new().padding(12.0)).child((
-                Row(Modifier::new().align_items(AlignItems::Center)).child((
+            Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
+                Row(Modifier::new().align_items(AlignItems::Center).gap(sp::SM)).child((
                     TextButton(Modifier::new(), { let m = mode.clone(); move || m.set(SpringMode::Gentle) }, || Text("Gentle")),
-                    Box(Modifier::new().width(8.0).height(1.0)),
                     TextButton(Modifier::new(), { let m = mode.clone(); move || m.set(SpringMode::Bouncy) }, || Text("Bouncy")),
-                    Box(Modifier::new().width(8.0).height(1.0)),
                     ElevatedButton(Modifier::new(), { let m = mode.clone(); move || m.set(SpringMode::Crit) }, || Text("Crit")),
                     Spacer(),
                     TextButton(Modifier::new(), { let v = visible.clone(); move || v.update(|x| *x = !*x) }, || Text("Toggle")),
                 )),
-                Box(Modifier::new().height(8.0).width(1.0)),
-                Box(Modifier::new().padding(8.0)).child(Box(Modifier::new()
+                Box(Modifier::new().padding(sp::SM)).child(Box(Modifier::new()
                     .size(220.0, 120.0)
                     .scale(t).alpha(t)
                     .background(theme().primary)
@@ -102,63 +106,44 @@ pub fn screen() -> View {
             ))
         }),
 
-
         Section("Crossfade", {
-            Column(Modifier::new().padding(12.0)).child((
-                FilledButton(Modifier::new(), { let c = cross.clone(); move || c.update(|x| *x = match x { CrossfadeState::A => CrossfadeState::B, CrossfadeState::B => CrossfadeState::A }) }, || Text("Toggle")),
-                Box(Modifier::new().height(12.0).width(1.0)),
+            Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
+                FilledButton(Modifier::new(), {
+                    let c = cross.clone();
+                    move || c.update(|x| *x = match x { CrossfadeState::A => CrossfadeState::B, CrossfadeState::B => CrossfadeState::A })
+                }, || Text("Toggle")),
                 Box(Modifier::new().size(200.0, 80.0)).child(
-                    Crossfade("cross_demo", cross.get(), AnimationSpec::tween(web_time::Duration::from_millis(400), Easing::EaseInOut), |s| {
-                        match s {
-                            CrossfadeState::A => Box(Modifier::new().fill_max_size().background(theme().primary).clip_rounded(12.0).align_items(AlignItems::Center).justify_content(JustifyContent::Center))
-                                .child(Text("State A").color(theme().on_primary).size(18.0)),
-                            CrossfadeState::B => Box(Modifier::new().fill_max_size().background(theme().tertiary).clip_rounded(12.0).align_items(AlignItems::Center).justify_content(JustifyContent::Center))
-                                .child(Text("State B").color(theme().on_tertiary).size(18.0)),
-                        }
-                    }),
+                    Crossfade("cross_demo", cross.get(),
+                        AnimationSpec::tween(Duration::from_millis(400), Easing::EaseInOut),
+                        |s| match s {
+                            CrossfadeState::A => state_face("State A", theme().primary, theme().on_primary),
+                            CrossfadeState::B => state_face("State B", theme().tertiary, theme().on_tertiary),
+                        }),
                 ),
             ))
         }),
 
         Section("Animate Content Size", {
-            Column(Modifier::new().padding(12.0)).child((
+            Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 FilledButton(Modifier::new(), { let x = long_text.clone(); move || x.update(|v| *v = !*v) }, || Text("Toggle Long Text")),
-                Box(Modifier::new().height(8.0).width(1.0)),
                 Box(Modifier::new()
                     .animate_content_size(AnimationSpec::spring_gentle())
                     .background(theme().surface_container_highest)
                     .clip_rounded(12.0)
-                    .padding(16.0)
-                ).child(
-                    Text(
-                        if long_text.get() {
-                            "This is a much longer text that demonstrates how animateContentSize smoothly transitions between different content sizes without any jarring jumps."
-                        } else {
-                            "Short text."
-                        }
-                    ).color(theme().on_surface).size(16.0),
+                    .padding(sp::LG))
+                .child(
+                    Text(if long_text.get() {
+                        "This is a much longer text that demonstrates how animateContentSize smoothly transitions between different content sizes without any jarring jumps."
+                    } else {
+                        "Short text."
+                    }).color(theme().on_surface).size(16.0),
                 ),
             ))
         }),
 
-
-        // Section("Keyframes (bounce)", {
-        //     Column(Modifier::new().padding(12.0)).child((
-        //         Text("A bar bouncing in width via 5 keyframe stops")
-        //             .size(14.0).color(theme().on_surface_variant),
-        //         Box(Modifier::new().height(8.0).width(1.0)),
-        //         Box(Modifier::new()
-        //             .size(bounce_anim + 20.0, 24.0)
-        //             .background(theme().primary)
-        //             .clip_rounded(4.0)),
-        //     ))
-        // }),
-
         Section("Repeated Pulse (infinite + reverse)", {
-            Column(Modifier::new().padding(12.0)).child((
-                Text("A pulsing box using repeated animation spec")
-                    .size(14.0).color(theme().on_surface_variant),
-                Box(Modifier::new().height(8.0).width(1.0)),
+            Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
+                Hint("A pulsing box using repeated animation spec"),
                 Box(Modifier::new()
                     .size(120.0 * repeated_anim, 120.0 * repeated_anim)
                     .background(theme().tertiary)
@@ -181,12 +166,10 @@ pub fn screen() -> View {
                 _ => ExitTransition::ScaleOut { target: 0.5 },
             };
 
-            Column(Modifier::new().padding(12.0)).child((
-                Row(Modifier::new().align_items(AlignItems::Center)).child((
+            Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
+                Row(Modifier::new().align_items(AlignItems::Center).gap(sp::SM)).child((
                     TextButton(Modifier::new(), { let t = transition_kind.clone(); move || t.set(0) }, || Text("Fade")),
-                    Box(Modifier::new().width(8.0).height(1.0)),
                     TextButton(Modifier::new(), { let t = transition_kind.clone(); move || t.set(1) }, || Text("Slide")),
-                    Box(Modifier::new().width(8.0).height(1.0)),
                     TextButton(Modifier::new(), { let t = transition_kind.clone(); move || t.set(2) }, || Text("Scale")),
                     Spacer(),
                     FilledButton(Modifier::new(), { let s = content_state.clone(); move || {
@@ -197,18 +180,15 @@ pub fn screen() -> View {
                         })
                     }}, || Text("Next")),
                 )),
-                Box(Modifier::new().height(12.0).width(1.0)),
                 Box(Modifier::new().size(300.0, 100.0)).child(
-                    AnimatedContent("content_demo", content_state.get(), AnimationSpec::tween(web_time::Duration::from_millis(350), Easing::EaseInOut), enter, exit, |s| {
-                        match s {
-                            ContentState::First => Box(Modifier::new().fill_max_size().background(theme().primary).clip_rounded(12.0).align_items(AlignItems::Center).justify_content(JustifyContent::Center))
-                                .child(Text("First").color(theme().on_primary).size(18.0)),
-                            ContentState::Second => Box(Modifier::new().fill_max_size().background(theme().tertiary).clip_rounded(12.0).align_items(AlignItems::Center).justify_content(JustifyContent::Center))
-                                .child(Text("Second").color(theme().on_tertiary).size(18.0)),
-                            ContentState::Third => Box(Modifier::new().fill_max_size().background(theme().error_container).clip_rounded(12.0).align_items(AlignItems::Center).justify_content(JustifyContent::Center))
-                                .child(Text("Third").color(theme().on_error_container).size(18.0)),
-                        }
-                    }),
+                    AnimatedContent("content_demo", content_state.get(),
+                        AnimationSpec::tween(Duration::from_millis(350), Easing::EaseInOut),
+                        enter, exit,
+                        |s| match s {
+                            ContentState::First => state_face("First", theme().primary, theme().on_primary),
+                            ContentState::Second => state_face("Second", theme().tertiary, theme().on_tertiary),
+                            ContentState::Third => state_face("Third", theme().error_container, theme().on_error_container),
+                        }),
                 ),
             ))
         }),
@@ -222,8 +202,7 @@ pub fn screen() -> View {
             };
             let colors = [theme().primary, theme().tertiary, theme().secondary, theme().error];
 
-            Column(Modifier::new().padding(12.0)).child((
-                // Controls
+            Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 Row(Modifier::new().align_items(AlignItems::Center).gap(6.0)).child((
                     FilledButton(Modifier::new(), {
                         let li = list_items.clone();
@@ -238,27 +217,14 @@ pub fn screen() -> View {
                     }, || Text("Add")),
                     FilledButton(Modifier::new(), {
                         let li = list_items.clone();
-                        move || {
-                            let mut v = li.get();
-                            if !v.is_empty() {
-                                v.remove(0);
-                                li.set(v);
-                            }
-                        }
+                        move || li.update(|v| { if !v.is_empty() { v.remove(0); } })
                     }, || Text("Pop First")),
                     FilledButton(Modifier::new(), {
                         let li = list_items.clone();
-                        move || {
-                            let mut v = li.get();
-                            if !v.is_empty() {
-                                v.pop();
-                                li.set(v);
-                            }
-                        }
+                        move || li.update(|v| { v.pop(); })
                     }, || Text("Pop Last")),
                     Spacer(),
                 )),
-                Box(Modifier::new().height(6.0).width(1.0)),
                 Row(Modifier::new().align_items(AlignItems::Center).gap(6.0)).child((
                     TextButton(Modifier::new(), { let s = list_anim_spec.clone(); move || s.set(0) }, || Text("Fast")),
                     TextButton(Modifier::new(), { let s = list_anim_spec.clone(); move || s.set(1) }, || Text("Tween")),
@@ -267,57 +233,42 @@ pub fn screen() -> View {
                     Text("Count: ").size(13.0).color(theme().on_surface_variant),
                     Text(items.len().to_string()).size(13.0).color(theme().on_surface),
                 )),
-                Box(Modifier::new().height(8.0).width(1.0)),
-                // Animated list
                 Box(Modifier::new()
                     .max_width(600.0)
                     .max_height(220.0)
                     .border(1.0, theme().outline_variant, 8.0)
-                    .clip_rounded(8.0)
-                ).child(
-                    LazyColumn(
-                        items,
-                        44.0,
-                        list_state.clone(),
-                        Modifier::new().fill_max_size(),
-                        |item: &ListItem| item.id,
-                        Some(spec),
-                        move |item: ListItem, _idx| {
-                            let c = colors[item.color_idx as usize % colors.len()];
-                            Row(Modifier::new()
-                                .padding(12.0)
-                                .fill_max_width()
-                                .height(44.0)
-                                .align_items(AlignItems::Center)
-                            ).child((
-                                Box(Modifier::new()
-                                    .size(24.0, 24.0)
-                                    .background(c)
-                                    .clip_rounded(12.0)
-                                    .flex_shrink(0.0)
-                                ),
-                                Box(Modifier::new().width(10.0).height(1.0).flex_shrink(0.0)),
-                                Column(Modifier::new()).child((
-                                    Text(item.label).size(14.0).color(theme().on_surface),
-                                    Text(format!("id={}", item.id))
-                                        .size(11.0).color(theme().on_surface_variant),
-                                )),
-                                Spacer(),
-                                TextButton(Modifier::new(), {
-                                    let li = list_items.clone();
-                                    let target_id = item.id;
-                                    move || {
-                                        let mut v = li.get();
-                                        v.retain(|x| x.id != target_id);
-                                        li.set(v);
-                                    }
-                                }, || Text("✕")),
-                            ))
-                        },
-                    )
-                ),
+                    .clip_rounded(8.0))
+                .child(LazyColumn(
+                    items,
+                    44.0,
+                    list_state.clone(),
+                    Modifier::new().fill_max_size(),
+                    |item: &ListItem| item.id,
+                    Some(spec),
+                    move |item: ListItem, _idx| {
+                        let c = colors[item.color_idx as usize % colors.len()];
+                        Row(Modifier::new()
+                            .padding(sp::MD)
+                            .fill_max_width()
+                            .height(44.0)
+                            .align_items(AlignItems::Center)
+                            .gap(10.0))
+                        .child((
+                            Box(Modifier::new().size(24.0, 24.0).background(c).clip_rounded(12.0).flex_shrink(0.0)),
+                            Column(Modifier::new()).child((
+                                Text(item.label).size(14.0).color(theme().on_surface),
+                                Text(format!("id={}", item.id)).size(11.0).color(theme().on_surface_variant),
+                            )),
+                            Spacer(),
+                            TextButton(Modifier::new(), {
+                                let li = list_items.clone();
+                                let target_id = item.id;
+                                move || li.update(|v| v.retain(|x| x.id != target_id))
+                            }, || Text("✕")),
+                        ))
+                    },
+                )),
             ))
         }),
-
     )))
 }

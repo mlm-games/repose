@@ -1,29 +1,31 @@
 use repose_core::prelude::*;
 use repose_ui::*;
 
-use crate::ui::Section;
+use crate::ui::{Hint, Section, sp};
 
 pub fn screen() -> View {
+    let th = theme();
+    let bullet = move |text: &'static str| {
+        Row(Modifier::new().align_items(AlignItems::Center).gap(sp::SM)).child((
+            Box(Modifier::new()
+                .size(6.0, 6.0)
+                .background(th.primary)
+                .clip_rounded(3.0)),
+            Text(text).size(15.0).color(th.on_surface),
+        ))
+    };
+
     Section(
         "Welcome",
-        Column(Modifier::new().padding(12.0).gap(4.0)).child((
+        Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
             Text("This is the Home Showcase screen.")
                 .size(16.0)
-                .color(theme().on_surface),
-            Text("Use the navigation rail on the left to explore features.")
-                .size(16.0)
-                .color(theme().on_surface),
-            Box(Modifier::new().height(16.0).width(1.0)),
-            Text("Highlights:").size(16.0).color(theme().on_surface),
-            Text("• Typed navigation (repose-navigation)")
-                .size(16.0)
-                .color(theme().on_surface),
-            Text("• Stable identity via Modifier::key")
-                .size(16.0)
-                .color(theme().on_surface),
-            Text("• Scroll, text, canvas, animations, and error boundaries")
-                .size(16.0)
-                .color(theme().on_surface),
+                .color(th.on_surface),
+            Hint("Use the navigation rail on the left to explore features."),
+            Text("Highlights").size(16.0).color(th.on_surface),
+            bullet("Typed navigation (repose-navigation)"),
+            bullet("Stable identity via Modifier::key"),
+            bullet("Scroll, text, canvas, animations, and error boundaries"),
         )),
     )
 }

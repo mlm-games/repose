@@ -14,7 +14,41 @@ use repose_ui::{
 };
 use web_time::Duration;
 
-use crate::ui::Section;
+use crate::ui::{Page, Section, sp};
+
+/// Overlay-backed dialog driven by a one-shot "show" request.
+/// `content` receives a shared dismiss callback for OK/Cancel wiring.
+fn picker_dialog(
+    overlay: OverlayHandle,
+    show_requested: bool,
+    consume_request: impl Fn() + 'static,
+    content: impl FnOnce(Rc<dyn Fn()>) -> View,
+) -> View {
+    let state = remember(DialogState::new);
+    if show_requested {
+        state.show();
+        consume_request();
+    }
+    let dismiss: Rc<dyn Fn()> = Rc::new({
+        let s = state.clone();
+        move || s.dismiss()
+    });
+    Dialog(state.clone(), overlay, Modifier::new(), content(dismiss))
+}
+
+fn rail_item(
+    label: &str,
+    icon: &'static str,
+    sel: impl Fn() + 'static,
+    badge: Option<View>,
+) -> NavRailItem {
+    NavRailItem {
+        icon: Text(icon).size(20.0),
+        label: label.into(),
+        on_click: Rc::new(sel),
+        badge,
+    }
+}
 
 pub fn screen(overlay: OverlayHandle) -> View {
     // DropdownMenu state
@@ -25,18 +59,15 @@ pub fn screen(overlay: OverlayHandle) -> View {
     let sheet_state = remember(|| SheetState::new(200.0));
     let old_sheet_state = remember(|| signal(false));
 
-    // DatePicker state
+    // Date / time picker state
     let date_state = remember(|| DatePickerState::new(2026, 5, 29));
     let show_date_picker = remember(|| signal(false));
     let date_result = remember(|| signal("Not set".to_string()));
-
-    // TimePicker state
     let time_state = remember(|| TimePickerState::new(14, 30));
     let show_time_picker = remember(|| signal(false));
     let time_result = remember(|| signal("Not set".to_string()));
 
     use repose_core::animation::KeyframesSpec;
-    // Animation keyframes demo
     let kf_val = animate_keyframes(
         "m3_kf",
         KeyframesSpec::new(vec![
@@ -56,37 +87,33 @@ pub fn screen(overlay: OverlayHandle) -> View {
         AnimationSpec::tween(Duration::from_millis(600), Easing::FastOutSlowIn),
     );
 
-    // NavigationRail demo
     let rail_selected = remember(|| signal(0usize));
-
     let th = theme();
 
-    // DropdownMenu items
     let menu_items: Vec<DropdownMenuEntry> = vec![
         DropdownMenuEntry::Item(DropdownMenuItem::new("Item 1", {
-            let label = menu_label.clone();
-            move || label.set("Item 1".to_string())
+            let l = menu_label.clone();
+            move || l.set("Item 1".to_string())
         })),
         DropdownMenuEntry::Item(DropdownMenuItem::new("Item 2", {
-            let label = menu_label.clone();
-            move || label.set("Item 2".to_string())
+            let l = menu_label.clone();
+            move || l.set("Item 2".to_string())
         })),
         DropdownMenuEntry::Item(DropdownMenuItem::new("Item 3 (disabled)", || {}).disabled()),
         DropdownMenuEntry::Divider,
         DropdownMenuEntry::Item(DropdownMenuItem::new("Item 4", {
-            let label = menu_label.clone();
-            move || label.set("Item 4".to_string())
+            let l = menu_label.clone();
+            move || l.set("Item 4".to_string())
         })),
     ];
 
-    Column(Modifier::new().fill_max_width()).child((
+    Page(vec![
         Section(
             "DropdownMenu",
-            Column(Modifier::new().padding(12.0)).child((
+            Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 Text(format!("Selected: {}", menu_label.get()))
                     .color(th.on_surface)
                     .size(th.typography.body_medium),
-                Box(Modifier::new().height(8.0).width(1.0)),
                 DropdownMenu(
                     menu_state.clone(),
                     overlay.clone(),
@@ -105,7 +132,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
         ),
         Section(
             "Modal Bottom Sheet",
-            Column(Modifier::new().padding(12.0)).child((
+            Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 FilledButton(
                     Modifier::new(),
                     {
@@ -118,11 +145,10 @@ pub fn screen(overlay: OverlayHandle) -> View {
                     sheet_state.clone(),
                     overlay.clone(),
                     Modifier::new(),
-                    Column(Modifier::new().padding(24.0)).child((
+                    Column(Modifier::new().padding(sp::XL).gap(sp::SM)).child((
                         Text("Sheet Content").color(th.on_surface).size(18.0),
                         Text("This is a modal bottom sheet with a drag handle.")
                             .color(th.on_surface_variant),
-                        Box(Modifier::new().height(16.0).width(1.0)),
                         TextButton(
                             Modifier::new(),
                             {
@@ -137,7 +163,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
         ),
         Section(
             "Simple Bottom Sheet (animated)",
-            Column(Modifier::new().padding(12.0)).child((
+            Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 FilledButton(
                     Modifier::new(),
                     {
@@ -158,14 +184,14 @@ pub fn screen(overlay: OverlayHandle) -> View {
                     Modifier::new()
                         .fill_max_width()
                         .background(th.surface_container_low)
-                        .padding(24.0),
+                        .padding(sp::XL),
                     Text("This is a simple animated bottom sheet."),
                 ),
             )),
         ),
         Section(
             "DatePicker + TimePicker",
-            Column(Modifier::new().padding(12.0)).child((
+            Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 FilledButton(
                     Modifier::new(),
                     {
@@ -177,7 +203,6 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 Text(format!("Date: {}", date_result.get()))
                     .color(th.on_surface)
                     .size(th.typography.body_medium),
-                Box(Modifier::new().height(8.0).width(1.0)),
                 FilledButton(
                     Modifier::new(),
                     {
@@ -189,114 +214,106 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 Text(format!("Time: {}", time_result.get()))
                     .color(th.on_surface)
                     .size(th.typography.body_medium),
-                // DatePicker dialog (overlay-based, never clipped by parents)
-                {
-                    let dp_state = remember(DialogState::new);
-                    if show_date_picker.get() {
-                        dp_state.show();
-                        show_date_picker.set(false);
-                    }
-                    Dialog(
-                        dp_state.clone(),
-                        overlay.clone(),
-                        Modifier::new(),
+                picker_dialog(
+                    overlay.clone(),
+                    show_date_picker.get(),
+                    {
+                        let s = show_date_picker.clone();
+                        move || s.set(false)
+                    },
+                    |dismiss| {
                         DatePicker(
                             date_state.clone(),
                             Rc::new({
                                 let r = date_result.clone();
-                                let dp_state = dp_state.clone();
+                                let dismiss = dismiss.clone();
                                 move |y, m, d| {
                                     r.set(format!("{}-{:02}-{:02}", y, m, d));
-                                    dp_state.dismiss();
+                                    dismiss();
                                 }
                             }),
                             Rc::new({
-                                let dp_state = dp_state.clone();
-                                move || dp_state.dismiss()
+                                let dismiss = dismiss.clone();
+                                move || dismiss()
                             }),
-                        ),
-                    )
-                },
-                Box(Modifier::new().height(8.0).width(1.0)),
-                // TimePicker dialog (overlay-based)
-                {
-                    let tp_state = remember(DialogState::new);
-                    if show_time_picker.get() {
-                        tp_state.show();
-                        show_time_picker.set(false);
-                    }
-                    Dialog(
-                        tp_state.clone(),
-                        overlay.clone(),
-                        Modifier::new(),
+                        )
+                    },
+                ),
+                picker_dialog(
+                    overlay.clone(),
+                    show_time_picker.get(),
+                    {
+                        let s = show_time_picker.clone();
+                        move || s.set(false)
+                    },
+                    |dismiss| {
                         TimePicker(
                             time_state.clone(),
                             Rc::new({
                                 let r = time_result.clone();
-                                let tp_state = tp_state.clone();
+                                let dismiss = dismiss.clone();
                                 move |h, m| {
                                     r.set(format!("{:02}:{:02}", h, m));
-                                    tp_state.dismiss();
+                                    dismiss();
                                 }
                             }),
                             Rc::new({
-                                let tp_state = tp_state.clone();
-                                move || tp_state.dismiss()
+                                let dismiss = dismiss.clone();
+                                move || dismiss()
                             }),
-                        ),
-                    )
-                },
+                        )
+                    },
+                ),
             )),
         ),
         Section(
             "NavigationRail",
-            Column(Modifier::new().padding(12.0)).child((
+            Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 Text(format!("Selected: Item {}", rail_selected.get() + 1))
                     .color(th.on_surface)
                     .size(th.typography.body_medium),
-                Box(Modifier::new().height(8.0).width(1.0)),
-                Row(Modifier::new().height(400.0).border(1.0, th.outline, 8.0)).child({
+                Row(Modifier::new().height(400.0).border(1.0, th.outline, 8.0)).child(
                     NavigationRail(
                         rail_selected.get(),
                         vec![
-                            NavRailItem {
-                                icon: Text("★").size(20.0),
-                                label: "Favorites".into(),
-                                on_click: Rc::new({
+                            rail_item(
+                                "Favorites",
+                                "★",
+                                {
                                     let s = rail_selected.clone();
                                     move || s.set(0)
-                                }),
-                                badge: None,
-                            },
-                            NavRailItem {
-                                icon: Text("☁").size(20.0),
-                                label: "Cloud".into(),
-                                on_click: Rc::new({
+                                },
+                                None,
+                            ),
+                            rail_item(
+                                "Cloud",
+                                "☁",
+                                {
                                     let s = rail_selected.clone();
                                     move || s.set(1)
-                                }),
-                                badge: None,
-                            },
-                            NavRailItem {
-                                icon: Text("⚙").size(20.0),
-                                label: "Settings".into(),
-                                on_click: Rc::new({
+                                },
+                                None,
+                            ),
+                            rail_item(
+                                "Settings",
+                                "⚙",
+                                {
                                     let s = rail_selected.clone();
                                     move || s.set(2)
-                                }),
-                                badge: Some(Box(Modifier::new()
+                                },
+                                Some(Box(Modifier::new()
                                     .size(8.0, 8.0)
                                     .background(th.error)
                                     .clip_rounded(4.0))),
-                            },
-                            NavRailItem {
-                                icon: Text("🛒").size(20.0),
-                                label: "Cart".into(),
-                                on_click: Rc::new({
+                            ),
+                            rail_item(
+                                "Cart",
+                                "🛒",
+                                {
                                     let s = rail_selected.clone();
                                     move || s.set(3)
-                                }),
-                                badge: Some(
+                                },
+                                Some(
                                     Box(Modifier::new()
                                         .min_width(16.0)
                                         .height(16.0)
@@ -306,17 +323,17 @@ pub fn screen(overlay: OverlayHandle) -> View {
                                         .justify_content(JustifyContent::Center))
                                     .child(Text("3").color(th.on_error).size(10.0).single_line()),
                                 ),
-                            },
+                            ),
                         ],
-                        None, // header
-                        None, // FAB
-                    )
-                }),
+                        None,
+                        None,
+                    ),
+                ),
             )),
         ),
         Section(
             "Animation: Keyframes (animate_keyframes)",
-            Column(Modifier::new().padding(12.0)).child((
+            Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 Text("Keyframe animation bouncing between sizes")
                     .size(14.0)
                     .color(th.on_surface_variant),
@@ -328,7 +345,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
         ),
         Section(
             "Animation: Tween (animate_f32)",
-            Column(Modifier::new().padding(12.0)).child((
+            Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 FilledButton(
                     Modifier::new(),
                     {
@@ -343,11 +360,10 @@ pub fn screen(overlay: OverlayHandle) -> View {
                     .clip_rounded(4.0)),
             )),
         ),
-    ))
+    ])
 }
 
 fn rand_val() -> f32 {
-    // Simple deterministic-ish pseudo-random for demo
     use web_time::{SystemTime, UNIX_EPOCH};
     let t = SystemTime::now()
         .duration_since(UNIX_EPOCH)
