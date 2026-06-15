@@ -56,17 +56,19 @@ impl NestedScrollConnection {
 
 fn run_pre_scroll(conn: &RefCell<Option<NestedScrollConnection>>, d: Vec2) -> Vec2 {
     if let Some(ref parent) = *conn.borrow()
-        && let Some(ref pre) = parent.on_pre_scroll {
-            return pre(d);
-        }
+        && let Some(ref pre) = parent.on_pre_scroll
+    {
+        return pre(d);
+    }
     d
 }
 
 fn run_post_scroll(conn: &RefCell<Option<NestedScrollConnection>>, leftover: Vec2) -> Vec2 {
     if let Some(ref parent) = *conn.borrow()
-        && let Some(ref post) = parent.on_post_scroll {
-            return post(leftover);
-        }
+        && let Some(ref post) = parent.on_post_scroll
+    {
+        return post(leftover);
+    }
     leftover
 }
 
@@ -875,10 +877,10 @@ pub fn HorizontalScrollArea(
                     y: d.y,
                 }
             } else {
-                let leftover = st.scroll_immediate(d.y);
+                let leftover_x = st.scroll_immediate(d.x);
                 Vec2 {
-                    x: 0.0,
-                    y: leftover,
+                    x: leftover_x,
+                    y: d.y,
                 }
             };
             run_post_scroll(&st.parent_connection, result)

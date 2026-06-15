@@ -289,10 +289,10 @@ pub(crate) fn dnd_target_id_at(frame: &Frame, pos: Vec2) -> Option<u64> {
         .find(|h| is_dnd_target(h))
         .map(|h| h.id)
 }
-
 /// Dispatch wheel/touch-scroll to the top-most scroll consumer under `pos`.
 /// Returns `true` if something consumed the scroll.
-pub(crate) fn dispatch_scroll(frame: &Frame, pos: Vec2, delta: Vec2) -> bool {
+pub(crate) fn dispatch_scroll(frame: &Frame, pos: Vec2, mut delta: Vec2) -> bool {
+    let mut any_consumed = false;
     for hit in frame
         .hit_regions
         .iter()
@@ -305,11 +305,15 @@ pub(crate) fn dispatch_scroll(frame: &Frame, pos: Vec2, delta: Vec2) -> bool {
             let consumed_x = (before.x - leftover.x).abs() > 0.001;
             let consumed_y = (before.y - leftover.y).abs() > 0.001;
             if consumed_x || consumed_y {
-                return true;
+                any_consumed = true;
+            }
+            delta = leftover;
+            if delta.x.abs() <= 0.001 && delta.y.abs() <= 0.001 {
+                break;
             }
         }
     }
-    false
+    any_consumed
 }
 
 #[macro_export]

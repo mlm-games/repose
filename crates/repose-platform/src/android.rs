@@ -81,6 +81,7 @@ pub fn run_android_app_with_options(
 
         // touch scroll cancel-click
         touch_scrolled: bool,
+        touch_scroll_accum_x_px: f32,
         touch_scroll_accum_y_px: f32,
         prev_touch_px: Option<(f32, f32)>,
 
@@ -128,6 +129,7 @@ pub fn run_android_app_with_options(
                 key_pressed_active: None,
 
                 touch_scrolled: false,
+                touch_scroll_accum_x_px: 0.0,
                 touch_scroll_accum_y_px: 0.0,
                 prev_touch_px: None,
 
@@ -544,6 +546,7 @@ pub fn run_android_app_with_options(
                     match t.phase {
                         winit::event::TouchPhase::Started => {
                             self.touch_scrolled = false;
+                            self.touch_scroll_accum_x_px = 0.0;
                             self.touch_scroll_accum_y_px = 0.0;
 
                             if self.primary_touch_id.is_none() {
@@ -669,17 +672,26 @@ pub fn run_android_app_with_options(
                             }
 
                             if let (Some(prev), Some(f)) = (self.prev_touch_px, &self.frame_cache) {
+                                let dx_px = pos_px.0 - prev.0;
                                 let dy_px = pos_px.1 - prev.1;
 
-                                // Always attempt to scroll the best consumer under the finger.
-                                if dy_px.abs() > 0.0 {
+                                if dx_px.abs() > 0.0 || dy_px.abs() > 0.0 {
+                                    self.touch_scroll_accum_x_px += dx_px;
                                     self.touch_scroll_accum_y_px += dy_px;
 
-                                    let consumed =
-                                        rc::dispatch_scroll(f, pos, Vec2 { x: 0.0, y: -dy_px });
+                                    let consumed = rc::dispatch_scroll(
+                                        f,
+                                        pos,
+                                        Vec2 {
+                                            x: -dx_px,
+                                            y: -dy_px,
+                                        },
+                                    );
 
                                     if consumed
-                                        && self.touch_scroll_accum_y_px.abs() > self.touch_slop_px()
+                                        && (self.touch_scroll_accum_x_px.abs() > self.touch_slop_px()
+                                            || self.touch_scroll_accum_y_px.abs()
+                                                > self.touch_slop_px())
                                     {
                                         self.touch_scrolled = true;
                                     }
