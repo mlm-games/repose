@@ -349,6 +349,9 @@ impl LayoutEngine {
         }
         self.stats.layout_time_ms = (web_time::Instant::now() - start).as_secs_f32() * 1000.0;
 
+        // 4.5. Advance scroll physics (pre-paint, so paint only reads offset)
+        self.walk_tick(root_node_id);
+
         // 5. Paint
         let (scene, hits, sems) = self.paint(
             root_node_id,
@@ -1116,6 +1119,27 @@ impl LayoutEngine {
                 }
             }
             _ => taffy::geometry::Size::ZERO,
+        }
+    }
+
+    /// Advance scroll physics on all scrollable nodes before paint.
+    /// Keeps mutation out of the render walk.
+    fn walk_tick(&self, root_id: NodeId) {
+        let mut stack = vec![root_id];
+        while let Some(id) = stack.pop() {
+            let Some(n) = self.tree.get(id) else { continue };
+            match &n.kind {
+                ViewKind::ScrollV { tick_scroll, .. }
+                | ViewKind::ScrollXY { tick_scroll, .. } => {
+                    if let Some(tick) = tick_scroll {
+                        tick();
+                    }
+                }
+                _ => {}
+            }
+            for &ch in n.children.iter() {
+                stack.push(ch);
+            }
         }
     }
 
@@ -2851,6 +2875,7 @@ impl LayoutEngine {
                 get_scroll_offset,
                 set_scroll_offset,
                 show_scrollbar,
+                ..
             } => {
                 hits.push(HitRegion {
                     id: view_id,
@@ -2942,6 +2967,7 @@ impl LayoutEngine {
                 get_scroll_offset_xy,
                 set_scroll_offset_xy,
                 show_scrollbar,
+                ..
             } => {
                 hits.push(HitRegion {
                     id: view_id,

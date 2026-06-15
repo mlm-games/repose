@@ -137,13 +137,6 @@ where
     let scroll_offset_px = state.scroll_offset.get();
     let viewport_height_px = state.viewport_height.get();
 
-    let actual_content_h_px = if state.content_height.get() > 0.0 {
-        state.content_height.get()
-    } else {
-        content_height_px
-    };
-    state.tick(actual_content_h_px);
-
     let first_visible = match cumulative_px.binary_search_by(|p| {
         p.partial_cmp(&scroll_offset_px)
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -362,8 +355,19 @@ where
     let measured_h_px = {
         let st = state.clone();
         Rc::new(move |h_px: f32| {
-            st.content_height.set(h_px);
-            st.set_offset(st.scroll_offset.get(), h_px);
+            if (st.content_height.get() - h_px).abs() > 0.5 {
+                st.content_height.set(h_px);
+                st.set_offset(st.scroll_offset.get(), h_px);
+            }
+        })
+    };
+
+    let tick_scroll = {
+        let st = state.clone();
+        Rc::new(move || {
+            let ch = st.content_height.get();
+            let ch = if ch > 0.0 { ch } else { content_height_px };
+            st.tick(ch);
         })
     };
 
@@ -376,6 +380,7 @@ where
             get_scroll_offset: Some(get_scroll),
             set_scroll_offset: Some(set_scroll),
             show_scrollbar: true,
+            tick_scroll: Some(tick_scroll),
         },
     )
     .modifier(modifier)
@@ -496,13 +501,6 @@ where
     let scroll_offset_px = state.scroll_offset.get();
     let viewport_height_px = state.viewport_height.get();
 
-    let actual_content_h_px = if state.content_height.get() > 0.0 {
-        state.content_height.get()
-    } else {
-        content_height_px
-    };
-    state.tick(actual_content_h_px);
-
     let buffer_rows = 2usize;
     let first_row = ((scroll_offset_px / item_h_px).floor().max(0.0)) as usize;
     let first_row = first_row.saturating_sub(buffer_rows);
@@ -575,8 +573,19 @@ where
     let measured_h = {
         let st = state.clone();
         Rc::new(move |h: f32| {
-            st.content_height.set(h);
-            st.set_offset(st.scroll_offset.get(), h);
+            if (st.content_height.get() - h).abs() > 0.5 {
+                st.content_height.set(h);
+                st.set_offset(st.scroll_offset.get(), h);
+            }
+        })
+    };
+
+    let tick_scroll = {
+        let st = state.clone();
+        Rc::new(move || {
+            let ch = st.content_height.get();
+            let ch = if ch > 0.0 { ch } else { content_height_px };
+            st.tick(ch);
         })
     };
 
@@ -591,6 +600,7 @@ where
             get_scroll_offset: Some(get_scroll),
             set_scroll_offset: Some(set_scroll),
             show_scrollbar: true,
+            tick_scroll: Some(tick_scroll),
         },
     )
     .modifier(modifier)
@@ -688,13 +698,6 @@ where
     let scroll_offset_px = state.scroll_offset.get();
     let viewport_width_px = state.viewport_width.get();
 
-    let actual_content_w_px = if state.content_width.get() > 0.0 {
-        state.content_width.get()
-    } else {
-        content_width_px
-    };
-    state.tick(actual_content_w_px);
-
     let first_visible = (scroll_offset_px / item_w_px).floor().max(0.0) as usize;
     let last_visible = ((scroll_offset_px + viewport_width_px) / item_w_px).ceil() as usize + 2;
 
@@ -760,6 +763,15 @@ where
         })
     };
 
+    let tick_scroll = {
+        let st = state.clone();
+        Rc::new(move || {
+            let cw = st.content_width.get();
+            let cw = if cw > 0.0 { cw } else { content_width_px };
+            st.tick(cw);
+        })
+    };
+
     let content = crate::Row(Modifier::new().flex_shrink(0.0)).with_children(children);
 
     View::new(
@@ -773,6 +785,7 @@ where
             get_scroll_offset_xy: Some(get_scroll),
             set_scroll_offset_xy: Some(set_scroll),
             show_scrollbar: true,
+            tick_scroll: Some(tick_scroll),
         },
     )
     .modifier(modifier)
@@ -926,8 +939,6 @@ where
     let scroll_offset_px = state.scroll_offset.get();
     let viewport_height_px = state.viewport_height.get();
 
-    state.tick(state.content_height.get().max(viewport_height_px));
-
     let buffer = 2;
     let mut first_visible = usize::MAX;
     let mut last_visible = 0usize;
@@ -1036,8 +1047,18 @@ where
     let measured_h = {
         let st = state.clone();
         Rc::new(move |h: f32| {
-            st.content_height.set(h);
-            st.set_offset(st.scroll_offset.get(), h);
+            if (st.content_height.get() - h).abs() > 0.5 {
+                st.content_height.set(h);
+                st.set_offset(st.scroll_offset.get(), h);
+            }
+        })
+    };
+
+    let tick_scroll = {
+        let st = state.clone();
+        Rc::new(move || {
+            let ch = st.content_height.get().max(st.viewport_height.get());
+            st.tick(ch);
         })
     };
 
@@ -1052,6 +1073,7 @@ where
             get_scroll_offset: Some(get_scroll),
             set_scroll_offset: Some(set_scroll),
             show_scrollbar: true,
+            tick_scroll: Some(tick_scroll),
         },
     )
     .modifier(modifier)

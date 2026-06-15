@@ -92,6 +92,7 @@ pub enum ViewKind {
         get_scroll_offset: Option<Rc<dyn Fn() -> f32>>,
         set_scroll_offset: Option<Rc<dyn Fn(f32)>>,
         show_scrollbar: bool,
+        tick_scroll: Option<Rc<dyn Fn()>>,
     },
     ScrollXY {
         on_scroll: Option<ScrollCallback>,
@@ -102,6 +103,7 @@ pub enum ViewKind {
         get_scroll_offset_xy: Option<Rc<dyn Fn() -> (f32, f32)>>,
         set_scroll_offset_xy: Option<Rc<dyn Fn(f32, f32)>>,
         show_scrollbar: bool,
+        tick_scroll: Option<Rc<dyn Fn()>>,
     },
     Text {
         text: String,

@@ -12,6 +12,8 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use web_time::Instant;
 
+const OVERSHOOT_DECAY_PER_60HZ: f32 = 0.78;
+
 /// A connection between a nested scrollable and its nearest ancestor scrollable.
 /// Allows coordinated scrolling: the parent can pre-consume deltas before the
 /// child processes them, and post-consume leftovers after the child is done.
@@ -194,6 +196,7 @@ pub struct ScrollState {
     overscroll_enabled: bool,
     parent_connection: RefCell<Option<NestedScrollConnection>>,
     show_scrollbar: Cell<bool>,
+    prev_tick: Cell<Instant>,
 }
 
 impl Default for ScrollState {
@@ -213,6 +216,7 @@ impl ScrollState {
             overscroll_enabled: true,
             parent_connection: RefCell::new(None),
             show_scrollbar: Cell::new(true),
+            prev_tick: Cell::new(Instant::now()),
         }
     }
 
@@ -240,12 +244,18 @@ impl ScrollState {
     }
 
     pub fn set_viewport_height(&self, h: f32) {
-        self.viewport_height.set(h.max(0.0));
-        self.clamp_offset();
+        let h = h.max(0.0);
+        if (self.viewport_height.get() - h).abs() > 0.5 {
+            self.viewport_height.set(h);
+            self.clamp_offset();
+        }
     }
     pub fn set_content_height(&self, h: f32) {
-        self.content_height.set(h.max(0.0));
-        self.clamp_offset();
+        let h = h.max(0.0);
+        if (self.content_height.get() - h).abs() > 0.5 {
+            self.content_height.set(h);
+            self.clamp_offset();
+        }
     }
     /// Set the overscroll value directly. Used by pull-to-refresh to
     /// reset overscroll when the refresh completes.
@@ -351,11 +361,14 @@ impl ScrollState {
 
     /// Advance physics one tick; returns true if animating.
     pub fn tick(&self) -> bool {
-        // Handle overscroll decay (frame-rate-independent, ~20% decay per 60Hz frame)
+        let now = Instant::now();
+        let dt = (now - self.prev_tick.get()).as_secs_f32().min(0.1);
+        self.prev_tick.set(now);
+
         if self.overscroll_enabled {
             let os = self.overscroll.get();
             if os.abs() > 0.5 {
-                let decayed = os * 0.78;
+                let decayed = os * OVERSHOOT_DECAY_PER_60HZ.powf(dt * 60.0);
                 if decayed.abs() < 0.5 {
                     self.overscroll.set(0.0);
                 } else {
@@ -392,6 +405,7 @@ pub struct HorizontalScrollState {
     overscroll_enabled: bool,
     parent_connection: RefCell<Option<NestedScrollConnection>>,
     show_scrollbar: Cell<bool>,
+    prev_tick: Cell<Instant>,
 }
 
 impl Default for HorizontalScrollState {
@@ -411,6 +425,7 @@ impl HorizontalScrollState {
             overscroll_enabled: true,
             parent_connection: RefCell::new(None),
             show_scrollbar: Cell::new(true),
+            prev_tick: Cell::new(Instant::now()),
         }
     }
 
@@ -435,12 +450,18 @@ impl HorizontalScrollState {
     }
 
     pub fn set_viewport_width(&self, w: f32) {
-        self.viewport_width.set(w.max(0.0));
-        self.clamp();
+        let w = w.max(0.0);
+        if (self.viewport_width.get() - w).abs() > 0.5 {
+            self.viewport_width.set(w);
+            self.clamp();
+        }
     }
     pub fn set_content_width(&self, w: f32) {
-        self.content_width.set(w.max(0.0));
-        self.clamp();
+        let w = w.max(0.0);
+        if (self.content_width.get() - w).abs() > 0.5 {
+            self.content_width.set(w);
+            self.clamp();
+        }
     }
     pub fn set_overscroll(&self, val: f32) {
         self.overscroll.set(val);
@@ -507,10 +528,14 @@ impl HorizontalScrollState {
         leftover
     }
     pub fn tick(&self) -> bool {
+        let now = Instant::now();
+        let dt = (now - self.prev_tick.get()).as_secs_f32().min(0.1);
+        self.prev_tick.set(now);
+
         if self.overscroll_enabled {
             let os = self.overscroll.get();
             if os.abs() > 0.5 {
-                let decayed = os * 0.78;
+                let decayed = os * OVERSHOOT_DECAY_PER_60HZ.powf(dt * 60.0);
                 if decayed.abs() < 0.5 {
                     self.overscroll.set(0.0);
                 } else {
@@ -550,6 +575,7 @@ pub struct ScrollStateXY {
     overscroll_enabled: bool,
     parent_connection: RefCell<Option<NestedScrollConnection>>,
     show_scrollbar: Cell<bool>,
+    prev_tick: Cell<Instant>,
 }
 impl Default for ScrollStateXY {
     fn default() -> Self {
@@ -573,6 +599,7 @@ impl ScrollStateXY {
             overscroll_enabled: true,
             parent_connection: RefCell::new(None),
             show_scrollbar: Cell::new(true),
+            prev_tick: Cell::new(Instant::now()),
         }
     }
 
@@ -597,14 +624,26 @@ impl ScrollStateXY {
     }
 
     pub fn set_viewport(&self, w: f32, h: f32) {
-        self.vp_w.set(w.max(0.0));
-        self.vp_h.set(h.max(0.0));
-        self.clamp();
+        let w = w.max(0.0);
+        let h = h.max(0.0);
+        let changed = (self.vp_w.get() - w).abs() > 0.5
+            || (self.vp_h.get() - h).abs() > 0.5;
+        if changed {
+            self.vp_w.set(w);
+            self.vp_h.set(h);
+            self.clamp();
+        }
     }
     pub fn set_content(&self, w: f32, h: f32) {
-        self.c_w.set(w.max(0.0));
-        self.c_h.set(h.max(0.0));
-        self.clamp();
+        let w = w.max(0.0);
+        let h = h.max(0.0);
+        let changed = (self.c_w.get() - w).abs() > 0.5
+            || (self.c_h.get() - h).abs() > 0.5;
+        if changed {
+            self.c_w.set(w);
+            self.c_h.set(h);
+            self.clamp();
+        }
     }
     pub fn set_offset_xy(&self, x: f32, y: f32) {
         let max_x = (self.c_w.get() - self.vp_w.get()).max(0.0);
@@ -694,13 +733,13 @@ impl ScrollStateXY {
 
         Vec2 { x: lx, y: ly }
     }
-    fn tick_os_axis(os: &Signal<f32>, enabled: bool) -> bool {
+    fn tick_os_axis(os: &Signal<f32>, enabled: bool, dt: f32) -> bool {
         if !enabled {
             return false;
         }
         let v = os.get();
         if v.abs() > 0.5 {
-            let decayed = v * 0.78;
+            let decayed = v * OVERSHOOT_DECAY_PER_60HZ.powf(dt * 60.0);
             if decayed.abs() < 0.5 {
                 os.set(0.0);
             } else {
@@ -715,10 +754,14 @@ impl ScrollStateXY {
     /// Advance physics for both axes using a shared dt.
     /// Returns true if either axis is still animating.
     pub fn tick(&self) -> bool {
+        let now = Instant::now();
+        let dt = (now - self.prev_tick.get()).as_secs_f32().min(0.1);
+        self.prev_tick.set(now);
+
         if self.overscroll_enabled {
-            let os_active =
-                Self::tick_os_axis(&self.os_x, true) || Self::tick_os_axis(&self.os_y, true);
-            if os_active {
+            if Self::tick_os_axis(&self.os_x, true, dt)
+                || Self::tick_os_axis(&self.os_y, true, dt)
+            {
                 return true;
             }
         }
@@ -734,8 +777,6 @@ impl ScrollStateXY {
         if !px.animating && !py.animating {
             return false;
         }
-
-        let dt = px.dt().max(py.dt());
 
         // Integrate X
         if px.animating {
@@ -812,15 +853,9 @@ pub fn ScrollArea(modifier: Modifier, state: Rc<ScrollState>, content: View) -> 
     let on_scroll = {
         let st = state.clone();
         Rc::new(move |d: Vec2| -> Vec2 {
-            // Pre-scroll: let parent consume first
             let d = run_pre_scroll(&st.parent_connection, d);
-            // My scroll
             let leftover_y = st.scroll_immediate(d.y);
-            let result = Vec2 {
-                x: d.x,
-                y: leftover_y,
-            };
-            // Post-scroll: parent gets the leftover
+            let result = Vec2 { x: d.x, y: leftover_y };
             run_post_scroll(&st.parent_connection, result)
         })
     };
@@ -834,14 +869,15 @@ pub fn ScrollArea(modifier: Modifier, state: Rc<ScrollState>, content: View) -> 
     };
     let get_scroll = {
         let st = state.clone();
-        Rc::new(move || {
-            st.tick();
-            st.get() + st.overscroll_offset()
-        })
+        Rc::new(move || st.get() + st.overscroll_offset())
     };
     let set_scroll = {
         let st = state.clone();
         Rc::new(move |off: f32| st.set_offset(off))
+    };
+    let tick_scroll = {
+        let st = state.clone();
+        Rc::new(move || { st.tick(); })
     };
     View::new(
         0,
@@ -852,6 +888,7 @@ pub fn ScrollArea(modifier: Modifier, state: Rc<ScrollState>, content: View) -> 
             get_scroll_offset: Some(get_scroll),
             set_scroll_offset: Some(set_scroll),
             show_scrollbar: state.show_scrollbar.get(),
+            tick_scroll: Some(tick_scroll),
         },
     )
     .modifier(modifier)
@@ -863,18 +900,13 @@ pub fn HorizontalScrollArea(
     state: Rc<HorizontalScrollState>,
     mut content: View,
 ) -> View {
-    // Prevent content from shrinking below its natural width in the Row layout.
     content.modifier = content.modifier.flex_shrink(0.0);
     let on_scroll = {
         let st = state.clone();
         Rc::new(move |d: Vec2| -> Vec2 {
-            // Pre-scroll: let parent consume first
             let d = run_pre_scroll(&st.parent_connection, d);
             let leftover_x = st.scroll_immediate(d.x);
-            let result = Vec2 {
-                x: leftover_x,
-                y: d.y,
-            };
+            let result = Vec2 { x: leftover_x, y: d.y };
             run_post_scroll(&st.parent_connection, result)
         })
     };
@@ -888,14 +920,15 @@ pub fn HorizontalScrollArea(
     };
     let get_scroll_xy = {
         let st = state.clone();
-        Rc::new(move || {
-            st.tick();
-            (st.get() + st.overscroll_offset(), 0.0)
-        })
+        Rc::new(move || (st.get() + st.overscroll_offset(), 0.0))
     };
     let set_xy = {
         let st = state.clone();
         Rc::new(move |x: f32, _y: f32| st.set_offset(x))
+    };
+    let tick_scroll = {
+        let st = state.clone();
+        Rc::new(move || { st.tick(); })
     };
     View::new(
         0,
@@ -908,6 +941,7 @@ pub fn HorizontalScrollArea(
             get_scroll_offset_xy: Some(get_scroll_xy),
             set_scroll_offset_xy: Some(set_xy),
             show_scrollbar: state.show_scrollbar.get(),
+            tick_scroll: Some(tick_scroll),
         },
     )
     .modifier(modifier)
@@ -933,20 +967,15 @@ pub fn ScrollAreaXY(modifier: Modifier, state: Rc<ScrollStateXY>, content: View)
     };
     let set_cw = {
         let st = state.clone();
-        Rc::new(move |w: f32| {
-            st.set_content(w, st.c_h.get());
-        })
+        Rc::new(move |w: f32| st.set_content(w, st.c_h.get()))
     };
     let set_ch = {
         let st = state.clone();
-        Rc::new(move |h: f32| {
-            st.set_content(st.c_w.get(), h);
-        })
+        Rc::new(move |h: f32| st.set_content(st.c_w.get(), h))
     };
     let get_xy = {
         let st = state.clone();
         Rc::new(move || {
-            st.tick();
             let (ox, oy) = st.get();
             let (osx, osy) = st.overscroll_offset();
             (ox + osx, oy + osy)
@@ -955,6 +984,10 @@ pub fn ScrollAreaXY(modifier: Modifier, state: Rc<ScrollStateXY>, content: View)
     let set_xy = {
         let st = state.clone();
         Rc::new(move |x: f32, y: f32| st.set_offset_xy(x, y))
+    };
+    let tick_scroll = {
+        let st = state.clone();
+        Rc::new(move || { st.tick(); })
     };
 
     View::new(
@@ -968,6 +1001,7 @@ pub fn ScrollAreaXY(modifier: Modifier, state: Rc<ScrollStateXY>, content: View)
             get_scroll_offset_xy: Some(get_xy),
             set_scroll_offset_xy: Some(set_xy),
             show_scrollbar: state.show_scrollbar.get(),
+            tick_scroll: Some(tick_scroll),
         },
     )
     .modifier(modifier)
