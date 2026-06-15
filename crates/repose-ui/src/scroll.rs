@@ -77,14 +77,13 @@ pub struct ScrollPhysics {
     last_t: Instant,
     last_input_t: Instant,
     animating: bool,
-    decay_per_60hz: f32,
     stop_velocity: f32,
     input_activate_velocity: f32,
 }
 
 impl ScrollPhysics {
     pub(crate) fn new(
-        decay_per_60hz: f32,
+        _decay_per_60hz: f32,
         stop_velocity: f32,
         input_activate_velocity: f32,
     ) -> Self {
@@ -94,21 +93,32 @@ impl ScrollPhysics {
             last_t: now,
             last_input_t: now,
             animating: false,
-            decay_per_60hz,
             stop_velocity,
             input_activate_velocity,
         }
     }
 
-    /// Record a scroll input of `consumed` px. Estimates instantaneous velocity
-    /// from the time delta since the last input.
+    /// Record a scroll input of `consumed` px. Estimates velocity using
+    /// EWMA smoothing over recent frames to avoid spikes from frame jitter.
+    /// Capped to `max_velocity` px/s.
     pub(crate) fn record_input(&mut self, consumed: f32) {
         let now = Instant::now();
-        let dt = (now - self.last_input_t)
-            .as_secs_f32()
-            .clamp(1.0 / 240.0, 1.0 / 15.0);
+        let raw_dt = (now - self.last_input_t).as_secs_f32();
+        let dt = raw_dt.clamp(1.0 / 240.0, 1.0 / 15.0);
         self.last_input_t = now;
-        self.vel = consumed / dt;
+
+        // Reset velocity if a significant gap occurred (finger was lifted/paused)
+        if raw_dt > 0.1 {
+            self.vel = 0.0;
+        }
+
+        let instant_vel = consumed / dt;
+        const SMOOTHING: f32 = 0.35;
+        self.vel = self.vel * (1.0 - SMOOTHING) + instant_vel * SMOOTHING;
+
+        const MAX_VEL: f32 = 8000.0;
+        self.vel = self.vel.clamp(-MAX_VEL, MAX_VEL);
+
         self.animating = self.vel.abs() > self.input_activate_velocity;
     }
 
@@ -148,8 +158,13 @@ impl ScrollPhysics {
             return None;
         }
 
-        // Frame-rate-independent exponential decay.
-        let decay = self.decay_per_60hz.powf(dt * 60.0);
+        // Velocity-dependent decay: more friction at low speeds, less at high.
+        // This matches Android's spline-based fling where effective friction
+        // decreases as velocity increases (ln(0.78)/ln(0.9) spline scaling).
+        let speed = self.vel.abs();
+        let t = (speed / 4000.0).min(1.0);
+        let effective_decay = 0.85 + t * 0.10; // ranges from 0.85 (slow) to 0.95 (fast)
+        let decay = effective_decay.powf(dt * 60.0);
         self.vel = vel0 * decay;
 
         // Re-check stop threshold after decay (avoids sub-threshold oscillation).
@@ -191,7 +206,7 @@ impl ScrollState {
             scroll_offset: signal(0.0),
             viewport_height: signal(0.0),
             content_height: signal(0.0),
-            physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
+            physics: RefCell::new(ScrollPhysics::new(0.90, 15.0, 50.0)),
             overscroll: signal(0.0),
             overscroll_enabled: true,
             parent_connection: RefCell::new(None),
@@ -389,7 +404,7 @@ impl HorizontalScrollState {
             scroll_offset: signal(0.0),
             viewport_width: signal(0.0),
             content_width: signal(0.0),
-            physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
+            physics: RefCell::new(ScrollPhysics::new(0.90, 15.0, 50.0)),
             overscroll: signal(0.0),
             overscroll_enabled: true,
             parent_connection: RefCell::new(None),
@@ -549,8 +564,8 @@ impl ScrollStateXY {
             vp_h: signal(0.0),
             c_w: signal(0.0),
             c_h: signal(0.0),
-            physics_x: RefCell::new(ScrollPhysics::new(0.95, 5.0, 10.0)),
-            physics_y: RefCell::new(ScrollPhysics::new(0.95, 5.0, 10.0)),
+            physics_x: RefCell::new(ScrollPhysics::new(0.90, 15.0, 50.0)),
+            physics_y: RefCell::new(ScrollPhysics::new(0.90, 15.0, 50.0)),
             os_x: signal(0.0),
             os_y: signal(0.0),
             overscroll_enabled: true,
@@ -722,7 +737,7 @@ impl ScrollStateXY {
 
         // Integrate X
         if px.animating {
-            if px.vel.abs() < 5.0 {
+            if px.vel.abs() < px.stop_velocity {
                 px.vel = 0.0;
                 px.animating = false;
             } else {
@@ -731,7 +746,10 @@ impl ScrollStateXY {
                     px.vel = 0.0;
                     px.animating = false;
                 } else {
-                    px.vel *= px.decay_per_60hz.powf(dt * 60.0);
+                    let speed = px.vel.abs();
+                    let t = (speed / 4000.0).min(1.0);
+                    let effective_decay = 0.85 + t * 0.10;
+                    px.vel *= effective_decay.powf(dt * 60.0);
                     if px.vel.abs() < px.stop_velocity {
                         px.vel = 0.0;
                         px.animating = false;
@@ -744,7 +762,7 @@ impl ScrollStateXY {
 
         // Integrate Y
         if py.animating {
-            if py.vel.abs() < 5.0 {
+            if py.vel.abs() < py.stop_velocity {
                 py.vel = 0.0;
                 py.animating = false;
             } else {
@@ -753,7 +771,10 @@ impl ScrollStateXY {
                     py.vel = 0.0;
                     py.animating = false;
                 } else {
-                    py.vel *= py.decay_per_60hz.powf(dt * 60.0);
+                    let speed = py.vel.abs();
+                    let t = (speed / 4000.0).min(1.0);
+                    let effective_decay = 0.85 + t * 0.10;
+                    py.vel *= effective_decay.powf(dt * 60.0);
                     if py.vel.abs() < py.stop_velocity {
                         py.vel = 0.0;
                         py.animating = false;
