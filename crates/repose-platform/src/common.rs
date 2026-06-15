@@ -289,9 +289,43 @@ pub(crate) fn dnd_target_id_at(frame: &Frame, pos: Vec2) -> Option<u64> {
         .find(|h| is_dnd_target(h))
         .map(|h| h.id)
 }
-/// Dispatch wheel/touch-scroll to the top-most scroll consumer under `pos`.
-/// Returns `true` if something consumed the scroll.
-pub(crate) fn dispatch_scroll(frame: &Frame, pos: Vec2, mut delta: Vec2) -> bool {
+/// Dispatch wheel/touch-scroll to scroll consumers under `pos`, propagating
+/// leftovers to parent hit regions.
+///
+/// Returns `(any_consumed, updated_capture)`.  Feed the new capture back on
+/// subsequent calls during the same touch gesture.
+pub(crate) fn dispatch_scroll(
+    frame: &Frame,
+    pos: Vec2,
+    mut delta: Vec2,
+    scroll_capture: Option<u64>,
+) -> (bool, Option<u64>) {
+    let mut new_capture = scroll_capture;
+
+    // If a scrollable has captured the gesture, try it first (position-independent).
+    if let Some(cid) = scroll_capture {
+        if let Some(cb) = frame
+            .hit_regions
+            .iter()
+            .find(|h| h.id == cid)
+            .and_then(|h| h.on_scroll.as_ref())
+        {
+            let before = delta;
+            let leftover = cb(before);
+            let consumed_x = (before.x - leftover.x).abs() > 0.001;
+            let consumed_y = (before.y - leftover.y).abs() > 0.001;
+            if consumed_x || consumed_y {
+                delta = leftover;
+                if delta.x.abs() <= 0.001 && delta.y.abs() <= 0.001 {
+                    return (true, Some(cid));
+                }
+            } else {
+                new_capture = None; // captured region exhausted — fall through
+            }
+        }
+    }
+
+    // Normal position-based dispatch for remaining/uncaptured delta.
     let mut any_consumed = false;
     for hit in frame
         .hit_regions
@@ -306,6 +340,9 @@ pub(crate) fn dispatch_scroll(frame: &Frame, pos: Vec2, mut delta: Vec2) -> bool
             let consumed_y = (before.y - leftover.y).abs() > 0.001;
             if consumed_x || consumed_y {
                 any_consumed = true;
+                if new_capture.is_none() {
+                    new_capture = Some(hit.id);
+                }
             }
             delta = leftover;
             if delta.x.abs() <= 0.001 && delta.y.abs() <= 0.001 {
@@ -313,7 +350,7 @@ pub(crate) fn dispatch_scroll(frame: &Frame, pos: Vec2, mut delta: Vec2) -> bool
             }
         }
     }
-    any_consumed
+    (any_consumed, new_capture)
 }
 
 #[macro_export]

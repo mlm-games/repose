@@ -925,7 +925,7 @@ pub fn run_desktop_app_with_snackbar(
                             y: self.mouse_pos_px.1,
                         };
 
-                        if rc::dispatch_scroll(f, pos, Vec2 { x: dx_px, y: dy_px }) {
+                        if rc::dispatch_scroll(f, pos, Vec2 { x: dx_px, y: dy_px }, None).0 {
                             self.request_redraw();
                         }
                     }

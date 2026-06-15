@@ -145,6 +145,7 @@ struct App {
 
     // touch click-cancel after scroll
     touch_scrolled: bool,
+    scroll_capture_id: Option<u64>,
     touch_scroll_accum_x_px: f32,
     touch_scroll_accum_y_px: f32,
     prev_touch_px: Option<(f32, f32)>,
@@ -200,6 +201,7 @@ impl App {
             drag: None,
 
             touch_scrolled: false,
+            scroll_capture_id: None,
             touch_scroll_accum_x_px: 0.0,
             touch_scroll_accum_y_px: 0.0,
             prev_touch_px: None,
@@ -967,7 +969,7 @@ impl ApplicationHandler<()> for App {
                         x: self.mouse_pos_px.0,
                         y: self.mouse_pos_px.1,
                     };
-                    if rc::dispatch_scroll(f, pos, Vec2 { x: dx_px, y: dy_px }) {
+                    if rc::dispatch_scroll(f, pos, Vec2 { x: dx_px, y: dy_px }, None).0 {
                         self.request_redraw();
                     }
                 }
@@ -1117,6 +1119,7 @@ impl ApplicationHandler<()> for App {
                 match t.phase {
                     TouchPhase::Started => {
                         self.touch_scrolled = false;
+                        self.scroll_capture_id = None;
                         self.touch_scroll_accum_x_px = 0.0;
                         self.touch_scroll_accum_y_px = 0.0;
 
@@ -1202,14 +1205,16 @@ impl ApplicationHandler<()> for App {
                                 self.touch_scroll_accum_x_px += dx_px;
                                 self.touch_scroll_accum_y_px += dy_px;
 
-                                let consumed = rc::dispatch_scroll(
+                                let (consumed, cap) = rc::dispatch_scroll(
                                     f,
                                     pos,
                                     Vec2 {
                                         x: -dx_px,
                                         y: -dy_px,
                                     },
+                                    self.scroll_capture_id,
                                 );
+                                self.scroll_capture_id = cap;
 
                                 if consumed
                                     && (self.touch_scroll_accum_x_px.abs()
@@ -1269,6 +1274,7 @@ impl ApplicationHandler<()> for App {
                                         || (dx > 0.0 && self.dispatch_action(&window, Action::Back))
                                     {
                                         self.capture_id = None;
+                                        self.scroll_capture_id = None;
                                         self.prev_touch_px = None;
                                         self.pressed_ids.clear();
                                         self.request_redraw();
@@ -1302,6 +1308,7 @@ impl ApplicationHandler<()> for App {
                         }
 
                         self.capture_id = None;
+                        self.scroll_capture_id = None;
                         self.prev_touch_px = None;
                         self.pressed_ids.clear();
                         self.request_redraw();
