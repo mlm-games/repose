@@ -5,7 +5,7 @@ use repose_core::Color;
 use repose_core::{
     Rect, Size, Vec2,
     animation::{AnimatedValue, AnimationSpec, KeyframesSpec, RepeatableSpec},
-    remember_state_with_key, request_frame,
+    remember_state_with_key,
 };
 
 /// Animate f32 from an explicit initial value to a target.
@@ -33,10 +33,7 @@ pub fn animate_f32_from(
     }
     drop(lt);
 
-    let still_animating = a.update();
-    if still_animating {
-        request_frame();
-    }
+    a.update();
 
     *a.get()
 }
@@ -72,10 +69,7 @@ macro_rules! animate_from_impl {
             }
             drop(lt);
 
-            let still_animating = a.update();
-            if still_animating {
-                request_frame();
-            }
+            a.update();
 
             *a.get()
         }
@@ -132,10 +126,7 @@ pub fn animate_keyframes(
     if !a.has_keyframes() {
         a.set_keyframes(keyframes);
     }
-    let still = a.update();
-    if still {
-        request_frame();
-    }
+    a.update();
     *a.get()
 }
 

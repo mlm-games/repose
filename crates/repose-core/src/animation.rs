@@ -2,6 +2,8 @@ use parking_lot::RwLock;
 use std::sync::OnceLock;
 use web_time::{Duration, Instant};
 
+use crate::request_frame;
+
 pub(crate) fn now() -> Instant {
     let lock = CLOCK.get_or_init(|| RwLock::new(Box::new(SystemClock) as Box<dyn Clock>));
     lock.read().now()
@@ -568,7 +570,7 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
 
     pub fn update(&mut self) -> bool {
         let spring_spec = self.spec.spring;
-        let still = if let Some(spring) = spring_spec {
+        let mut still = if let Some(spring) = spring_spec {
             self.update_spring(&spring)
         } else if self.keyframes.is_some() {
             self.update_keyframes()
@@ -591,11 +593,14 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
                     self.velocity = 0.0;
                     self.start_time = Some(now());
                     self.last_update = None;
-                    return true;
+                    still = true;
                 }
             }
         }
 
+        if still {
+            request_frame();
+        }
         still
     }
 
