@@ -870,18 +870,10 @@ pub fn HorizontalScrollArea(
         Rc::new(move |d: Vec2| -> Vec2 {
             // Pre-scroll: let parent consume first
             let d = run_pre_scroll(&st.parent_connection, d);
-            let result = if d.x.abs() > 0.001 {
-                let leftover_x = st.scroll_immediate(d.x);
-                Vec2 {
-                    x: leftover_x,
-                    y: d.y,
-                }
-            } else {
-                let leftover_x = st.scroll_immediate(d.x);
-                Vec2 {
-                    x: leftover_x,
-                    y: d.y,
-                }
+            let leftover_x = st.scroll_immediate(d.x);
+            let result = Vec2 {
+                x: leftover_x,
+                y: d.y,
             };
             run_post_scroll(&st.parent_connection, result)
         })

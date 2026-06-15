@@ -925,18 +925,8 @@ pub fn run_desktop_app_with_snackbar(
                             y: self.mouse_pos_px.1,
                         };
 
-                        for hit in f.hit_regions.iter().rev().filter(|h| h.rect.contains(pos)) {
-                            if let Some(cb) = &hit.on_scroll {
-                                log::debug!("Calling on_scroll for hit region id={}", hit.id);
-                                let before = Vec2 { x: dx_px, y: dy_px };
-                                let leftover = cb(before);
-                                let consumed_x = (before.x - leftover.x).abs() > 0.001;
-                                let consumed_y = (before.y - leftover.y).abs() > 0.001;
-                                if consumed_x || consumed_y {
-                                    self.request_redraw();
-                                    break; // stop after first consumer
-                                }
-                            }
+                        if rc::dispatch_scroll(f, pos, Vec2 { x: dx_px, y: dy_px }) {
+                            self.request_redraw();
                         }
                     }
                 }
