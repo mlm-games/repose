@@ -1,6 +1,7 @@
 pub use crate::animation::{
     AnimatedValue, AnimationSpec, Clock, DecayAnimationSpec, Easing, Interpolate, KeyframesSpec,
-    RepeatableSpec, SpringSpec, SystemClock, TestClock, ensure_system_clock, set_clock,
+    MonoSpline, RepeatableSpec, SplineKeyframes, SpringSpec, SystemClock, TestClock,
+    ensure_system_clock, set_clock,
 };
 pub use crate::color::Color;
 pub use crate::dnd::*;

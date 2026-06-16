@@ -4,7 +4,7 @@ use std::rc::Rc;
 use repose_core::Color;
 use repose_core::{
     Rect, Size, Vec2,
-    animation::{AnimatedValue, AnimationSpec, KeyframesSpec, RepeatableSpec},
+    animation::{AnimatedValue, AnimationSpec, KeyframesSpec, RepeatableSpec, SplineKeyframes},
     remember_state_with_key,
 };
 
@@ -128,6 +128,41 @@ pub fn animate_keyframes(
     }
     a.update();
     *a.get()
+}
+
+/// Animate f32 through a sequence of keyframes using a smooth cubic Hermite spline.
+///
+/// Produces C1-continuous animation (smooth derivatives at keyframe boundaries),
+/// unlike `animate_keyframes` which uses C0 linear interpolation.
+///
+/// Example:
+/// ```ignore
+/// let val = animate_spline_keyframes("bounce", SplineKeyframes::new(vec![
+///     (0.0, 0.0),
+///     (0.3, 100.0),
+///     (0.6, 80.0),
+///     (1.0, 100.0),
+/// ]), AnimationSpec::tween(Duration::from_millis(600), Easing::EaseInOut));
+/// ```
+pub fn animate_spline_keyframes(
+    key: impl Into<String>,
+    keyframes: SplineKeyframes,
+    spec: AnimationSpec,
+) -> f32 {
+    let key = key.into();
+    // Animate progress 0..1 using standard AnimatedValue (handles easing, repeat, frame clock)
+    let anim = remember_state_with_key(format!("anim:spkf_progress:{key}"), || {
+        AnimatedValue::new(0.0, spec)
+    });
+    let spline = remember_state_with_key(format!("anim:spkf:{key}"), || keyframes);
+
+    let mut a = anim.borrow_mut();
+    let s = spline.borrow();
+
+    a.set_target(1.0);
+    a.update();
+    let progress = *a.get();
+    s.evaluate(progress)
 }
 
 fn with_infinite_repeat(spec: AnimationSpec) -> AnimationSpec {

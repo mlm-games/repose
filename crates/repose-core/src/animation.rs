@@ -17,6 +17,11 @@ pub struct SpringSpec {
     pub damping_ratio: f32,
     /// Stiffness k: higher = faster, snappier response.
     pub stiffness: f32,
+    /// Progress threshold for settling: when `|progress - 1.0| < this`, the spring is
+    /// considered visually close enough to the target and stops. Default: 0.005 (0.5%).
+    pub settle_progress: f32,
+    /// Velocity threshold for settling (in progress-units/second). Default: 0.1.
+    pub settle_velocity: f32,
 }
 
 impl SpringSpec {
@@ -24,6 +29,8 @@ impl SpringSpec {
         Self {
             damping_ratio,
             stiffness,
+            settle_progress: 0.005,
+            settle_velocity: 0.1,
         }
     }
     /// Gentle preset: low overshoot, moderate speed.
@@ -41,6 +48,19 @@ impl SpringSpec {
     /// Snappy preset: high damping, high stiffness.
     pub const fn stiff() -> Self {
         Self::new(0.8, 600.0)
+    }
+
+    /// Set the settling threshold in progress units. Lower values = more precise settling.
+    /// For example, 0.001 means the spring stops when within 0.1% of the target.
+    pub const fn with_settle_progress(mut self, threshold: f32) -> Self {
+        self.settle_progress = threshold;
+        self
+    }
+
+    /// Set the velocity threshold for settling (progress-units/second).
+    pub const fn with_settle_velocity(mut self, threshold: f32) -> Self {
+        self.settle_velocity = threshold;
+        self
     }
 }
 
@@ -114,6 +134,116 @@ fn eval_cubic_bezier(p1x: f32, p1y: f32, p2x: f32, p2y: f32, t: f32) -> f32 {
     }
     let omu = 1.0 - u;
     3.0 * omu * omu * u * p1y + 3.0 * omu * u * u * p2y + u * u * u
+}
+
+/// Cubic Hermite spline interpolation. Given interval width `h`, normalized
+/// position `x` in [0,1], endpoint values `y1,y2` and their tangents `t1,t2`,
+/// returns the interpolated value.
+///
+/// Factored to reduce operation count (adapted from Compose's MonoSpline).
+fn hermite_interpolate(h: f32, x: f32, y1: f32, y2: f32, t1: f32, t2: f32) -> f32 {
+    let x2 = x * x;
+    let x3 = x2 * x;
+    h * t1 * (x - 2.0 * x2 + x3) + h * t2 * (x3 - x2) + y1 - (3.0 * x2 - 2.0 * x3) * (y1 - y2)
+}
+
+/// Derivative of cubic Hermite spline at normalized position `x`.
+#[allow(dead_code)]
+fn hermite_differential(h: f32, x: f32, y1: f32, y2: f32, t1: f32, t2: f32) -> f32 {
+    let x2 = x * x;
+    h * (t1 - 2.0 * x * (2.0 * t1 + t2) + 3.0 * (t1 + t2) * x2) - 6.0 * (x - x2) * (y1 - y2)
+}
+
+/// A monotone cubic Hermite spline for C1-continuous interpolation of `f32` values.
+///
+/// Uses the Fritsch–Carlson method to compute tangents that preserve monotonicity
+/// and prevent overshoot. Based on Android Compose's `MonoSpline`.
+#[derive(Clone, Debug)]
+pub struct MonoSpline {
+    times: Vec<f32>,
+    values: Vec<f32>,
+    tangents: Vec<f32>,
+}
+
+impl MonoSpline {
+    /// Build a spline from keyframe times and values.
+    /// Times must be sorted ascending and have at least 2 entries.
+    /// Values must have the same length as times.
+    pub fn new(times: Vec<f32>, values: Vec<f32>) -> Self {
+        assert!(times.len() >= 2, "MonoSpline requires at least 2 keyframes");
+        assert_eq!(times.len(), values.len());
+        let n = times.len();
+        let mut tangents = vec![0.0; n];
+
+        // Compute slopes for each segment
+        let mut slopes = vec![0.0; n.saturating_sub(1)];
+        for i in 0..n - 1 {
+            let dt = times[i + 1] - times[i];
+            slopes[i] = (values[i + 1] - values[i]) / dt;
+        }
+
+        // Tangents at interior knots: average of adjacent slopes
+        tangents[0] = slopes[0];
+        for i in 1..n - 1 {
+            tangents[i] = (slopes[i - 1] + slopes[i]) * 0.5;
+        }
+        tangents[n - 1] = slopes[n - 2];
+
+        // Fritsch–Carlson monotonicity preservation
+        for i in 0..n - 1 {
+            if slopes[i] == 0.0 {
+                tangents[i] = 0.0;
+                tangents[i + 1] = 0.0;
+            } else {
+                let a = tangents[i] / slopes[i];
+                let b = tangents[i + 1] / slopes[i];
+                let h = (a * a + b * b).sqrt();
+                if h > 9.0 {
+                    let t = 3.0 / h;
+                    tangents[i] = t * a * slopes[i];
+                    tangents[i + 1] = t * b * slopes[i];
+                }
+            }
+        }
+
+        Self {
+            times,
+            values,
+            tangents,
+        }
+    }
+
+    /// Evaluate the spline at time `t`.
+    /// Clamps `t` to the spline's time range. Extrapolates using the endpoint tangent.
+    pub fn evaluate(&self, t: f32) -> f32 {
+        let n = self.times.len();
+        let first = self.times[0];
+        let last = self.times[n - 1];
+
+        if t <= first {
+            return self.values[0] + (t - first) * self.tangents[0];
+        }
+        if t >= last {
+            return self.values[n - 1] + (t - last) * self.tangents[n - 1];
+        }
+
+        for i in 0..n - 1 {
+            if t >= self.times[i] && t <= self.times[i + 1] {
+                let h = self.times[i + 1] - self.times[i];
+                let x = (t - self.times[i]) / h;
+                return hermite_interpolate(
+                    h,
+                    x,
+                    self.values[i],
+                    self.values[i + 1],
+                    self.tangents[i],
+                    self.tangents[i + 1],
+                );
+            }
+        }
+
+        self.values[n - 1] // fallback
+    }
 }
 
 fn spring_underdamped_normalized(t: f32, zeta: f32, omega: f32) -> f32 {
@@ -247,7 +377,8 @@ impl<T: Clone + Interpolate> KeyframesSpec<T> {
         if kf.is_empty() {
             panic!("KeyframesSpec must have at least one keyframe");
         }
-        // Find the segment containing t
+
+        // Linear interpolation (with per-segment easing)
         for i in 0..kf.len() - 1 {
             let (t0, _, _) = kf[i];
             let (t1, ref v1, easing) = kf[i + 1];
@@ -265,6 +396,40 @@ impl<T: Clone + Interpolate> KeyframesSpec<T> {
             }
         }
         kf.last().unwrap().1.clone()
+    }
+}
+
+/// A keyframe animation specification with smooth cubic Hermite spline interpolation.
+///
+/// Provides C1 continuity (smooth derivatives at keyframe boundaries),
+/// unlike `KeyframesSpec` which uses C0 linear interpolation.
+///
+/// Uses the Fritsch–Carlson monotonicity-preserving Hermite spline
+#[derive(Clone, Debug)]
+pub struct SplineKeyframes {
+    spline: MonoSpline,
+}
+
+impl SplineKeyframes {
+    /// Build a spline keyframe from time/value pairs.
+    ///
+    /// Times should be in [0.0, 1.0] and sorted ascending.
+    /// At least 2 keyframes are required.
+    pub fn new(keyframes: Vec<(f32, f32)>) -> Self {
+        assert!(
+            keyframes.len() >= 2,
+            "SplineKeyframes requires at least 2 keyframes"
+        );
+        let times: Vec<f32> = keyframes.iter().map(|(t, _)| *t).collect();
+        let values: Vec<f32> = keyframes.iter().map(|(_, v)| *v).collect();
+        Self {
+            spline: MonoSpline::new(times, values),
+        }
+    }
+
+    /// Evaluate the spline at normalized time `t` (0.0 to 1.0).
+    pub fn evaluate(&self, t: f32) -> f32 {
+        self.spline.evaluate(t.clamp(0.0, 1.0))
     }
 }
 
@@ -657,7 +822,9 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
         let d = 2.0 * spring.damping_ratio * k.sqrt();
         let displacement = self.progress - 1.0;
 
-        if displacement.abs() < 0.005 && self.velocity.abs() < 0.1 {
+        if displacement.abs() < spring.settle_progress
+            && self.velocity.abs() < spring.settle_velocity
+        {
             // Settled
             self.progress = 1.0;
             self.velocity = 0.0;
