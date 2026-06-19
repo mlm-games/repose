@@ -3,6 +3,7 @@ name = "showcase"
 version.workspace = true
 edition.workspace = true
 publish = false
+default-run = "showcase-desktop"
 
 [lib]
 name = "showcase"
@@ -15,7 +16,7 @@ desktop-bin = []
 [[bin]]
 name = "showcase-desktop"
 path = "src/main.rs"
-required-features = ["desktop-bin"]
+# required-features = ["desktop-bin"]
 
 [package.metadata.android]
 package = "com.example.showcase"

@@ -7,6 +7,14 @@ use repose_material::material3::{
     FilledButton, MenuState, ModalBottomSheet, NavRailItem, NavigationRail, SheetState, TextButton,
     TimePicker, TimePickerState,
 };
+use repose_material::{Icon, material_symbols};
+
+material_symbols! {
+    cloud          : '\u{F15C}',
+    settings       : '\u{E8B8}',
+    shopping_cart  : '\u{E8CC}',
+    star           : '\u{F09A}',
+}
 use repose_ui::{
     anim::{animate_f32, animate_keyframes},
     overlay::OverlayHandle,
@@ -38,12 +46,12 @@ fn picker_dialog(
 
 fn rail_item(
     label: &str,
-    icon: &'static str,
+    icon: View,
     sel: impl Fn() + 'static,
     badge: Option<View>,
 ) -> NavRailItem {
     NavRailItem {
-        icon: Text(icon).size(20.0),
+        icon,
         label: label.into(),
         on_click: Rc::new(sel),
         badge,
@@ -278,7 +286,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                         vec![
                             rail_item(
                                 "Favorites",
-                                "★",
+                                Icon(Symbols::star).size(20.0),
                                 {
                                     let s = rail_selected.clone();
                                     move || s.set(0)
@@ -287,7 +295,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                             ),
                             rail_item(
                                 "Cloud",
-                                "☁",
+                                Icon(Symbols::cloud).size(20.0),
                                 {
                                     let s = rail_selected.clone();
                                     move || s.set(1)
@@ -296,7 +304,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                             ),
                             rail_item(
                                 "Settings",
-                                "⚙",
+                                Icon(Symbols::settings).size(20.0),
                                 {
                                     let s = rail_selected.clone();
                                     move || s.set(2)
@@ -308,7 +316,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                             ),
                             rail_item(
                                 "Cart",
-                                "🛒",
+                                Icon(Symbols::shopping_cart).size(20.0),
                                 {
                                     let s = rail_selected.clone();
                                     move || s.set(3)

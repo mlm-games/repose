@@ -2,10 +2,17 @@ use std::rc::Rc;
 
 use repose_core::{prelude::*, signal};
 use repose_material::material3::{Carousel, SwipeToDismiss, SwipeToDismissState};
+use repose_material::{Icon, material_symbols};
 use repose_ui::{
     lazy::{LazyColumn, LazyColumnState, LazyRow, LazyRowState},
     *,
 };
+
+material_symbols! {
+    check_circle    : '\u{F0BE}',
+    circle          : '\u{EF4A}',
+    notifications   : '\u{E7F5}',
+}
 
 use crate::ui::{Page, Section};
 
@@ -27,7 +34,7 @@ fn make_items(count: usize) -> Vec<Item> {
 }
 
 /// icon over title card
-fn cell_card(m: Modifier, icon: String, icon_size: f32, title: String, pad: f32) -> View {
+fn cell_card(m: Modifier, icon: View, title: String, pad: f32) -> View {
     Surface(
         m,
         Column(
@@ -38,7 +45,7 @@ fn cell_card(m: Modifier, icon: String, icon_size: f32, title: String, pad: f32)
                 .padding(pad),
         )
         .child((
-            Text(icon).size(icon_size),
+            icon,
             Text(title).size(14.0).single_line().overflow_ellipsize(),
         )),
     )
@@ -86,7 +93,8 @@ pub fn screen() -> View {
                         .background(if it.done { done_tint } else { th.surface })
                         .border(1.0, th.outline, 0.0))
                     .child((
-                        Text(if it.done { "✓" } else { "○" })
+                        (if it.done { Icon(Symbols::check_circle) } else { Icon(Symbols::circle) })
+                            .size(16.0)
                             .modifier(Modifier::new().padding(8.0)),
                         Text(it.title).modifier(Modifier::new().padding(4.0)),
                     ))
@@ -148,8 +156,7 @@ pub fn screen() -> View {
                             .background(bg)
                             .border(1.0, th.outline, 0.0)
                             .clip_rounded(12.0),
-                        (if it.done { "✓" } else { "○" }).to_string(),
-                        24.0,
+                        if it.done { Icon(Symbols::check_circle).size(24.0) } else { Icon(Symbols::circle).size(24.0) },
                         it.title,
                         8.0,
                     )
@@ -171,8 +178,7 @@ pub fn screen() -> View {
                             .height(160.0)
                             .background(th.primary.with_alpha(32))
                             .clip_rounded(16.0),
-                        (if it.done { "★" } else { "☆" }).to_string(),
-                        32.0,
+                        Text(if it.done { "★" } else { "☆" }).size(32.0),
                         it.title,
                         12.0,
                     )
@@ -212,7 +218,7 @@ pub fn screen() -> View {
                                 .border(1.0, th.outline_variant, 0.0)
                                 .padding(16.0),
                             Row(Modifier::new().align_items(AlignItems::Center)).child((
-                                Text("🔔").size(20.0),
+                                Icon(Symbols::notifications).size(20.0),
                                 Box(Modifier::new().width(12.0).height(1.0)),
                                 Column(Modifier::new()).child((
                                     Text(msg)
