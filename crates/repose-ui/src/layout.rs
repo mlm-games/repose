@@ -364,13 +364,15 @@ impl LayoutEngine {
         // Fire focus change callbacks
         if self.prev_focused != focused {
             if let Some(old_id) = self.prev_focused
-                && let Some(cb) = self.focus_callbacks.get(&old_id) {
-                    (cb)(false);
-                }
+                && let Some(cb) = self.focus_callbacks.get(&old_id)
+            {
+                (cb)(false);
+            }
             if let Some(new_id) = focused
-                && let Some(cb) = self.focus_callbacks.get(&new_id) {
-                    (cb)(true);
-                }
+                && let Some(cb) = self.focus_callbacks.get(&new_id)
+            {
+                (cb)(true);
+            }
             self.prev_focused = focused;
         }
 
@@ -452,7 +454,6 @@ impl LayoutEngine {
             .map(|c| self.build_taffy_subtree(c, taffy, font_px))
             .collect();
 
-        
         if child_tids.is_empty() {
             taffy.new_leaf_with_context(style, ctx).unwrap()
         } else {
@@ -580,12 +581,11 @@ impl LayoutEngine {
                 .and_then(|pid| self.tree.get(pid))
                 .is_some_and(|p| matches!(p.kind, ViewKind::ZStack))
         };
-        if parent_is_zstack
-            && let Ok(cs) = self.taffy.style(taffy_id) {
-                let mut new_cs = cs.clone();
-                new_cs.position = Position::Absolute;
-                let _ = self.taffy.set_style(taffy_id, new_cs);
-            }
+        if parent_is_zstack && let Ok(cs) = self.taffy.style(taffy_id) {
+            let mut new_cs = cs.clone();
+            new_cs.position = Position::Absolute;
+            let _ = self.taffy.set_style(taffy_id, new_cs);
+        }
 
         let child_taffy_ids: Vec<taffy::NodeId> = children
             .iter()
@@ -1129,8 +1129,7 @@ impl LayoutEngine {
         while let Some(id) = stack.pop() {
             let Some(n) = self.tree.get(id) else { continue };
             match &n.kind {
-                ViewKind::ScrollV { tick_scroll, .. }
-                | ViewKind::ScrollXY { tick_scroll, .. } => {
+                ViewKind::ScrollV { tick_scroll, .. } | ViewKind::ScrollXY { tick_scroll, .. } => {
                     if let Some(tick) = tick_scroll {
                         tick();
                     }
@@ -1190,9 +1189,11 @@ impl LayoutEngine {
                 h: layout.size.height,
             };
             if let Some(node) = self.tree.get(node_id)
-                && node.modifier.input_blocker && !node.modifier.hit_passthrough {
-                    deferred_blockers.push((z, rect));
-                }
+                && node.modifier.input_blocker
+                && !node.modifier.hit_passthrough
+            {
+                deferred_blockers.push((z, rect));
+            }
             self.walk_paint(
                 node_id,
                 &mut scene,
@@ -1376,11 +1377,12 @@ impl LayoutEngine {
         // Check if this node should be deferred for later painting
         if !skip_defer
             && let Some(render_z) = modifier.render_z_index
-                && (!deferred.is_empty() || render_z != 0.0) {
-                    // Defer this node - it will be painted later based on render_z_index
-                    deferred.push((node_id, parent_offset_px, alpha_accum, sem_parent, render_z));
-                    return;
-                }
+            && (!deferred.is_empty() || render_z != 0.0)
+        {
+            // Defer this node - it will be painted later based on render_z_index
+            deferred.push((node_id, parent_offset_px, alpha_accum, sem_parent, render_z));
+            return;
+        }
         debug_assert!(view_id != 0);
 
         let taffy_id = self.taffy_map[&node_id];
@@ -1439,17 +1441,17 @@ impl LayoutEngine {
             );
             if let Some(entry) = self.paint_cache.get(&node_id)
                 && entry.subtree_hash == subtree_hash
-                    && entry.stamp == stamp
-                    && entry.rect == rect
-                    && entry.sem_parent == sem_parent
-                    && entry.alpha_q == alpha_q
-                {
-                    self.stats.paint_cache_hits += 1;
-                    scene.nodes.extend(entry.nodes.iter().cloned());
-                    hits.extend(entry.hits.iter().cloned());
-                    sems.extend(entry.sems.iter().cloned());
-                    return;
-                }
+                && entry.stamp == stamp
+                && entry.rect == rect
+                && entry.sem_parent == sem_parent
+                && entry.alpha_q == alpha_q
+            {
+                self.stats.paint_cache_hits += 1;
+                scene.nodes.extend(entry.nodes.iter().cloned());
+                hits.extend(entry.hits.iter().cloned());
+                sems.extend(entry.sems.iter().cloned());
+                return;
+            }
             self.stats.paint_cache_misses += 1;
             let mut local_scene = Scene {
                 clear_color: scene.clear_color,
@@ -1944,7 +1946,31 @@ impl LayoutEngine {
                         }
                     }) as Rc<dyn Fn(Vec2) -> Vec2>)
                 } else {
-                    None
+                    // Single-line horizontal scroll (mouse wheel or trackpad)
+                    let key = tf_key;
+                    let inner_w = inner.w.max(1.0);
+                    let font_val = font_px(TF_FONT_DP);
+                    let states = textfield_states.get(&key).cloned();
+                    Some(Rc::new(move |d: Vec2| -> Vec2 {
+                        let Some(st_rc) = states.as_ref() else {
+                            return d;
+                        };
+                        let mut st = st_rc.borrow_mut();
+                        st.set_inner_width(inner_w);
+                        let m = crate::textfield::measure_text(&st.text, font_val, None);
+                        let content_w = m.positions.last().copied().unwrap_or(0.0);
+                        let max_x = (content_w - st.inner_width).max(0.0);
+
+                        let before = st.scroll_target;
+                        let target = (st.scroll_target - d.y).clamp(0.0, max_x);
+                        st.scroll_target = target;
+
+                        let consumed = before - target;
+                        Vec2 {
+                            x: d.x,
+                            y: d.y - consumed,
+                        }
+                    }) as Rc<dyn Fn(Vec2) -> Vec2>)
                 };
 
                 if !modifier.hit_passthrough {
@@ -3201,9 +3227,10 @@ fn infer_label(tree: &ViewTree, node_id: NodeId) -> Option<String> {
     while let Some(id) = stack.pop() {
         let n = tree.get(id)?;
         if let ViewKind::Text { text, .. } = &n.kind
-            && !text.is_empty() {
-                return Some(text.clone());
-            }
+            && !text.is_empty()
+        {
+            return Some(text.clone());
+        }
         for &ch in n.children.iter().rev() {
             stack.push(ch);
         }
