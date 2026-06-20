@@ -11,12 +11,10 @@ crate-type = ["cdylib"]
 
 [features]
 default = []
-desktop-bin = []
 
 [[bin]]
 name = "showcase-desktop"
 path = "src/main.rs"
-# required-features = ["desktop-bin"]
 
 [package.metadata.android]
 package = "com.example.showcase"
