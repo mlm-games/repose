@@ -14,6 +14,12 @@ pub fn wasm_start() -> Result<(), JsValue> {
     )
 }
 
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
+pub fn desktop_main() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    let _ = repose_platform::run_desktop_app(|s, _rc| app::app(s));
+}
+
 #[cfg(target_os = "android")]
 use log::LevelFilter;
 

@@ -7,7 +7,7 @@ default-run = "showcase-desktop"
 
 [lib]
 name = "showcase"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [features]
 default = []
