@@ -156,9 +156,7 @@ pub fn run_android_app_with_options(
         }
 
         fn request_redraw(&self) {
-            if let Some(w) = &self.window {
-                w.request_redraw();
-            }
+            rc::request_redraw(&self.window);
         }
 
         fn scale(&self) -> f32 {
@@ -181,20 +179,11 @@ pub fn run_android_app_with_options(
         }
 
         fn tf_key_of(&self, visual_id: u64) -> u64 {
-            if let Some(f) = &self.frame_cache {
-                return rc::tf_key_of(f, visual_id);
-            }
-            visual_id
+            rc::tf_key_of_in_frame(&self.frame_cache, visual_id)
         }
 
         fn is_textfield(&self, id: u64) -> bool {
-            if let Some(f) = &self.frame_cache {
-                f.semantics_nodes
-                    .iter()
-                    .any(|n| n.id == id && n.role == Role::TextField)
-            } else {
-                false
-            }
+            rc::is_textfield_in_frame(&self.frame_cache, id)
         }
 
         fn notify_text_change(&self, id: u64, text: String) {
@@ -397,13 +386,7 @@ pub fn run_android_app_with_options(
         }
 
         fn dnd_update_over(&mut self, pos: Vec2) {
-            let Some(f) = &self.frame_cache else {
-                return;
-            };
-            let Some(session) = self.drag.as_mut() else {
-                return;
-            };
-            rc::dnd_update_over(f, session, self.modifiers, pos);
+            rc::dnd_update_over_in_frame(&self.frame_cache, &mut self.drag, self.modifiers, pos);
         }
 
         fn dnd_try_begin_touch(&mut self, pos: Vec2) -> bool {
@@ -526,15 +509,7 @@ pub fn run_android_app_with_options(
                 }
 
                 WindowEvent::ModifiersChanged(new_mods) => {
-                    self.modifiers.shift = new_mods.state().shift_key();
-                    self.modifiers.ctrl = new_mods.state().control_key();
-                    self.modifiers.alt = new_mods.state().alt_key();
-                    self.modifiers.meta = new_mods.state().super_key();
-                    self.modifiers.command = if cfg!(target_os = "macos") {
-                        self.modifiers.meta
-                    } else {
-                        self.modifiers.ctrl
-                    };
+                    rc::update_modifiers(&mut self.modifiers, &new_mods.state());
                 }
 
                 // Touch handling (Android primary)

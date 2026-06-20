@@ -21,6 +21,56 @@ pub(crate) fn tick_snackbar(last_redraw: web_time::Instant) {
     }
 }
 
+pub(crate) fn request_redraw(window: &Option<std::sync::Arc<winit::window::Window>>) {
+    if let Some(w) = window {
+        w.request_redraw();
+    }
+}
+
+pub(crate) fn tf_key_of_in_frame(frame_cache: &Option<Frame>, visual_id: u64) -> u64 {
+    if let Some(f) = frame_cache {
+        return tf_key_of(f, visual_id);
+    }
+    visual_id
+}
+
+pub(crate) fn is_textfield_in_frame(frame_cache: &Option<Frame>, id: u64) -> bool {
+    if let Some(f) = frame_cache {
+        f.semantics_nodes
+            .iter()
+            .any(|n| n.id == id && n.role == Role::TextField)
+    } else {
+        false
+    }
+}
+
+pub(crate) fn dnd_update_over_in_frame(
+    frame_cache: &Option<Frame>,
+    drag: &mut Option<DragSession>,
+    modifiers: Modifiers,
+    pos: Vec2,
+) {
+    let Some(f) = frame_cache else {
+        return;
+    };
+    let Some(session) = drag.as_mut() else {
+        return;
+    };
+    dnd_update_over(f, session, modifiers, pos);
+}
+
+pub(crate) fn update_modifiers(modifiers: &mut Modifiers, state: &winit::keyboard::ModifiersState) {
+    modifiers.shift = state.shift_key();
+    modifiers.ctrl = state.control_key();
+    modifiers.alt = state.alt_key();
+    modifiers.meta = state.super_key();
+    modifiers.command = if cfg!(target_os = "macos") {
+        modifiers.meta
+    } else {
+        modifiers.ctrl
+    };
+}
+
 /// Like `index_for_x_bytes` but applies visual transformation if active on the state.
 /// The returned offset is in the original text's byte space.
 pub(crate) fn index_for_x_bytes_vt(state: &TextFieldState, font_px: f32, x_px: f32) -> usize {
