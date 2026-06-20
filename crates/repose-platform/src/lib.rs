@@ -247,14 +247,6 @@ fn map_cursor(c: repose_core::CursorIcon) -> winit::window::CursorIcon {
 pub fn run_desktop_app(
     root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
 ) -> anyhow::Result<()> {
-    run_desktop_app_with_snackbar(root, None)
-}
-
-#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
-pub fn run_desktop_app_with_snackbar(
-    root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
-    snackbar_tick: Option<Rc<dyn Fn(u32)>>,
-) -> anyhow::Result<()> {
     use std::collections::{HashMap, HashSet};
     use winit::application::ApplicationHandler;
     use winit::dpi::{LogicalPosition, LogicalSize, PhysicalSize};
@@ -322,7 +314,6 @@ pub fn run_desktop_app_with_snackbar(
 
         last_redraw: Instant,
         pending_redraw: bool,
-        snackbar_tick: Option<Rc<dyn Fn(u32)>>,
     }
 
     impl App {
@@ -402,17 +393,7 @@ pub fn run_desktop_app_with_snackbar(
 
                 last_redraw: Instant::now(),
                 pending_redraw: false,
-                snackbar_tick: None,
             }
-        }
-
-        fn new_with_snackbar(
-            root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>,
-            snackbar_tick: Option<Rc<dyn Fn(u32)>>,
-        ) -> Self {
-            let mut app = Self::new(root);
-            app.snackbar_tick = snackbar_tick;
-            app
         }
 
         fn request_redraw(&self) {
@@ -422,14 +403,11 @@ pub fn run_desktop_app_with_snackbar(
         }
 
         fn tick_snackbar(&mut self) {
-            let Some(cb) = &self.snackbar_tick else {
-                return;
-            };
             let now = Instant::now();
             let elapsed = now.saturating_duration_since(self.last_redraw);
             let ms = elapsed.as_millis().min(u32::MAX as u128) as u32;
             if ms > 0 {
-                cb(ms);
+                repose_ui::overlay::SnackbarController::tick_for_frame(ms);
             }
         }
 
@@ -2187,19 +2165,11 @@ pub fn run_desktop_app_with_snackbar(
 
     let event_loop = EventLoop::new()?;
     set_event_loop_proxy(event_loop.create_proxy());
-    let mut app = App::new_with_snackbar(Box::new(root), snackbar_tick);
+    let mut app = App::new(Box::new(root));
     // Install system clock once
     repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
     event_loop.run_app(&mut app)?;
     Ok(())
-}
-
-#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
-pub fn run_app_with_snackbar(
-    root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
-    snackbar_tick: Rc<dyn Fn(u32)>,
-) -> anyhow::Result<()> {
-    run_desktop_app_with_snackbar(root, Some(snackbar_tick))
 }
 
 // Accessibility bridge stub (Noop by default; logs on Linux for now)
