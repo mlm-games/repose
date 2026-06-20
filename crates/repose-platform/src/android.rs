@@ -107,6 +107,8 @@ pub fn run_android_app_with_options(
         touch_start: Option<(web_time::Instant, (f32, f32))>,
 
         drag: Option<rc::DragSession>,
+
+        last_redraw: web_time::Instant,
     }
 
     impl AppState {
@@ -148,6 +150,17 @@ pub fn run_android_app_with_options(
                 touch_start: None,
 
                 drag: None,
+
+                last_redraw: web_time::Instant::now(),
+            }
+        }
+
+        fn tick_snackbar(&mut self) {
+            let now = web_time::Instant::now();
+            let elapsed = now.saturating_duration_since(self.last_redraw);
+            let ms = elapsed.as_millis().min(u32::MAX as u128) as u32;
+            if ms > 0 {
+                repose_ui::overlay::SnackbarController::tick_for_frame(ms);
             }
         }
 
@@ -1164,6 +1177,7 @@ pub fn run_android_app_with_options(
                 }
 
                 WindowEvent::RedrawRequested => {
+                    self.tick_snackbar();
                     self.process_render_commands();
 
                     let (Some(backend), Some(win)) = (self.backend.as_mut(), self.window.as_ref())
@@ -1212,6 +1226,7 @@ pub fn run_android_app_with_options(
                     }
 
                     self.frame_cache = Some(frame);
+                    self.last_redraw = web_time::Instant::now();
 
                     self.dirty = false;
 
