@@ -19,7 +19,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.17.7"
+version = "0.18.0"
 edition = "2024"
 license = "LGPL-2.1-or-later"
 repository = "https://github.com/mlm-games/repose"
@@ -75,15 +75,15 @@ web-time = "1"
 rustc-hash = "2.1"
 rapidhash = "4.4"
 
-repose-core = { path = "crates/repose-core", version = "0.17.7" }
-repose-ui = { path = "crates/repose-ui", version = "0.17.7" }
-repose-material = { path = "crates/repose-material", version = "0.17.7" }
-repose-canvas = { path = "crates/repose-canvas", version = "0.17.7" }
-repose-navigation = { path = "crates/repose-navigation", version = "0.17.7" }
-repose-devtools = { path = "crates/repose-devtools", version = "0.17.7" }
-repose-text = { path = "crates/repose-text", version = "0.17.7" }
-repose-render-wgpu = { path = "crates/repose-render-wgpu", version = "0.17.7" }
-repose-platform = { path = "crates/repose-platform", version = "0.17.7" }
-repose-tree = { path = "crates/repose-tree", version = "0.17.7" }
-repose-docking = { path = "crates/repose-docking", version = "0.17.7" }
-repose-macros = { path = "crates/repose-macros", version = "0.17.7" }
+repose-core = { path = "crates/repose-core", version = "0.18.0" }
+repose-ui = { path = "crates/repose-ui", version = "0.18.0" }
+repose-material = { path = "crates/repose-material", version = "0.18.0" }
+repose-canvas = { path = "crates/repose-canvas", version = "0.18.0" }
+repose-navigation = { path = "crates/repose-navigation", version = "0.18.0" }
+repose-devtools = { path = "crates/repose-devtools", version = "0.18.0" }
+repose-text = { path = "crates/repose-text", version = "0.18.0" }
+repose-render-wgpu = { path = "crates/repose-render-wgpu", version = "0.18.0" }
+repose-platform = { path = "crates/repose-platform", version = "0.18.0" }
+repose-tree = { path = "crates/repose-tree", version = "0.18.0" }
+repose-docking = { path = "crates/repose-docking", version = "0.18.0" }
+repose-macros = { path = "crates/repose-macros", version = "0.18.0" }
