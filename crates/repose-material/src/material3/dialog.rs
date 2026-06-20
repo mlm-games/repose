@@ -4,8 +4,9 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
+use web_time::Duration;
 use repose_ui::overlay::OverlayHandle;
-use repose_ui::{Box, Column, Row, Spacer, Surface, ViewExt, ZStack};
+use repose_ui::{Box, Surface, ViewExt, ZStack};
 
 static DIALOG_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -65,8 +66,9 @@ pub fn Dialog(
     *current_content.borrow_mut() = content;
 
     // Animated scale/alpha for enter/exit
+    let spec = AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn);
     let anim = remember_state_with_key(state.key("anim"), || {
-        AnimatedValue::new(0.0, theme().motion.overlay)
+        AnimatedValue::new(0.0, spec)
     });
     let last_target = remember_state_with_key(state.key("atarget"), || f32::NAN);
     let anim_target = if state.is_visible() { 1.0 } else { 0.0 };
@@ -75,6 +77,7 @@ pub fn Dialog(
         let mut a = anim.borrow_mut();
         let mut lt = last_target.borrow_mut();
         if lt.is_nan() || (*lt - anim_target).abs() > 1e-6 {
+            a.set_spec(spec);
             a.set_target(anim_target);
             *lt = anim_target;
         }
@@ -96,7 +99,6 @@ pub fn Dialog(
                 let current_content = current_content.clone();
                 move || {
                     let progress = *anim.borrow().get();
-                    let scale = 0.85 + 0.15 * progress;
                     let alpha = progress.min(1.0);
                     let th = theme();
                     let content = current_content.borrow().clone();
@@ -108,7 +110,7 @@ pub fn Dialog(
                             .then(modifier.clone())
                             .background(th.surface_container_high)
                             .clip_rounded(th.shapes.extra_large)
-                            .scale(scale),
+                            .alpha(alpha),
                         content,
                     );
 
