@@ -53,8 +53,8 @@ pub fn IconButton(icon: View, on_click: impl Fn() + 'static) -> View {
     let th = theme();
     let _bg = Color::TRANSPARENT;
     Box(Modifier::new()
-        .size(40.0, 40.0)
-        .clip_rounded(20.0)
+        .size(48.0, 48.0)
+        .clip_rounded(24.0)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
@@ -202,7 +202,7 @@ pub fn OutlinedButton(
         modifier,
         on_click,
         content,
-        th.on_surface,
+        th.outline,
         None,
         StateColors {
             default: Color::TRANSPARENT,
@@ -211,7 +211,7 @@ pub fn OutlinedButton(
             disabled: Color::TRANSPARENT,
         },
         None,
-        Some((1.0, th.outline_variant, 20.0)),
+        Some((1.0, th.outline, 20.0)),
         24.0,
         24.0,
     )
@@ -644,21 +644,60 @@ pub fn SegmentedButton(selected: &[usize], segments: Vec<Segment>) -> View {
     )
 }
 
-/// M3 Circular Progress Indicator. Uses the built-in `ProgressBar` view kind
-/// with `circular: true`.
-///
-/// - `value`: `Some(0.0..=1.0)` for determinate, `None` for indeterminate.
 pub fn CircularProgressIndicator(value: Option<f32>) -> View {
-    View::new(
-        0,
-        ViewKind::ProgressBar {
-            value: value.unwrap_or(0.0),
-            min: 0.0,
-            max: 1.0,
-            circular: true,
-        },
-    )
-    .modifier(Modifier::new().size(48.0, 48.0))
+    let th = theme();
+    let sz = dp_to_px(40.0);
+    let stroke = dp_to_px(4.0);
+    let val = value.unwrap_or(0.0).clamp(0.0, 1.0);
+
+    Box(Modifier::new()
+        .size(sz, sz)
+        .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
+            let mul_c = |c: Color| {
+                Color(
+                    c.0,
+                    c.1,
+                    c.2,
+                    ((c.3 as f32) * alpha).clamp(0.0, 255.0) as u8,
+                )
+            };
+            let cx = rect.x + rect.w * 0.5;
+            let cy = rect.y + rect.h * 0.5;
+            let r = (rect.w.min(rect.h)) * 0.5 - stroke * 0.5;
+            let circle = Rect {
+                x: cx - r,
+                y: cy - r,
+                w: r * 2.0,
+                h: r * 2.0,
+            };
+
+            // Track ring
+            scene.nodes.push(SceneNode::EllipseBorder {
+                rect: circle,
+                color: mul_c(th.secondary_container),
+                width: stroke,
+            });
+
+            // Indicator: bottom-up fill approximation inside circle
+            if val > 0.0 {
+                let fill_h = r * 2.0 * val;
+                scene.nodes.push(SceneNode::PushClip {
+                    rect: Rect {
+                        x: cx - r,
+                        y: cy + r - fill_h,
+                        w: r * 2.0,
+                        h: fill_h,
+                    },
+                    radius: 0.0,
+                });
+                scene.nodes.push(SceneNode::EllipseBorder {
+                    rect: circle,
+                    color: mul_c(th.primary),
+                    width: stroke,
+                });
+                scene.nodes.push(SceneNode::PopClip);
+            }
+        }))
     .semantics(Semantics {
         role: Role::ProgressBar,
         label: None,
@@ -667,18 +706,73 @@ pub fn CircularProgressIndicator(value: Option<f32>) -> View {
     })
 }
 
-/// M3 Linear Progress Indicator. Uses the built-in `ProgressBar` view kind.
+/// M3 Linear Progress Indicator.
 pub fn LinearProgressIndicator(value: Option<f32>) -> View {
-    View::new(
-        0,
-        ViewKind::ProgressBar {
-            value: value.unwrap_or(0.0),
-            min: 0.0,
-            max: 1.0,
-            circular: false,
+    let th = theme();
+
+    Box(Modifier::new().fill_max_width().height(4.0).painter(
+        move |scene: &mut Scene, rect: Rect, alpha: f32| {
+            let mul_c = |c: Color| {
+                Color(
+                    c.0,
+                    c.1,
+                    c.2,
+                    ((c.3 as f32) * alpha).clamp(0.0, 255.0) as u8,
+                )
+            };
+            let track_h = rect.h;
+            let corner = track_h * 0.5;
+            let gap = dp_to_px(4.0);
+            let dot_r = dp_to_px(2.0);
+            let cy = rect.y + rect.h * 0.5;
+            let t = value.unwrap_or(0.0).clamp(0.0, 1.0);
+
+            // Indicator (active portion from left)
+            if t > 0.0 {
+                let ind_w = t * rect.w;
+                scene.nodes.push(SceneNode::Rect {
+                    rect: Rect {
+                        x: rect.x,
+                        y: cy - corner,
+                        w: ind_w,
+                        h: track_h,
+                    },
+                    brush: Brush::Solid(mul_c(th.primary)),
+                    radius: corner,
+                });
+            }
+
+            // Track (inactive portion after gap)
+            let track_start = rect.x + t * rect.w + gap;
+            let track_w = (rect.x + rect.w - track_start).max(0.0);
+            if t < 1.0 && track_w > 0.0 {
+                scene.nodes.push(SceneNode::Rect {
+                    rect: Rect {
+                        x: track_start,
+                        y: cy - corner,
+                        w: track_w,
+                        h: track_h,
+                    },
+                    brush: Brush::Solid(mul_c(th.secondary_container)),
+                    radius: corner,
+                });
+            }
+
+            // Stop indicator at right end (4dp circle, Primary)
+            if t < 1.0 {
+                let sx = rect.x + rect.w - dot_r;
+                scene.nodes.push(SceneNode::Ellipse {
+                    rect: Rect {
+                        x: sx - dot_r,
+                        y: cy - dot_r,
+                        w: dot_r * 2.0,
+                        h: dot_r * 2.0,
+                    },
+                    brush: Brush::Solid(mul_c(th.primary)),
+                });
+            }
         },
-    )
-    .modifier(Modifier::new().fill_max_width().height(4.0))
+    ))
     .semantics(Semantics {
         role: Role::ProgressBar,
         label: None,
