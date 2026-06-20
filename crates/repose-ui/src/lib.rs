@@ -290,56 +290,6 @@ pub fn Button(content: impl IntoChildren, on_click: impl Fn() + 'static) -> View
     })
 }
 
-pub fn Slider(
-    value: f32,
-    range: (f32, f32),
-    step: Option<f32>,
-    on_change: impl Fn(f32) + 'static,
-) -> View {
-    View::new(
-        0,
-        ViewKind::Slider {
-            value,
-            min: range.0,
-            max: range.1,
-            step,
-            on_change: Some(Rc::new(on_change)),
-        },
-    )
-    .semantics(Semantics {
-        role: Role::Slider,
-        label: None,
-        focused: false,
-        enabled: true,
-    })
-}
-
-pub fn RangeSlider(
-    start: f32,
-    end: f32,
-    range: (f32, f32),
-    step: Option<f32>,
-    on_change: impl Fn(f32, f32) + 'static,
-) -> View {
-    View::new(
-        0,
-        ViewKind::RangeSlider {
-            start,
-            end,
-            min: range.0,
-            max: range.1,
-            step,
-            on_change: Some(Rc::new(on_change)),
-        },
-    )
-    .semantics(Semantics {
-        role: Role::Slider,
-        label: None,
-        focused: false,
-        enabled: true,
-    })
-}
-
 pub fn LinearProgress(value: Option<f32>) -> View {
     View::new(
         0,

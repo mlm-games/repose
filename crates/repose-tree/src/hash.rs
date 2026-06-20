@@ -88,32 +88,6 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             hint.hash(hasher);
             value.hash(hasher);
         }
-        ViewKind::Slider {
-            value,
-            min,
-            max,
-            step,
-            ..
-        } => {
-            ((value * 1000.0) as i32).hash(hasher);
-            ((min * 1000.0) as i32).hash(hasher);
-            ((max * 1000.0) as i32).hash(hasher);
-            step.map(|s| (s * 1000.0) as i32).hash(hasher);
-        }
-        ViewKind::RangeSlider {
-            start,
-            end,
-            min,
-            max,
-            step,
-            ..
-        } => {
-            ((start * 1000.0) as i32).hash(hasher);
-            ((end * 1000.0) as i32).hash(hasher);
-            ((min * 1000.0) as i32).hash(hasher);
-            ((max * 1000.0) as i32).hash(hasher);
-            step.map(|s| (s * 1000.0) as i32).hash(hasher);
-        }
         ViewKind::ProgressBar {
             value,
             min,

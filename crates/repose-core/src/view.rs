@@ -136,21 +136,6 @@ pub enum ViewKind {
         /// IME action button configuration.
         ime_action: Option<crate::text::ImeAction>,
     },
-    Slider {
-        value: f32,
-        min: f32,
-        max: f32,
-        step: Option<f32>,
-        on_change: Option<CallbackF32>,
-    },
-    RangeSlider {
-        start: f32,
-        end: f32,
-        min: f32,
-        max: f32,
-        step: Option<f32>,
-        on_change: Option<CallbackRange>,
-    },
     ProgressBar {
         value: f32,
         min: f32,
@@ -239,8 +224,6 @@ impl std::fmt::Debug for ViewKind {
                 }
                 s.finish()
             }
-            Self::Slider { value, .. } => write!(f, "Slider({})", value),
-            Self::RangeSlider { start, end, .. } => write!(f, "Range({}..{})", start, end),
             Self::ProgressBar { value, .. } => write!(f, "Progress({})", value),
             Self::Expander { expanded, .. } => {
                 if *expanded { write!(f, "Expander(expanded)") } else { write!(f, "Expander(collapsed)") }
@@ -374,9 +357,6 @@ pub enum SceneNode {
         color: Color,
     },
 }
-
-pub type CallbackF32 = Rc<dyn Fn(f32)>;
-pub type CallbackRange = Rc<dyn Fn(f32, f32)>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]

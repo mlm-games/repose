@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use repose_core::*;
 use repose_tree::{NodeId, TreeNode, TreeStats, ViewTree};
-use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
+use rustc_hash::{FxHashMap, FxHasher};
 use taffy::TaffyTree;
 use taffy::prelude::*;
 use taffy::style::FlexDirection;
@@ -84,10 +84,7 @@ pub struct LayoutEngine {
     view_ids: FxHashMap<NodeId, u64>,
     next_view_id: u64,
 
-    /// Slider drag state - tracks which sliders are being dragged.
-    slider_dragging: Rc<RefCell<FxHashSet<u64>>>,
-    /// Range slider active thumb - false=start, true=end.
-    range_active_thumb: Rc<RefCell<FxHashMap<u64, bool>>>,
+
 
     /// Monotonic counter for graphics layer ids, assigned during paint.
     layer_id_counter: u32,
@@ -164,8 +161,6 @@ enum NodeContext {
     TextField {
         multiline: bool,
     },
-    Slider,
-    Range,
     Progress,
     Container,
     ScrollContainer,
@@ -203,8 +198,7 @@ impl LayoutEngine {
             last_locals_stamp: None,
             view_ids: FxHashMap::default(),
             next_view_id: 1,
-            slider_dragging: Rc::new(RefCell::new(FxHashSet::default())),
-            range_active_thumb: Rc::new(RefCell::new(FxHashMap::default())),
+
             layer_id_counter: 0,
             prev_focused: None,
             focus_callbacks: FxHashMap::default(),
@@ -472,11 +466,6 @@ impl LayoutEngine {
                 self.text_cache.remove(&node_id);
                 self.paint_cache.remove(&node_id);
             }
-            // Clean up view_ids and drag state
-            if let Some(&vid) = self.view_ids.get(&node_id) {
-                self.slider_dragging.borrow_mut().remove(&vid);
-                self.range_active_thumb.borrow_mut().remove(&vid);
-            }
             self.view_ids.remove(&node_id);
         }
 
@@ -687,7 +676,7 @@ impl LayoutEngine {
 
         if matches!(
             kind,
-            ViewKind::Slider { .. } | ViewKind::RangeSlider { .. } | ViewKind::Image { .. }
+            ViewKind::Image { .. }
         ) {
             s.flex_shrink = 0.0;
         } else {
@@ -936,8 +925,6 @@ impl LayoutEngine {
             ViewKind::TextField { multiline, .. } => NodeContext::TextField {
                 multiline: *multiline,
             },
-            ViewKind::Slider { .. } => NodeContext::Slider,
-            ViewKind::RangeSlider { .. } => NodeContext::Range,
             ViewKind::ProgressBar { .. } => NodeContext::Progress,
             ViewKind::Expander { .. } => NodeContext::Container,
             ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. } => NodeContext::ScrollContainer,
@@ -1081,30 +1068,6 @@ impl LayoutEngine {
                     _ => known.height.unwrap_or(natural_h),
                 };
                 taffy::geometry::Size { width, height }
-            }
-            Some(NodeContext::Slider) => {
-                let natural_w = px(200.0);
-                let width = match avail.width {
-                    AvailableSpace::Definite(w) if w > 0.5 => w,
-                    AvailableSpace::MinContent => px(48.0),
-                    _ => known.width.unwrap_or(natural_w),
-                };
-                taffy::geometry::Size {
-                    width,
-                    height: px(28.0),
-                }
-            }
-            Some(NodeContext::Range) => {
-                let natural_w = px(220.0);
-                let width = match avail.width {
-                    AvailableSpace::Definite(w) if w > 0.5 => w,
-                    AvailableSpace::MinContent => px(96.0),
-                    _ => known.width.unwrap_or(natural_w),
-                };
-                taffy::geometry::Size {
-                    width,
-                    height: px(28.0),
-                }
             }
             Some(NodeContext::Progress) => {
                 let natural_w = px(200.0);
@@ -1657,8 +1620,6 @@ impl LayoutEngine {
             kind,
             ViewKind::Button { .. }
                 | ViewKind::TextField { .. }
-                | ViewKind::Slider { .. }
-                | ViewKind::RangeSlider { .. }
                 | ViewKind::ScrollV { .. }
                 | ViewKind::ScrollXY { .. }
                 | ViewKind::Expander { .. }
@@ -2343,319 +2304,6 @@ impl LayoutEngine {
                     enabled: true,
                 });
                 next_sem_parent = Some(view_id);
-            }
-            ViewKind::Slider {
-                value,
-                min,
-                max,
-                step,
-                on_change,
-            } => {
-                let th = locals::theme();
-                let th_h = dp_to_px(4.0);
-                let kn_d = dp_to_px(20.0);
-                let cy = rect.y + rect.h * 0.5;
-                scene.nodes.push(SceneNode::Rect {
-                    rect: repose_core::Rect {
-                        x: rect.x,
-                        y: cy - th_h * 0.5,
-                        w: rect.w,
-                        h: th_h,
-                    },
-                    brush: Brush::Solid(th.outline),
-                    radius: th_h * 0.5,
-                });
-                let t = norm(*value, *min, *max).clamp(0.0, 1.0);
-                let kx = rect.x + t * rect.w;
-                scene.nodes.push(SceneNode::Rect {
-                    rect: repose_core::Rect {
-                        x: kx - kn_d * 0.5,
-                        y: cy - kn_d * 0.5,
-                        w: kn_d,
-                        h: kn_d,
-                    },
-                    brush: Brush::Solid(th.surface),
-                    radius: kn_d * 0.5,
-                });
-                scene.nodes.push(SceneNode::Border {
-                    rect: repose_core::Rect {
-                        x: kx - kn_d * 0.5,
-                        y: cy - kn_d * 0.5,
-                        w: kn_d,
-                        h: kn_d,
-                    },
-                    color: th.outline,
-                    width: dp_to_px(1.0),
-                    radius: kn_d * 0.5,
-                });
-                if let Some(cb) = on_change.clone() {
-                    let dragging = self.slider_dragging.clone();
-                    let id = view_id;
-                    let r = rect;
-                    let minv = *min;
-                    let maxv = *max;
-                    let stepv = *step;
-
-                    let on_pd = {
-                        let cb = cb.clone();
-                        let dragging = dragging.clone();
-                        Rc::new(move |pe: PointerEvent| {
-                            dragging.borrow_mut().insert(id);
-                            (cb)(value_from_x(pe.position.x, r, minv, maxv, stepv));
-                        }) as Rc<dyn Fn(PointerEvent)>
-                    };
-
-                    let on_pm = {
-                        let cb = cb.clone();
-                        let dragging = dragging.clone();
-                        Rc::new(move |pe: PointerEvent| {
-                            if !dragging.borrow().contains(&id) {
-                                return; // ignore hover moves
-                            }
-                            (cb)(value_from_x(pe.position.x, r, minv, maxv, stepv));
-                        }) as Rc<dyn Fn(PointerEvent)>
-                    };
-
-                    let on_pu = {
-                        let dragging = dragging.clone();
-                        Rc::new(move |_pe: PointerEvent| {
-                            dragging.borrow_mut().remove(&id);
-                        }) as Rc<dyn Fn(PointerEvent)>
-                    };
-
-                    // Build on_scroll for wheel support
-                    let on_scroll = {
-                        let cb = cb.clone();
-                        let cur = *value;
-                        Rc::new(move |d: Vec2| -> Vec2 {
-                            let dir = wheel_to_steps(d.y);
-                            if dir == 0 {
-                                return d;
-                            }
-                            let next = apply_step(cur, dir, minv, maxv, stepv);
-                            if (next - cur).abs() > 1e-6 {
-                                (cb)(next);
-                                Vec2 { x: d.x, y: 0.0 }
-                            } else {
-                                d
-                            }
-                        }) as Rc<dyn Fn(Vec2) -> Vec2>
-                    };
-
-                    hits.push(HitRegion {
-                        id: view_id,
-                        rect,
-                        on_scroll: Some(on_scroll),
-                        focusable: true,
-                        on_pointer_down: Some(on_pd),
-                        on_pointer_move: Some(on_pm),
-                        on_pointer_up: Some(on_pu),
-                        on_pointer_enter: modifier.on_pointer_enter.clone(),
-                        on_pointer_leave: modifier.on_pointer_leave.clone(),
-                        z_index: modifier.z_index,
-                        ..HitRegion::from_modifier(view_id, rect, &modifier)
-                    });
-                }
-                sems.push(SemNode {
-                    id: view_id,
-                    parent: sem_parent,
-                    role: Role::Slider,
-                    label: None,
-                    rect,
-                    focused: is_focused,
-                    enabled: true,
-                });
-                next_sem_parent = Some(view_id);
-                if is_focused {
-                    push_focus_ring(scene, rect, 6.0);
-                }
-            }
-            ViewKind::RangeSlider {
-                start,
-                end,
-                min,
-                max,
-                step,
-                on_change,
-            } => {
-                let th = locals::theme();
-                let th_h = dp_to_px(4.0);
-                let kn_d = dp_to_px(20.0);
-                let cy = rect.y + rect.h * 0.5;
-                scene.nodes.push(SceneNode::Rect {
-                    rect: repose_core::Rect {
-                        x: rect.x,
-                        y: cy - th_h * 0.5,
-                        w: rect.w,
-                        h: th_h,
-                    },
-                    brush: Brush::Solid(th.outline),
-                    radius: th_h * 0.5,
-                });
-                let t0 = norm(*start, *min, *max).clamp(0.0, 1.0);
-                let t1 = norm(*end, *min, *max).clamp(0.0, 1.0);
-                let k0 = rect.x + t0 * rect.w;
-                let k1 = rect.x + t1 * rect.w;
-                scene.nodes.push(SceneNode::Rect {
-                    rect: repose_core::Rect {
-                        x: k0.min(k1),
-                        y: cy - th_h * 0.5,
-                        w: (k1 - k0).abs(),
-                        h: th_h,
-                    },
-                    brush: Brush::Solid(th.primary),
-                    radius: th_h * 0.5,
-                });
-                scene.nodes.push(SceneNode::Rect {
-                    rect: repose_core::Rect {
-                        x: k0 - kn_d * 0.5,
-                        y: cy - kn_d * 0.5,
-                        w: kn_d,
-                        h: kn_d,
-                    },
-                    brush: Brush::Solid(th.surface),
-                    radius: kn_d * 0.5,
-                });
-                scene.nodes.push(SceneNode::Rect {
-                    rect: repose_core::Rect {
-                        x: k1 - kn_d * 0.5,
-                        y: cy - kn_d * 0.5,
-                        w: kn_d,
-                        h: kn_d,
-                    },
-                    brush: Brush::Solid(th.surface),
-                    radius: kn_d * 0.5,
-                });
-                sems.push(SemNode {
-                    id: view_id,
-                    parent: sem_parent,
-                    role: Role::Slider,
-                    label: None,
-                    rect,
-                    focused: is_focused,
-                    enabled: true,
-                });
-                next_sem_parent = Some(view_id);
-                if is_focused {
-                    scene.nodes.push(SceneNode::Border {
-                        rect,
-                        color: th.focus,
-                        width: dp_to_px(2.0),
-                        radius: dp_to_px(6.0),
-                    });
-                }
-
-                if let Some(cb) = on_change.clone() {
-                    let dragging = self.slider_dragging.clone();
-                    let active = self.range_active_thumb.clone();
-
-                    let id = view_id;
-                    let r = rect;
-                    let minv = *min;
-                    let maxv = *max;
-                    let stepv = *step;
-
-                    let start0 = *start;
-                    let end0 = *end;
-
-                    let on_pd = {
-                        let cb = cb.clone();
-                        let dragging = dragging.clone();
-                        let active = active.clone();
-                        Rc::new(move |pe: PointerEvent| {
-                            dragging.borrow_mut().insert(id);
-
-                            // choose thumb based on which value is closer at press-time
-                            let v = value_from_x(pe.position.x, r, minv, maxv, stepv);
-                            let use_end = (v - end0).abs() < (v - start0).abs();
-                            active.borrow_mut().insert(id, use_end);
-
-                            let (mut a, mut b) = (start0, end0);
-                            if use_end {
-                                b = v.max(a);
-                            } else {
-                                a = v.min(b);
-                            }
-                            (cb)(a, b);
-                        }) as Rc<dyn Fn(PointerEvent)>
-                    };
-
-                    let on_pm = {
-                        let cb = cb.clone();
-                        let dragging = dragging.clone();
-                        let active = active.clone();
-                        Rc::new(move |pe: PointerEvent| {
-                            if !dragging.borrow().contains(&id) {
-                                return;
-                            }
-                            let v = value_from_x(pe.position.x, r, minv, maxv, stepv);
-                            let use_end = *active.borrow().get(&id).unwrap_or(&false);
-
-                            let (mut a, mut b) = (start0, end0);
-                            if use_end {
-                                b = v.max(a);
-                            } else {
-                                a = v.min(b);
-                            }
-                            (cb)(a, b);
-                        }) as Rc<dyn Fn(PointerEvent)>
-                    };
-
-                    let on_pu = {
-                        let dragging = dragging.clone();
-                        let active = active.clone();
-                        Rc::new(move |_pe: PointerEvent| {
-                            dragging.borrow_mut().remove(&id);
-                            active.borrow_mut().remove(&id);
-                        }) as Rc<dyn Fn(PointerEvent)>
-                    };
-
-                    // Build on_scroll for wheel support
-                    let on_scroll = {
-                        let cb = cb.clone();
-                        let cur_a = *start;
-                        let cur_b = *end;
-                        let active_map = active.clone();
-
-                        Rc::new(move |d: Vec2| -> Vec2 {
-                            let dir = wheel_to_steps(d.y);
-                            if dir == 0 {
-                                return d;
-                            }
-
-                            // Use end thumb by default if no active thumb stored
-                            let use_end = *active_map.borrow().get(&id).unwrap_or(&true);
-
-                            let (mut a, mut b) = (cur_a, cur_b);
-                            if use_end {
-                                b = apply_step(b, dir, minv, maxv, stepv).max(a);
-                            } else {
-                                a = apply_step(a, dir, minv, maxv, stepv).min(b);
-                            }
-
-                            if (a - cur_a).abs() > 1e-6 || (b - cur_b).abs() > 1e-6 {
-                                (cb)(a, b);
-                                Vec2 { x: d.x, y: 0.0 }
-                            } else {
-                                d
-                            }
-                        }) as Rc<dyn Fn(Vec2) -> Vec2>
-                    };
-
-                    hits.push(HitRegion {
-                        id: view_id,
-                        rect,
-                        on_scroll: Some(on_scroll),
-                        focusable: true,
-                        on_pointer_down: Some(on_pd),
-                        on_pointer_move: Some(on_pm),
-                        on_pointer_up: Some(on_pu),
-                        on_pointer_enter: modifier.on_pointer_enter.clone(),
-                        on_pointer_leave: modifier.on_pointer_leave.clone(),
-                        z_index: modifier.z_index,
-                        ..HitRegion::from_modifier(view_id, rect, &modifier)
-                    });
-                }
             }
             ViewKind::ProgressBar {
                 value,
@@ -3434,41 +3082,6 @@ fn push_scrollbar(
             ..Default::default()
         });
     }
-}
-
-fn snap_step(v: f32, min: f32, max: f32, step: Option<f32>) -> f32 {
-    let v = v.clamp(min, max);
-    if let Some(s) = step.filter(|s| *s > 0.0) {
-        let t = ((v - min) / s).round();
-        (min + t * s).clamp(min, max)
-    } else {
-        v
-    }
-}
-
-fn value_from_x(x: f32, rect: repose_core::Rect, min: f32, max: f32, step: Option<f32>) -> f32 {
-    let w = rect.w.max(1.0);
-    let t = ((x - rect.x) / w).clamp(0.0, 1.0);
-    let v = min + t * (max - min);
-    snap_step(v, min, max, step)
-}
-
-fn wheel_to_steps(dy_px: f32) -> i32 {
-    if dy_px < -0.5 {
-        1
-    } else if dy_px > 0.5 {
-        -1
-    } else {
-        0
-    }
-}
-
-fn apply_step(v: f32, dir: i32, min: f32, max: f32, step: Option<f32>) -> f32 {
-    if dir == 0 {
-        return v;
-    }
-    let s = step.unwrap_or(1.0).max(1e-6);
-    snap_step(v + (dir as f32) * s, min, max, step)
 }
 
 #[cfg(test)]
