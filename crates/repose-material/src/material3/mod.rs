@@ -70,44 +70,39 @@ pub fn AlertDialog(
     ))
 }
 
+static BOTTOMSHEET_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 pub fn BottomSheet(
     visible: bool,
     on_dismiss: impl Fn() + 'static,
     modifier: Modifier,
     content: View,
 ) -> View {
-    let max_h = animate_f32(
-        "sheet_height",
-        if visible { 500.0 } else { 0.0 },
-        theme().motion.layout,
+    let th = theme();
+    let id = remember(|| BOTTOMSHEET_COUNTER.fetch_add(1, Ordering::Relaxed));
+
+    let opacity = animate_f32_from(
+        format!("bs_opacity_{id}"),
+        if visible { 0.0 } else { 1.0 },
+        if visible { 1.0 } else { 0.0 },
+        th.motion.layout,
     );
 
-    Column(Modifier::new()).child((
-        Box(if visible {
-            modifier
-                .clone()
-                .fill_max_width()
-                .max_height(max_h)
-                .clip_rounded(4.0)
-        } else {
-            Modifier::new().width(0.0).height(0.0)
-        })
-        .child(if visible {
-            content
-        } else {
-            Box(Modifier::new())
-        }),
-        if visible {
+    let keep = visible || opacity > 0.01;
+    if keep {
+        Column(Modifier::new()).child((
+            Box(modifier.alpha(opacity)).child(content),
             Box(Modifier::new()
                 .width(1.0)
                 .height(0.0)
                 .fill_max_width()
+                .alpha(opacity)
                 .hit_passthrough()
-                .on_pointer_down(move |_| on_dismiss()))
-        } else {
-            Box(Modifier::new())
-        },
-    ))
+                .on_pointer_down(move |_| on_dismiss())),
+        ))
+    } else {
+        Box(Modifier::new())
+    }
 }
 
 static NAVBAR_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1527,20 +1522,26 @@ pub fn ModalBottomSheet(
     content: View,
 ) -> View {
     let th = theme();
-    let _peek = state.peek_height.get();
+    let peek_h = state.peek_height.get();
+    let anim_distance = peek_h.max(48.0).max(400.0);
     let overlay_id = remember_with_key("mbs_oid", || signal(0u64));
 
-    // Animated offset: 600px (off-screen) → 0px (visible)
+    // Animated offset: anim_distance px (off-screen) → 0px (visible)
     let anim = remember_state_with_key("mbs_anim", || {
-        AnimatedValue::new(600.0, theme().motion.spring)
+        AnimatedValue::new(anim_distance, theme().motion.spring)
     });
     let last_target = remember_state_with_key("mbs_anim_target", || f32::NAN);
-    let anim_target = if state.is_visible() { 0.0 } else { 600.0 };
+    let anim_target = if state.is_visible() { 0.0 } else { anim_distance };
 
     {
         let mut a = anim.borrow_mut();
         let mut lt = last_target.borrow_mut();
         if lt.is_nan() || (*lt - anim_target).abs() > 1e-6 {
+            if state.is_visible() {
+                a.set_spec(th.motion.spring);
+            } else {
+                a.set_spec(AnimationSpec::fast());
+            }
             a.set_target(anim_target);
             *lt = anim_target;
         }
@@ -1552,7 +1553,7 @@ pub fn ModalBottomSheet(
     }
 
     let offset = *anim.borrow().get();
-    let sheet_visible = state.is_visible() || offset < 590.0;
+    let sheet_visible = state.is_visible() || offset < anim_distance - 10.0;
 
     if sheet_visible {
         if overlay_id.get() == 0 {
@@ -1564,13 +1565,11 @@ pub fn ModalBottomSheet(
                 let th = th;
                 move || {
                     let off = *anim.borrow().get();
-                    let modif = modifier.clone();
-                    let peek_h = state.peek_height.get();
-                    let sheet = Box(modif
+
+                    let sheet_body = Box(modifier.clone()
                         .fill_max_width()
-                        .absolute()
-                        .offset(None, Some(off), Some(0.0), Some(0.0))
-                        .min_height(peek_h.max(48.0))
+                        .max_width(dp_to_px(640.0))
+                        .translate(0.0, off)
                         .background(th.surface_container_low)
                         .clip_rounded(th.shapes.large))
                     .child(
@@ -1579,27 +1578,34 @@ pub fn ModalBottomSheet(
                                 .fill_max_width()
                                 .justify_content(JustifyContent::Center))
                             .child(Box(Modifier::new()
-                                .margin_vertical(8.0)
+                                .margin_vertical(22.0)
                                 .width(32.0)
                                 .height(4.0)
-                                .background(th.on_surface_variant.with_alpha_f32(0.4))
+                                .background(th.on_surface_variant)
                                 .clip_rounded(2.0))),
                             content.clone(),
                         )),
                     );
 
-                    let visible = state.is_visible();
-                    let scrim = if visible {
-                        Box(Modifier::new()
-                            .fill_max_size()
-                            .background(th.scrim.with_alpha(85))
-                            .on_pointer_down({
-                                let s = state.clone();
-                                move |_| s.dismiss()
-                            }))
+                    let sheet = Box(Modifier::new()
+                        .fill_max_size()
+                        .justify_content(JustifyContent::Center)
+                        .align_items(AlignItems::FlexEnd))
+                    .child(sheet_body);
+
+                    let scrim_alpha = if state.is_visible() {
+                        85u8
                     } else {
-                        Box(Modifier::new())
+                        let t = (off / anim_distance).clamp(0.0, 1.0);
+                        (85.0 * (1.0 - t)) as u8
                     };
+                    let scrim = Box(Modifier::new()
+                        .fill_max_size()
+                        .background(th.scrim.with_alpha(scrim_alpha))
+                        .on_pointer_down({
+                            let s = state.clone();
+                            move |_| s.dismiss()
+                        }));
 
                     ZStack(Modifier::new().fill_max_size().absolute()).child((scrim, sheet))
                 }
@@ -1664,10 +1670,9 @@ impl PullToRefreshState {
 
     pub fn set_refreshing(&self, v: bool) {
         self.refreshing.set(v);
-        if !v
-            && let Some(sc) = self.scroll_state.borrow().as_ref() {
-                sc.set_overscroll(0.0);
-            }
+        if !v && let Some(sc) = self.scroll_state.borrow().as_ref() {
+            sc.set_overscroll(0.0);
+        }
     }
 
     /// Read the current pull offset from the connected scroll state's overscroll.

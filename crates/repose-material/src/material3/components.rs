@@ -19,7 +19,7 @@ pub fn TopAppBar(
 ) -> View {
     let th = theme();
     Row(Modifier::new()
-        .fill_max_width()
+        .min_width(200.0)
         .height(64.0)
         .background(th.surface)
         .padding_values(PaddingValues {
@@ -358,7 +358,7 @@ pub fn ExtendedFAB(
 pub fn Divider() -> View {
     let th = theme();
     Box(Modifier::new()
-        .fill_max_width()
+        .min_width(200.0)
         .height(1.0)
         .background(th.outline_variant))
 }
@@ -416,7 +416,7 @@ pub fn ListItem(
 ) -> View {
     let th = theme();
     let mut modifier = Modifier::new()
-        .fill_max_width()
+        .min_width(200.0)
         .min_height(if supporting_text.is_some() {
             72.0
         } else {
@@ -549,7 +549,7 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>) -> View {
                             .size(th.typography.title_small)
                             .single_line(),
                         Box(Modifier::new()
-                            .fill_max_width()
+                            .min_width(200.0)
                             .height(indicator_h)
                             .background(th.primary)
                             .clip_rounded(1.5)),
@@ -558,7 +558,7 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>) -> View {
                 .collect::<Vec<_>>(),
         ),
         Box(Modifier::new()
-            .fill_max_width()
+            .min_width(200.0)
             .height(1.0)
             .background(th.outline_variant)),
     ))
@@ -870,7 +870,7 @@ pub fn OutlinedTextField(
             // A surface-colored background box hides the border stroke behind the label.
             if let Some(lbl) = label_str {
                 Box(Modifier::new()
-                    .fill_max_width()
+                    .min_width(200.0)
                     .padding_values(PaddingValues {
                         left: 20.0,
                         right: 20.0,
@@ -1097,25 +1097,222 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
     )
 }
 
-/// M3 Slider.
-/// Wraps the low-level `ViewKind::Slider` with M3 sizing and theme colors.
+static SLIDER_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn snap_step(v: f32, min: f32, max: f32, step: Option<f32>) -> f32 {
+    let v = v.clamp(min, max);
+    if let Some(s) = step.filter(|s| *s > 0.0) {
+        let t = ((v - min) / s).round();
+        (min + t * s).clamp(min, max)
+    } else {
+        v
+    }
+}
+
+fn value_from_x(x: f32, rect: Rect, min: f32, max: f32, step: Option<f32>) -> f32 {
+    let w = rect.w.max(1.0);
+    let t = ((x - rect.x) / w).clamp(0.0, 1.0);
+    let v = min + t * (max - min);
+    snap_step(v, min, max, step)
+}
+
 pub fn M3Slider(
     value: f32,
     range: (f32, f32),
     step: Option<f32>,
     on_change: impl Fn(f32) + 'static,
 ) -> View {
-    View::new(
-        0,
-        ViewKind::Slider {
-            value,
-            min: range.0,
-            max: range.1,
-            step,
-            on_change: Some(Rc::new(on_change)),
-        },
-    )
-    .modifier(Modifier::new().height(28.0))
+    let id = *remember(|| SLIDER_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let track_rect = remember_state_with_key(format!("ms_rect_{}", id), || Rect::default());
+    let drag_active = remember_state_with_key(format!("ms_da_{}", id), || false);
+
+    let track_rect_p = track_rect.clone();
+    let drag_active_p = drag_active.clone();
+
+    let min = range.0;
+    let max = range.1;
+    let oc = Rc::new(on_change);
+    let th = theme();
+    let range_size = (max - min).max(1e-6);
+    let t = ((value - min) / range_size).clamp(0.0, 1.0);
+
+    let tick_frac: Vec<f32> = if let Some(s) = step {
+        let n = ((max - min) / s.max(1e-6)).round() as usize;
+        (0..=n).map(|i| i as f32 / n as f32).collect()
+    } else {
+        Vec::new()
+    };
+
+    Box(Modifier::new()
+        .min_width(200.0)
+        .height(44.0)
+        .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
+            let mul_c = |c: Color| {
+                Color(
+                    c.0,
+                    c.1,
+                    c.2,
+                    ((c.3 as f32) * alpha).clamp(0.0, 255.0) as u8,
+                )
+            };
+            let track_h = dp_to_px(16.0);
+            let thumb_w = dp_to_px(4.0);
+            let thumb_h = dp_to_px(44.0);
+            let dot_r = dp_to_px(2.0);
+            let corner = track_h * 0.5;
+            let gap = dp_to_px(8.0);
+            let pad = thumb_w * 0.5;
+            let track_x = rect.x + pad;
+            let track_w = (rect.w - thumb_w).max(0.0);
+            let cy = rect.y + rect.h * 0.5;
+
+            // Thumb center: for steps, clamp within corner inset (Compose SliderImpl:924-930)
+            let kx = if step.is_some() && !tick_frac.is_empty() {
+                let is_first = (t - tick_frac[0]).abs() < 1e-6;
+                let is_last = (t - tick_frac[tick_frac.len() - 1]).abs() < 1e-6;
+                if is_first || is_last {
+                    track_x + t * track_w
+                } else {
+                    track_x + (track_w - track_h) * t + corner
+                }
+            } else {
+                track_x + t * track_w
+            };
+
+            *track_rect_p.borrow_mut() = Rect {
+                x: track_x,
+                y: rect.y,
+                w: track_w,
+                h: rect.h,
+            };
+
+            // Inactive track (after thumb gap)
+            let inactive_x = track_x.max(kx + gap);
+            let inactive_w = (track_x + track_w - inactive_x).max(0.0);
+            if inactive_w > 0.0 {
+                scene.nodes.push(SceneNode::Rect {
+                    rect: Rect {
+                        x: inactive_x,
+                        y: cy - track_h * 0.5,
+                        w: inactive_w,
+                        h: track_h,
+                    },
+                    brush: Brush::Solid(mul_c(th.secondary_container)),
+                    radius: corner,
+                });
+            }
+            // Active track fill (from left to thumb gap)
+            let fill_w = (kx - gap - track_x).max(0.0);
+            if fill_w > 0.0 {
+                scene.nodes.push(SceneNode::Rect {
+                    rect: Rect {
+                        x: track_x,
+                        y: cy - track_h * 0.5,
+                        w: fill_w,
+                        h: track_h,
+                    },
+                    brush: Brush::Solid(mul_c(th.primary)),
+                    radius: corner,
+                });
+            }
+            // Tick marks at step positions (skipping gap region)
+            let tick_start = track_x + corner;
+            let tick_end = track_x + track_w - corner;
+            for &tf in &tick_frac {
+                let tx = tick_start + tf * (tick_end - tick_start);
+                if tx >= kx - gap && tx <= kx + gap {
+                    continue;
+                }
+                let on_active = tx <= kx - gap;
+                scene.nodes.push(SceneNode::Ellipse {
+                    rect: Rect {
+                        x: tx - dot_r,
+                        y: cy - dot_r,
+                        w: dot_r * 2.0,
+                        h: dot_r * 2.0,
+                    },
+                    brush: Brush::Solid(mul_c(if on_active {
+                        th.secondary_container
+                    } else {
+                        th.primary
+                    })),
+                });
+            }
+            // Stop indicator at right end (only when inactive track visible)
+            if inactive_w > 0.0 {
+                let sx = track_x + track_w - corner;
+                scene.nodes.push(SceneNode::Ellipse {
+                    rect: Rect {
+                        x: sx - dot_r,
+                        y: cy - dot_r,
+                        w: dot_r * 2.0,
+                        h: dot_r * 2.0,
+                    },
+                    brush: Brush::Solid(mul_c(th.primary)),
+                });
+            }
+            // Thumb pill (shrinks to 2dp when dragging, matching Compose Thumb:2469-2478)
+            let da = *drag_active_p.borrow();
+            let tw = if da { thumb_w * 0.5 } else { thumb_w };
+            scene.nodes.push(SceneNode::Rect {
+                rect: Rect {
+                    x: kx - tw * 0.5,
+                    y: cy - thumb_h * 0.5,
+                    w: tw,
+                    h: thumb_h,
+                },
+                brush: Brush::Solid(mul_c(th.primary)),
+                radius: tw * 0.5,
+            });
+        })
+        .on_pointer_down({
+            let oc = oc.clone();
+            let track_rect = track_rect.clone();
+            let drag_active = drag_active.clone();
+            move |pe: PointerEvent| {
+                *drag_active.borrow_mut() = true;
+                let r = *track_rect.borrow();
+                (oc)(value_from_x(pe.position.x, r, min, max, step));
+            }
+        })
+        .on_pointer_move({
+            let oc = oc.clone();
+            let track_rect = track_rect.clone();
+            let drag_active = drag_active.clone();
+            move |pe: PointerEvent| {
+                if !*drag_active.borrow() {
+                    return;
+                }
+                let r = *track_rect.borrow();
+                (oc)(value_from_x(pe.position.x, r, min, max, step));
+            }
+        })
+        .on_pointer_up(move |_pe: PointerEvent| {
+            *drag_active.borrow_mut() = false;
+        })
+        .on_scroll({
+            let oc = oc.clone();
+            move |d: Vec2| -> Vec2 {
+                let dir = if d.y < -0.5 {
+                    1
+                } else if d.y > 0.5 {
+                    -1
+                } else {
+                    0
+                };
+                if dir == 0 {
+                    return d;
+                }
+                let step_val = step.unwrap_or(1.0).max(1e-6);
+                let new_val = snap_step(value + (dir as f32) * step_val, min, max, step);
+                if (new_val - value).abs() > 1e-6 {
+                    (oc)(new_val);
+                    Vec2 { x: d.x, y: 0.0 }
+                } else {
+                    d
+                }
+            }
+        }))
     .semantics(Semantics {
         role: Role::Slider,
         label: None,
@@ -1124,8 +1321,6 @@ pub fn M3Slider(
     })
 }
 
-/// M3 RangeSlider.
-/// Wraps the low-level `ViewKind::RangeSlider` with M3 sizing and theme colors.
 pub fn M3RangeSlider(
     start: f32,
     end: f32,
@@ -1133,18 +1328,265 @@ pub fn M3RangeSlider(
     step: Option<f32>,
     on_change: impl Fn(f32, f32) + 'static,
 ) -> View {
-    View::new(
-        0,
-        ViewKind::RangeSlider {
-            start,
-            end,
-            min: range.0,
-            max: range.1,
-            step,
-            on_change: Some(Rc::new(on_change)),
-        },
-    )
-    .modifier(Modifier::new().height(28.0))
+    let id = *remember(|| SLIDER_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let track_rect = remember_state_with_key(format!("mrs_rect_{}", id), || Rect::default());
+    let drag_active = remember_state_with_key(format!("mrs_da_{}", id), || false);
+    let active_thumb = remember_state_with_key(format!("mrs_at_{}", id), || false);
+
+    let min = range.0;
+    let max = range.1;
+    let oc = Rc::new(on_change);
+    let th = theme();
+    let range_size = (max - min).max(1e-6);
+    let t0 = ((start - min) / range_size).clamp(0.0, 1.0);
+    let t1 = ((end - min) / range_size).clamp(0.0, 1.0);
+
+    let tick_frac: Vec<f32> = if let Some(s) = step {
+        let n = ((max - min) / s.max(1e-6)).round() as usize;
+        (0..=n).map(|i| i as f32 / n as f32).collect()
+    } else {
+        Vec::new()
+    };
+
+    let track_rect_p = track_rect.clone();
+    let drag_active_p = drag_active.clone();
+    let active_thumb_p = active_thumb.clone();
+
+    Box(Modifier::new()
+        .min_width(200.0)
+        .height(44.0)
+        .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
+            let mul_c = |c: Color| {
+                Color(
+                    c.0,
+                    c.1,
+                    c.2,
+                    ((c.3 as f32) * alpha).clamp(0.0, 255.0) as u8,
+                )
+            };
+            let track_h = dp_to_px(16.0);
+            let thumb_w = dp_to_px(4.0);
+            let thumb_h = dp_to_px(44.0);
+            let dot_r = dp_to_px(2.0);
+            let corner = track_h * 0.5;
+            let gap = dp_to_px(8.0);
+            let pad = thumb_w * 0.5;
+            let track_x = rect.x + pad;
+            let track_w = (rect.w - thumb_w).max(0.0);
+            let cy = rect.y + rect.h * 0.5;
+
+            // Thumb centers with corner-inset for steps
+            let thumb_pos = |tf: f32, fracs: &[f32]| {
+                if step.is_some() && !fracs.is_empty() {
+                    let is_first = (tf - fracs[0]).abs() < 1e-6;
+                    let is_last = (tf - fracs[fracs.len() - 1]).abs() < 1e-6;
+                    if is_first || is_last {
+                        track_x + tf * track_w
+                    } else {
+                        track_x + (track_w - track_h) * tf + corner
+                    }
+                } else {
+                    track_x + tf * track_w
+                }
+            };
+            let k0 = thumb_pos(t0, &tick_frac);
+            let k1 = thumb_pos(t1, &tick_frac);
+            let active_l = k0.min(k1);
+            let active_r = k0.max(k1);
+
+            *track_rect_p.borrow_mut() = Rect {
+                x: track_x,
+                y: rect.y,
+                w: track_w,
+                h: rect.h,
+            };
+
+            let linactive_w = (active_l - gap - track_x).max(0.0);
+            if linactive_w > 0.0 {
+                scene.nodes.push(SceneNode::Rect {
+                    rect: Rect {
+                        x: track_x,
+                        y: cy - track_h * 0.5,
+                        w: linactive_w,
+                        h: track_h,
+                    },
+                    brush: Brush::Solid(mul_c(th.secondary_container)),
+                    radius: corner,
+                });
+            }
+            let rinactive_x = (active_r + gap).min(track_x + track_w);
+            let rinactive_w = (track_x + track_w - rinactive_x).max(0.0);
+            if rinactive_w > 0.0 {
+                scene.nodes.push(SceneNode::Rect {
+                    rect: Rect {
+                        x: rinactive_x,
+                        y: cy - track_h * 0.5,
+                        w: rinactive_w,
+                        h: track_h,
+                    },
+                    brush: Brush::Solid(mul_c(th.secondary_container)),
+                    radius: corner,
+                });
+            }
+            // Active range between thumbs
+            let active_w = (active_r - gap - (active_l + gap)).max(0.0);
+            if active_w > 0.0 {
+                scene.nodes.push(SceneNode::Rect {
+                    rect: Rect {
+                        x: active_l + gap,
+                        y: cy - track_h * 0.5,
+                        w: active_w,
+                        h: track_h,
+                    },
+                    brush: Brush::Solid(mul_c(th.primary)),
+                    radius: corner,
+                });
+            }
+            // Tick marks at step positions (skipping gap regions)
+            let tick_start = track_x + corner;
+            let tick_end = track_x + track_w - corner;
+            for &tf in &tick_frac {
+                let tx = tick_start + tf * (tick_end - tick_start);
+                if tx >= active_l - gap && tx <= active_r + gap {
+                    continue;
+                }
+                let on_active = tx >= active_l + gap && tx <= active_r - gap;
+                scene.nodes.push(SceneNode::Ellipse {
+                    rect: Rect {
+                        x: tx - dot_r,
+                        y: cy - dot_r,
+                        w: dot_r * 2.0,
+                        h: dot_r * 2.0,
+                    },
+                    brush: Brush::Solid(mul_c(if on_active {
+                        th.secondary_container
+                    } else {
+                        th.primary
+                    })),
+                });
+            }
+            // Stop indicators (only when corresponding inactive track visible)
+            if linactive_w > 0.0 {
+                let sx0 = track_x + corner;
+                scene.nodes.push(SceneNode::Ellipse {
+                    rect: Rect {
+                        x: sx0 - dot_r,
+                        y: cy - dot_r,
+                        w: dot_r * 2.0,
+                        h: dot_r * 2.0,
+                    },
+                    brush: Brush::Solid(mul_c(th.primary)),
+                });
+            }
+            if rinactive_w > 0.0 {
+                let sx = track_x + track_w - corner;
+                scene.nodes.push(SceneNode::Ellipse {
+                    rect: Rect {
+                        x: sx - dot_r,
+                        y: cy - dot_r,
+                        w: dot_r * 2.0,
+                        h: dot_r * 2.0,
+                    },
+                    brush: Brush::Solid(mul_c(th.primary)),
+                });
+            }
+            // Thumb pills (shrink to 2dp when dragging that specific thumb)
+            let da = *drag_active_p.borrow();
+            let at = *active_thumb_p.borrow();
+            let thumb_sizes = [
+                (k0, if da && !at { thumb_w * 0.5 } else { thumb_w }),
+                (k1, if da && at { thumb_w * 0.5 } else { thumb_w }),
+            ];
+            for &(kx, tw) in &thumb_sizes {
+                scene.nodes.push(SceneNode::Rect {
+                    rect: Rect {
+                        x: kx - tw * 0.5,
+                        y: cy - thumb_h * 0.5,
+                        w: tw,
+                        h: thumb_h,
+                    },
+                    brush: Brush::Solid(mul_c(th.primary)),
+                    radius: tw * 0.5,
+                });
+            }
+        })
+        .on_pointer_down({
+            let oc = oc.clone();
+            let track_rect = track_rect.clone();
+            let drag_active = drag_active.clone();
+            let active_thumb = active_thumb.clone();
+            move |pe: PointerEvent| {
+                *drag_active.borrow_mut() = true;
+                let r = *track_rect.borrow();
+                let v = value_from_x(pe.position.x, r, min, max, step);
+                let use_end = (v - end).abs() < (v - start).abs();
+                *active_thumb.borrow_mut() = use_end;
+                let (a, b) = if use_end {
+                    (start, v.max(start))
+                } else {
+                    (v.min(end), end)
+                };
+                (oc)(a, b);
+            }
+        })
+        .on_pointer_move({
+            let oc = oc.clone();
+            let track_rect = track_rect.clone();
+            let drag_active = drag_active.clone();
+            let active_thumb = active_thumb.clone();
+            move |pe: PointerEvent| {
+                if !*drag_active.borrow() {
+                    return;
+                }
+                let r = *track_rect.borrow();
+                let v = value_from_x(pe.position.x, r, min, max, step);
+                let use_end = *active_thumb.borrow();
+                let (a, b) = if use_end {
+                    (start, v.max(start))
+                } else {
+                    (v.min(end), end)
+                };
+                (oc)(a, b);
+            }
+        })
+        .on_pointer_up({
+            let drag_active = drag_active.clone();
+            let active_thumb = active_thumb.clone();
+            move |_pe: PointerEvent| {
+                *drag_active.borrow_mut() = false;
+                *active_thumb.borrow_mut() = false;
+            }
+        })
+        .on_scroll({
+            let oc = oc.clone();
+            let active_thumb = active_thumb.clone();
+            move |d: Vec2| -> Vec2 {
+                let dir = if d.y < -0.5 {
+                    1
+                } else if d.y > 0.5 {
+                    -1
+                } else {
+                    0
+                };
+                if dir == 0 {
+                    return d;
+                }
+                let step_val = step.unwrap_or(1.0).max(1e-6);
+                let use_end = *active_thumb.borrow();
+                let (mut a, mut b) = (start, end);
+                if use_end {
+                    b = snap_step(end + (dir as f32) * step_val, min, max, step).max(a);
+                } else {
+                    a = snap_step(start + (dir as f32) * step_val, min, max, step).min(b);
+                }
+                if (a - start).abs() > 1e-6 || (b - end).abs() > 1e-6 {
+                    (oc)(a, b);
+                    Vec2 { x: d.x, y: 0.0 }
+                } else {
+                    d
+                }
+            }
+        }))
     .semantics(Semantics {
         role: Role::Slider,
         label: None,

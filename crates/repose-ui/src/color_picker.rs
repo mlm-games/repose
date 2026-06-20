@@ -77,10 +77,10 @@ fn spacer(h: f32) -> View {
 
 static CP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-type Painter = Rc<dyn Fn(&mut Scene, repose_core::Rect)>;
+type Painter = Rc<dyn Fn(&mut Scene, repose_core::Rect, f32)>;
 
 fn gradient_painter(stops: Vec<(f32, Color)>) -> Painter {
-    Rc::new(move |scene: &mut Scene, rect: repose_core::Rect| {
+    Rc::new(move |scene: &mut Scene, rect: repose_core::Rect, _alpha: f32| {
         if stops.len() < 2 {
             return;
         }
@@ -233,7 +233,7 @@ pub fn ColorPicker(
     ));
 
     let hue_slider = Stack(Modifier::new().width(slider_w).height(slider_h)).child((
-        Box(Modifier::new().fill_max_size().painter(move |s: &mut Scene, r: repose_core::Rect| (hue_painter)(s, r))).child(Box(Modifier::new())),
+        Box(Modifier::new().fill_max_size().painter(move |s: &mut Scene, r: repose_core::Rect, a: f32| (hue_painter)(s, r, a))).child(Box(Modifier::new())),
         Box(Modifier::new().absolute().offset(Some(hue_frac * slider_w - thumb_w * 0.5), None, None, None).width(thumb_w).height(slider_h).background(Color::WHITE).border(1.0, th.outline, 2.0)),
     ))
     .modifier(
@@ -250,7 +250,7 @@ pub fn ColorPicker(
     );
 
     let sat_slider = Stack(Modifier::new().width(slider_w).height(slider_h)).child((
-        Box(Modifier::new().fill_max_size().painter(move |s: &mut Scene, r: repose_core::Rect| (sat_painter)(s, r))).child(Box(Modifier::new())),
+        Box(Modifier::new().fill_max_size().painter(move |s: &mut Scene, r: repose_core::Rect, a: f32| (sat_painter)(s, r, a))).child(Box(Modifier::new())),
         Box(Modifier::new().absolute().offset(Some(sat_frac * slider_w - thumb_w * 0.5), None, None, None).width(thumb_w).height(slider_h).background(Color::WHITE).border(1.0, th.outline, 2.0)),
     ))
     .modifier(
@@ -267,7 +267,7 @@ pub fn ColorPicker(
     );
 
     let val_slider = Stack(Modifier::new().width(slider_w).height(slider_h)).child((
-        Box(Modifier::new().fill_max_size().painter(move |s: &mut Scene, r: repose_core::Rect| (val_painter)(s, r))).child(Box(Modifier::new())),
+        Box(Modifier::new().fill_max_size().painter(move |s: &mut Scene, r: repose_core::Rect, a: f32| (val_painter)(s, r, a))).child(Box(Modifier::new())),
         Box(Modifier::new().absolute().offset(Some(val_frac * slider_w - thumb_w * 0.5), None, None, None).width(thumb_w).height(slider_h).background(Color::WHITE).border(1.0, th.outline, 2.0)),
     ))
     .modifier(

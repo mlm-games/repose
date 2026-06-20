@@ -198,7 +198,7 @@ pub struct Modifier {
     pub margin_top: Option<f32>,
     pub margin_bottom: Option<f32>,
     pub aspect_ratio: Option<f32>,
-    pub painter: Option<Rc<dyn Fn(&mut crate::Scene, crate::Rect)>>,
+    pub painter: Option<Rc<dyn Fn(&mut crate::Scene, crate::Rect, f32)>>,
 
     // Drag-drop (internal)
     pub on_drag_start: Option<Rc<dyn Fn(crate::dnd::DragStart) -> Option<crate::dnd::DragPayload>>>,
@@ -718,7 +718,7 @@ impl Modifier {
         self.aspect_ratio = Some(ratio);
         self
     }
-    pub fn painter(mut self, f: impl Fn(&mut crate::Scene, crate::Rect) + 'static) -> Self {
+    pub fn painter(mut self, f: impl Fn(&mut crate::Scene, crate::Rect, f32) + 'static) -> Self {
         self.painter = Some(Rc::new(f));
         self
     }

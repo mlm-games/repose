@@ -407,7 +407,7 @@ fn render_tabs(
         .padding(6.0)
         .painter({
             let tabbar_rect = tabbar_rect.clone();
-            move |_scene, r| *tabbar_rect.borrow_mut() = r
+            move |_scene, r, _alpha| *tabbar_rect.borrow_mut() = r
         });
 
     if drag_active.get() {
@@ -743,7 +743,7 @@ fn render_split(
     // Paint-only hook to store rect
     let track = {
         let rect_rc = rect_rc.clone();
-        Modifier::new().painter(move |_scene, r| {
+        Modifier::new().painter(move |_scene, r, _alpha| {
             *rect_rc.borrow_mut() = r;
         })
     };

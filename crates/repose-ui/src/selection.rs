@@ -95,7 +95,7 @@ pub fn SelectableText(
         let text = text_for_paint.clone();
         let selection = selection.clone();
         let last_rect = last_rect.clone();
-        move |scene: &mut Scene, rect: Rect| {
+        move |scene: &mut Scene, rect: Rect, _alpha: f32| {
             *last_rect.borrow_mut() = rect;
 
             let (s, e) = match *selection.borrow() {

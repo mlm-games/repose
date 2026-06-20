@@ -92,7 +92,7 @@ impl DrawScope {
 
 pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) -> View {
     // Painter replays drawing each frame, so Canvas can react to signals/animation.
-    let painter = move |scene: &mut Scene, rect: Rect| {
+    let painter = move |scene: &mut Scene, rect: Rect, _alpha: f32| {
         let mut scope = DrawScope {
             commands: Vec::new(),
             size: Size {

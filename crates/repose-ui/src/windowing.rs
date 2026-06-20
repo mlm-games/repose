@@ -229,7 +229,7 @@ pub fn WindowHost(
     });
 
     let bounds_capture = bounds.clone();
-    let host_mod = modifier.painter(move |_scene, rect_px| {
+    let host_mod = modifier.painter(move |_scene, rect_px, _alpha| {
         let mut bounds_dp = rect_px_to_dp(rect_px);
         bounds_dp.x = 0.0;
         bounds_dp.y = 0.0;

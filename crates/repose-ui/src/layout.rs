@@ -1637,7 +1637,7 @@ impl LayoutEngine {
             });
         }
         if let Some(p) = &modifier.painter {
-            (p)(scene, rect);
+            (p)(scene, rect, alpha_accum);
         }
 
         let has_pointer = modifier.on_pointer_down.is_some()
