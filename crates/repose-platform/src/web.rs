@@ -216,15 +216,6 @@ impl App {
         }
     }
 
-    fn tick_snackbar(&mut self) {
-        let now = web_time::Instant::now();
-        let elapsed = now.saturating_duration_since(self.last_redraw);
-        let ms = elapsed.as_millis().min(u32::MAX as u128) as u32;
-        if ms > 0 {
-            repose_ui::overlay::SnackbarController::tick_for_frame(ms);
-        }
-    }
-
     fn request_redraw(&self) {
         if let Some(w) = &self.window {
             w.request_redraw();
@@ -1361,7 +1352,9 @@ impl ApplicationHandler<()> for App {
 
                                 self.sched.focused = Some(next);
 
-                                let tf_state_key = f.hit_regions.iter()
+                                let tf_state_key = f
+                                    .hit_regions
+                                    .iter()
                                     .find(|h| h.id == next)
                                     .and_then(|h| h.tf_state_key);
                                 if let Some(key) = tf_state_key {
@@ -1385,13 +1378,15 @@ impl ApplicationHandler<()> for App {
                     if let Some(active) = self.key_pressed_active.take() {
                         self.pressed_ids.remove(&active);
                     }
-                    let tf_state_key = f.hit_regions.iter()
+                    let tf_state_key = f
+                        .hit_regions
+                        .iter()
                         .find(|h| h.id == next)
                         .and_then(|h| h.tf_state_key);
                     if let Some(key) = tf_state_key {
-                        self.textfield_states.entry(key).or_insert_with(|| {
-                            Rc::new(RefCell::new(TextFieldState::new()))
-                        });
+                        self.textfield_states
+                            .entry(key)
+                            .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
                         if let Some(state_rc) = self.textfield_states.get(&key) {
                             state_rc.borrow_mut().reset_caret_blink();
                         }
@@ -1425,11 +1420,8 @@ impl ApplicationHandler<()> for App {
 
                                         // Execute click
                                         if let Some(f) = &self.frame_cache {
-                                            if let Some(hit) = f
-                                                .hit_regions
-                                                .iter()
-                                                .rev()
-                                                .find(|h| h.id == fid)
+                                            if let Some(hit) =
+                                                f.hit_regions.iter().rev().find(|h| h.id == fid)
                                             {
                                                 if let Some(cb) = &hit.on_click {
                                                     cb();
@@ -1741,7 +1733,8 @@ impl ApplicationHandler<()> for App {
             }
 
             WindowEvent::RedrawRequested => {
-                self.tick_snackbar();
+                rc::tick_snackbar(self.last_redraw);
+
                 self.ensure_fullscreen_size(&window);
                 self.sync_size_from_window(&window);
 

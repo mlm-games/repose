@@ -402,15 +402,6 @@ pub fn run_desktop_app(
             }
         }
 
-        fn tick_snackbar(&mut self) {
-            let now = Instant::now();
-            let elapsed = now.saturating_duration_since(self.last_redraw);
-            let ms = elapsed.as_millis().min(u32::MAX as u128) as u32;
-            if ms > 0 {
-                repose_ui::overlay::SnackbarController::tick_for_frame(ms);
-            }
-        }
-
         // Ensure caret is visible after edits/moves (all units in px)
         fn tf_ensure_caret_visible(st: &mut TextFieldState, is_multiline: bool) {
             rc::tf_ensure_caret_visible(st, is_multiline);
@@ -1787,7 +1778,7 @@ pub fn run_desktop_app(
 
                     self.dispatch_file_drop_now();
 
-                    self.tick_snackbar();
+                    rc::tick_snackbar(self.last_redraw);
                     self.last_redraw = Instant::now();
                 }
 

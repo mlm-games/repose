@@ -155,15 +155,6 @@ pub fn run_android_app_with_options(
             }
         }
 
-        fn tick_snackbar(&mut self) {
-            let now = web_time::Instant::now();
-            let elapsed = now.saturating_duration_since(self.last_redraw);
-            let ms = elapsed.as_millis().min(u32::MAX as u128) as u32;
-            if ms > 0 {
-                repose_ui::overlay::SnackbarController::tick_for_frame(ms);
-            }
-        }
-
         fn request_redraw(&self) {
             if let Some(w) = &self.window {
                 w.request_redraw();
@@ -707,7 +698,8 @@ pub fn run_android_app_with_options(
                                     self.scroll_capture_id = cap;
 
                                     if consumed
-                                        && (self.touch_scroll_accum_x_px.abs() > self.touch_slop_px()
+                                        && (self.touch_scroll_accum_x_px.abs()
+                                            > self.touch_slop_px()
                                             || self.touch_scroll_accum_y_px.abs()
                                                 > self.touch_slop_px())
                                     {
@@ -736,13 +728,13 @@ pub fn run_android_app_with_options(
                         winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
                             if self.drag.is_some() {
                                 self.dnd_finish(pos, true);
-                                        self.capture_id = None;
-                                        self.scroll_capture_id = None;
-                                        self.prev_touch_px = None;
-                                        self.pressed_ids.clear();
-                                        self.dirty = true;
-                                        self.request_redraw();
-                                        return;
+                                self.capture_id = None;
+                                self.scroll_capture_id = None;
+                                self.prev_touch_px = None;
+                                self.pressed_ids.clear();
+                                self.dirty = true;
+                                self.request_redraw();
+                                return;
                             }
 
                             self.active_touches.remove(&tid);
@@ -1177,7 +1169,7 @@ pub fn run_android_app_with_options(
                 }
 
                 WindowEvent::RedrawRequested => {
-                    self.tick_snackbar();
+                    rc::tick_snackbar(self.last_redraw);
                     self.process_render_commands();
 
                     let (Some(backend), Some(win)) = (self.backend.as_mut(), self.window.as_ref())
