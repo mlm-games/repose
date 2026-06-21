@@ -759,7 +759,7 @@ fn apply_z_offset(mut view: View, z: f32) -> View {
 }
 
 fn inject_focus_handlers(mut view: View, focus: Rc<dyn Fn()>) -> View {
-    let needs_focus = kind_handles_hit(&view.kind) || modifier_has_hit(&view.modifier);
+    let needs_focus = kind_handles_hit(&view.kind) || view.modifier.text_input.is_some() || modifier_has_hit(&view.modifier);
     if needs_focus {
         let existing = view.modifier.on_pointer_down.clone();
         let focus_cb = focus.clone();
@@ -784,8 +784,7 @@ fn inject_focus_handlers(mut view: View, focus: Rc<dyn Fn()>) -> View {
 fn kind_handles_hit(kind: &ViewKind) -> bool {
     matches!(
         kind,
-        ViewKind::TextField { .. }
-            | ViewKind::ScrollV { .. }
+        ViewKind::ScrollV { .. }
             | ViewKind::ScrollXY { .. }
     )
 }

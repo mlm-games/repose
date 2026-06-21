@@ -932,40 +932,37 @@ pub fn OutlinedTextField(
                 .align_items(AlignItems::Center))
             .child((
                 config.leading_icon.unwrap_or(Box(Modifier::new())),
-                View::new(
-                    0,
-                    ViewKind::TextField {
-                        state_key: 0,
-                        hint: tf_placeholder,
-                        multiline: false,
-                        on_change: Some(Rc::new(on_value_change) as _),
-                        on_submit: config.on_submit.clone().map(|f| {
-                            let f = f.clone();
-                            Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
-                        }),
-                        focus_tracker: Some(focus_tracker.clone()),
-                        value: value.clone(),
-                        visual_transformation: None,
-                        keyboard_type: None,
-                        ime_action: None,
-                    },
-                )
-                .modifier(
-                    Modifier::new()
-                        .flex_grow(1.0)
-                        .padding_values(PaddingValues {
-                            left: 8.0,
-                            right: 8.0,
-                            top: 0.0,
-                            bottom: 0.0,
-                        }),
-                )
-                .semantics(Semantics {
-                    role: Role::TextField,
-                    label: None,
-                    focused: false,
-                    enabled: true,
-                }),
+                View::new(0, ViewKind::Box)
+                    .modifier(
+                        Modifier::new()
+                            .flex_grow(1.0)
+                            .padding_values(PaddingValues {
+                                left: 8.0,
+                                right: 8.0,
+                                top: 0.0,
+                                bottom: 0.0,
+                            })
+                            .text_input(TextInputConfig {
+                                hint: tf_placeholder,
+                                multiline: false,
+                                on_change: Some(Rc::new(on_value_change) as _),
+                                on_submit: config.on_submit.clone().map(|f| {
+                                    let f = f.clone();
+                                    Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
+                                }),
+                                focus_tracker: Some(focus_tracker.clone()),
+                                value: value.clone(),
+                                visual_transformation: None,
+                                keyboard_type: None,
+                                ime_action: None,
+                            }),
+                    )
+                    .semantics(Semantics {
+                        role: Role::TextField,
+                        label: None,
+                        focused: false,
+                        enabled: true,
+                    }),
                 config.trailing_icon.unwrap_or(Box(Modifier::new())),
             )),
             // Floating label - absolutely positioned, animates between text-line

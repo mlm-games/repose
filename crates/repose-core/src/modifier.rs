@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::rc::Rc;
 
 use taffy::{AlignContent, AlignItems, AlignSelf, FlexDirection, FlexWrap, JustifyContent};
@@ -67,6 +68,7 @@ macro_rules! impl_option_fields {
                     aspect_ratio, painter,
                     on_drag_start, on_drag_end, on_drag_enter, on_drag_over, on_drag_leave, on_drop,
                     on_action, cursor, animate_content_size, focus_requester, on_focus_changed,
+                    text_input,
                 );
                 merge_flags!(self, other;
                     fill_max, fill_max_w, fill_max_h,
@@ -121,6 +123,36 @@ pub struct ShadowSpec {
 pub enum PositionType {
     Relative,
     Absolute,
+}
+
+/// Configuration for a text input field (replaces ViewKind::TextField).
+#[derive(Clone)]
+pub struct TextInputConfig {
+    pub hint: String,
+    pub multiline: bool,
+    pub on_change: Option<Rc<dyn Fn(String)>>,
+    pub on_submit: Option<Rc<dyn Fn(String)>>,
+    pub focus_tracker: Option<Rc<Cell<bool>>>,
+    pub value: String,
+    pub visual_transformation: Option<Rc<dyn crate::text::VisualTransformation>>,
+    pub keyboard_type: Option<crate::text::KeyboardType>,
+    pub ime_action: Option<crate::text::ImeAction>,
+}
+
+impl std::fmt::Debug for TextInputConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s = f.debug_struct("TextInputConfig");
+        s.field("hint", &self.hint);
+        s.field("multiline", &self.multiline);
+        if self.on_change.is_some() { s.field("on_change", &"…"); }
+        if self.on_submit.is_some() { s.field("on_submit", &"…"); }
+        if self.focus_tracker.is_some() { s.field("focus_tracker", &"…"); }
+        s.field("value", &self.value);
+        if self.visual_transformation.is_some() { s.field("visual_transformation", &"…"); }
+        s.field("keyboard_type", &self.keyboard_type);
+        s.field("ime_action", &self.ime_action);
+        s.finish()
+    }
 }
 
 #[derive(Clone, Default)]
@@ -225,6 +257,9 @@ pub struct Modifier {
     /// Called when this view gains or loses focus. The boolean parameter is
     /// `true` when focused, `false` when unfocused.
     pub on_focus_changed: Option<Rc<dyn Fn(bool)>>,
+
+    /// Text input configuration. When set, this box acts as a text input field.
+    pub text_input: Option<TextInputConfig>,
 }
 
 impl std::fmt::Debug for Modifier {
@@ -306,6 +341,7 @@ impl std::fmt::Debug for Modifier {
             on_drop,
             on_action,
             on_focus_changed,
+            text_input,
         );
 
         macro_rules! flag {
@@ -833,4 +869,11 @@ impl Modifier {
         self.on_focus_changed = Some(Rc::new(f));
         self
     }
+
+    /// Mark this Box as a text input field with the given configuration.
+    pub fn text_input(mut self, config: TextInputConfig) -> Self {
+        self.text_input = Some(config);
+        self
+    }
+
 }

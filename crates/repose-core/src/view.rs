@@ -1,5 +1,5 @@
 use crate::{Brush, Color, Modifier, Rect, TextSpan, Transform};
-use std::{cell::Cell, rc::Rc, sync::Arc};
+use std::{rc::Rc, sync::Arc};
 
 /// The constraints that will be passed to a subcomposed child. Values are in
 /// device-independent pixels (dp), matching the units used by `Modifier`.
@@ -115,24 +115,7 @@ pub enum ViewKind {
         font_family: Option<&'static str>,
         annotations: Option<Arc<[TextSpan]>>,
     },
-    TextField {
-        state_key: ViewId,
-        hint: String,
-        multiline: bool,
-        on_change: Option<Rc<dyn Fn(String)>>,
-        on_submit: Option<Rc<dyn Fn(String)>>,
-        /// Set by the component (e.g. OutlinedTextField) to receive focus-change
-        /// signals from the layout/paint phase.
-        focus_tracker: Option<Rc<Cell<bool>>>,
-        /// Current text content, supplied by the caller. The platform syncs
-        value: String,
-        /// Optional text display transformation (e.g., password masking).
-        visual_transformation: Option<Rc<dyn crate::text::VisualTransformation>>,
-        /// Keyboard type hint for the platform IME.
-        keyboard_type: Option<crate::text::KeyboardType>,
-        /// IME action button configuration.
-        ime_action: Option<crate::text::ImeAction>,
-    },
+
     Image {
         handle: ImageHandle,
         tint: Color, // multiplicative (WHITE = no tint)
@@ -194,26 +177,7 @@ impl std::fmt::Debug for ViewKind {
             Self::EllipseBorder { .. } => f.write_str("EllipseBorder"),
             Self::SubcomposeLayout { .. } => f.write_str("SubcomposeLayout"),
             Self::Text { text, .. } => write!(f, "Text({:?})", text),
-            Self::TextField {
-                hint,
-                visual_transformation,
-                keyboard_type,
-                ime_action,
-                ..
-            } => {
-                let mut s = f.debug_struct("TextField");
-                s.field("hint", hint);
-                if visual_transformation.is_some() {
-                    s.field("visual_transformation", &"…");
-                }
-                if let Some(kt) = keyboard_type {
-                    s.field("keyboard_type", kt);
-                }
-                if let Some(ia) = ime_action {
-                    s.field("ime_action", ia);
-                }
-                s.finish()
-            }
+
             Self::Expander { expanded, .. } => {
                 if *expanded { write!(f, "Expander(expanded)") } else { write!(f, "Expander(collapsed)") }
             }

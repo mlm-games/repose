@@ -74,16 +74,6 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
                 }
             }
         }
-        ViewKind::TextField {
-            state_key,
-            hint,
-            value,
-            ..
-        } => {
-            state_key.hash(hasher);
-            hint.hash(hasher);
-            value.hash(hasher);
-        }
         ViewKind::Image { handle, tint, fit } => {
             handle.hash(hasher);
             hash_color(tint, hasher);

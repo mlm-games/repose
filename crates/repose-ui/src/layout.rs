@@ -18,9 +18,8 @@ use taffy::style::Overflow;
 use crate::Interactions;
 use crate::anim::{animate_color, animate_f32};
 use crate::textfield::{
-    TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, byte_to_char_index, measure_text,
+    TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, measure_text,
 };
-use repose_core::VisualTransformation;
 
 fn push_focus_ring(scene: &mut Scene, rect: repose_core::Rect, radius_dp: f32) {
     scene.nodes.push(SceneNode::Border {
@@ -155,11 +154,11 @@ enum NodeContext {
         font_family: Option<&'static str>,
         annotations: Option<Arc<[TextSpan]>>,
     },
-    TextField {
-        multiline: bool,
-    },
     Container,
     ScrollContainer,
+    TextInput {
+        multiline: bool,
+    },
 }
 
 #[derive(Clone)]
@@ -862,6 +861,11 @@ impl LayoutEngine {
     }
 
     fn context_from_node(&self, node: &TreeNode) -> NodeContext {
+        if let Some(ref ti) = node.modifier.text_input {
+            return NodeContext::TextInput {
+                multiline: ti.multiline,
+            };
+        }
         self.context_from_kind(&node.kind)
     }
 
@@ -886,9 +890,6 @@ impl LayoutEngine {
                 overflow: *overflow,
                 font_family: *font_family,
                 annotations: annotations.clone(),
-            },
-            ViewKind::TextField { multiline, .. } => NodeContext::TextField {
-                multiline: *multiline,
             },
             ViewKind::Expander { .. } => NodeContext::Container,
             ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. } => NodeContext::ScrollContainer,
@@ -1006,7 +1007,7 @@ impl LayoutEngine {
                     height: line_h_px_val * lines.len().max(1) as f32,
                 }
             }
-            Some(NodeContext::TextField { multiline }) => {
+            Some(NodeContext::TextInput { multiline }) => {
                 let natural_w = px(160.0);
                 let width = match avail.width {
                     AvailableSpace::Definite(w) if w > 0.5 => w,
@@ -1183,9 +1184,9 @@ impl LayoutEngine {
                         ((y * 8.0) as i32).hash(&mut h);
                     }
                 }
-                ViewKind::TextField { state_key, .. } => {
+                _ if n.modifier.text_input.is_some() => {
                     let vid = *self.view_ids.get(&id).unwrap_or(&0);
-                    let tf_key = if *state_key != 0 { *state_key } else { vid };
+                    let tf_key = vid;
                     if let Some(st_rc) = textfield_states.get(&tf_key) {
                         let st = st_rc.borrow();
                         let mut th = FxHasher::default();
@@ -1539,6 +1540,39 @@ impl LayoutEngine {
                 ),
             });
         }
+        // Native text field painting (Compose-aligned: text_input modifier triggers built-in paint)
+        if let Some(ref ti) = modifier.text_input {
+            let tf_key = view_id;
+            let state = textfield_states.get(&tf_key).cloned();
+            let is_focused = focused == Some(view_id);
+
+            if let Some(ref state_rc) = state {
+                let pad_x = dp_to_px(TF_PADDING_X_DP);
+                let inner_rect = repose_core::Rect {
+                    x: rect.x + pad_x,
+                    y: rect.y + dp_to_px(8.0),
+                    w: (rect.w - 2.0 * pad_x).max(0.0),
+                    h: (rect.h - dp_to_px(16.0)).max(0.0),
+                };
+                let mut st = state_rc.borrow_mut();
+                st.set_inner_width(inner_rect.w);
+                st.set_inner_height(inner_rect.h);
+                st.tick_scroll_animation();
+                if let Some(ref vt) = ti.visual_transformation.as_ref() {
+                    let tfmd = vt.filter("");
+                    st.offset_map = Some(tfmd.offset_map.clone());
+                    st.visual_transformation = Some((*vt).clone());
+                } else {
+                    st.offset_map = None;
+                    st.visual_transformation = None;
+                }
+                drop(st);
+            }
+
+            crate::textfield::paint_text_field(
+                scene, rect, ti, state.as_ref(), is_focused, modifier.clip_rounded,
+            );
+        }
         if let Some(p) = &modifier.painter {
             (p)(scene, rect, alpha_accum);
         }
@@ -1556,14 +1590,13 @@ impl LayoutEngine {
             || modifier.on_drag_leave.is_some()
             || modifier.on_drop.is_some();
 
-        let kind_handles_hit = matches!(
-            kind,
-            ViewKind::TextField { .. }
-                | ViewKind::ScrollV { .. }
+        let kind_handles_hit = modifier.text_input.is_some()
+            || matches!(kind,
+                ViewKind::ScrollV { .. }
                 | ViewKind::ScrollXY { .. }
                 | ViewKind::Expander { .. }
                 | ViewKind::TreeRow { .. }
-        );
+            );
 
         let needs_hit = !modifier.disabled
             && (has_pointer || modifier.click || has_dnd || modifier.on_action.is_some());
@@ -1734,24 +1767,21 @@ impl LayoutEngine {
                     fit: *fit,
                 });
             }
-            ViewKind::TextField {
-                state_key,
-                hint,
-                multiline,
-                on_change,
-                on_submit,
-                focus_tracker,
-                value,
-                visual_transformation,
-                keyboard_type: _,
-                ime_action: _,
-            } => {
-                let tf_key = if *state_key != 0 { *state_key } else { view_id };
+            ViewKind::Box if modifier.text_input.is_some() => {
+                let ti = modifier.text_input.as_ref().unwrap();
+                let multiline = ti.multiline;
+                let hint = &ti.hint;
+                let on_change = &ti.on_change;
+                let on_submit = &ti.on_submit;
+                let focus_tracker = &ti.focus_tracker;
+                let value = &ti.value;
+                let tf_key = view_id;
 
                 if let Some(cell) = focus_tracker.as_ref() {
                     cell.set(is_focused);
                 }
 
+                // Sync the controlled value into the TextFieldState
                 if let Some(state_rc) = textfield_states.get(&tf_key) {
                     let mut st = state_rc.borrow_mut();
                     if st.text != *value {
@@ -1771,12 +1801,12 @@ impl LayoutEngine {
                 let inner = repose_core::Rect {
                     x: rect.x + pad_x,
                     y: rect.y + dp_to_px(8.0),
-                    w: rect.w - 2.0 * pad_x,
-                    h: rect.h - dp_to_px(16.0),
+                    w: (rect.w - 2.0 * pad_x).max(0.0),
+                    h: (rect.h - dp_to_px(16.0)).max(0.0),
                 };
 
                 // Scroll wheel support for multiline text areas
-                let on_scroll = if *multiline {
+                let on_scroll = if multiline {
                     let key = tf_key;
                     let h = inner.h;
                     let font_val = font_px(TF_FONT_DP);
@@ -1793,10 +1823,10 @@ impl LayoutEngine {
                         let max_y = (content_h - st.inner_height).max(0.0);
 
                         let before = st.scroll_target_y;
-                        let target = (st.scroll_target_y - d.y).clamp(0.0, max_y);
+                        let target = (st.scroll_target_y + d.y).clamp(0.0, max_y);
                         st.scroll_target_y = target;
 
-                        let consumed = before - target;
+                        let consumed = target - before;
                         Vec2 {
                             x: d.x,
                             y: d.y - consumed,
@@ -1840,355 +1870,11 @@ impl LayoutEngine {
                         on_text_change: on_change.clone(),
                         on_text_submit: on_submit.clone(),
                         tf_state_key: Some(tf_key),
-                        tf_multiline: *multiline,
+                        tf_multiline: multiline,
                         cursor: Some(crate::CursorIcon::Text),
                         ..HitRegion::from_modifier(view_id, rect, &modifier)
                     });
                 }
-
-                scene.nodes.push(SceneNode::PushClip {
-                    rect: inner,
-                    radius: 0.0,
-                });
-
-                if is_focused {
-                    push_focus_ring(scene, rect, focus_radius(&modifier));
-                }
-
-                // Apply visual transformation to text for display.
-                let (display_text, offset_map): (Box<dyn Fn(&str) -> String>, _) =
-                    if let Some(vt) = visual_transformation.as_ref() {
-                        let tfmd = vt.filter("");
-                        let om = tfmd.offset_map.clone();
-                        let vt2 = vt.clone();
-                        (
-                            Box::new(move |original: &str| vt2.filter(original).text),
-                            Some(om),
-                        )
-                    } else {
-                        (Box::new(|original: &str| original.to_string()), None)
-                    };
-
-                let font_val = font_px(TF_FONT_DP);
-                let line_h = font_val * 1.3;
-                let text_off_y = (inner.h - line_h) / 2.0;
-
-                if let Some(state_rc) = textfield_states.get(&tf_key) {
-                    // Store VT and offset_map on the state for platform to use, and tick scroll animation
-                    {
-                        let mut st = state_rc.borrow_mut();
-                        st.set_inner_width(inner.w);
-                        st.set_inner_height(inner.h);
-                        st.tick_scroll_animation();
-                        if let Some(vt) = visual_transformation.as_ref() {
-                            st.offset_map = offset_map.clone();
-                            st.visual_transformation = Some(vt.clone());
-                        } else {
-                            st.offset_map = None;
-                            st.visual_transformation = None;
-                        }
-                    }
-
-                    let st = state_rc.borrow();
-
-                    if !*multiline {
-                        // When VT is active, measure display text for caret/selection
-                        let measure_for = if visual_transformation.is_some() && !st.text.is_empty()
-                        {
-                            display_text(&st.text)
-                        } else {
-                            st.text.clone()
-                        };
-                        let has_vt = visual_transformation.is_some();
-                        let m = measure_text(&measure_for, font_val, None);
-
-                        if st.selection.start != st.selection.end {
-                            let start_off = if has_vt {
-                                repose_core::original_offset_to_display(
-                                    &st.text,
-                                    &measure_for,
-                                    st.selection.start,
-                                )
-                            } else {
-                                st.selection.start
-                            };
-                            let end_off = if has_vt {
-                                repose_core::original_offset_to_display(
-                                    &st.text,
-                                    &measure_for,
-                                    st.selection.end,
-                                )
-                            } else {
-                                st.selection.end
-                            };
-                            let sx = m
-                                .positions
-                                .get(byte_to_char_index(&m, start_off))
-                                .copied()
-                                .unwrap_or(0.0)
-                                - st.scroll_offset;
-                            let ex = m
-                                .positions
-                                .get(byte_to_char_index(&m, end_off))
-                                .copied()
-                                .unwrap_or(sx)
-                                - st.scroll_offset;
-
-                            let th = locals::theme();
-                            let selection = mul_alpha_color(th.focus, 85.0 / 255.0);
-                            let vis_x = sx.max(0.0);
-                            let vis_ex = ex.max(0.0);
-                            scene.nodes.push(SceneNode::Rect {
-                                rect: repose_core::Rect {
-                                    x: inner.x + vis_x,
-                                    y: inner.y + text_off_y,
-                                    w: (vis_ex - vis_x).max(0.0),
-                                    h: line_h,
-                                },
-                                brush: Brush::Solid(selection),
-                                radius: 0.0,
-                            });
-                        }
-
-                        let th = locals::theme();
-                        let txt_col = if st.text.is_empty() {
-                            th.on_surface_variant
-                        } else {
-                            th.on_surface
-                        };
-
-                        let render_txt = if st.text.is_empty() {
-                            hint.clone()
-                        } else {
-                            display_text(&st.text)
-                        };
-                        scene.nodes.push(SceneNode::Text {
-                            rect: repose_core::Rect {
-                                x: inner.x - st.scroll_offset,
-                                y: inner.y + text_off_y,
-                                w: inner.w,
-                                h: line_h,
-                            },
-                            text: Arc::from(render_txt),
-                            color: txt_col,
-                            size: font_val,
-                            font_family: None,
-                        });
-
-                        if is_focused
-                            && st.selection.start == st.selection.end
-                            && st.caret_visible()
-                        {
-                            let caret_off = if has_vt {
-                                repose_core::original_offset_to_display(
-                                    &st.text,
-                                    &measure_for,
-                                    st.selection.end,
-                                )
-                            } else {
-                                st.selection.end
-                            };
-                            let cx = m
-                                .positions
-                                .get(byte_to_char_index(&m, caret_off))
-                                .copied()
-                                .unwrap_or(0.0)
-                                - st.scroll_offset;
-                            scene.nodes.push(SceneNode::Rect {
-                                rect: repose_core::Rect {
-                                    x: inner.x + cx.max(0.0),
-                                    y: inner.y + text_off_y,
-                                    w: dp_to_px(1.0),
-                                    h: line_h,
-                                },
-                                brush: Brush::Solid(th.on_surface),
-                                radius: 0.0,
-                            });
-                        }
-                    } else {
-                        let layout = crate::textfield::layout_text_area(
-                            &st.text,
-                            font_val,
-                            inner.w.max(1.0),
-                        );
-                        let line_h = layout.line_h_px;
-                        let content_h = layout.ranges.len().max(1) as f32 * line_h;
-                        drop(st);
-
-                        // Reborrow mutably to clamp scroll after we know content height
-                        {
-                            let mut st = state_rc.borrow_mut();
-                            st.clamp_scroll(content_h);
-                        }
-
-                        // Render
-                        let st = state_rc.borrow();
-                        let th = locals::theme();
-                        let selection = mul_alpha_color(th.focus, 85.0 / 255.0);
-                        if st.text.is_empty() {
-                            scene.nodes.push(SceneNode::Text {
-                                rect: repose_core::Rect {
-                                    x: inner.x,
-                                    y: inner.y,
-                                    w: inner.w,
-                                    h: inner.h,
-                                },
-                                text: Arc::from(hint.clone()),
-                                color: th.on_surface_variant,
-                                size: font_val,
-                                font_family: None,
-                            });
-                        } else {
-                            let display_full = display_text(&st.text);
-                            for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
-                                let ln = display_full[s..e].to_string();
-                                let draw_y = inner.y + (i as f32) * line_h - st.scroll_offset_y;
-                                if draw_y + line_h < inner.y - 1.0
-                                    || draw_y > inner.y + inner.h + 1.0
-                                {
-                                    continue;
-                                }
-                                scene.nodes.push(SceneNode::Text {
-                                    rect: repose_core::Rect {
-                                        x: inner.x,
-                                        y: draw_y,
-                                        w: inner.w,
-                                        h: line_h,
-                                    },
-                                    text: Arc::<str>::from(ln),
-                                    color: locals::theme().on_surface,
-                                    size: font_val,
-                                    font_family: None,
-                                });
-                            }
-                        }
-
-                        // Selection (multi-line)
-                        if st.selection.start != st.selection.end {
-                            let (sel_a, sel_b) = if st.selection.start < st.selection.end {
-                                (st.selection.start, st.selection.end)
-                            } else {
-                                (st.selection.end, st.selection.start)
-                            };
-                            for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
-                                let os = sel_a.max(s);
-                                let oe = sel_b.min(e);
-                                if os >= oe {
-                                    continue;
-                                }
-                                let ln = &st.text[s..e];
-                                let m = measure_text(ln, font_val, None);
-
-                                let ls = os - s;
-                                let le = oe - s;
-
-                                let sx = m
-                                    .positions
-                                    .get(byte_to_char_index(&m, ls))
-                                    .copied()
-                                    .unwrap_or(0.0);
-                                let ex = m
-                                    .positions
-                                    .get(byte_to_char_index(&m, le))
-                                    .copied()
-                                    .unwrap_or(sx);
-
-                                let draw_y = inner.y + (i as f32) * line_h - st.scroll_offset_y;
-                                scene.nodes.push(SceneNode::Rect {
-                                    rect: repose_core::Rect {
-                                        x: inner.x + sx,
-                                        y: draw_y,
-                                        w: (ex - sx).max(0.0),
-                                        h: line_h,
-                                    },
-                                    brush: Brush::Solid(selection),
-                                    radius: 0.0,
-                                });
-                            }
-                        }
-
-                        // Caret (multi-line)
-                        if is_focused
-                            && st.selection.start == st.selection.end
-                            && st.caret_visible()
-                        {
-                            let caret = st.selection.end.min(st.text.len());
-                            let (cx, cy, _li) = crate::textfield::caret_xy_for_byte(
-                                &st.text,
-                                font_val,
-                                inner.w.max(1.0),
-                                caret,
-                            );
-                            let draw_x = inner.x + cx;
-                            let draw_y = inner.y + cy - st.scroll_offset_y;
-                            scene.nodes.push(SceneNode::Rect {
-                                rect: repose_core::Rect {
-                                    x: draw_x,
-                                    y: draw_y,
-                                    w: dp_to_px(1.0),
-                                    h: line_h,
-                                },
-                                brush: Brush::Solid(th.on_surface),
-                                radius: 0.0,
-                            });
-                        }
-                    }
-                } else {
-                    let th = locals::theme();
-                    if value.is_empty() {
-                        scene.nodes.push(SceneNode::Text {
-                            rect: repose_core::Rect {
-                                x: inner.x,
-                                y: inner.y + text_off_y,
-                                w: inner.w,
-                                h: line_h,
-                            },
-                            text: Arc::from(hint.clone()),
-                            color: th.on_surface_variant,
-                            size: font_val,
-                            font_family: None,
-                        });
-                    } else if *multiline {
-                        let layout =
-                            crate::textfield::layout_text_area(value, font_val, inner.w.max(1.0));
-                        let line_h = layout.line_h_px;
-                        let display_full = display_text(value);
-                        for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
-                            let ln = display_full[s..e].to_string();
-                            let draw_y = inner.y + (i as f32) * line_h;
-                            if draw_y + line_h < inner.y - 1.0 || draw_y > inner.y + inner.h + 1.0 {
-                                continue;
-                            }
-                            scene.nodes.push(SceneNode::Text {
-                                rect: repose_core::Rect {
-                                    x: inner.x,
-                                    y: draw_y,
-                                    w: inner.w,
-                                    h: line_h,
-                                },
-                                text: Arc::<str>::from(ln),
-                                color: th.on_surface,
-                                size: font_val,
-                                font_family: None,
-                            });
-                        }
-                    } else {
-                        scene.nodes.push(SceneNode::Text {
-                            rect: repose_core::Rect {
-                                x: inner.x,
-                                y: inner.y + text_off_y,
-                                w: inner.w,
-                                h: line_h,
-                            },
-                            text: Arc::from(display_text(value)),
-                            color: th.on_surface,
-                            size: font_val,
-                            font_family: None,
-                        });
-                    }
-                }
-
-                scene.nodes.push(SceneNode::PopClip);
 
                 sems.push(SemNode {
                     id: view_id,
