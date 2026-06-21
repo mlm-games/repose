@@ -1909,13 +1909,8 @@ pub fn DatePicker(
     let now = ReposeDate::now();
     let today = (now.year, now.month, now.day);
 
-    Box(Modifier::new()
-        .width(328.0)
-        .padding(16.0)
-        .background(th.surface_container_high)
-        .clip_rounded(th.shapes.extra_large))
-    .child(
-        Column(Modifier::new()).child((
+    Column(Modifier::new()
+        .padding(16.0)).child((
             // Month header
             Row(Modifier::new()
                 .fill_max_width()
@@ -2064,8 +2059,7 @@ pub fn DatePicker(
                     || Text("OK").size(14.0),
                 ),
             )),
-        )),
-    )
+        ))
 }
 
 /// State for `TimePicker` - manages selected hour and minute.
@@ -2111,13 +2105,10 @@ pub fn TimePicker(
     let hour_str = format!("{:02}", hour);
     let min_str = format!("{:02}", minute);
 
-    Box(Modifier::new()
+    Column(Modifier::new()
         .width(256.0)
         .padding(24.0)
-        .background(th.surface_container_high)
-        .clip_rounded(th.shapes.extra_large))
-    .child(
-        Column(Modifier::new().align_items(AlignItems::Center)).child((
+        .align_items(AlignItems::Center)).child((
             // Time display
             Row(Modifier::new().align_items(AlignItems::Center)).child((
                 Box(Modifier::new()
@@ -2243,8 +2234,7 @@ pub fn TimePicker(
                         .single_line(),
                 ),
             )),
-        )),
-    )
+        ))
 }
 
 /// A destination entry inside a NavigationRail.
