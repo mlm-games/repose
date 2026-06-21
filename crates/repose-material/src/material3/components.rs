@@ -2303,3 +2303,158 @@ pub fn M3RangeSlider(
     })
 }
 
+/// Configuration for [`Card`].
+#[derive(Clone, Debug)]
+pub struct CardConfig {
+    pub modifier: Modifier,
+    pub container_color: Color,
+    pub shape_radius: f32,
+    pub tonal_elevation: f32,
+}
+
+impl Default for CardConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            container_color: CardDefaults::filled_container_color(),
+            shape_radius: CardDefaults::SHAPE_RADIUS,
+            tonal_elevation: CardDefaults::ELEVATION,
+        }
+    }
+}
+
+/// M3 Card - a configurable container surface.
+pub fn Card(config: CardConfig, content: impl FnOnce() -> View) -> View {
+    let mut m = Modifier::new()
+        .background(config.container_color)
+        .clip_rounded(config.shape_radius)
+        .then(config.modifier);
+    if config.tonal_elevation > 0.0 {
+        m = m.state_elevation(StateElevation {
+            default: config.tonal_elevation,
+            hovered: config.tonal_elevation,
+            pressed: config.tonal_elevation,
+            disabled: 0.0,
+        });
+    }
+    Box(m).child(content())
+}
+
+/// Configuration for [`Snackbar`].
+#[derive(Clone, Debug)]
+pub struct SnackbarConfig {
+    pub modifier: Modifier,
+    pub container_color: Color,
+    pub content_color: Color,
+    pub action_color: Color,
+    pub min_height: f32,
+    pub min_width: f32,
+    pub max_width: f32,
+}
+
+impl Default for SnackbarConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            container_color: SnackbarDefaults::container_color(),
+            content_color: SnackbarDefaults::content_color(),
+            action_color: SnackbarDefaults::action_color(),
+            min_height: SnackbarDefaults::MIN_HEIGHT,
+            min_width: SnackbarDefaults::MIN_WIDTH,
+            max_width: SnackbarDefaults::MAX_WIDTH,
+        }
+    }
+}
+
+/// Configuration for chips.
+#[derive(Clone, Debug)]
+pub struct ChipConfig {
+    pub modifier: Modifier,
+    pub enabled: bool,
+    pub selected: bool,
+    pub container_color: Color,
+    pub selected_container_color: Color,
+    pub content_color: Color,
+    pub selected_content_color: Color,
+    pub border_color: Color,
+    pub shape_radius: f32,
+    pub horizontal_padding: f32,
+}
+
+impl Default for ChipConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            enabled: true,
+            selected: false,
+            container_color: ChipDefaults::surface_color(),
+            selected_container_color: ChipDefaults::selected_container_color(),
+            content_color: ChipDefaults::unselected_content_color(),
+            selected_content_color: ChipDefaults::selected_content_color(),
+            border_color: ChipDefaults::unselected_border_color(),
+            shape_radius: ChipDefaults::SHAPE_RADIUS,
+            horizontal_padding: ChipDefaults::HORIZONTAL_PADDING,
+        }
+    }
+}
+
+/// M3 Assist Chip - a chip for triggering actions.
+pub fn AssistChip(
+    on_click: impl Fn() + 'static,
+    label: View,
+    leading_icon: Option<View>,
+    trailing_icon: Option<View>,
+    config: ChipConfig,
+) -> View {
+    let th = theme();
+    let shape = config.shape_radius;
+    Box(Modifier::new()
+        .state_colors(StateColors {
+            default: Color::TRANSPARENT,
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
+            disabled: Color::TRANSPARENT,
+        })
+        .padding_values(PaddingValues {
+            left: config.horizontal_padding,
+            right: config.horizontal_padding,
+            top: 8.0,
+            bottom: 8.0,
+        })
+        .clickable()
+        .on_pointer_down(move |_| on_click())
+        .background(Color::TRANSPARENT)
+        .clip_rounded(shape)
+        .border(1.0, config.border_color, shape)
+        .then(config.modifier))
+    .child(
+        Row(Modifier::new().align_items(AlignItems::Center)).child((
+            leading_icon
+                .map(|v| {
+                    Box(Modifier::new().padding_values(PaddingValues {
+                        left: 0.0,
+                        right: 8.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    }))
+                    .child(with_content_color(config.content_color, move || v))
+                })
+                .unwrap_or(Box(Modifier::new())),
+            with_content_color(config.content_color, move || label),
+            trailing_icon
+                .map(|v| {
+                    Box(Modifier::new().padding_values(PaddingValues {
+                        left: 8.0,
+                        right: 0.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    }))
+                    .child(with_content_color(config.content_color, move || v))
+                })
+                .unwrap_or(Box(Modifier::new())),
+        )),
+    )
+}
+
+
+

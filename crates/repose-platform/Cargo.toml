@@ -35,6 +35,8 @@ web-sys = { workspace = true, features = [
     "DataTransfer",
     "FileList",
     "File",
+    "Location",
+    "Window",
 ] }
 winit = { workspace = true, features = ["rwh_05"] }
 console_error_panic_hook = { workspace = true }
