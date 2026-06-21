@@ -1,4 +1,6 @@
 #![allow(non_snake_case)]
+pub mod deeplink;
+
 use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc};
 
 use repose_core::*;

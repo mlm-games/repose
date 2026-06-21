@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
+use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use web_sys::DragEvent;
 
@@ -102,8 +103,33 @@ pub fn run_web_app(
 
     repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
 
+    // Deeplink from page URL on startup.
+    if let Some(w) = web_sys::window() {
+        if let Ok(Some(hash)) = w.location().hash() {
+            let hash = hash.trim_start_matches('#');
+            if !hash.is_empty() {
+                crate::push_deeplink(hash.as_bytes().to_vec());
+            }
+        }
+    }
+
     let event_loop = EventLoop::new().map_err(|e| JsValue::from_str(&format!("{e:?}")))?;
-    let app = App::new(Box::new(root), options);
+    let mut app = App::new(Box::new(root), options);
+
+    // Listen for hash changes
+    if let Some(w) = web_sys::window() {
+        let location = w.location();
+        let cb = Closure::wrap(Box::new(move || {
+            if let Ok(Some(hash)) = location.hash() {
+                let hash = hash.trim_start_matches('#');
+                if !hash.is_empty() {
+                    crate::push_deeplink(hash.as_bytes().to_vec());
+                }
+            }
+        }) as Box<dyn FnMut()>);
+        w.set_onhashchange(Some(cb.as_ref().unchecked_ref()));
+        app.deeplink_listener = Some(WebDeeplinkListener { _hash_change: cb });
+    }
 
     event_loop.spawn_app(app);
     Ok(())
@@ -112,6 +138,10 @@ pub fn run_web_app(
 struct WebDropListeners {
     _drag_over: Closure<dyn FnMut(DragEvent)>,
     _drop: Closure<dyn FnMut(DragEvent)>,
+}
+
+struct WebDeeplinkListener {
+    _hash_change: Closure<dyn FnMut()>,
 }
 
 struct App {
@@ -153,6 +183,7 @@ struct App {
 
     // keep DOM listener closures alive
     drop_listeners: Option<WebDropListeners>,
+    deeplink_listener: Option<WebDeeplinkListener>,
 
     // multi-touch for pinch
     active_touches: HashMap<u64, (f32, f32)>,
@@ -204,6 +235,7 @@ impl App {
 
             external_drop_actions: Rc::new(RefCell::new(Vec::new())),
             drop_listeners: None,
+            deeplink_listener: None,
 
             active_touches: HashMap::new(),
             primary_touch_id: None,
