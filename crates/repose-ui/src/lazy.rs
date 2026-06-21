@@ -163,7 +163,7 @@ where
         let top_spacer_px = cumulative_px[first_with_buffer];
         if top_spacer_px > 0.0 {
             combined_children.push(crate::Box(
-                Modifier::new().size(1.0, px_to_dp(top_spacer_px).max(0.0)),
+                Modifier::new().fill_max_width().height(px_to_dp(top_spacer_px).max(0.0)),
             ));
         }
     }
@@ -312,7 +312,7 @@ where
         let remaining_px = (content_height_px - end_px).max(0.0);
         if remaining_px > 0.0 {
             combined_children.push(crate::Box(
-                Modifier::new().size(1.0, px_to_dp(remaining_px).max(0.0)),
+                Modifier::new().fill_max_width().height(px_to_dp(remaining_px).max(0.0)),
             ));
         }
     }
@@ -516,7 +516,7 @@ where
     // Top spacer
     if first_row > 0 {
         children.push(crate::Box(
-            Modifier::new().size(1.0, first_row as f32 * item_height_dp),
+            Modifier::new().fill_max_width().height(first_row as f32 * item_height_dp),
         ));
     }
 
@@ -536,7 +536,7 @@ where
     // Bottom spacer
     if last_row < total_rows {
         children.push(crate::Box(
-            Modifier::new().size(1.0, (total_rows - last_row) as f32 * item_height_dp),
+            Modifier::new().fill_max_width().height((total_rows - last_row) as f32 * item_height_dp),
         ));
     }
 
@@ -708,7 +708,7 @@ where
 
     if first_with_buffer > 0 {
         children.push(crate::Box(
-            Modifier::new().size(first_with_buffer as f32 * item_width_dp, 1.0),
+            Modifier::new().fill_max_height().width(first_with_buffer as f32 * item_width_dp),
         ));
     }
 
@@ -721,7 +721,7 @@ where
     if last_visible < items.len() {
         let remaining = items.len() - last_visible;
         children.push(crate::Box(
-            Modifier::new().size(remaining as f32 * item_width_dp, 1.0),
+            Modifier::new().fill_max_height().width(remaining as f32 * item_width_dp),
         ));
     }
 
@@ -979,7 +979,7 @@ where
             let spacer_y = p.y_px - prev_y;
             if spacer_y > 0.0 {
                 col_children[col].push(crate::Box(
-                    Modifier::new().size(1.0, px_to_dp(spacer_y).max(0.0)),
+                    Modifier::new().fill_max_width().height(px_to_dp(spacer_y).max(0.0)),
                 ));
             }
             if let Some(item) = items.get(i) {
@@ -995,7 +995,7 @@ where
                     );
                 } else {
                     // Placeholder to maintain column height
-                    col_children[col].push(crate::Box(Modifier::new().size(1.0, h_dp)));
+                    col_children[col].push(crate::Box(Modifier::new().fill_max_width().height(h_dp)));
                 }
             }
             prev_y = p.y_px + p.h_px;
@@ -1003,7 +1003,7 @@ where
         let remaining = total_content_height_px - prev_y;
         if remaining > 0.0 {
             col_children[col].push(crate::Box(
-                Modifier::new().size(1.0, px_to_dp(remaining).max(0.0)),
+                Modifier::new().fill_max_width().height(px_to_dp(remaining).max(0.0)),
             ));
         }
     }

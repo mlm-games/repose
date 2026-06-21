@@ -28,7 +28,7 @@ pub(crate) fn alert_dialog_body(
 ) -> View {
     Column(Modifier::new()).child((
         title,
-        Box(Modifier::new().size(1.0, 16.0)),
+        Box(Modifier::new().fill_max_width().height(16.0)),
         text,
         Spacer(),
         Row(Modifier::new()).child((
@@ -1114,7 +1114,7 @@ fn render_dropdown_menu_content(
                     item.leading_icon
                         .clone()
                         .unwrap_or(Box(Modifier::new().width(24.0).height(24.0))),
-                    Box(Modifier::new().size(12.0, 1.0)),
+                    Box(Modifier::new().width(12.0).fill_max_height()),
                     Box(Modifier::new().flex_grow(1.0)).child(
                         Text(item.text.clone())
                             .color(text_color)
@@ -1296,7 +1296,7 @@ pub fn SearchBar(
             .align_items(AlignItems::Center))
         .child((
             leading_icon.unwrap_or(Box(Modifier::new().size(24.0, 24.0))),
-            Box(Modifier::new().size(8.0, 1.0)),
+            Box(Modifier::new().width(8.0).fill_max_height()),
             input_field,
             trailing_icon.unwrap_or(Box(Modifier::new())),
         )),
@@ -1411,7 +1411,7 @@ pub fn DockedSearchBar(
             .align_items(AlignItems::Center))
         .child((
             leading_icon.unwrap_or(Box(Modifier::new().size(24.0, 24.0))),
-            Box(Modifier::new().size(12.0, 1.0)),
+            Box(Modifier::new().width(12.0).fill_max_height()),
             input_field,
             if active {
                 Box(Modifier::new()
@@ -1952,7 +1952,7 @@ pub fn DatePicker(
                     next_month,
                 ),
             )),
-            Box(Modifier::new().size(1.0, 12.0)),
+            Box(Modifier::new().fill_max_width().height(12.0)),
             // Day grid
             Column(Modifier::new()).child({
                 let mut rows: Vec<View> = Vec::new();
@@ -2036,7 +2036,7 @@ pub fn DatePicker(
                 }
                 rows
             }),
-            Box(Modifier::new().size(1.0, 12.0)),
+            Box(Modifier::new().fill_max_width().height(12.0)),
             // Cancel / Confirm
             Row(Modifier::new()
                 .fill_max_width()
@@ -2141,7 +2141,7 @@ pub fn TimePicker(
                     .padding(8.0))
                 .child(Text(min_str).size(48.0).color(th.on_surface).single_line()),
             )),
-            Box(Modifier::new().size(1.0, 16.0)),
+            Box(Modifier::new().fill_max_width().height(16.0)),
             // AM/PM toggle
             Row(Modifier::new().align_items(AlignItems::Center)).child((
                 Box(Modifier::new()
@@ -2214,7 +2214,7 @@ pub fn TimePicker(
                     }),
                 ),
             )),
-            Box(Modifier::new().size(1.0, 16.0)),
+            Box(Modifier::new().fill_max_width().height(16.0)),
             Row(Modifier::new().fill_max_width()).child((
                 Spacer(),
                 Box(Modifier::new().padding(8.0).clickable().on_pointer_down({
@@ -2308,8 +2308,8 @@ pub fn NavigationRail(
 
     if has_header || has_fab {
         top_children.push(Box(Modifier::new()
-            .size(80.0, 1.0)
             .fill_max_width()
+            .height(1.0)
             .background(th.outline_variant)));
     }
 
@@ -2373,7 +2373,7 @@ pub fn NavigationRail(
                         })
                         .unwrap_or(Box(Modifier::new())),
                 )),
-                Box(Modifier::new().size(1.0, 4.0)),
+                Box(Modifier::new().fill_max_width().height(4.0)),
                 Text(item.label)
                     .color(fg)
                     .size(th.typography.label_medium)

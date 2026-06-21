@@ -30,7 +30,7 @@ pub fn TopAppBar(
         })
         .align_items(AlignItems::Center))
     .child((
-        navigation_icon.unwrap_or(Box(Modifier::new().size(16.0, 1.0))),
+        navigation_icon.unwrap_or(Box(Modifier::new().width(16.0).fill_max_height())),
         Box(Modifier::new()
             .padding_values(PaddingValues {
                 left: 16.0,
@@ -355,7 +355,7 @@ pub fn ExtendedFAB(
         .on_pointer_down(move |_| on_click()))
     .child((
         icon.unwrap_or(Box(Modifier::new())),
-        Box(Modifier::new().size(if has_icon { 12.0 } else { 0.0 }, 1.0)),
+        Box(Modifier::new().width(if has_icon { 12.0 } else { 0.0 }).fill_max_height()),
         Text(label)
             .color(th.on_primary_container)
             .size(th.typography.label_large)
