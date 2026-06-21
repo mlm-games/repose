@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use repose_core::*;
-use repose_tree::{NodeId, TreeNode, TreeStats, ViewTree};
+use repose_tree::{LayoutConstraints, NodeId, TreeNode, TreeStats, ViewTree};
 use rustc_hash::{FxHashMap, FxHasher};
 use taffy::TaffyTree;
 use taffy::prelude::*;
@@ -17,9 +17,7 @@ use taffy::style::Overflow;
 
 use crate::Interactions;
 use crate::anim::{animate_color, animate_f32};
-use crate::textfield::{
-    TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, measure_text,
-};
+use crate::textfield::{TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, measure_text};
 
 fn push_focus_ring(scene: &mut Scene, rect: repose_core::Rect, radius_dp: f32) {
     scene.nodes.push(SceneNode::Border {
@@ -82,8 +80,6 @@ pub struct LayoutEngine {
     /// Stable, unique ViewId per ViewTree NodeId.
     view_ids: FxHashMap<NodeId, u64>,
     next_view_id: u64,
-
-
 
     /// Monotonic counter for graphics layer ids, assigned during paint.
     layer_id_counter: u32,
@@ -305,27 +301,46 @@ impl LayoutEngine {
                     height: AvailableSpace::Definite(size_px.1 as f32),
                 };
 
-                let text_cache = &mut self.text_cache;
-                let reverse_map = &self.reverse_map;
-                let tree = &self.tree;
+                {
+                    let text_cache = &mut self.text_cache;
+                    let reverse_map = &self.reverse_map;
+                    let tree = &self.tree;
 
-                let _ = self.taffy.compute_layout_with_measure(
-                    taffy_root,
-                    available,
-                    |known, avail, taffy_node, ctx, _style| {
-                        Self::measure_node(
-                            known,
-                            avail,
-                            taffy_node,
-                            ctx.as_deref(),
-                            text_cache,
-                            reverse_map,
-                            tree,
-                            &font_px,
-                            &px,
-                        )
-                    },
-                );
+                    let _ = self.taffy.compute_layout_with_measure(
+                        taffy_root,
+                        available,
+                        |known, avail, taffy_node, ctx, _style| {
+                            Self::measure_node(
+                                known,
+                                avail,
+                                taffy_node,
+                                ctx.as_deref(),
+                                text_cache,
+                                reverse_map,
+                                tree,
+                                &font_px,
+                                &px,
+                            )
+                        },
+                    );
+                }
+
+                // 4a. Store Taffy-computed sizes for all nodes
+                let density_scale = density_scale;
+                for (&node_id, &taffy_id) in &self.taffy_map {
+                    if let Ok(layout) = self.taffy.layout(taffy_id) {
+                        let dp_w = layout.size.width / density_scale;
+                        let dp_h = layout.size.height / density_scale;
+                        let rect = repose_core::Rect {
+                            x: 0.0,
+                            y: 0.0,
+                            w: dp_w,
+                            h: dp_h,
+                        };
+                        self.tree
+                            .set_layout(node_id, rect, rect, LayoutConstraints::default());
+                    }
+                }
 
                 self.last_locals_stamp = Some(locals_stamp);
 
@@ -633,9 +648,7 @@ impl LayoutEngine {
                     FlexDirection::Row
                 };
             }
-            ViewKind::Column
-            | ViewKind::ScrollV { .. }
-            | ViewKind::OverlayHost => {
+            ViewKind::Column | ViewKind::ScrollV { .. } | ViewKind::OverlayHost => {
                 s.flex_direction = FlexDirection::Column;
             }
             ViewKind::ScrollXY {
@@ -668,10 +681,7 @@ impl LayoutEngine {
         }
         s.justify_content = Some(JustifyContent::FlexStart);
 
-        if matches!(
-            kind,
-            ViewKind::Image { .. }
-        ) {
+        if matches!(kind, ViewKind::Image { .. }) {
             s.flex_shrink = 0.0;
         } else {
             s.flex_shrink = 1.0;
@@ -1569,7 +1579,12 @@ impl LayoutEngine {
             }
 
             crate::textfield::paint_text_field(
-                scene, rect, ti, state.as_ref(), is_focused, modifier.clip_rounded,
+                scene,
+                rect,
+                ti,
+                state.as_ref(),
+                is_focused,
+                modifier.clip_rounded,
             );
         }
         if let Some(p) = &modifier.painter {
@@ -1590,11 +1605,12 @@ impl LayoutEngine {
             || modifier.on_drop.is_some();
 
         let kind_handles_hit = modifier.text_input.is_some()
-            || matches!(kind,
+            || matches!(
+                kind,
                 ViewKind::ScrollV { .. }
-                | ViewKind::ScrollXY { .. }
-                | ViewKind::Expander { .. }
-                | ViewKind::TreeRow { .. }
+                    | ViewKind::ScrollXY { .. }
+                    | ViewKind::Expander { .. }
+                    | ViewKind::TreeRow { .. }
             );
 
         let needs_hit = !modifier.disabled

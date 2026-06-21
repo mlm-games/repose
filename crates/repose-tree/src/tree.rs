@@ -102,9 +102,10 @@ impl ViewTree {
     ) -> Vec<(u64, View)> {
         let scope = self.compute_scope_for_node(node_id);
         if let Some((cached_scope, cached_slots)) = self.subcompose_cache.get(&node_id)
-            && *cached_scope == scope {
-                return cached_slots.clone();
-            }
+            && *cached_scope == scope
+        {
+            return cached_slots.clone();
+        }
         let mut slots = content(&scope);
         for (slot_id, view) in slots.iter_mut() {
             view.modifier.key = Some(*slot_id);
@@ -136,20 +137,13 @@ impl ViewTree {
         for ancestor_id in chain {
             if let Some(node) = self.nodes.get(ancestor_id) {
                 scope = intersect_scope_with_modifier(scope, &node.modifier);
-            }
-        }
-        // Apply the cached Taffy-computed size from the previous frame.
-        // This gives `SubcomposeLayout` nodes the actual resolved size
-        // (e.g. from `fill_max_width()` in a parent Column with Stretch).
-        if let Some(node) = self.nodes.get(node_id) {
-            if let Some(cache) = &node.layout_cache {
-                let w = cache.rect.w;
-                let h = cache.rect.h;
-                if w > 0.0 && w.is_finite() {
-                    scope.max_width = scope.max_width.min(w);
-                }
-                if h > 0.0 && h.is_finite() {
-                    scope.max_height = scope.max_height.min(h);
+                // Apply cached Taffy-computed width for this ancestor if
+                // available.
+                if let Some(cache) = &node.layout_cache {
+                    let w = cache.rect.w;
+                    if w > 0.0 && w.is_finite() {
+                        scope.max_width = scope.max_width.min(w);
+                    }
                 }
             }
         }
@@ -685,6 +679,13 @@ impl ViewTree {
 /// are handled by storing the Taffy-computed size after layout.
 fn intersect_scope_with_modifier(scope: SubcomposeScope, modifier: &Modifier) -> SubcomposeScope {
     let mut s = scope;
+    // `size()` sets both min and max to the same value (exact size).
+    if let Some(sz) = modifier.size {
+        s.min_width = s.min_width.max(sz.width);
+        s.max_width = s.max_width.min(sz.width);
+        s.min_height = s.min_height.max(sz.height);
+        s.max_height = s.max_height.min(sz.height);
+    }
     if let Some(w) = modifier.width {
         s.min_width = s.min_width.max(w);
         s.max_width = s.max_width.min(w);
