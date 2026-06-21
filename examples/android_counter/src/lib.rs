@@ -9,10 +9,12 @@ use winit::platform::android::activity::AndroidApp;
 
 fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
     let count = remember(|| signal(0i32));
-    Surface(
+    Box(
         Modifier::new()
             .fill_max_size()
             .background(theme().background),
+    )
+    .child(
         Column(Modifier::new().padding(24.0).fill_max_size()).with_children(vec![
             Spacer(),
             Text(format!("Count: {}", count.get())).modifier(Modifier::new().padding(12.0)),

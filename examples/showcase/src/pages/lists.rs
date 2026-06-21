@@ -35,8 +35,7 @@ fn make_items(count: usize) -> Vec<Item> {
 
 /// icon over title card
 fn cell_card(m: Modifier, icon: View, title: String, pad: f32) -> View {
-    Surface(
-        m,
+    Box(m).child(
         Column(
             Modifier::new()
                 .fill_max_size()
@@ -211,12 +210,14 @@ pub fn screen() -> View {
                             .align_items(AlignItems::Center))
                         .child(Text("Delete").color(th.on_error).size(16.0)),
                         // Foreground content (draggable)
-                        Surface(
+                        Box(
                             Modifier::new()
                                 .fill_max_width()
                                 .background(th.surface_container)
                                 .border(1.0, th.outline_variant, 0.0)
                                 .padding(16.0),
+                        )
+                        .child(
                             Row(Modifier::new().align_items(AlignItems::Center)).child((
                                 Icon(Symbols::notifications).size(20.0),
                                 Box(Modifier::new().width(12.0).height(1.0)),

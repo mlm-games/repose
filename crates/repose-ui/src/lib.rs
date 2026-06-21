@@ -58,14 +58,14 @@
 //! use repose_ui::*;
 //!
 //! fn CardExample() -> View {
-//!     Surface(
+//!     Box(
 //!         Modifier::new()
 //!             .padding(16.0)
 //!             .background(theme().surface)
 //!             .border(1.0, theme().outline, 8.0)
 //!             .clip_rounded(8.0),
-//!         Text("Hello, Repose!"),
 //!     )
+//!     .child(Text("Hello, Repose!"))
 //! }
 //! ```
 //!
@@ -150,10 +150,6 @@ thread_local! {
 pub struct Interactions {
     pub hover: Option<u64>,
     pub pressed: HashSet<u64>,
-}
-
-pub fn Surface(modifier: Modifier, child: View) -> View {
-    Column(modifier).child(child)
 }
 
 pub fn Box(modifier: Modifier) -> View {

@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use repose_core::*;
 use web_time::Duration;
 use repose_ui::overlay::OverlayHandle;
-use repose_ui::{Box, Surface, ViewExt, ZStack};
+use repose_ui::{Box, ViewExt, ZStack};
 
 static DIALOG_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -103,16 +103,14 @@ pub fn Dialog(
                     let th = theme();
                     let content = current_content.borrow().clone();
 
-                    let dialog = Surface(
-                        Modifier::new()
-                            .min_width(280.0)
-                            .max_width(560.0)
-                            .then(modifier.clone())
-                            .background(th.surface_container_high)
-                            .clip_rounded(th.shapes.extra_large)
-                            .alpha(alpha),
-                        content,
-                    );
+                    let dialog = Box(Modifier::new()
+                        .min_width(280.0)
+                        .max_width(560.0)
+                        .then(modifier.clone())
+                        .background(th.surface_container_high)
+                        .clip_rounded(th.shapes.extra_large)
+                        .alpha(alpha))
+                    .child(content);
 
                     let scrim = Box(Modifier::new()
                         .fill_max_size()

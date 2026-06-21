@@ -35,8 +35,10 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
     let current_color = *animated_color.borrow().get();
     let current_size = *animated_size.borrow().get();
 
-    Surface(
+    Box(
         Modifier::new().fill_max_size().background(th.background),
+    )
+    .child(
         Column(Modifier::new().padding(32.0)).child((
             Text("Animation Demo").modifier(Modifier::new().padding(12.0)),
             // Animated box

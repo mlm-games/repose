@@ -339,13 +339,13 @@ fn render_node(
     key_prefix: &str,
 ) -> View {
     match &node.kind {
-        DockKind::Empty => Surface(
+        DockKind::Empty => Box(
             Modifier::new()
                 .fill_max_size()
                 .background(theme().surface)
                 .key(node.id),
-            Box(Modifier::new().fill_max_size()).child(Text("Empty").color(theme().on_surface)),
-        ),
+        )
+        .child(Box(Modifier::new().fill_max_size()).child(Text("Empty").color(theme().on_surface))),
 
         DockKind::Tabs { tabs, active } => render_tabs(
             node.id,
@@ -568,10 +568,10 @@ fn render_tabs(
     Stack(Modifier::new().fill_max_size().key(node_id)).child((
         Column(Modifier::new().fill_max_size()).child((
             tab_bar,
-            Surface(
+            Box(
                 Modifier::new().fill_max_size().background(th.background),
-                Box(Modifier::new().fill_max_size().padding(8.0)).child(content),
-            ),
+            )
+            .child(Box(Modifier::new().fill_max_size().padding(8.0)).child(content)),
         )),
         Box(Modifier::new()
             .absolute()

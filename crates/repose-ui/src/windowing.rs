@@ -6,7 +6,7 @@ use repose_core::{
     Rect, Size, Vec2, View, ViewKind, request_frame,
 };
 
-use crate::{Box, Column, Row, Spacer, Stack, Surface, Text, TextStyle, ViewExt, ZStack};
+use crate::{Box, Column, Row, Spacer, Stack, Text, TextStyle, ViewExt, ZStack};
 
 const TITLE_BAR_HEIGHT_DP: f32 = 32.0;
 const WINDOW_PADDING_DP: f32 = 8.0;
@@ -520,19 +520,17 @@ pub fn WindowHost(
                 }
             };
 
-            let mut window_view = Surface(
-                Modifier::new()
-                    .key(key_for(window_id, 1))
-                    .absolute()
-                    .offset(Some(window_pos.x), Some(window_pos.y), None, None)
-                    .size(window_size.width, window_size.height)
-                    .background(th.surface)
-                    .border(1.0, border_color, 10.0)
-                    .clip_rounded(10.0)
-                    .z_index(-1.0)
-                    .on_pointer_down(focus_on_pointer_down),
-                ZStack(Modifier::new().fill_max_size()).child((column, resize_handles)),
-            );
+            let mut window_view = Box(Modifier::new()
+                .key(key_for(window_id, 1))
+                .absolute()
+                .offset(Some(window_pos.x), Some(window_pos.y), None, None)
+                .size(window_size.width, window_size.height)
+                .background(th.surface)
+                .border(1.0, border_color, 10.0)
+                .clip_rounded(10.0)
+                .z_index(-1.0)
+                .on_pointer_down(focus_on_pointer_down))
+            .child(ZStack(Modifier::new().fill_max_size()).child((column, resize_handles)));
             window_view = apply_z_offset(window_view, z_base);
             window_view
         })

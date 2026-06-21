@@ -66,12 +66,14 @@ pub fn DemoTile(
     fg: Color,
     height: f32,
 ) -> View {
-    Surface(
+    Box(
         Modifier::new()
             .fill_max_width()
             .height(height)
             .background(bg)
             .clip_rounded(radius::LG),
+    )
+    .child(
         Column(
             Modifier::new()
                 .fill_max_size()
@@ -120,10 +122,12 @@ pub fn AppShell(
     settings: SettingsVm,
     content: View,
 ) -> View {
-    Surface(
+    Box(
         Modifier::new()
             .fill_max_size()
             .background(theme().background),
+    )
+    .child(
         Column(Modifier::new().fill_max_size()).child((
             TopBar(overlay, settings),
             Row(Modifier::new().fill_max_size()).child((
@@ -138,7 +142,8 @@ pub fn AppShell(
                     content,
                 ),
             )),
-        )),
+        )
+        )
     )
 }
 
