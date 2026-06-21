@@ -105,7 +105,7 @@ pub fn run_web_app(
 
     // Deeplink from page URL on startup.
     if let Some(w) = web_sys::window() {
-        if let Ok(Some(hash)) = w.location().hash() {
+        if let Ok(hash) = w.location().hash() {
             let hash = hash.trim_start_matches('#');
             if !hash.is_empty() {
                 crate::push_deeplink(hash.as_bytes().to_vec());
@@ -120,7 +120,7 @@ pub fn run_web_app(
     if let Some(w) = web_sys::window() {
         let location = w.location();
         let cb = Closure::wrap(Box::new(move || {
-            if let Ok(Some(hash)) = location.hash() {
+            if let Ok(hash) = location.hash() {
                 let hash = hash.trim_start_matches('#');
                 if !hash.is_empty() {
                     crate::push_deeplink(hash.as_bytes().to_vec());
