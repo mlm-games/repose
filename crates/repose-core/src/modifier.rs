@@ -125,7 +125,7 @@ pub enum PositionType {
     Absolute,
 }
 
-/// Configuration for a text input field (replaces ViewKind::TextField).
+/// Configuration for a text input field.
 #[derive(Clone)]
 pub struct TextInputConfig {
     pub hint: String,

@@ -88,7 +88,7 @@ impl WebOptions {
 #[wasm_bindgen]
 pub fn run_app(options: WebOptions) -> Result<(), JsValue> {
     run_web_app(
-        |_sched, _rc| repose_core::View::new(0, repose_core::ViewKind::Surface),
+        |_sched, _rc| repose_core::View::new(0, repose_core::ViewKind::Box),
         options,
     )
 }

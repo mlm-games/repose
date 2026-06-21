@@ -298,20 +298,29 @@ pub fn Snackbar(
     let snackbar = Box(Modifier::new()
         .translate(0.0, slide)
         .alpha(alpha)
-        .padding_values(PaddingValues {
-            left: 16.0,
-            right: 16.0,
-            top: 12.0,
-            bottom: 12.0,
-        })
         .min_height(48.0)
         .min_width(280.0)
         .max_width(600.0)
         .background(bg)
         .clip_rounded(th.shapes.small))
     .child(
-        Row(Modifier::new().align_items(repose_core::AlignItems::Center)).child((
+        Row(Modifier::new()
+            .fill_max_width()
+            .padding_values(PaddingValues {
+                left: 16.0,
+                right: 8.0,
+                top: 0.0,
+                bottom: 0.0,
+            })
+            .align_items(repose_core::AlignItems::Center))
+        .child((
             Text(msg)
+                .modifier(Modifier::new().padding_values(PaddingValues {
+                    left: 0.0,
+                    right: 0.0,
+                    top: 14.0,
+                    bottom: 14.0,
+                }))
                 .color(fg)
                 .size(th.typography.body_medium)
                 .max_lines(2)
@@ -320,21 +329,10 @@ pub fn Snackbar(
             action
                 .map(|a| {
                     let label = a.label.clone();
-                    Box(Modifier::new()
-                        .padding_values(PaddingValues {
-                            left: 8.0,
-                            right: 8.0,
-                            top: 6.0,
-                            bottom: 6.0,
-                        })
-                        .clip_rounded(th.shapes.extra_small)
-                        .clickable()
-                        .on_pointer_down(move |_| (a.on_click)()))
-                    .child(
-                        Text(label)
-                            .color(action_color)
-                            .size(th.typography.label_large)
-                            .single_line(),
+                    TextButton(
+                        Modifier::new(),
+                        move || (a.on_click)(),
+                        || Text(label).color(action_color).size(th.typography.label_large).single_line(),
                     )
                 })
                 .unwrap_or(Box(Modifier::new())),
