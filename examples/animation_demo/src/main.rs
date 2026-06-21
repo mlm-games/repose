@@ -1,14 +1,19 @@
 use repose_core::*;
+use repose_material::material3::TextButton;
 use repose_platform::{RenderContext, run_desktop_app};
 use repose_ui::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+const BLUE: Color = Color(66, 133, 244, 255);
+const GREEN: Color = Color(52, 168, 83, 255);
+const RED: Color = Color(234, 67, 53, 255);
+
 fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
     let th = theme();
     let animated_color = remember_with_key("color", || {
         Rc::new(RefCell::new(repose_core::animation::AnimatedValue::new(
-            th.primary,
+            BLUE,
             repose_core::animation::AnimationSpec::default(),
         )))
     });
@@ -45,61 +50,67 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
                 .border(2.0, th.on_surface, 8.0)),
             // Controls
             Row(Modifier::new().padding(16.0)).child((
-                Button(
-                    Text("🔵 Blue").modifier(Modifier::new().padding(8.0).align_self_center()),
+                TextButton(
+                    Modifier::new(),
                     {
                         let anim = animated_color.clone();
                         move || {
-                            anim.borrow_mut().set_target(th.primary);
+                            anim.borrow_mut().set_target(BLUE);
                         }
                     },
+                    || Text("🔵 Blue").modifier(Modifier::new().padding(8.0).align_self_center()),
                 ),
-                Button(
-                    Text("🟢 Green").modifier(Modifier::new().padding(8.0).align_self_center()),
+                TextButton(
+                    Modifier::new(),
                     {
                         let anim = animated_color.clone();
                         move || {
-                            anim.borrow_mut().set_target(th.secondary);
+                            anim.borrow_mut().set_target(GREEN);
                         }
                     },
+                    || Text("🟢 Green").modifier(Modifier::new().padding(8.0).align_self_center()),
                 ),
-                Button(
-                    Text("🔴 Red").modifier(Modifier::new().padding(8.0).align_self_center()),
+                TextButton(
+                    Modifier::new(),
                     {
                         let anim = animated_color.clone();
                         move || {
-                            anim.borrow_mut().set_target(th.error);
+                            anim.borrow_mut().set_target(RED);
                         }
                     },
+                    || Text("🔴 Red").modifier(Modifier::new().padding(8.0).align_self_center()),
                 ),
             )),
             Row(Modifier::new().padding(8.0)).child((
-                Button(
-                    Text("Small").modifier(Modifier::new().padding(8.0).align_self_center()),
+                TextButton(
+                    Modifier::new(),
                     {
                         let anim = animated_size.clone();
                         move || {
                             anim.borrow_mut().set_target(80.0);
                         }
                     },
+                    || Text("Small").modifier(Modifier::new().padding(8.0).align_self_center()),
                 ),
-                Button(
-                    Text("Medium").modifier(Modifier::new().padding(8.0).align_self_center()),
+                TextButton(
+                    Modifier::new(),
                     {
                         let anim = animated_size.clone();
                         move || {
                             anim.borrow_mut().set_target(150.0);
                         }
                     },
+                    || Text("Medium").modifier(Modifier::new().padding(8.0).align_self_center()),
                 ),
-                Button(
-                    Text("Large").modifier(Modifier::new().padding(8.0).align_self_center()),
+                TextButton(
+                    Modifier::new(),
                     {
                         let anim = animated_size.clone();
                         move || {
                             anim.borrow_mut().set_target(220.0);
                         }
                     },
+                    || Text("Large").modifier(Modifier::new().padding(8.0).align_self_center()),
                 ),
             )),
             Text(

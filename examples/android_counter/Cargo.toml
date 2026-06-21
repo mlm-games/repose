@@ -26,6 +26,7 @@ fullscreen = true
 repose-core.workspace = true
 repose-ui.workspace = true
 repose-platform.workspace = true
+repose-material.workspace = true
 winit = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }

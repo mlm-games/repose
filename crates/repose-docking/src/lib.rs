@@ -531,14 +531,14 @@ fn render_tabs(
                         ))
                         .child((
                             if let Some(pop) = cb_pop {
-                                Button(Text("↗").size(12.0), move || pop(pid))
-                                    .modifier(Modifier::new().padding(2.0))
+                                Box(Modifier::new().clickable().on_pointer_down(move |_| pop(pid)).padding(2.0))
+                                    .child(Text("↗").size(12.0))
                             } else {
                                 Box(Modifier::new())
                             },
                             if let Some(close) = cb_close {
-                                Button(Text("×").size(12.0), move || close(pid))
-                                    .modifier(Modifier::new().padding(2.0))
+                                Box(Modifier::new().clickable().on_pointer_down(move |_| close(pid)).padding(2.0))
+                                    .child(Text("×").size(12.0))
                             } else {
                                 Box(Modifier::new())
                             },

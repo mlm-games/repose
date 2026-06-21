@@ -784,8 +784,7 @@ fn inject_focus_handlers(mut view: View, focus: Rc<dyn Fn()>) -> View {
 fn kind_handles_hit(kind: &ViewKind) -> bool {
     matches!(
         kind,
-        ViewKind::Button { .. }
-            | ViewKind::TextField { .. }
+        ViewKind::TextField { .. }
             | ViewKind::ScrollV { .. }
             | ViewKind::ScrollXY { .. }
     )

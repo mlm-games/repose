@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
 use repose_ui::anim::{animate_color, animate_f32};
-use repose_ui::{Box, Button, Column, Row, Stack, Text, TextStyle, ViewExt};
+use repose_ui::{Box, Column, Row, Stack, Text, TextStyle, ViewExt};
 
 use crate::{Icon, Symbol};
 
@@ -127,6 +127,15 @@ fn button_impl(
         .on_pointer_down(move |_| on_click())
         .then(modifier);
     Box(m).child(content)
+}
+
+/// M3 Filled Button - the basic Material3 button (equivalent to Compose's `Button`).
+pub fn Button(
+    modifier: Modifier,
+    on_click: impl Fn() + 'static,
+    content: impl FnOnce() -> View,
+) -> View {
+    FilledButton(modifier, on_click, content)
 }
 
 /// M3 Filled Button - prominent action button with primary color fill.
@@ -1035,7 +1044,15 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
         spec,
     );
 
-    Button(
+    Box(Modifier::new()
+        .width(40.0)
+        .height(40.0)
+        .padding(0.0)
+        .clip_rounded(20.0)
+        .background(Color::TRANSPARENT)
+        .clickable()
+        .on_pointer_down(move |_| on_change(!checked)))
+    .child(
         Box(Modifier::new()
             .size(sz, sz)
             .background(fill)
@@ -1052,15 +1069,6 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
         } else {
             Box(Modifier::new())
         }),
-        move || on_change(!checked),
-    )
-    .modifier(
-        Modifier::new()
-            .width(40.0)
-            .height(40.0)
-            .padding(0.0)
-            .clip_rounded(20.0)
-            .background(Color::TRANSPARENT),
     )
 }
 
@@ -1091,7 +1099,15 @@ pub fn RadioButton(selected: bool, on_select: impl Fn() + 'static) -> View {
         spring,
     );
 
-    Button(
+    Box(Modifier::new()
+        .width(40.0)
+        .height(40.0)
+        .padding(0.0)
+        .clip_rounded(20.0)
+        .background(Color::TRANSPARENT)
+        .clickable()
+        .on_pointer_down(move |_| on_select()))
+    .child(
         Box(Modifier::new()
             .size(d, d)
             .border(2.0, ring_col, d * 0.5)
@@ -1106,15 +1122,6 @@ pub fn RadioButton(selected: bool, on_select: impl Fn() + 'static) -> View {
         } else {
             Box(Modifier::new())
         }),
-        on_select,
-    )
-    .modifier(
-        Modifier::new()
-            .width(40.0)
-            .height(40.0)
-            .padding(0.0)
-            .clip_rounded(20.0)
-            .background(Color::TRANSPARENT),
     )
 }
 
@@ -1168,7 +1175,14 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
         color_spec,
     );
 
-    Button(
+    Box(Modifier::new()
+        .size(track_w, track_h)
+        .padding(0.0)
+        .clip_rounded(track_h * 0.5)
+        .background(Color::TRANSPARENT)
+        .clickable()
+        .on_pointer_down(move |_| on_change(!checked)))
+    .child(
         Box(Modifier::new()
             .size(track_w, track_h)
             .background(track_bg)
@@ -1180,14 +1194,6 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
             .clip_rounded(thumb_d * 0.5)
             .absolute()
             .offset(Some(thumb_left), Some(thumb_top), None, None))),
-        move || on_change(!checked),
-    )
-    .modifier(
-        Modifier::new()
-            .size(track_w, track_h)
-            .padding(0.0)
-            .clip_rounded(track_h * 0.5)
-            .background(Color::TRANSPARENT),
     )
 }
 

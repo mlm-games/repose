@@ -193,6 +193,7 @@ dependencies = [
  "anyhow",
  "log",
  "repose-core",
+ "repose-material",
  "repose-platform",
  "repose-ui",
  "winit",
@@ -232,6 +233,7 @@ dependencies = [
  "env_logger",
  "log",
  "repose-core",
+ "repose-material",
  "repose-platform",
  "repose-ui",
 ]

@@ -1,7 +1,6 @@
 use repose_core::{prelude::*, signal};
 use repose_material::material3::{
-    AssistChip, Checkbox, FilterChip, LinearProgressIndicator, M3RangeSlider, M3Slider,
-    RadioButton, Switch, TextButton,
+    AssistChip, Checkbox, FilterChip, M3RangeSlider, M3Slider, RadioButton, Switch, TextButton,
 };
 use repose_material::{Icon, material_symbols};
 use repose_ui::*;
@@ -85,7 +84,7 @@ pub fn screen() -> View {
                         b.set(x1);
                     }
                 }),
-                LinearProgressIndicator(Some(prog.get())),
+                ProgressBar(prog.get(), (0.0, 1.0)),
                 Row(Modifier::new().gap(sp::MD)).child((
                     TextButton(
                         Modifier::new(),
