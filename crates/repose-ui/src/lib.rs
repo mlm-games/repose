@@ -274,62 +274,6 @@ pub fn Grid(
     Column(modifier.grid(columns, row_gap, column_gap)).with_children(children)
 }
 
-pub fn Button(content: impl IntoChildren, on_click: impl Fn() + 'static) -> View {
-    View::new(
-        0,
-        ViewKind::Button {
-            on_click: Some(Rc::new(on_click)),
-        },
-    )
-    .with_children(content.into_children())
-    .semantics(Semantics {
-        role: Role::Button,
-        label: None, // optional: we could derive from first Text child later
-        focused: false,
-        enabled: true,
-    })
-}
-
-pub fn LinearProgress(value: Option<f32>) -> View {
-    View::new(
-        0,
-        ViewKind::ProgressBar {
-            value: value.unwrap_or(0.0),
-            min: 0.0,
-            max: 1.0,
-            circular: false,
-        },
-    )
-    .semantics(Semantics {
-        role: Role::ProgressBar,
-        label: None,
-        focused: false,
-        enabled: true,
-    })
-}
-
-pub fn ProgressBar(value: f32, range: (f32, f32)) -> View {
-    View::new(
-        0,
-        ViewKind::ProgressBar {
-            value,
-            min: range.0,
-            max: range.1,
-            circular: false,
-        },
-    )
-    .semantics(Semantics {
-        role: Role::ProgressBar,
-        label: None,
-        focused: false,
-        enabled: true,
-    })
-}
-
-/// A collapsible section with a clickable header.
-///
-/// The first child is rendered as the header with a chevron toggle arrow.
-/// Remaining children are shown only when `expanded` is true.
 pub fn Expander(modifier: Modifier, expanded: bool, on_toggle: impl Fn() + 'static) -> View {
     View::new(
         0,
@@ -367,24 +311,6 @@ pub fn TreeRow(
         },
     )
     .modifier(modifier)
-}
-
-/// A circular progress indicator (spinner).
-///
-/// If `value` is `None`, renders an indeterminate spinner (filled circle).
-/// If `value` is `Some(f)`, renders a determinate circular progress with
-/// the value clamped to `0.0..=1.0`.
-pub fn CircularProgress(value: Option<f32>) -> View {
-    View::new(
-        0,
-        ViewKind::ProgressBar {
-            value: value.unwrap_or(0.0),
-            min: 0.0,
-            max: 1.0,
-            circular: true,
-        },
-    )
-    .modifier(Modifier::new().width(48.0).height(48.0))
 }
 
 static DRAGVALUE_COUNTER: AtomicU64 = AtomicU64::new(0);

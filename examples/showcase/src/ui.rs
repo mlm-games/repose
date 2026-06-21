@@ -224,7 +224,15 @@ fn NavItem(route: Route, selected: bool, on_click: impl Fn() + 'static) -> View 
     };
     let indicator = if selected { th.primary } else { bg };
 
-    Button(
+    Box(Modifier::new()
+        .key(route.id())
+        .fill_max_width()
+        .padding(6.0)
+        .background(bg)
+        .clip_rounded(radius::MD)
+        .clickable()
+        .on_pointer_down(move |_| on_click()))
+    .child(
         Row(Modifier::new().align_items(AlignItems::Center).gap(sp::SM)).child((
             Box(Modifier::new()
                 .size(3.0, 16.0)
@@ -232,15 +240,6 @@ fn NavItem(route: Route, selected: bool, on_click: impl Fn() + 'static) -> View 
                 .clip_rounded(2.0)),
             Text(route.title()).size(15.0).color(fg),
         )),
-        on_click,
-    )
-    .modifier(
-        Modifier::new()
-            .key(route.id())
-            .fill_max_width()
-            .padding(6.0)
-            .background(bg)
-            .clip_rounded(radius::MD),
     )
 }
 

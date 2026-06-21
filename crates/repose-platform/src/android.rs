@@ -156,6 +156,7 @@ pub fn run_android_app_with_options(
         }
 
         fn request_redraw(&self) {
+            repose_core::request_frame();
             rc::request_redraw(&self.window);
         }
 

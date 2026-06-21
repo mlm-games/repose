@@ -217,6 +217,7 @@ impl App {
     }
 
     fn request_redraw(&self) {
+        repose_core::request_frame();
         rc::request_redraw(&self.window);
     }
 

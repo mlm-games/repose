@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::{borrow::Cow, sync::Once};
 
 use repose_core::{Brush, GlyphRasterConfig, RenderBackend, Scene, SceneNode, Transform};
+use repose_core::request_frame;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use wgpu::Instance;
 
@@ -2111,6 +2112,7 @@ impl RenderBackend for WgpuBackend {
                     self.surface.configure(&self.device, &self.config);
                 }
                 wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
+                    request_frame();
                     return;
                 }
                 wgpu::CurrentSurfaceTexture::Validation => {

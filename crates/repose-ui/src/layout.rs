@@ -155,13 +155,9 @@ enum NodeContext {
         font_family: Option<&'static str>,
         annotations: Option<Arc<[TextSpan]>>,
     },
-    Button {
-        label: String,
-    },
     TextField {
         multiline: bool,
     },
-    Progress,
     Container,
     ScrollContainer,
 }
@@ -834,34 +830,6 @@ impl LayoutEngine {
             s.padding.left = length(px(indent_dp));
         }
 
-        if matches!(kind, ViewKind::Button { .. }) {
-            s.display = Display::Flex;
-            s.flex_direction = if locals::text_direction() == locals::TextDirection::Rtl {
-                FlexDirection::RowReverse
-            } else {
-                FlexDirection::Row
-            };
-            if m.justify_content.is_none() {
-                s.justify_content = Some(JustifyContent::Center);
-            }
-            if m.align_items_container.is_none() {
-                s.align_items = Some(AlignItems::Center);
-            }
-            if m.padding.is_none() && m.padding_values.is_none() {
-                let ph = px(14.0);
-                let pv = px(10.0);
-                s.padding = taffy::geometry::Rect {
-                    left: length(ph),
-                    right: length(ph),
-                    top: length(pv),
-                    bottom: length(pv),
-                };
-            }
-            if m.min_height.is_none() && s.min_size.height.is_auto() {
-                s.min_size.height = length(px(40.0));
-            }
-        }
-
         if let Some(v) = m.min_width {
             s.min_size.width = length(px(v.max(0.0)));
         }
@@ -919,13 +887,9 @@ impl LayoutEngine {
                 font_family: *font_family,
                 annotations: annotations.clone(),
             },
-            ViewKind::Button { .. } => NodeContext::Button {
-                label: String::new(),
-            },
             ViewKind::TextField { multiline, .. } => NodeContext::TextField {
                 multiline: *multiline,
             },
-            ViewKind::ProgressBar { .. } => NodeContext::Progress,
             ViewKind::Expander { .. } => NodeContext::Container,
             ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. } => NodeContext::ScrollContainer,
             ViewKind::OverlayHost => NodeContext::Container,
@@ -1042,18 +1006,6 @@ impl LayoutEngine {
                     height: line_h_px_val * lines.len().max(1) as f32,
                 }
             }
-            Some(NodeContext::Button { label }) => {
-                let natural_w = (label.len() as f32 * font_px(16.0) * 0.6) + px(24.0);
-                let width = match avail.width {
-                    AvailableSpace::Definite(w) if w > 0.5 => w,
-                    AvailableSpace::MinContent => px(48.0).max(natural_w),
-                    _ => natural_w,
-                };
-                taffy::geometry::Size {
-                    width,
-                    height: px(36.0),
-                }
-            }
             Some(NodeContext::TextField { multiline }) => {
                 let natural_w = px(160.0);
                 let width = match avail.width {
@@ -1068,18 +1020,6 @@ impl LayoutEngine {
                     _ => known.height.unwrap_or(natural_h),
                 };
                 taffy::geometry::Size { width, height }
-            }
-            Some(NodeContext::Progress) => {
-                let natural_w = px(200.0);
-                let width = match avail.width {
-                    AvailableSpace::Definite(w) if w > 0.5 => w,
-                    AvailableSpace::MinContent => px(32.0),
-                    _ => known.width.unwrap_or(natural_w),
-                };
-                taffy::geometry::Size {
-                    width,
-                    height: px(12.0),
-                }
             }
             _ => taffy::geometry::Size::ZERO,
         }
@@ -1618,8 +1558,7 @@ impl LayoutEngine {
 
         let kind_handles_hit = matches!(
             kind,
-            ViewKind::Button { .. }
-                | ViewKind::TextField { .. }
+            ViewKind::TextField { .. }
                 | ViewKind::ScrollV { .. }
                 | ViewKind::ScrollXY { .. }
                 | ViewKind::Expander { .. }
@@ -1786,49 +1725,6 @@ impl LayoutEngine {
                     enabled: true,
                 });
                 next_sem_parent = Some(view_id);
-            }
-            ViewKind::Button { on_click } => {
-                if modifier.background.is_none() {
-                    let th = locals::theme();
-                    let base = if is_pressed {
-                        th.button_bg_pressed
-                    } else if is_hovered {
-                        th.button_bg_hover
-                    } else {
-                        th.button_bg
-                    };
-                    scene.nodes.push(SceneNode::Rect {
-                        rect,
-                        brush: Brush::Solid(base),
-                        radius: modifier.clip_rounded.map(dp_to_px).unwrap_or(dp_to_px(6.0)),
-                    });
-                }
-                if (modifier.click || on_click.is_some())
-                    && !modifier.hit_passthrough
-                    && !modifier.disabled
-                {
-                    hits.push(HitRegion {
-                        id: view_id,
-                        rect,
-                        on_click: on_click.clone(),
-                        focusable: true,
-                        z_index: modifier.z_index,
-                        ..HitRegion::from_modifier(view_id, rect, &modifier)
-                    });
-                }
-                sems.push(SemNode {
-                    id: view_id,
-                    parent: sem_parent,
-                    role: Role::Button,
-                    label: infer_label(&self.tree, node_id),
-                    rect,
-                    focused: is_focused,
-                    enabled: true,
-                });
-                next_sem_parent = Some(view_id);
-                if is_focused {
-                    push_focus_ring(scene, rect, focus_radius(&modifier));
-                }
             }
             ViewKind::Image { handle, tint, fit } => {
                 scene.nodes.push(SceneNode::Image {
@@ -2299,110 +2195,6 @@ impl LayoutEngine {
                     parent: sem_parent,
                     role: Role::TextField,
                     label: Some(hint.clone()),
-                    rect,
-                    focused: is_focused,
-                    enabled: true,
-                });
-                next_sem_parent = Some(view_id);
-            }
-            ViewKind::ProgressBar {
-                value,
-                min,
-                max,
-                circular,
-            } => {
-                let th = locals::theme();
-                if *circular {
-                    // Circular progress: pulsing ellipse for indeterminate,
-                    // or filled arc segment for determinate
-                    let cx = rect.x + rect.w * 0.5;
-                    let cy = rect.y + rect.h * 0.5;
-                    let diameter = rect.w.min(rect.h);
-                    let r = diameter * 0.5;
-                    let circle_rect = repose_core::Rect {
-                        x: cx - r,
-                        y: cy - r,
-                        w: diameter,
-                        h: diameter,
-                    };
-
-                    // Background track ring (thin)
-                    let track_w = dp_to_px(4.0);
-                    scene.nodes.push(SceneNode::EllipseBorder {
-                        rect: circle_rect,
-                        color: th.outline,
-                        width: track_w,
-                    });
-
-                    let t = norm(*value, *min, *max).clamp(0.0, 1.0);
-                    if t > 0.0 {
-                        // Progress arc: approximate with a filled ellipse clipped to partial sector.
-                        // For simplicity, render as a filled arc using a combination of primitives.
-                        // Full ellipse fill for the track, then clip to progress.
-                        let progress_color = th.primary;
-                        // Use ellipse fill with a rectangular clip to approximate pie fill
-                        if t >= 1.0 {
-                            scene.nodes.push(SceneNode::Ellipse {
-                                rect: circle_rect,
-                                brush: Brush::Solid(progress_color),
-                            });
-                        } else {
-                            // For partial progress, render a rectangular backdrop clipped
-                            // by the circle to approximate a progress arc.
-                            // This is a simple visual that fills from bottom to top.
-                            let fill_h = diameter * t;
-                            scene.nodes.push(SceneNode::PushClip {
-                                rect: repose_core::Rect {
-                                    x: cx - r,
-                                    y: cy + r - fill_h,
-                                    w: diameter,
-                                    h: fill_h,
-                                },
-                                radius: 0.0,
-                            });
-                            scene.nodes.push(SceneNode::Ellipse {
-                                rect: circle_rect,
-                                brush: Brush::Solid(progress_color),
-                            });
-                            scene.nodes.push(SceneNode::PopClip);
-                        }
-                    } else {
-                        // Indeterminate: render a visible filled circle
-                        scene.nodes.push(SceneNode::Ellipse {
-                            rect: circle_rect,
-                            brush: Brush::Solid(th.primary.with_alpha_f32(0.4)),
-                        });
-                    }
-                } else {
-                    let th_h = dp_to_px(6.0);
-                    let cy = rect.y + rect.h * 0.5;
-                    scene.nodes.push(SceneNode::Rect {
-                        rect: repose_core::Rect {
-                            x: rect.x,
-                            y: cy - th_h * 0.5,
-                            w: rect.w,
-                            h: th_h,
-                        },
-                        brush: Brush::Solid(th.outline),
-                        radius: th_h * 0.5,
-                    });
-                    let t = norm(*value, *min, *max).clamp(0.0, 1.0);
-                    scene.nodes.push(SceneNode::Rect {
-                        rect: repose_core::Rect {
-                            x: rect.x,
-                            y: cy - th_h * 0.5,
-                            w: rect.w * t,
-                            h: th_h,
-                        },
-                        brush: Brush::Solid(th.primary),
-                        radius: th_h * 0.5,
-                    });
-                }
-                sems.push(SemNode {
-                    id: view_id,
-                    parent: sem_parent,
-                    role: Role::ProgressBar,
-                    label: None,
                     rect,
                     focused: is_focused,
                     enabled: true,
@@ -2935,13 +2727,6 @@ fn mul_alpha_brush(b: Brush, a: f32) -> Brush {
 
 fn clamp_radius(r: f32, w: f32, h: f32) -> f32 {
     r.max(0.0).min(0.5 * w.max(0.0)).min(0.5 * h.max(0.0))
-}
-fn norm(v: f32, min: f32, max: f32) -> f32 {
-    if max > min {
-        (v - min) / (max - min)
-    } else {
-        0.0
-    }
 }
 
 #[derive(Clone, Copy)]

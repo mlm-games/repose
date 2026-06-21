@@ -1531,7 +1531,11 @@ pub fn ModalBottomSheet(
         AnimatedValue::new(anim_distance, theme().motion.spring)
     });
     let last_target = remember_state_with_key("mbs_anim_target", || f32::NAN);
-    let anim_target = if state.is_visible() { 0.0 } else { anim_distance };
+    let anim_target = if state.is_visible() {
+        0.0
+    } else {
+        anim_distance
+    };
 
     {
         let mut a = anim.borrow_mut();
@@ -1566,7 +1570,8 @@ pub fn ModalBottomSheet(
                 move || {
                     let off = *anim.borrow().get();
 
-                    let sheet_body = Box(modifier.clone()
+                    let sheet_body = Box(modifier
+                        .clone()
                         .fill_max_width()
                         .max_width(dp_to_px(640.0))
                         .translate(0.0, off)

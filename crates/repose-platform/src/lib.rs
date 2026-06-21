@@ -397,6 +397,7 @@ pub fn run_desktop_app(
         }
 
         fn request_redraw(&self) {
+            repose_core::request_frame();
             rc::request_redraw(&self.window);
         }
 
@@ -842,6 +843,7 @@ pub fn run_desktop_app(
                                 cb(pe);
                             }
                             self.hover_id = new_hover;
+                            self.request_redraw();
                         }
 
                         // Build PointerEvent
@@ -1804,7 +1806,7 @@ pub fn run_desktop_app(
 
             if now.saturating_duration_since(self.last_redraw) >= interval {
                 self.pending_redraw = false;
-                self.request_redraw();
+                rc::request_redraw(&self.window);
                 self.last_redraw = now;
             } else {
                 el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(

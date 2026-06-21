@@ -1,6 +1,7 @@
 #![cfg(target_os = "android")]
 use log::LevelFilter;
 use repose_core::prelude::*;
+use repose_material::material3::Button;
 use repose_platform::RenderContext;
 use repose_platform::android::run_android_app;
 use repose_ui::*;
@@ -15,16 +16,14 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
         Column(Modifier::new().padding(24.0).fill_max_size()).with_children(vec![
             Spacer(),
             Text(format!("Count: {}", count.get())).modifier(Modifier::new().padding(12.0)),
-            Button(Text("Increment"), {
+            Button(Modifier::new().padding(16.0), {
                 let count = count.clone();
                 move || count.update(|c| *c += 1)
-            })
-            .modifier(Modifier::new().padding(16.0)),
-            Button(Text("Decrement"), {
+            }, || Text("Increment")),
+            Button(Modifier::new().padding(16.0), {
                 let count = count.clone();
                 move || count.update(|c| *c -= 1)
-            })
-            .modifier(Modifier::new().padding(16.0)),
+            }, || Text("Decrement")),
             Spacer(),
         ]),
     )

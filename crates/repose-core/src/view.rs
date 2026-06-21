@@ -115,9 +115,6 @@ pub enum ViewKind {
         font_family: Option<&'static str>,
         annotations: Option<Arc<[TextSpan]>>,
     },
-    Button {
-        on_click: Option<Callback>,
-    },
     TextField {
         state_key: ViewId,
         hint: String,
@@ -135,12 +132,6 @@ pub enum ViewKind {
         keyboard_type: Option<crate::text::KeyboardType>,
         /// IME action button configuration.
         ime_action: Option<crate::text::ImeAction>,
-    },
-    ProgressBar {
-        value: f32,
-        min: f32,
-        max: f32,
-        circular: bool,
     },
     Image {
         handle: ImageHandle,
@@ -198,7 +189,6 @@ impl std::fmt::Debug for ViewKind {
             Self::OverlayHost => f.write_str("OverlayHost"),
             Self::ScrollV { .. } => f.write_str("ScrollV"),
             Self::ScrollXY { .. } => f.write_str("ScrollXY"),
-            Self::Button { .. } => f.write_str("Button"),
             Self::Image { .. } => f.write_str("Image"),
             Self::Ellipse { .. } => f.write_str("Ellipse"),
             Self::EllipseBorder { .. } => f.write_str("EllipseBorder"),
@@ -224,7 +214,6 @@ impl std::fmt::Debug for ViewKind {
                 }
                 s.finish()
             }
-            Self::ProgressBar { value, .. } => write!(f, "Progress({})", value),
             Self::Expander { expanded, .. } => {
                 if *expanded { write!(f, "Expander(expanded)") } else { write!(f, "Expander(collapsed)") }
             }
