@@ -80,7 +80,7 @@ pub fn screen() -> View {
                 items.get(),
                 48.0,
                 scroll,
-                Modifier::new().max_width(1200.0).max_height(400.0),
+                Modifier::new().fill_max_width().max_height(400.0),
                 |it: &Item| it.id as u64,
                 None,
                 move |it, _| {
@@ -113,7 +113,7 @@ pub fn screen() -> View {
                 hetero_items,
                 |it: &Item| 48.0 + (it.id % 5) as f32 * 16.0,
                 hetero_scroll,
-                Modifier::new().max_width(1200.0).max_height(400.0),
+                Modifier::new().fill_max_width().max_height(400.0),
                 |it: &Item| it.id as u64,
                 None,
                 move |it, _| {
