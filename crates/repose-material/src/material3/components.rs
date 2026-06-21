@@ -8,9 +8,29 @@ use repose_core::*;
 use repose_ui::anim::{animate_color, animate_f32};
 use repose_ui::{Box, Column, Row, Stack, Text, TextStyle, ViewExt};
 
-use super::ProgressIndicatorDefaults;
+use super::*;
 
 use crate::{Icon, Symbol};
+
+/// Configuration for [`TopAppBar`].
+#[derive(Clone, Debug)]
+pub struct TopAppBarConfig {
+    pub modifier: Modifier,
+    pub container_color: Color,
+    pub title_color: Color,
+    pub height: f32,
+}
+
+impl Default for TopAppBarConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            container_color: TopAppBarDefaults::container_color(),
+            title_color: TopAppBarDefaults::title_color(),
+            height: TopAppBarDefaults::HEIGHT,
+        }
+    }
+}
 
 /// M3 Top App Bar (small). Displays a title with optional navigation icon and
 /// trailing action buttons.
@@ -18,19 +38,21 @@ pub fn TopAppBar(
     title: impl Into<String>,
     navigation_icon: Option<View>,
     actions: Vec<View>,
+    config: TopAppBarConfig,
 ) -> View {
     let th = theme();
     Row(Modifier::new()
         .min_width(200.0)
-        .height(64.0)
-        .background(th.surface)
+        .height(config.height)
+        .background(config.container_color)
         .padding_values(PaddingValues {
             left: 4.0,
             right: 4.0,
             top: 0.0,
             bottom: 0.0,
         })
-        .align_items(AlignItems::Center))
+        .align_items(AlignItems::Center)
+        .then(config.modifier))
     .child((
         navigation_icon.unwrap_or(Box(Modifier::new().width(16.0).fill_max_height())),
         Box(Modifier::new()
@@ -43,69 +65,124 @@ pub fn TopAppBar(
             .flex_grow(1.0))
         .child(
             Text(title)
-                .color(th.on_surface)
+                .color(config.title_color)
                 .size(th.typography.title_large),
         ),
         Row(Modifier::new().align_items(AlignItems::Center)).child(actions),
     ))
 }
 
+/// Configuration for [`IconButton`] and [`FilledIconButton`].
+#[derive(Clone, Debug)]
+pub struct IconButtonConfig {
+    pub modifier: Modifier,
+    pub content_color: Option<Color>,
+    pub container_size: Option<f32>,
+    pub filler_container_color: Option<Color>,
+    pub state_colors: Option<StateColors>,
+}
+
+impl Default for IconButtonConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            content_color: None,
+            container_size: None,
+            filler_container_color: None,
+            state_colors: None,
+        }
+    }
+}
+
 /// M3 Icon Button - a tappable circular container for an icon.
-pub fn IconButton(icon: View, on_click: impl Fn() + 'static) -> View {
-    let th = theme();
-    let _bg = Color::TRANSPARENT;
+pub fn IconButton(icon: View, on_click: impl Fn() + 'static, config: IconButtonConfig) -> View {
+    let sz = config.container_size.unwrap_or(IconButtonDefaults::CONTAINER_SIZE);
+    let colors = config.state_colors.unwrap_or_else(IconButtonDefaults::state_colors_default);
     Box(Modifier::new()
-        .size(48.0, 48.0)
-        .clip_rounded(24.0)
-        .state_colors(StateColors {
-            default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            pressed: th.on_surface.with_alpha_f32(0.12),
-            disabled: Color::TRANSPARENT,
-        })
+        .size(sz, sz)
+        .clip_rounded(sz * 0.5)
+        .state_colors(colors)
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
         .clickable()
-        .on_pointer_down(move |_| on_click()))
+        .on_pointer_down(move |_| on_click())
+        .then(config.modifier))
     .child(icon)
 }
 
 /// M3 Filled Icon Button - icon button with a filled container background.
-pub fn FilledIconButton(icon: View, on_click: impl Fn() + 'static) -> View {
+pub fn FilledIconButton(icon: View, on_click: impl Fn() + 'static, config: IconButtonConfig) -> View {
     let th = theme();
-    let bg = th.primary;
+    let content_color = config.content_color.unwrap_or_else(IconButtonDefaults::filled_content_color);
+    let bg = config.filler_container_color.unwrap_or_else(IconButtonDefaults::filled_container_color);
+    let sz = config.container_size.unwrap_or(IconButtonDefaults::FILLED_CONTAINER_SIZE);
     Box(Modifier::new()
-        .size(40.0, 40.0)
-        .clip_rounded(20.0)
+        .size(sz, sz)
+        .clip_rounded(sz * 0.5)
         .background(bg)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_primary.with_alpha_f32(0.08),
-            pressed: th.on_primary.with_alpha_f32(0.12),
+            hovered: content_color.with_alpha_f32(0.08),
+            pressed: content_color.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         })
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
         .clickable()
-        .on_pointer_down(move |_| on_click()))
+        .on_pointer_down(move |_| on_click())
+        .then(config.modifier))
     .child(icon)
 }
 
+/// Configuration for button components.
+#[derive(Clone, Debug)]
+pub struct ButtonConfig {
+    pub modifier: Modifier,
+    pub enabled: bool,
+    pub content_color: Option<Color>,
+    pub container_color: Option<Color>,
+    pub state_colors: Option<StateColors>,
+    pub state_elevation: Option<StateElevation>,
+    pub border: Option<(f32, Color, f32)>,
+    pub shape_radius: f32,
+    pub content_padding: Option<PaddingValues>,
+    pub height: f32,
+}
+
+impl Default for ButtonConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            enabled: true,
+            content_color: None,
+            container_color: None,
+            state_colors: None,
+            state_elevation: None,
+            border: None,
+            shape_radius: ButtonDefaults::SHAPE_RADIUS,
+            content_padding: None,
+            height: ButtonDefaults::HEIGHT,
+        }
+    }
+}
+
 fn button_impl(
-    modifier: Modifier,
+    outer_modifier: Modifier,
     on_click: impl Fn() + 'static,
     content: impl FnOnce() -> View,
     content_color: Color,
-    bg: Option<Color>,
+    container_color: Option<Color>,
     state_colors: StateColors,
     state_elevation: Option<StateElevation>,
     border: Option<(f32, Color, f32)>,
     padding_left: f32,
     padding_right: f32,
+    height: f32,
+    shape_radius: f32,
+    enabled: bool,
 ) -> View {
-    let content = with_content_color(content_color, content);
-    let mut m = Modifier::new().height(40.0).min_width(48.0);
-    if let Some(bg) = bg {
+    let mut m = Modifier::new().height(height).min_width(48.0);
+    if let Some(bg) = container_color {
         m = m.background(bg);
     }
     m = m.state_colors(state_colors);
@@ -116,7 +193,7 @@ fn button_impl(
         m = m.border(w, c, r);
     }
     m = m
-        .clip_rounded(20.0)
+        .clip_rounded(shape_radius)
         .padding_values(PaddingValues {
             left: padding_left,
             right: padding_right,
@@ -124,10 +201,15 @@ fn button_impl(
             bottom: 0.0,
         })
         .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
-        .clickable()
-        .on_pointer_down(move |_| on_click())
-        .then(modifier);
+        .justify_content(JustifyContent::Center);
+    if enabled {
+        m = m.clickable().on_pointer_down(move |_| on_click());
+    }
+    m = m.then(outer_modifier);
+    let content = with_content_color(
+        if enabled { content_color } else { content_color.with_alpha_f32(0.38) },
+        content,
+    );
     Box(m).child(content)
 }
 
@@ -137,37 +219,37 @@ pub fn Button(
     on_click: impl Fn() + 'static,
     content: impl FnOnce() -> View,
 ) -> View {
-    FilledButton(modifier, on_click, content)
+    FilledButton(modifier, on_click, ButtonConfig::default(), content)
 }
 
 /// M3 Filled Button - prominent action button with primary color fill.
 pub fn FilledButton(
     modifier: Modifier,
     on_click: impl Fn() + 'static,
+    config: ButtonConfig,
     content: impl FnOnce() -> View,
 ) -> View {
-    let th = theme();
+    let cc = config.content_color.unwrap_or_else(ButtonDefaults::content_color);
+    let bg = config.container_color.unwrap_or_else(ButtonDefaults::container_color);
+    let sc = config.state_colors.unwrap_or_else(ButtonDefaults::state_colors_default);
+    let se = config.state_elevation.unwrap_or_else(ButtonDefaults::state_elevation_default);
+    let pad = config.content_padding.unwrap_or(PaddingValues {
+        left: 24.0, right: 24.0, top: 0.0, bottom: 0.0,
+    });
     button_impl(
-        modifier,
+        modifier.then(config.modifier),
         on_click,
         content,
-        th.on_primary,
-        Some(th.primary),
-        StateColors {
-            default: Color::TRANSPARENT,
-            hovered: th.on_primary.with_alpha_f32(0.08),
-            pressed: th.on_primary.with_alpha_f32(0.12),
-            disabled: th.on_surface.with_alpha_f32(0.12),
-        },
-        Some(StateElevation {
-            default: 0.0,
-            hovered: 1.0,
-            pressed: 8.0,
-            disabled: 0.0,
-        }),
-        None,
-        24.0,
-        24.0,
+        cc,
+        Some(bg),
+        sc,
+        Some(se),
+        config.border,
+        pad.left,
+        pad.right,
+        config.height,
+        config.shape_radius,
+        config.enabled,
     )
 }
 
@@ -175,30 +257,30 @@ pub fn FilledButton(
 pub fn FilledTonalButton(
     modifier: Modifier,
     on_click: impl Fn() + 'static,
+    config: ButtonConfig,
     content: impl FnOnce() -> View,
 ) -> View {
-    let th = theme();
+    let cc = config.content_color.unwrap_or_else(ButtonDefaults::tonal_content_color);
+    let bg = config.container_color.unwrap_or_else(ButtonDefaults::tonal_container_color);
+    let sc = config.state_colors.unwrap_or_else(ButtonDefaults::state_colors_default);
+    let se = config.state_elevation.unwrap_or_else(ButtonDefaults::state_elevation_default);
+    let pad = config.content_padding.unwrap_or(PaddingValues {
+        left: 24.0, right: 24.0, top: 0.0, bottom: 0.0,
+    });
     button_impl(
-        modifier,
+        modifier.then(config.modifier),
         on_click,
         content,
-        th.on_secondary_container,
-        Some(th.secondary_container),
-        StateColors {
-            default: Color::TRANSPARENT,
-            hovered: th.on_secondary_container.with_alpha_f32(0.08),
-            pressed: th.on_secondary_container.with_alpha_f32(0.12),
-            disabled: th.on_surface.with_alpha_f32(0.12),
-        },
-        Some(StateElevation {
-            default: 0.0,
-            hovered: 1.0,
-            pressed: 8.0,
-            disabled: 0.0,
-        }),
-        None,
-        24.0,
-        24.0,
+        cc,
+        Some(bg),
+        sc,
+        Some(se),
+        config.border,
+        pad.left,
+        pad.right,
+        config.height,
+        config.shape_radius,
+        config.enabled,
     )
 }
 
@@ -206,25 +288,29 @@ pub fn FilledTonalButton(
 pub fn OutlinedButton(
     modifier: Modifier,
     on_click: impl Fn() + 'static,
+    config: ButtonConfig,
     content: impl FnOnce() -> View,
 ) -> View {
-    let th = theme();
+    let cc = config.content_color.unwrap_or_else(ButtonDefaults::outlined_content_color);
+    let sc = config.state_colors.unwrap_or_else(ButtonDefaults::state_colors_default);
+    let border = config.border.unwrap_or((1.0, ButtonDefaults::outlined_border_color(), 20.0));
+    let pad = config.content_padding.unwrap_or(PaddingValues {
+        left: 24.0, right: 24.0, top: 0.0, bottom: 0.0,
+    });
     button_impl(
-        modifier,
+        modifier.then(config.modifier),
         on_click,
         content,
-        th.outline,
+        cc,
         None,
-        StateColors {
-            default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            pressed: th.on_surface.with_alpha_f32(0.12),
-            disabled: Color::TRANSPARENT,
-        },
+        sc,
         None,
-        Some((1.0, th.outline, 20.0)),
-        24.0,
-        24.0,
+        Some(border),
+        pad.left,
+        pad.right,
+        config.height,
+        config.shape_radius,
+        config.enabled,
     )
 }
 
@@ -232,25 +318,28 @@ pub fn OutlinedButton(
 pub fn TextButton(
     modifier: Modifier,
     on_click: impl Fn() + 'static,
+    config: ButtonConfig,
     content: impl FnOnce() -> View,
 ) -> View {
-    let th = theme();
+    let cc = config.content_color.unwrap_or_else(ButtonDefaults::text_content_color);
+    let sc = config.state_colors.unwrap_or_else(ButtonDefaults::state_colors_default);
+    let pad = config.content_padding.unwrap_or(PaddingValues {
+        left: 12.0, right: 12.0, top: 0.0, bottom: 0.0,
+    });
     button_impl(
-        modifier,
+        modifier.then(config.modifier),
         on_click,
         content,
-        th.on_surface,
+        cc,
         None,
-        StateColors {
-            default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            pressed: th.on_surface.with_alpha_f32(0.12),
-            disabled: Color::TRANSPARENT,
-        },
+        sc,
         None,
         None,
-        12.0,
-        12.0,
+        pad.left,
+        pad.right,
+        config.height,
+        config.shape_radius,
+        config.enabled,
     )
 }
 
@@ -258,66 +347,86 @@ pub fn TextButton(
 pub fn ElevatedButton(
     modifier: Modifier,
     on_click: impl Fn() + 'static,
+    config: ButtonConfig,
     content: impl FnOnce() -> View,
 ) -> View {
-    let th = theme();
+    let cc = config.content_color.unwrap_or_else(ButtonDefaults::elevated_content_color);
+    let bg = config.container_color.unwrap_or_else(ButtonDefaults::elevated_container_color);
+    let sc = config.state_colors.unwrap_or_else(ButtonDefaults::state_colors_default);
+    let se = config.state_elevation.unwrap_or_else(ButtonDefaults::elevated_state_elevation);
+    let pad = config.content_padding.unwrap_or(PaddingValues {
+        left: 24.0, right: 24.0, top: 0.0, bottom: 0.0,
+    });
     button_impl(
-        modifier,
+        modifier.then(config.modifier),
         on_click,
         content,
-        th.primary,
-        Some(th.surface_container_low),
-        StateColors {
-            default: Color::TRANSPARENT,
-            hovered: th.primary.with_alpha_f32(0.08),
-            pressed: th.primary.with_alpha_f32(0.12),
-            disabled: th.on_surface.with_alpha_f32(0.12),
-        },
-        Some(StateElevation {
-            default: th.elevation.level1,
-            hovered: th.elevation.level2,
-            pressed: th.elevation.level3,
-            disabled: 0.0,
-        }),
-        None,
-        24.0,
-        24.0,
+        cc,
+        Some(bg),
+        sc,
+        Some(se),
+        config.border,
+        pad.left,
+        pad.right,
+        config.height,
+        config.shape_radius,
+        config.enabled,
     )
 }
 
-fn fab_impl(icon: View, on_click: impl Fn() + 'static, size: f32) -> View {
+/// Configuration for FAB components.
+#[derive(Clone, Debug)]
+pub struct FABConfig {
+    pub modifier: Modifier,
+    pub container_color: Color,
+    pub content_color: Color,
+    pub state_elevation: StateElevation,
+    pub shape_radius: f32,
+    pub size: f32,
+}
+
+impl Default for FABConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            container_color: FABDefaults::container_color(),
+            content_color: FABDefaults::content_color(),
+            state_elevation: FABDefaults::state_elevation(),
+            shape_radius: FABDefaults::SHAPE_RADIUS,
+            size: FABDefaults::SIZE,
+        }
+    }
+}
+
+fn fab_impl(icon: View, on_click: impl Fn() + 'static, size: f32, shape_r: f32, config: FABConfig) -> View {
     let th = theme();
     Box(Modifier::new()
         .size(size, size)
-        .background(th.primary_container)
+        .background(config.container_color)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_primary_container.with_alpha_f32(0.08),
-            pressed: th.on_primary_container.with_alpha_f32(0.12),
+            hovered: config.content_color.with_alpha_f32(0.08),
+            pressed: config.content_color.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         })
-        .state_elevation(StateElevation {
-            default: 6.0,
-            hovered: 8.0,
-            pressed: 12.0,
-            disabled: 0.0,
-        })
-        .clip_rounded(28.0)
+        .state_elevation(config.state_elevation)
+        .clip_rounded(shape_r)
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
         .clickable()
-        .on_pointer_down(move |_| on_click()))
+        .on_pointer_down(move |_| on_click())
+        .then(config.modifier))
     .child(icon)
 }
 
 /// M3 Floating Action Button (regular, 56dp).
-pub fn FAB(icon: View, on_click: impl Fn() + 'static) -> View {
-    fab_impl(icon, on_click, 56.0)
+pub fn FAB(icon: View, on_click: impl Fn() + 'static, config: FABConfig) -> View {
+    fab_impl(icon, on_click, FABDefaults::SIZE, FABDefaults::SHAPE_RADIUS, config)
 }
 
 /// M3 Large FAB (96dp).
-pub fn LargeFAB(icon: View, on_click: impl Fn() + 'static) -> View {
-    fab_impl(icon, on_click, 96.0)
+pub fn LargeFAB(icon: View, on_click: impl Fn() + 'static, config: FABConfig) -> View {
+    fab_impl(icon, on_click, FABDefaults::LARGE_SIZE, FABDefaults::LARGE_SHAPE_RADIUS, config)
 }
 
 /// M3 Extended FAB - FAB with icon + label.
@@ -325,26 +434,21 @@ pub fn ExtendedFAB(
     icon: Option<View>,
     label: impl Into<String>,
     on_click: impl Fn() + 'static,
+    config: FABConfig,
 ) -> View {
     let th = theme();
     let has_icon = icon.is_some();
-    let bg = th.primary_container;
     Row(Modifier::new()
         .height(56.0)
         .min_width(80.0)
-        .background(bg)
+        .background(config.container_color)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_primary_container.with_alpha_f32(0.08),
-            pressed: th.on_primary_container.with_alpha_f32(0.12),
-            disabled: th.on_surface.with_alpha_f32(0.12),
+            hovered: config.content_color.with_alpha_f32(0.08),
+            pressed: config.content_color.with_alpha_f32(0.12),
+            disabled: theme().on_surface.with_alpha_f32(0.12),
         })
-        .state_elevation(StateElevation {
-            default: 6.0,
-            hovered: 8.0,
-            pressed: 12.0,
-            disabled: 0.0,
-        })
+        .state_elevation(config.state_elevation)
         .clip_rounded(16.0)
         .padding_values(PaddingValues {
             left: 16.0,
@@ -354,53 +458,83 @@ pub fn ExtendedFAB(
         })
         .align_items(AlignItems::Center)
         .clickable()
-        .on_pointer_down(move |_| on_click()))
+        .on_pointer_down(move |_| on_click())
+        .then(config.modifier))
     .child((
         icon.unwrap_or(Box(Modifier::new())),
         Box(Modifier::new()
             .width(if has_icon { 12.0 } else { 0.0 })
             .fill_max_height()),
         Text(label)
-            .color(th.on_primary_container)
+            .color(config.content_color)
             .size(th.typography.label_large)
             .single_line(),
     ))
 }
 
+/// Configuration for divider components.
+#[derive(Clone, Debug)]
+pub struct DividerConfig {
+    pub modifier: Modifier,
+    pub thickness: f32,
+    pub color: Color,
+}
+
+impl Default for DividerConfig {
+    fn default() -> Self {
+        Self { modifier: Modifier::new(), thickness: DividerDefaults::THICKNESS, color: DividerDefaults::color() }
+    }
+}
+
 /// M3 Horizontal Divider - a thin 1dp line.
-pub fn Divider() -> View {
-    let th = theme();
+pub fn Divider(config: DividerConfig) -> View {
     Box(Modifier::new()
         .min_width(200.0)
-        .height(1.0)
-        .background(th.outline_variant))
+        .height(config.thickness)
+        .background(config.color)
+        .then(config.modifier))
 }
 
 /// M3 Vertical Divider - a thin 1dp vertical line.
-pub fn VerticalDivider() -> View {
-    let th = theme();
+pub fn VerticalDivider(config: DividerConfig) -> View {
     Box(Modifier::new()
-        .width(1.0)
+        .width(config.thickness)
         .fill_max_height()
-        .background(th.outline_variant))
+        .background(config.color)
+        .then(config.modifier))
+}
+
+/// Configuration for [`Badge`].
+#[derive(Clone, Debug)]
+pub struct BadgeConfig {
+    pub modifier: Modifier,
+    pub color: Color,
+    pub label_color: Color,
+}
+
+impl Default for BadgeConfig {
+    fn default() -> Self {
+        Self { modifier: Modifier::new(), color: BadgeDefaults::color(), label_color: BadgeDefaults::label_color() }
+    }
 }
 
 /// M3 Badge - a small notification indicator. If `label` is `None`, shows a
 /// small 6dp dot; otherwise shows the label text inside a 16dp pill.
-pub fn Badge(label: Option<impl Into<String>>) -> View {
+pub fn Badge(label: Option<impl Into<String>>, config: BadgeConfig) -> View {
     let th = theme();
     match label {
         None => Box(Modifier::new()
-            .size(6.0, 6.0)
-            .background(th.error)
-            .clip_rounded(3.0)),
+            .size(BadgeDefaults::DOT_SIZE, BadgeDefaults::DOT_SIZE)
+            .background(config.color)
+            .clip_rounded(BadgeDefaults::DOT_SIZE * 0.5)
+            .then(config.modifier)),
         Some(text) => {
             let text = text.into();
             Box(Modifier::new()
-                .min_width(16.0)
-                .height(16.0)
-                .background(th.error)
-                .clip_rounded(8.0)
+                .min_width(BadgeDefaults::LABEL_MIN_WIDTH)
+                .height(BadgeDefaults::LABEL_HEIGHT)
+                .background(config.color)
+                .clip_rounded(BadgeDefaults::LABEL_HEIGHT * 0.5)
                 .padding_values(PaddingValues {
                     left: 4.0,
                     right: 4.0,
@@ -408,13 +542,40 @@ pub fn Badge(label: Option<impl Into<String>>) -> View {
                     bottom: 0.0,
                 })
                 .align_items(AlignItems::Center)
-                .justify_content(JustifyContent::Center))
+                .justify_content(JustifyContent::Center)
+                .then(config.modifier))
             .child(
                 Text(text)
-                    .color(th.on_error)
+                    .color(config.label_color)
                     .size(th.typography.label_small)
                     .single_line(),
             )
+        }
+    }
+}
+
+/// Configuration for [`ListItem`].
+#[derive(Clone, Debug)]
+pub struct ListItemConfig {
+    pub modifier: Modifier,
+    pub headline_color: Color,
+    pub supporting_color: Color,
+    pub horizontal_padding: f32,
+    pub trailing_padding: f32,
+    pub one_line_height: f32,
+    pub two_line_height: f32,
+}
+
+impl Default for ListItemConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            headline_color: ListItemDefaults::headline_color(),
+            supporting_color: ListItemDefaults::supporting_color(),
+            horizontal_padding: ListItemDefaults::HORIZONTAL_PADDING,
+            trailing_padding: ListItemDefaults::TRAILING_PADDING,
+            one_line_height: ListItemDefaults::ONE_LINE_HEIGHT,
+            two_line_height: ListItemDefaults::TWO_LINE_HEIGHT,
         }
     }
 }
@@ -426,15 +587,12 @@ pub fn ListItem(
     leading: Option<View>,
     trailing: Option<View>,
     on_click: Option<Rc<dyn Fn()>>,
+    config: ListItemConfig,
 ) -> View {
     let th = theme();
     let mut modifier = Modifier::new()
         .min_width(200.0)
-        .min_height(if supporting_text.is_some() {
-            72.0
-        } else {
-            56.0
-        })
+        .min_height(if supporting_text.is_some() { config.two_line_height } else { config.one_line_height })
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
@@ -442,12 +600,13 @@ pub fn ListItem(
             disabled: Color::TRANSPARENT,
         })
         .padding_values(PaddingValues {
-            left: 16.0,
-            right: 24.0,
+            left: config.horizontal_padding,
+            right: config.trailing_padding,
             top: 8.0,
             bottom: 8.0,
         })
-        .align_items(AlignItems::Center);
+        .align_items(AlignItems::Center)
+        .then(config.modifier);
 
     if let Some(cb) = on_click {
         modifier = modifier.clickable().on_pointer_down(move |_| cb());
@@ -472,13 +631,13 @@ pub fn ListItem(
         )
         .child((
             Text(headline)
-                .color(th.on_surface)
+                .color(config.headline_color)
                 .size(th.typography.body_large)
                 .single_line(),
             supporting_text
                 .map(|st| {
                     Text(st)
-                        .color(th.on_surface_variant)
+                        .color(config.supporting_color)
                         .size(th.typography.body_medium)
                         .max_lines(2)
                         .overflow_ellipsize()
@@ -506,19 +665,45 @@ pub struct Tab {
     pub on_click: Rc<dyn Fn()>,
 }
 
+/// Configuration for [`TabRow`].
+#[derive(Clone, Debug)]
+pub struct TabRowConfig {
+    pub modifier: Modifier,
+    pub container_color: Color,
+    pub selected_content_color: Color,
+    pub unselected_content_color: Color,
+    pub indicator_color: Color,
+    pub height: f32,
+    pub indicator_height: f32,
+}
+
+impl Default for TabRowConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            container_color: TabDefaults::container_color(),
+            selected_content_color: TabDefaults::selected_content_color(),
+            unselected_content_color: TabDefaults::unselected_content_color(),
+            indicator_color: TabDefaults::indicator_color(),
+            height: TabDefaults::HEIGHT,
+            indicator_height: TabDefaults::INDICATOR_HEIGHT,
+        }
+    }
+}
+
 static TABROW_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// M3 Tab Row - a horizontal row of tabs with an active indicator.
 /// Text colors and indicator height animate with 150ms FastOutSlowIn.
-pub fn TabRow(selected_index: usize, tabs: Vec<Tab>) -> View {
+pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> View {
     let th = theme();
     let id = remember(|| TABROW_COUNTER.fetch_add(1, Ordering::Relaxed));
     let spec = th.motion.color;
     Column(Modifier::new().fill_max_width()).child((
         Row(Modifier::new()
             .fill_max_width()
-            .height(48.0)
-            .background(th.surface))
+            .height(config.height)
+            .background(config.container_color))
         .child(
             tabs.into_iter()
                 .enumerate()
@@ -526,16 +711,12 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>) -> View {
                     let selected = i == selected_index;
                     let color = animate_color(
                         format!("tab_clr_{}_{}", id, i),
-                        if selected {
-                            th.primary
-                        } else {
-                            th.on_surface_variant
-                        },
+                        if selected { config.selected_content_color } else { config.unselected_content_color },
                         spec,
                     );
                     let indicator_h = animate_f32(
                         format!("tab_ind_{}_{}", id, i),
-                        if selected { 3.0 } else { 0.0 },
+                        if selected { config.indicator_height } else { 0.0 },
                         spec,
                     );
                     let cb = tab.on_click.clone();
@@ -564,8 +745,8 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>) -> View {
                         Box(Modifier::new()
                             .min_width(200.0)
                             .height(indicator_h)
-                            .background(th.primary)
-                            .clip_rounded(1.5)),
+                            .background(config.indicator_color)
+                            .clip_rounded(TabDefaults::INDICATOR_CORNER)),
                     ))
                 })
                 .collect::<Vec<_>>(),
@@ -575,6 +756,7 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>) -> View {
             .height(1.0)
             .background(th.outline_variant)),
     ))
+    .modifier(config.modifier)
 }
 
 /// A single segment definition for `SegmentedButton`.
@@ -584,20 +766,47 @@ pub struct Segment {
     pub on_click: Rc<dyn Fn()>,
 }
 
+/// Configuration for [`SegmentedButton`].
+#[derive(Clone, Debug)]
+pub struct SegmentedButtonConfig {
+    pub modifier: Modifier,
+    pub border_color: Color,
+    pub selected_container_color: Color,
+    pub selected_content_color: Color,
+    pub unselected_content_color: Color,
+    pub height: f32,
+    pub shape_radius: f32,
+}
+
+impl Default for SegmentedButtonConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            border_color: SegmentedButtonDefaults::border_color(),
+            selected_container_color: SegmentedButtonDefaults::selected_container_color(),
+            selected_content_color: SegmentedButtonDefaults::selected_content_color(),
+            unselected_content_color: SegmentedButtonDefaults::unselected_content_color(),
+            height: SegmentedButtonDefaults::HEIGHT,
+            shape_radius: SegmentedButtonDefaults::SHAPE_RADIUS,
+        }
+    }
+}
+
 static SEGBUTTON_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// M3 Segmented Button - a row of toggle segments. `selected` contains the
 /// indices of selected segments (single-select: pass a single-element set).
-pub fn SegmentedButton(selected: &[usize], segments: Vec<Segment>) -> View {
+pub fn SegmentedButton(selected: &[usize], segments: Vec<Segment>, config: SegmentedButtonConfig) -> View {
     let th = theme();
     let count = segments.len();
     let id = remember(|| SEGBUTTON_COUNTER.fetch_add(1, Ordering::Relaxed));
     let spec = th.motion.color;
 
     Row(Modifier::new()
-        .height(40.0)
-        .border(1.0, th.outline, 20.0)
-        .clip_rounded(20.0))
+        .height(config.height)
+        .border(1.0, config.border_color, config.shape_radius)
+        .clip_rounded(config.shape_radius)
+        .then(config.modifier))
     .child(
         segments
             .into_iter()
@@ -605,24 +814,16 @@ pub fn SegmentedButton(selected: &[usize], segments: Vec<Segment>) -> View {
             .map(|(i, seg)| {
                 let is_selected = selected.contains(&i);
 
-                let bg = animate_color(
-                    format!("sb_bg_{}_{}", id, i),
-                    if is_selected {
-                        th.secondary_container
-                    } else {
-                        Color::TRANSPARENT
-                    },
-                    spec,
-                );
-                let fg = animate_color(
-                    format!("sb_fg_{}_{}", id, i),
-                    if is_selected {
-                        th.on_secondary_container
-                    } else {
-                        th.on_surface
-                    },
-                    spec,
-                );
+                    let bg = animate_color(
+                        format!("sb_bg_{}_{}", id, i),
+                        if is_selected { config.selected_container_color } else { Color::TRANSPARENT },
+                        spec,
+                    );
+                    let fg = animate_color(
+                        format!("sb_fg_{}_{}", id, i),
+                        if is_selected { config.selected_content_color } else { config.unselected_content_color },
+                        spec,
+                    );
 
                 let cb = seg.on_click.clone();
 
@@ -657,14 +858,26 @@ pub fn SegmentedButton(selected: &[usize], segments: Vec<Segment>) -> View {
     )
 }
 
+/// Configuration for [`CircularProgressIndicator`].
+#[derive(Clone, Debug)]
+pub struct CircularProgressIndicatorConfig {
+    pub color: Color,
+    pub track_color: Color,
+}
+
+impl Default for CircularProgressIndicatorConfig {
+    fn default() -> Self {
+        Self {
+            color: ProgressIndicatorDefaults::circular_color(),
+            track_color: ProgressIndicatorDefaults::circular_track_color(),
+        }
+    }
+}
+
 pub fn CircularProgressIndicator(
     value: Option<f32>,
-    color: Option<Color>,
-    track_color: Option<Color>,
+    config: CircularProgressIndicatorConfig,
 ) -> View {
-    let th = theme();
-    let color = color.unwrap_or(th.primary);
-    let track_color = track_color.unwrap_or(th.secondary_container);
     let sz = dp_to_px(ProgressIndicatorDefaults::CIRCULAR_INDICATOR_SIZE);
     let stroke = dp_to_px(ProgressIndicatorDefaults::CIRCULAR_STROKE_WIDTH);
     let val = value.unwrap_or(0.0).clamp(0.0, 1.0);
@@ -693,7 +906,7 @@ pub fn CircularProgressIndicator(
             // Track ring
             scene.nodes.push(SceneNode::EllipseBorder {
                 rect: circle,
-                color: mul_c(track_color),
+                color: mul_c(config.track_color),
                 width: stroke,
             });
 
@@ -711,7 +924,7 @@ pub fn CircularProgressIndicator(
                 });
                 scene.nodes.push(SceneNode::EllipseBorder {
                     rect: circle,
-                    color: mul_c(color),
+                    color: mul_c(config.color),
                     width: stroke,
                 });
                 scene.nodes.push(SceneNode::PopClip);
@@ -725,24 +938,36 @@ pub fn CircularProgressIndicator(
     })
 }
 
+/// Configuration for [`LinearProgressIndicator`].
+#[derive(Clone, Debug)]
+pub struct LinearProgressIndicatorConfig {
+    pub color: Color,
+    pub track_color: Color,
+    /// Gap between indicator and track, in dp.
+    pub gap_size: f32,
+    /// Diameter of the stop indicator dot, in dp.
+    pub stop_size: f32,
+}
+
+impl Default for LinearProgressIndicatorConfig {
+    fn default() -> Self {
+        Self {
+            color: ProgressIndicatorDefaults::linear_color(),
+            track_color: ProgressIndicatorDefaults::linear_track_color(),
+            gap_size: ProgressIndicatorDefaults::LINEAR_INDICATOR_GAP_SIZE,
+            stop_size: ProgressIndicatorDefaults::LINEAR_TRACK_STOP_SIZE,
+        }
+    }
+}
+
 /// M3 Linear Progress Indicator.
 ///
-/// When `color` or `track_color` is `None`, theme defaults from
-/// [`ProgressIndicatorDefaults`] are used.
-/// `gap_size` and `stop_size` are in dp; when `None` the defaults from
-/// [`ProgressIndicatorDefaults`] apply.
+/// Pass `LinearProgressIndicatorConfig::default()` for standard M3 appearance,
+/// or override individual fields via struct-update syntax.
 pub fn LinearProgressIndicator(
     value: Option<f32>,
-    color: Option<Color>,
-    track_color: Option<Color>,
-    gap_size: Option<f32>,
-    stop_size: Option<f32>,
+    config: LinearProgressIndicatorConfig,
 ) -> View {
-    let th = theme();
-    let color = color.unwrap_or(th.primary);
-    let track_color = track_color.unwrap_or(th.secondary_container);
-    let gap_sz = gap_size.unwrap_or(ProgressIndicatorDefaults::LINEAR_INDICATOR_GAP_SIZE);
-    let stop_sz = stop_size.unwrap_or(ProgressIndicatorDefaults::LINEAR_TRACK_STOP_SIZE);
 
     Box(Modifier::new()
         .fill_max_width()
@@ -759,8 +984,8 @@ pub fn LinearProgressIndicator(
             };
             let track_h = rect.h;
             let corner = track_h * 0.5;
-            let gap = dp_to_px(gap_sz);
-            let dot_r = dp_to_px(stop_sz) * 0.5;
+            let gap = dp_to_px(config.gap_size);
+            let dot_r = dp_to_px(config.stop_size) * 0.5;
             let cy = rect.y + rect.h * 0.5;
             let t = value.unwrap_or(0.0).clamp(0.0, 1.0);
 
@@ -774,7 +999,7 @@ pub fn LinearProgressIndicator(
                         w: ind_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(color)),
+                    brush: Brush::Solid(mul_c(config.color)),
                     radius: corner,
                 });
             }
@@ -790,7 +1015,7 @@ pub fn LinearProgressIndicator(
                         w: track_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(track_color)),
+                    brush: Brush::Solid(mul_c(config.track_color)),
                     radius: corner,
                 });
             }
@@ -805,7 +1030,7 @@ pub fn LinearProgressIndicator(
                         w: dot_r * 2.0,
                         h: dot_r * 2.0,
                     },
-                    brush: Brush::Solid(mul_c(color)),
+                    brush: Brush::Solid(mul_c(config.color)),
                 });
             }
         },
@@ -1029,38 +1254,50 @@ pub fn OutlinedTextField(
     )
 }
 
+/// Configuration for [`Checkbox`].
+#[derive(Clone, Debug)]
+pub struct CheckboxConfig {
+    pub modifier: Modifier,
+    pub checked_color: Color,
+    pub unchecked_color: Color,
+    pub checkmark_color: Color,
+}
+
+impl Default for CheckboxConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            checked_color: CheckboxDefaults::checked_color(),
+            unchecked_color: CheckboxDefaults::unchecked_color(),
+            checkmark_color: CheckboxDefaults::checkmark_color(),
+        }
+    }
+}
+
 /// M3 Checkbox.
 /// Renders a 40dp touch-target with an 18dp check box inside.
 /// Fill, border, and check mark animate with 100ms FastOutSlowIn.
 static CHECKBOX_COUNTER: AtomicU64 = AtomicU64::new(0);
-pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
+pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: CheckboxConfig) -> View {
     let th = theme();
-    let sz = 18.0;
+    let sz = CheckboxDefaults::BOX_SIZE;
 
     let id = remember(|| CHECKBOX_COUNTER.fetch_add(1, Ordering::Relaxed));
     let spec = th.motion.color_fast;
 
     let fill = animate_color(
         format!("cb_fill_{}", id),
-        if checked {
-            th.primary
-        } else {
-            Color::TRANSPARENT
-        },
+        if checked { config.checked_color } else { Color::TRANSPARENT },
         spec,
     );
     let bd_w = animate_f32(
         format!("cb_bw_{}", id),
-        if checked { 0.0 } else { 2.0 },
+        if checked { 0.0 } else { CheckboxDefaults::STROKE_WIDTH },
         spec,
     );
     let bd = animate_color(
         format!("cb_bd_{}", id),
-        if checked {
-            Color::TRANSPARENT
-        } else {
-            th.on_surface_variant
-        },
+        if checked { Color::TRANSPARENT } else { config.unchecked_color },
         spec,
     );
     let check_alpha = animate_f32(
@@ -1070,28 +1307,29 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
     );
 
     Box(Modifier::new()
-        .width(40.0)
-        .height(40.0)
+        .width(CheckboxDefaults::TOUCH_TARGET_SIZE)
+        .height(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .padding(0.0)
         .clip_rounded(20.0)
         .background(Color::TRANSPARENT)
         .clickable()
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
-        .on_pointer_down(move |_| on_change(!checked)))
+        .on_pointer_down(move |_| on_change(!checked))
+        .then(config.modifier))
     .child(
         Box(Modifier::new()
             .size(sz, sz)
             .background(fill)
-            .border(bd_w, bd, 2.0)
-            .clip_rounded(2.0)
+            .border(bd_w, bd, CheckboxDefaults::CORNER_RADIUS)
+            .clip_rounded(CheckboxDefaults::CORNER_RADIUS)
             .align_items(AlignItems::Center)
             .justify_content(JustifyContent::Center))
         .child(if check_alpha > 0.01 {
             Box(Modifier::new().alpha(check_alpha)).child(
                 Icon(Symbol::new("done", '\u{E876}'))
-                    .color(th.on_primary)
-                    .size(14.0),
+                    .color(config.checkmark_color)
+                    .size(CheckboxDefaults::CHECK_ICON_SIZE),
             )
         } else {
             Box(Modifier::new())
@@ -1099,13 +1337,31 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
     )
 }
 
+/// Configuration for [`RadioButton`].
+#[derive(Clone, Debug)]
+pub struct RadioButtonConfig {
+    pub modifier: Modifier,
+    pub selected_color: Color,
+    pub unselected_color: Color,
+}
+
+impl Default for RadioButtonConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            selected_color: RadioButtonDefaults::selected_color(),
+            unselected_color: RadioButtonDefaults::unselected_color(),
+        }
+    }
+}
+
 /// M3 RadioButton.
 /// Renders a 40dp touch-target with a 20dp outer circle + inner dot.
 /// Ring color animates with 100ms FastOutSlowIn; dot size animates with spring.
 static RADIO_COUNTER: AtomicU64 = AtomicU64::new(0);
-pub fn RadioButton(selected: bool, on_select: impl Fn() + 'static) -> View {
+pub fn RadioButton(selected: bool, on_select: impl Fn() + 'static, config: RadioButtonConfig) -> View {
     let th = theme();
-    let d = 20.0;
+    let d = RadioButtonDefaults::OUTER_RADIUS * 2.0;
 
     let id = remember(|| RADIO_COUNTER.fetch_add(1, Ordering::Relaxed));
     let color_spec = th.motion.color_fast;
@@ -1113,40 +1369,37 @@ pub fn RadioButton(selected: bool, on_select: impl Fn() + 'static) -> View {
 
     let ring_col = animate_color(
         format!("rb_ring_{}", id),
-        if selected {
-            th.primary
-        } else {
-            th.on_surface_variant
-        },
+        if selected { config.selected_color } else { config.unselected_color },
         color_spec,
     );
     let dot_size = animate_f32(
         format!("rb_dot_{}", id),
-        if selected { 10.0 } else { 0.0 },
+        if selected { RadioButtonDefaults::DOT_RADIUS * 2.0 } else { 0.0 },
         spring,
     );
 
     Box(Modifier::new()
-        .width(40.0)
-        .height(40.0)
+        .width(RadioButtonDefaults::TOUCH_TARGET_SIZE)
+        .height(RadioButtonDefaults::TOUCH_TARGET_SIZE)
         .padding(0.0)
         .clip_rounded(20.0)
         .background(Color::TRANSPARENT)
         .clickable()
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
-        .on_pointer_down(move |_| on_select()))
+        .on_pointer_down(move |_| on_select())
+        .then(config.modifier))
     .child(
         Box(Modifier::new()
             .size(d, d)
-            .border(2.0, ring_col, d * 0.5)
+            .border(RadioButtonDefaults::STROKE_WIDTH, ring_col, d * 0.5)
             .clip_rounded(d * 0.5)
             .align_items(AlignItems::Center)
             .justify_content(JustifyContent::Center))
         .child(if dot_size > 0.5 {
             Box(Modifier::new()
                 .size(dot_size, dot_size)
-                .background(th.primary)
+                .background(config.selected_color)
                 .clip_rounded(dot_size * 0.5))
         } else {
             Box(Modifier::new())
@@ -1154,20 +1407,44 @@ pub fn RadioButton(selected: bool, on_select: impl Fn() + 'static) -> View {
     )
 }
 
+/// Configuration for [`Switch`].
+#[derive(Clone, Debug)]
+pub struct SwitchConfig {
+    pub modifier: Modifier,
+    pub checked_track_color: Color,
+    pub unchecked_track_color: Color,
+    pub checked_thumb_color: Color,
+    pub unchecked_thumb_color: Color,
+    pub unchecked_border_color: Color,
+}
+
+impl Default for SwitchConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            checked_track_color: SwitchDefaults::checked_track_color(),
+            unchecked_track_color: SwitchDefaults::unchecked_track_color(),
+            checked_thumb_color: SwitchDefaults::checked_thumb_color(),
+            unchecked_thumb_color: SwitchDefaults::unchecked_thumb_color(),
+            unchecked_border_color: SwitchDefaults::unchecked_border_color(),
+        }
+    }
+}
+
 /// M3 Switch.
 /// Renders a pill track with an animated thumb knob.
 /// Thumb position, size, and colors animate with spring/tween physics.
 static SWITCH_COUNTER: AtomicU64 = AtomicU64::new(0);
-pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
+pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchConfig) -> View {
     let th = theme();
-    let track_w = 52.0;
-    let track_h = 32.0;
+    let track_w = SwitchDefaults::TRACK_WIDTH;
+    let track_h = SwitchDefaults::TRACK_HEIGHT;
 
     let id = remember(|| SWITCH_COUNTER.fetch_add(1, Ordering::Relaxed));
 
     // Thumb: spring-animated position and size
-    let thumb_target_pos = if checked { track_w - 24.0 - 4.0 } else { 8.0 };
-    let thumb_target_d = if checked { 24.0 } else { 16.0 };
+    let thumb_target_pos = if checked { track_w - SwitchDefaults::THUMB_CHECKED_SIZE - 4.0 } else { 8.0 };
+    let thumb_target_d = if checked { SwitchDefaults::THUMB_CHECKED_SIZE } else { SwitchDefaults::THUMB_UNCHECKED_SIZE };
     let spring = th.motion.spring;
 
     let thumb_left = animate_f32(format!("sw_pos_{}", id), thumb_target_pos, spring);
@@ -1177,16 +1454,12 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
     let color_spec = th.motion.color_fast;
     let track_bg = animate_color(
         format!("sw_tbg_{}", id),
-        if checked {
-            th.primary
-        } else {
-            th.surface_container_highest
-        },
+        if checked { config.checked_track_color } else { config.unchecked_track_color },
         color_spec,
     );
     let thumb_bg = animate_color(
         format!("sw_tmbg_{}", id),
-        if checked { th.on_primary } else { th.outline },
+        if checked { config.checked_thumb_color } else { config.unchecked_thumb_color },
         color_spec,
     );
     let track_border = animate_f32(
@@ -1196,11 +1469,7 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
     );
     let border_color = animate_color(
         format!("sw_bc_{}", id),
-        if checked {
-            Color::TRANSPARENT
-        } else {
-            th.outline
-        },
+        if checked { Color::TRANSPARENT } else { config.unchecked_border_color },
         color_spec,
     );
 
@@ -1210,7 +1479,8 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
         .clip_rounded(track_h * 0.5)
         .background(Color::TRANSPARENT)
         .clickable()
-        .on_pointer_down(move |_| on_change(!checked)))
+        .on_pointer_down(move |_| on_change(!checked))
+        .then(config.modifier))
     .child(
         Box(Modifier::new()
             .size(track_w, track_h)
@@ -1224,6 +1494,26 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
             .absolute()
             .offset(Some(thumb_left), Some(thumb_top), None, None))),
     )
+}
+
+/// Configuration for [`M3Slider`] and [`M3RangeSlider`].
+#[derive(Clone, Debug)]
+pub struct SliderConfig {
+    pub modifier: Modifier,
+    pub active_track_color: Color,
+    pub inactive_track_color: Color,
+    pub thumb_color: Color,
+}
+
+impl Default for SliderConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            active_track_color: SliderDefaults::active_track_color(),
+            inactive_track_color: SliderDefaults::inactive_track_color(),
+            thumb_color: SliderDefaults::thumb_color(),
+        }
+    }
 }
 
 static SLIDER_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1250,6 +1540,7 @@ pub fn M3Slider(
     range: (f32, f32),
     step: Option<f32>,
     on_change: impl Fn(f32) + 'static,
+    config: SliderConfig,
 ) -> View {
     let id = *remember(|| SLIDER_COUNTER.fetch_add(1, Ordering::Relaxed));
     let track_rect = remember_state_with_key(format!("ms_rect_{}", id), || Rect::default());
@@ -1261,7 +1552,6 @@ pub fn M3Slider(
     let min = range.0;
     let max = range.1;
     let oc = Rc::new(on_change);
-    let th = theme();
     let range_size = (max - min).max(1e-6);
     let t = ((value - min) / range_size).clamp(0.0, 1.0);
 
@@ -1326,7 +1616,7 @@ pub fn M3Slider(
                         w: inactive_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(th.secondary_container)),
+                    brush: Brush::Solid(mul_c(config.inactive_track_color)),
                     radius: corner,
                 });
             }
@@ -1340,7 +1630,7 @@ pub fn M3Slider(
                         w: fill_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(th.primary)),
+                    brush: Brush::Solid(mul_c(config.active_track_color)),
                     radius: corner,
                 });
             }
@@ -1361,9 +1651,9 @@ pub fn M3Slider(
                         h: dot_r * 2.0,
                     },
                     brush: Brush::Solid(mul_c(if on_active {
-                        th.secondary_container
+                        config.inactive_track_color
                     } else {
-                        th.primary
+                        config.active_track_color
                     })),
                 });
             }
@@ -1377,7 +1667,7 @@ pub fn M3Slider(
                         w: dot_r * 2.0,
                         h: dot_r * 2.0,
                     },
-                    brush: Brush::Solid(mul_c(th.primary)),
+                    brush: Brush::Solid(mul_c(config.active_track_color)),
                 });
             }
             // Thumb pill (shrinks to 2dp when dragging, matching Compose Thumb:2469-2478)
@@ -1390,7 +1680,7 @@ pub fn M3Slider(
                     w: tw,
                     h: thumb_h,
                 },
-                brush: Brush::Solid(mul_c(th.primary)),
+                brush: Brush::Solid(mul_c(config.thumb_color)),
                 radius: tw * 0.5,
             });
         })
@@ -1441,7 +1731,8 @@ pub fn M3Slider(
                     d
                 }
             }
-        }))
+        })
+        .then(config.modifier))
     .semantics(Semantics {
         role: Role::Slider,
         label: None,
@@ -1456,6 +1747,7 @@ pub fn M3RangeSlider(
     range: (f32, f32),
     step: Option<f32>,
     on_change: impl Fn(f32, f32) + 'static,
+    config: SliderConfig,
 ) -> View {
     let id = *remember(|| SLIDER_COUNTER.fetch_add(1, Ordering::Relaxed));
     let track_rect = remember_state_with_key(format!("mrs_rect_{}", id), || Rect::default());
@@ -1465,7 +1757,6 @@ pub fn M3RangeSlider(
     let min = range.0;
     let max = range.1;
     let oc = Rc::new(on_change);
-    let th = theme();
     let range_size = (max - min).max(1e-6);
     let t0 = ((start - min) / range_size).clamp(0.0, 1.0);
     let t1 = ((end - min) / range_size).clamp(0.0, 1.0);
@@ -1539,7 +1830,7 @@ pub fn M3RangeSlider(
                         w: linactive_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(th.secondary_container)),
+                    brush: Brush::Solid(mul_c(config.inactive_track_color)),
                     radius: corner,
                 });
             }
@@ -1553,7 +1844,7 @@ pub fn M3RangeSlider(
                         w: rinactive_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(th.secondary_container)),
+                    brush: Brush::Solid(mul_c(config.inactive_track_color)),
                     radius: corner,
                 });
             }
@@ -1567,7 +1858,7 @@ pub fn M3RangeSlider(
                         w: active_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(th.primary)),
+                    brush: Brush::Solid(mul_c(config.active_track_color)),
                     radius: corner,
                 });
             }
@@ -1588,9 +1879,9 @@ pub fn M3RangeSlider(
                         h: dot_r * 2.0,
                     },
                     brush: Brush::Solid(mul_c(if on_active {
-                        th.secondary_container
+                        config.inactive_track_color
                     } else {
-                        th.primary
+                        config.active_track_color
                     })),
                 });
             }
@@ -1604,7 +1895,7 @@ pub fn M3RangeSlider(
                         w: dot_r * 2.0,
                         h: dot_r * 2.0,
                     },
-                    brush: Brush::Solid(mul_c(th.primary)),
+                    brush: Brush::Solid(mul_c(config.active_track_color)),
                 });
             }
             if rinactive_w > 0.0 {
@@ -1616,7 +1907,7 @@ pub fn M3RangeSlider(
                         w: dot_r * 2.0,
                         h: dot_r * 2.0,
                     },
-                    brush: Brush::Solid(mul_c(th.primary)),
+                    brush: Brush::Solid(mul_c(config.active_track_color)),
                 });
             }
             // Thumb pills (shrink to 2dp when dragging that specific thumb)
@@ -1634,7 +1925,7 @@ pub fn M3RangeSlider(
                         w: tw,
                         h: thumb_h,
                     },
-                    brush: Brush::Solid(mul_c(th.primary)),
+                    brush: Brush::Solid(mul_c(config.thumb_color)),
                     radius: tw * 0.5,
                 });
             }
@@ -1715,7 +2006,8 @@ pub fn M3RangeSlider(
                     d
                 }
             }
-        }))
+        })
+        .then(config.modifier))
     .semantics(Semantics {
         role: Role::Slider,
         label: None,
@@ -1723,3 +2015,4 @@ pub fn M3RangeSlider(
         enabled: true,
     })
 }
+

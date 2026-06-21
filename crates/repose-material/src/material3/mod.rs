@@ -335,6 +335,7 @@ pub fn Snackbar(
                     TextButton(
                         Modifier::new(),
                         move || (a.on_click)(),
+                        ButtonConfig::default(),
                         || Text(label).color(action_color).size(th.typography.label_large).single_line(),
                     )
                 })
@@ -1920,6 +1921,7 @@ pub fn DatePicker(
                 IconButton(
                     Box(Modifier::new()).child(Text("◀").color(th.on_surface).size(16.0)),
                     prev_month,
+                    IconButtonConfig::default(),
                 ),
                 Spacer(),
                 Column(Modifier::new().align_items(AlignItems::Center)).child((
@@ -1931,6 +1933,7 @@ pub fn DatePicker(
                             Box(Modifier::new())
                                 .child(Text("‹").color(th.on_surface_variant).size(14.0)),
                             prev_year,
+                            IconButtonConfig::default(),
                         ),
                         Text(year.to_string())
                             .size(th.typography.body_small)
@@ -1939,6 +1942,7 @@ pub fn DatePicker(
                             Box(Modifier::new())
                                 .child(Text("›").color(th.on_surface_variant).size(14.0)),
                             next_year,
+                            IconButtonConfig::default(),
                         ),
                     )),
                 )),
@@ -1946,6 +1950,7 @@ pub fn DatePicker(
                 IconButton(
                     Box(Modifier::new()).child(Text("▶").color(th.on_surface).size(16.0)),
                     next_month,
+                    IconButtonConfig::default(),
                 ),
             )),
             Box(Modifier::new().fill_max_width().height(12.0)),
@@ -2045,6 +2050,7 @@ pub fn DatePicker(
                         let on_dismiss = on_dismiss.clone();
                         move || (on_dismiss)()
                     },
+                    ButtonConfig::default(),
                     || Text("Cancel").size(14.0),
                 ),
                 FilledButton(
@@ -2057,6 +2063,7 @@ pub fn DatePicker(
                             on_confirm(y, m, d);
                         }
                     },
+                    ButtonConfig::default(),
                     || Text("OK").size(14.0),
                 ),
             )),

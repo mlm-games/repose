@@ -85,7 +85,7 @@ pub fn screen() -> View {
                         b.set(x1);
                     }
                 }),
-                LinearProgressIndicator(Some(prog.get()), None, None, None, None),
+                LinearProgressIndicator(Some(prog.get()), Default::default()),
                 Row(Modifier::new().gap(sp::MD)).child((
                     TextButton(
                         Modifier::new(),
