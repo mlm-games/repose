@@ -1776,6 +1776,7 @@ impl ApplicationHandler<()> for App {
     }
 
     fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
+        crate::process_deeplinks();
         if !self.options.continuous_redraw && take_frame_request() {
             self.request_redraw();
         }

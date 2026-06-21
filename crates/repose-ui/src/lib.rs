@@ -120,7 +120,6 @@ pub use subcompose::{
     BoxWithConstraints, SubcomposeLayout, box_with_constraints_with_key, subcompose_hash_key,
     subcompose_layout_with_slots, subcompose_with_key, subcompose_with_key_slots,
 };
-pub mod navigation;
 pub mod overlay;
 pub mod pager;
 pub mod scroll;
