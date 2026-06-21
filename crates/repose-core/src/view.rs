@@ -136,12 +136,6 @@ pub enum ViewKind {
         /// IME action button configuration.
         ime_action: Option<crate::text::ImeAction>,
     },
-    ProgressBar {
-        value: f32,
-        min: f32,
-        max: f32,
-        circular: bool,
-    },
     Image {
         handle: ImageHandle,
         tint: Color, // multiplicative (WHITE = no tint)
@@ -224,7 +218,6 @@ impl std::fmt::Debug for ViewKind {
                 }
                 s.finish()
             }
-            Self::ProgressBar { value, .. } => write!(f, "Progress({})", value),
             Self::Expander { expanded, .. } => {
                 if *expanded { write!(f, "Expander(expanded)") } else { write!(f, "Expander(collapsed)") }
             }

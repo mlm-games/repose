@@ -88,17 +88,6 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             hint.hash(hasher);
             value.hash(hasher);
         }
-        ViewKind::ProgressBar {
-            value,
-            min,
-            max,
-            circular,
-        } => {
-            ((value * 1000.0) as i32).hash(hasher);
-            ((min * 1000.0) as i32).hash(hasher);
-            ((max * 1000.0) as i32).hash(hasher);
-            circular.hash(hasher);
-        }
         ViewKind::Image { handle, tint, fit } => {
             handle.hash(hasher);
             hash_color(tint, hasher);
