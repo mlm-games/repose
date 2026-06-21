@@ -2456,5 +2456,252 @@ pub fn AssistChip(
     )
 }
 
+/// Configuration for [`NavigationBar`].
+#[derive(Clone, Debug)]
+pub struct NavigationBarConfig {
+    pub modifier: Modifier,
+    pub container_color: Color,
+    pub selected_icon_color: Color,
+    pub unselected_icon_color: Color,
+    pub indicator_color: Color,
+    pub height: f32,
+    pub indicator_opacity: f32,
+    pub item_horizontal_padding: f32,
+    pub item_vertical_padding: f32,
+    pub indicator_radius: f32,
+}
 
+impl Default for NavigationBarConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            container_color: NavigationBarDefaults::container_color(),
+            selected_icon_color: NavigationBarDefaults::selected_icon_color(),
+            unselected_icon_color: NavigationBarDefaults::unselected_icon_color(),
+            indicator_color: NavigationBarDefaults::indicator_color(),
+            height: NavigationBarDefaults::HEIGHT,
+            indicator_opacity: NavigationBarDefaults::ITEM_ACTIVE_INDICATOR_OPACITY,
+            item_horizontal_padding: 4.0,
+            item_vertical_padding: 6.0,
+            indicator_radius: 16.0,
+        }
+    }
+}
 
+/// Configuration for [`NavigationRail`].
+#[derive(Clone, Debug)]
+pub struct NavigationRailConfig {
+    pub modifier: Modifier,
+    pub container_color: Color,
+    pub selected_icon_color: Color,
+    pub unselected_icon_color: Color,
+    pub selected_container_color: Color,
+    pub width: f32,
+    pub item_radius: f32,
+}
+
+impl Default for NavigationRailConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            container_color: NavigationRailDefaults::container_color(),
+            selected_icon_color: NavigationRailDefaults::selected_icon_color(),
+            unselected_icon_color: NavigationRailDefaults::unselected_icon_color(),
+            selected_container_color: NavigationRailDefaults::selected_container_color(),
+            width: NavigationRailDefaults::WIDTH,
+            item_radius: 16.0,
+        }
+    }
+}
+
+/// Configuration for [`Scaffold`].
+#[derive(Clone, Debug)]
+pub struct ScaffoldConfig {
+    pub modifier: Modifier,
+    pub container_color: Color,
+    pub top_bar_height: f32,
+    pub bottom_bar_height: f32,
+    pub fab_margin: f32,
+}
+
+impl Default for ScaffoldConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            container_color: ScaffoldDefaults::container_color(),
+            top_bar_height: ScaffoldDefaults::TOP_BAR_HEIGHT,
+            bottom_bar_height: ScaffoldDefaults::BOTTOM_BAR_HEIGHT,
+            fab_margin: ScaffoldDefaults::FAB_MARGIN,
+        }
+    }
+}
+
+/// Configuration for [`NavigationDrawer`].
+#[derive(Clone, Debug)]
+pub struct NavigationDrawerConfig {
+    pub modifier: Modifier,
+    pub container_color: Color,
+    pub scrim_color: Color,
+    pub width: f32,
+    pub shape_radius: f32,
+}
+
+impl Default for NavigationDrawerConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            container_color: NavigationDrawerDefaults::container_color(),
+            scrim_color: NavigationDrawerDefaults::scrim_color(),
+            width: NavigationDrawerDefaults::WIDTH,
+            shape_radius: NavigationDrawerDefaults::SHAPE_RADIUS,
+        }
+    }
+}
+
+/// Configuration for [`BottomSheet`] / `ModalBottomSheet`.
+#[derive(Clone, Debug)]
+pub struct BottomSheetConfig {
+    pub modifier: Modifier,
+    pub container_color: Color,
+    pub scrim_color: Color,
+    pub drag_handle_color: Color,
+    pub shape_radius: f32,
+    pub max_width: f32,
+    pub drag_handle_width: f32,
+    pub drag_handle_height: f32,
+    pub peek_height: f32,
+}
+
+impl Default for BottomSheetConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            container_color: BottomSheetDefaults::container_color(),
+            scrim_color: BottomSheetDefaults::scrim_color(),
+            drag_handle_color: BottomSheetDefaults::drag_handle_color(),
+            shape_radius: BottomSheetDefaults::SHAPE_RADIUS,
+            max_width: BottomSheetDefaults::MAX_WIDTH,
+            drag_handle_width: BottomSheetDefaults::DRAG_HANDLE_WIDTH,
+            drag_handle_height: BottomSheetDefaults::DRAG_HANDLE_HEIGHT,
+            peek_height: BottomSheetDefaults::PEEK_HEIGHT,
+        }
+    }
+}
+
+/// Configuration for [`SearchBar`].
+#[derive(Clone, Debug)]
+pub struct SearchBarConfig {
+    pub modifier: Modifier,
+    pub container_color: Color,
+    pub active_container_color: Color,
+    pub content_color: Color,
+    pub placeholder_color: Color,
+    pub height: f32,
+    pub expanded_width: f32,
+    pub collapsed_width: f32,
+}
+
+impl Default for SearchBarConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            container_color: SearchBarDefaults::container_color(),
+            active_container_color: SearchBarDefaults::active_container_color(),
+            content_color: SearchBarDefaults::content_color(),
+            placeholder_color: SearchBarDefaults::placeholder_color(),
+            height: SearchBarDefaults::HEIGHT,
+            expanded_width: SearchBarDefaults::EXPANDED_WIDTH,
+            collapsed_width: SearchBarDefaults::COLLAPSED_WIDTH,
+        }
+    }
+}
+
+/// Configuration for [`DropdownMenu`].
+#[derive(Clone, Debug)]
+pub struct DropdownMenuConfig {
+    pub modifier: Modifier,
+    pub container_color: Color,
+    pub item_text_color: Color,
+    pub disabled_item_text_color: Color,
+    pub divider_color: Color,
+    pub min_width: f32,
+    pub item_height: f32,
+}
+
+impl Default for DropdownMenuConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            container_color: DropdownMenuDefaults::container_color(),
+            item_text_color: DropdownMenuDefaults::item_text_color(),
+            disabled_item_text_color: DropdownMenuDefaults::disabled_item_text_color(),
+            divider_color: DropdownMenuDefaults::divider_color(),
+            min_width: DropdownMenuDefaults::MIN_WIDTH,
+            item_height: DropdownMenuDefaults::ITEM_HEIGHT,
+        }
+    }
+}
+
+/// Configuration for tooltip.
+#[derive(Clone, Debug)]
+pub struct TooltipConfig {
+    pub modifier: Modifier,
+    pub container_color: Color,
+    pub content_color: Color,
+    pub offset_y: f32,
+    pub horizontal_padding: f32,
+    pub vertical_padding: f32,
+}
+
+impl Default for TooltipConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            container_color: TooltipDefaults::container_color(),
+            content_color: TooltipDefaults::content_color(),
+            offset_y: TooltipDefaults::OFFSET_Y,
+            horizontal_padding: TooltipDefaults::HORIZONTAL_PADDING,
+            vertical_padding: TooltipDefaults::VERTICAL_PADDING,
+        }
+    }
+}
+
+/// Configuration for pull-to-refresh.
+#[derive(Clone, Debug)]
+pub struct PullToRefreshConfig {
+    pub modifier: Modifier,
+    pub indicator_color: Color,
+    pub threshold: f32,
+}
+
+impl Default for PullToRefreshConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            indicator_color: PullToRefreshDefaults::indicator_color(),
+            threshold: PullToRefreshDefaults::THRESHOLD,
+        }
+    }
+}
+
+/// Configuration for alert dialog.
+#[derive(Clone, Debug)]
+pub struct AlertDialogConfig {
+    pub modifier: Modifier,
+    pub scrim_color: Color,
+    pub min_width: f32,
+    pub max_width: f32,
+    pub horizontal_padding: f32,
+}
+
+impl Default for AlertDialogConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            scrim_color: AlertDialogDefaults::scrim_color(),
+            min_width: AlertDialogDefaults::MIN_WIDTH,
+            max_width: AlertDialogDefaults::MAX_WIDTH,
+            horizontal_padding: AlertDialogDefaults::HORIZONTAL_PADDING,
+        }
+    }
+}

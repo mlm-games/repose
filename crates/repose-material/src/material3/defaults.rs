@@ -339,3 +339,93 @@ impl ChipDefaults {
     pub fn input_unselected_icon_color() -> Color { theme().on_surface_variant }
     pub fn suggestion_icon_color() -> Color { theme().primary }
 }
+
+/// Default values for scaffold layout.
+pub struct ScaffoldDefaults;
+
+impl ScaffoldDefaults {
+    pub fn container_color() -> Color { theme().background }
+    pub const TOP_BAR_HEIGHT: f32 = 64.0;
+    pub const BOTTOM_BAR_HEIGHT: f32 = 80.0;
+    pub const FAB_MARGIN: f32 = 16.0;
+}
+
+/// Default values for navigation drawer.
+pub struct NavigationDrawerDefaults;
+
+impl NavigationDrawerDefaults {
+    pub const WIDTH: f32 = 300.0;
+    pub fn container_color() -> Color { theme().surface_container_low }
+    pub fn scrim_color() -> Color { theme().scrim.with_alpha(82) }
+    pub const SHAPE_RADIUS: f32 = 16.0;
+}
+
+/// Default values for bottom sheet / modal bottom sheet.
+pub struct BottomSheetDefaults;
+
+impl BottomSheetDefaults {
+    pub fn container_color() -> Color { theme().surface_container_low }
+    pub fn drag_handle_color() -> Color { theme().on_surface_variant }
+    pub fn scrim_color() -> Color { theme().scrim.with_alpha(85) }
+    pub const DRAG_HANDLE_WIDTH: f32 = 32.0;
+    pub const DRAG_HANDLE_HEIGHT: f32 = 4.0;
+    pub const SHAPE_RADIUS: f32 = 16.0;
+    pub const PEEK_HEIGHT: f32 = 56.0;
+    pub const MAX_WIDTH: f32 = 640.0;
+}
+
+/// Default values for search bar.
+pub struct SearchBarDefaults;
+
+impl SearchBarDefaults {
+    pub const HEIGHT: f32 = 56.0;
+    pub const EXPANDED_WIDTH: f32 = 360.0;
+    pub const COLLAPSED_WIDTH: f32 = 240.0;
+    pub const DOCKED_HEIGHT: f32 = 400.0;
+    pub fn container_color() -> Color { theme().surface_container }
+    pub fn active_container_color() -> Color { theme().surface_container_high }
+    pub fn content_color() -> Color { theme().on_surface }
+    pub fn placeholder_color() -> Color { theme().on_surface_variant }
+}
+
+/// Default values for dropdown menu.
+pub struct DropdownMenuDefaults;
+
+impl DropdownMenuDefaults {
+    pub const MIN_WIDTH: f32 = 112.0;
+    pub const ITEM_HEIGHT: f32 = 40.0;
+    pub fn container_color() -> Color { theme().surface_container }
+    pub fn item_text_color() -> Color { theme().on_surface }
+    pub fn disabled_item_text_color() -> Color { theme().on_surface.with_alpha_f32(0.38) }
+    pub fn divider_color() -> Color { theme().outline_variant }
+}
+
+/// Default values for tooltip.
+pub struct TooltipDefaults;
+
+impl TooltipDefaults {
+    pub const OFFSET_Y: f32 = -28.0;
+    pub const HORIZONTAL_PADDING: f32 = 8.0;
+    pub const VERTICAL_PADDING: f32 = 4.0;
+    pub fn container_color() -> Color { theme().inverse_surface }
+    pub fn content_color() -> Color { theme().inverse_on_surface }
+}
+
+/// Default values for pull-to-refresh.
+pub struct PullToRefreshDefaults;
+
+impl PullToRefreshDefaults {
+    pub const THRESHOLD: f32 = 64.0;
+    pub fn indicator_color() -> Color { theme().primary }
+    pub fn container_color() -> Color { Color::TRANSPARENT }
+}
+
+/// Default values for alert dialog.
+pub struct AlertDialogDefaults;
+
+impl AlertDialogDefaults {
+    pub const MIN_WIDTH: f32 = 280.0;
+    pub const MAX_WIDTH: f32 = 560.0;
+    pub const HORIZONTAL_PADDING: f32 = 24.0;
+    pub fn scrim_color() -> Color { theme().scrim.with_alpha(170) }
+}

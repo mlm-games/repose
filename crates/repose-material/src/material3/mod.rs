@@ -443,60 +443,6 @@ pub fn FilterChip(
     )
 }
 
-pub fn AssistChip(
-    on_click: impl Fn() + 'static,
-    label: View,
-    leading_icon: Option<View>,
-    trailing_icon: Option<View>,
-) -> View {
-    let th = theme();
-    Box(Modifier::new()
-        .state_colors(StateColors {
-            default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            pressed: th.on_surface.with_alpha_f32(0.12),
-            disabled: Color::TRANSPARENT,
-        })
-        .padding_values(PaddingValues {
-            left: 16.0,
-            right: 16.0,
-            top: 8.0,
-            bottom: 8.0,
-        })
-        .clickable()
-        .on_pointer_down(move |_| on_click())
-        .background(Color::TRANSPARENT)
-        .clip_rounded(8.0)
-        .border(1.0, th.outline_variant, 8.0))
-    .child(
-        Row(Modifier::new().align_items(AlignItems::Center)).child((
-            leading_icon
-                .map(|v| {
-                    Box(Modifier::new().padding_values(PaddingValues {
-                        left: 0.0,
-                        right: 8.0,
-                        top: 0.0,
-                        bottom: 0.0,
-                    }))
-                    .child(with_content_color(th.primary, move || v))
-                })
-                .unwrap_or(Box(Modifier::new())),
-            with_content_color(th.on_surface, move || label),
-            trailing_icon
-                .map(|v| {
-                    Box(Modifier::new().padding_values(PaddingValues {
-                        left: 8.0,
-                        right: 0.0,
-                        top: 0.0,
-                        bottom: 0.0,
-                    }))
-                    .child(with_content_color(th.primary, move || v))
-                })
-                .unwrap_or(Box(Modifier::new())),
-        )),
-    )
-}
-
 pub fn SuggestionChip(on_click: impl Fn() + 'static, label: View, icon: Option<View>) -> View {
     let th = theme();
     Box(Modifier::new()

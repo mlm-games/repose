@@ -1,8 +1,8 @@
 use repose_core::{prelude::*, signal};
 use repose_material::material3::{
-    AssistChip, ButtonConfig, Checkbox, CheckboxConfig, FilterChip, LinearProgressIndicator,
-    M3RangeSlider, M3Slider, RadioButton, RadioButtonConfig, SliderConfig, Switch, SwitchConfig,
-    TextButton,
+    AssistChip, ButtonConfig, CardConfig, Checkbox, CheckboxConfig, ChipConfig, FilterChip,
+    LinearProgressIndicator, M3RangeSlider, M3Slider, RadioButton, RadioButtonConfig, SliderConfig,
+    Switch, SwitchConfig, TextButton,
 };
 use repose_material::{Icon, material_symbols};
 use repose_ui::*;
@@ -154,18 +154,20 @@ pub fn screen() -> View {
                 Column(Modifier::new().gap(sp::SM)).child((
                     Hint("AssistChip"),
                     Row(Modifier::new().gap(sp::SM)).child((
-                        AssistChip(|| {}, Text("Basic"), None, None),
+                        AssistChip(|| {}, Text("Basic"), None, None, ChipConfig::default()),
                         AssistChip(
                             || {},
                             Text("Leading"),
                             Some(Icon(Symbols::add).size(18.0)),
                             None,
+                            ChipConfig::default(),
                         ),
                         AssistChip(
                             || {},
                             Text("Both"),
                             Some(Icon(Symbols::search).size(18.0)),
                             Some(Icon(Symbols::close).size(18.0)),
+                            ChipConfig::default(),
                         ),
                     )),
                 )),
