@@ -8,6 +8,8 @@ use repose_core::*;
 use repose_ui::anim::{animate_color, animate_f32};
 use repose_ui::{Box, Column, Row, Stack, Text, TextStyle, ViewExt};
 
+use super::ProgressIndicatorDefaults;
+
 use crate::{Icon, Symbol};
 
 /// M3 Top App Bar (small). Displays a title with optional navigation icon and
@@ -655,10 +657,16 @@ pub fn SegmentedButton(selected: &[usize], segments: Vec<Segment>) -> View {
     )
 }
 
-pub fn CircularProgressIndicator(value: Option<f32>) -> View {
+pub fn CircularProgressIndicator(
+    value: Option<f32>,
+    color: Option<Color>,
+    track_color: Option<Color>,
+) -> View {
     let th = theme();
-    let sz = dp_to_px(40.0);
-    let stroke = dp_to_px(4.0);
+    let color = color.unwrap_or(th.primary);
+    let track_color = track_color.unwrap_or(th.secondary_container);
+    let sz = dp_to_px(ProgressIndicatorDefaults::CIRCULAR_INDICATOR_SIZE);
+    let stroke = dp_to_px(ProgressIndicatorDefaults::CIRCULAR_STROKE_WIDTH);
     let val = value.unwrap_or(0.0).clamp(0.0, 1.0);
 
     Box(Modifier::new()
@@ -685,7 +693,7 @@ pub fn CircularProgressIndicator(value: Option<f32>) -> View {
             // Track ring
             scene.nodes.push(SceneNode::EllipseBorder {
                 rect: circle,
-                color: mul_c(th.secondary_container),
+                color: mul_c(track_color),
                 width: stroke,
             });
 
@@ -703,7 +711,7 @@ pub fn CircularProgressIndicator(value: Option<f32>) -> View {
                 });
                 scene.nodes.push(SceneNode::EllipseBorder {
                     rect: circle,
-                    color: mul_c(th.primary),
+                    color: mul_c(color),
                     width: stroke,
                 });
                 scene.nodes.push(SceneNode::PopClip);
@@ -717,33 +725,30 @@ pub fn CircularProgressIndicator(value: Option<f32>) -> View {
     })
 }
 
-/// Default values for M3 progress indicator properties.
-pub struct ProgressIndicatorDefaults;
-
-impl ProgressIndicatorDefaults {
-    pub fn indicator_color() -> Color {
-        theme().primary
-    }
-    pub fn track_color() -> Color {
-        theme().secondary_container
-    }
-}
-
 /// M3 Linear Progress Indicator.
 ///
 /// When `color` or `track_color` is `None`, theme defaults from
 /// [`ProgressIndicatorDefaults`] are used.
+/// `gap_size` and `stop_size` are in dp; when `None` the defaults from
+/// [`ProgressIndicatorDefaults`] apply.
 pub fn LinearProgressIndicator(
     value: Option<f32>,
     color: Option<Color>,
     track_color: Option<Color>,
+    gap_size: Option<f32>,
+    stop_size: Option<f32>,
 ) -> View {
     let th = theme();
     let color = color.unwrap_or(th.primary);
     let track_color = track_color.unwrap_or(th.secondary_container);
+    let gap_sz = gap_size.unwrap_or(ProgressIndicatorDefaults::LINEAR_INDICATOR_GAP_SIZE);
+    let stop_sz = stop_size.unwrap_or(ProgressIndicatorDefaults::LINEAR_TRACK_STOP_SIZE);
 
-    Box(Modifier::new().fill_max_width().height(4.0).painter(
-        move |scene: &mut Scene, rect: Rect, alpha: f32| {
+    Box(Modifier::new()
+        .fill_max_width()
+        .height(ProgressIndicatorDefaults::LINEAR_INDICATOR_HEIGHT)
+        .painter(
+            move |scene: &mut Scene, rect: Rect, alpha: f32| {
             let mul_c = |c: Color| {
                 Color(
                     c.0,
@@ -754,8 +759,8 @@ pub fn LinearProgressIndicator(
             };
             let track_h = rect.h;
             let corner = track_h * 0.5;
-            let gap = dp_to_px(4.0);
-            let dot_r = dp_to_px(2.0);
+            let gap = dp_to_px(gap_sz);
+            let dot_r = dp_to_px(stop_sz) * 0.5;
             let cy = rect.y + rect.h * 0.5;
             let t = value.unwrap_or(0.0).clamp(0.0, 1.0);
 
