@@ -1,5 +1,57 @@
 use repose_core::*;
 
+/// Default values for surface component.
+pub struct SurfaceDefaults;
+
+impl SurfaceDefaults {
+    pub fn color() -> Color { theme().surface }
+    pub const SHAPE_RADIUS: f32 = 0.0;
+    pub const TONAL_ELEVATION: f32 = 0.0;
+}
+
+/// Default values for toggle button components.
+pub struct ToggleButtonDefaults;
+
+impl ToggleButtonDefaults {
+    pub const HEIGHT: f32 = 40.0;
+    pub const HORIZONTAL_PADDING: f32 = 24.0;
+    pub const SHAPE_RADIUS: f32 = 20.0;
+    pub fn content_color() -> Color { theme().on_surface_variant }
+    pub fn checked_container_color() -> Color { theme().primary }
+    pub fn checked_content_color() -> Color { theme().on_primary }
+    pub fn tonal_content_color() -> Color { theme().on_surface_variant }
+    pub fn tonal_checked_container_color() -> Color { theme().secondary_container }
+    pub fn tonal_checked_content_color() -> Color { theme().on_secondary_container }
+    pub fn outlined_content_color() -> Color { theme().on_surface_variant }
+    pub fn outlined_border_color() -> Color { theme().outline }
+    pub fn outlined_checked_container_color() -> Color { theme().secondary_container }
+    pub fn outlined_checked_content_color() -> Color { theme().on_secondary_container }
+    pub fn elevated_content_color() -> Color { theme().primary }
+    pub fn elevated_checked_container_color() -> Color { theme().surface_container_low }
+    pub fn elevated_checked_content_color() -> Color { theme().primary }
+    pub fn state_colors_default() -> StateColors {
+        let th = theme();
+        StateColors {
+            default: Color::TRANSPARENT,
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
+            disabled: th.on_surface.with_alpha_f32(0.12),
+        }
+    }
+    pub fn state_elevation_default() -> StateElevation {
+        StateElevation { default: 0.0, hovered: 1.0, pressed: 0.0, disabled: 0.0 }
+    }
+    pub fn elevated_state_elevation() -> StateElevation {
+        let th = theme();
+        StateElevation {
+            default: th.elevation.level1,
+            hovered: th.elevation.level2,
+            pressed: th.elevation.level1,
+            disabled: 0.0,
+        }
+    }
+}
+
 /// Default values for progress indicator components.
 pub struct ProgressIndicatorDefaults;
 
@@ -101,6 +153,8 @@ impl IconButtonDefaults {
     pub fn content_color() -> Color { theme().on_surface_variant }
     pub fn filled_content_color() -> Color { theme().on_primary }
     pub fn filled_container_color() -> Color { theme().primary }
+    pub fn filled_tonal_content_color() -> Color { theme().on_secondary_container }
+    pub fn filled_tonal_container_color() -> Color { theme().secondary_container }
     pub fn state_colors_default() -> StateColors {
         let th = theme();
         StateColors {

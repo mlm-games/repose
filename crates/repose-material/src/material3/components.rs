@@ -72,6 +72,83 @@ pub fn TopAppBar(
     ))
 }
 
+/// M3 Center-Aligned Top App Bar - same as TopAppBar but title is centered.
+pub fn CenterAlignedTopAppBar(
+    title: impl Into<String>,
+    navigation_icon: Option<View>,
+    actions: Vec<View>,
+    config: TopAppBarConfig,
+) -> View {
+    let th = theme();
+    Row(Modifier::new()
+        .min_width(200.0)
+        .height(config.height)
+        .background(config.container_color)
+        .padding_values(PaddingValues {
+            left: 4.0,
+            right: 4.0,
+            top: 0.0,
+            bottom: 0.0,
+        })
+        .align_items(AlignItems::Center)
+        .justify_content(JustifyContent::Center)
+        .then(config.modifier))
+    .child((
+        navigation_icon.unwrap_or(Box(Modifier::new().width(16.0).fill_max_height())),
+        Box(Modifier::new()
+            .flex_grow(1.0))
+        .child(
+            Text(title)
+                .color(config.title_color)
+                .size(th.typography.title_large),
+        ),
+        Row(Modifier::new().align_items(AlignItems::Center)).child(actions),
+    ))
+}
+
+/// Configuration for [`Surface`].
+#[derive(Clone, Debug)]
+pub struct SurfaceConfig {
+    pub modifier: Modifier,
+    pub color: Color,
+    pub shape_radius: f32,
+    pub tonal_elevation: f32,
+    pub border: Option<(f32, Color)>,
+}
+
+impl Default for SurfaceConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            color: SurfaceDefaults::color(),
+            shape_radius: SurfaceDefaults::SHAPE_RADIUS,
+            tonal_elevation: SurfaceDefaults::TONAL_ELEVATION,
+            border: None,
+        }
+    }
+}
+
+/// M3 Surface - a basic container with shape, color, elevation, and border.
+/// Sets the ContentColor local for children based on the surface color.
+pub fn Surface(config: SurfaceConfig, content: impl FnOnce() -> View) -> View {
+    let mut m = Modifier::new()
+        .background(config.color)
+        .clip_rounded(config.shape_radius)
+        .then(config.modifier);
+    if config.tonal_elevation > 0.0 {
+        m = m.state_elevation(StateElevation {
+            default: config.tonal_elevation,
+            hovered: config.tonal_elevation,
+            pressed: config.tonal_elevation,
+            disabled: 0.0,
+        });
+    }
+    if let Some((w, c)) = config.border {
+        m = m.border(w, c, config.shape_radius);
+    }
+    Box(m).child(content())
+}
+
 /// Configuration for [`IconButton`] and [`FilledIconButton`].
 #[derive(Clone, Debug)]
 pub struct IconButtonConfig {
@@ -126,6 +203,48 @@ pub fn FilledIconButton(icon: View, on_click: impl Fn() + 'static, config: IconB
             pressed: content_color.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         })
+        .align_items(AlignItems::Center)
+        .justify_content(JustifyContent::Center)
+        .clickable()
+        .on_pointer_down(move |_| on_click())
+        .then(config.modifier))
+    .child(icon)
+}
+
+/// M3 Filled Tonal Icon Button - icon button with a secondary container background.
+pub fn FilledTonalIconButton(icon: View, on_click: impl Fn() + 'static, config: IconButtonConfig) -> View {
+    let th = theme();
+    let content_color = config.content_color.unwrap_or_else(IconButtonDefaults::filled_tonal_content_color);
+    let bg = config.filler_container_color.unwrap_or_else(IconButtonDefaults::filled_tonal_container_color);
+    let sz = config.container_size.unwrap_or(IconButtonDefaults::FILLED_CONTAINER_SIZE);
+    Box(Modifier::new()
+        .size(sz, sz)
+        .clip_rounded(sz * 0.5)
+        .background(bg)
+        .state_colors(StateColors {
+            default: Color::TRANSPARENT,
+            hovered: content_color.with_alpha_f32(0.08),
+            pressed: content_color.with_alpha_f32(0.12),
+            disabled: th.on_surface.with_alpha_f32(0.12),
+        })
+        .align_items(AlignItems::Center)
+        .justify_content(JustifyContent::Center)
+        .clickable()
+        .on_pointer_down(move |_| on_click())
+        .then(config.modifier))
+    .child(icon)
+}
+
+/// M3 Outlined Icon Button - icon button with a transparent background and border.
+pub fn OutlinedIconButton(icon: View, on_click: impl Fn() + 'static, config: IconButtonConfig) -> View {
+    let th = theme();
+    let sz = config.container_size.unwrap_or(IconButtonDefaults::CONTAINER_SIZE);
+    let colors = config.state_colors.unwrap_or_else(IconButtonDefaults::state_colors_default);
+    Box(Modifier::new()
+        .size(sz, sz)
+        .clip_rounded(sz * 0.5)
+        .state_colors(colors)
+        .border(1.0, th.outline, sz * 0.5)
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
         .clickable()
@@ -371,6 +490,174 @@ pub fn ElevatedButton(
         config.height,
         config.shape_radius,
         config.enabled,
+    )
+}
+
+/// Configuration for toggle button components.
+#[derive(Clone, Debug)]
+pub struct ToggleButtonConfig {
+    pub modifier: Modifier,
+    pub enabled: bool,
+    pub container_color: Option<Color>,
+    pub content_color: Option<Color>,
+    pub checked_container_color: Option<Color>,
+    pub checked_content_color: Option<Color>,
+    pub state_colors: Option<StateColors>,
+    pub state_elevation: Option<StateElevation>,
+    pub border: Option<(f32, Color, f32)>,
+    pub shape_radius: f32,
+    pub height: f32,
+}
+
+impl Default for ToggleButtonConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            enabled: true,
+            container_color: None,
+            content_color: None,
+            checked_container_color: None,
+            checked_content_color: None,
+            state_colors: None,
+            state_elevation: None,
+            border: None,
+            shape_radius: ToggleButtonDefaults::SHAPE_RADIUS,
+            height: ToggleButtonDefaults::HEIGHT,
+        }
+    }
+}
+
+fn toggle_button_impl(
+    checked: bool,
+    on_checked_change: impl Fn(bool) + 'static,
+    content: impl FnOnce(bool) -> View,
+    content_color: Color,
+    container_color: Option<Color>,
+    checked_container_color: Option<Color>,
+    checked_content_color: Option<Color>,
+    state_colors: StateColors,
+    state_elevation: StateElevation,
+    border: Option<(f32, Color, f32)>,
+    pad_left: f32,
+    pad_right: f32,
+    height: f32,
+    shape_radius: f32,
+    enabled: bool,
+) -> View {
+    let th = theme();
+    let bg = if checked {
+        checked_container_color.unwrap_or(th.primary)
+    } else {
+        container_color.unwrap_or(Color::TRANSPARENT)
+    };
+    let fg = if checked {
+        checked_content_color.unwrap_or(th.on_primary)
+    } else {
+        content_color
+    };
+    let mut m = Modifier::new()
+        .height(height)
+        .padding_values(PaddingValues { left: pad_left, right: pad_right, top: 0.0, bottom: 0.0 })
+        .background(bg)
+        .clip_rounded(shape_radius)
+        .state_colors(state_colors)
+        .state_elevation(state_elevation);
+    if let Some((w, c, r)) = border {
+        m = m.border(w, c, r);
+    }
+    if enabled {
+        m = m.clickable().on_pointer_down({
+            let cb = on_checked_change;
+            move |_| cb(!checked)
+        });
+    } else {
+        m = m.alpha(0.38);
+    }
+    with_content_color(fg, || Box(m).child(content(checked)))
+}
+
+/// M3 Toggle Button - a button that toggles between checked/unchecked states.
+pub fn ToggleButton(
+    checked: bool,
+    on_checked_change: impl Fn(bool) + 'static,
+    config: ToggleButtonConfig,
+    content: impl FnOnce(bool) -> View,
+) -> View {
+    let cc = config.content_color.unwrap_or_else(ToggleButtonDefaults::content_color);
+    let checked_cc = config.checked_content_color.unwrap_or_else(ToggleButtonDefaults::checked_content_color);
+    let checked_bg = config.checked_container_color.unwrap_or_else(ToggleButtonDefaults::checked_container_color);
+    let sc = config.state_colors.unwrap_or_else(ToggleButtonDefaults::state_colors_default);
+    let se = config.state_elevation.unwrap_or_else(ToggleButtonDefaults::state_elevation_default);
+    toggle_button_impl(
+        checked, on_checked_change, content, cc, None, Some(checked_bg), Some(checked_cc),
+        sc, se, config.border,
+        ToggleButtonDefaults::HORIZONTAL_PADDING, ToggleButtonDefaults::HORIZONTAL_PADDING,
+        config.height, config.shape_radius, config.enabled,
+    )
+}
+
+/// M3 Tonal Toggle Button - uses secondary container colors.
+pub fn TonalToggleButton(
+    checked: bool,
+    on_checked_change: impl Fn(bool) + 'static,
+    config: ToggleButtonConfig,
+    content: impl FnOnce(bool) -> View,
+) -> View {
+    let cc = config.content_color.unwrap_or_else(ToggleButtonDefaults::tonal_content_color);
+    let checked_cc = config.checked_content_color.unwrap_or_else(ToggleButtonDefaults::tonal_checked_content_color);
+    let checked_bg = config.checked_container_color.unwrap_or_else(ToggleButtonDefaults::tonal_checked_container_color);
+    let sc = config.state_colors.unwrap_or_else(ToggleButtonDefaults::state_colors_default);
+    let se = config.state_elevation.unwrap_or_else(ToggleButtonDefaults::state_elevation_default);
+    toggle_button_impl(
+        checked, on_checked_change, content, cc, None, Some(checked_bg), Some(checked_cc),
+        sc, se, config.border,
+        ToggleButtonDefaults::HORIZONTAL_PADDING, ToggleButtonDefaults::HORIZONTAL_PADDING,
+        config.height, config.shape_radius, config.enabled,
+    )
+}
+
+/// M3 Outlined Toggle Button - outlined button that toggles between states.
+pub fn OutlinedToggleButton(
+    checked: bool,
+    on_checked_change: impl Fn(bool) + 'static,
+    config: ToggleButtonConfig,
+    content: impl FnOnce(bool) -> View,
+) -> View {
+    let cc = config.content_color.unwrap_or_else(ToggleButtonDefaults::outlined_content_color);
+    let checked_cc = config.checked_content_color.unwrap_or_else(ToggleButtonDefaults::outlined_checked_content_color);
+    let checked_bg = config.checked_container_color.unwrap_or_else(ToggleButtonDefaults::outlined_checked_container_color);
+    let sc = config.state_colors.unwrap_or_else(ToggleButtonDefaults::state_colors_default);
+    let se = config.state_elevation.unwrap_or_else(ToggleButtonDefaults::state_elevation_default);
+    let border = if !checked {
+        Some(config.border.unwrap_or((1.0, ToggleButtonDefaults::outlined_border_color(), config.shape_radius)))
+    } else {
+        config.border
+    };
+    toggle_button_impl(
+        checked, on_checked_change, content, cc, None, Some(checked_bg), Some(checked_cc),
+        sc, se, border,
+        ToggleButtonDefaults::HORIZONTAL_PADDING, ToggleButtonDefaults::HORIZONTAL_PADDING,
+        config.height, config.shape_radius, config.enabled,
+    )
+}
+
+/// M3 Elevated Toggle Button - elevated button that toggles between states.
+pub fn ElevatedToggleButton(
+    checked: bool,
+    on_checked_change: impl Fn(bool) + 'static,
+    config: ToggleButtonConfig,
+    content: impl FnOnce(bool) -> View,
+) -> View {
+    let cc = config.content_color.unwrap_or_else(ToggleButtonDefaults::elevated_content_color);
+    let checked_cc = config.checked_content_color.unwrap_or_else(ToggleButtonDefaults::elevated_checked_content_color);
+    let checked_bg = config.checked_container_color.unwrap_or_else(ToggleButtonDefaults::elevated_checked_container_color);
+    let sc = config.state_colors.unwrap_or_else(ToggleButtonDefaults::state_colors_default);
+    let se = config.state_elevation.unwrap_or_else(ToggleButtonDefaults::elevated_state_elevation);
+    toggle_button_impl(
+        checked, on_checked_change, content, cc, None, Some(checked_bg), Some(checked_cc),
+        sc, se, config.border,
+        ToggleButtonDefaults::HORIZONTAL_PADDING, ToggleButtonDefaults::HORIZONTAL_PADDING,
+        config.height, config.shape_radius, config.enabled,
     )
 }
 
