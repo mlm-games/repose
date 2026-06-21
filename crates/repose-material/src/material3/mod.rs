@@ -83,6 +83,7 @@ pub fn BottomSheet(
     on_dismiss: impl Fn() + 'static,
     modifier: Modifier,
     content: View,
+    config: BottomSheetConfig,
 ) -> View {
     let th = theme();
     let id = remember(|| BOTTOMSHEET_COUNTER.fetch_add(1, Ordering::Relaxed));
@@ -115,15 +116,16 @@ static NAVBAR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// M3 Navigation Bar - a bottom navigation bar with animated selection.
 /// Colors and indicator background transition with 200ms FastOutSlowIn.
-pub fn NavigationBar(selected_index: usize, items: Vec<NavItem>) -> View {
+pub fn NavigationBar(selected_index: usize, items: Vec<NavItem>, config: NavigationBarConfig) -> View {
     let th = theme();
     let id = remember(|| NAVBAR_COUNTER.fetch_add(1, Ordering::Relaxed));
     let spec = th.motion.shape;
     Row(Modifier::new()
         .fill_max_size()
-        .min_height(80.0)
-        .background(th.surface_container)
-        .padding(8.0))
+        .min_height(config.height)
+        .background(config.container_color)
+        .padding(8.0)
+        .then(config.modifier))
     .child(
         items
             .into_iter()
@@ -133,9 +135,9 @@ pub fn NavigationBar(selected_index: usize, items: Vec<NavItem>) -> View {
                 let fg = animate_color(
                     format!("nb_fg_{}_{}", id, i),
                     if selected {
-                        th.primary
+                        config.selected_icon_color
                     } else {
-                        th.on_surface_variant
+                        config.unselected_icon_color
                     },
                     spec,
                 );
@@ -144,22 +146,22 @@ pub fn NavigationBar(selected_index: usize, items: Vec<NavItem>) -> View {
                     if selected { 1.0 } else { 0.0 },
                     spec,
                 );
-                let indicator_bg = th.primary.with_alpha_f32(bg_alpha * 0.12);
+                let indicator_bg = config.indicator_color.with_alpha_f32(bg_alpha * config.indicator_opacity);
                 let cb = item.on_click.clone();
 
                 Column(
                     Modifier::new()
                         .flex_grow(1.0)
                         .padding_values(PaddingValues {
-                            left: 4.0,
-                            right: 4.0,
-                            top: 6.0,
-                            bottom: 6.0,
+                            left: config.item_horizontal_padding,
+                            right: config.item_horizontal_padding,
+                            top: config.item_vertical_padding,
+                            bottom: config.item_vertical_padding,
                         })
                         .align_items(AlignItems::Center)
                         .justify_content(JustifyContent::Center)
                         .background(indicator_bg)
-                        .clip_rounded(16.0)
+                        .clip_rounded(config.indicator_radius)
                         .state_colors(StateColors {
                             default: Color::TRANSPARENT,
                             hovered: th.on_surface.with_alpha_f32(0.08),
@@ -188,33 +190,41 @@ pub struct NavItem {
 }
 
 pub fn Card(modifier: Modifier, content: View) -> View {
-    let th = theme();
+    let config = CardConfig::default();
     Box(modifier
-        .background(th.surface_container_highest)
-        .clip_rounded(th.shapes.medium))
+        .background(config.container_color)
+        .clip_rounded(config.shape_radius)
+        .then(config.modifier))
     .child(Column(Modifier::new().fill_max_size()).child(content))
 }
 
 pub fn ElevatedCard(modifier: Modifier, content: View) -> View {
     let th = theme();
+    let config = CardConfig {
+        container_color: CardDefaults::elevated_container_color(),
+        ..Default::default()
+    };
     Box(modifier
         .state_elevation(StateElevation {
-            default: th.elevation.level1,
+            default: config.tonal_elevation,
             hovered: th.elevation.level2,
             pressed: th.elevation.level3,
             disabled: 0.0,
         })
-        .background(th.surface_container_low)
-        .clip_rounded(th.shapes.medium))
+        .background(config.container_color)
+        .clip_rounded(config.shape_radius))
     .child(Column(Modifier::new().fill_max_size()).child(content))
 }
 
 pub fn OutlinedCard(modifier: Modifier, content: View) -> View {
-    let th = theme();
+    let config = CardConfig {
+        container_color: CardDefaults::outlined_container_color(),
+        ..Default::default()
+    };
     Box(modifier
-        .background(th.surface)
-        .clip_rounded(th.shapes.medium)
-        .border(1.0, th.outline_variant, th.shapes.medium))
+        .background(config.container_color)
+        .clip_rounded(config.shape_radius)
+        .border(1.0, CardDefaults::outlined_border_color(), config.shape_radius))
     .child(Column(Modifier::new().fill_max_size()).child(content))
 }
 
@@ -283,12 +293,13 @@ pub fn Snackbar(
     message: impl Into<String>,
     action: Option<SnackbarAction>,
     modifier: Modifier,
+    config: SnackbarConfig,
 ) -> View {
     let msg = message.into();
     let th = theme();
-    let bg = th.inverse_surface;
-    let fg = th.inverse_on_surface;
-    let action_color = th.inverse_primary;
+    let bg = config.container_color;
+    let fg = config.content_color;
+    let action_color = config.action_color;
 
     let dismissing = snackbar_is_dismissing();
 
@@ -358,6 +369,7 @@ pub fn FilterChip(
     label: View,
     leading_icon: Option<View>,
     trailing_icon: Option<View>,
+    config: ChipConfig,
 ) -> View {
     let th = theme();
     let id = remember(|| FILTERCHIP_COUNTER.fetch_add(1, Ordering::Relaxed));
@@ -366,32 +378,32 @@ pub fn FilterChip(
     let bg = animate_color(
         format!("fc_bg_{}", id),
         if selected {
-            th.secondary_container
+            config.selected_container_color
         } else {
-            th.surface
+            config.container_color
         },
         spec,
     );
     let label_color = animate_color(
         format!("fc_lc_{}", id),
         if selected {
-            th.on_secondary_container
+            config.selected_content_color
         } else {
-            th.on_surface_variant
+            config.content_color
         },
         spec,
     );
     let border_color = if selected {
         Color::TRANSPARENT
     } else {
-        th.outline_variant
+        config.border_color
     };
     let leading_color = animate_color(
         format!("fc_lic_{}", id),
         if selected {
-            th.on_secondary_container
+            config.selected_content_color
         } else {
-            th.primary
+            config.content_color
         },
         spec,
     );
@@ -404,16 +416,16 @@ pub fn FilterChip(
             disabled: Color::TRANSPARENT,
         })
         .padding_values(PaddingValues {
-            left: 16.0,
-            right: 16.0,
+            left: config.horizontal_padding,
+            right: config.horizontal_padding,
             top: 8.0,
             bottom: 8.0,
         })
         .clickable()
         .on_pointer_down(move |_| on_click())
         .background(bg)
-        .clip_rounded(8.0)
-        .border(1.0, border_color, 8.0))
+        .clip_rounded(config.shape_radius)
+        .border(1.0, border_color, config.shape_radius))
     .child(
         Row(Modifier::new().align_items(AlignItems::Center)).child((
             leading_icon
@@ -436,7 +448,7 @@ pub fn FilterChip(
                         top: 0.0,
                         bottom: 0.0,
                     }))
-                    .child(with_content_color(th.on_surface_variant, move || v))
+                    .child(with_content_color(config.content_color, move || v))
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
@@ -944,6 +956,7 @@ pub fn DropdownMenu(
     modifier: Modifier,
     trigger: View,
     items: Vec<DropdownMenuEntry>,
+    config: DropdownMenuConfig,
 ) -> View {
     let th = theme();
     let ddm_id = remember(|| DROPDOWN_COUNTER.fetch_add(1, Ordering::Relaxed));
@@ -1002,7 +1015,7 @@ pub fn DropdownMenu(
                 .render_z_index(900.0)
                 .scale(scale)
                 .alpha(alpha))
-            .child(render_dropdown_menu_content(&th, &items, state.clone()))
+            .child(render_dropdown_menu_content(&th, &items, state.clone(), &config))
         } else {
             Box(Modifier::new())
         },
@@ -1020,15 +1033,16 @@ fn render_dropdown_menu_content(
     th: &Theme,
     items: &[DropdownMenuEntry],
     state: Rc<MenuState>,
+    config: &DropdownMenuConfig,
 ) -> View {
     let children: Vec<View> = items
         .iter()
         .map(|entry| match entry {
             DropdownMenuEntry::Item(item) => {
                 let text_color = if item.enabled {
-                    th.on_surface
+                    config.item_text_color
                 } else {
-                    th.on_surface.with_alpha_f32(0.38)
+                    config.disabled_item_text_color
                 };
                 let on_click = item.on_click.clone();
                 let state = state.clone();
@@ -1076,7 +1090,7 @@ fn render_dropdown_menu_content(
                 .fill_max_width()
                 .height(1.0)
                 .margin(12.0)
-                .background(th.outline_variant)),
+                .background(config.divider_color)),
         })
         .collect();
 
@@ -1087,9 +1101,9 @@ fn render_dropdown_menu_content(
             pressed: th.elevation.level3,
             disabled: 0.0,
         })
-        .min_width(112.0)
+        .min_width(config.min_width)
         .padding(4.0)
-        .background(th.surface_container)
+        .background(config.container_color)
         .clip_rounded(th.shapes.small))
     .child(Column(Modifier::new()).with_children(children))
 }
@@ -1453,9 +1467,10 @@ pub fn ModalBottomSheet(
     overlay: OverlayHandle,
     modifier: Modifier,
     content: View,
+    config: BottomSheetConfig,
 ) -> View {
     let th = theme();
-    let peek_h = state.peek_height.get();
+    let peek_h = state.peek_height.get().max(config.peek_height);
     let anim_distance = peek_h.max(48.0).max(400.0);
     let overlay_id = remember_with_key("mbs_oid", || signal(0u64));
 
@@ -1506,10 +1521,10 @@ pub fn ModalBottomSheet(
                     let sheet_body = Box(modifier
                         .clone()
                         .fill_max_width()
-                        .max_width(dp_to_px(640.0))
+                        .max_width(dp_to_px(config.max_width))
                         .translate(0.0, off)
-                        .background(th.surface_container_low)
-                        .clip_rounded(th.shapes.large))
+                        .background(config.container_color)
+                        .clip_rounded(config.shape_radius))
                     .child(
                         Column(Modifier::new().fill_max_width()).child((
                             Row(Modifier::new()
@@ -1517,9 +1532,9 @@ pub fn ModalBottomSheet(
                                 .justify_content(JustifyContent::Center))
                             .child(Box(Modifier::new()
                                 .margin_vertical(22.0)
-                                .width(32.0)
-                                .height(4.0)
-                                .background(th.on_surface_variant)
+                                .width(config.drag_handle_width)
+                                .height(config.drag_handle_height)
+                                .background(config.drag_handle_color)
                                 .clip_rounded(2.0))),
                             content.clone(),
                         )),
@@ -1532,14 +1547,14 @@ pub fn ModalBottomSheet(
                     .child(sheet_body);
 
                     let scrim_alpha = if state.is_visible() {
-                        85u8
+                        config.scrim_color.3
                     } else {
                         let t = (off / anim_distance).clamp(0.0, 1.0);
-                        (85.0 * (1.0 - t)) as u8
+                        (config.scrim_color.3 as f32 * (1.0 - t)) as u8
                     };
                     let scrim = Box(Modifier::new()
                         .fill_max_size()
-                        .background(th.scrim.with_alpha(scrim_alpha))
+                        .background(config.scrim_color.with_alpha(scrim_alpha))
                         .on_pointer_down({
                             let s = state.clone();
                             move |_| s.dismiss()
@@ -1637,16 +1652,18 @@ pub fn PullToRefresh(
     modifier: Modifier,
     on_refresh: Rc<dyn Fn()>,
     content: View,
+    config: PullToRefreshConfig,
 ) -> View {
     let th = theme();
     let pull = state.pull_offset();
     let refreshing = state.is_refreshing();
+    let threshold = config.threshold;
 
-    if state.triggered.get() && !refreshing && pull < state.threshold {
+    if state.triggered.get() && !refreshing && pull < threshold {
         state.triggered.set(false);
     }
 
-    if !refreshing && !state.triggered.get() && pull >= state.threshold {
+    if !refreshing && !state.triggered.get() && pull >= threshold {
         state.triggered.set(true);
         state.refreshing.set(true);
         (on_refresh)();
@@ -1656,14 +1673,14 @@ pub fn PullToRefresh(
     let raw_frac = if refreshing {
         1.0
     } else if pull > 0.0 {
-        (pull / state.threshold).min(1.0)
+        (pull / threshold).min(1.0)
     } else {
         0.0
     };
     let distance_fraction = animate_f32_from(frac_key, 0.0, raw_frac, theme().motion.color);
 
     // Indicator at top (pushed into view by overscroll) + content below.
-    let indicator_h = distance_fraction * state.threshold;
+    let indicator_h = distance_fraction * threshold;
     Column(modifier).child((
         if distance_fraction > 0.01 {
             Box(Modifier::new()
@@ -1672,11 +1689,11 @@ pub fn PullToRefresh(
                 .align_items(AlignItems::Center)
                 .justify_content(JustifyContent::Center))
             .child(if refreshing {
-                Text("↻").size(24.0).color(th.primary)
+                Text("\u{21BB}").size(24.0).color(config.indicator_color)
             } else {
-                Text("↓")
+                Text("\u{2193}")
                     .size((16.0 + distance_fraction * 8.0).min(24.0))
-                    .color(th.primary.with_alpha_f32(distance_fraction.min(1.0)))
+                    .color(config.indicator_color.with_alpha_f32(distance_fraction.min(1.0)))
             })
         } else {
             Box(Modifier::new())
@@ -2211,6 +2228,7 @@ pub fn NavigationRail(
     items: Vec<NavRailItem>,
     header: Option<View>,
     fab: Option<View>,
+    config: NavigationRailConfig,
 ) -> View {
     let th = theme();
     let id = remember(|| NAVRAIL_COUNTER.fetch_add(1, Ordering::Relaxed));
@@ -2263,16 +2281,16 @@ pub fn NavigationRail(
         let fg = animate_color(
             format!("nr_fg_{}_{}", id, i),
             if selected {
-                th.on_secondary_container
+                config.selected_icon_color
             } else {
-                th.on_surface_variant
+                config.unselected_icon_color
             },
             spec,
         );
         let bg = animate_color(
             format!("nr_bg_{}_{}", id, i),
             if selected {
-                th.secondary_container
+                config.selected_container_color
             } else {
                 Color::TRANSPARENT
             },
@@ -2300,7 +2318,7 @@ pub fn NavigationRail(
                         pressed: th.on_surface.with_alpha_f32(0.12),
                         disabled: Color::TRANSPARENT,
                     })
-                    .clip_rounded(16.0)
+                    .clip_rounded(config.item_radius)
                     .clickable()
                     .on_pointer_down(move |_| cb()),
             )
@@ -2328,10 +2346,11 @@ pub fn NavigationRail(
 
     Column(
         Modifier::new()
-            .width(80.0)
+            .width(config.width)
             .fill_max_height()
-            .background(th.surface)
-            .align_items(AlignItems::Center),
+            .background(config.container_color)
+            .align_items(AlignItems::Center)
+            .then(config.modifier),
     )
     .child((
         Column(Modifier::new()).with_children(top_children),
@@ -2390,13 +2409,20 @@ impl SwipeToDismissState {
 
     /// Whether the current position is past the dismiss threshold.
     pub fn is_dismissed(&self) -> bool {
-        *self.anim.borrow().get() < -250.0
+        *self.anim.borrow().get() < -150.0
     }
 
     /// Animate to the dismissed position.
     pub fn dismiss(&self) {
         *self.dismiss_handled.borrow_mut() = false;
         self.anim.borrow_mut().set_target(-300.0);
+        request_frame();
+    }
+
+    /// Animate to the dismissed position with custom offset.
+    pub fn dismiss_to(&self, offset: f32) {
+        *self.dismiss_handled.borrow_mut() = false;
+        self.anim.borrow_mut().set_target(-offset);
         request_frame();
     }
 
@@ -2417,6 +2443,17 @@ impl SwipeToDismissState {
             }
         }
     }
+
+    /// Fire the dismiss callback once when the spring settles past a given threshold.
+    fn try_handle_dismiss_with_threshold(&self, on_dismiss: &Option<Rc<dyn Fn()>>, threshold: f32) {
+        let anim = self.anim.borrow();
+        if !anim.is_animating() && !*self.dismiss_handled.borrow() && *anim.get() < -threshold {
+            *self.dismiss_handled.borrow_mut() = true;
+            if let Some(cb) = on_dismiss {
+                cb();
+            }
+        }
+    }
 }
 
 /// M3 SwipeToDismiss - wraps content that can be swiped left to reveal
@@ -2428,9 +2465,10 @@ pub fn SwipeToDismiss(
     background: View,
     content: View,
     modifier: Modifier,
+    config: SwipeToDismissConfig,
 ) -> View {
     let offset = state.offset();
-    state.try_handle_dismiss(&on_dismiss);
+    state.try_handle_dismiss_with_threshold(&on_dismiss, config.dismiss_threshold);
 
     let drag_start_x = remember_with_key("swipe_drag_start", || RefCell::new(None::<f32>));
     let drag_base = remember_with_key("swipe_drag_base", || RefCell::new(0.0f32));
@@ -2460,10 +2498,11 @@ pub fn SwipeToDismiss(
     let st = state.clone();
     let on_up = {
         let d = drag_start_x.clone();
+        let dt = config.dismiss_threshold;
         move |_e: PointerEvent| {
             *d.borrow_mut() = None;
             let off = *st.anim.borrow().get();
-            if off > -50.0 {
+            if off > -dt * 0.333 {
                 st.reset();
             } else {
                 st.dismiss();
@@ -2471,7 +2510,7 @@ pub fn SwipeToDismiss(
         }
     };
 
-    let display_offset = offset.max(-300.0).min(0.0);
+    let display_offset = offset.max(-config.dismissed_offset).min(0.0);
 
     Stack(modifier.fill_max_width()).child((
         Box(Modifier::new().fill_max_size().absolute()).child(background),

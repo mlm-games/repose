@@ -123,6 +123,7 @@ fn save_snackbar_request(snackbar: &SnackbarController) -> SnackbarRequest {
                     on_click: undo.clone(),
                 }),
                 Modifier::new(),
+                material3::SnackbarConfig::default(),
             )
         }),
     }

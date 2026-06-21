@@ -3,9 +3,10 @@ use std::rc::Rc;
 use repose_core::prelude::*;
 use repose_material::material3::dialog::{Dialog, DialogState};
 use repose_material::material3::{
-    BottomSheet, ButtonConfig, DatePicker, DatePickerState, DropdownMenu, DropdownMenuEntry,
-    DropdownMenuItem, FilledButton, MenuState, ModalBottomSheet, NavRailItem, NavigationRail,
-    SheetState, TextButton, TimePicker, TimePickerState,
+    BottomSheet, BottomSheetConfig, ButtonConfig, DatePicker, DatePickerState, DropdownMenu,
+    DropdownMenuConfig, DropdownMenuEntry, DropdownMenuItem, FilledButton, MenuState,
+    ModalBottomSheet, NavRailItem, NavigationRail, NavigationRailConfig, SheetState, TextButton,
+    TimePicker, TimePickerState,
 };
 use repose_material::{Icon, material_symbols};
 
@@ -136,6 +137,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                         || Text(menu_label.get().clone()).size(th.typography.body_large),
                     ),
                     menu_items.clone(),
+                    DropdownMenuConfig::default(),
                 ),
             )),
         ),
@@ -169,6 +171,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                             || Text("Dismiss"),
                         ),
                     )),
+                    BottomSheetConfig::default(),
                 ),
             )),
         ),
@@ -198,6 +201,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                         .background(th.surface_container_low)
                         .padding(sp::XL),
                     Text("This is a simple animated bottom sheet."),
+                    BottomSheetConfig::default(),
                 ),
             )),
         ),
@@ -341,6 +345,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                         ],
                         None,
                         None,
+                        NavigationRailConfig::default(),
                     ),
                 ),
             )),

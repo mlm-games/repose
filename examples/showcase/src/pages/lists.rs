@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use repose_core::{prelude::*, signal};
-use repose_material::material3::{Carousel, SwipeToDismiss, SwipeToDismissState};
+use repose_material::material3::{Carousel, SwipeToDismiss, SwipeToDismissConfig, SwipeToDismissState};
 use repose_material::{Icon, material_symbols};
 use repose_ui::{
     lazy::{LazyColumn, LazyColumnState, LazyRow, LazyRowState},
@@ -232,6 +232,7 @@ pub fn screen() -> View {
                             )),
                         ),
                         Modifier::new().fill_max_width(),
+                        SwipeToDismissConfig::default(),
                     )
                 })
                 .collect();

@@ -2666,6 +2666,26 @@ impl Default for TooltipConfig {
     }
 }
 
+/// Configuration for swipe-to-dismiss.
+#[derive(Clone, Debug)]
+pub struct SwipeToDismissConfig {
+    pub modifier: Modifier,
+    pub dismiss_threshold: f32,
+    pub dismissed_offset: f32,
+    pub animation_spec: AnimationSpec,
+}
+
+impl Default for SwipeToDismissConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            dismiss_threshold: 150.0,
+            dismissed_offset: 300.0,
+            animation_spec: AnimationSpec::spring_gentle(),
+        }
+    }
+}
+
 /// Configuration for pull-to-refresh.
 #[derive(Clone, Debug)]
 pub struct PullToRefreshConfig {

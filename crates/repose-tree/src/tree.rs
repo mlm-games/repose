@@ -116,8 +116,11 @@ impl ViewTree {
 
     /// Compute the `SubcomposeScope` visible to a `SubcomposeLayout` at
     /// `node_id`. Starts with the user-set root scope and intersects each
-    /// ancestor's `Modifier` width / height / min / max fields in root-to-leaf
-    /// order. The SubcomposeLayout node itself is included.
+    /// ancestor's `Modifier` width / height / min / max / padding fields in
+    /// root-to-leaf order. Then narrows using the SubcomposeLayout's own
+    /// cached Taffy-computed size (from the previous frame's layout pass)
+    /// if available, so `fill_max_width` / `fill_max_height` and other
+    /// parent-dependent sizes are reflected in the scope after the first frame.
     fn compute_scope_for_node(&self, node_id: NodeId) -> SubcomposeScope {
         let mut scope = self.subcompose_scope;
         let mut chain: Vec<NodeId> = Vec::new();
@@ -133,6 +136,21 @@ impl ViewTree {
         for ancestor_id in chain {
             if let Some(node) = self.nodes.get(ancestor_id) {
                 scope = intersect_scope_with_modifier(scope, &node.modifier);
+            }
+        }
+        // Apply the cached Taffy-computed size from the previous frame.
+        // This gives `SubcomposeLayout` nodes the actual resolved size
+        // (e.g. from `fill_max_width()` in a parent Column with Stretch).
+        if let Some(node) = self.nodes.get(node_id) {
+            if let Some(cache) = &node.layout_cache {
+                let w = cache.rect.w;
+                let h = cache.rect.h;
+                if w > 0.0 && w.is_finite() {
+                    scope.max_width = scope.max_width.min(w);
+                }
+                if h > 0.0 && h.is_finite() {
+                    scope.max_height = scope.max_height.min(h);
+                }
             }
         }
         scope
@@ -658,10 +676,13 @@ impl ViewTree {
     }
 }
 
-/// Intersect a `SubcomposeScope` with a `Modifier`'s width / height / min /
-/// max fields. `Modifier::width` / `Modifier::height` are treated as exact
-/// sizes (the resulting min and max both equal that value). `fill_max_w` /
-/// `fill_max_h` and `padding` are not consulted.
+/// Intersect a `SubcomposeScope` with a `Modifier`'s size-related fields.
+/// `Modifier::width` / `Modifier::height` are treated as exact sizes (the
+/// resulting min and max both equal that value). Padding values reduce the
+/// available content area (matching Compose semantics where padding offsets
+/// the child constraints). `fill_max_w` / `fill_max_h` are layout-direction
+/// hints resolved by Taffy and cannot produce a concrete size here; they
+/// are handled by storing the Taffy-computed size after layout.
 fn intersect_scope_with_modifier(scope: SubcomposeScope, modifier: &Modifier) -> SubcomposeScope {
     let mut s = scope;
     if let Some(w) = modifier.width {
@@ -683,6 +704,23 @@ fn intersect_scope_with_modifier(scope: SubcomposeScope, modifier: &Modifier) ->
     }
     if let Some(mh) = modifier.max_height {
         s.max_height = s.max_height.min(mh);
+    }
+    // Padding reduces the available content area (Compose semantics:
+    // constraints are offset by the padding amount).
+    if let Some(p) = modifier.padding {
+        let total = p * 2.0;
+        s.min_width = (s.min_width - total).max(0.0);
+        s.max_width = (s.max_width - total).max(0.0);
+        s.min_height = (s.min_height - total).max(0.0);
+        s.max_height = (s.max_height - total).max(0.0);
+    }
+    if let Some(pv) = modifier.padding_values {
+        let h_total = pv.left + pv.right;
+        let v_total = pv.top + pv.bottom;
+        s.min_width = (s.min_width - h_total).max(0.0);
+        s.max_width = (s.max_width - h_total).max(0.0);
+        s.min_height = (s.min_height - v_total).max(0.0);
+        s.max_height = (s.max_height - v_total).max(0.0);
     }
     s
 }

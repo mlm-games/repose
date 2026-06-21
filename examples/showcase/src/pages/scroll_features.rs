@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use repose_core::prelude::*;
-use repose_material::material3::{PullToRefresh, PullToRefreshState};
+use repose_material::material3::{PullToRefresh, PullToRefreshConfig, PullToRefreshState};
 use repose_ui::scroll::{NestedScrollConnection, ScrollArea, remember_scroll_state};
 use repose_ui::*;
 
@@ -164,6 +164,7 @@ fn pull_to_refresh_demo() -> View {
                     }),
                     Column(Modifier::new().fill_max_width().gap(sp::XS).padding(sp::XS))
                         .child(items),
+                    PullToRefreshConfig::default(),
                 ),
             ),
         )),
