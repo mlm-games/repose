@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use repose_core::prelude::*;
 use repose_material::material3::{
-    FilledButton, OutlinedTextField, OutlinedTextFieldConfig, TextButton,
+    ButtonConfig, FilledButton, OutlinedTextField, OutlinedTextFieldConfig, TextButton,
 };
 use repose_ui::scroll::{ScrollArea, remember_scroll_state};
 use repose_ui::windowing::{FloatingWindow, WindowAction, WindowHost, WindowManagerState};
@@ -174,16 +174,19 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                             TextButton(
                                 Modifier::new().fill_max_width(),
                                 || {},
+                                ButtonConfig::default(),
                                 || Text("Focus Note"),
                             ),
                             TextButton(
                                 Modifier::new().fill_max_width(),
                                 || {},
+                                ButtonConfig::default(),
                                 || Text("Spawn Task"),
                             ),
                             TextButton(
                                 Modifier::new().fill_max_width(),
                                 || {},
+                                ButtonConfig::default(),
                                 || Text("Clear Logs"),
                             ),
                         ))
@@ -284,11 +287,11 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
         Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
             Hint("Floating windows are hosted in-app. Drag, resize, and focus them."),
             Row(Modifier::new().align_items(AlignItems::Center).gap(10.0)).child(vec![
-                FilledButton(Modifier::new(), open_note, || Text("New Note")),
-                FilledButton(Modifier::new(), open_log, || Text("New Log")),
-                FilledButton(Modifier::new(), open_tools, || Text("Tools")),
-                FilledButton(Modifier::new(), open_palette, || Text("Palette")),
-                FilledButton(Modifier::new(), open_global, || Text("Global Window")),
+                FilledButton(Modifier::new(), open_note, ButtonConfig::default(), || Text("New Note")),
+                FilledButton(Modifier::new(), open_log, ButtonConfig::default(), || Text("New Log")),
+                FilledButton(Modifier::new(), open_tools, ButtonConfig::default(), || Text("Tools")),
+                FilledButton(Modifier::new(), open_palette, ButtonConfig::default(), || Text("Palette")),
+                FilledButton(Modifier::new(), open_global, ButtonConfig::default(), || Text("Global Window")),
                 Spacer(),
                 Caption(format!("{} windows", window_count)),
             ]),

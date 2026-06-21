@@ -1,7 +1,8 @@
 use repose_core::{prelude::*, signal};
 use repose_material::material3::{
-    AssistChip, Checkbox, FilterChip, LinearProgressIndicator, M3RangeSlider, M3Slider,
-    RadioButton, Switch, TextButton,
+    AssistChip, ButtonConfig, Checkbox, CheckboxConfig, FilterChip, LinearProgressIndicator,
+    M3RangeSlider, M3Slider, RadioButton, RadioButtonConfig, SliderConfig, Switch, SwitchConfig,
+    TextButton,
 };
 use repose_material::{Icon, material_symbols};
 use repose_ui::*;
@@ -44,28 +45,28 @@ pub fn screen() -> View {
                     Switch(sw.get(), {
                         let s = sw.clone();
                         move |v| s.set(v)
-                    }),
+                    }, SwitchConfig::default()),
                     "Switch",
                 ),
                 Labeled(
                     Checkbox(cb.get(), {
                         let s = cb.clone();
                         move |v| s.set(v)
-                    }),
+                    }, CheckboxConfig::default()),
                     "Checkbox",
                 ),
                 Labeled(
                     RadioButton(radio.get() == 0, {
                         let r = radio.clone();
                         move || r.set(0)
-                    }),
+                    }, RadioButtonConfig::default()),
                     "Radio A",
                 ),
                 Labeled(
                     RadioButton(radio.get() == 1, {
                         let r = radio.clone();
                         move || r.set(1)
-                    }),
+                    }, RadioButtonConfig::default()),
                     "Radio B",
                 ),
             )),
@@ -76,7 +77,7 @@ pub fn screen() -> View {
                 M3Slider(s_val.get(), (0.0, 1.0), Some(0.01), {
                     let s = s_val.clone();
                     move |v| s.set(v)
-                }),
+                }, SliderConfig::default()),
                 M3RangeSlider(r_a.get(), r_b.get(), (0.0, 1.0), Some(0.01), {
                     let a = r_a.clone();
                     let b = r_b.clone();
@@ -84,7 +85,7 @@ pub fn screen() -> View {
                         a.set(x0);
                         b.set(x1);
                     }
-                }),
+                }, SliderConfig::default()),
                 LinearProgressIndicator(Some(prog.get()), Default::default()),
                 Row(Modifier::new().gap(sp::MD)).child((
                     TextButton(
@@ -93,6 +94,7 @@ pub fn screen() -> View {
                             let p = prog.clone();
                             move || p.update(|x| *x = (*x - 0.05).max(0.0))
                         },
+                        ButtonConfig::default(),
                         || Text("Decrease"),
                     ),
                     TextButton(
@@ -101,6 +103,7 @@ pub fn screen() -> View {
                             let p = prog.clone();
                             move || p.update(|x| *x = (*x + 0.05).min(1.0))
                         },
+                        ButtonConfig::default(),
                         || Text("Increase"),
                     ),
                 )),

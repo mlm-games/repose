@@ -4,7 +4,9 @@ use std::rc::Rc;
 
 use repose_core::prelude::*;
 use repose_material::material3::dialog::{Dialog, DialogState};
-use repose_material::material3::{Card, ElevatedCard, IconButton, M3Slider, Switch};
+use repose_material::material3::{
+    Card, ElevatedCard, IconButton, IconButtonConfig, M3Slider, SliderConfig, Switch, SwitchConfig,
+};
 use repose_material::{Icon, material_symbols};
 use repose_navigation::Navigator;
 use repose_ui::overlay::OverlayHandle;
@@ -167,6 +169,7 @@ pub fn TopBar(overlay: OverlayHandle, vm: SettingsVm) -> View {
                 let s = settings_state.clone();
                 move || s.show()
             },
+            IconButtonConfig::default(),
         ),
         Dialog(
             settings_state.clone(),
@@ -251,7 +254,7 @@ fn NavItem(route: Route, selected: bool, on_click: impl Fn() + 'static) -> View 
 pub fn LabeledSwitch(label: &str, checked: bool, on_change: impl Fn(bool) + 'static) -> View {
     Row(Modifier::new().align_items(AlignItems::Center).gap(sp::SM)).child((
         Text(label).size(14.0).color(theme().on_surface_variant),
-        Switch(checked, on_change),
+        Switch(checked, on_change, SwitchConfig::default()),
     ))
 }
 
@@ -266,7 +269,7 @@ pub fn LabeledSlider(
         Text(format!("{label}: {value:.2}"))
             .size(14.0)
             .color(theme().on_surface_variant),
-        M3Slider(value, range, step, on_change),
+        M3Slider(value, range, step, on_change, SliderConfig::default()),
     ))
 }
 

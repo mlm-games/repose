@@ -1,5 +1,5 @@
 use repose_core::{prelude::*, signal};
-use repose_material::material3::TextButton;
+use repose_material::material3::{ButtonConfig, TextButton};
 use repose_ui::*;
 
 use crate::ui::{Section, sp};
@@ -34,6 +34,7 @@ pub fn screen() -> View {
                                 let b = boom.clone();
                                 move || b.set(true)
                             },
+                            ButtonConfig::default(),
                             || Text("Throw"),
                         ),
                         TextButton(
@@ -42,6 +43,7 @@ pub fn screen() -> View {
                                 let b = boom.clone();
                                 move || b.set(false)
                             },
+                            ButtonConfig::default(),
                             || Text("Reset"),
                         ),
                     )),

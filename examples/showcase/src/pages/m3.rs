@@ -3,9 +3,9 @@ use std::rc::Rc;
 use repose_core::prelude::*;
 use repose_material::material3::dialog::{Dialog, DialogState};
 use repose_material::material3::{
-    BottomSheet, DatePicker, DatePickerState, DropdownMenu, DropdownMenuEntry, DropdownMenuItem,
-    FilledButton, MenuState, ModalBottomSheet, NavRailItem, NavigationRail, SheetState, TextButton,
-    TimePicker, TimePickerState,
+    BottomSheet, ButtonConfig, DatePicker, DatePickerState, DropdownMenu, DropdownMenuEntry,
+    DropdownMenuItem, FilledButton, MenuState, ModalBottomSheet, NavRailItem, NavigationRail,
+    SheetState, TextButton, TimePicker, TimePickerState,
 };
 use repose_material::{Icon, material_symbols};
 
@@ -132,6 +132,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                             let s = menu_state.clone();
                             move || s.open()
                         },
+                        ButtonConfig::default(),
                         || Text(menu_label.get().clone()).size(th.typography.body_large),
                     ),
                     menu_items.clone(),
@@ -147,6 +148,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                         let s = sheet_state.clone();
                         move || s.show()
                     },
+                    ButtonConfig::default(),
                     || Text("Open Bottom Sheet"),
                 ),
                 ModalBottomSheet(
@@ -163,6 +165,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                                 let s = sheet_state.clone();
                                 move || s.dismiss()
                             },
+                            ButtonConfig::default(),
                             || Text("Dismiss"),
                         ),
                     )),
@@ -178,6 +181,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                         let s = old_sheet_state.clone();
                         move || s.set(!s.get())
                     },
+                    ButtonConfig::default(),
                     {
                         let s = old_sheet_state.clone();
                         move || Text(if s.get() { "Hide Sheet" } else { "Show Sheet" })
@@ -206,6 +210,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                         let s = show_date_picker.clone();
                         move || s.set(true)
                     },
+                    ButtonConfig::default(),
                     || Text("Pick Date"),
                 ),
                 Text(format!("Date: {}", date_result.get()))
@@ -217,6 +222,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                         let s = show_time_picker.clone();
                         move || s.set(true)
                     },
+                    ButtonConfig::default(),
                     || Text("Pick Time"),
                 ),
                 Text(format!("Time: {}", time_result.get()))
@@ -360,6 +366,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                         let t = anim_target.clone();
                         move || t.set(rand_val())
                     },
+                    ButtonConfig::default(),
                     || Text("Animate to random"),
                 ),
                 Box(Modifier::new()
