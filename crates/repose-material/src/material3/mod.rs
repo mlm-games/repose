@@ -64,7 +64,12 @@ pub fn AlertDialog(
             .padding(24.0)
             .background(th.surface_container_high)
             .clip_rounded(th.shapes.extra_large))
-        .child(alert_dialog_body(title, text, confirm_button, dismiss_button)),
+        .child(alert_dialog_body(
+            title,
+            text,
+            confirm_button,
+            dismiss_button,
+        )),
     ))
 }
 
@@ -184,7 +189,7 @@ pub fn Card(modifier: Modifier, content: View) -> View {
     Box(modifier
         .background(th.surface_container_highest)
         .clip_rounded(th.shapes.medium))
-    .child(content)
+    .child(Column(Modifier::new().fill_max_size()).child(content))
 }
 
 pub fn ElevatedCard(modifier: Modifier, content: View) -> View {
@@ -198,7 +203,7 @@ pub fn ElevatedCard(modifier: Modifier, content: View) -> View {
         })
         .background(th.surface_container_low)
         .clip_rounded(th.shapes.medium))
-    .child(content)
+    .child(Column(Modifier::new().fill_max_size()).child(content))
 }
 
 pub fn OutlinedCard(modifier: Modifier, content: View) -> View {
@@ -207,7 +212,7 @@ pub fn OutlinedCard(modifier: Modifier, content: View) -> View {
         .background(th.surface)
         .clip_rounded(th.shapes.medium)
         .border(1.0, th.outline_variant, th.shapes.medium))
-    .child(content)
+    .child(Column(Modifier::new().fill_max_size()).child(content))
 }
 
 fn card_state_colors(bg: Color) -> StateColors {
@@ -229,7 +234,7 @@ pub fn ClickableCard(on_click: impl Fn() + 'static, modifier: Modifier, content:
         .on_pointer_down(move |_| on_click())
         .background(bg)
         .clip_rounded(th.shapes.medium))
-    .child(content)
+    .child(Column(Modifier::new().fill_max_size()).child(content))
 }
 
 pub fn ClickableElevatedCard(
@@ -251,7 +256,7 @@ pub fn ClickableElevatedCard(
         .on_pointer_down(move |_| on_click())
         .background(bg)
         .clip_rounded(th.shapes.medium))
-    .child(content)
+    .child(Column(Modifier::new().fill_max_size()).child(content))
 }
 
 pub fn ClickableOutlinedCard(
@@ -268,7 +273,7 @@ pub fn ClickableOutlinedCard(
         .background(bg)
         .clip_rounded(th.shapes.medium)
         .border(1.0, th.outline_variant, th.shapes.medium))
-    .child(content)
+    .child(Column(Modifier::new().fill_max_size()).child(content))
 }
 
 pub fn Snackbar(
