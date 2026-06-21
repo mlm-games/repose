@@ -7,10 +7,11 @@ struct VSOut {
 
 @vertex
 fn vs_main(
-  @location(0) xywh: vec4<f32>,      // NDC rect
-  @location(1) uv_rect: vec4<f32>,   // u0,v0,u1,v1
+  @location(0) xywh: vec4<f32>,
+  @location(1) uv_rect: vec4<f32>,
   @location(2) tint: vec4<f32>,
   @location(3) full_range: f32,
+  @location(4) sin_cos: vec2<f32>,
   @builtin(vertex_index) v: u32
 ) -> VSOut {
   var positions = array<vec2<f32>, 6>(
@@ -23,8 +24,11 @@ fn vs_main(
   );
   let p = positions[v];
   let uv_lerp = uvs[v];
+  let half = 0.5 * xywh.zw;
+  let corner = (p * 2.0 - 1.0) * half;
+  let rotated = vec2(corner.x * sin_cos.x - corner.y * sin_cos.y, corner.x * sin_cos.y + corner.y * sin_cos.x);
   var o: VSOut;
-  o.pos = vec4(xywh.xy + p * xywh.zw, 0.0, 1.0);
+  o.pos = vec4(xywh.xy + rotated, 0.0, 1.0);
   o.uv = mix(uv_rect.xy, uv_rect.zw, uv_lerp);
   o.tint = tint;
   o.full_range = full_range;
@@ -39,8 +43,6 @@ fn yuv_to_rgb(y: f32, u: f32, v: f32, full_range: bool) -> vec3<f32> {
   let uu = u - 0.5;
   let vv = v - 0.5;
 
-  // TODO: BT.709/601 + range handling later.
-  // If limited range: Y typically [16/255..235/255]; UV [16/255..240/255]
   var yy = y;
   if (!full_range) {
     yy = clamp((y - (16.0/255.0)) * (255.0/219.0), 0.0, 1.0);

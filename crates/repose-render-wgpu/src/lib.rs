@@ -1,13 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::{borrow::Cow, sync::Once};
+use std::borrow::Cow;
 
 use repose_core::{Brush, GlyphRasterConfig, RenderBackend, Scene, SceneNode, Transform};
 use repose_core::request_frame;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use wgpu::Instance;
-
-static ROT_WARN_ONCE: Once = Once::new();
 
 #[derive(Clone)]
 struct UploadRing {
@@ -282,21 +280,25 @@ impl Pipelines {
             wgpu::VertexAttribute { shader_location: 4, offset: 40, format: wgpu::VertexFormat::Float32x4 },
             wgpu::VertexAttribute { shader_location: 5, offset: 56, format: wgpu::VertexFormat::Float32x2 },
             wgpu::VertexAttribute { shader_location: 6, offset: 64, format: wgpu::VertexFormat::Float32x2 },
+            wgpu::VertexAttribute { shader_location: 7, offset: 72, format: wgpu::VertexFormat::Float32x2 },
         ];
         let border_attrs: &[wgpu::VertexAttribute] = &[
             wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
             wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32 },
             wgpu::VertexAttribute { shader_location: 2, offset: 20, format: wgpu::VertexFormat::Float32 },
             wgpu::VertexAttribute { shader_location: 3, offset: 24, format: wgpu::VertexFormat::Float32x4 },
+            wgpu::VertexAttribute { shader_location: 4, offset: 40, format: wgpu::VertexFormat::Float32x2 },
         ];
         let ellipse_attrs: &[wgpu::VertexAttribute] = &[
             wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
             wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32x4 },
+            wgpu::VertexAttribute { shader_location: 2, offset: 32, format: wgpu::VertexFormat::Float32x2 },
         ];
         let ellipse_border_attrs: &[wgpu::VertexAttribute] = &[
             wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
             wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32 },
             wgpu::VertexAttribute { shader_location: 2, offset: 20, format: wgpu::VertexFormat::Float32x4 },
+            wgpu::VertexAttribute { shader_location: 3, offset: 36, format: wgpu::VertexFormat::Float32x2 },
         ];
 
         make_content_pipeline!(rects, "rect", RectInstance, rect_attrs);
@@ -339,6 +341,11 @@ impl Pipelines {
                     shader_location: 2,
                     offset: 32,
                     format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 3,
+                    offset: 48,
+                    format: wgpu::VertexFormat::Float32x2,
                 },
             ],
         };
@@ -437,6 +444,11 @@ impl Pipelines {
                             offset: 48,
                             format: wgpu::VertexFormat::Float32x2,
                         },
+                        wgpu::VertexAttribute {
+                            shader_location: 4,
+                            offset: 56,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
                     ],
                 }],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -499,6 +511,11 @@ impl Pipelines {
                             shader_location: 3,
                             offset: 48,
                             format: wgpu::VertexFormat::Float32,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 4,
+                            offset: 52,
+                            format: wgpu::VertexFormat::Float32x2,
                         },
                     ],
                 }],
@@ -747,6 +764,7 @@ struct RectInstance {
     color1: [f32; 4],
     grad_start: [f32; 2],
     grad_end: [f32; 2],
+    sin_cos: [f32; 2],
 }
 
 #[repr(C)]
@@ -756,6 +774,7 @@ struct BorderInstance {
     radius: f32,
     stroke: f32,
     color: [f32; 4],
+    sin_cos: [f32; 2],
 }
 
 #[repr(C)]
@@ -763,6 +782,7 @@ struct BorderInstance {
 struct EllipseInstance {
     xywh: [f32; 4],
     color: [f32; 4],
+    sin_cos: [f32; 2],
 }
 
 #[repr(C)]
@@ -771,6 +791,7 @@ struct EllipseBorderInstance {
     xywh: [f32; 4],
     stroke: f32,
     color: [f32; 4],
+    sin_cos: [f32; 2],
 }
 
 #[repr(C)]
@@ -779,6 +800,7 @@ struct GlyphInstance {
     xywh: [f32; 4],
     uv: [f32; 4],
     color: [f32; 4],
+    sin_cos: [f32; 2],
 }
 
 #[repr(C)]
@@ -788,6 +810,7 @@ struct BlurInstance {
     uv: [f32; 4],
     color: [f32; 4],
     blur_uv: [f32; 2],
+    sin_cos: [f32; 2],
 }
 
 #[repr(C)]
@@ -797,7 +820,8 @@ struct Nv12Instance {
     uv: [f32; 4],
     color: [f32; 4], // tint
     full_range: f32,
-    _pad: [f32; 3],
+    sin_cos: [f32; 2],
+    _pad: [f32; 1],
 }
 
 #[repr(C)]
@@ -805,7 +829,7 @@ struct Nv12Instance {
 struct ClipInstance {
     xywh: [f32; 4],
     radius: f32,
-    _pad: [f32; 3],
+    sin_cos: [f32; 2],
 }
 
 fn swash_to_a8_coverage(content: cosmic_text::SwashContent, data: &[u8]) -> Option<Vec<u8>> {
@@ -1085,6 +1109,11 @@ impl WgpuBackend {
                     shader_location: 1,
                     offset: 16,
                     format: wgpu::VertexFormat::Float32,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 2,
+                    offset: 20,
+                    format: wgpu::VertexFormat::Float32x2,
                 },
             ],
         };
@@ -2140,6 +2169,34 @@ impl RenderBackend for WgpuBackend {
             [min_x, min_y, w_ndc, h_ndc]
         }
 
+        /// Convert a local-space rect + transform to NDC center-based position+size and rotation.
+        fn rect_to_instance_ndc(
+            rect: repose_core::Rect,
+            transform: &Transform,
+            fb_w: f32,
+            fb_h: f32,
+        ) -> ([f32; 4], [f32; 2]) {
+            let cx = rect.x + rect.w * 0.5;
+            let cy = rect.y + rect.h * 0.5;
+
+            // Apply full transform to center
+            let sx = cx * transform.scale_x;
+            let sy = cy * transform.scale_y;
+            let cos_a = transform.rotate.cos();
+            let sin_a = transform.rotate.sin();
+            let tx = sx * cos_a - sy * sin_a + transform.translate_x;
+            let ty = sx * sin_a + sy * cos_a + transform.translate_y;
+
+            // NDC center
+            let ndc_cx = (tx / fb_w) * 2.0 - 1.0;
+            let ndc_cy = 1.0 - (ty / fb_h) * 2.0;
+            // NDC size (after scale only, no rotation — rotation is done in shader)
+            let ndc_w = (rect.w * transform.scale_x / fb_w) * 2.0;
+            let ndc_h = (rect.h * transform.scale_y / fb_h) * 2.0;
+
+            ([ndc_cx, ndc_cy, ndc_w, ndc_h], [cos_a, sin_a])
+        }
+
         fn to_scissor(r: &repose_core::Rect, fb_w: u32, fb_h: u32) -> (u32, u32, u32, u32) {
             let mut x = r.x.floor() as i64;
             let mut y = r.y.floor() as i64;
@@ -2323,24 +2380,23 @@ impl RenderBackend for WgpuBackend {
                     radius,
                 } => {
                     flush_if_prim_changed!("rect", &self.rects);
-                    let transformed_rect = current_transform.apply_to_rect(*rect);
+                    let (ndc, sin_cos) = rect_to_instance_ndc(
+                        *rect,
+                        current_transform,
+                        current_target_size.0,
+                        current_target_size.1,
+                    );
                     let (brush_type, color0, color1, grad_start, grad_end) =
                         brush_to_instance_fields(brush);
                     batch.rects.push(RectInstance {
-                        xywh: to_ndc(
-                            transformed_rect.x,
-                            transformed_rect.y,
-                            transformed_rect.w,
-                            transformed_rect.h,
-                            current_target_size.0,
-                            current_target_size.1,
-                        ),
+                        xywh: ndc,
                         radius: *radius,
                         brush_type,
                         color0,
                         color1,
                         grad_start,
                         grad_end,
+                        sin_cos,
                     });
                 }
                 SceneNode::Border {
@@ -2350,51 +2406,48 @@ impl RenderBackend for WgpuBackend {
                     radius,
                 } => {
                     flush_if_prim_changed!("border", &self.borders);
-                    let transformed_rect = current_transform.apply_to_rect(*rect);
+                    let (ndc, sin_cos) = rect_to_instance_ndc(
+                        *rect,
+                        current_transform,
+                        current_target_size.0,
+                        current_target_size.1,
+                    );
                     batch.borders.push(BorderInstance {
-                        xywh: to_ndc(
-                            transformed_rect.x,
-                            transformed_rect.y,
-                            transformed_rect.w,
-                            transformed_rect.h,
-                            current_target_size.0,
-                            current_target_size.1,
-                        ),
+                        xywh: ndc,
                         radius: *radius,
                         stroke: *width,
                         color: color.to_linear(),
+                        sin_cos,
                     });
                 }
                 SceneNode::Ellipse { rect, brush } => {
                     flush_if_prim_changed!("ellipse", &self.ellipses);
-                    let transformed = current_transform.apply_to_rect(*rect);
+                    let (ndc, sin_cos) = rect_to_instance_ndc(
+                        *rect,
+                        current_transform,
+                        current_target_size.0,
+                        current_target_size.1,
+                    );
                     let color = brush_to_solid_color(brush);
                     batch.ellipses.push(EllipseInstance {
-                        xywh: to_ndc(
-                            transformed.x,
-                            transformed.y,
-                            transformed.w,
-                            transformed.h,
-                            current_target_size.0,
-                            current_target_size.1,
-                        ),
+                        xywh: ndc,
                         color,
+                        sin_cos,
                     });
                 }
                 SceneNode::EllipseBorder { rect, color, width } => {
                     flush_if_prim_changed!("ellipse_border", &self.ellipse_borders);
-                    let transformed = current_transform.apply_to_rect(*rect);
+                    let (ndc, sin_cos) = rect_to_instance_ndc(
+                        *rect,
+                        current_transform,
+                        current_target_size.0,
+                        current_target_size.1,
+                    );
                     batch.e_borders.push(EllipseBorderInstance {
-                        xywh: to_ndc(
-                            transformed.x,
-                            transformed.y,
-                            transformed.w,
-                            transformed.h,
-                            current_target_size.0,
-                            current_target_size.1,
-                        ),
+                        xywh: ndc,
                         stroke: *width,
                         color: color.to_linear(),
+                        sin_cos,
                     });
                 }
                 SceneNode::Text {
@@ -2408,38 +2461,80 @@ impl RenderBackend for WgpuBackend {
 
                     let px = (*size).clamp(8.0, 96.0);
                     let shaped = repose_text::shape_line(text.as_ref(), px, *font_family);
-                    let transformed_rect = current_transform.apply_to_rect(*rect);
+
+                    let cos_a = current_transform.rotate.cos();
+                    let sin_a = current_transform.rotate.sin();
+                    let has_rotation = current_transform.rotate != 0.0;
+
+                    // For rotated text, the pivot is the center of the text rect.
+                    // The translate-rotate-translate modifier chain rotates around
+                    // this point, and the glyph corners are rotated around it.
+                    let pivot_x = rect.x + rect.w * 0.5;
+                    let pivot_y = rect.y + rect.h * 0.5;
+
+                    // Helper: compute NDC for a glyph rect, handling rotation correctly.
+                    let make_glyph_instance = |gx: f32, gy: f32, gw: f32, gh: f32| -> ([f32; 4], [f32; 2]) {
+                        if has_rotation {
+                            // Rotate the 4 corners of the glyph rect around the text rect center,
+                            // then find the axis-aligned bounding box.
+                            let corners = [
+                                (gx, gy),
+                                (gx + gw, gy),
+                                (gx + gw, gy + gh),
+                                (gx, gy + gh),
+                            ];
+                            let mut min_x = f32::MAX;
+                            let mut max_x = f32::MIN;
+                            let mut min_y = f32::MAX;
+                            let mut max_y = f32::MIN;
+                            for &(x, y) in &corners {
+                                let dx = x - pivot_x;
+                                let dy = y - pivot_y;
+                                let rx = pivot_x + dx * cos_a - dy * sin_a;
+                                let ry = pivot_y + dx * sin_a + dy * cos_a;
+                                min_x = min_x.min(rx);
+                                max_x = max_x.max(rx);
+                                min_y = min_y.min(ry);
+                                max_y = max_y.max(ry);
+                            }
+                            let bb_w = max_x - min_x;
+                            let bb_h = max_y - min_y;
+                            let ndc_tl = to_ndc(min_x, min_y, bb_w, bb_h, current_target_size.0, current_target_size.1);
+                            let ndc = [
+                                ndc_tl[0] + ndc_tl[2] * 0.5,
+                                ndc_tl[1] + ndc_tl[3] * 0.5,
+                                ndc_tl[2],
+                                ndc_tl[3],
+                            ];
+                            (ndc, [cos_a, sin_a])
+                        } else {
+                            rect_to_instance_ndc(
+                                repose_core::Rect { x: gx, y: gy, w: gw, h: gh },
+                                current_transform,
+                                current_target_size.0,
+                                current_target_size.1,
+                            )
+                        }
+                    };
 
                     for sg in shaped {
+                        let gx = rect.x + sg.x + sg.bearing_x;
+                        let gy = rect.y + sg.y - sg.bearing_y;
                         if let Some(info) = self.upload_glyph_color(sg.key, px as u32) {
-                            let x = transformed_rect.x + sg.x + sg.bearing_x;
-                            let y = transformed_rect.y + sg.y - sg.bearing_y;
+                            let (ndc, sin_cos) = make_glyph_instance(gx, gy, info.w, info.h);
                             batch.colors.push(GlyphInstance {
-                                xywh: to_ndc(
-                                    x,
-                                    y,
-                                    info.w,
-                                    info.h,
-                                    current_target_size.0,
-                                    current_target_size.1,
-                                ),
+                                xywh: ndc,
                                 uv: [info.u0, info.v1, info.u1, info.v0],
                                 color: color.to_linear(),
+                                sin_cos,
                             });
                         } else if let Some(info) = self.upload_glyph_mask(sg.key, px as u32) {
-                            let x = transformed_rect.x + sg.x + sg.bearing_x;
-                            let y = transformed_rect.y + sg.y - sg.bearing_y;
+                            let (ndc, sin_cos) = make_glyph_instance(gx, gy, info.w, info.h);
                             batch.masks.push(GlyphInstance {
-                                xywh: to_ndc(
-                                    x,
-                                    y,
-                                    info.w,
-                                    info.h,
-                                    current_target_size.0,
-                                    current_target_size.1,
-                                ),
+                                xywh: ndc,
                                 uv: [info.u0, info.v1, info.u1, info.v0],
                                 color: color.to_linear(),
+                                sin_cos,
                             });
                         }
                     }
@@ -2560,6 +2655,14 @@ impl RenderBackend for WgpuBackend {
                         _ => ([0.0; 4], [0.0; 4]),
                     };
  
+                    // Convert top-left based NDC to center-based for shader
+                    let ndc_center = [
+                        xywh_ndc[0] + xywh_ndc[2] * 0.5,
+                        xywh_ndc[1] + xywh_ndc[3] * 0.5,
+                        xywh_ndc[2],
+                        xywh_ndc[3],
+                    ];
+
                     if is_nv12 {
                         let full_range = if let Some(ImageTex::Nv12 { full_range, .. }) =
                             self.images.get(handle)
@@ -2570,11 +2673,12 @@ impl RenderBackend for WgpuBackend {
                         };
 
                         let inst = Nv12Instance {
-                            xywh: xywh_ndc,
+                            xywh: ndc_center,
                             uv: uv_rect,
                             color: tint.to_linear(),
                             full_range,
-                            _pad: [0.0; 3],
+                            sin_cos: [1.0, 0.0],
+                            _pad: [0.0],
                         };
                         if let Some((off, _)) = self.nv12.upload(&self.device, &self.queue, &[inst])
                         {
@@ -2587,9 +2691,10 @@ impl RenderBackend for WgpuBackend {
                     } else {
                         // RGBA uses GlyphInstance struct (reused pipeline)
                         let inst = GlyphInstance {
-                            xywh: xywh_ndc,
+                            xywh: ndc_center,
                             uv: uv_rect,
                             color: tint.to_linear(),
+                            sin_cos: [1.0, 0.0],
                         };
                         if let Some((off, _)) =
                             self.glyph_color.upload(&self.device, &self.queue, &[inst])
@@ -2618,17 +2723,23 @@ impl RenderBackend for WgpuBackend {
                         current_target_size.1 as u32,
                     );
 
+                    let clip_ndc_tl = to_ndc(
+                        transformed.x,
+                        transformed.y,
+                        transformed.w,
+                        transformed.h,
+                        current_target_size.0,
+                        current_target_size.1,
+                    );
                     let inst = ClipInstance {
-                        xywh: to_ndc(
-                            transformed.x,
-                            transformed.y,
-                            transformed.w,
-                            transformed.h,
-                            current_target_size.0,
-                            current_target_size.1,
-                        ),
+                        xywh: [
+                            clip_ndc_tl[0] + clip_ndc_tl[2] * 0.5,
+                            clip_ndc_tl[1] + clip_ndc_tl[3] * 0.5,
+                            clip_ndc_tl[2],
+                            clip_ndc_tl[3],
+                        ],
                         radius: *radius,
-                        _pad: [0.0; 3],
+                        sin_cos: [1.0, 0.0],
                     };
                     let bytes = bytemuck::bytes_of(&inst);
                     self.clip_ring.grow_to_fit(&self.device, bytes.len() as u64);
@@ -2664,36 +2775,28 @@ impl RenderBackend for WgpuBackend {
                     color,
                 } => {
                     flush_if_prim_changed!("rect", &self.rects);
-                    let transformed_rect = current_transform.apply_to_rect(*rect);
+                    let (ndc, sin_cos) = rect_to_instance_ndc(
+                        *rect,
+                        current_transform,
+                        current_target_size.0,
+                        current_target_size.1,
+                    );
                     let (brush_type, color0, _color1, _grad_start, _grad_end) =
                         brush_to_instance_fields(&Brush::Solid(*color));
                     batch.rects.push(RectInstance {
-                        xywh: to_ndc(
-                            transformed_rect.x,
-                            transformed_rect.y,
-                            transformed_rect.w,
-                            transformed_rect.h,
-                            current_target_size.0,
-                            current_target_size.1,
-                        ),
+                        xywh: ndc,
                         radius: *radius,
                         brush_type,
                         color0,
                         color1: [0.0; 4],
                         grad_start: [0.0; 2],
                         grad_end: [0.0; 2],
+                        sin_cos,
                     });
                 }
                 SceneNode::PushTransform { transform } => {
                     flush_batch!(); // flush before transform change
                     let combined = current_transform.combine(transform);
-                    if transform.rotate != 0.0 {
-                        ROT_WARN_ONCE.call_once(|| {
-                            log::warn!(
-                                "Transform rotation is not supported for Rect/Text/Image; rotation will be ignored."
-                            );
-                        });
-                    }
                     transform_stack.push(combined);
                 }
                 SceneNode::PopTransform => {
@@ -2750,17 +2853,24 @@ impl RenderBackend for WgpuBackend {
                         .copied()
                     {
                         let layer = self.layer_pool.get(layer_id).expect("layer target");
+                        let ndc_tl = to_ndc(
+                            layer.rect_px.0,
+                            layer.rect_px.1,
+                            layer.rect_px.2,
+                            layer.rect_px.3,
+                            fb_w,
+                            fb_h,
+                        );
                         let inst = GlyphInstance {
-                            xywh: to_ndc(
-                                layer.rect_px.0,
-                                layer.rect_px.1,
-                                layer.rect_px.2,
-                                layer.rect_px.3,
-                                fb_w,
-                                fb_h,
-                            ),
+                            xywh: [
+                                ndc_tl[0] + ndc_tl[2] * 0.5,
+                                ndc_tl[1] + ndc_tl[3] * 0.5,
+                                ndc_tl[2],
+                                ndc_tl[3],
+                            ],
                             uv: [0.0, 1.0, 1.0, 0.0],
                             color: [1.0, 1.0, 1.0, layer_alpha],
+                            sin_cos: [1.0, 0.0],
                         };
                         if let Some((off, cnt)) =
                             self.glyph_color.upload(&self.device, &self.queue, &[inst])
@@ -2791,8 +2901,14 @@ impl RenderBackend for WgpuBackend {
                         // (the 1.5 matches the 3x3 Gaussian span).
                         let bw_uv = (blur_px * 1.5) / layer.width.max(1) as f32;
                         let bh_uv = (blur_px * 1.5) / layer.height.max(1) as f32;
+                        let ndc_tl = to_ndc(sx, sy, sw, sh, fb_w, fb_h);
                         let inst = BlurInstance {
-                            xywh: to_ndc(sx, sy, sw, sh, fb_w, fb_h),
+                            xywh: [
+                                ndc_tl[0] + ndc_tl[2] * 0.5,
+                                ndc_tl[1] + ndc_tl[3] * 0.5,
+                                ndc_tl[2],
+                                ndc_tl[3],
+                            ],
                             uv: [0.0, 0.0, 1.0, 1.0],
                             color: [
                                 color.0 as f32 / 255.0,
@@ -2801,6 +2917,7 @@ impl RenderBackend for WgpuBackend {
                                 color.3 as f32 / 255.0,
                             ],
                             blur_uv: [bw_uv, bh_uv],
+                            sin_cos: [1.0, 0.0],
                         };
                         self.blur_ring
                             .grow_to_fit(&self.device, std::mem::size_of::<BlurInstance>() as u64);

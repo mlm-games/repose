@@ -14,6 +14,7 @@ struct VSOut {
     @location(5) grad_start: vec2<f32>,
     @location(6) grad_end: vec2<f32>,
     @location(7) pos_ndc: vec2<f32>,
+    @location(8) sin_cos: vec2<f32>,
 };
 
 @vertex
@@ -25,6 +26,7 @@ fn vs_main(
     @location(4) color1: vec4<f32>,
     @location(5) grad_start: vec2<f32>,
     @location(6) grad_end: vec2<f32>,
+    @location(7) sin_cos: vec2<f32>,
     @builtin(vertex_index) v: u32,
 ) -> VSOut {
     var positions = array<vec2<f32>, 6>(
@@ -32,7 +34,10 @@ fn vs_main(
         vec2(0.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0)
     );
     let p = positions[v];
-    let pos_ndc = xywh.xy + p * xywh.zw;
+    let half = 0.5 * xywh.zw;
+    let corner = (p * 2.0 - 1.0) * half;
+    let rotated = vec2(corner.x * sin_cos.x - corner.y * sin_cos.y, corner.x * sin_cos.y + corner.y * sin_cos.x);
+    let pos_ndc = xywh.xy + rotated;
 
     var out: VSOut;
     out.pos = vec4(pos_ndc, 0.0, 1.0);
@@ -44,10 +49,10 @@ fn vs_main(
     out.grad_start = grad_start;
     out.grad_end = grad_end;
     out.pos_ndc = pos_ndc;
+    out.sin_cos = sin_cos;
     return out;
 }
 
-// Pixel-space SDF for true circular corners
 fn sdf_round_box_px(p_px: vec2<f32>, half_px: vec2<f32>, r_px: f32) -> f32 {
     let r = max(r_px, 0.0);
     let q = abs(p_px) - (half_px - vec2<f32>(r, r));
@@ -61,9 +66,15 @@ fn eval_brush(in: VSOut) -> vec4<f32> {
         return in.color0;
     }
 
-    let rect_min = in.xywh.xy;
+    let center_ndc = in.xywh.xy;
+    let half = 0.5 * in.xywh.zw;
+    let rect_min = center_ndc - half;
     let rect_size = in.xywh.zw;
-    let local = (in.pos_ndc - rect_min) / rect_size;
+    let unrotated_ndc = center_ndc + vec2(
+        (in.pos_ndc.x - center_ndc.x) * in.sin_cos.x + (in.pos_ndc.y - center_ndc.y) * in.sin_cos.y,
+        -(in.pos_ndc.x - center_ndc.x) * in.sin_cos.y + (in.pos_ndc.y - center_ndc.y) * in.sin_cos.x
+    );
+    let local = (unrotated_ndc - rect_min) / rect_size;
 
     let dir = in.grad_end - in.grad_start;
     let len2 = max(dot(dir, dir), 1e-6);
@@ -73,14 +84,17 @@ fn eval_brush(in: VSOut) -> vec4<f32> {
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
-    let center_ndc = in.xywh.xy + 0.5 * in.xywh.zw;
-
+    let center_ndc = in.xywh.xy;
     let p_px = (in.pos_ndc - center_ndc) * G.ndc_to_px;
     let half_px = 0.5 * in.xywh.zw * G.ndc_to_px;
 
-    let d = sdf_round_box_px(p_px, half_px, in.radius);
+    let unrotated_px = vec2(
+        p_px.x * in.sin_cos.x + p_px.y * in.sin_cos.y,
+        -p_px.x * in.sin_cos.y + p_px.y * in.sin_cos.x
+    );
 
-    // d is in pixels, so fwidth(d) ≈ 1 at edges
+    let d = sdf_round_box_px(unrotated_px, half_px, in.radius);
+
     let w = max(fwidth(d), 1e-4);
     let alpha_cov = 1.0 - smoothstep(-w, w, d);
 

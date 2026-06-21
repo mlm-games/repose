@@ -17,6 +17,7 @@ fn vs_main(
     @location(1) uv_rect: vec4<f32>,
     @location(2) color: vec4<f32>,
     @location(3) blur_uv: vec2<f32>,
+    @location(4) sin_cos: vec2<f32>,
     @builtin(vertex_index) v: u32
 ) -> VSOut {
     var positions = array<vec2<f32>, 6>(
@@ -29,7 +30,10 @@ fn vs_main(
     );
     let p = positions[v];
     let uv_lerp = uvs[v];
-    let pos_ndc = xywh.xy + p * xywh.zw;
+    let half = 0.5 * xywh.zw;
+    let corner = (p * 2.0 - 1.0) * half;
+    let rotated = vec2(corner.x * sin_cos.x - corner.y * sin_cos.y, corner.x * sin_cos.y + corner.y * sin_cos.x);
+    let pos_ndc = xywh.xy + rotated;
 
     var out: VSOut;
     out.pos = vec4(pos_ndc, 0.0, 1.0);

@@ -12,7 +12,9 @@ pub use dialog::*;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use web_time::Duration;
 
+use repose_core::animation::{AnimationSpec, Easing, RepeatableSpec};
 use repose_core::*;
 use repose_ui::lazy::{LazyRow, LazyRowState};
 use repose_ui::{
@@ -116,7 +118,11 @@ static NAVBAR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// M3 Navigation Bar - a bottom navigation bar with animated selection.
 /// Colors and indicator background transition with 200ms FastOutSlowIn.
-pub fn NavigationBar(selected_index: usize, items: Vec<NavItem>, config: NavigationBarConfig) -> View {
+pub fn NavigationBar(
+    selected_index: usize,
+    items: Vec<NavItem>,
+    config: NavigationBarConfig,
+) -> View {
     let th = theme();
     let id = remember(|| NAVBAR_COUNTER.fetch_add(1, Ordering::Relaxed));
     let spec = th.motion.shape;
@@ -146,7 +152,9 @@ pub fn NavigationBar(selected_index: usize, items: Vec<NavItem>, config: Navigat
                     if selected { 1.0 } else { 0.0 },
                     spec,
                 );
-                let indicator_bg = config.indicator_color.with_alpha_f32(bg_alpha * config.indicator_opacity);
+                let indicator_bg = config
+                    .indicator_color
+                    .with_alpha_f32(bg_alpha * config.indicator_opacity);
                 let cb = item.on_click.clone();
 
                 Column(
@@ -224,7 +232,11 @@ pub fn OutlinedCard(modifier: Modifier, content: View) -> View {
     Box(modifier
         .background(config.container_color)
         .clip_rounded(config.shape_radius)
-        .border(1.0, CardDefaults::outlined_border_color(), config.shape_radius))
+        .border(
+            1.0,
+            CardDefaults::outlined_border_color(),
+            config.shape_radius,
+        ))
     .child(Column(Modifier::new().fill_max_size()).child(content))
 }
 
@@ -347,7 +359,12 @@ pub fn Snackbar(
                         Modifier::new(),
                         move || (a.on_click)(),
                         ButtonConfig::default(),
-                        || Text(label).color(action_color).size(th.typography.label_large).single_line(),
+                        || {
+                            Text(label)
+                                .color(action_color)
+                                .size(th.typography.label_large)
+                                .single_line()
+                        },
                     )
                 })
                 .unwrap_or(Box(Modifier::new())),
@@ -1015,7 +1032,12 @@ pub fn DropdownMenu(
                 .render_z_index(900.0)
                 .scale(scale)
                 .alpha(alpha))
-            .child(render_dropdown_menu_content(&th, &items, state.clone(), &config))
+            .child(render_dropdown_menu_content(
+                &th,
+                &items,
+                state.clone(),
+                &config,
+            ))
         } else {
             Box(Modifier::new())
         },
@@ -1654,7 +1676,6 @@ pub fn PullToRefresh(
     content: View,
     config: PullToRefreshConfig,
 ) -> View {
-    let th = theme();
     let pull = state.pull_offset();
     let refreshing = state.is_refreshing();
     let threshold = config.threshold;
@@ -1681,6 +1702,22 @@ pub fn PullToRefresh(
 
     // Indicator at top (pushed into view by overscroll) + content below.
     let indicator_h = distance_fraction * threshold;
+    let icon_size = if refreshing {
+        24.0
+    } else {
+        (16.0 + distance_fraction * 8.0).min(24.0)
+    };
+    let rotation = if refreshing {
+        animate_f32_from(
+            "ptr_spin",
+            0.0,
+            std::f32::consts::TAU,
+            AnimationSpec::tween(Duration::from_millis(1000), Easing::Linear)
+                .repeated(RepeatableSpec::infinite()),
+        )
+    } else {
+        (distance_fraction * 180.0).to_radians()
+    };
     Column(modifier).child((
         if distance_fraction > 0.01 {
             Box(Modifier::new()
@@ -1688,13 +1725,22 @@ pub fn PullToRefresh(
                 .height(indicator_h)
                 .align_items(AlignItems::Center)
                 .justify_content(JustifyContent::Center))
-            .child(if refreshing {
-                Text("\u{21BB}").size(24.0).color(config.indicator_color)
-            } else {
-                Text("\u{2193}")
-                    .size((16.0 + distance_fraction * 8.0).min(24.0))
-                    .color(config.indicator_color.with_alpha_f32(distance_fraction.min(1.0)))
-            })
+            .child(
+                Box(Modifier::new()
+                    .size(icon_size, icon_size)
+                    .translate(icon_size * 0.5, icon_size * 0.5)
+                    .rotate(rotation)
+                    .translate(-icon_size * 0.5, -icon_size * 0.5))
+                .child(if refreshing {
+                    Text("\u{21BB}").size(24.0).color(config.indicator_color)
+                } else {
+                    Text("\u{2193}").size(icon_size).color(
+                        config
+                            .indicator_color
+                            .with_alpha_f32(distance_fraction.min(1.0)),
+                    )
+                }),
+            )
         } else {
             Box(Modifier::new())
         },
@@ -1874,163 +1920,161 @@ pub fn DatePicker(
     let now = ReposeDate::now();
     let today = (now.year, now.month, now.day);
 
-    Column(Modifier::new()
-        .padding(16.0)).child((
-            // Month header
-            Row(Modifier::new()
-                .fill_max_width()
-                .align_items(AlignItems::Center))
-            .child((
-                IconButton(
-                    Box(Modifier::new()).child(Text("◀").color(th.on_surface).size(16.0)),
-                    prev_month,
-                    IconButtonConfig::default(),
-                ),
-                Spacer(),
-                Column(Modifier::new().align_items(AlignItems::Center)).child((
-                    Text(MONTH_NAMES[(month - 1) as usize].to_string())
-                        .size(th.typography.title_medium)
-                        .color(th.on_surface),
-                    Row(Modifier::new().gap(8.0).align_items(AlignItems::Center)).child((
-                        IconButton(
-                            Box(Modifier::new())
-                                .child(Text("‹").color(th.on_surface_variant).size(14.0)),
-                            prev_year,
-                            IconButtonConfig::default(),
-                        ),
-                        Text(year.to_string())
-                            .size(th.typography.body_small)
-                            .color(th.on_surface_variant),
-                        IconButton(
-                            Box(Modifier::new())
-                                .child(Text("›").color(th.on_surface_variant).size(14.0)),
-                            next_year,
-                            IconButtonConfig::default(),
-                        ),
-                    )),
+    Column(Modifier::new().padding(16.0)).child((
+        // Month header
+        Row(Modifier::new()
+            .fill_max_width()
+            .align_items(AlignItems::Center))
+        .child((
+            IconButton(
+                Box(Modifier::new()).child(Text("◀").color(th.on_surface).size(16.0)),
+                prev_month,
+                IconButtonConfig::default(),
+            ),
+            Spacer(),
+            Column(Modifier::new().align_items(AlignItems::Center)).child((
+                Text(MONTH_NAMES[(month - 1) as usize].to_string())
+                    .size(th.typography.title_medium)
+                    .color(th.on_surface),
+                Row(Modifier::new().gap(8.0).align_items(AlignItems::Center)).child((
+                    IconButton(
+                        Box(Modifier::new())
+                            .child(Text("‹").color(th.on_surface_variant).size(14.0)),
+                        prev_year,
+                        IconButtonConfig::default(),
+                    ),
+                    Text(year.to_string())
+                        .size(th.typography.body_small)
+                        .color(th.on_surface_variant),
+                    IconButton(
+                        Box(Modifier::new())
+                            .child(Text("›").color(th.on_surface_variant).size(14.0)),
+                        next_year,
+                        IconButtonConfig::default(),
+                    ),
                 )),
-                Spacer(),
-                IconButton(
-                    Box(Modifier::new()).child(Text("▶").color(th.on_surface).size(16.0)),
-                    next_month,
-                    IconButtonConfig::default(),
-                ),
             )),
-            Box(Modifier::new().fill_max_width().height(12.0)),
-            // Day grid
-            Column(Modifier::new()).child({
-                let mut rows: Vec<View> = Vec::new();
-                // Day-of-week headers
-                let dow_headers: Vec<View> = DOW_HEADERS
-                    .iter()
-                    .map(|d| {
-                        Box(Modifier::new()
-                            .width(40.0)
-                            .height(40.0)
-                            .align_items(AlignItems::Center)
-                            .justify_content(JustifyContent::Center))
-                        .child(
-                            Text(d.to_string())
-                                .size(th.typography.label_small)
-                                .color(th.on_surface_variant),
-                        )
-                    })
-                    .collect();
-                rows.push(Row(Modifier::new()).with_children(dow_headers));
+            Spacer(),
+            IconButton(
+                Box(Modifier::new()).child(Text("▶").color(th.on_surface).size(16.0)),
+                next_month,
+                IconButtonConfig::default(),
+            ),
+        )),
+        Box(Modifier::new().fill_max_width().height(12.0)),
+        // Day grid
+        Column(Modifier::new()).child({
+            let mut rows: Vec<View> = Vec::new();
+            // Day-of-week headers
+            let dow_headers: Vec<View> = DOW_HEADERS
+                .iter()
+                .map(|d| {
+                    Box(Modifier::new()
+                        .width(40.0)
+                        .height(40.0)
+                        .align_items(AlignItems::Center)
+                        .justify_content(JustifyContent::Center))
+                    .child(
+                        Text(d.to_string())
+                            .size(th.typography.label_small)
+                            .color(th.on_surface_variant),
+                    )
+                })
+                .collect();
+            rows.push(Row(Modifier::new()).with_children(dow_headers));
 
-                // Proper calendar grid: offset by start_dow, 6 rows
-                let total_cells = start_dow + dim;
-                let num_rows = total_cells.div_ceil(7).min(6);
-                for w in 0..num_rows {
-                    let mut week: Vec<View> = Vec::new();
-                    for d in 0..7 {
-                        let cell_idx = w * 7 + d;
-                        if cell_idx < start_dow {
-                            week.push(Box(Modifier::new().width(40.0).height(40.0)));
-                        } else {
-                            let day_num = (cell_idx - start_dow + 1) as i32;
-                            if day_num <= dim as i32 {
-                                let is_selected = day_num == day as i32;
-                                let is_today = today.0 == year
-                                    && today.1 == month
-                                    && today.2 == day_num as u32;
-                                let s = state.clone();
-                                let on_confirm = on_confirm.clone();
-                                let on_dismiss_fn = on_dismiss.clone();
-                                week.push(
-                                    Box(Modifier::new()
-                                        .width(40.0)
-                                        .height(40.0)
-                                        .background(if is_selected {
-                                            th.primary
+            // Proper calendar grid: offset by start_dow, 6 rows
+            let total_cells = start_dow + dim;
+            let num_rows = total_cells.div_ceil(7).min(6);
+            for w in 0..num_rows {
+                let mut week: Vec<View> = Vec::new();
+                for d in 0..7 {
+                    let cell_idx = w * 7 + d;
+                    if cell_idx < start_dow {
+                        week.push(Box(Modifier::new().width(40.0).height(40.0)));
+                    } else {
+                        let day_num = (cell_idx - start_dow + 1) as i32;
+                        if day_num <= dim as i32 {
+                            let is_selected = day_num == day as i32;
+                            let is_today =
+                                today.0 == year && today.1 == month && today.2 == day_num as u32;
+                            let s = state.clone();
+                            let on_confirm = on_confirm.clone();
+                            let on_dismiss_fn = on_dismiss.clone();
+                            week.push(
+                                Box(Modifier::new()
+                                    .width(40.0)
+                                    .height(40.0)
+                                    .background(if is_selected {
+                                        th.primary
+                                    } else {
+                                        Color::TRANSPARENT
+                                    })
+                                    .clip_rounded(20.0)
+                                    .align_items(AlignItems::Center)
+                                    .justify_content(JustifyContent::Center)
+                                    .clickable()
+                                    .on_pointer_down(move |_| {
+                                        s.day.set(day_num as u32);
+                                        on_confirm(s.year.get(), s.month.get(), day_num as u32);
+                                        on_dismiss_fn();
+                                    }))
+                                .child({
+                                    let mut t = Text(day_num.to_string())
+                                        .size(th.typography.body_medium)
+                                        .color(if is_selected {
+                                            th.on_primary
                                         } else {
-                                            Color::TRANSPARENT
-                                        })
-                                        .clip_rounded(20.0)
-                                        .align_items(AlignItems::Center)
-                                        .justify_content(JustifyContent::Center)
-                                        .clickable()
-                                        .on_pointer_down(move |_| {
-                                            s.day.set(day_num as u32);
-                                            on_confirm(s.year.get(), s.month.get(), day_num as u32);
-                                            on_dismiss_fn();
-                                        }))
-                                    .child({
-                                        let mut t = Text(day_num.to_string())
-                                            .size(th.typography.body_medium)
-                                            .color(if is_selected {
-                                                th.on_primary
-                                            } else {
-                                                th.on_surface
-                                            });
-                                        if is_today && !is_selected {
-                                            t = t.modifier(
-                                                Modifier::new().border(1.0, th.primary, 10.0),
-                                            );
-                                        }
-                                        t
-                                    }),
-                                );
-                            } else {
-                                week.push(Box(Modifier::new().width(40.0).height(40.0)));
-                            }
+                                            th.on_surface
+                                        });
+                                    if is_today && !is_selected {
+                                        t = t.modifier(
+                                            Modifier::new().border(1.0, th.primary, 10.0),
+                                        );
+                                    }
+                                    t
+                                }),
+                            );
+                        } else {
+                            week.push(Box(Modifier::new().width(40.0).height(40.0)));
                         }
                     }
-                    rows.push(Row(Modifier::new()).with_children(week));
                 }
-                rows
-            }),
-            Box(Modifier::new().fill_max_width().height(12.0)),
-            // Cancel / Confirm
-            Row(Modifier::new()
-                .fill_max_width()
-                .justify_content(JustifyContent::End)
-                .gap(8.0))
-            .child((
-                TextButton(
-                    Modifier::new(),
-                    {
-                        let on_dismiss = on_dismiss.clone();
-                        move || (on_dismiss)()
-                    },
-                    ButtonConfig::default(),
-                    || Text("Cancel").size(14.0),
-                ),
-                FilledButton(
-                    Modifier::new(),
-                    {
-                        let on_confirm = on_confirm.clone();
-                        let s = state.clone();
-                        move || {
-                            let (y, m, d) = s.selected_date();
-                            on_confirm(y, m, d);
-                        }
-                    },
-                    ButtonConfig::default(),
-                    || Text("OK").size(14.0),
-                ),
-            )),
-        ))
+                rows.push(Row(Modifier::new()).with_children(week));
+            }
+            rows
+        }),
+        Box(Modifier::new().fill_max_width().height(12.0)),
+        // Cancel / Confirm
+        Row(Modifier::new()
+            .fill_max_width()
+            .justify_content(JustifyContent::End)
+            .gap(8.0))
+        .child((
+            TextButton(
+                Modifier::new(),
+                {
+                    let on_dismiss = on_dismiss.clone();
+                    move || (on_dismiss)()
+                },
+                ButtonConfig::default(),
+                || Text("Cancel").size(14.0),
+            ),
+            FilledButton(
+                Modifier::new(),
+                {
+                    let on_confirm = on_confirm.clone();
+                    let s = state.clone();
+                    move || {
+                        let (y, m, d) = s.selected_date();
+                        on_confirm(y, m, d);
+                    }
+                },
+                ButtonConfig::default(),
+                || Text("OK").size(14.0),
+            ),
+        )),
+    ))
 }
 
 /// State for `TimePicker` - manages selected hour and minute.
@@ -2076,136 +2120,135 @@ pub fn TimePicker(
     let hour_str = format!("{:02}", hour);
     let min_str = format!("{:02}", minute);
 
-    Column(Modifier::new()
-        .width(256.0)
-        .padding(24.0)
-        .align_items(AlignItems::Center)).child((
-            // Time display
-            Row(Modifier::new().align_items(AlignItems::Center)).child((
-                Box(Modifier::new()
-                    .clickable()
-                    .on_pointer_down({
-                        let s = state.clone();
-                        move |_| s.hour.set((s.hour.get() % 12) + 1)
-                    })
-                    .padding(8.0))
-                .child(Text(hour_str).size(48.0).color(th.on_surface).single_line()),
-                Text(":")
-                    .size(48.0)
-                    .color(th.on_surface_variant)
-                    .single_line(),
-                Box(Modifier::new()
-                    .clickable()
-                    .on_pointer_down({
-                        let s = state.clone();
-                        move |_| s.minute.set((s.minute.get() + 1) % 60)
-                    })
-                    .padding(8.0))
-                .child(Text(min_str).size(48.0).color(th.on_surface).single_line()),
-            )),
-            Box(Modifier::new().fill_max_width().height(16.0)),
-            // AM/PM toggle
-            Row(Modifier::new().align_items(AlignItems::Center)).child((
-                Box(Modifier::new()
-                    .padding_values(PaddingValues {
-                        left: 12.0,
-                        right: 12.0,
-                        top: 4.0,
-                        bottom: 4.0,
-                    })
-                    .background(if is_am {
-                        th.primary
-                    } else {
-                        Color::TRANSPARENT
-                    })
-                    .clip_rounded(8.0)
-                    .clickable()
-                    .on_pointer_down({
-                        let s = state.clone();
-                        move |_| {
-                            if !s.is_am.get() {
-                                s.is_am.set(true);
-                                let h = s.hour.get();
-                                s.hour.set(if h == 12 { 12 } else { (h + 12) % 24 });
-                                if s.hour.get() == 0 {
-                                    s.hour.set(12);
-                                }
+    Column(
+        Modifier::new()
+            .width(256.0)
+            .padding(24.0)
+            .align_items(AlignItems::Center),
+    )
+    .child((
+        // Time display
+        Row(Modifier::new().align_items(AlignItems::Center)).child((
+            Box(Modifier::new()
+                .clickable()
+                .on_pointer_down({
+                    let s = state.clone();
+                    move |_| s.hour.set((s.hour.get() % 12) + 1)
+                })
+                .padding(8.0))
+            .child(Text(hour_str).size(48.0).color(th.on_surface).single_line()),
+            Text(":")
+                .size(48.0)
+                .color(th.on_surface_variant)
+                .single_line(),
+            Box(Modifier::new()
+                .clickable()
+                .on_pointer_down({
+                    let s = state.clone();
+                    move |_| s.minute.set((s.minute.get() + 1) % 60)
+                })
+                .padding(8.0))
+            .child(Text(min_str).size(48.0).color(th.on_surface).single_line()),
+        )),
+        Box(Modifier::new().fill_max_width().height(16.0)),
+        // AM/PM toggle
+        Row(Modifier::new().align_items(AlignItems::Center)).child((
+            Box(Modifier::new()
+                .padding_values(PaddingValues {
+                    left: 12.0,
+                    right: 12.0,
+                    top: 4.0,
+                    bottom: 4.0,
+                })
+                .background(if is_am {
+                    th.primary
+                } else {
+                    Color::TRANSPARENT
+                })
+                .clip_rounded(8.0)
+                .clickable()
+                .on_pointer_down({
+                    let s = state.clone();
+                    move |_| {
+                        if !s.is_am.get() {
+                            s.is_am.set(true);
+                            let h = s.hour.get();
+                            s.hour.set(if h == 12 { 12 } else { (h + 12) % 24 });
+                            if s.hour.get() == 0 {
+                                s.hour.set(12);
                             }
                         }
-                    }))
-                .child(
-                    Text("AM").size(th.typography.label_large).color(if is_am {
-                        th.on_primary
-                    } else {
-                        th.on_surface
-                    }),
-                ),
-                Box(Modifier::new().width(8.0).height(1.0)),
-                Box(Modifier::new()
-                    .padding_values(PaddingValues {
-                        left: 12.0,
-                        right: 12.0,
-                        top: 4.0,
-                        bottom: 4.0,
-                    })
-                    .background(if !is_am {
-                        th.primary
-                    } else {
-                        Color::TRANSPARENT
-                    })
-                    .clip_rounded(8.0)
-                    .clickable()
-                    .on_pointer_down({
-                        let s = state.clone();
-                        move |_| {
-                            if s.is_am.get() {
-                                s.is_am.set(false);
-                                let h = s.hour.get();
-                                s.hour.set(if h == 12 { 12 } else { (h + 12) % 24 });
-                                if s.hour.get() == 0 {
-                                    s.hour.set(12);
-                                }
-                            }
-                        }
-                    }))
-                .child(
-                    Text("PM").size(th.typography.label_large).color(if !is_am {
-                        th.on_primary
-                    } else {
-                        th.on_surface
-                    }),
-                ),
-            )),
-            Box(Modifier::new().fill_max_width().height(16.0)),
-            Row(Modifier::new().fill_max_width()).child((
-                Spacer(),
-                Box(Modifier::new().padding(8.0).clickable().on_pointer_down({
-                    let on_dismiss = on_dismiss.clone();
-                    move |_| on_dismiss()
+                    }
                 }))
-                .child(
-                    Text("Cancel")
-                        .color(th.primary)
-                        .size(th.typography.label_large)
-                        .single_line(),
-                ),
-                Box(Modifier::new().width(8.0).height(1.0)),
-                Box(Modifier::new()
-                    .padding(8.0)
-                    .clickable()
-                    .on_pointer_down(move |_| {
-                        let (h, m) = state.selected_time();
-                        on_confirm(h, m);
-                        on_dismiss();
-                    }))
-                .child(
-                    Text("OK")
-                        .color(th.primary)
-                        .size(th.typography.label_large)
-                        .single_line(),
-                ),
-            )),
-        ))
+            .child(Text("AM").size(th.typography.label_large).color(if is_am {
+                th.on_primary
+            } else {
+                th.on_surface
+            })),
+            Box(Modifier::new().width(8.0).height(1.0)),
+            Box(Modifier::new()
+                .padding_values(PaddingValues {
+                    left: 12.0,
+                    right: 12.0,
+                    top: 4.0,
+                    bottom: 4.0,
+                })
+                .background(if !is_am {
+                    th.primary
+                } else {
+                    Color::TRANSPARENT
+                })
+                .clip_rounded(8.0)
+                .clickable()
+                .on_pointer_down({
+                    let s = state.clone();
+                    move |_| {
+                        if s.is_am.get() {
+                            s.is_am.set(false);
+                            let h = s.hour.get();
+                            s.hour.set(if h == 12 { 12 } else { (h + 12) % 24 });
+                            if s.hour.get() == 0 {
+                                s.hour.set(12);
+                            }
+                        }
+                    }
+                }))
+            .child(Text("PM").size(th.typography.label_large).color(if !is_am {
+                th.on_primary
+            } else {
+                th.on_surface
+            })),
+        )),
+        Box(Modifier::new().fill_max_width().height(16.0)),
+        Row(Modifier::new().fill_max_width()).child((
+            Spacer(),
+            Box(Modifier::new().padding(8.0).clickable().on_pointer_down({
+                let on_dismiss = on_dismiss.clone();
+                move |_| on_dismiss()
+            }))
+            .child(
+                Text("Cancel")
+                    .color(th.primary)
+                    .size(th.typography.label_large)
+                    .single_line(),
+            ),
+            Box(Modifier::new().width(8.0).height(1.0)),
+            Box(Modifier::new()
+                .padding(8.0)
+                .clickable()
+                .on_pointer_down(move |_| {
+                    let (h, m) = state.selected_time();
+                    on_confirm(h, m);
+                    on_dismiss();
+                }))
+            .child(
+                Text("OK")
+                    .color(th.primary)
+                    .size(th.typography.label_large)
+                    .single_line(),
+            ),
+        )),
+    ))
 }
 
 /// A destination entry inside a NavigationRail.
