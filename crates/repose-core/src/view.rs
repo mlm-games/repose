@@ -1,5 +1,5 @@
 use crate::{Brush, Color, Modifier, Rect, TextSpan, Transform};
-use std::{rc::Rc, sync::Arc};
+use std::{fmt::Formatter, rc::Rc, sync::Arc};
 
 /// The constraints that will be passed to a subcomposed child. Values are in
 /// device-independent pixels (dp), matching the units used by `Modifier`.
@@ -161,7 +161,7 @@ pub enum ViewKind {
 }
 
 impl std::fmt::Debug for ViewKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Surface => f.write_str("Surface"),
             Self::Box => f.write_str("Box"),
@@ -179,11 +179,24 @@ impl std::fmt::Debug for ViewKind {
             Self::Text { text, .. } => write!(f, "Text({:?})", text),
 
             Self::Expander { expanded, .. } => {
-                if *expanded { write!(f, "Expander(expanded)") } else { write!(f, "Expander(collapsed)") }
+                if *expanded {
+                    write!(f, "Expander(expanded)")
+                } else {
+                    write!(f, "Expander(collapsed)")
+                }
             }
-            Self::TreeRow { depth, has_children, is_expanded, is_selected, .. } => {
-                write!(f, "TreeRow(depth={}, children={}, expanded={}, selected={})",
-                    depth, has_children, is_expanded, is_selected)
+            Self::TreeRow {
+                depth,
+                has_children,
+                is_expanded,
+                is_selected,
+                ..
+            } => {
+                write!(
+                    f,
+                    "TreeRow(depth={}, children={}, expanded={}, selected={})",
+                    depth, has_children, is_expanded, is_selected
+                )
             }
         }
     }
