@@ -355,7 +355,9 @@ pub fn ExtendedFAB(
         .on_pointer_down(move |_| on_click()))
     .child((
         icon.unwrap_or(Box(Modifier::new())),
-        Box(Modifier::new().width(if has_icon { 12.0 } else { 0.0 }).fill_max_height()),
+        Box(Modifier::new()
+            .width(if has_icon { 12.0 } else { 0.0 })
+            .fill_max_height()),
         Text(label)
             .color(th.on_primary_container)
             .size(th.typography.label_large)
@@ -715,9 +717,30 @@ pub fn CircularProgressIndicator(value: Option<f32>) -> View {
     })
 }
 
+/// Default values for M3 progress indicator properties.
+pub struct ProgressIndicatorDefaults;
+
+impl ProgressIndicatorDefaults {
+    pub fn indicator_color() -> Color {
+        theme().primary
+    }
+    pub fn track_color() -> Color {
+        theme().secondary_container
+    }
+}
+
 /// M3 Linear Progress Indicator.
-pub fn LinearProgressIndicator(value: Option<f32>) -> View {
+///
+/// When `color` or `track_color` is `None`, theme defaults from
+/// [`ProgressIndicatorDefaults`] are used.
+pub fn LinearProgressIndicator(
+    value: Option<f32>,
+    color: Option<Color>,
+    track_color: Option<Color>,
+) -> View {
     let th = theme();
+    let color = color.unwrap_or(th.primary);
+    let track_color = track_color.unwrap_or(th.secondary_container);
 
     Box(Modifier::new().fill_max_width().height(4.0).painter(
         move |scene: &mut Scene, rect: Rect, alpha: f32| {
@@ -746,7 +769,7 @@ pub fn LinearProgressIndicator(value: Option<f32>) -> View {
                         w: ind_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(th.primary)),
+                    brush: Brush::Solid(mul_c(color)),
                     radius: corner,
                 });
             }
@@ -762,7 +785,7 @@ pub fn LinearProgressIndicator(value: Option<f32>) -> View {
                         w: track_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(th.secondary_container)),
+                    brush: Brush::Solid(mul_c(track_color)),
                     radius: corner,
                 });
             }
@@ -777,7 +800,7 @@ pub fn LinearProgressIndicator(value: Option<f32>) -> View {
                         w: dot_r * 2.0,
                         h: dot_r * 2.0,
                     },
-                    brush: Brush::Solid(mul_c(th.primary)),
+                    brush: Brush::Solid(mul_c(color)),
                 });
             }
         },
