@@ -1051,6 +1051,8 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static) -> View {
         .clip_rounded(20.0)
         .background(Color::TRANSPARENT)
         .clickable()
+        .align_items(AlignItems::Center)
+        .justify_content(JustifyContent::Center)
         .on_pointer_down(move |_| on_change(!checked)))
     .child(
         Box(Modifier::new()
@@ -1106,6 +1108,8 @@ pub fn RadioButton(selected: bool, on_select: impl Fn() + 'static) -> View {
         .clip_rounded(20.0)
         .background(Color::TRANSPARENT)
         .clickable()
+        .align_items(AlignItems::Center)
+        .justify_content(JustifyContent::Center)
         .on_pointer_down(move |_| on_select()))
     .child(
         Box(Modifier::new()
