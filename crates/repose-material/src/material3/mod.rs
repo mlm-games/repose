@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use repose_core::*;
 use repose_ui::lazy::{LazyRow, LazyRowState};
 use repose_ui::{
-    Box, Column, Row, Spacer, Stack, Surface, Text, TextField, TextStyle, ViewExt, ZStack,
+    Box, Column, Row, Spacer, Stack, Text, TextField, TextStyle, ViewExt, ZStack,
     anim::{animate_color, animate_f32, animate_f32_from},
     overlay::OverlayHandle,
     overlay::SnackbarAction,
@@ -62,9 +62,12 @@ pub fn AlertDialog(
             Modifier::new()
                 .min_width(280.0)
                 .max_width(560.0)
-                .background(th.surface_container_high)
-                .clip_rounded(th.shapes.extra_large)
                 .padding(24.0),
+            SurfaceConfig {
+                shape: th.shapes.extra_large,
+                color: th.surface_container_high,
+                ..Default::default()
+            },
             alert_dialog_body(title, text, confirm_button, dismiss_button),
         ),
     ))
@@ -184,9 +187,12 @@ pub struct NavItem {
 pub fn Card(modifier: Modifier, content: View) -> View {
     let th = theme();
     Surface(
-        modifier
-            .background(th.surface_container_highest)
-            .clip_rounded(th.shapes.medium),
+        modifier,
+        SurfaceConfig {
+            shape: th.shapes.medium,
+            color: th.surface_container_highest,
+            ..Default::default()
+        },
         content,
     )
 }
@@ -194,15 +200,17 @@ pub fn Card(modifier: Modifier, content: View) -> View {
 pub fn ElevatedCard(modifier: Modifier, content: View) -> View {
     let th = theme();
     Surface(
-        modifier
-            .background(th.surface_container_low)
-            .state_elevation(StateElevation {
-                default: th.elevation.level1,
-                hovered: th.elevation.level2,
-                pressed: th.elevation.level3,
-                disabled: 0.0,
-            })
-            .clip_rounded(th.shapes.medium),
+        modifier.state_elevation(StateElevation {
+            default: th.elevation.level1,
+            hovered: th.elevation.level2,
+            pressed: th.elevation.level3,
+            disabled: 0.0,
+        }),
+        SurfaceConfig {
+            shape: th.shapes.medium,
+            color: th.surface_container_low,
+            ..Default::default()
+        },
         content,
     )
 }
@@ -210,10 +218,14 @@ pub fn ElevatedCard(modifier: Modifier, content: View) -> View {
 pub fn OutlinedCard(modifier: Modifier, content: View) -> View {
     let th = theme();
     Surface(
-        modifier
-            .background(th.surface)
-            .border(1.0, th.outline_variant, th.shapes.medium)
-            .clip_rounded(th.shapes.medium),
+        modifier,
+        SurfaceConfig {
+            shape: th.shapes.medium,
+            color: th.surface,
+            border_width: 1.0,
+            border_color: th.outline_variant,
+            ..Default::default()
+        },
         content,
     )
 }
@@ -233,11 +245,14 @@ pub fn ClickableCard(on_click: impl Fn() + 'static, modifier: Modifier, content:
     let bg = th.surface_container_highest;
     Surface(
         modifier
-            .background(bg)
             .state_colors(card_state_colors(bg))
-            .clip_rounded(th.shapes.medium)
             .clickable()
             .on_pointer_down(move |_| on_click()),
+        SurfaceConfig {
+            shape: th.shapes.medium,
+            color: bg,
+            ..Default::default()
+        },
         content,
     )
 }
@@ -251,7 +266,6 @@ pub fn ClickableElevatedCard(
     let bg = th.surface;
     Surface(
         modifier
-            .background(bg)
             .state_colors(card_state_colors(bg))
             .state_elevation(StateElevation {
                 default: th.elevation.level1,
@@ -259,9 +273,13 @@ pub fn ClickableElevatedCard(
                 pressed: th.elevation.level3,
                 disabled: 0.0,
             })
-            .clip_rounded(th.shapes.medium)
             .clickable()
             .on_pointer_down(move |_| on_click()),
+        SurfaceConfig {
+            shape: th.shapes.medium,
+            color: bg,
+            ..Default::default()
+        },
         content,
     )
 }
@@ -275,12 +293,16 @@ pub fn ClickableOutlinedCard(
     let bg = th.surface;
     Surface(
         modifier
-            .background(bg)
             .state_colors(card_state_colors(bg))
-            .border(1.0, th.outline_variant, th.shapes.medium)
-            .clip_rounded(th.shapes.medium)
             .clickable()
             .on_pointer_down(move |_| on_click()),
+        SurfaceConfig {
+            shape: th.shapes.medium,
+            color: bg,
+            border_width: 1.0,
+            border_color: th.outline_variant,
+            ..Default::default()
+        },
         content,
     )
 }
@@ -308,8 +330,6 @@ pub fn Snackbar(
         Modifier::new()
             .translate(0.0, slide)
             .alpha(alpha)
-            .background(bg)
-            .clip_rounded(th.shapes.small)
             .padding_values(PaddingValues {
                 left: 16.0,
                 right: 16.0,
@@ -319,6 +339,11 @@ pub fn Snackbar(
             .min_height(48.0)
             .min_width(280.0)
             .max_width(600.0),
+        SurfaceConfig {
+            shape: th.shapes.small,
+            color: bg,
+            ..Default::default()
+        },
         Row(Modifier::new().align_items(repose_core::AlignItems::Center)).child((
             Text(msg)
                 .color(fg)
@@ -388,6 +413,11 @@ pub fn FilterChip(
         },
         spec,
     );
+    let border_color = if selected {
+        Color::TRANSPARENT
+    } else {
+        th.outline_variant
+    };
     let leading_color = animate_color(
         format!("fc_lic_{}", id),
         if selected {
@@ -400,23 +430,12 @@ pub fn FilterChip(
 
     Surface(
         Modifier::new()
-            .background(bg)
             .state_colors(StateColors {
                 default: Color::TRANSPARENT,
                 hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
                 pressed: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
                 disabled: Color::TRANSPARENT,
             })
-            .border(
-                1.0,
-                if selected {
-                    Color::TRANSPARENT
-                } else {
-                    th.outline_variant
-                },
-                8.0,
-            )
-            .clip_rounded(8.0)
             .padding_values(PaddingValues {
                 left: 16.0,
                 right: 16.0,
@@ -425,6 +444,13 @@ pub fn FilterChip(
             })
             .clickable()
             .on_pointer_down(move |_| on_click()),
+        SurfaceConfig {
+            shape: 8.0,
+            color: bg,
+            border_width: 1.0,
+            border_color,
+            ..Default::default()
+        },
         Row(Modifier::new().align_items(AlignItems::Center)).child((
             leading_icon
                 .map(|v| {
@@ -468,8 +494,6 @@ pub fn AssistChip(
                 pressed: th.on_surface.with_alpha_f32(0.12),
                 disabled: Color::TRANSPARENT,
             })
-            .border(1.0, th.outline_variant, 8.0)
-            .clip_rounded(8.0)
             .padding_values(PaddingValues {
                 left: 16.0,
                 right: 16.0,
@@ -478,6 +502,13 @@ pub fn AssistChip(
             })
             .clickable()
             .on_pointer_down(move |_| on_click()),
+        SurfaceConfig {
+            shape: 8.0,
+            color: Color::TRANSPARENT,
+            border_width: 1.0,
+            border_color: th.outline_variant,
+            ..Default::default()
+        },
         Row(Modifier::new().align_items(AlignItems::Center)).child((
             leading_icon
                 .map(|v| {
@@ -516,8 +547,6 @@ pub fn SuggestionChip(on_click: impl Fn() + 'static, label: View, icon: Option<V
                 pressed: th.on_surface.with_alpha_f32(0.12),
                 disabled: Color::TRANSPARENT,
             })
-            .border(1.0, th.outline_variant, 8.0)
-            .clip_rounded(8.0)
             .padding_values(PaddingValues {
                 left: 16.0,
                 right: 16.0,
@@ -526,6 +555,13 @@ pub fn SuggestionChip(on_click: impl Fn() + 'static, label: View, icon: Option<V
             })
             .clickable()
             .on_pointer_down(move |_| on_click()),
+        SurfaceConfig {
+            shape: 8.0,
+            color: Color::TRANSPARENT,
+            border_width: 1.0,
+            border_color: th.outline_variant,
+            ..Default::default()
+        },
         Row(Modifier::new().align_items(AlignItems::Center)).child((
             icon.map(|v| {
                 Box(Modifier::new().padding_values(PaddingValues {
@@ -572,6 +608,11 @@ pub fn InputChip(
         },
         spec,
     );
+    let border_color = if selected {
+        Color::TRANSPARENT
+    } else {
+        th.outline_variant
+    };
     let leading_color = animate_color(
         format!("ic_lic_{}", id),
         if selected {
@@ -584,23 +625,12 @@ pub fn InputChip(
 
     Surface(
         Modifier::new()
-            .background(bg)
             .state_colors(StateColors {
                 default: Color::TRANSPARENT,
                 hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
                 pressed: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
                 disabled: Color::TRANSPARENT,
             })
-            .border(
-                1.0,
-                if selected {
-                    Color::TRANSPARENT
-                } else {
-                    th.outline_variant
-                },
-                8.0,
-            )
-            .clip_rounded(8.0)
             .padding_values(PaddingValues {
                 left: 16.0,
                 right: 16.0,
@@ -609,6 +639,13 @@ pub fn InputChip(
             })
             .clickable()
             .on_pointer_down(move |_| on_click()),
+        SurfaceConfig {
+            shape: 8.0,
+            color: bg,
+            border_width: 1.0,
+            border_color,
+            ..Default::default()
+        },
         Row(Modifier::new().align_items(AlignItems::Center)).child((
             avatar
                 .or(leading_icon)
@@ -896,26 +933,28 @@ pub fn NavigationDrawerItem(
                 bottom: 0.0,
             })
             .min_height(56.0)
-            .background(bg)
-            .clip_rounded(28.0)
             .clickable()
             .on_pointer_down(move |_| on_click()),
-        with_content_color(fg, move || {
-            Row(Modifier::new()
-                .align_items(AlignItems::Center)
-                .padding_values(PaddingValues {
-                    left: 16.0,
-                    right: 24.0,
-                    top: 0.0,
-                    bottom: 0.0,
-                }))
-            .child((
-                icon.unwrap_or(Box(Modifier::new().width(24.0).height(24.0))),
-                Box(Modifier::new().width(12.0).height(1.0)),
-                Box(Modifier::new().flex_grow(1.0)).child(label),
-                badge.unwrap_or(Box(Modifier::new())),
-            ))
-        }),
+        SurfaceConfig {
+            shape: 28.0,
+            color: bg,
+            content_color: fg,
+            ..Default::default()
+        },
+        Row(Modifier::new()
+            .align_items(AlignItems::Center)
+            .padding_values(PaddingValues {
+                left: 16.0,
+                right: 24.0,
+                top: 0.0,
+                bottom: 0.0,
+            }))
+        .child((
+            icon.unwrap_or(Box(Modifier::new().width(24.0).height(24.0))),
+            Box(Modifier::new().width(12.0).height(1.0)),
+            Box(Modifier::new().flex_grow(1.0)).child(label),
+            badge.unwrap_or(Box(Modifier::new())),
+        )),
     )
 }
 
@@ -1149,8 +1188,6 @@ fn render_dropdown_menu_content(
 
     Surface(
         Modifier::new()
-            .background(th.surface_container)
-            .clip_rounded(th.shapes.small)
             .state_elevation(StateElevation {
                 default: th.elevation.level2,
                 hovered: th.elevation.level3,
@@ -1159,6 +1196,11 @@ fn render_dropdown_menu_content(
             })
             .min_width(112.0)
             .padding(4.0),
+        SurfaceConfig {
+            shape: th.shapes.small,
+            color: th.surface_container,
+            ..Default::default()
+        },
         Column(Modifier::new()).with_children(children),
     )
 }
@@ -1280,22 +1322,21 @@ pub fn SearchBar(
     };
 
     let bar_modifier = modifier.clone();
+    let bar_bg = if active {
+        th.surface_container_high
+    } else {
+        th.surface_container
+    };
     let bar = Surface(
         bar_modifier
             .width(width)
             .height(56.0)
-            .background(if active {
-                th.surface_container_high
-            } else {
-                th.surface_container
-            })
             .state_elevation(StateElevation {
                 default: if active { th.elevation.level3 } else { 0.0 },
                 hovered: th.elevation.level2,
                 pressed: th.elevation.level3,
                 disabled: 0.0,
             })
-            .clip_rounded(th.shapes.large)
             .padding_values(PaddingValues {
                 left: 16.0,
                 right: 16.0,
@@ -1307,6 +1348,11 @@ pub fn SearchBar(
                 let s = state.clone();
                 move |_| s.activate()
             }),
+        SurfaceConfig {
+            shape: th.shapes.large,
+            color: bar_bg,
+            ..Default::default()
+        },
         Row(Modifier::new()
             .fill_max_size()
             .align_items(AlignItems::Center))
@@ -1390,22 +1436,21 @@ pub fn DockedSearchBar(
         })
     };
 
+    let bar_bg = if active {
+        th.surface_container_high
+    } else {
+        th.surface_container
+    };
     let bar = Surface(
         modifier
             .fill_max_width()
             .height(56.0)
-            .background(if active {
-                th.surface_container_high
-            } else {
-                th.surface_container
-            })
             .state_elevation(StateElevation {
                 default: if active { th.elevation.level3 } else { 0.0 },
                 hovered: th.elevation.level2,
                 pressed: th.elevation.level3,
                 disabled: 0.0,
             })
-            .clip_rounded(th.shapes.large)
             .padding_values(PaddingValues {
                 left: 16.0,
                 right: 16.0,
@@ -1421,6 +1466,11 @@ pub fn DockedSearchBar(
                     }
                 }
             }),
+        SurfaceConfig {
+            shape: th.shapes.large,
+            color: bar_bg,
+            ..Default::default()
+        },
         Row(Modifier::new()
             .fill_max_size()
             .align_items(AlignItems::Center))
@@ -1925,11 +1975,12 @@ pub fn DatePicker(
     let today = (now.year, now.month, now.day);
 
     Surface(
-        Modifier::new()
-            .width(328.0)
-            .background(th.surface_container_high)
-            .clip_rounded(th.shapes.extra_large)
-            .padding(16.0),
+        Modifier::new().width(328.0).padding(16.0),
+        SurfaceConfig {
+            shape: th.shapes.extra_large,
+            color: th.surface_container_high,
+            ..Default::default()
+        },
         Column(Modifier::new()).child((
             // Month header
             Row(Modifier::new()
@@ -2127,11 +2178,12 @@ pub fn TimePicker(
     let min_str = format!("{:02}", minute);
 
     Surface(
-        Modifier::new()
-            .width(256.0)
-            .background(th.surface_container_high)
-            .clip_rounded(th.shapes.extra_large)
-            .padding(24.0),
+        Modifier::new().width(256.0).padding(24.0),
+        SurfaceConfig {
+            shape: th.shapes.extra_large,
+            color: th.surface_container_high,
+            ..Default::default()
+        },
         Column(Modifier::new().align_items(AlignItems::Center)).child((
             // Time display
             Row(Modifier::new().align_items(AlignItems::Center)).child((

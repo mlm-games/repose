@@ -153,9 +153,7 @@ pub struct Interactions {
 }
 
 pub fn Surface(modifier: Modifier, child: View) -> View {
-    let mut v = View::new(0, ViewKind::Surface).modifier(modifier);
-    v.children = vec![child];
-    v
+    Column(modifier).child(child)
 }
 
 pub fn Box(modifier: Modifier) -> View {
@@ -439,7 +437,7 @@ fn flex_dir_for(kind: &ViewKind) -> Option<FlexDirection> {
                 Some(FlexDirection::Row)
             }
         }
-        ViewKind::Column | ViewKind::Surface | ViewKind::ScrollV { .. } => {
+        ViewKind::Column | ViewKind::ScrollV { .. } => {
             Some(FlexDirection::Column)
         }
         _ => None,

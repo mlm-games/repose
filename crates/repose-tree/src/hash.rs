@@ -79,20 +79,10 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             hash_color(tint, hasher);
             std::mem::discriminant(fit).hash(hasher);
         }
-        ViewKind::Ellipse { rect, color } => {
-            hash_rect(rect, hasher);
-            hash_color(color, hasher);
-        }
-        ViewKind::EllipseBorder { rect, color, width } => {
-            hash_rect(rect, hasher);
-            hash_color(color, hasher);
-            ((width * 100.0) as u32).hash(hasher);
-        }
         ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. } => {
             // Scroll state is external, not part of content hash
         }
         ViewKind::OverlayHost
-        | ViewKind::Surface
         | ViewKind::Box
         | ViewKind::Row
         | ViewKind::Column

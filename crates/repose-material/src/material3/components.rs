@@ -1695,3 +1695,78 @@ pub fn M3RangeSlider(
         enabled: true,
     })
 }
+
+/// Configuration for `Surface`. Use `..Default::default()` for defaults.
+///
+/// Defaults match Compose Material3 Surface:
+/// - `shape`: `0.0` (RectangleShape)
+/// - `color`: `theme().surface` (MaterialTheme.colorScheme.surface)
+/// - `content_color`: `theme().on_surface` (contentColorFor(color))
+/// - `shadow_elevation`: `0.0` (0.dp)
+/// - `border_width`: `0.0` (null border)
+/// - `border_color`: `Color::TRANSPARENT`
+#[derive(Clone, Copy, Debug)]
+pub struct SurfaceConfig {
+    /// Corner radius in dp (default 0.0 = RectangleShape).
+    pub shape: f32,
+    /// Fill color (default `theme().surface`, matching Compose's `colorScheme.surface`).
+    pub color: Color,
+    /// Content color propagated to children (default `theme().on_surface`).
+    pub content_color: Color,
+    /// Shadow elevation in dp (default 0.0 = no shadow).
+    pub shadow_elevation: f32,
+    /// Border width in dp. 0.0 = no border (default).
+    pub border_width: f32,
+    /// Border color. Ignored when border_width <= 0.0.
+    pub border_color: Color,
+}
+
+impl Default for SurfaceConfig {
+    fn default() -> Self {
+        Self {
+            shape: 0.0,
+            color: theme().surface,
+            content_color: theme().on_surface,
+            shadow_elevation: 0.0,
+            border_width: 0.0,
+            border_color: Color::TRANSPARENT,
+        }
+    }
+}
+
+/// Material3 Surface.
+///
+/// Wraps content in a Box with Material3 surface styling applied in the correct
+/// order: shadow → border → background → clip, and propagates `content_color`
+/// to children via `with_content_color` (matching Compose's `LocalContentColor`).
+///
+/// For clickable surfaces, add `.clickable().on_pointer_down(cb)` on the modifier.
+///
+/// # Example
+/// ```ignore
+/// let th = theme();
+/// Surface(
+///     modifier,
+///     SurfaceConfig {
+///         shape: th.shapes.medium,
+///         color: th.surface,
+///         shadow_elevation: th.elevation.level1,
+///         ..Default::default()
+///     },
+///     content,
+/// );
+/// ```
+pub fn Surface(
+    modifier: Modifier,
+    config: SurfaceConfig,
+    content: View,
+) -> View {
+    let mut m = modifier.background(config.color).clip_rounded(config.shape);
+    if config.shadow_elevation > 0.0 {
+        m = m.elevation(config.shadow_elevation).graphics_layer(1.0);
+    }
+    if config.border_width > 0.0 {
+        m = m.border(config.border_width, config.border_color, config.shape);
+    }
+    with_content_color(config.content_color, || Box(m).child(content))
+}

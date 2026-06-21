@@ -634,7 +634,6 @@ impl LayoutEngine {
                 };
             }
             ViewKind::Column
-            | ViewKind::Surface
             | ViewKind::ScrollV { .. }
             | ViewKind::OverlayHost => {
                 s.flex_direction = FlexDirection::Column;

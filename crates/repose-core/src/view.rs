@@ -78,7 +78,6 @@ pub struct OverlayEntry {
 #[derive(Clone)]
 #[non_exhaustive]
 pub enum ViewKind {
-    Surface,
     Box,
     Row,
     Column,
@@ -121,15 +120,6 @@ pub enum ViewKind {
         tint: Color, // multiplicative (WHITE = no tint)
         fit: ImageFit,
     },
-    Ellipse {
-        rect: Rect,
-        color: Color,
-    },
-    EllipseBorder {
-        rect: Rect,
-        color: Color,
-        width: f32, // screen-space width (px)
-    },
     /// A layout whose children are produced by calling `content` with the
     /// current `SubcomposeScope`. The closure is invoked during reconciliation
     /// and returns a list of `(slot_id, view)` pairs. Each slot id is a stable
@@ -163,7 +153,6 @@ pub enum ViewKind {
 impl std::fmt::Debug for ViewKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Surface => f.write_str("Surface"),
             Self::Box => f.write_str("Box"),
             Self::Row => f.write_str("Row"),
             Self::Column => f.write_str("Column"),
@@ -173,8 +162,6 @@ impl std::fmt::Debug for ViewKind {
             Self::ScrollV { .. } => f.write_str("ScrollV"),
             Self::ScrollXY { .. } => f.write_str("ScrollXY"),
             Self::Image { .. } => f.write_str("Image"),
-            Self::Ellipse { .. } => f.write_str("Ellipse"),
-            Self::EllipseBorder { .. } => f.write_str("EllipseBorder"),
             Self::SubcomposeLayout { .. } => f.write_str("SubcomposeLayout"),
             Self::Text { text, .. } => write!(f, "Text({:?})", text),
 
