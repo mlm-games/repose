@@ -57,7 +57,10 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         rel.x * cos + rel.y * sin,
         -rel.x * sin + rel.y * cos
     );
-    let norm_uv = clamp((unrotated_rel + 1.0) * 0.5, vec2(0.0), vec2(1.0));
+    let norm_uv = (unrotated_rel + 1.0) * 0.5;
+    if any(norm_uv < vec2(0.0)) || any(norm_uv > vec2(1.0)) {
+        discard;
+    }
     let atlas_uv = mix(in.uv_rect.xy, in.uv_rect.zw, norm_uv);
     let cov = textureSample(glyph_tex, glyph_sampler, atlas_uv).r;
     let a = cov * in.color.a;
