@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use web_time::Duration;
 
 use repose_core::animation::{AnimationSpec, Easing, RepeatableSpec};
+use crate::{Icon, Symbol};
 use repose_core::*;
 use repose_ui::lazy::{LazyRow, LazyRowState};
 use repose_ui::{
@@ -1732,13 +1733,17 @@ pub fn PullToRefresh(
                     .rotate(rotation)
                     .translate(-icon_size * 0.5, -icon_size * 0.5))
                 .child(if refreshing {
-                    Text("\u{21BB}").size(24.0).color(config.indicator_color)
+                    Icon(Symbol::new("refresh", '\u{E042}'))
+                        .size(24.0)
+                        .color(config.indicator_color)
                 } else {
-                    Text("\u{2193}").size(icon_size).color(
-                        config
-                            .indicator_color
-                            .with_alpha_f32(distance_fraction.min(1.0)),
-                    )
+                    Icon(Symbol::new("arrow_downward", '\u{E5DB}'))
+                        .size(icon_size)
+                        .color(
+                            config
+                                .indicator_color
+                                .with_alpha_f32(distance_fraction.min(1.0)),
+                        )
                 }),
             )
         } else {
