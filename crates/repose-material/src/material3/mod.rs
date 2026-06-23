@@ -1733,7 +1733,7 @@ pub fn PullToRefresh(
                     .rotate(rotation)
                     .translate(-icon_size * 0.5, -icon_size * 0.5))
                 .child(if refreshing {
-                    Icon(Symbol::new("refresh", '\u{E042}'))
+                    Icon(Symbol::new("refresh", '\u{E5D5}'))
                         .size(24.0)
                         .color(config.indicator_color)
                 } else {
