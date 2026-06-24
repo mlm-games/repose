@@ -325,7 +325,7 @@ pub fn NavDisplay<K: NavKey>(
     } else {
         (1.0, 0.0)
     };
-    let t = animate_f32_from(format!("nav3:{id}"), initial, target, transition.spec);
+    let t = animate_f32_from(format!("nav3:{id}:{_v}"), initial, target, transition.spec);
 
     let slide = if dir == TransitionDir::Push {
         1.0 - t
