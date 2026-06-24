@@ -216,6 +216,7 @@ struct Pipelines {
     blur: wgpu::RenderPipeline,
     clip_a2c: wgpu::RenderPipeline,
     clip_bin: wgpu::RenderPipeline,
+    slug: wgpu::RenderPipeline,
 }
 
 impl Pipelines {
@@ -231,6 +232,7 @@ impl Pipelines {
         stencil_for_clip_inc: &wgpu::DepthStencilState,
         clip_color_target: &wgpu::ColorTargetState,
         clip_vertex_layout: &wgpu::VertexBufferLayout,
+        slug_storage_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let msaa_state = wgpu::MultisampleState {
             count: sample_count,
@@ -699,6 +701,10 @@ impl Pipelines {
             cache: None,
         });
 
+        let slug = slug::create_pipeline(
+            device, format, sample_count, globals_layout, slug_storage_layout, stencil_for_content,
+        );
+
         Self {
             rects,
             borders,
@@ -711,6 +717,7 @@ impl Pipelines {
             blur,
             clip_a2c,
             clip_bin,
+            slug,
         }
     }
 }
@@ -1224,6 +1231,9 @@ impl WgpuBackend {
             write_mask: wgpu::ColorWrites::empty(),
         };
 
+        // Slug storage layout (shared across sample counts, created first)
+        let slug_storage_layout = slug::create_storage_layout(&device);
+
         // Two sets of pipelines: one for the MSAA surface pass, one for layer
         // render-to-texture passes (sample_count = 1).
         let surface_pipes = Pipelines::create(
@@ -1238,6 +1248,7 @@ impl WgpuBackend {
             &stencil_for_clip_inc,
             &clip_color_target,
             &clip_vertex_layout,
+            &slug_storage_layout,
         );
         let layer_pipes = Pipelines::create(
             &device,
@@ -1251,15 +1262,13 @@ impl WgpuBackend {
             &stencil_for_clip_inc,
             &clip_color_target,
             &clip_vertex_layout,
+            &slug_storage_layout,
         );
 
-        // Slug (vector glyph) pipeline
+        // Slug storage (shared across sample counts)
         let slug_pipeline = slug::SlugPipeline::new(
             &device,
-            config.format,
-            msaa_samples,
-            &globals_layout,
-            &stencil_for_content,
+            &slug_storage_layout,
         );
 
         // Blur composite ring (for graphics-layer drop shadows)
@@ -2645,8 +2654,8 @@ impl RenderBackend for WgpuBackend {
                         let gx = rect.x + sg.x + sg.bearing_x;
                         let gy = rect.y + sg.y - sg.bearing_y;
 
-                        if has_rotation {
-                            // Fast hit path: lookup + cache get (1 engine lock).
+                        // Vector glyph path: per-pixel Bezier evaluation on GPU.
+                        {
                             let ck = repose_text::lookup_cache_key(sg.key);
                             if let Some(ref ck) = ck {
                                 if !self.slug_cache.contains(ck) {
@@ -2718,7 +2727,7 @@ impl RenderBackend for WgpuBackend {
                             }
                         }
 
-                        // Atlas fallback: unrotated glyphs + color emoji + failed slug extraction
+                        // Atlas fallback: color emoji + failed slug extraction
                         if let Some(info) = self.upload_glyph_color(sg.key, px as u32) {
                             let (ndc, sin_cos) = make_glyph_instance(gx, gy, info.w, info.h);
                             batch.colors.push(GlyphInstance {
@@ -3325,7 +3334,7 @@ impl RenderBackend for WgpuBackend {
                     }
 
                     Cmd::GlyphsVector { off, cnt: n } => {
-                        rpass.set_pipeline(self.slug_pipeline.pipeline());
+                        rpass.set_pipeline(&pipes.slug);
                         rpass.set_bind_group(1, self.slug_pipeline.bind_group(), &[]);
                         let bytes = (n as u64) * std::mem::size_of::<slug::SlugVertex>() as u64;
                         rpass.set_vertex_buffer(0, self.slug_ring.buf.slice(off..off + bytes));
