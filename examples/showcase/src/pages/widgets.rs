@@ -42,31 +42,47 @@ pub fn screen() -> View {
             "Switch / Checkbox / Radio",
             Column(Modifier::new().padding(sp::MD).gap(10.0)).child((
                 Labeled(
-                    Switch(sw.get(), {
-                        let s = sw.clone();
-                        move |v| s.set(v)
-                    }, SwitchConfig::default()),
+                    Switch(
+                        sw.get(),
+                        {
+                            let s = sw.clone();
+                            move |v| s.set(v)
+                        },
+                        SwitchConfig::default(),
+                    ),
                     "Switch",
                 ),
                 Labeled(
-                    Checkbox(cb.get(), {
-                        let s = cb.clone();
-                        move |v| s.set(v)
-                    }, CheckboxConfig::default()),
+                    Checkbox(
+                        cb.get(),
+                        {
+                            let s = cb.clone();
+                            move |v| s.set(v)
+                        },
+                        CheckboxConfig::default(),
+                    ),
                     "Checkbox",
                 ),
                 Labeled(
-                    RadioButton(radio.get() == 0, {
-                        let r = radio.clone();
-                        move || r.set(0)
-                    }, RadioButtonConfig::default()),
+                    RadioButton(
+                        radio.get() == 0,
+                        {
+                            let r = radio.clone();
+                            move || r.set(0)
+                        },
+                        RadioButtonConfig::default(),
+                    ),
                     "Radio A",
                 ),
                 Labeled(
-                    RadioButton(radio.get() == 1, {
-                        let r = radio.clone();
-                        move || r.set(1)
-                    }, RadioButtonConfig::default()),
+                    RadioButton(
+                        radio.get() == 1,
+                        {
+                            let r = radio.clone();
+                            move || r.set(1)
+                        },
+                        RadioButtonConfig::default(),
+                    ),
                     "Radio B",
                 ),
             )),
@@ -74,18 +90,31 @@ pub fn screen() -> View {
         Section(
             "Sliders + Progress",
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
-                M3Slider(s_val.get(), (0.0, 1.0), Some(0.01), {
-                    let s = s_val.clone();
-                    move |v| s.set(v)
-                }, SliderConfig::default()),
-                M3RangeSlider(r_a.get(), r_b.get(), (0.0, 1.0), Some(0.01), {
-                    let a = r_a.clone();
-                    let b = r_b.clone();
-                    move |x0, x1| {
-                        a.set(x0);
-                        b.set(x1);
-                    }
-                }, SliderConfig::default()),
+                M3Slider(
+                    s_val.get(),
+                    (0.0, 1.0),
+                    Some(0.01),
+                    {
+                        let s = s_val.clone();
+                        move |v| s.set(v)
+                    },
+                    SliderConfig::default(),
+                ),
+                M3RangeSlider(
+                    r_a.get(),
+                    r_b.get(),
+                    (0.0, 1.0),
+                    Some(0.01),
+                    {
+                        let a = r_a.clone();
+                        let b = r_b.clone();
+                        move |x0, x1| {
+                            a.set(x0);
+                            b.set(x1);
+                        }
+                    },
+                    SliderConfig::default(),
+                ),
                 LinearProgressIndicator(Some(prog.get()), Default::default()),
                 Row(Modifier::new().gap(sp::MD)).child((
                     TextButton(
@@ -185,7 +214,14 @@ pub fn screen() -> View {
                             None,
                             ChipConfig::default(),
                         ),
-                        FilterChip(true, || {}, Text("Active"), None, None, ChipConfig::default()),
+                        FilterChip(
+                            true,
+                            || {},
+                            Text("Active"),
+                            None,
+                            None,
+                            ChipConfig::default(),
+                        ),
                         FilterChip(
                             true,
                             || {},

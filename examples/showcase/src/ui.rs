@@ -68,13 +68,11 @@ pub fn DemoTile(
     fg: Color,
     height: f32,
 ) -> View {
-    Box(
-        Modifier::new()
-            .fill_max_width()
-            .height(height)
-            .background(bg)
-            .clip_rounded(radius::LG),
-    )
+    Box(Modifier::new()
+        .fill_max_width()
+        .height(height)
+        .background(bg)
+        .clip_rounded(radius::LG))
     .child(
         Column(
             Modifier::new()
@@ -124,29 +122,24 @@ pub fn AppShell(
     settings: SettingsVm,
     content: View,
 ) -> View {
-    Box(
-        Modifier::new()
-            .fill_max_size()
-            .background(theme().background),
-    )
-    .child(
-        Column(Modifier::new().fill_max_size()).child((
-            TopBar(overlay, settings),
-            Row(Modifier::new().fill_max_size()).child((
-                NavRail(current, nav),
-                ScrollArea(
-                    Modifier::new().fill_max_size().padding(sp::LG),
-                    {
-                        let st = remember_scroll_state("page_scroll");
-                        st.set_show_scrollbar(false);
-                        st
-                    },
-                    content,
-                ),
-            )),
-        )
-        )
-    )
+    Box(Modifier::new()
+        .fill_max_size()
+        .background(theme().background))
+    .child(Column(Modifier::new().fill_max_size()).child((
+        TopBar(overlay, settings),
+        Row(Modifier::new().fill_max_size()).child((
+            NavRail(current, nav),
+            ScrollArea(
+                Modifier::new().fill_max_size().padding(sp::LG),
+                {
+                    let st = remember_scroll_state("page_scroll");
+                    st.set_show_scrollbar(false);
+                    st
+                },
+                content,
+            ),
+        )),
+    )))
 }
 
 pub fn TopBar(overlay: OverlayHandle, vm: SettingsVm) -> View {

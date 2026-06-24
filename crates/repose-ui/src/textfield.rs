@@ -1225,7 +1225,10 @@ pub(crate) fn paint_text_field(
     let line_h = font_val * 1.3;
     let text_off_y = (inner.h - line_h) / 2.0;
 
-    scene.nodes.push(SceneNode::PushClip { rect: inner, radius: 0.0 });
+    scene.nodes.push(SceneNode::PushClip {
+        rect: inner,
+        radius: 0.0,
+    });
 
     if is_focused {
         let radius = clip_rounded.unwrap_or(6.0);
@@ -1251,8 +1254,7 @@ pub(crate) fn paint_text_field(
 
         if !text_input.multiline {
             // --- Single-line ---
-            let measure_for = if text_input.visual_transformation.is_some() && !st.text.is_empty()
-            {
+            let measure_for = if text_input.visual_transformation.is_some() && !st.text.is_empty() {
                 rendered_by_vt(&st.text)
             } else {
                 st.text.clone()
@@ -1324,10 +1326,7 @@ pub(crate) fn paint_text_field(
             });
 
             // Caret
-            if is_focused
-                && st.selection.start == st.selection.end
-                && st.caret_visible()
-            {
+            if is_focused && st.selection.start == st.selection.end && st.caret_visible() {
                 let caret_off = if has_vt {
                     original_offset_to_display(&st.text, &measure_for, st.selection.end)
                 } else {
@@ -1432,13 +1431,9 @@ pub(crate) fn paint_text_field(
             }
 
             // Caret (multi-line)
-            if is_focused
-                && st.selection.start == st.selection.end
-                && st.caret_visible()
-            {
+            if is_focused && st.selection.start == st.selection.end && st.caret_visible() {
                 let caret = st.selection.end.min(st.text.len());
-                let (cx, cy, _li) =
-                    caret_xy_for_byte(&st.text, font_val, inner.w.max(1.0), caret);
+                let (cx, cy, _li) = caret_xy_for_byte(&st.text, font_val, inner.w.max(1.0), caret);
                 let draw_x = inner.x + cx;
                 let draw_y = inner.y + cy - st.scroll_offset_y;
                 scene.nodes.push(SceneNode::Rect {

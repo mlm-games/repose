@@ -1,8 +1,8 @@
-use rapidhash::{HashMapExt, RapidHashMap, fast::RapidHasher};
 use cosmic_text::{
     Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, SwashCache, SwashContent,
 };
 use once_cell::sync::OnceCell;
+use rapidhash::{HashMapExt, RapidHashMap, fast::RapidHasher};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
     collections::{HashMap, VecDeque},
@@ -257,6 +257,42 @@ pub fn rasterize(key: GlyphKey, _px: f32) -> Option<GlyphBitmap> {
         content: img.content,
         data: img.data, // already a Vec<u8>
     })
+}
+
+/// Look up the full CacheKey for a compact GlyphKey.
+pub fn lookup_cache_key(key: GlyphKey) -> Option<cosmic_text::CacheKey> {
+    let eng = engine().lock().unwrap();
+    eng.key_map.get(&key).copied()
+}
+
+/// Extract vector outline commands for a glyph (uncached — caller should cache).
+/// Returns quadratic + cubic bezier commands in font-unit scaled coordinates.
+pub fn extract_outline_commands(
+    cache_key: cosmic_text::CacheKey,
+) -> Option<Box<[cosmic_text::Command]>> {
+    let mut eng = engine().lock().unwrap();
+    let Engine {
+        ref mut cache,
+        ref mut fs,
+        ..
+    } = *eng;
+    cache.get_outline_commands_uncached(fs, cache_key)
+}
+
+/// Look up the CacheKey for a GlyphKey and extract outline commands in one engine lock.
+/// Returns `None` if the GlyphKey isn't in the key map or extraction fails.
+pub fn lookup_and_extract_outline(
+    key: GlyphKey,
+) -> Option<(cosmic_text::CacheKey, Box<[cosmic_text::Command]>)> {
+    let mut eng = engine().lock().unwrap();
+    let ck = eng.key_map.get(&key).copied()?;
+    let Engine {
+        ref mut cache,
+        ref mut fs,
+        ..
+    } = *eng;
+    let cmds = cache.get_outline_commands_uncached(fs, ck)?;
+    Some((ck, cmds))
 }
 
 // Text metrics for TextField: positions per grapheme boundary and byte offsets.
@@ -561,10 +597,11 @@ pub fn wrap_line_ranges(
             line0_start = i + 1;
 
             if let Some(ml) = max_lines
-                && out.len() >= ml {
-                    truncated = true;
-                    break;
-                }
+                && out.len() >= ml
+            {
+                truncated = true;
+                break;
+            }
         }
     }
     if !truncated {
@@ -642,19 +679,21 @@ fn wrap_one_hard_line_ranges(
                 }
             }
             if cut == line_start
-                && let Some((ofs, gr)) = tok.grapheme_indices(true).next() {
-                    cut = tok_abs_start + ofs + gr.len();
-                }
+                && let Some((ofs, gr)) = tok.grapheme_indices(true).next()
+            {
+                cut = tok_abs_start + ofs + gr.len();
+            }
             out.push((line_start, cut));
             line_start = cut;
         }
 
         // Max lines check
         if let Some(ml) = max_lines
-            && out.len() >= ml {
-                t = true;
-                break;
-            }
+            && out.len() >= ml
+        {
+            t = true;
+            break;
+        }
 
         best_break = line_start;
     }

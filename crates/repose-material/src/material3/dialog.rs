@@ -4,9 +4,9 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
-use web_time::Duration;
 use repose_ui::overlay::OverlayHandle;
 use repose_ui::{Box, ViewExt, ZStack};
+use web_time::Duration;
 
 static DIALOG_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -67,9 +67,7 @@ pub fn Dialog(
 
     // Animated scale/alpha for enter/exit
     let spec = AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn);
-    let anim = remember_state_with_key(state.key("anim"), || {
-        AnimatedValue::new(0.0, spec)
-    });
+    let anim = remember_state_with_key(state.key("anim"), || AnimatedValue::new(0.0, spec));
     let last_target = remember_state_with_key(state.key("atarget"), || f32::NAN);
     let anim_target = if state.is_visible() { 1.0 } else { 0.0 };
 

@@ -144,11 +144,19 @@ impl std::fmt::Debug for TextInputConfig {
         let mut s = f.debug_struct("TextInputConfig");
         s.field("hint", &self.hint);
         s.field("multiline", &self.multiline);
-        if self.on_change.is_some() { s.field("on_change", &"…"); }
-        if self.on_submit.is_some() { s.field("on_submit", &"…"); }
-        if self.focus_tracker.is_some() { s.field("focus_tracker", &"…"); }
+        if self.on_change.is_some() {
+            s.field("on_change", &"…");
+        }
+        if self.on_submit.is_some() {
+            s.field("on_submit", &"…");
+        }
+        if self.focus_tracker.is_some() {
+            s.field("focus_tracker", &"…");
+        }
         s.field("value", &self.value);
-        if self.visual_transformation.is_some() { s.field("visual_transformation", &"…"); }
+        if self.visual_transformation.is_some() {
+            s.field("visual_transformation", &"…");
+        }
         s.field("keyboard_type", &self.keyboard_type);
         s.field("ime_action", &self.ime_action);
         s.finish()
@@ -875,5 +883,4 @@ impl Modifier {
         self.text_input = Some(config);
         self
     }
-
 }

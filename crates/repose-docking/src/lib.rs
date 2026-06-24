@@ -123,17 +123,19 @@ impl DockState {
     pub fn set_active(&mut self, tabs_node_id: u64, pid: PanelId) {
         if let Some(n) = find_node_mut(&mut self.root, tabs_node_id)
             && let DockKind::Tabs { tabs, active } = &mut n.kind
-                && tabs.contains(&pid) {
-                    *active = Some(pid);
-                }
+            && tabs.contains(&pid)
+        {
+            *active = Some(pid);
+        }
     }
 
     pub fn set_split_ratio(&mut self, split_node_id: u64, ratio: f32) {
         let ratio = ratio.clamp(0.05, 0.95);
         if let Some(n) = find_node_mut(&mut self.root, split_node_id)
-            && let DockKind::Split { ratio: r, .. } = &mut n.kind {
-                *r = ratio;
-            }
+            && let DockKind::Split { ratio: r, .. } = &mut n.kind
+        {
+            *r = ratio;
+        }
     }
 
     pub fn dock_panel(&mut self, target_node_id: u64, zone: DropZone, pid: PanelId) -> bool {
@@ -339,12 +341,10 @@ fn render_node(
     key_prefix: &str,
 ) -> View {
     match &node.kind {
-        DockKind::Empty => Box(
-            Modifier::new()
-                .fill_max_size()
-                .background(theme().surface)
-                .key(node.id),
-        )
+        DockKind::Empty => Box(Modifier::new()
+            .fill_max_size()
+            .background(theme().surface)
+            .key(node.id))
         .child(Box(Modifier::new().fill_max_size()).child(Text("Empty").color(theme().on_surface))),
 
         DockKind::Tabs { tabs, active } => render_tabs(
@@ -531,14 +531,20 @@ fn render_tabs(
                         ))
                         .child((
                             if let Some(pop) = cb_pop {
-                                Box(Modifier::new().clickable().on_pointer_down(move |_| pop(pid)).padding(2.0))
-                                    .child(Text("↗").size(12.0))
+                                Box(Modifier::new()
+                                    .clickable()
+                                    .on_pointer_down(move |_| pop(pid))
+                                    .padding(2.0))
+                                .child(Text("↗").size(12.0))
                             } else {
                                 Box(Modifier::new())
                             },
                             if let Some(close) = cb_close {
-                                Box(Modifier::new().clickable().on_pointer_down(move |_| close(pid)).padding(2.0))
-                                    .child(Text("×").size(12.0))
+                                Box(Modifier::new()
+                                    .clickable()
+                                    .on_pointer_down(move |_| close(pid))
+                                    .padding(2.0))
+                                .child(Text("×").size(12.0))
                             } else {
                                 Box(Modifier::new())
                             },
@@ -568,10 +574,8 @@ fn render_tabs(
     Stack(Modifier::new().fill_max_size().key(node_id)).child((
         Column(Modifier::new().fill_max_size()).child((
             tab_bar,
-            Box(
-                Modifier::new().fill_max_size().background(th.background),
-            )
-            .child(Box(Modifier::new().fill_max_size().padding(8.0)).child(content)),
+            Box(Modifier::new().fill_max_size().background(th.background))
+                .child(Box(Modifier::new().fill_max_size().padding(8.0)).child(content)),
         )),
         Box(Modifier::new()
             .absolute()

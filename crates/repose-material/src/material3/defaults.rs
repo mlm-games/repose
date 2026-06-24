@@ -4,7 +4,9 @@ use repose_core::*;
 pub struct SurfaceDefaults;
 
 impl SurfaceDefaults {
-    pub fn color() -> Color { theme().surface }
+    pub fn color() -> Color {
+        theme().surface
+    }
     pub const SHAPE_RADIUS: f32 = 0.0;
     pub const TONAL_ELEVATION: f32 = 0.0;
 }
@@ -16,19 +18,45 @@ impl ToggleButtonDefaults {
     pub const HEIGHT: f32 = 40.0;
     pub const HORIZONTAL_PADDING: f32 = 24.0;
     pub const SHAPE_RADIUS: f32 = 20.0;
-    pub fn content_color() -> Color { theme().on_surface_variant }
-    pub fn checked_container_color() -> Color { theme().primary }
-    pub fn checked_content_color() -> Color { theme().on_primary }
-    pub fn tonal_content_color() -> Color { theme().on_surface_variant }
-    pub fn tonal_checked_container_color() -> Color { theme().secondary_container }
-    pub fn tonal_checked_content_color() -> Color { theme().on_secondary_container }
-    pub fn outlined_content_color() -> Color { theme().on_surface_variant }
-    pub fn outlined_border_color() -> Color { theme().outline }
-    pub fn outlined_checked_container_color() -> Color { theme().secondary_container }
-    pub fn outlined_checked_content_color() -> Color { theme().on_secondary_container }
-    pub fn elevated_content_color() -> Color { theme().primary }
-    pub fn elevated_checked_container_color() -> Color { theme().surface_container_low }
-    pub fn elevated_checked_content_color() -> Color { theme().primary }
+    pub fn content_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn checked_container_color() -> Color {
+        theme().primary
+    }
+    pub fn checked_content_color() -> Color {
+        theme().on_primary
+    }
+    pub fn tonal_content_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn tonal_checked_container_color() -> Color {
+        theme().secondary_container
+    }
+    pub fn tonal_checked_content_color() -> Color {
+        theme().on_secondary_container
+    }
+    pub fn outlined_content_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn outlined_border_color() -> Color {
+        theme().outline
+    }
+    pub fn outlined_checked_container_color() -> Color {
+        theme().secondary_container
+    }
+    pub fn outlined_checked_content_color() -> Color {
+        theme().on_secondary_container
+    }
+    pub fn elevated_content_color() -> Color {
+        theme().primary
+    }
+    pub fn elevated_checked_container_color() -> Color {
+        theme().surface_container_low
+    }
+    pub fn elevated_checked_content_color() -> Color {
+        theme().primary
+    }
     pub fn state_colors_default() -> StateColors {
         let th = theme();
         StateColors {
@@ -39,7 +67,12 @@ impl ToggleButtonDefaults {
         }
     }
     pub fn state_elevation_default() -> StateElevation {
-        StateElevation { default: 0.0, hovered: 1.0, pressed: 0.0, disabled: 0.0 }
+        StateElevation {
+            default: 0.0,
+            hovered: 1.0,
+            pressed: 0.0,
+            disabled: 0.0,
+        }
     }
     pub fn elevated_state_elevation() -> StateElevation {
         let th = theme();
@@ -56,14 +89,22 @@ impl ToggleButtonDefaults {
 pub struct ProgressIndicatorDefaults;
 
 impl ProgressIndicatorDefaults {
-    pub fn linear_color() -> Color { theme().primary }
-    pub fn linear_track_color() -> Color { theme().secondary_container }
+    pub fn linear_color() -> Color {
+        theme().primary
+    }
+    pub fn linear_track_color() -> Color {
+        theme().secondary_container
+    }
     pub const LINEAR_INDICATOR_HEIGHT: f32 = 4.0;
     pub const LINEAR_INDICATOR_GAP_SIZE: f32 = 4.0;
     pub const LINEAR_TRACK_STOP_SIZE: f32 = 4.0;
 
-    pub fn circular_color() -> Color { theme().primary }
-    pub fn circular_track_color() -> Color { theme().secondary_container }
+    pub fn circular_color() -> Color {
+        theme().primary
+    }
+    pub fn circular_track_color() -> Color {
+        theme().secondary_container
+    }
     pub const CIRCULAR_INDICATOR_SIZE: f32 = 40.0;
     pub const CIRCULAR_STROKE_WIDTH: f32 = 4.0;
 }
@@ -72,15 +113,33 @@ impl ProgressIndicatorDefaults {
 pub struct ButtonDefaults;
 
 impl ButtonDefaults {
-    pub fn content_color() -> Color { theme().on_primary }
-    pub fn container_color() -> Color { theme().primary }
-    pub fn tonal_container_color() -> Color { theme().secondary_container }
-    pub fn tonal_content_color() -> Color { theme().on_secondary_container }
-    pub fn elevated_container_color() -> Color { theme().surface_container_low }
-    pub fn elevated_content_color() -> Color { theme().primary }
-    pub fn outlined_content_color() -> Color { theme().on_surface_variant }
-    pub fn outlined_border_color() -> Color { theme().outline_variant }
-    pub fn text_content_color() -> Color { theme().primary }
+    pub fn content_color() -> Color {
+        theme().on_primary
+    }
+    pub fn container_color() -> Color {
+        theme().primary
+    }
+    pub fn tonal_container_color() -> Color {
+        theme().secondary_container
+    }
+    pub fn tonal_content_color() -> Color {
+        theme().on_secondary_container
+    }
+    pub fn elevated_container_color() -> Color {
+        theme().surface_container_low
+    }
+    pub fn elevated_content_color() -> Color {
+        theme().primary
+    }
+    pub fn outlined_content_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn outlined_border_color() -> Color {
+        theme().outline_variant
+    }
+    pub fn text_content_color() -> Color {
+        theme().primary
+    }
     pub const HEIGHT: f32 = 40.0;
     pub const HORIZONTAL_PADDING: f32 = 24.0;
     pub const TEXT_HORIZONTAL_PADDING: f32 = 12.0;
@@ -95,7 +154,12 @@ impl ButtonDefaults {
         }
     }
     pub fn state_elevation_default() -> StateElevation {
-        StateElevation { default: 0.0, hovered: 1.0, pressed: 0.0, disabled: 0.0 }
+        StateElevation {
+            default: 0.0,
+            hovered: 1.0,
+            pressed: 0.0,
+            disabled: 0.0,
+        }
     }
     pub fn elevated_state_elevation() -> StateElevation {
         let th = theme();
@@ -116,19 +180,33 @@ impl SnackbarDefaults {
     pub const MIN_WIDTH: f32 = 280.0;
     pub const MAX_WIDTH: f32 = 600.0;
     pub const SHAPE_RADIUS: f32 = 4.0;
-    pub fn container_color() -> Color { theme().inverse_surface }
-    pub fn content_color() -> Color { theme().inverse_on_surface }
-    pub fn action_color() -> Color { theme().inverse_primary }
+    pub fn container_color() -> Color {
+        theme().inverse_surface
+    }
+    pub fn content_color() -> Color {
+        theme().inverse_on_surface
+    }
+    pub fn action_color() -> Color {
+        theme().inverse_primary
+    }
 }
 
 /// Default values for card components.
 pub struct CardDefaults;
 
 impl CardDefaults {
-    pub fn filled_container_color() -> Color { theme().surface_container_highest }
-    pub fn elevated_container_color() -> Color { theme().surface_container_low }
-    pub fn outlined_container_color() -> Color { theme().surface }
-    pub fn outlined_border_color() -> Color { theme().outline_variant }
+    pub fn filled_container_color() -> Color {
+        theme().surface_container_highest
+    }
+    pub fn elevated_container_color() -> Color {
+        theme().surface_container_low
+    }
+    pub fn outlined_container_color() -> Color {
+        theme().surface
+    }
+    pub fn outlined_border_color() -> Color {
+        theme().outline_variant
+    }
     pub const SHAPE_RADIUS: f32 = 12.0;
     pub const ELEVATION: f32 = 0.0;
 }
@@ -137,7 +215,9 @@ impl CardDefaults {
 pub struct DialogDefaults;
 
 impl DialogDefaults {
-    pub fn container_color() -> Color { theme().surface_container_high }
+    pub fn container_color() -> Color {
+        theme().surface_container_high
+    }
     pub const SHAPE_RADIUS: f32 = 28.0;
     pub const MIN_WIDTH: f32 = 280.0;
     pub const MAX_WIDTH: f32 = 560.0;
@@ -150,11 +230,21 @@ pub struct IconButtonDefaults;
 impl IconButtonDefaults {
     pub const CONTAINER_SIZE: f32 = 48.0;
     pub const FILLED_CONTAINER_SIZE: f32 = 40.0;
-    pub fn content_color() -> Color { theme().on_surface_variant }
-    pub fn filled_content_color() -> Color { theme().on_primary }
-    pub fn filled_container_color() -> Color { theme().primary }
-    pub fn filled_tonal_content_color() -> Color { theme().on_secondary_container }
-    pub fn filled_tonal_container_color() -> Color { theme().secondary_container }
+    pub fn content_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn filled_content_color() -> Color {
+        theme().on_primary
+    }
+    pub fn filled_container_color() -> Color {
+        theme().primary
+    }
+    pub fn filled_tonal_content_color() -> Color {
+        theme().on_secondary_container
+    }
+    pub fn filled_tonal_container_color() -> Color {
+        theme().secondary_container
+    }
     pub fn state_colors_default() -> StateColors {
         let th = theme();
         StateColors {
@@ -175,9 +265,15 @@ impl CheckboxDefaults {
     pub const STROKE_WIDTH: f32 = 2.0;
     pub const CORNER_RADIUS: f32 = 2.0;
     pub const CHECK_ICON_SIZE: f32 = 14.0;
-    pub fn checked_color() -> Color { theme().primary }
-    pub fn unchecked_color() -> Color { theme().on_surface_variant }
-    pub fn checkmark_color() -> Color { theme().on_primary }
+    pub fn checked_color() -> Color {
+        theme().primary
+    }
+    pub fn unchecked_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn checkmark_color() -> Color {
+        theme().on_primary
+    }
 }
 
 /// Default values for radio button.
@@ -188,8 +284,12 @@ impl RadioButtonDefaults {
     pub const OUTER_RADIUS: f32 = 10.0;
     pub const DOT_RADIUS: f32 = 5.0;
     pub const STROKE_WIDTH: f32 = 2.0;
-    pub fn selected_color() -> Color { theme().primary }
-    pub fn unselected_color() -> Color { theme().on_surface_variant }
+    pub fn selected_color() -> Color {
+        theme().primary
+    }
+    pub fn unselected_color() -> Color {
+        theme().on_surface_variant
+    }
 }
 
 /// Default values for switch.
@@ -200,11 +300,21 @@ impl SwitchDefaults {
     pub const TRACK_HEIGHT: f32 = 32.0;
     pub const THUMB_CHECKED_SIZE: f32 = 24.0;
     pub const THUMB_UNCHECKED_SIZE: f32 = 16.0;
-    pub fn checked_track_color() -> Color { theme().primary }
-    pub fn unchecked_track_color() -> Color { theme().surface_container_highest }
-    pub fn checked_thumb_color() -> Color { theme().on_primary }
-    pub fn unchecked_thumb_color() -> Color { theme().outline }
-    pub fn unchecked_border_color() -> Color { theme().outline }
+    pub fn checked_track_color() -> Color {
+        theme().primary
+    }
+    pub fn unchecked_track_color() -> Color {
+        theme().surface_container_highest
+    }
+    pub fn checked_thumb_color() -> Color {
+        theme().on_primary
+    }
+    pub fn unchecked_thumb_color() -> Color {
+        theme().outline
+    }
+    pub fn unchecked_border_color() -> Color {
+        theme().outline
+    }
 }
 
 /// Default values for slider.
@@ -213,9 +323,15 @@ pub struct SliderDefaults;
 impl SliderDefaults {
     pub const TRACK_HEIGHT: f32 = 4.0;
     pub const THUMB_SIZE: f32 = 20.0;
-    pub fn active_track_color() -> Color { theme().primary }
-    pub fn inactive_track_color() -> Color { theme().secondary_container }
-    pub fn thumb_color() -> Color { theme().primary }
+    pub fn active_track_color() -> Color {
+        theme().primary
+    }
+    pub fn inactive_track_color() -> Color {
+        theme().secondary_container
+    }
+    pub fn thumb_color() -> Color {
+        theme().primary
+    }
 }
 
 /// Default values for divider.
@@ -223,7 +339,9 @@ pub struct DividerDefaults;
 
 impl DividerDefaults {
     pub const THICKNESS: f32 = 1.0;
-    pub fn color() -> Color { theme().outline_variant }
+    pub fn color() -> Color {
+        theme().outline_variant
+    }
 }
 
 /// Default values for badge.
@@ -233,8 +351,12 @@ impl BadgeDefaults {
     pub const DOT_SIZE: f32 = 6.0;
     pub const LABEL_MIN_WIDTH: f32 = 16.0;
     pub const LABEL_HEIGHT: f32 = 16.0;
-    pub fn color() -> Color { theme().error }
-    pub fn label_color() -> Color { theme().on_error }
+    pub fn color() -> Color {
+        theme().error
+    }
+    pub fn label_color() -> Color {
+        theme().on_error
+    }
 }
 
 /// Default values for list item.
@@ -246,8 +368,12 @@ impl ListItemDefaults {
     pub const THREE_LINE_HEIGHT: f32 = 88.0;
     pub const HORIZONTAL_PADDING: f32 = 16.0;
     pub const TRAILING_PADDING: f32 = 24.0;
-    pub fn headline_color() -> Color { theme().on_surface }
-    pub fn supporting_color() -> Color { theme().on_surface_variant }
+    pub fn headline_color() -> Color {
+        theme().on_surface
+    }
+    pub fn supporting_color() -> Color {
+        theme().on_surface_variant
+    }
 }
 
 /// Default values for top app bar.
@@ -255,8 +381,12 @@ pub struct TopAppBarDefaults;
 
 impl TopAppBarDefaults {
     pub const HEIGHT: f32 = 64.0;
-    pub fn container_color() -> Color { theme().surface }
-    pub fn title_color() -> Color { theme().on_surface }
+    pub fn container_color() -> Color {
+        theme().surface
+    }
+    pub fn title_color() -> Color {
+        theme().on_surface
+    }
 }
 
 /// Default values for tab row.
@@ -266,10 +396,18 @@ impl TabDefaults {
     pub const HEIGHT: f32 = 48.0;
     pub const INDICATOR_HEIGHT: f32 = 3.0;
     pub const INDICATOR_CORNER: f32 = 1.5;
-    pub fn container_color() -> Color { theme().surface }
-    pub fn selected_content_color() -> Color { theme().primary }
-    pub fn unselected_content_color() -> Color { theme().on_surface_variant }
-    pub fn indicator_color() -> Color { theme().primary }
+    pub fn container_color() -> Color {
+        theme().surface
+    }
+    pub fn selected_content_color() -> Color {
+        theme().primary
+    }
+    pub fn unselected_content_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn indicator_color() -> Color {
+        theme().primary
+    }
 }
 
 /// Default values for navigation bar.
@@ -278,10 +416,18 @@ pub struct NavigationBarDefaults;
 impl NavigationBarDefaults {
     pub const HEIGHT: f32 = 80.0;
     pub const ITEM_ACTIVE_INDICATOR_OPACITY: f32 = 0.12;
-    pub fn container_color() -> Color { theme().surface_container }
-    pub fn selected_icon_color() -> Color { theme().primary }
-    pub fn unselected_icon_color() -> Color { theme().on_surface_variant }
-    pub fn indicator_color() -> Color { theme().primary }
+    pub fn container_color() -> Color {
+        theme().surface_container
+    }
+    pub fn selected_icon_color() -> Color {
+        theme().primary
+    }
+    pub fn unselected_icon_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn indicator_color() -> Color {
+        theme().primary
+    }
 }
 
 /// Default values for navigation rail.
@@ -289,10 +435,18 @@ pub struct NavigationRailDefaults;
 
 impl NavigationRailDefaults {
     pub const WIDTH: f32 = 80.0;
-    pub fn container_color() -> Color { theme().surface }
-    pub fn selected_icon_color() -> Color { theme().on_secondary_container }
-    pub fn unselected_icon_color() -> Color { theme().on_surface_variant }
-    pub fn selected_container_color() -> Color { theme().secondary_container }
+    pub fn container_color() -> Color {
+        theme().surface
+    }
+    pub fn selected_icon_color() -> Color {
+        theme().on_secondary_container
+    }
+    pub fn unselected_icon_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn selected_container_color() -> Color {
+        theme().secondary_container
+    }
 }
 
 /// Default values for segmented button.
@@ -301,10 +455,18 @@ pub struct SegmentedButtonDefaults;
 impl SegmentedButtonDefaults {
     pub const HEIGHT: f32 = 40.0;
     pub const SHAPE_RADIUS: f32 = 20.0;
-    pub fn border_color() -> Color { theme().outline }
-    pub fn selected_container_color() -> Color { theme().secondary_container }
-    pub fn selected_content_color() -> Color { theme().on_secondary_container }
-    pub fn unselected_content_color() -> Color { theme().on_surface }
+    pub fn border_color() -> Color {
+        theme().outline
+    }
+    pub fn selected_container_color() -> Color {
+        theme().secondary_container
+    }
+    pub fn selected_content_color() -> Color {
+        theme().on_secondary_container
+    }
+    pub fn unselected_content_color() -> Color {
+        theme().on_surface
+    }
 }
 
 /// Default values for FAB.
@@ -315,10 +477,19 @@ impl FABDefaults {
     pub const LARGE_SIZE: f32 = 96.0;
     pub const SHAPE_RADIUS: f32 = 28.0;
     pub const LARGE_SHAPE_RADIUS: f32 = 28.0;
-    pub fn container_color() -> Color { theme().primary_container }
-    pub fn content_color() -> Color { theme().on_primary_container }
+    pub fn container_color() -> Color {
+        theme().primary_container
+    }
+    pub fn content_color() -> Color {
+        theme().on_primary_container
+    }
     pub fn state_elevation() -> StateElevation {
-        StateElevation { default: 6.0, hovered: 8.0, pressed: 12.0, disabled: 0.0 }
+        StateElevation {
+            default: 6.0,
+            hovered: 8.0,
+            pressed: 12.0,
+            disabled: 0.0,
+        }
     }
 }
 
@@ -329,22 +500,42 @@ impl ChipDefaults {
     pub const HEIGHT: f32 = 32.0;
     pub const HORIZONTAL_PADDING: f32 = 16.0;
     pub const SHAPE_RADIUS: f32 = 8.0;
-    pub fn surface_color() -> Color { theme().surface }
-    pub fn selected_container_color() -> Color { theme().secondary_container }
-    pub fn selected_content_color() -> Color { theme().on_secondary_container }
-    pub fn unselected_content_color() -> Color { theme().on_surface_variant }
-    pub fn unselected_border_color() -> Color { theme().outline_variant }
-    pub fn assist_icon_color() -> Color { theme().primary }
-    pub fn input_selected_icon_color() -> Color { theme().primary }
-    pub fn input_unselected_icon_color() -> Color { theme().on_surface_variant }
-    pub fn suggestion_icon_color() -> Color { theme().primary }
+    pub fn surface_color() -> Color {
+        theme().surface
+    }
+    pub fn selected_container_color() -> Color {
+        theme().secondary_container
+    }
+    pub fn selected_content_color() -> Color {
+        theme().on_secondary_container
+    }
+    pub fn unselected_content_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn unselected_border_color() -> Color {
+        theme().outline_variant
+    }
+    pub fn assist_icon_color() -> Color {
+        theme().primary
+    }
+    pub fn input_selected_icon_color() -> Color {
+        theme().primary
+    }
+    pub fn input_unselected_icon_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn suggestion_icon_color() -> Color {
+        theme().primary
+    }
 }
 
 /// Default values for scaffold layout.
 pub struct ScaffoldDefaults;
 
 impl ScaffoldDefaults {
-    pub fn container_color() -> Color { theme().background }
+    pub fn container_color() -> Color {
+        theme().background
+    }
     pub const TOP_BAR_HEIGHT: f32 = 64.0;
     pub const BOTTOM_BAR_HEIGHT: f32 = 80.0;
     pub const FAB_MARGIN: f32 = 16.0;
@@ -355,8 +546,12 @@ pub struct NavigationDrawerDefaults;
 
 impl NavigationDrawerDefaults {
     pub const WIDTH: f32 = 300.0;
-    pub fn container_color() -> Color { theme().surface_container_low }
-    pub fn scrim_color() -> Color { theme().scrim.with_alpha(82) }
+    pub fn container_color() -> Color {
+        theme().surface_container_low
+    }
+    pub fn scrim_color() -> Color {
+        theme().scrim.with_alpha(82)
+    }
     pub const SHAPE_RADIUS: f32 = 16.0;
 }
 
@@ -364,9 +559,15 @@ impl NavigationDrawerDefaults {
 pub struct BottomSheetDefaults;
 
 impl BottomSheetDefaults {
-    pub fn container_color() -> Color { theme().surface_container_low }
-    pub fn drag_handle_color() -> Color { theme().on_surface_variant }
-    pub fn scrim_color() -> Color { theme().scrim.with_alpha(85) }
+    pub fn container_color() -> Color {
+        theme().surface_container_low
+    }
+    pub fn drag_handle_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn scrim_color() -> Color {
+        theme().scrim.with_alpha(85)
+    }
     pub const DRAG_HANDLE_WIDTH: f32 = 32.0;
     pub const DRAG_HANDLE_HEIGHT: f32 = 4.0;
     pub const SHAPE_RADIUS: f32 = 16.0;
@@ -382,10 +583,18 @@ impl SearchBarDefaults {
     pub const EXPANDED_WIDTH: f32 = 360.0;
     pub const COLLAPSED_WIDTH: f32 = 240.0;
     pub const DOCKED_HEIGHT: f32 = 400.0;
-    pub fn container_color() -> Color { theme().surface_container }
-    pub fn active_container_color() -> Color { theme().surface_container_high }
-    pub fn content_color() -> Color { theme().on_surface }
-    pub fn placeholder_color() -> Color { theme().on_surface_variant }
+    pub fn container_color() -> Color {
+        theme().surface_container
+    }
+    pub fn active_container_color() -> Color {
+        theme().surface_container_high
+    }
+    pub fn content_color() -> Color {
+        theme().on_surface
+    }
+    pub fn placeholder_color() -> Color {
+        theme().on_surface_variant
+    }
 }
 
 /// Default values for dropdown menu.
@@ -394,10 +603,18 @@ pub struct DropdownMenuDefaults;
 impl DropdownMenuDefaults {
     pub const MIN_WIDTH: f32 = 112.0;
     pub const ITEM_HEIGHT: f32 = 40.0;
-    pub fn container_color() -> Color { theme().surface_container }
-    pub fn item_text_color() -> Color { theme().on_surface }
-    pub fn disabled_item_text_color() -> Color { theme().on_surface.with_alpha_f32(0.38) }
-    pub fn divider_color() -> Color { theme().outline_variant }
+    pub fn container_color() -> Color {
+        theme().surface_container
+    }
+    pub fn item_text_color() -> Color {
+        theme().on_surface
+    }
+    pub fn disabled_item_text_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
+    pub fn divider_color() -> Color {
+        theme().outline_variant
+    }
 }
 
 /// Default values for tooltip.
@@ -407,8 +624,12 @@ impl TooltipDefaults {
     pub const OFFSET_Y: f32 = -28.0;
     pub const HORIZONTAL_PADDING: f32 = 8.0;
     pub const VERTICAL_PADDING: f32 = 4.0;
-    pub fn container_color() -> Color { theme().inverse_surface }
-    pub fn content_color() -> Color { theme().inverse_on_surface }
+    pub fn container_color() -> Color {
+        theme().inverse_surface
+    }
+    pub fn content_color() -> Color {
+        theme().inverse_on_surface
+    }
 }
 
 /// Default values for pull-to-refresh.
@@ -416,8 +637,12 @@ pub struct PullToRefreshDefaults;
 
 impl PullToRefreshDefaults {
     pub const THRESHOLD: f32 = 64.0;
-    pub fn indicator_color() -> Color { theme().primary }
-    pub fn container_color() -> Color { Color::TRANSPARENT }
+    pub fn indicator_color() -> Color {
+        theme().primary
+    }
+    pub fn container_color() -> Color {
+        Color::TRANSPARENT
+    }
 }
 
 /// Default values for alert dialog.
@@ -427,5 +652,7 @@ impl AlertDialogDefaults {
     pub const MIN_WIDTH: f32 = 280.0;
     pub const MAX_WIDTH: f32 = 560.0;
     pub const HORIZONTAL_PADDING: f32 = 24.0;
-    pub fn scrim_color() -> Color { theme().scrim.with_alpha(170) }
+    pub fn scrim_color() -> Color {
+        theme().scrim.with_alpha(170)
+    }
 }

@@ -80,51 +80,50 @@ static CP_COUNTER: AtomicU64 = AtomicU64::new(0);
 type Painter = Rc<dyn Fn(&mut Scene, repose_core::Rect, f32)>;
 
 fn gradient_painter(stops: Vec<(f32, Color)>) -> Painter {
-    Rc::new(move |scene: &mut Scene, rect: repose_core::Rect, _alpha: f32| {
-        if stops.len() < 2 {
-            return;
-        }
-        let segments = 80usize;
-        let seg_w = rect.w / segments as f32;
-        for i in 0..segments {
-            let t = i as f32 / segments as f32;
-            let mut idx = 0;
-            for j in 0..stops.len() - 1 {
-                if t >= stops[j].0 && t <= stops[j + 1].0 {
-                    idx = j;
-                    break;
+    Rc::new(
+        move |scene: &mut Scene, rect: repose_core::Rect, _alpha: f32| {
+            if stops.len() < 2 {
+                return;
+            }
+            let segments = 80usize;
+            let seg_w = rect.w / segments as f32;
+            for i in 0..segments {
+                let t = i as f32 / segments as f32;
+                let mut idx = 0;
+                for j in 0..stops.len() - 1 {
+                    if t >= stops[j].0 && t <= stops[j + 1].0 {
+                        idx = j;
+                        break;
+                    }
                 }
+                if idx >= stops.len() - 1 {
+                    idx = stops.len() - 2;
+                }
+                let c0 = &stops[idx];
+                let c1 = &stops[idx + 1];
+                let local_t = if (c1.0 - c0.0).abs() < 1e-6 {
+                    0.0
+                } else {
+                    (t - c0.0) / (c1.0 - c0.0)
+                };
+                let col = lerp_color(c0.1, c1.1, local_t);
+                scene.nodes.push(SceneNode::Rect {
+                    rect: repose_core::Rect {
+                        x: rect.x + i as f32 * seg_w,
+                        y: rect.y,
+                        w: seg_w + 1.0,
+                        h: rect.h,
+                    },
+                    brush: Brush::Solid(col),
+                    radius: 0.0,
+                });
             }
-            if idx >= stops.len() - 1 {
-                idx = stops.len() - 2;
-            }
-            let c0 = &stops[idx];
-            let c1 = &stops[idx + 1];
-            let local_t = if (c1.0 - c0.0).abs() < 1e-6 {
-                0.0
-            } else {
-                (t - c0.0) / (c1.0 - c0.0)
-            };
-            let col = lerp_color(c0.1, c1.1, local_t);
-            scene.nodes.push(SceneNode::Rect {
-                rect: repose_core::Rect {
-                    x: rect.x + i as f32 * seg_w,
-                    y: rect.y,
-                    w: seg_w + 1.0,
-                    h: rect.h,
-                },
-                brush: Brush::Solid(col),
-                radius: 0.0,
-            });
-        }
-    })
+        },
+    )
 }
 
 /// A compact HSV color picker with hue, saturation, and value sliders.
-pub fn ColorPicker(
-    color: Color,
-    on_change: impl Fn(Color) + 'static,
-) -> View {
+pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
     let id = CP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let (hue, sat, val) = rgb_to_hsv(color.0, color.1, color.2);
 
@@ -227,61 +226,98 @@ pub fn ColorPicker(
     };
 
     let header = Row(Modifier::new().align_items(AlignItems::Center)).child((
-        Box(Modifier::new().width(swatch_size).height(swatch_size).background(color).border(1.0, th.outline, 4.0).clip_rounded(4.0)),
+        Box(Modifier::new()
+            .width(swatch_size)
+            .height(swatch_size)
+            .background(color)
+            .border(1.0, th.outline, 4.0)
+            .clip_rounded(4.0)),
         Box(Modifier::new().width(8.0).height(1.0)),
-        Text(format!("#{:02X}{:02X}{:02X}", color.0, color.1, color.2)).size(12.0).color(th.on_surface),
+        Text(format!("#{:02X}{:02X}{:02X}", color.0, color.1, color.2))
+            .size(12.0)
+            .color(th.on_surface),
     ));
 
-    let hue_slider = Stack(Modifier::new().width(slider_w).height(slider_h)).child((
-        Box(Modifier::new().fill_max_size().painter(move |s: &mut Scene, r: repose_core::Rect, a: f32| (hue_painter)(s, r, a))).child(Box(Modifier::new())),
-        Box(Modifier::new().absolute().offset(Some(hue_frac * slider_w - thumb_w * 0.5), None, None, None).width(thumb_w).height(slider_h).background(Color::WHITE).border(1.0, th.outline, 2.0)),
-    ))
-    .modifier(
-        Modifier::new()
-            .on_pointer_down(make_drag_start(0, hue_frac))
-            .on_pointer_move({
-                let f = make_drag_move.clone();
-                move |pe| f(pe)
-            })
-            .on_pointer_up({
-                let f = make_drag_end.clone();
-                move |pe| f(pe)
-            }),
-    );
+    let hue_slider = Stack(Modifier::new().width(slider_w).height(slider_h))
+        .child((
+            Box(Modifier::new().fill_max_size().painter(
+                move |s: &mut Scene, r: repose_core::Rect, a: f32| (hue_painter)(s, r, a),
+            ))
+            .child(Box(Modifier::new())),
+            Box(Modifier::new()
+                .absolute()
+                .offset(Some(hue_frac * slider_w - thumb_w * 0.5), None, None, None)
+                .width(thumb_w)
+                .height(slider_h)
+                .background(Color::WHITE)
+                .border(1.0, th.outline, 2.0)),
+        ))
+        .modifier(
+            Modifier::new()
+                .on_pointer_down(make_drag_start(0, hue_frac))
+                .on_pointer_move({
+                    let f = make_drag_move.clone();
+                    move |pe| f(pe)
+                })
+                .on_pointer_up({
+                    let f = make_drag_end.clone();
+                    move |pe| f(pe)
+                }),
+        );
 
-    let sat_slider = Stack(Modifier::new().width(slider_w).height(slider_h)).child((
-        Box(Modifier::new().fill_max_size().painter(move |s: &mut Scene, r: repose_core::Rect, a: f32| (sat_painter)(s, r, a))).child(Box(Modifier::new())),
-        Box(Modifier::new().absolute().offset(Some(sat_frac * slider_w - thumb_w * 0.5), None, None, None).width(thumb_w).height(slider_h).background(Color::WHITE).border(1.0, th.outline, 2.0)),
-    ))
-    .modifier(
-        Modifier::new()
-            .on_pointer_down(make_drag_start(1, sat_frac))
-            .on_pointer_move({
-                let f = make_drag_move.clone();
-                move |pe| f(pe)
-            })
-            .on_pointer_up({
-                let f = make_drag_end.clone();
-                move |pe| f(pe)
-            }),
-    );
+    let sat_slider = Stack(Modifier::new().width(slider_w).height(slider_h))
+        .child((
+            Box(Modifier::new().fill_max_size().painter(
+                move |s: &mut Scene, r: repose_core::Rect, a: f32| (sat_painter)(s, r, a),
+            ))
+            .child(Box(Modifier::new())),
+            Box(Modifier::new()
+                .absolute()
+                .offset(Some(sat_frac * slider_w - thumb_w * 0.5), None, None, None)
+                .width(thumb_w)
+                .height(slider_h)
+                .background(Color::WHITE)
+                .border(1.0, th.outline, 2.0)),
+        ))
+        .modifier(
+            Modifier::new()
+                .on_pointer_down(make_drag_start(1, sat_frac))
+                .on_pointer_move({
+                    let f = make_drag_move.clone();
+                    move |pe| f(pe)
+                })
+                .on_pointer_up({
+                    let f = make_drag_end.clone();
+                    move |pe| f(pe)
+                }),
+        );
 
-    let val_slider = Stack(Modifier::new().width(slider_w).height(slider_h)).child((
-        Box(Modifier::new().fill_max_size().painter(move |s: &mut Scene, r: repose_core::Rect, a: f32| (val_painter)(s, r, a))).child(Box(Modifier::new())),
-        Box(Modifier::new().absolute().offset(Some(val_frac * slider_w - thumb_w * 0.5), None, None, None).width(thumb_w).height(slider_h).background(Color::WHITE).border(1.0, th.outline, 2.0)),
-    ))
-    .modifier(
-        Modifier::new()
-            .on_pointer_down(make_drag_start(2, val_frac))
-            .on_pointer_move({
-                let f = make_drag_move.clone();
-                move |pe| f(pe)
-            })
-            .on_pointer_up({
-                let f = make_drag_end.clone();
-                move |pe| f(pe)
-            }),
-    );
+    let val_slider = Stack(Modifier::new().width(slider_w).height(slider_h))
+        .child((
+            Box(Modifier::new().fill_max_size().painter(
+                move |s: &mut Scene, r: repose_core::Rect, a: f32| (val_painter)(s, r, a),
+            ))
+            .child(Box(Modifier::new())),
+            Box(Modifier::new()
+                .absolute()
+                .offset(Some(val_frac * slider_w - thumb_w * 0.5), None, None, None)
+                .width(thumb_w)
+                .height(slider_h)
+                .background(Color::WHITE)
+                .border(1.0, th.outline, 2.0)),
+        ))
+        .modifier(
+            Modifier::new()
+                .on_pointer_down(make_drag_start(2, val_frac))
+                .on_pointer_move({
+                    let f = make_drag_move.clone();
+                    move |pe| f(pe)
+                })
+                .on_pointer_up({
+                    let f = make_drag_end.clone();
+                    move |pe| f(pe)
+                }),
+        );
 
     Column(Modifier::new().width(240.0))
         .child(header)

@@ -7,8 +7,7 @@ use crate::anim::animate_f32_from;
 use crate::anim::animate_vec2_from;
 
 /// Describes how content enters the screen.
-#[derive(Clone, Debug)]
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub enum EnterTransition {
     /// Fade from alpha 0 to 1.
     #[default]
@@ -21,10 +20,8 @@ pub enum EnterTransition {
     Composite(Vec<EnterTransition>),
 }
 
-
 /// Describes how content exits the screen.
-#[derive(Clone, Debug)]
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub enum ExitTransition {
     /// Fade from alpha 1 to 0.
     #[default]
@@ -36,7 +33,6 @@ pub enum ExitTransition {
     /// Composite: multiple exit transitions applied together.
     Composite(Vec<ExitTransition>),
 }
-
 
 /// Crossfades between two pieces of content when `target` changes.
 ///

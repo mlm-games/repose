@@ -1,11 +1,13 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::borrow::Cow;
 
-use repose_core::{Brush, GlyphRasterConfig, RenderBackend, Scene, SceneNode, Transform};
 use repose_core::request_frame;
+use repose_core::{Brush, GlyphRasterConfig, RenderBackend, Scene, SceneNode, Transform};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use wgpu::Instance;
+
+mod slug;
 
 #[derive(Clone)]
 struct UploadRing {
@@ -130,6 +132,13 @@ pub struct WgpuBackend {
     // Stencil clip ring
     clip_ring: UploadRing,
 
+    // Slug vector glyph pipeline
+    slug_pipeline: slug::SlugPipeline,
+    slug_ring: UploadRing,
+    slug_cache: slug::GlyphSlugCache,
+    slug_prev_generation: u64,
+    slug_instances: Vec<slug::SlugVertex>,
+
     // Instanced NV12 ring
     nv12: InstancedPipe<Nv12Instance>,
 
@@ -233,13 +242,16 @@ impl Pipelines {
             ($name:ident, $shader:literal, $inst_type:ty, $attrs:expr) => {
                 let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                     label: Some(concat!($shader, ".wgsl")),
-                    source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(concat!("shaders/", $shader, ".wgsl")))),
+                    source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(concat!(
+                        "shaders/", $shader, ".wgsl"
+                    )))),
                 });
-                let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some(concat!($shader, " pipeline layout")),
-                    bind_group_layouts: &[Some(globals_layout)],
-                    immediate_size: 0,
-                });
+                let pipeline_layout =
+                    device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: Some(concat!($shader, " pipeline layout")),
+                        bind_group_layouts: &[Some(globals_layout)],
+                        immediate_size: 0,
+                    });
                 let $name = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                     label: Some(concat!($shader, " pipeline")),
                     layout: Some(&pipeline_layout),
@@ -273,38 +285,123 @@ impl Pipelines {
         }
 
         let rect_attrs: &[wgpu::VertexAttribute] = &[
-            wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
-            wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32 },
-            wgpu::VertexAttribute { shader_location: 2, offset: 20, format: wgpu::VertexFormat::Uint32 },
-            wgpu::VertexAttribute { shader_location: 3, offset: 24, format: wgpu::VertexFormat::Float32x4 },
-            wgpu::VertexAttribute { shader_location: 4, offset: 40, format: wgpu::VertexFormat::Float32x4 },
-            wgpu::VertexAttribute { shader_location: 5, offset: 56, format: wgpu::VertexFormat::Float32x2 },
-            wgpu::VertexAttribute { shader_location: 6, offset: 64, format: wgpu::VertexFormat::Float32x2 },
-            wgpu::VertexAttribute { shader_location: 7, offset: 72, format: wgpu::VertexFormat::Float32x2 },
+            wgpu::VertexAttribute {
+                shader_location: 0,
+                offset: 0,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 1,
+                offset: 16,
+                format: wgpu::VertexFormat::Float32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 2,
+                offset: 20,
+                format: wgpu::VertexFormat::Uint32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 3,
+                offset: 24,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 4,
+                offset: 40,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 5,
+                offset: 56,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 6,
+                offset: 64,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 7,
+                offset: 72,
+                format: wgpu::VertexFormat::Float32x2,
+            },
         ];
         let border_attrs: &[wgpu::VertexAttribute] = &[
-            wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
-            wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32 },
-            wgpu::VertexAttribute { shader_location: 2, offset: 20, format: wgpu::VertexFormat::Float32 },
-            wgpu::VertexAttribute { shader_location: 3, offset: 24, format: wgpu::VertexFormat::Float32x4 },
-            wgpu::VertexAttribute { shader_location: 4, offset: 40, format: wgpu::VertexFormat::Float32x2 },
+            wgpu::VertexAttribute {
+                shader_location: 0,
+                offset: 0,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 1,
+                offset: 16,
+                format: wgpu::VertexFormat::Float32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 2,
+                offset: 20,
+                format: wgpu::VertexFormat::Float32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 3,
+                offset: 24,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 4,
+                offset: 40,
+                format: wgpu::VertexFormat::Float32x2,
+            },
         ];
         let ellipse_attrs: &[wgpu::VertexAttribute] = &[
-            wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
-            wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32x4 },
-            wgpu::VertexAttribute { shader_location: 2, offset: 32, format: wgpu::VertexFormat::Float32x2 },
+            wgpu::VertexAttribute {
+                shader_location: 0,
+                offset: 0,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 1,
+                offset: 16,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 2,
+                offset: 32,
+                format: wgpu::VertexFormat::Float32x2,
+            },
         ];
         let ellipse_border_attrs: &[wgpu::VertexAttribute] = &[
-            wgpu::VertexAttribute { shader_location: 0, offset: 0, format: wgpu::VertexFormat::Float32x4 },
-            wgpu::VertexAttribute { shader_location: 1, offset: 16, format: wgpu::VertexFormat::Float32 },
-            wgpu::VertexAttribute { shader_location: 2, offset: 20, format: wgpu::VertexFormat::Float32x4 },
-            wgpu::VertexAttribute { shader_location: 3, offset: 36, format: wgpu::VertexFormat::Float32x2 },
+            wgpu::VertexAttribute {
+                shader_location: 0,
+                offset: 0,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 1,
+                offset: 16,
+                format: wgpu::VertexFormat::Float32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 2,
+                offset: 20,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 3,
+                offset: 36,
+                format: wgpu::VertexFormat::Float32x2,
+            },
         ];
 
         make_content_pipeline!(rects, "rect", RectInstance, rect_attrs);
         make_content_pipeline!(borders, "border", BorderInstance, border_attrs);
         make_content_pipeline!(ellipses, "ellipse", EllipseInstance, ellipse_attrs);
-        make_content_pipeline!(ellipse_borders, "ellipse_border", EllipseBorderInstance, ellipse_border_attrs);
+        make_content_pipeline!(
+            ellipse_borders,
+            "ellipse_border",
+            EllipseBorderInstance,
+            ellipse_border_attrs
+        );
 
         // Text (mask)
         let text_mask_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -660,6 +757,10 @@ enum Cmd {
         cnt: u32,
     },
     GlyphsColor {
+        off: u64,
+        cnt: u32,
+    },
+    GlyphsVector {
         off: u64,
         cnt: u32,
     },
@@ -1152,6 +1253,15 @@ impl WgpuBackend {
             &clip_vertex_layout,
         );
 
+        // Slug (vector glyph) pipeline
+        let slug_pipeline = slug::SlugPipeline::new(
+            &device,
+            config.format,
+            msaa_samples,
+            &globals_layout,
+            &stencil_for_content,
+        );
+
         // Blur composite ring (for graphics-layer drop shadows)
         let blur_ring = UploadRing::new(&device, "blur ring", 1024 * 1024);
 
@@ -1166,6 +1276,7 @@ impl WgpuBackend {
         let ring_ellipse_border = UploadRing::new(&device, "ring ellipse border", 1 << 20);
         let ring_glyph_mask = UploadRing::new(&device, "ring glyph mask", 1 << 20);
         let ring_glyph_color = UploadRing::new(&device, "ring glyph color", 1 << 20);
+        let ring_slug = UploadRing::new(&device, "ring slug", 1 << 18);
         let ring_clip = UploadRing::new(&device, "ring clip", 1 << 16);
         let ring_nv12 = UploadRing::new(&device, "ring nv12", 1 << 20);
 
@@ -1210,6 +1321,12 @@ impl WgpuBackend {
             image_sampler,
 
             blur_ring,
+
+            slug_pipeline,
+            slug_ring: ring_slug,
+            slug_cache: slug::GlyphSlugCache::new(),
+            slug_prev_generation: !0,
+            slug_instances: Vec::new(),
 
             clip_ring: ring_clip,
 
@@ -2118,6 +2235,7 @@ impl RenderBackend for WgpuBackend {
     fn frame(&mut self, scene: &Scene, _glyph_cfg: GlyphRasterConfig) {
         // Frame start maintenance
         self.frame_index = self.frame_index.wrapping_add(1);
+        self.slug_cache.next_frame();
 
         if self.config.width == 0 || self.config.height == 0 {
             return;
@@ -2327,6 +2445,7 @@ impl RenderBackend for WgpuBackend {
         self.blur_ring.reset();
         self.nv12.reset();
 
+        self.slug_instances.clear();
         let mut batch = Batch::new();
         let mut transform_stack: Vec<Transform> = vec![Transform::identity()];
         let mut scissor_stack: Vec<repose_core::Rect> = Vec::with_capacity(8);
@@ -2467,59 +2586,139 @@ impl RenderBackend for WgpuBackend {
                     let has_rotation = current_transform.rotate != 0.0;
 
                     // For rotated text, the pivot is the center of the text rect.
-                    // The translate-rotate-translate modifier chain rotates around
-                    // this point, and the glyph corners are rotated around it.
                     let pivot_x = rect.x + rect.w * 0.5;
                     let pivot_y = rect.y + rect.h * 0.5;
 
                     // Helper: compute NDC for a glyph rect, handling rotation correctly.
-                    let make_glyph_instance = |gx: f32, gy: f32, gw: f32, gh: f32| -> ([f32; 4], [f32; 2]) {
-                        if has_rotation {
-                            // Rotate the 4 corners of the glyph rect around the text rect center,
-                            // then find the axis-aligned bounding box.
-                            let corners = [
-                                (gx, gy),
-                                (gx + gw, gy),
-                                (gx + gw, gy + gh),
-                                (gx, gy + gh),
-                            ];
-                            let mut min_x = f32::MAX;
-                            let mut max_x = f32::MIN;
-                            let mut min_y = f32::MAX;
-                            let mut max_y = f32::MIN;
-                            for &(x, y) in &corners {
-                                let dx = x - pivot_x;
-                                let dy = y - pivot_y;
-                                let rx = pivot_x + dx * cos_a - dy * sin_a;
-                                let ry = pivot_y + dx * sin_a + dy * cos_a;
-                                min_x = min_x.min(rx);
-                                max_x = max_x.max(rx);
-                                min_y = min_y.min(ry);
-                                max_y = max_y.max(ry);
+                    let make_glyph_instance =
+                        |gx: f32, gy: f32, gw: f32, gh: f32| -> ([f32; 4], [f32; 2]) {
+                            if has_rotation {
+                                let corners =
+                                    [(gx, gy), (gx + gw, gy), (gx + gw, gy + gh), (gx, gy + gh)];
+                                let mut min_x = f32::MAX;
+                                let mut max_x = f32::MIN;
+                                let mut min_y = f32::MAX;
+                                let mut max_y = f32::MIN;
+                                for &(x, y) in &corners {
+                                    let dx = x - pivot_x;
+                                    let dy = y - pivot_y;
+                                    let rx = pivot_x + dx * cos_a - dy * sin_a;
+                                    let ry = pivot_y + dx * sin_a + dy * cos_a;
+                                    min_x = min_x.min(rx);
+                                    max_x = max_x.max(rx);
+                                    min_y = min_y.min(ry);
+                                    max_y = max_y.max(ry);
+                                }
+                                let bb_w = max_x - min_x;
+                                let bb_h = max_y - min_y;
+                                let ndc_tl = to_ndc(
+                                    min_x,
+                                    min_y,
+                                    bb_w,
+                                    bb_h,
+                                    current_target_size.0,
+                                    current_target_size.1,
+                                );
+                                let ndc = [
+                                    ndc_tl[0] + ndc_tl[2] * 0.5,
+                                    ndc_tl[1] + ndc_tl[3] * 0.5,
+                                    ndc_tl[2],
+                                    ndc_tl[3],
+                                ];
+                                (ndc, [cos_a, sin_a])
+                            } else {
+                                rect_to_instance_ndc(
+                                    repose_core::Rect {
+                                        x: gx,
+                                        y: gy,
+                                        w: gw,
+                                        h: gh,
+                                    },
+                                    current_transform,
+                                    current_target_size.0,
+                                    current_target_size.1,
+                                )
                             }
-                            let bb_w = max_x - min_x;
-                            let bb_h = max_y - min_y;
-                            let ndc_tl = to_ndc(min_x, min_y, bb_w, bb_h, current_target_size.0, current_target_size.1);
-                            let ndc = [
-                                ndc_tl[0] + ndc_tl[2] * 0.5,
-                                ndc_tl[1] + ndc_tl[3] * 0.5,
-                                ndc_tl[2],
-                                ndc_tl[3],
-                            ];
-                            (ndc, [cos_a, sin_a])
-                        } else {
-                            rect_to_instance_ndc(
-                                repose_core::Rect { x: gx, y: gy, w: gw, h: gh },
-                                current_transform,
-                                current_target_size.0,
-                                current_target_size.1,
-                            )
-                        }
-                    };
+                        };
 
                     for sg in shaped {
                         let gx = rect.x + sg.x + sg.bearing_x;
                         let gy = rect.y + sg.y - sg.bearing_y;
+
+                        if has_rotation {
+                            // Fast hit path: lookup + cache get (1 engine lock).
+                            let ck = repose_text::lookup_cache_key(sg.key);
+                            if let Some(ref ck) = ck {
+                                if !self.slug_cache.contains(ck) {
+                                    // Cache miss: combined lookup+extract in 1 lock.
+                                    if let Some((ck2, commands)) =
+                                        repose_text::lookup_and_extract_outline(sg.key)
+                                    {
+                                        let font_size_px = f32::from_bits(ck2.font_size_bits);
+                                        self.slug_cache.get_or_insert(ck2, font_size_px, &commands);
+                                    }
+                                }
+                            }
+                            if let Some(entry) = ck.as_ref().and_then(|ck| self.slug_cache.get(ck))
+                            {
+                                // The origin is at (rect.x + sg.x, rect.y + sg.y) in screen pixels.
+                                // Outline bounds are in em-space with Y+ = UP (mathematical).
+                                let ox = rect.x + sg.x;
+                                let oy = rect.y + sg.y;
+                                let b = &entry.band_data.bounds;
+                                // Convert em-space (Y+up) → screen pixels (Y+down):
+                                let left = ox + b[0] * px;
+                                let top = oy - b[3] * px; // max y in em = top in screen
+                                let right = ox + b[2] * px;
+                                let bottom = oy - b[1] * px; // min y in em = bottom in screen
+                                let gw = right - left;
+                                let gh = bottom - top;
+                                // Rotate the 4 corners around the text pivot, find AABB
+                                let corners = [
+                                    (left, top),
+                                    (left + gw, top),
+                                    (left + gw, top + gh),
+                                    (left, top + gh),
+                                ];
+                                let (mut min_x, mut max_x, mut min_y, mut max_y) =
+                                    (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+                                for &(x, y) in &corners {
+                                    let dx = x - pivot_x;
+                                    let dy = y - pivot_y;
+                                    let rx = pivot_x + dx * cos_a - dy * sin_a;
+                                    let ry = pivot_y + dx * sin_a + dy * cos_a;
+                                    min_x = min_x.min(rx);
+                                    max_x = max_x.max(rx);
+                                    min_y = min_y.min(ry);
+                                    max_y = max_y.max(ry);
+                                }
+                                let bb_w = max_x - min_x;
+                                let bb_h = max_y - min_y;
+                                let ndc_tl = to_ndc(
+                                    min_x,
+                                    min_y,
+                                    bb_w,
+                                    bb_h,
+                                    current_target_size.0,
+                                    current_target_size.1,
+                                );
+                                self.slug_instances.push(slug::SlugVertex {
+                                    center: [
+                                        ndc_tl[0] + ndc_tl[2] * 0.5,
+                                        ndc_tl[1] + ndc_tl[3] * 0.5,
+                                    ],
+                                    size: [ndc_tl[2], ndc_tl[3]],
+                                    color: color.to_linear(),
+                                    glyph_base: entry.gpu_offset,
+                                    origin_px: [ox, oy],
+                                    pivot_px: [pivot_x, pivot_y],
+                                    cos_sin: [cos_a, sin_a],
+                                });
+                                continue;
+                            }
+                        }
+
+                        // Atlas fallback: unrotated glyphs + color emoji + failed slug extraction
                         if let Some(info) = self.upload_glyph_color(sg.key, px as u32) {
                             let (ndc, sin_cos) = make_glyph_instance(gx, gy, info.w, info.h);
                             batch.colors.push(GlyphInstance {
@@ -2538,7 +2737,18 @@ impl RenderBackend for WgpuBackend {
                             });
                         }
                     }
-                    // Don't flush here - let next primitive trigger flush
+
+                    // Upload slug instances if any
+                    if !self.slug_instances.is_empty() {
+                        let bytes = bytemuck::cast_slice(&self.slug_instances);
+                        self.slug_ring.grow_to_fit(&self.device, bytes.len() as u64);
+                        let (off, _) = self.slug_ring.alloc_write(&self.queue, bytes);
+                        current_pass.cmds.push(Cmd::GlyphsVector {
+                            off,
+                            cnt: self.slug_instances.len() as u32,
+                        });
+                        self.slug_instances.clear();
+                    }
                 }
                 SceneNode::Image {
                     rect,
@@ -2654,7 +2864,7 @@ impl RenderBackend for WgpuBackend {
                         }
                         _ => ([0.0; 4], [0.0; 4]),
                     };
- 
+
                     // Convert top-left based NDC to center-based for shader
                     let ndc_center = [
                         xywh_ndc[0] + xywh_ndc[2] * 0.5,
@@ -2939,6 +3149,14 @@ impl RenderBackend for WgpuBackend {
         // Push the final pass.
         passes.push(current_pass);
 
+        // Upload slug storage buffer with newly-cached glyph outline data.
+        self.slug_pipeline.upload(
+            &self.device,
+            &self.queue,
+            &mut self.slug_cache,
+            &mut self.slug_prev_generation,
+        );
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -3104,6 +3322,14 @@ impl RenderBackend for WgpuBackend {
                             off,
                             n
                         );
+                    }
+
+                    Cmd::GlyphsVector { off, cnt: n } => {
+                        rpass.set_pipeline(self.slug_pipeline.pipeline());
+                        rpass.set_bind_group(1, self.slug_pipeline.bind_group(), &[]);
+                        let bytes = (n as u64) * std::mem::size_of::<slug::SlugVertex>() as u64;
+                        rpass.set_vertex_buffer(0, self.slug_ring.buf.slice(off..off + bytes));
+                        rpass.draw(0..6, 0..n);
                     }
 
                     Cmd::ImageRgba {

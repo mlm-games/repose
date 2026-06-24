@@ -226,10 +226,11 @@ impl SnackbarController {
     pub fn dismiss(&self) {
         let mut inner = self.inner.borrow_mut();
         if let Some(active) = inner.active.as_mut()
-            && !active.dismiss_started.get() {
-                active.dismiss_started.set(true);
-                request_frame();
-            }
+            && !active.dismiss_started.get()
+        {
+            active.dismiss_started.set(true);
+            request_frame();
+        }
     }
 
     pub fn current(&self) -> Option<(String, Option<SnackbarAction>)> {

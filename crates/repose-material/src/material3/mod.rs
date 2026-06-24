@@ -14,8 +14,8 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use web_time::Duration;
 
-use repose_core::animation::{AnimationSpec, Easing, RepeatableSpec};
 use crate::{Icon, Symbol};
+use repose_core::animation::{AnimationSpec, Easing, RepeatableSpec};
 use repose_core::*;
 use repose_ui::lazy::{LazyRow, LazyRowState};
 use repose_ui::{

@@ -1,5 +1,7 @@
 use repose_core::{prelude::*, signal};
-use repose_material::material3::{ButtonConfig, FilledButton, OutlinedTextField, OutlinedTextFieldConfig};
+use repose_material::material3::{
+    ButtonConfig, FilledButton, OutlinedTextField, OutlinedTextFieldConfig,
+};
 use repose_material::{Icon, material_symbols};
 use repose_ui::*;
 use std::rc::Rc;

@@ -50,7 +50,11 @@ fn vs_main(
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let half = 0.5 * in.xywh.zw;
     let rel = (in.pos_ndc - in.xywh.xy) / half;
-    // Inverse-rotate UV so the texture appears rotated within the axis-aligned quad.
+    // HACK: Inverse-rotate UV so the texture appears rotated within the axis-aligned quad.
+    // This rotates a fixed-size bitmap glyph, causing blur when the AABB expands (e.g. 45°
+    // rotation of a square → ~1.4× scale). The discard below avoids sampling outside the glyph
+    // rect. A proper fix evaluates glyph outlines in the slug pipeline
+    // (slug.wgsl) instead of rotating a fixed atlas bitmap.
     let cos = in.sin_cos.x;
     let sin = in.sin_cos.y;
     let unrotated_rel = vec2(

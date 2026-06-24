@@ -626,8 +626,7 @@ impl ScrollStateXY {
     pub fn set_viewport(&self, w: f32, h: f32) {
         let w = w.max(0.0);
         let h = h.max(0.0);
-        let changed = (self.vp_w.get() - w).abs() > 0.5
-            || (self.vp_h.get() - h).abs() > 0.5;
+        let changed = (self.vp_w.get() - w).abs() > 0.5 || (self.vp_h.get() - h).abs() > 0.5;
         if changed {
             self.vp_w.set(w);
             self.vp_h.set(h);
@@ -637,8 +636,7 @@ impl ScrollStateXY {
     pub fn set_content(&self, w: f32, h: f32) {
         let w = w.max(0.0);
         let h = h.max(0.0);
-        let changed = (self.c_w.get() - w).abs() > 0.5
-            || (self.c_h.get() - h).abs() > 0.5;
+        let changed = (self.c_w.get() - w).abs() > 0.5 || (self.c_h.get() - h).abs() > 0.5;
         if changed {
             self.c_w.set(w);
             self.c_h.set(h);
@@ -759,8 +757,7 @@ impl ScrollStateXY {
         self.prev_tick.set(now);
 
         if self.overscroll_enabled {
-            if Self::tick_os_axis(&self.os_x, true, dt)
-                || Self::tick_os_axis(&self.os_y, true, dt)
+            if Self::tick_os_axis(&self.os_x, true, dt) || Self::tick_os_axis(&self.os_y, true, dt)
             {
                 return true;
             }
@@ -855,7 +852,10 @@ pub fn ScrollArea(modifier: Modifier, state: Rc<ScrollState>, content: View) -> 
         Rc::new(move |d: Vec2| -> Vec2 {
             let d = run_pre_scroll(&st.parent_connection, d);
             let leftover_y = st.scroll_immediate(d.y);
-            let result = Vec2 { x: d.x, y: leftover_y };
+            let result = Vec2 {
+                x: d.x,
+                y: leftover_y,
+            };
             run_post_scroll(&st.parent_connection, result)
         })
     };
@@ -877,7 +877,9 @@ pub fn ScrollArea(modifier: Modifier, state: Rc<ScrollState>, content: View) -> 
     };
     let tick_scroll = {
         let st = state.clone();
-        Rc::new(move || { st.tick(); })
+        Rc::new(move || {
+            st.tick();
+        })
     };
     View::new(
         0,
@@ -906,7 +908,10 @@ pub fn HorizontalScrollArea(
         Rc::new(move |d: Vec2| -> Vec2 {
             let d = run_pre_scroll(&st.parent_connection, d);
             let leftover_x = st.scroll_immediate(d.x);
-            let result = Vec2 { x: leftover_x, y: d.y };
+            let result = Vec2 {
+                x: leftover_x,
+                y: d.y,
+            };
             run_post_scroll(&st.parent_connection, result)
         })
     };
@@ -928,7 +933,9 @@ pub fn HorizontalScrollArea(
     };
     let tick_scroll = {
         let st = state.clone();
-        Rc::new(move || { st.tick(); })
+        Rc::new(move || {
+            st.tick();
+        })
     };
     View::new(
         0,
@@ -987,7 +994,9 @@ pub fn ScrollAreaXY(modifier: Modifier, state: Rc<ScrollStateXY>, content: View)
     };
     let tick_scroll = {
         let st = state.clone();
-        Rc::new(move || { st.tick(); })
+        Rc::new(move || {
+            st.tick();
+        })
     };
 
     View::new(

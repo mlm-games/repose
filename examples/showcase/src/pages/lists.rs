@@ -1,7 +1,9 @@
 use std::rc::Rc;
 
 use repose_core::{prelude::*, signal};
-use repose_material::material3::{Carousel, SwipeToDismiss, SwipeToDismissConfig, SwipeToDismissState};
+use repose_material::material3::{
+    Carousel, SwipeToDismiss, SwipeToDismissConfig, SwipeToDismissState,
+};
 use repose_material::{Icon, material_symbols};
 use repose_ui::{
     lazy::{LazyColumn, LazyColumnState, LazyRow, LazyRowState},
@@ -92,9 +94,13 @@ pub fn screen() -> View {
                         .background(if it.done { done_tint } else { th.surface })
                         .border(1.0, th.outline, 0.0))
                     .child((
-                        (if it.done { Icon(Symbols::check_circle) } else { Icon(Symbols::circle) })
-                            .size(16.0)
-                            .modifier(Modifier::new().padding(8.0)),
+                        (if it.done {
+                            Icon(Symbols::check_circle)
+                        } else {
+                            Icon(Symbols::circle)
+                        })
+                        .size(16.0)
+                        .modifier(Modifier::new().padding(8.0)),
                         Text(it.title).modifier(Modifier::new().padding(4.0)),
                     ))
                 },
@@ -155,7 +161,11 @@ pub fn screen() -> View {
                             .background(bg)
                             .border(1.0, th.outline, 0.0)
                             .clip_rounded(12.0),
-                        if it.done { Icon(Symbols::check_circle).size(24.0) } else { Icon(Symbols::circle).size(24.0) },
+                        if it.done {
+                            Icon(Symbols::check_circle).size(24.0)
+                        } else {
+                            Icon(Symbols::circle).size(24.0)
+                        },
                         it.title,
                         8.0,
                     )
@@ -210,13 +220,11 @@ pub fn screen() -> View {
                             .align_items(AlignItems::Center))
                         .child(Text("Delete").color(th.on_error).size(16.0)),
                         // Foreground content (draggable)
-                        Box(
-                            Modifier::new()
-                                .fill_max_width()
-                                .background(th.surface_container)
-                                .border(1.0, th.outline_variant, 0.0)
-                                .padding(16.0),
-                        )
+                        Box(Modifier::new()
+                            .fill_max_width()
+                            .background(th.surface_container)
+                            .border(1.0, th.outline_variant, 0.0)
+                            .padding(16.0))
                         .child(
                             Row(Modifier::new().align_items(AlignItems::Center)).child((
                                 Icon(Symbols::notifications).size(20.0),

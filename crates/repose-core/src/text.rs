@@ -89,8 +89,7 @@ pub fn original_offset_to_display(original: &str, display: &str, original_byte: 
 }
 
 /// Hints the platform about the type of keyboard to show.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum KeyboardType {
     #[default]
     Text,
@@ -102,10 +101,8 @@ pub enum KeyboardType {
     Decimal,
 }
 
-
 /// The action button on the IME (soft keyboard).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ImeAction {
     #[default]
     Unspecified,
@@ -117,7 +114,6 @@ pub enum ImeAction {
     Done,
     Previous,
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpanStyle {
@@ -250,10 +246,12 @@ impl AnnotatedStringBuilder {
         let mut merged: Vec<TextSpan> = Vec::new();
         for span in std::mem::take(&mut self.spans) {
             if let Some(last) = merged.last_mut()
-                && last.end == span.start && last.style == span.style {
-                    last.end = span.end;
-                    continue;
-                }
+                && last.end == span.start
+                && last.style == span.style
+            {
+                last.end = span.end;
+                continue;
+            }
             merged.push(span);
         }
         AnnotatedString {

@@ -55,10 +55,8 @@ macro_rules! animate_from_impl {
             let anim = remember_state_with_key(format!("anim:{}:{}", $prefix, key), || {
                 AnimatedValue::new(initial, spec)
             });
-            let last = remember_state_with_key(
-                format!("anim:{}_last:{}", $prefix, key),
-                || None::<$type>,
-            );
+            let last =
+                remember_state_with_key(format!("anim:{}_last:{}", $prefix, key), || None::<$type>);
 
             let mut a = anim.borrow_mut();
             let mut lt = last.borrow_mut();

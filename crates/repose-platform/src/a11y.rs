@@ -143,9 +143,10 @@ fn build_accesskit_node(sem: &SemNode, children: &[u64], scale: f64) -> Node {
     });
 
     if let Some(label) = &sem.label
-        && !label.is_empty() {
-            node.set_label(label.clone());
-        }
+        && !label.is_empty()
+    {
+        node.set_label(label.clone());
+    }
 
     if !children.is_empty() {
         node.set_children(children.iter().copied().map(NodeId).collect::<Vec<_>>());

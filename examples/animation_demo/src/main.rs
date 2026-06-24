@@ -35,10 +35,7 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
     let current_color = *animated_color.borrow().get();
     let current_size = *animated_size.borrow().get();
 
-    Box(
-        Modifier::new().fill_max_size().background(th.background),
-    )
-    .child(
+    Box(Modifier::new().fill_max_size().background(th.background)).child(
         Column(Modifier::new().padding(32.0)).child((
             Text("Animation Demo").modifier(Modifier::new().padding(12.0)),
             // Animated box
@@ -48,44 +45,68 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
                 .border(2.0, th.on_surface, 8.0)),
             // Controls
             Row(Modifier::new().padding(16.0)).child((
-                Button(Modifier::new(), {
-                    let anim = animated_color.clone();
-                    move || {
-                        anim.borrow_mut().set_target(th.primary);
-                    }
-                }, || Text("🔵 Blue").modifier(Modifier::new().padding(8.0).align_self_center())),
-                Button(Modifier::new(), {
-                    let anim = animated_color.clone();
-                    move || {
-                        anim.borrow_mut().set_target(th.secondary);
-                    }
-                }, || Text("🟢 Green").modifier(Modifier::new().padding(8.0).align_self_center())),
-                Button(Modifier::new(), {
-                    let anim = animated_color.clone();
-                    move || {
-                        anim.borrow_mut().set_target(th.error);
-                    }
-                }, || Text("🔴 Red").modifier(Modifier::new().padding(8.0).align_self_center())),
+                Button(
+                    Modifier::new(),
+                    {
+                        let anim = animated_color.clone();
+                        move || {
+                            anim.borrow_mut().set_target(th.primary);
+                        }
+                    },
+                    || Text("🔵 Blue").modifier(Modifier::new().padding(8.0).align_self_center()),
+                ),
+                Button(
+                    Modifier::new(),
+                    {
+                        let anim = animated_color.clone();
+                        move || {
+                            anim.borrow_mut().set_target(th.secondary);
+                        }
+                    },
+                    || Text("🟢 Green").modifier(Modifier::new().padding(8.0).align_self_center()),
+                ),
+                Button(
+                    Modifier::new(),
+                    {
+                        let anim = animated_color.clone();
+                        move || {
+                            anim.borrow_mut().set_target(th.error);
+                        }
+                    },
+                    || Text("🔴 Red").modifier(Modifier::new().padding(8.0).align_self_center()),
+                ),
             )),
             Row(Modifier::new().padding(8.0)).child((
-                Button(Modifier::new(), {
-                    let anim = animated_size.clone();
-                    move || {
-                        anim.borrow_mut().set_target(80.0);
-                    }
-                }, || Text("Small").modifier(Modifier::new().padding(8.0).align_self_center())),
-                Button(Modifier::new(), {
-                    let anim = animated_size.clone();
-                    move || {
-                        anim.borrow_mut().set_target(150.0);
-                    }
-                }, || Text("Medium").modifier(Modifier::new().padding(8.0).align_self_center())),
-                Button(Modifier::new(), {
-                    let anim = animated_size.clone();
-                    move || {
-                        anim.borrow_mut().set_target(220.0);
-                    }
-                }, || Text("Large").modifier(Modifier::new().padding(8.0).align_self_center())),
+                Button(
+                    Modifier::new(),
+                    {
+                        let anim = animated_size.clone();
+                        move || {
+                            anim.borrow_mut().set_target(80.0);
+                        }
+                    },
+                    || Text("Small").modifier(Modifier::new().padding(8.0).align_self_center()),
+                ),
+                Button(
+                    Modifier::new(),
+                    {
+                        let anim = animated_size.clone();
+                        move || {
+                            anim.borrow_mut().set_target(150.0);
+                        }
+                    },
+                    || Text("Medium").modifier(Modifier::new().padding(8.0).align_self_center()),
+                ),
+                Button(
+                    Modifier::new(),
+                    {
+                        let anim = animated_size.clone();
+                        move || {
+                            anim.borrow_mut().set_target(220.0);
+                        }
+                    },
+                    || Text("Large").modifier(Modifier::new().padding(8.0).align_self_center()),
+                ),
             )),
             Text(
                 if animated_color.borrow().is_animating() || animated_size.borrow().is_animating() {

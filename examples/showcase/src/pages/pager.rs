@@ -44,12 +44,10 @@ fn dots(current: usize) -> View {
 
 fn page_face(p: usize, hint: &'static str) -> View {
     let color = pager_colors()[p % PAGES];
-    Box(
-        Modifier::new()
-            .fill_max_size()
-            .background(color.with_alpha(48))
-            .clip_rounded(24.0),
-    )
+    Box(Modifier::new()
+        .fill_max_size()
+        .background(color.with_alpha(48))
+        .clip_rounded(24.0))
     .child(
         Column(
             Modifier::new()
