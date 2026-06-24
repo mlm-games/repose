@@ -326,7 +326,6 @@ impl LayoutEngine {
                 }
 
                 // 4a. Store Taffy-computed sizes for all nodes
-                let density_scale = density_scale;
                 for (&node_id, &taffy_id) in &self.taffy_map {
                     if let Ok(layout) = self.taffy.layout(taffy_id) {
                         let dp_w = layout.size.width / density_scale;
@@ -2215,11 +2214,9 @@ impl LayoutEngine {
                 }
                 if *show_scrollbar {
                     let set_y = set_scroll_offset_xy.clone().map(|s| {
-                        let ox = ox;
                         Rc::new(move |y| s(ox, y)) as Rc<dyn Fn(f32)>
                     });
                     let set_x = set_scroll_offset_xy.clone().map(|s| {
-                        let oy = oy;
                         Rc::new(move |x| s(x, oy)) as Rc<dyn Fn(f32)>
                     });
                     push_scrollbar(

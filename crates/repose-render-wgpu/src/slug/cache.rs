@@ -1,10 +1,9 @@
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
 use cosmic_text::{CacheKey, Command};
 
-use crate::slug::band::{BandData, NUM_BANDS, build_bands};
+use crate::slug::band::{BandData, build_bands};
 use crate::slug::outline::{QuadCurve, commands_to_curves};
 
 /// Slug glyph header layout (u32 offsets from base):
@@ -184,19 +183,7 @@ impl GlyphSlugCache {
             set(&mut data, base + 6, bd.bounds[1].to_bits());
             set(&mut data, base + 7, bd.bounds[2].to_bits());
             set(&mut data, base + 8, bd.bounds[3].to_bits());
-            let h_max = bd
-                .h_bands
-                .iter()
-                .rposition(|b| !b.indices.is_empty())
-                .map(|i| i as u32 + 1)
-                .unwrap_or(1);
-            let v_max = bd
-                .v_bands
-                .iter()
-                .rposition(|b| !b.indices.is_empty())
-                .map(|i| i as u32 + 1)
-                .unwrap_or(1);
-            set(&mut data, base + 9, h_max | (v_max << 16));
+            set(&mut data, base + 9, h_count | (v_count << 16));
             set(&mut data, base + 10, entry.font_size_bits);
             set(&mut data, base + 11, curve_base);
 

@@ -82,7 +82,6 @@ fn eval_horiz(curve_base: u32, rc: vec2<f32>, font_size: f32) -> f32 {
         let t = -c0 / c1;
         if t < 0.0 || t > 1.0 { return 0.0; }
         let xt = (1.0 - t) * (1.0 - t) * ax + 2.0 * (1.0 - t) * t * bx + t * t * cx;
-        if xt < 0.0 { return 0.0; }
         let cov = clamp(xt * font_size + 0.5, 0.0, 1.0);
         return sign(c1) * cov;
     }
@@ -93,11 +92,9 @@ fn eval_horiz(curve_base: u32, rc: vec2<f32>, font_size: f32) -> f32 {
         let t = roots[i];
         if t >= 0.0 && t <= 1.0 {
             let xt = (1.0 - t) * (1.0 - t) * ax + 2.0 * (1.0 - t) * t * bx + t * t * cx;
-            if xt >= 0.0 {
-                let dy_dt = 2.0 * c2 * t + c1;
-                let sign = select(sign(dy_dt), 1.0, abs(dy_dt) < 1e-10);
-                cov += sign * clamp(xt * font_size + 0.5, 0.0, 1.0);
-            }
+            let dy_dt = 2.0 * c2 * t + c1;
+            let sign = select(sign(dy_dt), 1.0, abs(dy_dt) < 1e-10);
+            cov += sign * clamp(xt * font_size + 0.5, 0.0, 1.0);
         }
     }
     return cov;
@@ -120,7 +117,6 @@ fn eval_vert(curve_base: u32, rc: vec2<f32>, font_size: f32) -> f32 {
         let t = -c0 / c1;
         if t < 0.0 || t > 1.0 { return 0.0; }
         let yt = (1.0 - t) * (1.0 - t) * ay + 2.0 * (1.0 - t) * t * by + t * t * cy;
-        if yt < 0.0 { return 0.0; }
         let cov = clamp(yt * font_size + 0.5, 0.0, 1.0);
         return sign(c1) * cov;
     }
@@ -131,11 +127,9 @@ fn eval_vert(curve_base: u32, rc: vec2<f32>, font_size: f32) -> f32 {
         let t = roots[i];
         if t >= 0.0 && t <= 1.0 {
             let yt = (1.0 - t) * (1.0 - t) * ay + 2.0 * (1.0 - t) * t * by + t * t * cy;
-            if yt >= 0.0 {
-                let dx_dt = 2.0 * c2 * t + c1;
-                let sign = select(sign(dx_dt), 1.0, abs(dx_dt) < 1e-10);
-                cov += sign * clamp(yt * font_size + 0.5, 0.0, 1.0);
-            }
+            let dx_dt = 2.0 * c2 * t + c1;
+            let sign = select(sign(dx_dt), 1.0, abs(dx_dt) < 1e-10);
+            cov += sign * clamp(yt * font_size + 0.5, 0.0, 1.0);
         }
     }
     return cov;
@@ -156,9 +150,9 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let band_scale = vec2(sx, sy);
     let band_offset = vec2(ox, oy);
 
-    let max_info = glyph_data[base + 9u];
-    let h_max = max_info & 0xFFFFu;
-    let v_max = (max_info >> 16u) & 0xFFFFu;
+    // All 8 bands are always stored; empty bands contribute 0.
+    let h_max = h_count;
+    let v_max = v_count;
 
     // Convert NDC to pixel space, inverse rotate around pivot, then to em-space
     let px_pos = vec2(

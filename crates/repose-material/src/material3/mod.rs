@@ -86,7 +86,7 @@ pub fn BottomSheet(
     on_dismiss: impl Fn() + 'static,
     modifier: Modifier,
     content: View,
-    config: BottomSheetConfig,
+    config: BottomSheetConfig, // HACK: use ot
 ) -> View {
     let th = theme();
     let id = remember(|| BOTTOMSHEET_COUNTER.fetch_add(1, Ordering::Relaxed));
@@ -1537,7 +1537,6 @@ pub fn ModalBottomSheet(
                 let anim = anim.clone();
                 let modifier = modifier.clone();
                 let content = content.clone();
-                let th = th;
                 move || {
                     let off = *anim.borrow().get();
 

@@ -47,7 +47,7 @@ fn sdf_round_box_px(p_px: vec2<f32>, half_px: vec2<f32>, r_px: f32) -> f32 {
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
-    let center_ndc = in.xywh.xy + 0.5 * in.xywh.zw;
+    let center_ndc = in.xywh.xy;
 
     let p_px = (in.pos_ndc - center_ndc) * G.ndc_to_px;
     let half_px = 0.5 * in.xywh.zw * G.ndc_to_px;

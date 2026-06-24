@@ -59,7 +59,6 @@ impl UploadRing {
 
 struct InstancedPipe<I: bytemuck::Pod> {
     ring: UploadRing,
-    stride: u64,
     _marker: std::marker::PhantomData<I>,
 }
 
@@ -67,7 +66,6 @@ impl<I: bytemuck::Pod> InstancedPipe<I> {
     fn new(ring: UploadRing) -> Self {
         Self {
             ring,
-            stride: std::mem::size_of::<I>() as u64,
             _marker: std::marker::PhantomData,
         }
     }
@@ -2260,10 +2258,20 @@ impl RenderBackend for WgpuBackend {
                     break f;
                 }
                 wgpu::CurrentSurfaceTexture::Outdated => {
+                    retries += 1;
+                    if retries >= MAX_RETRIES {
+                        log::warn!("surface outdated persisted after {MAX_RETRIES} retries; skipping frame");
+                        return;
+                    }
                     log::warn!("surface outdated; reconfiguring");
                     self.surface.configure(&self.device, &self.config);
                 }
                 wgpu::CurrentSurfaceTexture::Lost => {
+                    retries += 1;
+                    if retries >= MAX_RETRIES {
+                        log::warn!("surface lost persisted after {MAX_RETRIES} retries; skipping frame");
+                        return;
+                    }
                     log::warn!("surface lost; reconfiguring");
                     self.surface.configure(&self.device, &self.config);
                 }
@@ -2454,6 +2462,7 @@ impl RenderBackend for WgpuBackend {
         self.blur_ring.reset();
         self.nv12.reset();
 
+        self.slug_ring.reset();
         self.slug_instances.clear();
         let mut batch = Batch::new();
         let mut transform_stack: Vec<Transform> = vec![Transform::identity()];
@@ -2493,7 +2502,6 @@ impl RenderBackend for WgpuBackend {
                         &mut current_pass.cmds,
                     )
                 }
-                current_prim = None;
             };
         }
 
