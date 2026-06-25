@@ -130,12 +130,10 @@ pub struct WgpuBackend {
     // Stencil clip ring
     clip_ring: UploadRing,
 
-    // Slug vector glyph pipeline (None on backends without storage buffer support)
-    slug_pipeline: Option<slug::SlugPipeline>,
+    // Tessellated vector glyph pipeline (always enabled)
+    slug_enabled: bool,
     slug_ring: UploadRing,
     slug_cache: slug::GlyphSlugCache,
-    slug_prev_generation: u64,
-    slug_instances: Vec<slug::SlugVertex>,
 
     // Instanced NV12 ring
     nv12: InstancedPipe<Nv12Instance>,
@@ -230,7 +228,6 @@ impl Pipelines {
         stencil_for_clip_inc: &wgpu::DepthStencilState,
         clip_color_target: &wgpu::ColorTargetState,
         clip_vertex_layout: &wgpu::VertexBufferLayout,
-        slug_storage_layout: Option<&wgpu::BindGroupLayout>,
     ) -> Self {
         let msaa_state = wgpu::MultisampleState {
             count: sample_count,
@@ -699,16 +696,12 @@ impl Pipelines {
             cache: None,
         });
 
-        let slug = slug_storage_layout.map(|layout| {
-            slug::create_pipeline(
-                device,
-                format,
-                sample_count,
-                globals_layout,
-                layout,
-                stencil_for_content,
-            )
-        });
+        let slug = Some(slug::create_pipeline(
+            device,
+            format,
+            sample_count,
+            stencil_for_content,
+        ));
 
         Self {
             rects,
@@ -1232,15 +1225,6 @@ impl WgpuBackend {
             write_mask: wgpu::ColorWrites::empty(),
         };
 
-        // Slug storage layout (shared across sample counts, created first).
-        // WebGPU supports storage buffers in fragment shaders; GLES/WebGL2 do not.
-        let slug_storage_layout = if device.limits().max_storage_buffers_per_shader_stage > 0 {
-            Some(slug::create_storage_layout(&device))
-        } else {
-            log::info!("storage buffers not supported per-shader-stage; vector glyphs disabled");
-            None
-        };
-
         // Two sets of pipelines: one for the MSAA surface pass, one for layer
         // render-to-texture passes (sample_count = 1).
         let surface_pipes = Pipelines::create(
@@ -1255,7 +1239,6 @@ impl WgpuBackend {
             &stencil_for_clip_inc,
             &clip_color_target,
             &clip_vertex_layout,
-            slug_storage_layout.as_ref(),
         );
         let layer_pipes = Pipelines::create(
             &device,
@@ -1269,13 +1252,10 @@ impl WgpuBackend {
             &stencil_for_clip_inc,
             &clip_color_target,
             &clip_vertex_layout,
-            slug_storage_layout.as_ref(),
         );
 
-        // Slug storage (shared across sample counts)
-        let slug_pipeline = slug_storage_layout
-            .as_ref()
-            .map(|layout| slug::SlugPipeline::new(&device, layout));
+        // Vector glyph rendering always available with tessellation+MSAA approach.
+        let slug_enabled = true;
 
         // Blur composite ring (for graphics-layer drop shadows)
         let blur_ring = UploadRing::new(&device, "blur ring", 1024 * 1024);
@@ -1337,11 +1317,9 @@ impl WgpuBackend {
 
             blur_ring,
 
-            slug_pipeline,
+            slug_enabled,
             slug_ring: ring_slug,
             slug_cache: slug::GlyphSlugCache::new(),
-            slug_prev_generation: !0,
-            slug_instances: Vec::new(),
 
             clip_ring: ring_clip,
 
@@ -2475,8 +2453,8 @@ impl RenderBackend for WgpuBackend {
         self.nv12.reset();
 
         self.slug_ring.reset();
-        self.slug_instances.clear();
         let mut batch = Batch::new();
+        let mut slug_verts_local: Vec<slug::TessVertex> = Vec::new();
         let mut transform_stack: Vec<Transform> = vec![Transform::identity()];
         let mut scissor_stack: Vec<repose_core::Rect> = Vec::with_capacity(8);
         let root_clip_rect = repose_core::Rect {
@@ -2674,90 +2652,58 @@ impl RenderBackend for WgpuBackend {
                         let gx = rect.x + sg.x + sg.bearing_x;
                         let gy = rect.y + sg.y - sg.bearing_y;
 
-                        // Vector glyph path: per-pixel Bezier evaluation on GPU.
-                        if self.slug_pipeline.is_some() {
+                        // Vector glyph path: tessellated geometry with MSAA.
+                        if self.slug_enabled {
+                            let ck = repose_text::lookup_cache_key(sg.key);
+                            if let Some(ref ck) = ck {
+                                if !self.slug_cache.contains(ck) {
+                                    if let Some((ck2, commands)) =
+                                        repose_text::lookup_and_extract_outline(sg.key)
+                                    {
+                                        let font_size_px = f32::from_bits(ck2.font_size_bits);
+                                        self.slug_cache.get_or_insert(
+                                            ck2,
+                                            font_size_px,
+                                            &commands,
+                                        );
+                                    }
+                                }
+                            }
+                            if let Some(ref ck) = ck {
+                                self.slug_cache.touch(ck);
+                            }
+                            if let Some(entry) =
+                                ck.as_ref().and_then(|ck| self.slug_cache.get(ck))
                             {
-                                let ck = repose_text::lookup_cache_key(sg.key);
-                                if let Some(ref ck) = ck {
-                                    if !self.slug_cache.contains(ck) {
-                                        // Cache miss: combined lookup+extract in 1 lock.
-                                        if let Some((ck2, commands)) =
-                                            repose_text::lookup_and_extract_outline(sg.key)
-                                        {
-                                            let font_size_px = f32::from_bits(ck2.font_size_bits);
-                                            self.slug_cache.get_or_insert(
-                                                ck2,
-                                                font_size_px,
-                                                &commands,
-                                            );
-                                        }
-                                    }
-                                }
-                                if let Some(ref ck) = ck {
-                                    self.slug_cache.touch(ck);
-                                }
-                                if let Some(entry) =
-                                    ck.as_ref().and_then(|ck| self.slug_cache.get(ck))
-                                {
-                                    let ox = rect.x + sg.x;
-                                    let oy = rect.y + sg.y;
-                                    let scx = current_transform.scale_x;
-                                    let scy = current_transform.scale_y;
-                                    let ttx = current_transform.translate_x;
-                                    let tty = current_transform.translate_y;
+                                let ox = rect.x + sg.x;
+                                let oy = rect.y + sg.y;
+                                let scx = current_transform.scale_x;
+                                let scy = current_transform.scale_y;
+                                let ttx = current_transform.translate_x;
+                                let tty = current_transform.translate_y;
 
-                                    let tf = |x: f32, y: f32| -> (f32, f32) {
-                                        let sx = x * scx;
-                                        let sy = y * scy;
-                                        (
-                                            sx * cos_a - sy * sin_a + ttx,
-                                            sx * sin_a + sy * cos_a + tty,
-                                        )
-                                    };
+                                let tf = |x: f32, y: f32| -> (f32, f32) {
+                                    let sx = x * scx;
+                                    let sy = y * scy;
+                                    (
+                                        sx * cos_a - sy * sin_a + ttx,
+                                        sx * sin_a + sy * cos_a + tty,
+                                    )
+                                };
 
-                                    let (tox, toy) = tf(ox, oy);
-                                    let (tpx, tpy) = tf(pivot_x, pivot_y);
+                                let tw = current_target_size.0;
+                                let th = current_target_size.1;
 
-                                    let b = &entry.band_data.bounds;
-                                    // Outline corners in local pixel space, then transform.
-                                    let corners = [
-                                        tf(ox + b[0] * px, oy - b[3] * px),
-                                        tf(ox + b[2] * px, oy - b[3] * px),
-                                        tf(ox + b[2] * px, oy - b[1] * px),
-                                        tf(ox + b[0] * px, oy - b[1] * px),
-                                    ];
-                                    let (mut min_x, mut max_x, mut min_y, mut max_y) =
-                                        (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
-                                    for &(x, y) in &corners {
-                                        min_x = min_x.min(x);
-                                        max_x = max_x.max(x);
-                                        min_y = min_y.min(y);
-                                        max_y = max_y.max(y);
-                                    }
-                                    let bb_w = max_x - min_x;
-                                    let bb_h = max_y - min_y;
-                                    let ndc_tl = to_ndc(
-                                        min_x,
-                                        min_y,
-                                        bb_w,
-                                        bb_h,
-                                        current_target_size.0,
-                                        current_target_size.1,
-                                    );
-                                    self.slug_instances.push(slug::SlugVertex {
-                                        center: [
-                                            ndc_tl[0] + ndc_tl[2] * 0.5,
-                                            ndc_tl[1] + ndc_tl[3] * 0.5,
-                                        ],
-                                        size: [ndc_tl[2], ndc_tl[3]],
+                                for &v in &entry.vertices {
+                                    let (sx, sy) = tf(ox + v[0] * px, oy - v[1] * px);
+                                    let ndc_x = sx / tw * 2.0 - 1.0;
+                                    let ndc_y = -(sy / th) * 2.0 + 1.0;
+                                    slug_verts_local.push(slug::TessVertex {
+                                        ndc_pos: [ndc_x, ndc_y],
                                         color: color.to_linear(),
-                                        glyph_base: entry.gpu_offset,
-                                        origin_px: [tox, toy],
-                                        pivot_px: [tpx, tpy],
-                                        cos_sin: [cos_a, sin_a],
                                     });
-                                    continue;
                                 }
+                                continue;
                             }
                         }
 
@@ -2781,16 +2727,16 @@ impl RenderBackend for WgpuBackend {
                         }
                     }
 
-                    // Upload slug instances if any
-                    if !self.slug_instances.is_empty() {
-                        let bytes = bytemuck::cast_slice(&self.slug_instances);
+                    // Upload slug vertices if any
+                    if !slug_verts_local.is_empty() {
+                        let bytes = bytemuck::cast_slice(&slug_verts_local);
                         self.slug_ring.grow_to_fit(&self.device, bytes.len() as u64);
                         let (off, _) = self.slug_ring.alloc_write(&self.queue, bytes);
                         current_pass.cmds.push(Cmd::GlyphsVector {
                             off,
-                            cnt: self.slug_instances.len() as u32,
+                            cnt: slug_verts_local.len() as u32,
                         });
-                        self.slug_instances.clear();
+                        slug_verts_local.clear();
                     }
                 }
                 SceneNode::Image {
@@ -3192,15 +3138,6 @@ impl RenderBackend for WgpuBackend {
         // Push the final pass.
         passes.push(current_pass);
 
-        if let Some(ref mut slug) = self.slug_pipeline {
-            slug.upload(
-                &self.device,
-                &self.queue,
-                &mut self.slug_cache,
-                &mut self.slug_prev_generation,
-            );
-        }
-
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -3369,14 +3306,11 @@ impl RenderBackend for WgpuBackend {
                     }
 
                     Cmd::GlyphsVector { off, cnt: n } => {
-                        if let (Some(ref slug_pipe), Some(ref slug_backend)) =
-                            (pipes.slug.as_ref(), self.slug_pipeline.as_ref())
-                        {
+                        if let Some(ref slug_pipe) = pipes.slug.as_ref() {
                             rpass.set_pipeline(slug_pipe);
-                            rpass.set_bind_group(1, slug_backend.bind_group(), &[]);
-                            let bytes = (n as u64) * std::mem::size_of::<slug::SlugVertex>() as u64;
+                            let bytes = (n as u64) * std::mem::size_of::<slug::TessVertex>() as u64;
                             rpass.set_vertex_buffer(0, self.slug_ring.buf.slice(off..off + bytes));
-                            rpass.draw(0..6, 0..n);
+                            rpass.draw(0..n, 0..1);
                         }
                     }
 
