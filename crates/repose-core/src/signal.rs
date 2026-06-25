@@ -78,6 +78,7 @@ impl<T> Signal<T> {
         });
 
         reactive::signal_changed(id);
+        crate::signal_fired();
         crate::request_frame();
     }
 

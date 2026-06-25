@@ -128,7 +128,7 @@ pub use cursor::*;
 pub use dnd::*;
 pub use effects::*;
 pub use effects_ext::*;
-pub use frame_clock::{peek_frame_request, request_frame, take_frame_request};
+pub use frame_clock::{peek_frame_request, request_frame, signal_fired, take_frame_request, take_signal_fired};
 pub use geometry::*;
 pub use locals::*;
 pub use modifier::*;

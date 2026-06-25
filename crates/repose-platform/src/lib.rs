@@ -7,7 +7,7 @@ use repose_core::*;
 use repose_ui::textfield::{
     self, TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, caret_xy_for_byte, measure_text,
 };
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -314,6 +314,9 @@ pub fn run_desktop_app(
 
         last_redraw: Instant,
         pending_redraw: bool,
+
+        // Tracks whether a redraw was requested by app code
+        redraw_requested: Cell<bool>,
     }
 
     impl App {
@@ -393,10 +396,12 @@ pub fn run_desktop_app(
 
                 last_redraw: Instant::now(),
                 pending_redraw: false,
+                redraw_requested: Cell::new(false),
             }
         }
 
         fn request_redraw(&self) {
+            self.redraw_requested.set(true);
             repose_core::request_frame();
             rc::request_redraw(&self.window);
         }
@@ -1669,7 +1674,16 @@ pub fn run_desktop_app(
                 }
 
                 WindowEvent::RedrawRequested => {
-                    // 1. Process any pending A11y actions (clicks from screen reader)
+                    // 1. Check our redraw flag before processing a11y.
+                    if !self.redraw_requested.replace(false) {
+                        self.process_a11y_actions();
+                        self.process_render_commands();
+                        log::trace!("RedrawRequested: no frame request, skipping compose");
+                        return;
+                    }
+                    log::trace!("RedrawRequested: frame request pending, composing");
+
+                    // 2. Process a11y actions and render commands before compose.
                     self.process_a11y_actions();
                     self.process_render_commands();
 
@@ -1798,6 +1812,17 @@ pub fn run_desktop_app(
                 self.pending_redraw = true;
             }
             if !self.pending_redraw {
+                let now = Instant::now();
+                let idle_interval = web_time::Duration::from_millis(1000);
+                if now.saturating_duration_since(self.last_redraw) >= idle_interval {
+                    self.redraw_requested.set(true);
+                    request_frame();
+                    rc::request_redraw(&self.window);
+                    self.last_redraw = now;
+                }
+                el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                    self.last_redraw + idle_interval,
+                ));
                 return;
             }
 
@@ -1806,7 +1831,9 @@ pub fn run_desktop_app(
 
             if now.saturating_duration_since(self.last_redraw) >= interval {
                 self.pending_redraw = false;
-                rc::request_redraw(&self.window);
+                if repose_core::take_signal_fired() {
+                    rc::request_redraw(&self.window);
+                }
                 self.last_redraw = now;
             } else {
                 el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(

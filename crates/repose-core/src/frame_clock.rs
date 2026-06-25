@@ -8,6 +8,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 ///   to decide whether to `request_redraw()`.
 static NEEDS_FRAME: AtomicBool = AtomicBool::new(true);
 
+/// Distinguishes signal-driven frame requests from event-handler-driven ones.
+static SIGNAL_FIRED: AtomicBool = AtomicBool::new(false);
+
 /// Request another frame (coalesced).
 #[inline]
 pub fn request_frame() {
@@ -24,4 +27,16 @@ pub fn take_frame_request() -> bool {
 #[inline]
 pub fn peek_frame_request() -> bool {
     NEEDS_FRAME.load(Ordering::Acquire)
+}
+
+/// Mark that a signal just fired (real data change).
+#[inline]
+pub fn signal_fired() {
+    SIGNAL_FIRED.store(true, Ordering::Release);
+}
+
+/// Returns true if `signal_fired()` was called since last check, and clears it.
+#[inline]
+pub fn take_signal_fired() -> bool {
+    SIGNAL_FIRED.swap(false, Ordering::AcqRel)
 }
