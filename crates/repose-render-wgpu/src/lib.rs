@@ -700,7 +700,12 @@ impl Pipelines {
         });
 
         let slug = slug::create_pipeline(
-            device, format, sample_count, globals_layout, slug_storage_layout, stencil_for_content,
+            device,
+            format,
+            sample_count,
+            globals_layout,
+            slug_storage_layout,
+            stencil_for_content,
         );
 
         Self {
@@ -1264,10 +1269,7 @@ impl WgpuBackend {
         );
 
         // Slug storage (shared across sample counts)
-        let slug_pipeline = slug::SlugPipeline::new(
-            &device,
-            &slug_storage_layout,
-        );
+        let slug_pipeline = slug::SlugPipeline::new(&device, &slug_storage_layout);
 
         // Blur composite ring (for graphics-layer drop shadows)
         let blur_ring = UploadRing::new(&device, "blur ring", 1024 * 1024);
@@ -2260,7 +2262,9 @@ impl RenderBackend for WgpuBackend {
                 wgpu::CurrentSurfaceTexture::Outdated => {
                     retries += 1;
                     if retries >= MAX_RETRIES {
-                        log::warn!("surface outdated persisted after {MAX_RETRIES} retries; skipping frame");
+                        log::warn!(
+                            "surface outdated persisted after {MAX_RETRIES} retries; skipping frame"
+                        );
                         return;
                     }
                     log::warn!("surface outdated; reconfiguring");
@@ -2269,7 +2273,9 @@ impl RenderBackend for WgpuBackend {
                 wgpu::CurrentSurfaceTexture::Lost => {
                     retries += 1;
                     if retries >= MAX_RETRIES {
-                        log::warn!("surface lost persisted after {MAX_RETRIES} retries; skipping frame");
+                        log::warn!(
+                            "surface lost persisted after {MAX_RETRIES} retries; skipping frame"
+                        );
                         return;
                     }
                     log::warn!("surface lost; reconfiguring");
@@ -2678,36 +2684,37 @@ impl RenderBackend for WgpuBackend {
                             }
                             if let Some(entry) = ck.as_ref().and_then(|ck| self.slug_cache.get(ck))
                             {
-                                // The origin is at (rect.x + sg.x, rect.y + sg.y) in screen pixels.
-                                // Outline bounds are in em-space with Y+ = UP (mathematical).
                                 let ox = rect.x + sg.x;
                                 let oy = rect.y + sg.y;
+                                let scx = current_transform.scale_x;
+                                let scy = current_transform.scale_y;
+                                let ttx = current_transform.translate_x;
+                                let tty = current_transform.translate_y;
+
+                                let tf = |x: f32, y: f32| -> (f32, f32) {
+                                    let sx = x * scx;
+                                    let sy = y * scy;
+                                    (sx * cos_a - sy * sin_a + ttx, sx * sin_a + sy * cos_a + tty)
+                                };
+
+                                let (tox, toy) = tf(ox, oy);
+                                let (tpx, tpy) = tf(pivot_x, pivot_y);
+
                                 let b = &entry.band_data.bounds;
-                                // Convert em-space (Y+up) → screen pixels (Y+down):
-                                let left = ox + b[0] * px;
-                                let top = oy - b[3] * px; // max y in em = top in screen
-                                let right = ox + b[2] * px;
-                                let bottom = oy - b[1] * px; // min y in em = bottom in screen
-                                let gw = right - left;
-                                let gh = bottom - top;
-                                // Rotate the 4 corners around the text pivot, find AABB
+                                // Outline corners in local pixel space, then transform.
                                 let corners = [
-                                    (left, top),
-                                    (left + gw, top),
-                                    (left + gw, top + gh),
-                                    (left, top + gh),
+                                    tf(ox + b[0] * px, oy - b[3] * px),
+                                    tf(ox + b[2] * px, oy - b[3] * px),
+                                    tf(ox + b[2] * px, oy - b[1] * px),
+                                    tf(ox + b[0] * px, oy - b[1] * px),
                                 ];
                                 let (mut min_x, mut max_x, mut min_y, mut max_y) =
                                     (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
                                 for &(x, y) in &corners {
-                                    let dx = x - pivot_x;
-                                    let dy = y - pivot_y;
-                                    let rx = pivot_x + dx * cos_a - dy * sin_a;
-                                    let ry = pivot_y + dx * sin_a + dy * cos_a;
-                                    min_x = min_x.min(rx);
-                                    max_x = max_x.max(rx);
-                                    min_y = min_y.min(ry);
-                                    max_y = max_y.max(ry);
+                                    min_x = min_x.min(x);
+                                    max_x = max_x.max(x);
+                                    min_y = min_y.min(y);
+                                    max_y = max_y.max(y);
                                 }
                                 let bb_w = max_x - min_x;
                                 let bb_h = max_y - min_y;
@@ -2727,8 +2734,8 @@ impl RenderBackend for WgpuBackend {
                                     size: [ndc_tl[2], ndc_tl[3]],
                                     color: color.to_linear(),
                                     glyph_base: entry.gpu_offset,
-                                    origin_px: [ox, oy],
-                                    pivot_px: [pivot_x, pivot_y],
+                                    origin_px: [tox, toy],
+                                    pivot_px: [tpx, tpy],
                                     cos_sin: [cos_a, sin_a],
                                 });
                                 continue;
