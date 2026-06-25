@@ -59,7 +59,7 @@ fn solve_quadratic(a: f32, b: f32, c: f32) -> vec2<f32> {
     if disc < 0.0 { return vec2(1e10, 1e10); }
     let sd = sqrt(disc);
     if abs(b) < 1e-10 {
-        // Degenerate Citardauq: sign(0) = 0 → q = 0 → division by zero.
+        // Degenerate Citardauq: sign(0) = 0 -> q = 0 -> division by zero.
         return vec2(-sd / (2.0 * a), sd / (2.0 * a));
     }
     let q = -0.5 * (b + sign(b) * sd);
@@ -83,8 +83,8 @@ fn eval_horiz(curve_base: u32, rc: vec2<f32>, font_size: f32) -> f32 {
         let t = -c0 / c1;
         if t < 0.0 || t > 1.0 { return 0.0; }
         let xt = (1.0 - t) * (1.0 - t) * ax + 2.0 * (1.0 - t) * t * bx + t * t * cx;
-            let cov = clamp(0.5 - xt * font_size, 0.0, 1.0);
-            return sign(c1) * cov;
+        let cov = clamp(0.5 - xt * font_size, 0.0, 1.0);
+        return sign(c1) * cov;
     }
 
     let roots = solve_quadratic(c2, c1, c0);
@@ -96,41 +96,6 @@ fn eval_horiz(curve_base: u32, rc: vec2<f32>, font_size: f32) -> f32 {
             let dy_dt = 2.0 * c2 * t + c1;
             let sign = select(sign(dy_dt), 1.0, abs(dy_dt) < 1e-10);
             cov += sign * clamp(0.5 - xt * font_size, 0.0, 1.0);
-        }
-    }
-    return cov;
-}
-
-fn eval_vert(curve_base: u32, rc: vec2<f32>, font_size: f32) -> f32 {
-    let ax = f32_from(curve_base) - rc.x;
-    let ay = f32_from(curve_base + 1u) - rc.y;
-    let bx = f32_from(curve_base + 2u) - rc.x;
-    let by = f32_from(curve_base + 3u) - rc.y;
-    let cx = f32_from(curve_base + 4u) - rc.x;
-    let cy = f32_from(curve_base + 5u) - rc.y;
-
-    let c0 = ax;
-    let c1 = 2.0 * (bx - ax);
-    let c2 = cx - 2.0 * bx + ax;
-
-    if abs(c2) < 1e-10 {
-        if abs(c1) < 1e-10 { return 0.0; }
-        let t = -c0 / c1;
-        if t < 0.0 || t > 1.0 { return 0.0; }
-        let yt = (1.0 - t) * (1.0 - t) * ay + 2.0 * (1.0 - t) * t * by + t * t * cy;
-            let cov = clamp(0.5 - yt * font_size, 0.0, 1.0);
-            return sign(c1) * cov;
-    }
-
-    let roots = solve_quadratic(c2, c1, c0);
-    var cov = 0.0;
-    for (var i = 0u; i < 2u; i++) {
-        let t = roots[i];
-        if t >= 0.0 && t <= 1.0 {
-            let yt = (1.0 - t) * (1.0 - t) * ay + 2.0 * (1.0 - t) * t * by + t * t * cy;
-            let dx_dt = 2.0 * c2 * t + c1;
-            let sign = select(sign(dx_dt), 1.0, abs(dx_dt) < 1e-10);
-            cov += sign * clamp(0.5 - yt * font_size, 0.0, 1.0);
         }
     }
     return cov;
@@ -151,7 +116,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let band_scale = vec2(sx, sy);
     let band_offset = vec2(ox, oy);
 
-    // All 8 bands are always stored; empty bands contribute 0.
     let h_max = h_count;
 
     let px_pos = in.pos.xy;
