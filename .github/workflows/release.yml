@@ -1,4 +1,4 @@
-name: Release crate (crates.io only)
+name: Release crates
 
 on:
   push:
@@ -94,27 +94,21 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Publish workspace crates (dependency order)
+      - name: Publish workspace crates
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set -euo pipefail
-          for crate in \
-            repose-macros repose-core repose-tree repose-text \
-            repose-ui repose-render-wgpu repose-platform \
-            repose-devtools repose-canvas repose-material \
-            repose-navigation repose-docking
-          do
-            echo "Publishing $crate..."
-            for i in 1 2 3; do
-              if cargo publish -p "$crate" --locked 2>&1; then
-                echo "$crate published successfully"
-                break
-              fi
-              echo "Retry $i/3 for $crate failed, waiting $((i*10))s..."
-              sleep $((i*10))
-            done
+          for i in 1 2 3; do
+            if cargo publish --workspace --locked \
+              --exclude showcase --exclude animation_demo --exclude android_counter \
+              2>&1; then
+              exit 0
+            fi
+            echo "Retry $i/3 failed, waiting $((i*10))s..."
+            sleep $((i*10))
           done
+          exit 1
 
       - name: Upload crate artifacts
         uses: actions/upload-artifact@v4
