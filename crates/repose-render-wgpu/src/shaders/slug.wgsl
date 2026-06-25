@@ -15,7 +15,6 @@ struct VSOut {
     @location(2) origin_px: vec2<f32>,
     @location(3) pivot_px: vec2<f32>,
     @location(4) cos_sin: vec2<f32>,
-    @location(5) pos_ndc: vec2<f32>,
 };
 
 fn f32_from(i: u32) -> f32 {
@@ -47,7 +46,6 @@ fn vs_main(
         origin_px,
         pivot_px,
         cos_sin,
-        ndc_pos,
     );
 }
 
@@ -157,11 +155,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let h_max = h_count;
     let v_max = v_count;
 
-    // Convert NDC to pixel space, inverse rotate around pivot, then to em-space
-    let px_pos = vec2(
-        (in.pos_ndc.x + 1.0) * G.ndc_to_px.x,
-        (1.0 - in.pos_ndc.y) * G.ndc_to_px.y,
-    );
+    let px_pos = in.pos.xy;
     let d = px_pos - in.pivot_px;
     let cos_a = in.cos_sin.x;
     let sin_a = in.cos_sin.y;
