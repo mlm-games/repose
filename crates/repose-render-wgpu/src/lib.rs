@@ -3166,7 +3166,6 @@ impl RenderBackend for WgpuBackend {
         // Push the final pass.
         passes.push(current_pass);
 
-        // Upload slug storage buffer with newly-cached glyph outline data.
         self.slug_pipeline.upload(
             &self.device,
             &self.queue,
