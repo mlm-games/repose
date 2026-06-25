@@ -153,7 +153,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
 
     // All 8 bands are always stored; empty bands contribute 0.
     let h_max = h_count;
-    let v_max = v_count;
 
     let px_pos = in.pos.xy;
     let d = px_pos - in.pivot_px;
@@ -169,7 +168,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     );
 
     let band_h = u32(clamp(rc.y * band_scale.y + band_offset.y, 0.0, f32(h_max - 1u)));
-    let band_v = u32(clamp(rc.x * band_scale.x + band_offset.x, 0.0, f32(v_max - 1u)));
 
     let curve_start = glyph_data[base + 11u];
 
@@ -185,19 +183,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         }
     }
 
-    var v_cov = 0.0;
-    if (band_v < v_max) {
-        let hdr = glyph_data[base + HEADER_WORDS + h_count + band_v];
-        let count = hdr & 0xFFFFu;
-        let ref_off = (hdr >> 16u);
-        let ref_base = base + HEADER_WORDS + num_bands;
-        for (var ri = 0u; ri < count; ri++) {
-            let ci = glyph_data[ref_base + ref_off + ri];
-            v_cov += eval_vert(curve_start + ci * 6u, rc, font_size);
-        }
-    }
-
-    let coverage = clamp(max(abs(h_cov), abs(v_cov)), 0.0, 1.0);
+    let coverage = clamp(abs(h_cov), 0.0, 1.0);
     let a = in.color.a * coverage;
     return vec4(in.color.rgb * a, a);
 }
