@@ -118,6 +118,12 @@ impl GlyphSlugCache {
         self.map.get(key)
     }
 
+    pub fn touch(&mut self, key: &CacheKey) {
+        if let Some(entry) = self.map.get_mut(key) {
+            entry.last_used = self.frame;
+        }
+    }
+
     /// Build the storage buffer contents for all in-cache glyphs.
     /// Sorts keys only when the cache was modified.
     /// The returned Vec is empty when no glyphs are alive.

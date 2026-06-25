@@ -1291,7 +1291,7 @@ impl WgpuBackend {
         let ring_ellipse_border = UploadRing::new(&device, "ring ellipse border", 1 << 20);
         let ring_glyph_mask = UploadRing::new(&device, "ring glyph mask", 1 << 20);
         let ring_glyph_color = UploadRing::new(&device, "ring glyph color", 1 << 20);
-        let ring_slug = UploadRing::new(&device, "ring slug", 1 << 18);
+        let ring_slug = UploadRing::new(&device, "ring slug", 1 << 22);
         let ring_clip = UploadRing::new(&device, "ring clip", 1 << 16);
         let ring_nv12 = UploadRing::new(&device, "ring nv12", 1 << 20);
 
@@ -2692,6 +2692,9 @@ impl RenderBackend for WgpuBackend {
                                             );
                                         }
                                     }
+                                }
+                                if let Some(ref ck) = ck {
+                                    self.slug_cache.touch(ck);
                                 }
                                 if let Some(entry) =
                                     ck.as_ref().and_then(|ck| self.slug_cache.get(ck))
