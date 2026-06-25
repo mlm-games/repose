@@ -5,9 +5,15 @@ on:
     tags:
       - "v*.*.*"
   workflow_dispatch:
+    inputs:
+      create_release:
+        description: "Create GitHub Release"
+        required: true
+        default: true
+        type: boolean
 
 permissions:
-  contents: write 
+  contents: write
 
 concurrency:
   group: release-crate-${{ github.ref }}
@@ -17,96 +23,133 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  publish:
-    name: Publish to crates.io
+  prepare-version:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
-      name: ${{ steps.meta.outputs.name }}
-      version: ${{ steps.meta.outputs.version }}
-      crate_filename: ${{ steps.pkg.outputs.crate_filename }}
+      version_name: ${{ steps.meta.outputs.version_name }}
+      tag: ${{ steps.meta.outputs.tag }}
+      commit_sha: ${{ steps.meta.outputs.commit_sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set version/tag metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"
+            COMMIT_SHA="$(git rev-parse HEAD)"
+          else
+            OLD_VERSION=$(grep -m1 '^version\s*=\s*"' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+            IFS='.' read -r MAJ MIN PAT <<<"$OLD_VERSION"
+            VERSION="$MAJ.$MIN.$((PAT+1))"
+            sed -i -E "0,/^version\s*=.*/s//version = \"$VERSION\"/" Cargo.toml
+            git config --local user.email "github-actions[bot]@users.noreply.github.com"
+            git config --local user.name "github-actions[bot]"
+            cargo update -w
+            git add Cargo.toml Cargo.lock
+            git commit -m "chore: bump to v$VERSION [skip ci]" || true
+            git push
+            TAG="v$VERSION"
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+            COMMIT_SHA="$(git rev-parse HEAD)"
+          fi
+
+          echo "version_name=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Validate tag matches workspace version
+        run: |
+          VERSION=$(grep -m1 '^version\s*=\s*"' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ "v$VERSION" != "${{ steps.meta.outputs.tag }}" ]; then
+            echo "Version mismatch: tag ${{ steps.meta.outputs.tag }} != Cargo.toml v$VERSION"
+            exit 1
+          fi
+
+  publish:
+    name: Publish to crates.io
+    needs: prepare-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-version.outputs.commit_sha }}
 
       - name: Install deps
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libwayland-dev \
-            libxkbcommon-dev \
-            libx11-dev \
-            libxcursor-dev \
-            libxrandr-dev \
-            libxi-dev \
+            libwayland-dev libxkbcommon-dev \
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
             pkg-config
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Read package metadata and validate tag
-        id: meta
-        run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          NAME=$(cargo metadata --no-deps --format-version=1 | jq -r '.packages[0].name')
-          VERSION=$(cargo metadata --no-deps --format-version=1 | jq -r '.packages[0].version')
-          echo "Tag: $TAG  Cargo: $VERSION ($NAME)"
-          if [ "$TAG" != "$VERSION" ]; then
-            echo "Version mismatch: tag v$TAG != Cargo.toml $VERSION"
-            exit 1
-          fi
-          echo "name=$NAME" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Cargo package (dry-run archive)
-        id: pkg
-        run: |
-          set -euxo pipefail
-          cargo package --locked
-          NAME="${{ steps.meta.outputs.name }}"
-          VER="${{ steps.meta.outputs.version }}"
-          CRATE_FILENAME="${NAME}-${VER}.crate"
-          CRATE="target/package/$CRATE_FILENAME"
-          test -f "$CRATE"
-          echo "crate_filename=$CRATE_FILENAME" >> "$GITHUB_OUTPUT"
-
-      - name: Upload crate artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: crate
-          path: target/package/*.crate
-          retention-days: 1
-
-      - name: Publish to crates.io
+      - name: Publish workspace crates (dependency order)
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          for i in 1 2 3; do
-            if cargo publish --locked; then exit 0; fi
-            echo "Publish failed, retrying in $((i*10))s..."; sleep $((i*10))
+          set -euo pipefail
+          for crate in \
+            repose-macros repose-core repose-tree repose-text \
+            repose-ui repose-render-wgpu repose-platform \
+            repose-devtools repose-canvas repose-material \
+            repose-navigation repose-docking
+          do
+            echo "Publishing $crate..."
+            for i in 1 2 3; do
+              if cargo publish -p "$crate" --locked 2>&1; then
+                echo "$crate published successfully"
+                break
+              fi
+              echo "Retry $i/3 for $crate failed, waiting $((i*10))s..."
+              sleep $((i*10))
+            done
           done
-          exit 1
+
+      - name: Upload crate artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: crates
+          path: target/package/*.crate
+          retention-days: 1
 
   release:
     name: Create GitHub Release
-    needs: publish
+    needs:
+      - prepare-version
+      - publish
     runs-on: ubuntu-latest
     steps:
-      - name: Download crate artifact
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: crate
+          name: crates
           path: dist
 
-      - name: Prepare assets
+      - name: Generate checksums
         run: |
           cd dist
-          shasum -a 256 *.crate > SHA256SUMS.txt
-          ls -la
+          sha256sum *.crate > SHA256SUMS.txt
+          cat SHA256SUMS.txt
 
       - name: Create/Update Release
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_release == true) }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ needs.publish.outputs.version }}
-          name: v${{ needs.publish.outputs.version }}
-          # generate_release_notes: true
+          tag_name: ${{ needs.prepare-version.outputs.tag }}
+          name: ${{ needs.prepare-version.outputs.tag }}
+          generate_release_notes: true
+          target_commitish: ${{ needs.prepare-version.outputs.commit_sha }}
           files: |
             dist/*.crate
             dist/SHA256SUMS.txt
