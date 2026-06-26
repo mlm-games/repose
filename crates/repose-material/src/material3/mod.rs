@@ -17,8 +17,8 @@ use web_time::Duration;
 use crate::{Icon, Symbol};
 use repose_core::animation::{AnimationSpec, Easing, RepeatableSpec};
 use repose_core::*;
-use repose_ui::lazy::LazyRow;
 use repose_ui::LazyRowState;
+use repose_ui::lazy::LazyRow;
 use repose_ui::{
     Box, Column, Row, Spacer, Stack, Text, TextField as UiTextField, TextStyle, ViewExt, ZStack,
     anim::{animate_color, animate_f32, animate_f32_from},
@@ -468,7 +468,11 @@ pub fn SuggestionChip(on_click: impl Fn() + 'static, label: View, icon: Option<V
 }
 
 /// M3 Elevated Suggestion Chip - like [`SuggestionChip`] but with elevation and filled bg.
-pub fn ElevatedSuggestionChip(on_click: impl Fn() + 'static, label: View, icon: Option<View>) -> View {
+pub fn ElevatedSuggestionChip(
+    on_click: impl Fn() + 'static,
+    label: View,
+    icon: Option<View>,
+) -> View {
     let th = theme();
     Box(Modifier::new()
         .state_colors(StateColors {
@@ -849,10 +853,7 @@ pub fn DismissibleNavigationDrawer(
 }
 
 /// M3 Permanent Navigation Drawer - always visible alongside content.
-pub fn PermanentNavigationDrawer(
-    drawer_content: View,
-    content: View,
-) -> View {
+pub fn PermanentNavigationDrawer(drawer_content: View, content: View) -> View {
     Row(Modifier::new().fill_max_size()).child((
         Box(Modifier::new()
             .width(300.0)
@@ -1539,6 +1540,11 @@ pub fn ModalBottomSheet(
     let anim_distance = peek_h.max(48.0).max(400.0);
     let overlay_id = remember_with_key("mbs_oid", || signal(0u64));
 
+    // Drag state -> offset_at_drag_start is the anim value when the drag began
+    let drag_anchor_y: Rc<RefCell<f32>> = remember_state_with_key("mbs_drag_y", || 0.0);
+    let offset_at_drag_start: Rc<RefCell<f32>> = remember_state_with_key("mbs_drag_base", || 0.0);
+    let is_dragging: Rc<RefCell<bool>> = remember_state_with_key("mbs_drag", || false);
+
     // Animated offset: anim_distance px (off-screen) → 0px (visible)
     let anim = remember_state_with_key("mbs_anim", || {
         AnimatedValue::new(anim_distance, theme().motion.spring)
@@ -1579,6 +1585,10 @@ pub fn ModalBottomSheet(
                 let anim = anim.clone();
                 let modifier = modifier.clone();
                 let content = content.clone();
+                let drag_anchor_y = drag_anchor_y.clone();
+                let offset_at_drag_start = offset_at_drag_start.clone();
+                let is_dragging = is_dragging.clone();
+                let anim_distance = anim_distance;
                 move || {
                     let off = *anim.borrow().get();
 
@@ -1588,7 +1598,51 @@ pub fn ModalBottomSheet(
                         .max_width(dp_to_px(config.max_width))
                         .translate(0.0, off)
                         .background(config.container_color)
-                        .clip_rounded(config.shape_radius))
+                        .clip_rounded(config.shape_radius)
+                        .on_pointer_down({
+                            let anim = anim.clone();
+                            let drag_anchor_y = drag_anchor_y.clone();
+                            let offset_at_drag_start = offset_at_drag_start.clone();
+                            let is_dragging = is_dragging.clone();
+                            move |ev| {
+                                *drag_anchor_y.borrow_mut() = ev.position.y;
+                                *offset_at_drag_start.borrow_mut() = *anim.borrow().get();
+                                *is_dragging.borrow_mut() = true;
+                            }
+                        })
+                        .on_pointer_move({
+                            let anim = anim.clone();
+                            let drag_anchor_y = drag_anchor_y.clone();
+                            let offset_at_drag_start = offset_at_drag_start.clone();
+                            let is_dragging = is_dragging.clone();
+                            move |ev| {
+                                if !*is_dragging.borrow() {
+                                    return;
+                                }
+                                let delta = ev.position.y - *drag_anchor_y.borrow();
+                                let start_off = *offset_at_drag_start.borrow();
+                                let total = (start_off + delta).max(0.0);
+                                anim.borrow_mut().snap_to(total);
+                                request_frame();
+                            }
+                        })
+                        .on_pointer_up({
+                            let anim = anim.clone();
+                            let is_dragging = is_dragging.clone();
+                            let state = state.clone();
+                            let anim_distance = anim_distance;
+                            move |_| {
+                                *is_dragging.borrow_mut() = false;
+                                let current_off = *anim.borrow().get();
+                                let threshold = anim_distance * 0.3;
+                                if current_off > threshold {
+                                    anim.borrow_mut().set_target(anim_distance);
+                                    state.dismiss();
+                                } else {
+                                    anim.borrow_mut().set_target(0.0);
+                                }
+                            }
+                        }))
                     .child(
                         Column(Modifier::new().fill_max_width()).child((
                             Row(Modifier::new()
@@ -2275,17 +2329,14 @@ pub fn TimePicker(
                     .single_line(),
             ),
             Box(Modifier::new().width(8.0).height(1.0)),
-            Box(Modifier::new()
-                .padding(8.0)
-                .clickable()
-                .on_pointer_down({
-                    let on_confirm = on_confirm.clone();
-                    let state = state.clone();
-                    move |_| {
-                        let (h, m) = state.selected_time();
-                        on_confirm(h, m);
-                    }
-                }))
+            Box(Modifier::new().padding(8.0).clickable().on_pointer_down({
+                let on_confirm = on_confirm.clone();
+                let state = state.clone();
+                move |_| {
+                    let (h, m) = state.selected_time();
+                    on_confirm(h, m);
+                }
+            }))
             .child(
                 Text("OK")
                     .color(th.primary)

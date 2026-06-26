@@ -265,11 +265,23 @@ impl SnackbarController {
             snackbar_set_dismissing(flag_for_builder.get());
             (original_builder)()
         });
+        // action's on_click also dismisses the snackbar
+        let action = req.action.map(|a| SnackbarAction {
+            on_click: {
+                let original = a.on_click;
+                let controller = self.clone();
+                Rc::new(move || {
+                    (original)();
+                    controller.dismiss();
+                })
+            },
+            label: a.label,
+        });
         let id = self.overlay.show_entry(wrapped_builder, 900.0, true);
         inner.active = Some(ActiveSnackbar {
             id,
             message: req.message,
-            action: req.action,
+            action,
             remaining_ms: req.duration_ms.max(1),
             dismiss_started: dismiss_flag,
             dismiss_elapsed: 0,

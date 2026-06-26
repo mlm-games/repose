@@ -1108,7 +1108,7 @@ pub fn BadgedBox(badge: View, content: View) -> View {
         content,
         Box(Modifier::new()
             .absolute()
-            .offset(None, Some(0.0), None, Some(0.0)))
+            .offset(None, Some(0.0), Some(0.0), None))
         .child(badge),
     ))
 }
@@ -2309,8 +2309,8 @@ pub fn TriStateCheckbox(
         .justify_content(JustifyContent::Center)
         .on_pointer_down(move |_| {
             on_change(match state {
-                TriState::Checked => TriState::Indeterminate,
-                TriState::Indeterminate => TriState::Unchecked,
+                TriState::Checked => TriState::Unchecked,
+                TriState::Indeterminate => TriState::Checked,
                 TriState::Unchecked => TriState::Checked,
             })
         })
