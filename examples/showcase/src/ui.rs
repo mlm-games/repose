@@ -5,7 +5,7 @@ use std::rc::Rc;
 use repose_core::prelude::*;
 use repose_material::material3::dialog::{Dialog, DialogState};
 use repose_material::material3::{
-    Card, CardConfig, ElevatedCard, IconButton, IconButtonConfig, M3Slider, SliderConfig, Switch, SwitchConfig,
+    Card, CardConfig, ElevatedCard, IconButton, IconButtonConfig, Slider, SliderConfig, Switch, SwitchConfig,
 };
 use repose_material::{Icon, material_symbols};
 use repose_navigation::Navigator;
@@ -264,7 +264,7 @@ pub fn LabeledSlider(
         Text(format!("{label}: {value:.2}"))
             .size(14.0)
             .color(theme().on_surface_variant),
-        M3Slider(value, range, step, on_change, SliderConfig::default()),
+        Slider(value, range, step, on_change, SliderConfig::default()),
     ))
 }
 

@@ -1,5 +1,5 @@
 use repose_core::prelude::*;
-use repose_material::material3::Button;
+use repose_material::material3::{Button, ButtonConfig};
 use repose_ui::pager::PagerState;
 use repose_ui::pager::{HorizontalPager, VerticalPager};
 use repose_ui::*;
@@ -74,13 +74,13 @@ fn controls(state: Rc<PagerState>, current: usize) -> View {
         .align_items(AlignItems::Center)
         .padding(sp::SM))
     .child((
-        Button(Modifier::new(), prev, || Text("Prev")),
+        Button(Modifier::new(), prev, ButtonConfig::default(), || Text("Prev")),
         Spacer(),
         Text(format!("Page {} of {}", current + 1, PAGES))
             .size(14.0)
             .color(theme().on_surface),
         Spacer(),
-        Button(Modifier::new(), next, || Text("Next")),
+        Button(Modifier::new(), next, ButtonConfig::default(), || Text("Next")),
     ))
 }
 

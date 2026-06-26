@@ -384,8 +384,14 @@ impl TopAppBarDefaults {
     pub fn container_color() -> Color {
         theme().surface
     }
-    pub fn title_color() -> Color {
+    pub fn title_content_color() -> Color {
         theme().on_surface
+    }
+    pub fn navigation_icon_content_color() -> Color {
+        theme().on_surface
+    }
+    pub fn action_icon_content_color() -> Color {
+        theme().on_surface_variant
     }
 }
 
@@ -477,6 +483,8 @@ impl SegmentedButtonDefaults {
 pub struct FABDefaults;
 
 impl FABDefaults {
+    pub const SMALL_SIZE: f32 = 40.0;
+    pub const SMALL_SHAPE_RADIUS: f32 = 12.0;
     pub const SIZE: f32 = 56.0;
     pub const LARGE_SIZE: f32 = 96.0;
     pub const SHAPE_RADIUS: f32 = 28.0;

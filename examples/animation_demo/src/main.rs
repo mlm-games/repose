@@ -1,5 +1,5 @@
 use repose_core::*;
-use repose_material::material3::Button;
+use repose_material::material3::{Button, ButtonConfig};
 use repose_platform::{RenderContext, run_desktop_app};
 use repose_ui::*;
 use std::cell::RefCell;
@@ -53,6 +53,7 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
                             anim.borrow_mut().set_target(th.primary);
                         }
                     },
+                    ButtonConfig::default(),
                     || Text("🔵 Blue").modifier(Modifier::new().padding(8.0).align_self_center()),
                 ),
                 Button(
@@ -63,6 +64,7 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
                             anim.borrow_mut().set_target(th.secondary);
                         }
                     },
+                    ButtonConfig::default(),
                     || Text("🟢 Green").modifier(Modifier::new().padding(8.0).align_self_center()),
                 ),
                 Button(
@@ -73,6 +75,7 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
                             anim.borrow_mut().set_target(th.error);
                         }
                     },
+                    ButtonConfig::default(),
                     || Text("🔴 Red").modifier(Modifier::new().padding(8.0).align_self_center()),
                 ),
             )),
@@ -85,6 +88,7 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
                             anim.borrow_mut().set_target(80.0);
                         }
                     },
+                    ButtonConfig::default(),
                     || Text("Small").modifier(Modifier::new().padding(8.0).align_self_center()),
                 ),
                 Button(
@@ -95,6 +99,7 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
                             anim.borrow_mut().set_target(150.0);
                         }
                     },
+                    ButtonConfig::default(),
                     || Text("Medium").modifier(Modifier::new().padding(8.0).align_self_center()),
                 ),
                 Button(
@@ -105,6 +110,7 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
                             anim.borrow_mut().set_target(220.0);
                         }
                     },
+                    ButtonConfig::default(),
                     || Text("Large").modifier(Modifier::new().padding(8.0).align_self_center()),
                 ),
             )),

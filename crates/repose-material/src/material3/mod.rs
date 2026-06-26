@@ -20,7 +20,7 @@ use repose_core::*;
 use repose_ui::lazy::LazyRow;
 use repose_ui::LazyRowState;
 use repose_ui::{
-    Box, Column, Row, Spacer, Stack, Text, TextField, TextStyle, ViewExt, ZStack,
+    Box, Column, Row, Spacer, Stack, Text, TextField as UiTextField, TextStyle, ViewExt, ZStack,
     anim::{animate_color, animate_f32, animate_f32_from},
     overlay::OverlayHandle,
     overlay::SnackbarAction,
@@ -336,6 +336,100 @@ pub fn FilterChip(
     )
 }
 
+/// M3 Elevated Filter Chip - like [`FilterChip`] but with elevation and filled container.
+pub fn ElevatedFilterChip(
+    selected: bool,
+    on_click: impl Fn() + 'static,
+    label: View,
+    leading_icon: Option<View>,
+    trailing_icon: Option<View>,
+    config: ChipConfig,
+) -> View {
+    let th = theme();
+    let id = remember(|| FILTERCHIP_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let spec = th.motion.color;
+
+    let bg = animate_color(
+        format!("efc_bg_{}", id),
+        if selected {
+            config.selected_container_color
+        } else {
+            th.surface_container_low
+        },
+        spec,
+    );
+    let label_color = animate_color(
+        format!("efc_lc_{}", id),
+        if selected {
+            config.selected_content_color
+        } else {
+            config.content_color
+        },
+        spec,
+    );
+    let leading_color = animate_color(
+        format!("efc_lic_{}", id),
+        if selected {
+            config.selected_content_color
+        } else {
+            config.content_color
+        },
+        spec,
+    );
+
+    Box(Modifier::new()
+        .state_colors(StateColors {
+            default: Color::TRANSPARENT,
+            hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
+            pressed: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
+            disabled: Color::TRANSPARENT,
+        })
+        .state_elevation(StateElevation {
+            default: th.elevation.level1,
+            hovered: th.elevation.level2,
+            pressed: th.elevation.level1,
+            disabled: 0.0,
+        })
+        .padding_values(PaddingValues {
+            left: config.horizontal_padding,
+            right: config.horizontal_padding,
+            top: 8.0,
+            bottom: 8.0,
+        })
+        .clickable()
+        .on_pointer_down(move |_| on_click())
+        .background(bg)
+        .clip_rounded(config.shape_radius)
+        .then(config.modifier))
+    .child(
+        Row(Modifier::new().align_items(AlignItems::Center)).child((
+            leading_icon
+                .map(|v| {
+                    Box(Modifier::new().padding_values(PaddingValues {
+                        left: 0.0,
+                        right: 8.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    }))
+                    .child(with_content_color(leading_color, move || v))
+                })
+                .unwrap_or(Box(Modifier::new())),
+            with_content_color(label_color, move || label),
+            trailing_icon
+                .map(|v| {
+                    Box(Modifier::new().padding_values(PaddingValues {
+                        left: 8.0,
+                        right: 0.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    }))
+                    .child(with_content_color(config.content_color, move || v))
+                })
+                .unwrap_or(Box(Modifier::new())),
+        )),
+    )
+}
+
 pub fn SuggestionChip(on_click: impl Fn() + 'static, label: View, icon: Option<View>) -> View {
     let th = theme();
     Box(Modifier::new()
@@ -356,6 +450,49 @@ pub fn SuggestionChip(on_click: impl Fn() + 'static, label: View, icon: Option<V
         .background(Color::TRANSPARENT)
         .clip_rounded(8.0)
         .border(1.0, th.outline_variant, 8.0))
+    .child(
+        Row(Modifier::new().align_items(AlignItems::Center)).child((
+            icon.map(|v| {
+                Box(Modifier::new().padding_values(PaddingValues {
+                    left: 0.0,
+                    right: 8.0,
+                    top: 0.0,
+                    bottom: 0.0,
+                }))
+                .child(with_content_color(th.primary, move || v))
+            })
+            .unwrap_or(Box(Modifier::new())),
+            with_content_color(th.on_surface_variant, move || label),
+        )),
+    )
+}
+
+/// M3 Elevated Suggestion Chip - like [`SuggestionChip`] but with elevation and filled bg.
+pub fn ElevatedSuggestionChip(on_click: impl Fn() + 'static, label: View, icon: Option<View>) -> View {
+    let th = theme();
+    Box(Modifier::new()
+        .state_colors(StateColors {
+            default: Color::TRANSPARENT,
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
+            disabled: Color::TRANSPARENT,
+        })
+        .state_elevation(StateElevation {
+            default: th.elevation.level1,
+            hovered: th.elevation.level2,
+            pressed: th.elevation.level1,
+            disabled: 0.0,
+        })
+        .padding_values(PaddingValues {
+            left: 16.0,
+            right: 16.0,
+            top: 8.0,
+            bottom: 8.0,
+        })
+        .clickable()
+        .on_pointer_down(move |_| on_click())
+        .background(th.surface_container_low)
+        .clip_rounded(8.0))
     .child(
         Row(Modifier::new().align_items(AlignItems::Center)).child((
             icon.map(|v| {
@@ -681,6 +818,48 @@ pub fn ModalNavigationDrawer(
             .background(th.surface_container_low)
             .clip_rounded(th.shapes.large))
         .child(drawer_content),
+    ))
+}
+
+/// M3 Dismissible Navigation Drawer - slides alongside content without scrim.
+/// Uses [`DrawerState`] to control open/close.
+pub fn DismissibleNavigationDrawer(
+    drawer_state: Rc<DrawerState>,
+    drawer_content: View,
+    content: View,
+) -> View {
+    let th = theme();
+    let drawer_offset = animate_f32(
+        "dismissible_drawer_offset",
+        if drawer_state.is_open() { 0.0 } else { -360.0 },
+        theme().motion.spring,
+    );
+
+    ZStack(Modifier::new().fill_max_size()).child((
+        Box(Modifier::new().fill_max_size()).child(content),
+        Box(Modifier::new()
+            .absolute()
+            .offset(Some(drawer_offset), Some(0.0), None, Some(0.0))
+            .fill_max_height()
+            .width(300.0)
+            .background(th.surface_container_low)
+            .clip_rounded(th.shapes.large))
+        .child(drawer_content),
+    ))
+}
+
+/// M3 Permanent Navigation Drawer - always visible alongside content.
+pub fn PermanentNavigationDrawer(
+    drawer_content: View,
+    content: View,
+) -> View {
+    Row(Modifier::new().fill_max_size()).child((
+        Box(Modifier::new()
+            .width(300.0)
+            .fill_max_height()
+            .background(theme().surface_container_low))
+        .child(drawer_content),
+        Box(Modifier::new().flex_grow(1.0)).child(content),
     ))
 }
 
@@ -1075,7 +1254,7 @@ pub fn SearchBar(
     );
 
     let input_field: View = if active {
-        TextField(
+        UiTextField(
             placeholder.clone(),
             query.clone(),
             Modifier::new().flex_grow(1.0).padding(4.0),
@@ -1190,7 +1369,7 @@ pub fn DockedSearchBar(
     );
 
     let input_field: View = if active {
-        TextField(
+        UiTextField(
             placeholder.clone(),
             query.clone(),
             Modifier::new().flex_grow(1.0),
@@ -1927,7 +2106,7 @@ pub fn DatePicker(
                 ButtonConfig::default(),
                 || Text("Cancel").size(14.0),
             ),
-            FilledButton(
+            Button(
                 Modifier::new(),
                 {
                     let on_confirm = on_confirm.clone();

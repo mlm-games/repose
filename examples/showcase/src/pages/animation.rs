@@ -1,6 +1,6 @@
 use repose_core::prelude::*;
 use repose_core::signal;
-use repose_material::material3::{ButtonConfig, ElevatedButton, FilledButton, TextButton};
+use repose_material::material3::{Button, ButtonConfig, ElevatedButton, TextButton};
 use repose_ui::anim::{animate_f32, animate_f32_from};
 use repose_ui::anim_ext::{AnimatedContent, Crossfade, EnterTransition, ExitTransition};
 use repose_ui::lazy::LazyColumn;
@@ -109,7 +109,7 @@ pub fn screen() -> View {
 
         Section("Crossfade", {
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
-                FilledButton(Modifier::new(), {
+                Button(Modifier::new(), {
                     let c = cross.clone();
                     move || c.update(|x| *x = match x { CrossfadeState::A => CrossfadeState::B, CrossfadeState::B => CrossfadeState::A })
                 }, ButtonConfig::default(), || Text("Toggle")),
@@ -126,7 +126,7 @@ pub fn screen() -> View {
 
         Section("Animate Content Size", {
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
-                FilledButton(Modifier::new(), { let x = long_text.clone(); move || x.update(|v| *v = !*v) }, ButtonConfig::default(), || Text("Toggle Long Text")),
+                Button(Modifier::new(), { let x = long_text.clone(); move || x.update(|v| *v = !*v) }, ButtonConfig::default(), || Text("Toggle Long Text")),
                 Box(Modifier::new()
                     .animate_content_size(AnimationSpec::spring_gentle())
                     .background(theme().surface_container_highest)
@@ -173,7 +173,7 @@ pub fn screen() -> View {
                     TextButton(Modifier::new(), { let t = transition_kind.clone(); move || t.set(1) }, ButtonConfig::default(), || Text("Slide")),
                     TextButton(Modifier::new(), { let t = transition_kind.clone(); move || t.set(2) }, ButtonConfig::default(), || Text("Scale")),
                     Spacer(),
-                    FilledButton(Modifier::new(), { let s = content_state.clone(); move || {
+                    Button(Modifier::new(), { let s = content_state.clone(); move || {
                         s.update(|x| *x = match x {
                             ContentState::First => ContentState::Second,
                             ContentState::Second => ContentState::Third,
@@ -205,7 +205,7 @@ pub fn screen() -> View {
 
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 Row(Modifier::new().align_items(AlignItems::Center).gap(6.0)).child((
-                    FilledButton(Modifier::new(), {
+                    Button(Modifier::new(), {
                         let li = list_items.clone();
                         let nid = next_id.clone();
                         move || {
@@ -216,11 +216,11 @@ pub fn screen() -> View {
                             nid.set(id + 1);
                         }
                     }, ButtonConfig::default(), || Text("Add")),
-                    FilledButton(Modifier::new(), {
+                    Button(Modifier::new(), {
                         let li = list_items.clone();
                         move || li.update(|v| { if !v.is_empty() { v.remove(0); } })
                     }, ButtonConfig::default(), || Text("Pop First")),
-                    FilledButton(Modifier::new(), {
+                    Button(Modifier::new(), {
                         let li = list_items.clone();
                         move || li.update(|v| { v.pop(); })
                     }, ButtonConfig::default(), || Text("Pop Last")),

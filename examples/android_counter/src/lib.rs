@@ -1,7 +1,7 @@
 #![cfg(target_os = "android")]
 use log::LevelFilter;
 use repose_core::prelude::*;
-use repose_material::material3::Button;
+use repose_material::material3::{Button, ButtonConfig};
 use repose_platform::RenderContext;
 use repose_platform::android::run_android_app;
 use repose_ui::*;
@@ -22,6 +22,7 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
                     let count = count.clone();
                     move || count.update(|c| *c += 1)
                 },
+                ButtonConfig::default(),
                 || Text("Increment"),
             ),
             Button(
@@ -30,6 +31,7 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
                     let count = count.clone();
                     move || count.update(|c| *c -= 1)
                 },
+                ButtonConfig::default(),
                 || Text("Decrement"),
             ),
             Spacer(),

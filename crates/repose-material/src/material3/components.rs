@@ -14,96 +14,130 @@ use super::*;
 
 use crate::{Icon, Symbol};
 
+/// Color slots for [`TopAppBar`].
+#[derive(Clone, Copy, Debug)]
+pub struct TopAppBarColors {
+    pub container_color: Color,
+    pub navigation_icon_content_color: Color,
+    pub title_content_color: Color,
+    pub action_icon_content_color: Color,
+}
+
+impl Default for TopAppBarColors {
+    fn default() -> Self {
+        Self {
+            container_color: TopAppBarDefaults::container_color(),
+            navigation_icon_content_color: TopAppBarDefaults::navigation_icon_content_color(),
+            title_content_color: TopAppBarDefaults::title_content_color(),
+            action_icon_content_color: TopAppBarDefaults::action_icon_content_color(),
+        }
+    }
+}
+
 /// Configuration for [`TopAppBar`].
 #[derive(Clone, Debug)]
 pub struct TopAppBarConfig {
     pub modifier: Modifier,
-    pub container_color: Color,
-    pub title_color: Color,
+    pub colors: TopAppBarColors,
     pub height: f32,
+    pub window_insets: WindowInsets,
+    pub content_padding: PaddingValues,
+}
+
+/// System window insets for top app bar padding.
+#[derive(Clone, Copy, Debug)]
+pub struct WindowInsets {
+    pub top: f32,
+    pub bottom: f32,
+    pub left: f32,
+    pub right: f32,
+}
+
+impl Default for WindowInsets {
+    fn default() -> Self {
+        Self { top: 0.0, bottom: 0.0, left: 0.0, right: 0.0 }
+    }
 }
 
 impl Default for TopAppBarConfig {
     fn default() -> Self {
         Self {
             modifier: Modifier::new(),
-            container_color: TopAppBarDefaults::container_color(),
-            title_color: TopAppBarDefaults::title_color(),
+            colors: TopAppBarColors::default(),
             height: TopAppBarDefaults::HEIGHT,
+            window_insets: WindowInsets::default(),
+            content_padding: PaddingValues {
+                left: 4.0,
+                right: 4.0,
+                top: 0.0,
+                bottom: 0.0,
+            },
         }
     }
+}
+
+fn top_app_bar_layout(
+    title: View,
+    navigation_icon: Option<View>,
+    actions: Vec<View>,
+    config: TopAppBarConfig,
+    centered: bool,
+) -> View {
+    let insets = config.window_insets;
+    let mut m = Modifier::new()
+        .min_width(200.0)
+        .height(config.height + insets.top)
+        .background(config.colors.container_color)
+        .padding_values(PaddingValues {
+            left: config.content_padding.left + insets.left,
+            right: config.content_padding.right + insets.right,
+            top: config.content_padding.top + insets.top,
+            bottom: config.content_padding.bottom + insets.bottom,
+        })
+        .align_items(AlignItems::Center)
+        .then(config.modifier);
+    if centered {
+        m = m.justify_content(JustifyContent::Center);
+    }
+    Row(m).child((
+        navigation_icon.unwrap_or(Box(Modifier::new().width(16.0).fill_max_height())),
+        Box(Modifier::new()
+            .padding_values(PaddingValues {
+                left: 16.0,
+                right: if centered { 0.0 } else { 0.0 },
+                top: 0.0,
+                bottom: 0.0,
+            })
+            .flex_grow(1.0))
+        .child(with_content_color(config.colors.title_content_color, || title)),
+        Row(Modifier::new()
+            .align_items(AlignItems::Center)
+            .clip_rounded(20.0))
+        .child(actions.into_iter().map(|a| {
+            with_content_color(config.colors.action_icon_content_color, move || a.clone())
+        }).collect::<Vec<_>>()),
+    ))
 }
 
 /// M3 Top App Bar (small). Displays a title with optional navigation icon and
 /// trailing action buttons.
 pub fn TopAppBar(
-    title: impl Into<String>,
+    title: View,
     navigation_icon: Option<View>,
     actions: Vec<View>,
     config: TopAppBarConfig,
 ) -> View {
-    let th = theme();
-    Row(Modifier::new()
-        .min_width(200.0)
-        .height(config.height)
-        .background(config.container_color)
-        .padding_values(PaddingValues {
-            left: 4.0,
-            right: 4.0,
-            top: 0.0,
-            bottom: 0.0,
-        })
-        .align_items(AlignItems::Center)
-        .then(config.modifier))
-    .child((
-        navigation_icon.unwrap_or(Box(Modifier::new().width(16.0).fill_max_height())),
-        Box(Modifier::new()
-            .padding_values(PaddingValues {
-                left: 16.0,
-                right: 0.0,
-                top: 0.0,
-                bottom: 0.0,
-            })
-            .flex_grow(1.0))
-        .child(
-            Text(title)
-                .color(config.title_color)
-                .size(th.typography.title_large),
-        ),
-        Row(Modifier::new().align_items(AlignItems::Center)).child(actions),
-    ))
+    top_app_bar_layout(title, navigation_icon, actions, config, false)
 }
 
 /// M3 Center-Aligned Top App Bar - same as TopAppBar but title is centered.
 pub fn CenterAlignedTopAppBar(
-    title: impl Into<String>,
+    title: View,
     navigation_icon: Option<View>,
     actions: Vec<View>,
     config: TopAppBarConfig,
 ) -> View {
-    let th = theme();
-    Row(Modifier::new()
-        .min_width(200.0)
-        .height(config.height)
-        .background(config.container_color)
-        .padding_values(PaddingValues {
-            left: 4.0,
-            right: 4.0,
-            top: 0.0,
-            bottom: 0.0,
-        })
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
-        .then(config.modifier))
-    .child((
-        navigation_icon.unwrap_or(Box(Modifier::new().width(16.0).fill_max_height())),
-        Box(Modifier::new().flex_grow(1.0)).child(
-            Text(title)
-                .color(config.title_color)
-                .size(th.typography.title_large),
-        ),
-        Row(Modifier::new().align_items(AlignItems::Center)).child(actions),
-    ))
+    top_app_bar_layout(title, navigation_icon, actions, config, true)
 }
 
 /// Configuration for [`Surface`].
@@ -368,17 +402,9 @@ fn button_impl(
     Box(m).child(content)
 }
 
-/// M3 Filled Button - the basic Material3 button (equivalent to Compose's `Button`).
+/// M3 Button - prominent action button with primary color fill.
+/// (Equivalent to Compose Material3's `Button`.)
 pub fn Button(
-    modifier: Modifier,
-    on_click: impl Fn() + 'static,
-    content: impl FnOnce() -> View,
-) -> View {
-    FilledButton(modifier, on_click, ButtonConfig::default(), content)
-}
-
-/// M3 Filled Button - prominent action button with primary color fill.
-pub fn FilledButton(
     modifier: Modifier,
     on_click: impl Fn() + 'static,
     config: ButtonConfig,
@@ -901,6 +927,17 @@ pub fn FAB(icon: View, on_click: impl Fn() + 'static, config: FABConfig) -> View
     )
 }
 
+/// M3 Small FAB (40dp).
+pub fn SmallFAB(icon: View, on_click: impl Fn() + 'static, config: FABConfig) -> View {
+    fab_impl(
+        icon,
+        on_click,
+        FABDefaults::SMALL_SIZE,
+        FABDefaults::SMALL_SHAPE_RADIUS,
+        config,
+    )
+}
+
 /// M3 Large FAB (96dp).
 pub fn LargeFAB(icon: View, on_click: impl Fn() + 'static, config: FABConfig) -> View {
     fab_impl(
@@ -1043,6 +1080,18 @@ pub fn Badge(label: Option<impl Into<String>>, config: BadgeConfig) -> View {
             )
         }
     }
+}
+
+/// M3 BadgedBox - wraps `content` and shows a `badge` anchored to the top-end corner.
+/// The badge is positioned at (top: 0, end: 0) relative to the content.
+pub fn BadgedBox(badge: View, content: View) -> View {
+    Stack(Modifier::new()).child((
+        content,
+        Box(Modifier::new()
+            .absolute()
+            .offset(None, Some(0.0), None, Some(0.0)))
+        .child(badge),
+    ))
 }
 
 /// Configuration for [`ListItem`].
@@ -1849,6 +1898,199 @@ pub fn OutlinedTextField(
     )
 }
 
+/// Configuration for a filled M3 [`TextField`].
+#[derive(Clone)]
+pub struct TextFieldConfig {
+    pub label: Option<String>,
+    pub placeholder: Option<String>,
+    pub leading_icon: Option<View>,
+    pub trailing_icon: Option<View>,
+    pub single_line: bool,
+    pub is_error: bool,
+    pub enabled: bool,
+    pub on_submit: Option<Rc<dyn Fn(String)>>,
+}
+
+impl Default for TextFieldConfig {
+    fn default() -> Self {
+        Self {
+            label: None,
+            placeholder: None,
+            leading_icon: None,
+            trailing_icon: None,
+            single_line: true,
+            is_error: false,
+            enabled: true,
+            on_submit: None,
+        }
+    }
+}
+
+/// M3 Filled Text Field with floating label, leading/trailing icons, error state,
+/// and a bottom indicator line. (Equivalent to Compose Material3's `TextField`.)
+///
+/// The label floats up when `value` is non-empty or when the field is focused.
+/// Container: `SurfaceContainerHighest` bg, top-rounded corners (4dp), flat bottom.
+/// Indicator: always visible, 1dp (unfocused) / 2dp (focused/error), animated color+thickness.
+pub fn TextField(
+    modifier: Modifier,
+    value: String,
+    on_value_change: impl Fn(String) + 'static,
+    config: TextFieldConfig,
+) -> View {
+    let th = theme();
+    let label_str: Option<Rc<str>> = config.label.map(Rc::from);
+    let has_label = label_str.is_some();
+
+    let anim_key = match &label_str {
+        Some(l) => format!("tf_{}", &l[..l.len().min(32)]),
+        None => "tf_nolabel".into(),
+    };
+
+    let focus_tracker: Rc<Cell<bool>> =
+        remember_with_key(format!("tf_focus_{}", anim_key), || Cell::new(false));
+    let is_focused = focus_tracker.get();
+    let should_float = !value.is_empty() || is_focused;
+
+    let float_t = animate_f32(
+        anim_key.clone(),
+        if should_float { 1.0 } else { 0.0 },
+        th.motion.color,
+    );
+
+    // Indicator: unfocused = on_surface_variant/1dp, focused = primary/2dp, error = error/2dp
+    let indicator_is_active = config.is_error || float_t > 0.5;
+    let indicator_color = if config.is_error {
+        th.error
+    } else if float_t > 0.5 {
+        th.primary
+    } else {
+        th.on_surface_variant
+    };
+    let indicator_target_w = if config.enabled && indicator_is_active { 2.0 } else { 1.0 };
+    let indicator_w = animate_f32(
+        format!("tf_ind_w_{}", anim_key),
+        indicator_target_w,
+        th.motion.color,
+    );
+
+    let label_color = if config.is_error {
+        th.error
+    } else if float_t > 0.5 {
+        th.primary
+    } else {
+        th.on_surface_variant
+    };
+
+    let label_size = 16.0 - 4.0 * float_t;
+    let label_y = 16.0 - 20.0 * float_t;
+
+    let tf_placeholder = if has_label {
+        String::new()
+    } else {
+        config.placeholder.unwrap_or_default()
+    };
+
+    let container_bg = if config.enabled {
+        th.surface_container_highest
+    } else {
+        th.on_surface.with_alpha_f32(0.04).composite_over(th.surface)
+    };
+
+    Box(modifier
+        .clip_rounded(th.shapes.extra_small)
+        .background(container_bg))
+    .child(
+        Stack(Modifier::new().fill_max_size()).child((
+            // Bottom indicator line — full width, clipped by container shape
+            Box(Modifier::new()
+                .fill_max_size()
+                .align_items(AlignItems::FlexEnd))
+            .child(
+                Box(Modifier::new()
+                    .fill_max_width()
+                    .height(indicator_w)
+                    .background(indicator_color)),
+            ),
+            // Input row
+            Row(Modifier::new()
+                .fill_max_size()
+                .padding_values(PaddingValues {
+                    left: 16.0,
+                    right: 16.0,
+                    top: 16.0,
+                    bottom: 10.0,
+                })
+                .align_items(AlignItems::Center))
+            .child((
+                config.leading_icon.unwrap_or(Box(Modifier::new())),
+                View::new(0, ViewKind::Box)
+                    .modifier(
+                        Modifier::new()
+                            .flex_grow(1.0)
+                            .padding_values(PaddingValues {
+                                left: 8.0,
+                                right: 8.0,
+                                top: 0.0,
+                                bottom: 0.0,
+                            })
+                            .text_input(TextInputConfig {
+                                hint: tf_placeholder,
+                                multiline: !config.single_line,
+                                on_change: Some(Rc::new(on_value_change) as _),
+                                on_submit: config.on_submit.clone().map(|f| {
+                                    let f = f.clone();
+                                    Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
+                                }),
+                                focus_tracker: Some(focus_tracker.clone()),
+                                value: value.clone(),
+                                visual_transformation: None,
+                                keyboard_type: None,
+                                ime_action: None,
+                            }),
+                    )
+                    .semantics(Semantics {
+                        role: Role::TextField,
+                        label: None,
+                        focused: false,
+                        enabled: true,
+                    }),
+                config.trailing_icon.unwrap_or(Box(Modifier::new())),
+            )),
+            // Floating label
+            if let Some(lbl) = label_str {
+                Box(Modifier::new()
+                    .min_width(200.0)
+                    .padding_values(PaddingValues {
+                        left: 20.0,
+                        right: 20.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    })
+                    .absolute()
+                    .offset(Some(0.0), Some(label_y), None, None))
+                .child(
+                    Box(Modifier::new()
+                        .background(th.surface_container_highest)
+                        .padding_values(PaddingValues {
+                            left: 4.0,
+                            right: 4.0,
+                            top: 2.0,
+                            bottom: 2.0,
+                        }))
+                    .child(
+                        Text(lbl.as_ref().to_string())
+                            .color(label_color)
+                            .size(label_size),
+                    ),
+                )
+            } else {
+                Box(Modifier::new())
+            },
+        )),
+    )
+}
+
 /// Configuration for [`Checkbox`].
 #[derive(Clone, Debug)]
 pub struct CheckboxConfig {
@@ -1937,6 +2179,100 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
                 Icon(Symbol::new("done", '\u{E876}'))
                     .color(config.checkmark_color)
                     .size(CheckboxDefaults::CHECK_ICON_SIZE),
+            )
+        } else {
+            Box(Modifier::new())
+        }),
+    )
+}
+
+/// Three-state value for [`TriStateCheckbox`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TriState {
+    Checked,
+    Unchecked,
+    Indeterminate,
+}
+
+/// M3 Tri-State Checkbox - cycles through Checked → Indeterminate → Unchecked.
+/// Indeterminate shows a dash instead of a checkmark.
+pub fn TriStateCheckbox(
+    state: TriState,
+    on_change: impl Fn(TriState) + 'static,
+    config: CheckboxConfig,
+) -> View {
+    let th = theme();
+    let sz = CheckboxDefaults::BOX_SIZE;
+
+    let id = remember(|| CHECKBOX_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let spec = th.motion.color_fast;
+
+    let is_checked = state == TriState::Checked;
+    let is_indeterminate = state == TriState::Indeterminate;
+    let has_fill = is_checked || is_indeterminate;
+
+    let fill = animate_color(
+        format!("tc_fill_{}", id),
+        if has_fill {
+            config.checked_color
+        } else {
+            Color::TRANSPARENT
+        },
+        spec,
+    );
+    let bd_w = animate_f32(
+        format!("tc_bw_{}", id),
+        if has_fill { 0.0 } else { CheckboxDefaults::STROKE_WIDTH },
+        spec,
+    );
+    let bd = animate_color(
+        format!("tc_bd_{}", id),
+        if has_fill { Color::TRANSPARENT } else { config.unchecked_color },
+        spec,
+    );
+    let symbol_alpha = animate_f32(
+        format!("tc_sa_{}", id),
+        if has_fill { 1.0 } else { 0.0 },
+        spec,
+    );
+
+    Box(Modifier::new()
+        .width(CheckboxDefaults::TOUCH_TARGET_SIZE)
+        .height(CheckboxDefaults::TOUCH_TARGET_SIZE)
+        .padding(0.0)
+        .clip_rounded(20.0)
+        .background(Color::TRANSPARENT)
+        .clickable()
+        .align_items(AlignItems::Center)
+        .justify_content(JustifyContent::Center)
+        .on_pointer_down(move |_| on_change(match state {
+            TriState::Checked => TriState::Indeterminate,
+            TriState::Indeterminate => TriState::Unchecked,
+            TriState::Unchecked => TriState::Checked,
+        }))
+        .then(config.modifier))
+    .child(
+        Box(Modifier::new()
+            .size(sz, sz)
+            .background(fill)
+            .border(bd_w, bd, CheckboxDefaults::CORNER_RADIUS)
+            .clip_rounded(CheckboxDefaults::CORNER_RADIUS)
+            .align_items(AlignItems::Center)
+            .justify_content(JustifyContent::Center))
+        .child(if symbol_alpha > 0.01 {
+            Box(Modifier::new().alpha(symbol_alpha)).child(
+                if is_indeterminate {
+                    // Dash for indeterminate
+                    Box(Modifier::new()
+                        .width(10.0)
+                        .height(2.0)
+                        .background(config.checkmark_color)
+                        .clip_rounded(1.0))
+                } else {
+                    Icon(Symbol::new("done", '\u{E876}'))
+                        .color(config.checkmark_color)
+                        .size(CheckboxDefaults::CHECK_ICON_SIZE)
+                },
             )
         } else {
             Box(Modifier::new())
@@ -2135,7 +2471,7 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
     )
 }
 
-/// Configuration for [`M3Slider`] and [`M3RangeSlider`].
+/// Configuration for [`Slider`] and [`RangeSlider`].
 #[derive(Clone, Debug)]
 pub struct SliderConfig {
     pub modifier: Modifier,
@@ -2174,7 +2510,7 @@ fn value_from_x(x: f32, rect: Rect, min: f32, max: f32, step: Option<f32>) -> f3
     snap_step(v, min, max, step)
 }
 
-pub fn M3Slider(
+pub fn Slider(
     value: f32,
     range: (f32, f32),
     step: Option<f32>,
@@ -2380,7 +2716,7 @@ pub fn M3Slider(
     })
 }
 
-pub fn M3RangeSlider(
+pub fn RangeSlider(
     start: f32,
     end: f32,
     range: (f32, f32),
@@ -2891,6 +3227,69 @@ pub fn AssistChip(
         .background(Color::TRANSPARENT)
         .clip_rounded(shape)
         .border(1.0, config.border_color, shape)
+        .then(config.modifier))
+    .child(
+        Row(Modifier::new().align_items(AlignItems::Center)).child((
+            leading_icon
+                .map(|v| {
+                    Box(Modifier::new().padding_values(PaddingValues {
+                        left: 0.0,
+                        right: 8.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    }))
+                    .child(with_content_color(config.content_color, move || v))
+                })
+                .unwrap_or(Box(Modifier::new())),
+            with_content_color(config.content_color, move || label),
+            trailing_icon
+                .map(|v| {
+                    Box(Modifier::new().padding_values(PaddingValues {
+                        left: 8.0,
+                        right: 0.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    }))
+                    .child(with_content_color(config.content_color, move || v))
+                })
+                .unwrap_or(Box(Modifier::new())),
+        )),
+    )
+}
+
+/// M3 Elevated Assist Chip - like [`AssistChip`] but with elevated container.
+pub fn ElevatedAssistChip(
+    on_click: impl Fn() + 'static,
+    label: View,
+    leading_icon: Option<View>,
+    trailing_icon: Option<View>,
+    config: ChipConfig,
+) -> View {
+    let th = theme();
+    let shape = config.shape_radius;
+    Box(Modifier::new()
+        .state_colors(StateColors {
+            default: Color::TRANSPARENT,
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
+            disabled: Color::TRANSPARENT,
+        })
+        .state_elevation(StateElevation {
+            default: th.elevation.level1,
+            hovered: th.elevation.level2,
+            pressed: th.elevation.level1,
+            disabled: 0.0,
+        })
+        .padding_values(PaddingValues {
+            left: config.horizontal_padding,
+            right: config.horizontal_padding,
+            top: 8.0,
+            bottom: 8.0,
+        })
+        .clickable()
+        .on_pointer_down(move |_| on_click())
+        .background(th.surface_container_low)
+        .clip_rounded(shape)
         .then(config.modifier))
     .child(
         Row(Modifier::new().align_items(AlignItems::Center)).child((

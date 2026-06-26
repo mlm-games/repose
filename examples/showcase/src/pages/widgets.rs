@@ -1,7 +1,7 @@
 use repose_core::{prelude::*, signal};
 use repose_material::material3::{
     AssistChip, ButtonConfig, CardConfig, Checkbox, CheckboxConfig, ChipConfig, FilterChip,
-    LinearProgressIndicator, M3RangeSlider, M3Slider, RadioButton, RadioButtonConfig, SliderConfig,
+    LinearProgressIndicator, RangeSlider, Slider, RadioButton, RadioButtonConfig, SliderConfig,
     Switch, SwitchConfig, TextButton,
 };
 use repose_material::{Icon, material_symbols};
@@ -90,7 +90,7 @@ pub fn screen() -> View {
         Section(
             "Sliders + Progress",
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
-                M3Slider(
+                Slider(
                     s_val.get(),
                     (0.0, 1.0),
                     Some(0.01),
@@ -100,7 +100,7 @@ pub fn screen() -> View {
                     },
                     SliderConfig::default(),
                 ),
-                M3RangeSlider(
+                RangeSlider(
                     r_a.get(),
                     r_b.get(),
                     (0.0, 1.0),

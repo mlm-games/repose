@@ -5,7 +5,7 @@ use repose_material::material3::dialog::{Dialog, DialogState};
 use repose_material::material3::{
     BottomSheet, BottomSheetConfig, ButtonConfig, CircularProgressIndicator,
     CircularProgressIndicatorConfig, DatePicker, DatePickerState, DropdownMenu, DropdownMenuConfig,
-    DropdownMenuEntry, DropdownMenuItem, FilledButton, LinearProgressIndicator,
+    DropdownMenuEntry, DropdownMenuItem, Button, LinearProgressIndicator,
     LinearProgressIndicatorConfig, MenuState, ModalBottomSheet, NavRailItem, NavigationRail,
     NavigationRailConfig, SheetState, TextButton, TimePicker, TimePickerState,
 };
@@ -128,7 +128,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                     menu_state.clone(),
                     overlay.clone(),
                     Modifier::new().fill_max_width(),
-                    FilledButton(
+                    Button(
                         Modifier::new(),
                         {
                             let s = menu_state.clone();
@@ -145,7 +145,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
         Section(
             "Modal Bottom Sheet",
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
-                FilledButton(
+                Button(
                     Modifier::new(),
                     {
                         let s = sheet_state.clone();
@@ -179,7 +179,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
         Section(
             "Simple Bottom Sheet (animated)",
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
-                FilledButton(
+                Button(
                     Modifier::new(),
                     {
                         let s = old_sheet_state.clone();
@@ -209,7 +209,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
         Section(
             "DatePicker + TimePicker",
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
-                FilledButton(
+                Button(
                     Modifier::new(),
                     {
                         let s = show_date_picker.clone();
@@ -221,7 +221,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 Text(format!("Date: {}", date_result.get()))
                     .color(th.on_surface)
                     .size(th.typography.body_medium),
-                FilledButton(
+                Button(
                     Modifier::new(),
                     {
                         let s = show_time_picker.clone();
@@ -387,7 +387,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
         Section(
             "Animation: Tween (animate_f32)",
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
-                FilledButton(
+                Button(
                     Modifier::new(),
                     {
                         let t = anim_target.clone();

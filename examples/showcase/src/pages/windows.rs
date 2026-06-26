@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use repose_core::prelude::*;
 use repose_material::material3::{
-    ButtonConfig, FilledButton, OutlinedTextField, OutlinedTextFieldConfig, TextButton,
+    Button, ButtonConfig, OutlinedTextField, OutlinedTextFieldConfig, TextButton,
 };
 use repose_ui::scroll::{ScrollArea, remember_scroll_state};
 use repose_ui::windowing::{FloatingWindow, WindowAction, WindowHost, WindowManagerState};
@@ -287,22 +287,22 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
         Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
             Hint("Floating windows are hosted in-app. Drag, resize, and focus them."),
             Row(Modifier::new().align_items(AlignItems::Center).gap(10.0)).child(vec![
-                FilledButton(Modifier::new(), open_note, ButtonConfig::default(), || {
+                Button(Modifier::new(), open_note, ButtonConfig::default(), || {
                     Text("New Note")
                 }),
-                FilledButton(Modifier::new(), open_log, ButtonConfig::default(), || {
+                Button(Modifier::new(), open_log, ButtonConfig::default(), || {
                     Text("New Log")
                 }),
-                FilledButton(Modifier::new(), open_tools, ButtonConfig::default(), || {
+                Button(Modifier::new(), open_tools, ButtonConfig::default(), || {
                     Text("Tools")
                 }),
-                FilledButton(
+                Button(
                     Modifier::new(),
                     open_palette,
                     ButtonConfig::default(),
                     || Text("Palette"),
                 ),
-                FilledButton(
+                Button(
                     Modifier::new(),
                     open_global,
                     ButtonConfig::default(),

@@ -1,6 +1,6 @@
 use repose_core::{prelude::*, signal};
 use repose_material::material3::{
-    ButtonConfig, FilledButton, OutlinedTextField, OutlinedTextFieldConfig,
+    Button, ButtonConfig, OutlinedTextField, OutlinedTextFieldConfig,
 };
 use repose_material::{Icon, material_symbols};
 use repose_ui::*;
@@ -223,7 +223,7 @@ pub fn screen() -> View {
         };
         Column(Modifier::new().padding(sp::SM).gap(sp::SM)).child((
             AnnotatedText(annotated).size(18.0),
-            FilledButton(
+            Button(
                 Modifier::new(),
                 {
                     let t = toggle.clone();
