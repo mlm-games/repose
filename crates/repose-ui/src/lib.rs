@@ -113,8 +113,12 @@ pub mod lazy;
 pub mod selection;
 pub mod subcompose;
 pub use lazy::{
-    LazyColumn, LazyColumnState, LazyGridState, LazyRow, LazyRowState, LazyVerticalGrid,
-    LazyVerticalStaggeredGrid, LazyVerticalStaggeredGridState, SimpleList,
+    LazyColumn, LazyRow, LazyVerticalGrid,
+    LazyVerticalStaggeredGrid, SimpleList,
+};
+pub mod lazy_states;
+pub use lazy_states::{
+    LazyColumnState, LazyGridState, LazyRowState, LazyVerticalStaggeredGridState, ItemHeight,
 };
 pub use subcompose::{
     BoxWithConstraints, SubcomposeLayout, box_with_constraints_with_key, subcompose_hash_key,

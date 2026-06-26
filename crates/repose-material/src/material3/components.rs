@@ -2861,9 +2861,9 @@ impl Default for NavigationBarConfig {
             indicator_color: NavigationBarDefaults::indicator_color(),
             height: NavigationBarDefaults::HEIGHT,
             indicator_opacity: NavigationBarDefaults::ITEM_ACTIVE_INDICATOR_OPACITY,
-            item_horizontal_padding: 4.0,
-            item_vertical_padding: 6.0,
-            indicator_radius: 16.0,
+            item_horizontal_padding: NavigationBarDefaults::ITEM_HORIZONTAL_PADDING,
+            item_vertical_padding: NavigationBarDefaults::ITEM_VERTICAL_PADDING,
+            indicator_radius: NavigationBarDefaults::INDICATOR_RADIUS,
         }
     }
 }
@@ -2889,7 +2889,7 @@ impl Default for NavigationRailConfig {
             unselected_icon_color: NavigationRailDefaults::unselected_icon_color(),
             selected_container_color: NavigationRailDefaults::selected_container_color(),
             width: NavigationRailDefaults::WIDTH,
-            item_radius: 16.0,
+            item_radius: NavigationRailDefaults::ITEM_RADIUS,
         }
     }
 }
@@ -3059,8 +3059,8 @@ impl Default for SwipeToDismissConfig {
     fn default() -> Self {
         Self {
             modifier: Modifier::new(),
-            dismiss_threshold: 150.0,
-            dismissed_offset: 300.0,
+            dismiss_threshold: SwipeToDismissDefaults::DISMISS_THRESHOLD,
+            dismissed_offset: SwipeToDismissDefaults::DISMISSED_OFFSET,
             animation_spec: AnimationSpec::spring_gentle(),
         }
     }

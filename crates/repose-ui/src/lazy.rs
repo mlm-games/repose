@@ -1,88 +1,10 @@
-use crate::ViewExt;
 use crate::anim::animate_f32_from;
-use crate::scroll::ScrollPhysics;
+use crate::lazy_states::*;
+use crate::ViewExt;
 use repose_core::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-
-pub trait ItemHeight<T> {
-    fn get(&self, item: &T) -> f32;
-}
-
-impl<T> ItemHeight<T> for f32 {
-    fn get(&self, _item: &T) -> f32 {
-        *self
-    }
-}
-
-impl<T, F: Fn(&T) -> f32> ItemHeight<T> for F {
-    fn get(&self, item: &T) -> f32 {
-        (self)(item)
-    }
-}
-
-pub struct LazyColumnState {
-    scroll_offset: Signal<f32>,   // px
-    viewport_height: Signal<f32>, // px
-    content_height: Signal<f32>,  // px, actual measured height from layout
-
-    physics: RefCell<ScrollPhysics>,
-}
-
-impl Default for LazyColumnState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl LazyColumnState {
-    pub fn new() -> Self {
-        Self {
-            scroll_offset: signal(0.0),
-            viewport_height: signal(600.0),
-            content_height: signal(0.0),
-            physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
-        }
-    }
-
-    pub fn set_offset(&self, off: f32, content_height: f32) {
-        let vh = self.viewport_height.get();
-        let max_off = (content_height - vh).max(0.0);
-        self.scroll_offset.set(off.clamp(0.0, max_off));
-    }
-
-    /// Consume delta in px. Returns leftover in px (for nested scroll).
-    pub fn scroll_immediate(&self, delta_px: f32, content_height_px: f32) -> f32 {
-        let before = self.scroll_offset.get();
-        let viewport = self.viewport_height.get();
-        let max_offset = (content_height_px - viewport).max(0.0);
-
-        let new_offset = (before + delta_px).clamp(0.0, max_offset);
-        self.scroll_offset.set(new_offset);
-
-        let consumed = new_offset - before;
-
-        self.physics.borrow_mut().record_input(consumed);
-
-        delta_px - consumed
-    }
-
-    /// Advance inertia one tick; returns true if animating.
-    pub fn tick(&self, content_height_px: f32) -> bool {
-        let viewport = self.viewport_height.get();
-        let max_offset = (content_height_px - viewport).max(0.0);
-
-        let mut p = self.physics.borrow_mut();
-        if let Some(new_off) = p.tick_integrate(self.scroll_offset.get(), 0.0, max_offset) {
-            drop(p);
-            self.scroll_offset.set(new_off);
-            true
-        } else {
-            false
-        }
-    }
-}
 
 struct AnimState<T> {
     prev_keys: Vec<u64>,
@@ -172,7 +94,6 @@ where
 
     let total_slots: usize;
     if let Some(spec) = animate_spec {
-        // Stable per-call-site ID for animation key namespacing.
         let inst = remember(|| std::cell::Cell::new(0u64));
         if inst.get() == 0 {
             static CTR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -192,7 +113,6 @@ where
 
         let curr_keys: Vec<u64> = items.iter().map(&get_key).collect();
 
-        // Find added and removed keys
         let added: Vec<u64> = curr_keys
             .iter()
             .filter(|k| !s.prev_keys.contains(k))
@@ -208,7 +128,6 @@ where
 
         let had_prev = !s.prev_keys.is_empty();
 
-        // Add removed items to exiting list
         if had_prev && !removed.is_empty() {
             for (old_idx, key) in &removed {
                 if let Some(old_item) = s.item_cache.get(key) {
@@ -219,12 +138,10 @@ where
             }
         }
 
-        // Update item cache with current items
         for item in &items {
             s.item_cache.insert(get_key(item), item.clone());
         }
 
-        // Process exiting items - only keep those still fading
         let mut still_exiting: Vec<(u64, usize, T, u64)> = Vec::new();
         for (key, old_idx, old_item, version) in s.exiting.iter() {
             let exit_key = format!("_lz_x:{aid}:{key}:v{version}");
@@ -234,7 +151,6 @@ where
             }
         }
 
-        // Extend visible range to cover exiting items' positions
         let max_exit_slot = still_exiting
             .iter()
             .map(|(_, i, _, _)| *i)
@@ -243,8 +159,6 @@ where
         let vis_end = last_with_buffer.max(max_exit_slot + 1 + buffer);
         total_slots = items.len().max(max_exit_slot + 1);
 
-        // Build combined children: interleave exiting items at their old indices
-        // with normal items filling remaining slots in order
         let mut normal_ptr = 0usize;
         for visual_i in first_with_buffer..vis_end {
             let entry = still_exiting.iter().find(|(_, oi, _, _)| *oi == visual_i);
@@ -290,7 +204,6 @@ where
         s.exiting = still_exiting;
         s.prev_keys = curr_keys;
     } else {
-        // No animation: render items normally
         for i in first_with_buffer..last_with_buffer {
             if let Some(item) = items.get(i) {
                 let h_dp = item_height.get(item).max(1.0);
@@ -303,7 +216,6 @@ where
         total_slots = items.len();
     }
 
-    // Bottom spacer (dp; converted by layout)
     let has_top = first_with_buffer > 0;
     let rendered_items = combined_children.len() - if has_top { 1 } else { 0 };
     if first_with_buffer + rendered_items < total_slots {
@@ -323,7 +235,6 @@ where
 
     let content = crate::View::new(0, ViewKind::Column).with_children(combined_children);
 
-    // Scroll callbacks (px)
     let on_scroll = {
         let st = state.clone();
         Rc::new(move |d: repose_core::Vec2| -> repose_core::Vec2 {
@@ -407,61 +318,6 @@ pub fn SimpleList<T: Clone + 'static>(
     crate::Column(modifier).with_children(children)
 }
 
-/// State for a virtualized scrolling grid.
-pub struct LazyGridState {
-    scroll_offset: Signal<f32>,
-    viewport_height: Signal<f32>,
-    content_height: Signal<f32>,
-    physics: RefCell<ScrollPhysics>,
-}
-
-impl Default for LazyGridState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl LazyGridState {
-    pub fn new() -> Self {
-        Self {
-            scroll_offset: signal(0.0),
-            viewport_height: signal(600.0),
-            content_height: signal(0.0),
-            physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
-        }
-    }
-
-    pub fn set_offset(&self, off: f32, content_height: f32) {
-        let vh = self.viewport_height.get();
-        let max_off = (content_height - vh).max(0.0);
-        self.scroll_offset.set(off.clamp(0.0, max_off));
-    }
-
-    pub fn scroll_immediate(&self, delta_px: f32, content_height_px: f32) -> f32 {
-        let before = self.scroll_offset.get();
-        let viewport = self.viewport_height.get();
-        let max_offset = (content_height_px - viewport).max(0.0);
-        let new_offset = (before + delta_px).clamp(0.0, max_offset);
-        self.scroll_offset.set(new_offset);
-        let consumed = new_offset - before;
-        self.physics.borrow_mut().record_input(consumed);
-        delta_px - consumed
-    }
-
-    pub fn tick(&self, content_height_px: f32) -> bool {
-        let viewport = self.viewport_height.get();
-        let max_offset = (content_height_px - viewport).max(0.0);
-        let mut p = self.physics.borrow_mut();
-        if let Some(new_off) = p.tick_integrate(self.scroll_offset.get(), 0.0, max_offset) {
-            drop(p);
-            self.scroll_offset.set(new_off);
-            true
-        } else {
-            false
-        }
-    }
-}
-
 /// Virtualized scrolling grid with a fixed number of columns.
 ///
 /// Items are arranged left-to-right, top-to-bottom. Only items visible in the
@@ -517,7 +373,6 @@ where
 
     let mut children: Vec<View> = Vec::new();
 
-    // Top spacer
     if first_row > 0 {
         children.push(crate::Box(
             Modifier::new()
@@ -526,20 +381,17 @@ where
         ));
     }
 
-    // Visible items arranged in a Taffy CSS grid
     if first_item < last_item {
         let visible_items: Vec<View> = (first_item..last_item)
             .map(|i| item_builder(items[i].clone(), i))
             .collect();
 
-        // Extract gap settings from the parent modifier so the inner grid uses them
         let rg = modifier.row_gap.or(modifier.gap).unwrap_or(0.0);
         let cg = modifier.column_gap.or(modifier.gap).unwrap_or(0.0);
         let grid_mod = Modifier::new().grid(columns, rg, cg).fill_max_width();
         children.push(crate::Column(grid_mod).with_children(visible_items));
     }
 
-    // Bottom spacer
     if last_row < total_rows {
         children.push(crate::Box(
             Modifier::new()
@@ -618,59 +470,6 @@ where
 /// State for a horizontal lazy list (`LazyRow`).
 ///
 /// Tracks scroll offset, viewport width, content width, and inertial physics.
-pub struct LazyRowState {
-    scroll_offset: Signal<f32>,
-    viewport_width: Signal<f32>,
-    content_width: Signal<f32>,
-    physics: RefCell<ScrollPhysics>,
-}
-
-impl Default for LazyRowState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl LazyRowState {
-    pub fn new() -> Self {
-        Self {
-            scroll_offset: signal(0.0),
-            viewport_width: signal(600.0),
-            content_width: signal(0.0),
-            physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
-        }
-    }
-
-    pub fn set_offset(&self, off: f32, content_width: f32) {
-        let vw = self.viewport_width.get();
-        let max_off = (content_width - vw).max(0.0);
-        self.scroll_offset.set(off.clamp(0.0, max_off));
-    }
-
-    pub fn scroll_immediate(&self, delta_px: f32, content_width_px: f32) -> f32 {
-        let before = self.scroll_offset.get();
-        let viewport = self.viewport_width.get();
-        let max_offset = (content_width_px - viewport).max(0.0);
-        let new_offset = (before + delta_px).clamp(0.0, max_offset);
-        self.scroll_offset.set(new_offset);
-        let consumed = new_offset - before;
-        self.physics.borrow_mut().record_input(consumed);
-        delta_px - consumed
-    }
-
-    pub fn tick(&self, content_width_px: f32) -> bool {
-        let viewport = self.viewport_width.get();
-        let max_offset = (content_width_px - viewport).max(0.0);
-        let mut p = self.physics.borrow_mut();
-        if let Some(new_off) = p.tick_integrate(self.scroll_offset.get(), 0.0, max_offset) {
-            drop(p);
-            self.scroll_offset.set(new_off);
-            true
-        } else {
-            false
-        }
-    }
-}
 
 /// Virtualized horizontal list - only renders visible items.
 ///
@@ -804,73 +603,12 @@ where
     .with_children(vec![content])
 }
 
-/// State for a virtualized staggered scrolling grid.
-pub struct LazyVerticalStaggeredGridState {
-    scroll_offset: Signal<f32>,
-    viewport_height: Signal<f32>,
-    content_height: Signal<f32>,
-    physics: RefCell<ScrollPhysics>,
-}
-
-impl Default for LazyVerticalStaggeredGridState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl LazyVerticalStaggeredGridState {
-    pub fn new() -> Self {
-        Self {
-            scroll_offset: signal(0.0),
-            viewport_height: signal(600.0),
-            content_height: signal(0.0),
-            physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
-        }
-    }
-
-    pub fn set_offset(&self, off: f32, content_height: f32) {
-        let vh = self.viewport_height.get();
-        let max_off = (content_height - vh).max(0.0);
-        self.scroll_offset.set(off.clamp(0.0, max_off));
-    }
-
-    pub fn scroll_immediate(&self, delta_px: f32, content_height_px: f32) -> f32 {
-        let before = self.scroll_offset.get();
-        let viewport = self.viewport_height.get();
-        let max_offset = (content_height_px - viewport).max(0.0);
-        let new_offset = (before + delta_px).clamp(0.0, max_offset);
-        self.scroll_offset.set(new_offset);
-        let consumed = new_offset - before;
-        self.physics.borrow_mut().record_input(consumed);
-        delta_px - consumed
-    }
-
-    pub fn tick(&self, content_height_px: f32) -> bool {
-        let viewport = self.viewport_height.get();
-        let max_offset = (content_height_px - viewport).max(0.0);
-        let mut p = self.physics.borrow_mut();
-        if let Some(new_off) = p.tick_integrate(self.scroll_offset.get(), 0.0, max_offset) {
-            drop(p);
-            self.scroll_offset.set(new_off);
-            true
-        } else {
-            false
-        }
-    }
-}
-
-/// Pre-computed placement for an item in a staggered grid.
 struct StaggeredPlacement {
-    /// Which column this item occupies (0..columns).
     col: usize,
-    /// Vertical offset from the top of the grid content (px).
     y_px: f32,
-    /// Height of this item (px).
     h_px: f32,
 }
 
-/// Compute staggered grid placements for all items.
-/// Uses the "shortest column" algorithm to balance items across columns.
 fn compute_staggered_placements(
     heights_px: &[f32],
     columns: usize,
@@ -879,7 +617,6 @@ fn compute_staggered_placements(
     let mut placements = Vec::with_capacity(heights_px.len());
     let mut col_heights = vec![0.0_f32; columns];
     for (i, h) in heights_px.iter().enumerate() {
-        // Find shortest column
         let col = col_heights
             .iter()
             .enumerate()
@@ -935,14 +672,12 @@ where
     let gap_dp = modifier.row_gap.or(modifier.gap).unwrap_or(0.0);
     let gap_px = dp_to_px(gap_dp);
 
-    // Compute heights in px
     let heights_px: Vec<f32> = items
         .iter()
         .map(|it| dp_to_px(item_height_dp(it).max(1.0)))
         .collect();
     let placements = compute_staggered_placements(&heights_px, columns, gap_px);
 
-    // Compute total content height
     let total_content_height_px = placements
         .iter()
         .map(|p| p.y_px + p.h_px)
@@ -978,9 +713,6 @@ where
     let first_idx = first_visible.saturating_sub(buffer);
     let last_idx = (last_visible + buffer).min(items.len());
 
-    // Build per-column children with spacers for staggered positioning.
-    // Every item in [first_idx, last_idx) gets a placeholder so column heights
-    // match total_content_height_px - prevents scroll boundary from jumping.
     let mut col_children: Vec<Vec<View>> = (0..columns).map(|_| Vec::new()).collect();
     for col in 0..columns {
         let mut prev_y = 0.0_f32;
@@ -1008,7 +740,6 @@ where
                             .child(item_builder(item.clone(), i)),
                     );
                 } else {
-                    // Placeholder to maintain column height
                     col_children[col]
                         .push(crate::Box(Modifier::new().fill_max_width().height(h_dp)));
                 }

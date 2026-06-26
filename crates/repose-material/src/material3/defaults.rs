@@ -428,6 +428,9 @@ impl NavigationBarDefaults {
     pub fn indicator_color() -> Color {
         theme().primary
     }
+    pub const ITEM_HORIZONTAL_PADDING: f32 = 4.0;
+    pub const ITEM_VERTICAL_PADDING: f32 = 6.0;
+    pub const INDICATOR_RADIUS: f32 = 16.0;
 }
 
 /// Default values for navigation rail.
@@ -447,6 +450,7 @@ impl NavigationRailDefaults {
     pub fn selected_container_color() -> Color {
         theme().secondary_container
     }
+    pub const ITEM_RADIUS: f32 = 16.0;
 }
 
 /// Default values for segmented button.
