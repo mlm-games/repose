@@ -15,8 +15,9 @@ fn vs_main(
     @location(1) start_angle: f32,
     @location(2) sweep_angle: f32,
     @location(3) stroke_ndc: f32,
-    @location(4) color: vec4<f32>,
-    @location(5) sin_cos: vec2<f32>,
+    @location(4) pad: f32,
+    @location(5) color: vec4<f32>,
+    @location(6) sin_cos: vec2<f32>,
     @builtin(vertex_index) v: u32
 ) -> VSOut {
     var positions = array<vec2<f32>, 6>(
@@ -25,7 +26,9 @@ fn vs_main(
     );
     let p = positions[v];
     let half = 0.5 * xywh.zw;
-    let corner = (p * 2.0 - 1.0) * half;
+    // Expand quad to accommodate the full stroke width + AA
+    let quad_half = half + pad;
+    let corner = (p * 2.0 - 1.0) * quad_half;
     let rotated = vec2(corner.x * sin_cos.x - corner.y * sin_cos.y, corner.x * sin_cos.y + corner.y * sin_cos.x);
     let pos_ndc = xywh.xy + rotated;
 
@@ -94,14 +97,15 @@ fn arc_coverage(angle: f32, start: f32, sweep: f32, half_px: f32) -> f32 {
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let d = sdf_ellipse(in.pos_ndc, in.xywh, in.sin_cos);
-    let w = max(fwidth(d), 1e-5);
+    let grad = vec2(dpdx(d), dpdy(d));
+    let w = max(length(grad), 1e-5);
     let half_px = 0.5 * in.stroke_ndc;
     let half = half_px * w;
     let stroke_cov = 1.0 - smoothstep(-w, w, abs(d) - half);
 
     let angle = local_angle(in.pos_ndc, in.xywh, in.sin_cos);
     let angle_w = max(length(fwidth(in.pos_ndc)) / length(in.xywh.zw), 1e-4);
-    let angle_cov = arc_coverage(angle, in.start_angle, in.sweep_angle, angle_w * 0.5);
+    let angle_cov = arc_coverage(angle, in.start_angle, in.sweep_angle, angle_w * 2.0);
 
     let alpha_cov = stroke_cov * angle_cov;
     let a = in.color.a * alpha_cov;

@@ -538,7 +538,7 @@ where
                     .collect()
             })
             .collect();
-        let col_mod = Modifier::new().fill_max_height();
+        let col_mod = Modifier::new().fill_max_height().width(item_width_dp);
         let rg = modifier.row_gap.or(modifier.gap).unwrap_or(0.0);
         let cols: Vec<View> = chunked
             .into_iter()

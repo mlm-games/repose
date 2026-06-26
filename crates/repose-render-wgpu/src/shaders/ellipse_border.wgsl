@@ -11,8 +11,9 @@ struct VSOut {
 fn vs_main(
     @location(0) xywh: vec4<f32>,
     @location(1) stroke_ndc: f32,
-    @location(2) color: vec4<f32>,
-    @location(3) sin_cos: vec2<f32>,
+    @location(2) pad: f32,
+    @location(3) color: vec4<f32>,
+    @location(4) sin_cos: vec2<f32>,
     @builtin(vertex_index) v: u32
 ) -> VSOut {
     var positions = array<vec2<f32>, 6>(
@@ -21,7 +22,8 @@ fn vs_main(
     );
     let p = positions[v];
     let half = 0.5 * xywh.zw;
-    let corner = (p * 2.0 - 1.0) * half;
+    let quad_half = half + pad;
+    let corner = (p * 2.0 - 1.0) * quad_half;
     let rotated = vec2(corner.x * sin_cos.x - corner.y * sin_cos.y, corner.x * sin_cos.y + corner.y * sin_cos.x);
     let pos_ndc = xywh.xy + rotated;
 
@@ -49,7 +51,8 @@ fn sdf_ellipse(pos_ndc: vec2<f32>, xywh: vec4<f32>, sin_cos: vec2<f32>) -> f32 {
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let d = sdf_ellipse(in.pos_ndc, in.xywh, in.sin_cos);
-    let w = max(fwidth(d), 1e-5);
+    let grad = vec2(dpdx(d), dpdy(d));
+    let w = max(length(grad), 1e-5);
 
     let half_px = 0.5 * in.stroke_ndc;
     let half = half_px * w;

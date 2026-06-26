@@ -383,11 +383,16 @@ impl Pipelines {
             wgpu::VertexAttribute {
                 shader_location: 2,
                 offset: 20,
-                format: wgpu::VertexFormat::Float32x4,
+                format: wgpu::VertexFormat::Float32,
             },
             wgpu::VertexAttribute {
                 shader_location: 3,
-                offset: 36,
+                offset: 24,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 4,
+                offset: 40,
                 format: wgpu::VertexFormat::Float32x2,
             },
         ];
@@ -426,11 +431,16 @@ impl Pipelines {
             wgpu::VertexAttribute {
                 shader_location: 4,
                 offset: 28,
-                format: wgpu::VertexFormat::Float32x4,
+                format: wgpu::VertexFormat::Float32,
             },
             wgpu::VertexAttribute {
                 shader_location: 5,
-                offset: 44,
+                offset: 32,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 6,
+                offset: 48,
                 format: wgpu::VertexFormat::Float32x2,
             },
         ];
@@ -938,6 +948,7 @@ struct EllipseInstance {
 struct EllipseBorderInstance {
     xywh: [f32; 4],
     stroke: f32,
+    pad: f32,
     color: [f32; 4],
     sin_cos: [f32; 2],
 }
@@ -949,6 +960,7 @@ struct ArcInstance {
     start_angle: f32,
     sweep_angle: f32,
     stroke: f32,
+    pad: f32,
     color: [f32; 4],
     sin_cos: [f32; 2],
 }
@@ -2631,9 +2643,12 @@ impl RenderBackend for WgpuBackend {
                         current_target_size.0,
                         current_target_size.1,
                     );
+                    let pad_px = *width * 0.5 + 2.0;
+                    let pad = (pad_px / current_target_size.0) * 2.0;
                     batch.e_borders.push(EllipseBorderInstance {
                         xywh: ndc,
                         stroke: *width,
+                        pad,
                         color: color.to_linear(),
                         sin_cos,
                     });
@@ -2646,11 +2661,14 @@ impl RenderBackend for WgpuBackend {
                         current_target_size.0,
                         current_target_size.1,
                     );
+                    let pad_px = *stroke_width * 0.5 + 2.0;
+                    let pad = (pad_px / current_target_size.0) * 2.0;
                     batch.arcs.push(ArcInstance {
                         xywh: ndc,
                         start_angle: *start_angle,
                         sweep_angle: *sweep_angle,
                         stroke: *stroke_width,
+                        pad,
                         color: color.to_linear(),
                         sin_cos,
                     });
