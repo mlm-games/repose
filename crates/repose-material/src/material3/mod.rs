@@ -2045,8 +2045,6 @@ pub fn DatePicker(
                             let is_today =
                                 today.0 == year && today.1 == month && today.2 == day_num as u32;
                             let s = state.clone();
-                            let on_confirm = on_confirm.clone();
-                            let on_dismiss_fn = on_dismiss.clone();
                             week.push(
                                 Box(Modifier::new()
                                     .width(40.0)
@@ -2062,8 +2060,6 @@ pub fn DatePicker(
                                     .clickable()
                                     .on_pointer_down(move |_| {
                                         s.day.set(day_num as u32);
-                                        on_confirm(s.year.get(), s.month.get(), day_num as u32);
-                                        on_dismiss_fn();
                                     }))
                                 .child({
                                     let mut t = Text(day_num.to_string())
@@ -2282,10 +2278,13 @@ pub fn TimePicker(
             Box(Modifier::new()
                 .padding(8.0)
                 .clickable()
-                .on_pointer_down(move |_| {
-                    let (h, m) = state.selected_time();
-                    on_confirm(h, m);
-                    on_dismiss();
+                .on_pointer_down({
+                    let on_confirm = on_confirm.clone();
+                    let state = state.clone();
+                    move |_| {
+                        let (h, m) = state.selected_time();
+                        on_confirm(h, m);
+                    }
                 }))
             .child(
                 Text("OK")

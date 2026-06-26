@@ -5,10 +5,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
 use repose_ui::overlay::OverlayHandle;
-use repose_ui::{Box, ViewExt, ZStack};
+use repose_ui::{Box, Column, Row, Spacer, Text, ViewExt, ZStack};
 use web_time::Duration;
 
-use super::AlertDialogDefaults;
+use super::{AlertDialogDefaults, Button, ButtonConfig, TextButton};
+use super::{DatePicker, DatePickerState};
+use super::{TimePicker, TimePickerState};
 
 static DIALOG_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -190,5 +192,49 @@ pub fn AlertDialog(
             .max_width(config.max_width)
             .then(config.modifier),
         super::alert_dialog_body(title, text, confirm_button, dismiss_button),
+    )
+}
+
+/// M3 Date Picker Dialog - wraps [`DatePicker`] inside a modal [`Dialog`]
+/// with confirm/cancel buttons. Equivalent to Compose's `DatePickerDialog`.
+///
+/// The `on_confirm` callback fires when a day is clicked or the OK button is pressed.
+/// The `on_dismiss` fires on Cancel or scrim tap.
+pub fn DatePickerDialog(
+    state: Rc<DialogState>,
+    overlay: OverlayHandle,
+    picker_state: Rc<DatePickerState>,
+    on_confirm: Rc<dyn Fn(i32, u32, u32)>,
+    on_dismiss: Rc<dyn Fn()>,
+) -> View {
+    Dialog(
+        state,
+        overlay,
+        Modifier::new(),
+        Column(Modifier::new()).child((
+            DatePicker(picker_state.clone(), on_confirm, on_dismiss),
+        )),
+    )
+}
+
+/// M3 Time Picker Dialog - wraps [`TimePicker`] inside a modal [`Dialog`]
+/// with confirm/cancel buttons. Equivalent to Compose's `TimePickerDialog`.
+///
+/// The `on_confirm` callback fires when OK is pressed.
+/// The `on_dismiss` fires on Cancel or scrim tap.
+pub fn TimePickerDialog(
+    state: Rc<DialogState>,
+    overlay: OverlayHandle,
+    picker_state: Rc<TimePickerState>,
+    on_confirm: Rc<dyn Fn(u32, u32)>,
+    on_dismiss: Rc<dyn Fn()>,
+) -> View {
+    Dialog(
+        state,
+        overlay,
+        Modifier::new(),
+        Column(Modifier::new()).child((
+            TimePicker(picker_state.clone(), on_confirm, on_dismiss),
+        )),
     )
 }

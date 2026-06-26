@@ -1,13 +1,15 @@
 use std::rc::Rc;
 
 use repose_core::prelude::*;
-use repose_material::material3::dialog::{Dialog, DialogState};
+use repose_material::material3::dialog::{
+    DatePickerDialog, DialogState, TimePickerDialog,
+};
 use repose_material::material3::{
     BottomSheet, BottomSheetConfig, ButtonConfig, CircularProgressIndicator,
-    CircularProgressIndicatorConfig, DatePicker, DatePickerState, DropdownMenu, DropdownMenuConfig,
+    CircularProgressIndicatorConfig, DatePickerState, DropdownMenu, DropdownMenuConfig,
     DropdownMenuEntry, DropdownMenuItem, Button, LinearProgressIndicator,
     LinearProgressIndicatorConfig, MenuState, ModalBottomSheet, NavRailItem, NavigationRail,
-    NavigationRailConfig, SheetState, TextButton, TimePicker, TimePickerState,
+    NavigationRailConfig, SheetState, TextButton, TimePickerState,
 };
 use repose_material::{Icon, material_symbols};
 
@@ -25,26 +27,6 @@ use repose_ui::{
 use web_time::Duration;
 
 use crate::ui::{Page, Section, sp};
-
-/// Overlay-backed dialog driven by a one-shot "show" request.
-/// `content` receives a shared dismiss callback for OK/Cancel wiring.
-fn picker_dialog(
-    overlay: OverlayHandle,
-    show_requested: bool,
-    consume_request: impl Fn() + 'static,
-    content: impl FnOnce(Rc<dyn Fn()>) -> View,
-) -> View {
-    let state = remember(DialogState::new);
-    if show_requested {
-        state.show();
-        consume_request();
-    }
-    let dismiss: Rc<dyn Fn()> = Rc::new({
-        let s = state.clone();
-        move || s.dismiss()
-    });
-    Dialog(state.clone(), overlay, Modifier::new(), content(dismiss))
-}
 
 fn rail_item(
     label: &str,
@@ -71,10 +53,10 @@ pub fn screen(overlay: OverlayHandle) -> View {
 
     // Date / time picker state
     let date_state = remember(|| DatePickerState::new(2026, 5, 29));
-    let show_date_picker = remember(|| signal(false));
+    let date_dialog_state = remember(DialogState::new);
     let date_result = remember(|| signal("Not set".to_string()));
     let time_state = remember(|| TimePickerState::new(14, 30));
-    let show_time_picker = remember(|| signal(false));
+    let time_dialog_state = remember(DialogState::new);
     let time_result = remember(|| signal("Not set".to_string()));
 
     use repose_core::animation::KeyframesSpec;
@@ -212,8 +194,8 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 Button(
                     Modifier::new(),
                     {
-                        let s = show_date_picker.clone();
-                        move || s.set(true)
+                        let s = date_dialog_state.clone();
+                        move || s.show()
                     },
                     ButtonConfig::default(),
                     || Text("Pick Date"),
@@ -224,8 +206,8 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 Button(
                     Modifier::new(),
                     {
-                        let s = show_time_picker.clone();
-                        move || s.set(true)
+                        let s = time_dialog_state.clone();
+                        move || s.show()
                     },
                     ButtonConfig::default(),
                     || Text("Pick Time"),
@@ -233,55 +215,39 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 Text(format!("Time: {}", time_result.get()))
                     .color(th.on_surface)
                     .size(th.typography.body_medium),
-                picker_dialog(
+                DatePickerDialog(
+                    date_dialog_state.clone(),
                     overlay.clone(),
-                    show_date_picker.get(),
-                    {
-                        let s = show_date_picker.clone();
-                        move || s.set(false)
-                    },
-                    |dismiss| {
-                        DatePicker(
-                            date_state.clone(),
-                            Rc::new({
-                                let r = date_result.clone();
-                                let dismiss = dismiss.clone();
-                                move |y, m, d| {
-                                    r.set(format!("{}-{:02}-{:02}", y, m, d));
-                                    dismiss();
-                                }
-                            }),
-                            Rc::new({
-                                let dismiss = dismiss.clone();
-                                move || dismiss()
-                            }),
-                        )
-                    },
+                    date_state.clone(),
+                    Rc::new({
+                        let r = date_result.clone();
+                        let s = date_dialog_state.clone();
+                        move |y, m, d| {
+                            r.set(format!("{}-{:02}-{:02}", y, m, d));
+                            s.dismiss();
+                        }
+                    }),
+                    Rc::new({
+                        let s = date_dialog_state.clone();
+                        move || s.dismiss()
+                    }),
                 ),
-                picker_dialog(
+                TimePickerDialog(
+                    time_dialog_state.clone(),
                     overlay.clone(),
-                    show_time_picker.get(),
-                    {
-                        let s = show_time_picker.clone();
-                        move || s.set(false)
-                    },
-                    |dismiss| {
-                        TimePicker(
-                            time_state.clone(),
-                            Rc::new({
-                                let r = time_result.clone();
-                                let dismiss = dismiss.clone();
-                                move |h, m| {
-                                    r.set(format!("{:02}:{:02}", h, m));
-                                    dismiss();
-                                }
-                            }),
-                            Rc::new({
-                                let dismiss = dismiss.clone();
-                                move || dismiss()
-                            }),
-                        )
-                    },
+                    time_state.clone(),
+                    Rc::new({
+                        let r = time_result.clone();
+                        let s = time_dialog_state.clone();
+                        move |h, m| {
+                            r.set(format!("{:02}:{:02}", h, m));
+                            s.dismiss();
+                        }
+                    }),
+                    Rc::new({
+                        let s = time_dialog_state.clone();
+                        move || s.dismiss()
+                    }),
                 ),
             )),
         ),
