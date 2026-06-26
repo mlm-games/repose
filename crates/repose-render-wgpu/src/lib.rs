@@ -114,6 +114,7 @@ pub struct WgpuBackend {
     borders: InstancedPipe<BorderInstance>,
     ellipses: InstancedPipe<EllipseInstance>,
     ellipse_borders: InstancedPipe<EllipseBorderInstance>,
+    arcs: InstancedPipe<ArcInstance>,
     glyph_mask: InstancedPipe<GlyphInstance>,
     glyph_color: InstancedPipe<GlyphInstance>,
 
@@ -205,6 +206,7 @@ struct Pipelines {
     borders: wgpu::RenderPipeline,
     ellipses: wgpu::RenderPipeline,
     ellipse_borders: wgpu::RenderPipeline,
+    arcs: wgpu::RenderPipeline,
     text_mask: wgpu::RenderPipeline,
     text_color: wgpu::RenderPipeline,
     image_rgba: wgpu::RenderPipeline,
@@ -399,6 +401,41 @@ impl Pipelines {
             EllipseBorderInstance,
             ellipse_border_attrs
         );
+
+        let arc_attrs: &[wgpu::VertexAttribute] = &[
+            wgpu::VertexAttribute {
+                shader_location: 0,
+                offset: 0,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 1,
+                offset: 16,
+                format: wgpu::VertexFormat::Float32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 2,
+                offset: 20,
+                format: wgpu::VertexFormat::Float32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 3,
+                offset: 24,
+                format: wgpu::VertexFormat::Float32,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 4,
+                offset: 28,
+                format: wgpu::VertexFormat::Float32x4,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 5,
+                offset: 44,
+                format: wgpu::VertexFormat::Float32x2,
+            },
+        ];
+
+        make_content_pipeline!(arcs, "arc", ArcInstance, arc_attrs);
 
         // Text (mask)
         let text_mask_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -708,6 +745,7 @@ impl Pipelines {
             borders,
             ellipses,
             ellipse_borders,
+            arcs,
             text_mask,
             text_color,
             image_rgba,
@@ -754,6 +792,10 @@ enum Cmd {
         cnt: u32,
     },
     EllipseBorder {
+        off: u64,
+        cnt: u32,
+    },
+    Arc {
         off: u64,
         cnt: u32,
     },
@@ -895,6 +937,17 @@ struct EllipseInstance {
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct EllipseBorderInstance {
     xywh: [f32; 4],
+    stroke: f32,
+    color: [f32; 4],
+    sin_cos: [f32; 2],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct ArcInstance {
+    xywh: [f32; 4],
+    start_angle: f32,
+    sweep_angle: f32,
     stroke: f32,
     color: [f32; 4],
     sin_cos: [f32; 2],
@@ -1269,6 +1322,7 @@ impl WgpuBackend {
         let ring_border = UploadRing::new(&device, "ring border", 1 << 20);
         let ring_ellipse = UploadRing::new(&device, "ring ellipse", 1 << 20);
         let ring_ellipse_border = UploadRing::new(&device, "ring ellipse border", 1 << 20);
+        let ring_arc = UploadRing::new(&device, "ring arc", 1 << 20);
         let ring_glyph_mask = UploadRing::new(&device, "ring glyph mask", 1 << 20);
         let ring_glyph_color = UploadRing::new(&device, "ring glyph color", 1 << 20);
         let ring_slug = UploadRing::new(&device, "ring slug", 1 << 22);
@@ -1306,6 +1360,7 @@ impl WgpuBackend {
             borders: InstancedPipe::new(ring_border),
             ellipses: InstancedPipe::new(ring_ellipse),
             ellipse_borders: InstancedPipe::new(ring_ellipse_border),
+            arcs: InstancedPipe::new(ring_arc),
             glyph_mask: InstancedPipe::new(ring_glyph_mask),
             glyph_color: InstancedPipe::new(ring_glyph_color),
 
@@ -2367,6 +2422,7 @@ impl RenderBackend for WgpuBackend {
             borders: Vec<BorderInstance>,
             ellipses: Vec<EllipseInstance>,
             e_borders: Vec<EllipseBorderInstance>,
+            arcs: Vec<ArcInstance>,
             masks: Vec<GlyphInstance>,
             colors: Vec<GlyphInstance>,
             nv12s: Vec<Nv12Instance>,
@@ -2379,6 +2435,7 @@ impl RenderBackend for WgpuBackend {
                     borders: vec![],
                     ellipses: vec![],
                     e_borders: vec![],
+                    arcs: vec![],
                     masks: vec![],
                     colors: vec![],
                     nv12s: vec![],
@@ -2390,6 +2447,7 @@ impl RenderBackend for WgpuBackend {
                     && self.borders.is_empty()
                     && self.ellipses.is_empty()
                     && self.e_borders.is_empty()
+                    && self.arcs.is_empty()
                     && self.masks.is_empty()
                     && self.colors.is_empty()
                     && self.nv12s.is_empty()
@@ -2402,6 +2460,7 @@ impl RenderBackend for WgpuBackend {
                     &mut InstancedPipe<BorderInstance>,
                     &mut InstancedPipe<EllipseInstance>,
                     &mut InstancedPipe<EllipseBorderInstance>,
+                    &mut InstancedPipe<ArcInstance>,
                 ),
                 glyph_pipes: (
                     &mut InstancedPipe<GlyphInstance>,
@@ -2412,7 +2471,7 @@ impl RenderBackend for WgpuBackend {
                 queue: &wgpu::Queue,
                 cmds: &mut Vec<Cmd>,
             ) {
-                let (rects, borders, ellipses, e_borders) = pipes;
+                let (rects, borders, ellipses, e_borders, arcs) = pipes;
                 let (masks, colors) = glyph_pipes;
 
                 macro_rules! flush_one {
@@ -2430,6 +2489,7 @@ impl RenderBackend for WgpuBackend {
                 flush_one!(borders, borders, Border);
                 flush_one!(ellipses, ellipses, Ellipse);
                 flush_one!(e_borders, e_borders, EllipseBorder);
+                flush_one!(arcs, arcs, Arc);
                 flush_one!(masks, masks, GlyphsMask);
                 flush_one!(colors, colors, GlyphsColor);
 
@@ -2446,6 +2506,7 @@ impl RenderBackend for WgpuBackend {
         self.borders.reset();
         self.ellipses.reset();
         self.ellipse_borders.reset();
+        self.arcs.reset();
         self.glyph_mask.reset();
         self.glyph_color.reset();
         self.clip_ring.reset();
@@ -2484,6 +2545,7 @@ impl RenderBackend for WgpuBackend {
                             &mut self.borders,
                             &mut self.ellipses,
                             &mut self.ellipse_borders,
+                            &mut self.arcs,
                         ),
                         (&mut self.glyph_mask, &mut self.glyph_color),
                         &mut self.nv12,
@@ -2572,6 +2634,23 @@ impl RenderBackend for WgpuBackend {
                     batch.e_borders.push(EllipseBorderInstance {
                         xywh: ndc,
                         stroke: *width,
+                        color: color.to_linear(),
+                        sin_cos,
+                    });
+                }
+                SceneNode::Arc { rect, start_angle, sweep_angle, stroke_width, color } => {
+                    flush_if_prim_changed!("arc", &self.arcs);
+                    let (ndc, sin_cos) = rect_to_instance_ndc(
+                        *rect,
+                        current_transform,
+                        current_target_size.0,
+                        current_target_size.1,
+                    );
+                    batch.arcs.push(ArcInstance {
+                        xywh: ndc,
+                        start_angle: *start_angle,
+                        sweep_angle: *sweep_angle,
+                        stroke: *stroke_width,
                         color: color.to_linear(),
                         sin_cos,
                     });
@@ -3357,6 +3436,16 @@ impl RenderBackend for WgpuBackend {
                             &pipes.ellipse_borders,
                             self.ellipse_borders.ring,
                             EllipseBorderInstance,
+                            off,
+                            n
+                        );
+                    }
+
+                    Cmd::Arc { off, cnt: n } => {
+                        draw_simple!(
+                            &pipes.arcs,
+                            self.arcs.ring,
+                            ArcInstance,
                             off,
                             n
                         );

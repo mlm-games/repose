@@ -1390,8 +1390,6 @@ impl Default for CircularProgressIndicatorConfig {
     }
 }
 
-/// Draw a sweep arc of the circle from 12 o'clock clockwise, using
-/// 4-quadrant rectangular clips to reveal the border portion.
 fn draw_sweep_arc(
     scene: &mut Scene,
     cx: f32, cy: f32, r: f32,
@@ -1400,58 +1398,16 @@ fn draw_sweep_arc(
     color: Color,
 ) {
     if progress <= 0.0 { return; }
-    let circle = Rect { x: cx - r, y: cy - r, w: r * 2.0, h: r * 2.0 };
-    if progress >= 1.0 {
-        scene.nodes.push(SceneNode::EllipseBorder { rect: circle, color, width: stroke });
-        return;
-    }
-
-    let p = progress;
-    let circle_node = || SceneNode::EllipseBorder { rect: circle, color, width: stroke };
-
-    // Q1: 12→3 o'clock — vertical strip growing rightward from cx
-    let f1 = (p / 0.25).min(1.0);
-    if f1 > 0.0 {
-        scene.nodes.push(SceneNode::PushClip {
-            rect: Rect { x: cx, y: cy - r, w: r * f1, h: r },
-            radius: 0.0,
-        });
-        (circle_node)();
-        scene.nodes.push(SceneNode::PopClip);
-    }
-
-    // Q2: 3→6 o'clock — horizontal strip growing downward from cy
-    let f2 = ((p - 0.25) / 0.25).max(0.0).min(1.0);
-    if f2 > 0.0 {
-        scene.nodes.push(SceneNode::PushClip {
-            rect: Rect { x: cx, y: cy, w: r, h: r * f2 },
-            radius: 0.0,
-        });
-        (circle_node)();
-        scene.nodes.push(SceneNode::PopClip);
-    }
-
-    // Q3: 6→9 o'clock — vertical strip growing leftward from cx
-    let f3 = ((p - 0.5) / 0.25).max(0.0).min(1.0);
-    if f3 > 0.0 {
-        scene.nodes.push(SceneNode::PushClip {
-            rect: Rect { x: cx - r * f3, y: cy, w: r * f3, h: r },
-            radius: 0.0,
-        });
-        (circle_node)();
-        scene.nodes.push(SceneNode::PopClip);
-    }
-
-    // Q4: 9→12 o'clock — horizontal strip growing upward from cy
-    let f4 = ((p - 0.75) / 0.25).max(0.0).min(1.0);
-    if f4 > 0.0 {
-        scene.nodes.push(SceneNode::PushClip {
-            rect: Rect { x: cx, y: cy - r * f4, w: r, h: r * f4 },
-            radius: 0.0,
-        });
-        (circle_node)();
-        scene.nodes.push(SceneNode::PopClip);
-    }
+    let sweep_rad = progress * std::f32::consts::TAU;
+    let start_angle = -std::f32::consts::FRAC_PI_2;
+    let rect = Rect { x: cx - r, y: cy - r, w: r * 2.0, h: r * 2.0 };
+    scene.nodes.push(SceneNode::Arc {
+        rect,
+        start_angle,
+        sweep_angle: sweep_rad,
+        stroke_width: stroke,
+        color,
+    });
 }
 
 /// M3 Circular Progress Indicator.
@@ -1499,18 +1455,17 @@ pub fn CircularProgressIndicator(
                     draw_sweep_arc(scene, cx, cy, r, stroke_px, p, mul_c(config.color));
                 }
                 None => {
-                    // Indeterminate: rotating 270° arc
+                    // Indeterminate: rotating 270° arc (animate start_angle, not rotation)
                     let radians = rot_angle * std::f32::consts::PI / 180.0;
-                    scene.nodes.push(SceneNode::PushTransform {
-                        transform: Transform {
-                            translate_x: cx,
-                            translate_y: cy,
-                            scale_x: 1.0, scale_y: 1.0,
-                            rotate: radians,
-                        },
+                    let start_angle = -std::f32::consts::FRAC_PI_2 + radians;
+                    let sweep_rad = 0.75 * std::f32::consts::TAU;
+                    scene.nodes.push(SceneNode::Arc {
+                        rect: circle,
+                        start_angle,
+                        sweep_angle: sweep_rad,
+                        stroke_width: stroke_px,
+                        color: mul_c(config.color),
                     });
-                    draw_sweep_arc(scene, 0.0, 0.0, r, stroke_px, 0.75, mul_c(config.color));
-                    scene.nodes.push(SceneNode::PopTransform);
                 }
             }
         }))
@@ -1520,51 +1475,6 @@ pub fn CircularProgressIndicator(
         focused: false,
         enabled: true,
     })
-}
-
-fn draw_sweep_for_linear(
-    scene: &mut Scene,
-    rect: Rect,
-    color: Color,
-    corner: f32,
-    t: f32,
-    gap: f32,
-    dot_r: f32,
-) {
-    // Indicator (active portion from left)
-    if t > 0.0 {
-        let ind_w = t * rect.w;
-        scene.nodes.push(SceneNode::Rect {
-            rect: Rect { x: rect.x, y: rect.y + rect.h * 0.5 - corner, w: ind_w, h: corner * 2.0 },
-            brush: Brush::Solid(color),
-            radius: corner,
-        });
-    }
-
-    // Track (inactive portion after gap)
-    let track_start = rect.x + t * rect.w + gap;
-    let track_w = (rect.x + rect.w - track_start).max(0.0);
-    if t < 1.0 && track_w > 0.0 {
-        scene.nodes.push(SceneNode::Rect {
-            rect: Rect {
-                x: track_start,
-                y: rect.y + rect.h * 0.5 - corner,
-                w: track_w,
-                h: corner * 2.0,
-            },
-            brush: Brush::Solid(color),
-            radius: corner,
-        });
-    }
-
-    // Stop indicator dot at right end
-    if t < 1.0 && dot_r > 0.0 {
-        let sx = rect.x + rect.w - dot_r;
-        scene.nodes.push(SceneNode::Ellipse {
-            rect: Rect { x: sx - dot_r, y: rect.y + rect.h * 0.5 - dot_r, w: dot_r * 2.0, h: dot_r * 2.0 },
-            brush: Brush::Solid(color),
-        });
-    }
 }
 
 /// Configuration for [`LinearProgressIndicator`].

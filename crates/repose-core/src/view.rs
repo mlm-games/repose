@@ -309,6 +309,14 @@ pub enum SceneNode {
         offset_px: (f32, f32),
         color: Color,
     },
+    /// Arc stroke
+    Arc {
+        rect: Rect,
+        start_angle: f32,
+        sweep_angle: f32,
+        stroke_width: f32,
+        color: Color,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

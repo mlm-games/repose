@@ -51,7 +51,8 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let d = sdf_ellipse(in.pos_ndc, in.xywh, in.sin_cos);
     let w = max(fwidth(d), 1e-5);
 
-    let half = 0.5 * in.stroke_ndc;
+    let half_px = 0.5 * in.stroke_ndc;
+    let half = half_px * w;
     let alpha_cov = 1.0 - smoothstep(-w, w, abs(d) - half);
 
     let a = in.color.a * alpha_cov;
