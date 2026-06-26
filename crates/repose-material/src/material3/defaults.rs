@@ -656,3 +656,106 @@ impl AlertDialogDefaults {
         theme().scrim.with_alpha(170)
     }
 }
+
+/// Default values for outlined text field.
+pub struct OutlinedTextFieldDefaults;
+
+impl OutlinedTextFieldDefaults {
+    pub const MIN_HEIGHT: f32 = 56.0;
+    pub const MIN_WIDTH: f32 = 280.0;
+    pub const UNFOCUSED_BORDER_THICKNESS: f32 = 1.0;
+    pub const FOCUSED_BORDER_THICKNESS: f32 = 2.0;
+    pub const TEXT_FIELD_PADDING: f32 = 16.0;
+    pub const VERTICAL_PADDING_WITH_LABEL: f32 = 8.0;
+
+    pub fn label_color() -> Color { theme().on_surface_variant }
+    pub fn focused_label_color() -> Color { theme().primary }
+    pub fn error_label_color() -> Color { theme().error }
+    pub fn input_color() -> Color { theme().on_surface }
+    pub fn disabled_input_color() -> Color { theme().on_surface.with_alpha_f32(0.38) }
+    pub fn supporting_color() -> Color { theme().on_surface_variant }
+    pub fn placeholder_color() -> Color { theme().on_surface_variant }
+    pub fn leading_icon_color() -> Color { theme().on_surface_variant }
+    pub fn trailing_icon_color() -> Color { theme().on_surface_variant }
+    pub fn unfocused_border_color() -> Color { theme().outline }
+    pub fn focused_border_color() -> Color { theme().primary }
+    pub fn error_border_color() -> Color { theme().error }
+    pub fn cursor_color() -> Color { theme().primary }
+    pub fn container_color() -> Color { theme().surface }
+}
+
+/// Default values for date picker.
+pub struct DatePickerDefaults;
+
+impl DatePickerDefaults {
+    pub const CONTAINER_WIDTH: f32 = 360.0;
+    pub const CONTAINER_HEIGHT: f32 = 568.0;
+    pub const HEADER_CONTAINER_HEIGHT: f32 = 120.0;
+    pub const DATE_CELL_SIZE: f32 = 40.0;
+    pub const YEAR_CELL_HEIGHT: f32 = 36.0;
+    pub const YEAR_CELL_WIDTH: f32 = 72.0;
+    pub const TODAY_BORDER_WIDTH: f32 = 1.0;
+    pub const HORIZONTAL_PADDING: f32 = 12.0;
+
+    pub fn container_color() -> Color { theme().surface_container_high }
+    pub fn header_color() -> Color { theme().on_surface_variant }
+    pub fn weekday_color() -> Color { theme().on_surface }
+    pub fn day_color() -> Color { theme().on_surface }
+    pub fn selected_day_color() -> Color { theme().on_primary }
+    pub fn selected_day_container_color() -> Color { theme().primary }
+    pub fn today_content_color() -> Color { theme().primary }
+    pub fn today_border_color() -> Color { theme().primary }
+    pub fn year_selected_container_color() -> Color { theme().primary }
+    pub fn year_selected_content_color() -> Color { theme().on_primary }
+    pub fn year_unselected_content_color() -> Color { theme().on_surface_variant }
+}
+
+/// Default values for time picker.
+pub struct TimePickerDefaults;
+
+impl TimePickerDefaults {
+    pub const CLOCK_DIAL_CONTAINER_SIZE: f32 = 256.0;
+    pub const CLOCK_DIAL_MIN_CONTAINER_SIZE: f32 = 200.0;
+    pub const PERIOD_SELECTOR_HORIZONTAL_WIDTH: f32 = 216.0;
+    pub const PERIOD_SELECTOR_HORIZONTAL_HEIGHT: f32 = 38.0;
+    pub const PERIOD_SELECTOR_VERTICAL_WIDTH: f32 = 52.0;
+    pub const PERIOD_SELECTOR_VERTICAL_HEIGHT: f32 = 80.0;
+    pub const TIME_SELECTOR_CONTAINER_WIDTH: f32 = 96.0;
+    pub const TIME_SELECTOR_CONTAINER_HEIGHT: f32 = 80.0;
+    pub const TIME_SELECTOR_24H_WIDTH: f32 = 114.0;
+    pub const MAX_HEIGHT: f32 = 384.0;
+
+    pub fn clock_dial_color() -> Color { theme().surface_container_highest }
+    pub fn clock_dial_selected_content_color() -> Color { theme().on_primary }
+    pub fn clock_dial_unselected_content_color() -> Color { theme().on_surface }
+    pub fn selector_color() -> Color { theme().primary }
+    pub fn container_color() -> Color { theme().surface_container_high }
+    pub fn period_selector_selected_container_color() -> Color { theme().tertiary_container }
+    pub fn period_selector_selected_content_color() -> Color { theme().on_tertiary_container }
+    pub fn period_selector_unselected_content_color() -> Color { theme().on_surface_variant }
+    pub fn period_selector_border_color() -> Color { theme().outline }
+    pub fn time_selector_selected_container_color() -> Color { theme().primary_container }
+    pub fn time_selector_selected_content_color() -> Color { theme().on_primary_container }
+    pub fn time_selector_unselected_container_color() -> Color { theme().surface_container_highest }
+    pub fn time_selector_unselected_content_color() -> Color { theme().on_surface }
+    pub fn time_selector_separator_color() -> Color { theme().on_surface }
+}
+
+/// Default values for swipe-to-dismiss.
+pub struct SwipeToDismissDefaults;
+
+impl SwipeToDismissDefaults {
+    pub const POSITIONAL_THRESHOLD: f32 = 56.0;
+    pub const DISMISS_THRESHOLD: f32 = 150.0;
+    pub const DISMISSED_OFFSET: f32 = 300.0;
+    pub const MAX_WIDTH: f32 = 400.0;
+}
+
+/// Default values for carousel.
+pub struct CarouselDefaults;
+
+impl CarouselDefaults {
+    pub const MIN_SMALL_ITEM_SIZE: f32 = 40.0;
+    pub const MAX_SMALL_ITEM_SIZE: f32 = 56.0;
+    pub const ANCHOR_SIZE: f32 = 10.0;
+}
