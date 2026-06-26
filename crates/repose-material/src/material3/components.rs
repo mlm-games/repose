@@ -1396,6 +1396,7 @@ fn draw_sweep_arc(
     stroke: f32,
     progress: f32,
     color: Color,
+    cap: StrokeCap,
 ) {
     if progress <= 0.0 { return; }
     let sweep_rad = progress * std::f32::consts::TAU;
@@ -1407,6 +1408,7 @@ fn draw_sweep_arc(
         sweep_angle: sweep_rad,
         stroke_width: stroke,
         color,
+        cap,
     });
 }
 
@@ -1452,7 +1454,7 @@ pub fn CircularProgressIndicator(
 
             match val {
                 Some(p) => {
-                    draw_sweep_arc(scene, cx, cy, r, stroke_px, p, mul_c(config.color));
+                    draw_sweep_arc(scene, cx, cy, r, stroke_px, p, mul_c(config.color), StrokeCap::Round);
                 }
                 None => {
                     // Indeterminate: rotating 270° arc (animate start_angle, not rotation)
@@ -1465,6 +1467,7 @@ pub fn CircularProgressIndicator(
                         sweep_angle: sweep_rad,
                         stroke_width: stroke_px,
                         color: mul_c(config.color),
+                        cap: StrokeCap::Round,
                     });
                 }
             }

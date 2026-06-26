@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use repose_core::request_frame;
-use repose_core::{Brush, GlyphRasterConfig, RenderBackend, Scene, SceneNode, Transform};
+use repose_core::{Brush, GlyphRasterConfig, RenderBackend, Scene, SceneNode, StrokeCap, Transform};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use wgpu::Instance;
 
@@ -442,6 +442,11 @@ impl Pipelines {
                 shader_location: 6,
                 offset: 48,
                 format: wgpu::VertexFormat::Float32x2,
+            },
+            wgpu::VertexAttribute {
+                shader_location: 7,
+                offset: 56,
+                format: wgpu::VertexFormat::Float32,
             },
         ];
 
@@ -963,6 +968,7 @@ struct ArcInstance {
     pad: f32,
     color: [f32; 4],
     sin_cos: [f32; 2],
+    cap: f32, // 0=Butt, 1=Round, 2=Square
 }
 
 #[repr(C)]
@@ -2653,7 +2659,7 @@ impl RenderBackend for WgpuBackend {
                         sin_cos,
                     });
                 }
-                SceneNode::Arc { rect, start_angle, sweep_angle, stroke_width, color } => {
+                SceneNode::Arc { rect, start_angle, sweep_angle, stroke_width, color, cap } => {
                     flush_if_prim_changed!("arc", &self.arcs);
                     let (ndc, sin_cos) = rect_to_instance_ndc(
                         *rect,
@@ -2663,6 +2669,11 @@ impl RenderBackend for WgpuBackend {
                     );
                     let pad_px = *stroke_width * 0.5 + 2.0;
                     let pad = (pad_px / current_target_size.0) * 2.0;
+                    let cap_val = match cap {
+                        StrokeCap::Butt => 0.0,
+                        StrokeCap::Round => 1.0,
+                        StrokeCap::Square => 2.0,
+                    };
                     batch.arcs.push(ArcInstance {
                         xywh: ndc,
                         start_angle: *start_angle,
@@ -2671,6 +2682,7 @@ impl RenderBackend for WgpuBackend {
                         pad,
                         color: color.to_linear(),
                         sin_cos,
+                        cap: cap_val,
                     });
                 }
                 SceneNode::Text {

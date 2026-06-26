@@ -316,6 +316,7 @@ pub enum SceneNode {
         sweep_angle: f32,
         stroke_width: f32,
         color: Color,
+        cap: StrokeCap,
     },
 }
 
@@ -325,6 +326,21 @@ pub enum TextOverflow {
     Visible,
     Clip,
     Ellipsis,
+}
+
+/// Controls how the endpoints of a stroked arc are drawn.
+/// Mirrors [`StrokeCap`](https://developer.android.com/reference/kotlin/androidx/compose/ui/graphics/StrokeCap)
+/// in Compose.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum StrokeCap {
+    /// Flat ends at the exact arc endpoint. No extension.
+    Butt,
+    /// Semicircle with diameter equal to the stroke width, centered at the
+    /// arc endpoint.
+    Round,
+    /// Flat-ended rectangle extending half the stroke width beyond the arc
+    /// endpoint.
+    Square,
 }
 
 #[cfg(test)]
