@@ -64,6 +64,27 @@ impl SpringSpec {
     }
 }
 
+/// A cubic bezier curve with control points (p1x, p1y), (p2x, p2y).
+/// P0 = (0, 0) and P3 = (1, 1) are fixed.
+#[derive(Clone, Copy, Debug)]
+pub struct CubicBezier {
+    pub p1x: f32,
+    pub p1y: f32,
+    pub p2x: f32,
+    pub p2y: f32,
+}
+
+impl CubicBezier {
+    pub const fn new(p1x: f32, p1y: f32, p2x: f32, p2y: f32) -> Self {
+        Self { p1x, p1y, p2x, p2y }
+    }
+}
+
+/// Compose Material3 EmphasizedDecelerate: cubic-bezier(0.05, 0.7, 0.1, 1.0).
+pub const EASING_EMPHASIZED_DECELERATE: CubicBezier = CubicBezier::new(0.05, 0.7, 0.1, 1.0);
+/// Compose Material3 StandardDecelerate: cubic-bezier(0.2, 0.0, 0.0, 1.0).
+pub const EASING_STANDARD_DECELERATE: CubicBezier = CubicBezier::new(0.2, 0.0, 0.0, 1.0);
+
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub enum Easing {
@@ -82,6 +103,8 @@ pub enum Easing {
     /// Android FastOutSlowIn: cubic-bezier(0.4, 0.0, 0.2, 1.0).
     /// Starts fast, decelerates through the middle, ends slow.
     FastOutSlowIn,
+    /// Custom cubic-bezier easing with control points (p1x, p1y), (p2x, p2y).
+    Custom(CubicBezier),
 }
 
 impl Easing {
@@ -106,6 +129,7 @@ impl Easing {
             Easing::SpringGentle => spring_underdamped_normalized(t, 0.5, 8.0),
             Easing::SpringBouncy => spring_underdamped_normalized(t, 0.2, 12.0),
             Easing::FastOutSlowIn => eval_cubic_bezier(0.4, 0.0, 0.2, 1.0, t),
+            Easing::Custom(cb) => eval_cubic_bezier(cb.p1x, cb.p1y, cb.p2x, cb.p2y, t),
         }
     }
 }

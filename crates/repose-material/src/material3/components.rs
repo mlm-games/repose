@@ -5,9 +5,9 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use web_time::Duration;
 
-use repose_core::animation::{AnimationSpec, Easing, RepeatableSpec};
+use repose_core::animation::{AnimationSpec, CubicBezier, Easing, RepeatableSpec};
 use repose_core::*;
-use repose_ui::anim::{animate_color, animate_f32, animate_f32_from};
+use repose_ui::anim::{animate_color, animate_f32};
 use repose_ui::{Box, Column, Row, Stack, Text, TextStyle, ViewExt};
 
 use super::*;
@@ -1424,16 +1424,76 @@ pub fn CircularProgressIndicator(
     let stroke_px = dp_to_px(ProgressIndicatorDefaults::CIRCULAR_STROKE_WIDTH);
     let val = value.map(|v| v.clamp(0.0, 1.0));
 
-    // Indeterminate: animate rotation from 0 to 360 degrees
-    let rot_angle = if value.is_none() {
-        animate_f32_from(
-            "circ_ind_rot",
-            0.0, 360.0,
-            AnimationSpec::tween(Duration::from_millis(2000), Easing::Linear)
-                .repeated(RepeatableSpec::infinite()),
-        )
+    // Three concurrent animations matching Compose Material3 indeterminate spec:
+    //   1. Global rotation — 1080° linear over 6000ms
+    //   2. Additional rotation — 90° stepped jumps with EmphasizedDecelerate
+    //   3. Sweep — oscillates 0.1 → 0.87 → 0.1 over 6000ms
+    let (global_rotation, additional_rotation, sweep_val) = if value.is_none() {
+        let anim_global = remember_state_with_key("circ_ind_global_rot", || {
+            let mut a = AnimatedValue::new(
+                0.0f32,
+                AnimationSpec::tween(Duration::from_millis(6000), Easing::Linear)
+                    .repeated(RepeatableSpec::infinite()),
+            );
+            a.set_target(1080.0);
+            a
+        });
+        let mut a = anim_global.borrow_mut();
+        a.update();
+        let gv = *a.get();
+        drop(a);
+
+        let anim_add = remember_state_with_key("circ_ind_add_rot", || {
+            let mut a = AnimatedValue::new(
+                0.0f32,
+                AnimationSpec::tween(Duration::from_millis(6000), Easing::Linear)
+                    .repeated(RepeatableSpec::infinite()),
+            );
+            let emph = Easing::Custom(CubicBezier::new(0.05, 0.7, 0.1, 1.0));
+            a.set_keyframes(KeyframesSpec {
+                keyframes: vec![
+                    (0.0, 0.0, None),
+                    (0.05, 90.0, Some(emph)),
+                    (0.25, 90.0, None),
+                    (0.30, 180.0, Some(emph)),
+                    (0.50, 180.0, None),
+                    (0.55, 270.0, Some(emph)),
+                    (0.75, 270.0, None),
+                    (0.80, 360.0, Some(emph)),
+                    (1.0, 360.0, None),
+                ],
+            });
+            a
+        });
+        let mut a = anim_add.borrow_mut();
+        a.update();
+        let av = *a.get();
+        drop(a);
+
+        let anim_sweep = remember_state_with_key("circ_ind_sweep", || {
+            let mut a = AnimatedValue::new(
+                0.1f32,
+                AnimationSpec::tween(Duration::from_millis(6000), Easing::Linear)
+                    .repeated(RepeatableSpec::infinite()),
+            );
+            let std_dec = Easing::Custom(CubicBezier::new(0.2, 0.0, 0.0, 1.0));
+            a.set_keyframes(KeyframesSpec {
+                keyframes: vec![
+                    (0.0, 0.1, None),
+                    (0.5, 0.87, Some(std_dec)),
+                    (1.0, 0.1, None),
+                ],
+            });
+            a
+        });
+        let mut a = anim_sweep.borrow_mut();
+        a.update();
+        let sv = *a.get();
+        drop(a);
+
+        (gv, av, sv)
     } else {
-        0.0
+        (0.0, 0.0, 0.0)
     };
 
     Box(Modifier::new()
@@ -1457,10 +1517,9 @@ pub fn CircularProgressIndicator(
                     draw_sweep_arc(scene, cx, cy, r, stroke_px, p, mul_c(config.color), StrokeCap::Round);
                 }
                 None => {
-                    // Indeterminate: rotating 270° arc (animate start_angle, not rotation)
-                    let radians = rot_angle * std::f32::consts::PI / 180.0;
+                    let radians = (global_rotation + additional_rotation) * std::f32::consts::PI / 180.0;
                     let start_angle = -std::f32::consts::FRAC_PI_2 + radians;
-                    let sweep_rad = 0.75 * std::f32::consts::TAU;
+                    let sweep_rad = sweep_val * std::f32::consts::TAU;
                     scene.nodes.push(SceneNode::Arc {
                         rect: circle,
                         start_angle,
