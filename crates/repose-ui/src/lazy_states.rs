@@ -82,6 +82,8 @@ pub struct LazyGridState {
     pub(crate) scroll_offset: Signal<f32>,
     pub(crate) viewport_height: Signal<f32>,
     pub(crate) content_height: Signal<f32>,
+    pub(crate) viewport_width: Signal<f32>,
+    pub(crate) content_width: Signal<f32>,
     pub(crate) physics: RefCell<ScrollPhysics>,
 }
 
@@ -97,6 +99,8 @@ impl LazyGridState {
             scroll_offset: signal(0.0),
             viewport_height: signal(600.0),
             content_height: signal(0.0),
+            viewport_width: signal(600.0),
+            content_width: signal(0.0),
             physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
         }
     }
@@ -121,6 +125,36 @@ impl LazyGridState {
     pub fn tick(&self, content_height_px: f32) -> bool {
         let viewport = self.viewport_height.get();
         let max_offset = (content_height_px - viewport).max(0.0);
+        let mut p = self.physics.borrow_mut();
+        if let Some(new_off) = p.tick_integrate(self.scroll_offset.get(), 0.0, max_offset) {
+            drop(p);
+            self.scroll_offset.set(new_off);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn set_offset_x(&self, off: f32, content_width: f32) {
+        let vw = self.viewport_width.get();
+        let max_off = (content_width - vw).max(0.0);
+        self.scroll_offset.set(off.clamp(0.0, max_off));
+    }
+
+    pub fn scroll_immediate_x(&self, delta_px: f32, content_width_px: f32) -> f32 {
+        let before = self.scroll_offset.get();
+        let viewport = self.viewport_width.get();
+        let max_offset = (content_width_px - viewport).max(0.0);
+        let new_offset = (before + delta_px).clamp(0.0, max_offset);
+        self.scroll_offset.set(new_offset);
+        let consumed = new_offset - before;
+        self.physics.borrow_mut().record_input(consumed);
+        delta_px - consumed
+    }
+
+    pub fn tick_x(&self, content_width_px: f32) -> bool {
+        let viewport = self.viewport_width.get();
+        let max_offset = (content_width_px - viewport).max(0.0);
         let mut p = self.physics.borrow_mut();
         if let Some(new_off) = p.tick_integrate(self.scroll_offset.get(), 0.0, max_offset) {
             drop(p);

@@ -467,9 +467,161 @@ where
     .with_children(vec![content])
 }
 
-/// State for a horizontal lazy list (`LazyRow`).
+/// Virtualized horizontally-scrolling grid with a fixed number of rows.
 ///
-/// Tracks scroll offset, viewport width, content width, and inertial physics.
+/// Items are arranged top-to-bottom, left-to-right. Only items visible in the
+/// viewport (plus a buffer) are rendered. Each item has the same width (`item_width_dp`).
+///
+/// # Example
+/// ```ignore
+/// let state = Rc::new(LazyGridState::new());
+/// LazyHorizontalGrid(
+///     3,                          // rows
+///     items,                      // Vec<MyItem>
+///     100.0,                      // item width in dp
+///     state,
+///     Modifier::new().fill_max_size().gap(8.0),
+///     |item, index| Card(Modifier::new().fill_max_height(), Text(format!("Item {index}"))),
+/// )
+/// ```
+#[allow(non_snake_case)]
+pub fn LazyHorizontalGrid<T, F>(
+    rows: usize,
+    items: Vec<T>,
+    item_width_dp: f32,
+    state: Rc<LazyGridState>,
+    modifier: Modifier,
+    item_builder: F,
+) -> View
+where
+    T: Clone + 'static,
+    F: Fn(T, usize) -> View + 'static,
+{
+    let rows = rows.max(1);
+    let item_w_px = dp_to_px(item_width_dp).max(1.0);
+    let total_items = items.len();
+    let total_cols = total_items.div_ceil(rows);
+    let content_width_px = total_cols as f32 * item_w_px;
+
+    let scroll_offset_px = state.scroll_offset.get();
+    let viewport_width_px = state.viewport_width.get();
+
+    let buffer_cols = 2usize;
+    let first_col = ((scroll_offset_px / item_w_px).floor().max(0.0)) as usize;
+    let first_col = first_col.saturating_sub(buffer_cols);
+    let last_col = (((scroll_offset_px + viewport_width_px) / item_w_px).ceil() as usize
+        + buffer_cols)
+        .min(total_cols);
+
+    let first_item = first_col * rows;
+    let last_item = (last_col * rows).min(total_items);
+
+    let mut children: Vec<View> = Vec::new();
+
+    if first_col > 0 {
+        children.push(crate::Box(
+            Modifier::new()
+                .fill_max_height()
+                .width(first_col as f32 * item_width_dp),
+        ));
+    }
+
+    if first_item < last_item {
+        let visible_count = last_item - first_item;
+        let total_chunks = visible_count.div_ceil(rows);
+        let chunked: Vec<Vec<View>> = (0..total_chunks)
+            .map(|ci| {
+                let start = first_item + ci * rows;
+                let end = (start + rows).min(last_item);
+                (start..end)
+                    .map(|i| item_builder(items[i].clone(), i))
+                    .collect()
+            })
+            .collect();
+        let col_mod = Modifier::new().fill_max_height();
+        let rg = modifier.row_gap.or(modifier.gap).unwrap_or(0.0);
+        let cols: Vec<View> = chunked
+            .into_iter()
+            .map(|col_items| crate::Column(col_mod.clone().align_items(AlignItems::Stretch).row_gap(rg)).with_children(col_items))
+            .collect();
+        let cg = modifier.column_gap.or(modifier.gap).unwrap_or(0.0);
+        children.push(crate::Row(Modifier::new().column_gap(cg).fill_max_height()).with_children(cols));
+    }
+
+    if last_col < total_cols {
+        children.push(crate::Box(
+            Modifier::new()
+                .fill_max_height()
+                .width((total_cols - last_col) as f32 * item_width_dp),
+        ));
+    }
+
+    let on_scroll = {
+        let st = state.clone();
+        Rc::new(move |d: Vec2| -> Vec2 {
+            let cw = st.content_width.get();
+            let cw = if cw > 0.0 { cw } else { content_width_px };
+            Vec2 {
+                x: st.scroll_immediate_x(d.x, cw),
+                y: d.y,
+            }
+        })
+    };
+
+    let set_viewport_w = {
+        let st = state.clone();
+        Rc::new(move |w: f32| st.viewport_width.set(w.max(0.0)))
+    };
+
+    let set_content_w = {
+        let st = state.clone();
+        Rc::new(move |w: f32| {
+            st.content_width.set(w);
+            st.set_offset_x(st.scroll_offset.get(), w);
+        })
+    };
+
+    let get_scroll = {
+        let st = state.clone();
+        Rc::new(move || -> (f32, f32) { (st.scroll_offset.get(), 0.0) })
+    };
+
+    let set_scroll = {
+        let st = state.clone();
+        Rc::new(move |x: f32, _y: f32| {
+            let cw = st.content_width.get();
+            st.set_offset_x(x, if cw > 0.0 { cw } else { content_width_px });
+        })
+    };
+
+    let tick_scroll = {
+        let st = state.clone();
+        Rc::new(move || {
+            let cw = st.content_width.get();
+            let cw = if cw > 0.0 { cw } else { content_width_px };
+            st.tick_x(cw);
+        })
+    };
+
+    let content = crate::Row(Modifier::new().fill_max_height()).with_children(children);
+
+    View::new(
+        0,
+        ViewKind::ScrollXY {
+            on_scroll: Some(on_scroll),
+            set_viewport_width: Some(set_viewport_w),
+            set_viewport_height: None,
+            set_content_width: Some(set_content_w),
+            set_content_height: None,
+            get_scroll_offset_xy: Some(get_scroll),
+            set_scroll_offset_xy: Some(set_scroll),
+            show_scrollbar: true,
+            tick_scroll: Some(tick_scroll),
+        },
+    )
+    .modifier(modifier)
+    .with_children(vec![content])
+}
 
 /// Virtualized horizontal list - only renders visible items.
 ///

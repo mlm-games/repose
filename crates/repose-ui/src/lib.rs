@@ -113,7 +113,7 @@ pub mod lazy;
 pub mod selection;
 pub mod subcompose;
 pub use lazy::{
-    LazyColumn, LazyRow, LazyVerticalGrid,
+    LazyColumn, LazyHorizontalGrid, LazyRow, LazyVerticalGrid,
     LazyVerticalStaggeredGrid, SimpleList,
 };
 pub mod lazy_states;
