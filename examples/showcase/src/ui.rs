@@ -5,7 +5,7 @@ use std::rc::Rc;
 use repose_core::prelude::*;
 use repose_material::material3::dialog::{Dialog, DialogState};
 use repose_material::material3::{
-    ElevatedCard, FilledCard, IconButton, IconButtonConfig, M3Slider, SliderConfig, Switch, SwitchConfig,
+    Card, CardConfig, ElevatedCard, IconButton, IconButtonConfig, M3Slider, SliderConfig, Switch, SwitchConfig,
 };
 use repose_material::{Icon, material_symbols};
 use repose_navigation::Navigator;
@@ -193,11 +193,13 @@ pub fn TopBar(overlay: OverlayHandle, vm: SettingsVm) -> View {
 
 pub fn NavRail(current: Route, nav: Navigator<Route>) -> View {
     let th = theme();
-    FilledCard(
-        Modifier::new()
+    Card(CardConfig {
+        modifier: Modifier::new()
             .width(220.0)
             .fill_max_height()
             .padding(sp::SM),
+        ..Default::default()
+    }, ||
         Column(Modifier::new().fill_max_size().gap(2.0)).child(
             std::iter::once(
                 Text("Navigation")

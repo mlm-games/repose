@@ -1455,11 +1455,11 @@ pub fn CircularProgressIndicator(
                     (0.0, 0.0, None),
                     (0.05, 90.0, Some(emph)),
                     (0.25, 90.0, None),
-                    (0.30, 180.0, Some(emph)),
+                    (0.30, 180.0, None),
                     (0.50, 180.0, None),
-                    (0.55, 270.0, Some(emph)),
+                    (0.55, 270.0, None),
                     (0.75, 270.0, None),
-                    (0.80, 360.0, Some(emph)),
+                    (0.80, 360.0, None),
                     (1.0, 360.0, None),
                 ],
             });
@@ -2662,6 +2662,8 @@ pub struct CardConfig {
     pub container_color: Color,
     pub shape_radius: f32,
     pub tonal_elevation: f32,
+    pub state_elevation: Option<StateElevation>,
+    pub border: Option<(f32, Color)>,
 }
 
 impl Default for CardConfig {
@@ -2671,6 +2673,8 @@ impl Default for CardConfig {
             container_color: CardDefaults::filled_container_color(),
             shape_radius: CardDefaults::SHAPE_RADIUS,
             tonal_elevation: CardDefaults::ELEVATION,
+            state_elevation: None,
+            border: None,
         }
     }
 }
@@ -2681,7 +2685,12 @@ pub fn Card(config: CardConfig, content: impl FnOnce() -> View) -> View {
         .background(config.container_color)
         .clip_rounded(config.shape_radius)
         .then(config.modifier);
-    if config.tonal_elevation > 0.0 {
+    if let Some((w, c)) = config.border {
+        m = m.border(w, c, config.shape_radius);
+    }
+    if let Some(se) = config.state_elevation {
+        m = m.state_elevation(se);
+    } else if config.tonal_elevation > 0.0 {
         m = m.state_elevation(StateElevation {
             default: config.tonal_elevation,
             hovered: config.tonal_elevation,
@@ -2692,49 +2701,30 @@ pub fn Card(config: CardConfig, content: impl FnOnce() -> View) -> View {
     Box(m).child(content())
 }
 
-/// Convenience Card - filled variant using default config.
-pub fn FilledCard(modifier: Modifier, content: View) -> View {
-    let config = CardConfig::default();
-    Card(CardConfig {
-        modifier: modifier.then(config.modifier),
-        ..config
-    }, || Column(Modifier::new().fill_max_size()).child(content))
-}
-
 /// M3 Elevated Card - card with elevation.
 pub fn ElevatedCard(modifier: Modifier, content: View) -> View {
     let th = theme();
-    let config = CardConfig {
+    Card(CardConfig {
+        modifier,
         container_color: CardDefaults::elevated_container_color(),
-        ..Default::default()
-    };
-    Box(modifier
-        .state_elevation(StateElevation {
-            default: config.tonal_elevation,
+        state_elevation: Some(StateElevation {
+            default: th.elevation.level1,
             hovered: th.elevation.level2,
             pressed: th.elevation.level3,
             disabled: 0.0,
-        })
-        .background(config.container_color)
-        .clip_rounded(config.shape_radius))
-    .child(Column(Modifier::new().fill_max_size()).child(content))
+        }),
+        ..Default::default()
+    }, || Column(Modifier::new().fill_max_size()).child(content))
 }
 
 /// M3 Outlined Card - card with border outline.
 pub fn OutlinedCard(modifier: Modifier, content: View) -> View {
-    let config = CardConfig {
+    Card(CardConfig {
+        modifier,
         container_color: CardDefaults::outlined_container_color(),
+        border: Some((1.0, CardDefaults::outlined_border_color())),
         ..Default::default()
-    };
-    Box(modifier
-        .background(config.container_color)
-        .clip_rounded(config.shape_radius)
-        .border(
-            1.0,
-            CardDefaults::outlined_border_color(),
-            config.shape_radius,
-        ))
-    .child(Column(Modifier::new().fill_max_size()).child(content))
+    }, || Column(Modifier::new().fill_max_size()).child(content))
 }
 
 fn card_state_colors(bg: Color) -> StateColors {
@@ -2747,58 +2737,72 @@ fn card_state_colors(bg: Color) -> StateColors {
     }
 }
 
-/// M3 Clickable Filled Card - interactive card with state coloring.
-pub fn ClickableCard(on_click: impl Fn() + 'static, modifier: Modifier, content: View) -> View {
-    let th = theme();
-    let bg = th.surface_container_highest;
-    Box(modifier
+fn clickable_card_impl(
+    on_click: impl Fn() + 'static,
+    modifier: Modifier,
+    bg: Color,
+    shape_radius: f32,
+    config: CardConfig,
+    content: impl FnOnce() -> View,
+) -> View {
+    let m = modifier
         .state_colors(card_state_colors(bg))
         .clickable()
-        .on_pointer_down(move |_| on_click())
-        .background(bg)
-        .clip_rounded(th.shapes.medium))
-    .child(Column(Modifier::new().fill_max_size()).child(content))
+        .on_pointer_down(move |_| on_click());
+    Card(CardConfig {
+        modifier: m,
+        container_color: bg,
+        shape_radius,
+        border: config.border,
+        state_elevation: config.state_elevation,
+        tonal_elevation: config.tonal_elevation,
+    }, || Column(Modifier::new().fill_max_size()).child(content()))
+}
+
+/// M3 Clickable Filled Card - interactive card with state coloring.
+pub fn ClickableCard(
+    on_click: impl Fn() + 'static,
+    modifier: Modifier,
+    config: CardConfig,
+    content: impl FnOnce() -> View,
+) -> View {
+    let th = theme();
+    clickable_card_impl(on_click, modifier, th.surface_container_highest, th.shapes.medium, config, content)
 }
 
 /// M3 Clickable Elevated Card - interactive card with elevation.
 pub fn ClickableElevatedCard(
     on_click: impl Fn() + 'static,
     modifier: Modifier,
-    content: View,
+    config: CardConfig,
+    content: impl FnOnce() -> View,
 ) -> View {
     let th = theme();
-    let bg = th.surface;
-    Box(modifier
-        .state_colors(card_state_colors(bg))
-        .state_elevation(StateElevation {
+    let cfg = CardConfig {
+        state_elevation: Some(StateElevation {
             default: th.elevation.level1,
             hovered: th.elevation.level2,
             pressed: th.elevation.level3,
             disabled: 0.0,
-        })
-        .clickable()
-        .on_pointer_down(move |_| on_click())
-        .background(bg)
-        .clip_rounded(th.shapes.medium))
-    .child(Column(Modifier::new().fill_max_size()).child(content))
+        }),
+        ..config
+    };
+    clickable_card_impl(on_click, modifier, th.surface, th.shapes.medium, cfg, content)
 }
 
 /// M3 Clickable Outlined Card - interactive card with border.
 pub fn ClickableOutlinedCard(
     on_click: impl Fn() + 'static,
     modifier: Modifier,
-    content: View,
+    config: CardConfig,
+    content: impl FnOnce() -> View,
 ) -> View {
     let th = theme();
-    let bg = th.surface;
-    Box(modifier
-        .state_colors(card_state_colors(bg))
-        .clickable()
-        .on_pointer_down(move |_| on_click())
-        .background(bg)
-        .clip_rounded(th.shapes.medium)
-        .border(1.0, th.outline_variant, th.shapes.medium))
-    .child(Column(Modifier::new().fill_max_size()).child(content))
+    let cfg = CardConfig {
+        border: Some((1.0, th.outline_variant)),
+        ..config
+    };
+    clickable_card_impl(on_click, modifier, th.surface, th.shapes.medium, cfg, content)
 }
 
 /// Configuration for [`Snackbar`].
