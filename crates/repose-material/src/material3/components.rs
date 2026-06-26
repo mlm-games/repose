@@ -55,7 +55,12 @@ pub struct WindowInsets {
 
 impl Default for WindowInsets {
     fn default() -> Self {
-        Self { top: 0.0, bottom: 0.0, left: 0.0, right: 0.0 }
+        Self {
+            top: 0.0,
+            bottom: 0.0,
+            left: 0.0,
+            right: 0.0,
+        }
     }
 }
 
@@ -109,13 +114,21 @@ fn top_app_bar_layout(
                 bottom: 0.0,
             })
             .flex_grow(1.0))
-        .child(with_content_color(config.colors.title_content_color, || title)),
+        .child(with_content_color(
+            config.colors.title_content_color,
+            || title,
+        )),
         Row(Modifier::new()
             .align_items(AlignItems::Center)
             .clip_rounded(20.0))
-        .child(actions.into_iter().map(|a| {
-            with_content_color(config.colors.action_icon_content_color, move || a.clone())
-        }).collect::<Vec<_>>()),
+        .child(
+            actions
+                .into_iter()
+                .map(|a| {
+                    with_content_color(config.colors.action_icon_content_color, move || a.clone())
+                })
+                .collect::<Vec<_>>(),
+        ),
     ))
 }
 
@@ -1011,12 +1024,18 @@ impl Default for DividerConfig {
 }
 
 /// M3 Horizontal Divider - a thin 1dp line.
-pub fn Divider(config: DividerConfig) -> View {
+/// (Equivalent to Compose Material3's `HorizontalDivider`.)
+pub fn HorizontalDivider(config: DividerConfig) -> View {
     Box(Modifier::new()
         .min_width(200.0)
         .height(config.thickness)
         .background(config.color)
         .then(config.modifier))
+}
+
+#[deprecated(since = "0.19.5", note = "renamed to HorizontalDivider")]
+pub fn Divider(config: DividerConfig) -> View {
+    HorizontalDivider(config)
 }
 
 /// M3 Vertical Divider - a thin 1dp vertical line.
@@ -1441,16 +1460,25 @@ impl Default for CircularProgressIndicatorConfig {
 
 fn draw_sweep_arc(
     scene: &mut Scene,
-    cx: f32, cy: f32, r: f32,
+    cx: f32,
+    cy: f32,
+    r: f32,
     stroke: f32,
     progress: f32,
     color: Color,
     cap: StrokeCap,
 ) {
-    if progress <= 0.0 { return; }
+    if progress <= 0.0 {
+        return;
+    }
     let sweep_rad = progress * std::f32::consts::TAU;
     let start_angle = -std::f32::consts::FRAC_PI_2;
-    let rect = Rect { x: cx - r, y: cy - r, w: r * 2.0, h: r * 2.0 };
+    let rect = Rect {
+        x: cx - r,
+        y: cy - r,
+        w: r * 2.0,
+        h: r * 2.0,
+    };
     scene.nodes.push(SceneNode::Arc {
         rect,
         start_angle,
@@ -1548,11 +1576,23 @@ pub fn CircularProgressIndicator(
     Box(Modifier::new()
         .size(sz, sz)
         .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
-            let mul_c = |c: Color| Color(c.0, c.1, c.2, ((c.3 as f32) * alpha).clamp(0.0, 255.0) as u8);
+            let mul_c = |c: Color| {
+                Color(
+                    c.0,
+                    c.1,
+                    c.2,
+                    ((c.3 as f32) * alpha).clamp(0.0, 255.0) as u8,
+                )
+            };
             let cx = rect.x + rect.w * 0.5;
             let cy = rect.y + rect.h * 0.5;
             let r = (rect.w.min(rect.h)) * 0.5 - stroke_px * 0.5;
-            let circle = Rect { x: cx - r, y: cy - r, w: r * 2.0, h: r * 2.0 };
+            let circle = Rect {
+                x: cx - r,
+                y: cy - r,
+                w: r * 2.0,
+                h: r * 2.0,
+            };
 
             // Track ring
             scene.nodes.push(SceneNode::EllipseBorder {
@@ -1563,10 +1603,20 @@ pub fn CircularProgressIndicator(
 
             match val {
                 Some(p) => {
-                    draw_sweep_arc(scene, cx, cy, r, stroke_px, p, mul_c(config.color), StrokeCap::Round);
+                    draw_sweep_arc(
+                        scene,
+                        cx,
+                        cy,
+                        r,
+                        stroke_px,
+                        p,
+                        mul_c(config.color),
+                        StrokeCap::Round,
+                    );
                 }
                 None => {
-                    let radians = (global_rotation + additional_rotation) * std::f32::consts::PI / 180.0;
+                    let radians =
+                        (global_rotation + additional_rotation) * std::f32::consts::PI / 180.0;
                     let start_angle = -std::f32::consts::FRAC_PI_2 + radians;
                     let sweep_rad = sweep_val * std::f32::consts::TAU;
                     scene.nodes.push(SceneNode::Arc {
@@ -1967,7 +2017,11 @@ pub fn TextField(
     } else {
         th.on_surface_variant
     };
-    let indicator_target_w = if config.enabled && indicator_is_active { 2.0 } else { 1.0 };
+    let indicator_target_w = if config.enabled && indicator_is_active {
+        2.0
+    } else {
+        1.0
+    };
     let indicator_w = animate_f32(
         format!("tf_ind_w_{}", anim_key),
         indicator_target_w,
@@ -1994,7 +2048,9 @@ pub fn TextField(
     let container_bg = if config.enabled {
         th.surface_container_highest
     } else {
-        th.on_surface.with_alpha_f32(0.04).composite_over(th.surface)
+        th.on_surface
+            .with_alpha_f32(0.04)
+            .composite_over(th.surface)
     };
 
     Box(modifier
@@ -2006,12 +2062,10 @@ pub fn TextField(
             Box(Modifier::new()
                 .fill_max_size()
                 .align_items(AlignItems::FlexEnd))
-            .child(
-                Box(Modifier::new()
-                    .fill_max_width()
-                    .height(indicator_w)
-                    .background(indicator_color)),
-            ),
+            .child(Box(Modifier::new()
+                .fill_max_width()
+                .height(indicator_w)
+                .background(indicator_color))),
             // Input row
             Row(Modifier::new()
                 .fill_max_size()
@@ -2222,12 +2276,20 @@ pub fn TriStateCheckbox(
     );
     let bd_w = animate_f32(
         format!("tc_bw_{}", id),
-        if has_fill { 0.0 } else { CheckboxDefaults::STROKE_WIDTH },
+        if has_fill {
+            0.0
+        } else {
+            CheckboxDefaults::STROKE_WIDTH
+        },
         spec,
     );
     let bd = animate_color(
         format!("tc_bd_{}", id),
-        if has_fill { Color::TRANSPARENT } else { config.unchecked_color },
+        if has_fill {
+            Color::TRANSPARENT
+        } else {
+            config.unchecked_color
+        },
         spec,
     );
     let symbol_alpha = animate_f32(
@@ -2245,11 +2307,13 @@ pub fn TriStateCheckbox(
         .clickable()
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
-        .on_pointer_down(move |_| on_change(match state {
-            TriState::Checked => TriState::Indeterminate,
-            TriState::Indeterminate => TriState::Unchecked,
-            TriState::Unchecked => TriState::Checked,
-        }))
+        .on_pointer_down(move |_| {
+            on_change(match state {
+                TriState::Checked => TriState::Indeterminate,
+                TriState::Indeterminate => TriState::Unchecked,
+                TriState::Unchecked => TriState::Checked,
+            })
+        })
         .then(config.modifier))
     .child(
         Box(Modifier::new()
@@ -2260,20 +2324,18 @@ pub fn TriStateCheckbox(
             .align_items(AlignItems::Center)
             .justify_content(JustifyContent::Center))
         .child(if symbol_alpha > 0.01 {
-            Box(Modifier::new().alpha(symbol_alpha)).child(
-                if is_indeterminate {
-                    // Dash for indeterminate
-                    Box(Modifier::new()
-                        .width(10.0)
-                        .height(2.0)
-                        .background(config.checkmark_color)
-                        .clip_rounded(1.0))
-                } else {
-                    Icon(Symbol::new("done", '\u{E876}'))
-                        .color(config.checkmark_color)
-                        .size(CheckboxDefaults::CHECK_ICON_SIZE)
-                },
-            )
+            Box(Modifier::new().alpha(symbol_alpha)).child(if is_indeterminate {
+                // Dash for indeterminate
+                Box(Modifier::new()
+                    .width(10.0)
+                    .height(2.0)
+                    .background(config.checkmark_color)
+                    .clip_rounded(1.0))
+            } else {
+                Icon(Symbol::new("done", '\u{E876}'))
+                    .color(config.checkmark_color)
+                    .size(CheckboxDefaults::CHECK_ICON_SIZE)
+            })
         } else {
             Box(Modifier::new())
         }),
@@ -3040,27 +3102,33 @@ pub fn Card(config: CardConfig, content: impl FnOnce() -> View) -> View {
 /// M3 Elevated Card - card with elevation.
 pub fn ElevatedCard(modifier: Modifier, content: View) -> View {
     let th = theme();
-    Card(CardConfig {
-        modifier,
-        container_color: CardDefaults::elevated_container_color(),
-        state_elevation: Some(StateElevation {
-            default: th.elevation.level1,
-            hovered: th.elevation.level2,
-            pressed: th.elevation.level3,
-            disabled: 0.0,
-        }),
-        ..Default::default()
-    }, || Column(Modifier::new().fill_max_size()).child(content))
+    Card(
+        CardConfig {
+            modifier,
+            container_color: CardDefaults::elevated_container_color(),
+            state_elevation: Some(StateElevation {
+                default: th.elevation.level1,
+                hovered: th.elevation.level2,
+                pressed: th.elevation.level3,
+                disabled: 0.0,
+            }),
+            ..Default::default()
+        },
+        || Column(Modifier::new().fill_max_size()).child(content),
+    )
 }
 
 /// M3 Outlined Card - card with border outline.
 pub fn OutlinedCard(modifier: Modifier, content: View) -> View {
-    Card(CardConfig {
-        modifier,
-        container_color: CardDefaults::outlined_container_color(),
-        border: Some((1.0, CardDefaults::outlined_border_color())),
-        ..Default::default()
-    }, || Column(Modifier::new().fill_max_size()).child(content))
+    Card(
+        CardConfig {
+            modifier,
+            container_color: CardDefaults::outlined_container_color(),
+            border: Some((1.0, CardDefaults::outlined_border_color())),
+            ..Default::default()
+        },
+        || Column(Modifier::new().fill_max_size()).child(content),
+    )
 }
 
 fn card_state_colors(bg: Color) -> StateColors {
@@ -3085,14 +3153,17 @@ fn clickable_card_impl(
         .state_colors(card_state_colors(bg))
         .clickable()
         .on_pointer_down(move |_| on_click());
-    Card(CardConfig {
-        modifier: m,
-        container_color: bg,
-        shape_radius,
-        border: config.border,
-        state_elevation: config.state_elevation,
-        tonal_elevation: config.tonal_elevation,
-    }, || Column(Modifier::new().fill_max_size()).child(content()))
+    Card(
+        CardConfig {
+            modifier: m,
+            container_color: bg,
+            shape_radius,
+            border: config.border,
+            state_elevation: config.state_elevation,
+            tonal_elevation: config.tonal_elevation,
+        },
+        || Column(Modifier::new().fill_max_size()).child(content()),
+    )
 }
 
 /// M3 Clickable Filled Card - interactive card with state coloring.
@@ -3103,7 +3174,14 @@ pub fn ClickableCard(
     content: impl FnOnce() -> View,
 ) -> View {
     let th = theme();
-    clickable_card_impl(on_click, modifier, th.surface_container_highest, th.shapes.medium, config, content)
+    clickable_card_impl(
+        on_click,
+        modifier,
+        th.surface_container_highest,
+        th.shapes.medium,
+        config,
+        content,
+    )
 }
 
 /// M3 Clickable Elevated Card - interactive card with elevation.
@@ -3123,7 +3201,14 @@ pub fn ClickableElevatedCard(
         }),
         ..config
     };
-    clickable_card_impl(on_click, modifier, th.surface, th.shapes.medium, cfg, content)
+    clickable_card_impl(
+        on_click,
+        modifier,
+        th.surface,
+        th.shapes.medium,
+        cfg,
+        content,
+    )
 }
 
 /// M3 Clickable Outlined Card - interactive card with border.
@@ -3138,7 +3223,14 @@ pub fn ClickableOutlinedCard(
         border: Some((1.0, th.outline_variant)),
         ..config
     };
-    clickable_card_impl(on_click, modifier, th.surface, th.shapes.medium, cfg, content)
+    clickable_card_impl(
+        on_click,
+        modifier,
+        th.surface,
+        th.shapes.medium,
+        cfg,
+        content,
+    )
 }
 
 /// Configuration for [`Snackbar`].
@@ -3567,5 +3659,3 @@ impl Default for PullToRefreshConfig {
         }
     }
 }
-
-
