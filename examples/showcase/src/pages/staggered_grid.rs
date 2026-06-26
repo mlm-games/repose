@@ -1,5 +1,6 @@
 use repose_core::{prelude::*, signal};
-use repose_ui::lazy::{LazyVerticalStaggeredGrid, LazyVerticalStaggeredGridState};
+use repose_ui::lazy::LazyVerticalStaggeredGrid;
+use repose_ui::LazyVerticalStaggeredGridState;
 use repose_ui::*;
 
 use crate::ui::DemoTile;

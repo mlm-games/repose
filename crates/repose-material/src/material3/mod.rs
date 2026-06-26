@@ -17,7 +17,8 @@ use web_time::Duration;
 use crate::{Icon, Symbol};
 use repose_core::animation::{AnimationSpec, Easing, RepeatableSpec};
 use repose_core::*;
-use repose_ui::lazy::{LazyRow, LazyRowState};
+use repose_ui::lazy::LazyRow;
+use repose_ui::LazyRowState;
 use repose_ui::{
     Box, Column, Row, Spacer, Stack, Text, TextField, TextStyle, ViewExt, ZStack,
     anim::{animate_color, animate_f32, animate_f32_from},

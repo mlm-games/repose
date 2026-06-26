@@ -3,10 +3,11 @@ use std::rc::Rc;
 use repose_core::prelude::*;
 use repose_material::material3::dialog::{Dialog, DialogState};
 use repose_material::material3::{
-    BottomSheet, BottomSheetConfig, ButtonConfig, DatePicker, DatePickerState, DropdownMenu,
-    DropdownMenuConfig, DropdownMenuEntry, DropdownMenuItem, FilledButton, MenuState,
-    ModalBottomSheet, NavRailItem, NavigationRail, NavigationRailConfig, SheetState, TextButton,
-    TimePicker, TimePickerState,
+    BottomSheet, BottomSheetConfig, ButtonConfig, CircularProgressIndicator,
+    CircularProgressIndicatorConfig, DatePicker, DatePickerState, DropdownMenu, DropdownMenuConfig,
+    DropdownMenuEntry, DropdownMenuItem, FilledButton, LinearProgressIndicator,
+    LinearProgressIndicatorConfig, MenuState, ModalBottomSheet, NavRailItem, NavigationRail,
+    NavigationRailConfig, SheetState, TextButton, TimePicker, TimePickerState,
 };
 use repose_material::{Icon, material_symbols};
 
@@ -348,6 +349,27 @@ pub fn screen(overlay: OverlayHandle) -> View {
                         NavigationRailConfig::default(),
                     ),
                 ),
+            )),
+        ),
+        Section(
+            "Progress Indicators",
+            Column(Modifier::new().padding(sp::MD).gap(sp::LG)).child((
+                Column(Modifier::new().gap(sp::SM)).child((
+                    Text("Circular (determinate, indeterminate)")
+                        .size(14.0)
+                        .color(th.on_surface_variant),
+                    Row(Modifier::new().gap(sp::MD).align_items(AlignItems::Center)).child((
+                        CircularProgressIndicator(Some(0.6), CircularProgressIndicatorConfig::default()),
+                        CircularProgressIndicator(None, CircularProgressIndicatorConfig::default()),
+                    )),
+                )),
+                Column(Modifier::new().gap(sp::SM)).child((
+                    Text("Linear (determinate, indeterminate)")
+                        .size(14.0)
+                        .color(th.on_surface_variant),
+                    LinearProgressIndicator(Some(0.4), LinearProgressIndicatorConfig::default()),
+                    LinearProgressIndicator(None, LinearProgressIndicatorConfig::default()),
+                )),
             )),
         ),
         Section(
