@@ -2692,6 +2692,115 @@ pub fn Card(config: CardConfig, content: impl FnOnce() -> View) -> View {
     Box(m).child(content())
 }
 
+/// Convenience Card - filled variant using default config.
+pub fn FilledCard(modifier: Modifier, content: View) -> View {
+    let config = CardConfig::default();
+    Card(CardConfig {
+        modifier: modifier.then(config.modifier),
+        ..config
+    }, || Column(Modifier::new().fill_max_size()).child(content))
+}
+
+/// M3 Elevated Card - card with elevation.
+pub fn ElevatedCard(modifier: Modifier, content: View) -> View {
+    let th = theme();
+    let config = CardConfig {
+        container_color: CardDefaults::elevated_container_color(),
+        ..Default::default()
+    };
+    Box(modifier
+        .state_elevation(StateElevation {
+            default: config.tonal_elevation,
+            hovered: th.elevation.level2,
+            pressed: th.elevation.level3,
+            disabled: 0.0,
+        })
+        .background(config.container_color)
+        .clip_rounded(config.shape_radius))
+    .child(Column(Modifier::new().fill_max_size()).child(content))
+}
+
+/// M3 Outlined Card - card with border outline.
+pub fn OutlinedCard(modifier: Modifier, content: View) -> View {
+    let config = CardConfig {
+        container_color: CardDefaults::outlined_container_color(),
+        ..Default::default()
+    };
+    Box(modifier
+        .background(config.container_color)
+        .clip_rounded(config.shape_radius)
+        .border(
+            1.0,
+            CardDefaults::outlined_border_color(),
+            config.shape_radius,
+        ))
+    .child(Column(Modifier::new().fill_max_size()).child(content))
+}
+
+fn card_state_colors(bg: Color) -> StateColors {
+    let th = theme();
+    StateColors {
+        default: Color::TRANSPARENT,
+        hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
+        pressed: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
+        disabled: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
+    }
+}
+
+/// M3 Clickable Filled Card - interactive card with state coloring.
+pub fn ClickableCard(on_click: impl Fn() + 'static, modifier: Modifier, content: View) -> View {
+    let th = theme();
+    let bg = th.surface_container_highest;
+    Box(modifier
+        .state_colors(card_state_colors(bg))
+        .clickable()
+        .on_pointer_down(move |_| on_click())
+        .background(bg)
+        .clip_rounded(th.shapes.medium))
+    .child(Column(Modifier::new().fill_max_size()).child(content))
+}
+
+/// M3 Clickable Elevated Card - interactive card with elevation.
+pub fn ClickableElevatedCard(
+    on_click: impl Fn() + 'static,
+    modifier: Modifier,
+    content: View,
+) -> View {
+    let th = theme();
+    let bg = th.surface;
+    Box(modifier
+        .state_colors(card_state_colors(bg))
+        .state_elevation(StateElevation {
+            default: th.elevation.level1,
+            hovered: th.elevation.level2,
+            pressed: th.elevation.level3,
+            disabled: 0.0,
+        })
+        .clickable()
+        .on_pointer_down(move |_| on_click())
+        .background(bg)
+        .clip_rounded(th.shapes.medium))
+    .child(Column(Modifier::new().fill_max_size()).child(content))
+}
+
+/// M3 Clickable Outlined Card - interactive card with border.
+pub fn ClickableOutlinedCard(
+    on_click: impl Fn() + 'static,
+    modifier: Modifier,
+    content: View,
+) -> View {
+    let th = theme();
+    let bg = th.surface;
+    Box(modifier
+        .state_colors(card_state_colors(bg))
+        .clickable()
+        .on_pointer_down(move |_| on_click())
+        .background(bg)
+        .clip_rounded(th.shapes.medium)
+        .border(1.0, th.outline_variant, th.shapes.medium))
+    .child(Column(Modifier::new().fill_max_size()).child(content))
+}
+
 /// Configuration for [`Snackbar`].
 #[derive(Clone, Debug)]
 pub struct SnackbarConfig {
@@ -3056,24 +3165,4 @@ impl Default for PullToRefreshConfig {
     }
 }
 
-/// Configuration for alert dialog.
-#[derive(Clone, Debug)]
-pub struct AlertDialogConfig {
-    pub modifier: Modifier,
-    pub scrim_color: Color,
-    pub min_width: f32,
-    pub max_width: f32,
-    pub horizontal_padding: f32,
-}
 
-impl Default for AlertDialogConfig {
-    fn default() -> Self {
-        Self {
-            modifier: Modifier::new(),
-            scrim_color: AlertDialogDefaults::scrim_color(),
-            min_width: AlertDialogDefaults::MIN_WIDTH,
-            max_width: AlertDialogDefaults::MAX_WIDTH,
-            horizontal_padding: AlertDialogDefaults::HORIZONTAL_PADDING,
-        }
-    }
-}

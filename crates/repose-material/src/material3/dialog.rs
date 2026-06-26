@@ -8,6 +8,8 @@ use repose_ui::overlay::OverlayHandle;
 use repose_ui::{Box, ViewExt, ZStack};
 use web_time::Duration;
 
+use super::AlertDialogDefaults;
+
 static DIALOG_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// State controlling dialog visibility.
@@ -145,6 +147,28 @@ pub fn Dialog(
     Box(Modifier::new())
 }
 
+/// Configuration for alert dialog.
+#[derive(Clone, Debug)]
+pub struct AlertDialogConfig {
+    pub modifier: Modifier,
+    pub scrim_color: Color,
+    pub min_width: f32,
+    pub max_width: f32,
+    pub horizontal_padding: f32,
+}
+
+impl Default for AlertDialogConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            scrim_color: AlertDialogDefaults::scrim_color(),
+            min_width: AlertDialogDefaults::MIN_WIDTH,
+            max_width: AlertDialogDefaults::MAX_WIDTH,
+            horizontal_padding: AlertDialogDefaults::HORIZONTAL_PADDING,
+        }
+    }
+}
+
 /// An improved AlertDialog using the overlay-based `Dialog`.
 ///
 /// Shows a centered modal surface with title, text, confirm button, and optional
@@ -156,11 +180,15 @@ pub fn AlertDialog(
     text: View,
     confirm_button: View,
     dismiss_button: Option<View>,
+    config: AlertDialogConfig,
 ) -> View {
     Dialog(
         state,
         overlay,
-        Modifier::new(),
+        Modifier::new()
+            .min_width(config.min_width)
+            .max_width(config.max_width)
+            .then(config.modifier),
         super::alert_dialog_body(title, text, confirm_button, dismiss_button),
     )
 }
