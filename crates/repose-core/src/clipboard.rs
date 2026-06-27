@@ -3,6 +3,7 @@ use std::cell::RefCell;
 thread_local! {
     static CLIPBOARD: RefCell<Option<Box<dyn Fn(&str)>>> = RefCell::new(None);
     static PRIMARY: RefCell<Option<Box<dyn Fn(&str)>>> = RefCell::new(None);
+    static CLIPBOARD_READ: RefCell<Option<Box<dyn Fn() -> Option<String>>>> = RefCell::new(None);
 }
 
 /// Register a global clipboard write function (Ctrl+C / system clipboard).
@@ -17,6 +18,16 @@ pub fn copy_to_clipboard(text: &str) {
             f(text);
         }
     });
+}
+
+/// Register a global clipboard read function (Ctrl+V / system clipboard paste).
+pub fn set_clipboard_read_fn(f: Box<dyn Fn() -> Option<String>>) {
+    CLIPBOARD_READ.with(|slot| *slot.borrow_mut() = Some(f));
+}
+
+/// Read text from the system clipboard via the registered getter.
+pub fn paste_text() -> Option<String> {
+    CLIPBOARD_READ.with(|slot| slot.borrow().as_ref().and_then(|f| f()))
 }
 
 /// Register a global primary selection write function (X11 middle-click buffer).

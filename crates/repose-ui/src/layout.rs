@@ -1797,6 +1797,7 @@ impl LayoutEngine {
 
                 // Sync the controlled value into the TextFieldState
                 if let Some(state_rc) = textfield_states.get(&tf_key) {
+                    crate::textfield::set_textfield_state(tf_key, state_rc.clone());
                     let mut st = state_rc.borrow_mut();
                     if st.text != *value {
                         st.text = value.clone();
@@ -1875,6 +1876,104 @@ impl LayoutEngine {
                 };
 
                 if !modifier.hit_passthrough {
+                    let user_on_action = modifier.on_action.clone();
+                    let change_cb = on_change.clone();
+                    let is_multiline = multiline;
+                    let tf_on_action: Option<Rc<dyn Fn(repose_core::shortcuts::Action) -> bool>> =
+                        Some(Rc::new(move |action| {
+                            use repose_core::shortcuts::Action;
+                            let Some(st) = crate::textfield::get_textfield_state(tf_key) else {
+                                return false;
+                            };
+                            let mut s = st.borrow_mut();
+                            let mut handled = false;
+                            match action {
+                                Action::Copy => {
+                                    let txt = s.selected_text();
+                                    if !txt.is_empty() {
+                                        repose_core::clipboard::copy_to_clipboard(&txt);
+                                        handled = true;
+                                    }
+                                }
+                                Action::Cut => {
+                                    let txt = s.selected_text();
+                                    if !txt.is_empty() {
+                                        repose_core::clipboard::copy_to_clipboard(&txt);
+                                        s.insert_text_atomic("");
+                                        crate::textfield::ensure_caret_visible(&mut s, is_multiline);
+                                        let text = s.text.clone();
+                                        drop(s);
+                                        if let Some(cb) = &change_cb {
+                                            cb(text);
+                                        }
+                                        handled = true;
+                                    }
+                                }
+                                Action::Paste => {
+                                    let Some(mut txt) = repose_core::clipboard::paste_text()
+                                    else {
+                                        return false;
+                                    };
+                                    if is_multiline {
+                                        txt.retain(|c| c == '\n' || (!c.is_control() && c != '\r'));
+                                    } else {
+                                        txt.retain(|c| !c.is_control() && c != '\n' && c != '\r');
+                                    }
+                                    if txt.is_empty() {
+                                        return false;
+                                    }
+                                    s.insert_text_atomic(&txt);
+                                    crate::textfield::ensure_caret_visible(&mut s, is_multiline);
+                                    let text = s.text.clone();
+                                    drop(s);
+                                    if let Some(cb) = &change_cb {
+                                        cb(text);
+                                    }
+                                    handled = true;
+                                }
+                                Action::SelectAll => {
+                                    s.selection = 0..s.text.len();
+                                    crate::textfield::ensure_caret_visible(&mut s, is_multiline);
+                                    handled = true;
+                                }
+                                Action::Undo => {
+                                    if s.can_undo() {
+                                        s.undo();
+                                        crate::textfield::ensure_caret_visible(&mut s, is_multiline);
+                                        let text = s.text.clone();
+                                        drop(s);
+                                        if let Some(cb) = &change_cb {
+                                            cb(text);
+                                        }
+                                        handled = true;
+                                    }
+                                }
+                                Action::Redo => {
+                                    if s.can_redo() {
+                                        s.redo();
+                                        crate::textfield::ensure_caret_visible(&mut s, is_multiline);
+                                        let text = s.text.clone();
+                                        drop(s);
+                                        if let Some(cb) = &change_cb {
+                                            cb(text);
+                                        }
+                                        handled = true;
+                                    }
+                                }
+                                _ => {}
+                            }
+                            handled
+                        }));
+
+                    let combined: Option<
+                        Rc<dyn Fn(repose_core::shortcuts::Action) -> bool>,
+                    > = match (user_on_action, tf_on_action) {
+                        (Some(u), Some(t)) => Some(Rc::new(move |a| u(a.clone()) || t(a))),
+                        (Some(u), None) => Some(u),
+                        (None, Some(t)) => Some(t),
+                        (None, None) => None,
+                    };
+
                     hits.push(HitRegion {
                         id: view_id,
                         rect,
@@ -1885,6 +1984,7 @@ impl LayoutEngine {
                         on_text_submit: on_submit.clone(),
                         tf_state_key: Some(tf_key),
                         tf_multiline: multiline,
+                        on_action: combined,
                         cursor: Some(crate::CursorIcon::Text),
                         ..HitRegion::from_modifier(view_id, rect, &modifier)
                     });

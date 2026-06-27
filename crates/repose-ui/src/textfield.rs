@@ -39,12 +39,50 @@
 
 use repose_core::*;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
 use unicode_segmentation::UnicodeSegmentation;
 use web_time::Duration;
 use web_time::Instant;
+
+thread_local! {
+    static TEXTFIELD_STATES: RefCell<HashMap<u64, Rc<RefCell<TextFieldState>>>> = RefCell::new(HashMap::new());
+}
+
+pub fn set_textfield_state(key: u64, state: Rc<RefCell<TextFieldState>>) {
+    TEXTFIELD_STATES.with(|m| m.borrow_mut().insert(key, state));
+}
+
+pub fn get_textfield_state(key: u64) -> Option<Rc<RefCell<TextFieldState>>> {
+    TEXTFIELD_STATES.with(|m| m.borrow().get(&key).cloned())
+}
+
+pub fn ensure_caret_visible(state: &mut TextFieldState, multiline: bool) {
+    let font_px = repose_core::dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+    let wrap_width = state.inner_width;
+    if multiline {
+        let (cx, cy, _) = crate::textfield::caret_xy_for_byte(
+            &state.text, font_px, wrap_width, state.caret_index(),
+        );
+        let iw = state.inner_width;
+        let ih = state.inner_height;
+        state.ensure_caret_visible_xy(cx, cy, iw, ih, repose_core::dp_to_px(2.0));
+    } else {
+        let caret_idx = state.caret_index();
+        let (display, caret_display_off) = if let Some(vt) = &state.visual_transformation {
+            let tfmd = vt.filter(&state.text);
+            let off = repose_core::original_offset_to_display(&state.text, &tfmd.text, caret_idx);
+            (tfmd.text, off)
+        } else {
+            (state.text.clone(), caret_idx)
+        };
+        let m = crate::textfield::measure_text(&display, font_px, None);
+        let caret_x = m.positions.get(caret_display_off).copied().unwrap_or(0.0);
+        state.ensure_caret_visible(caret_x, wrap_width, repose_core::dp_to_px(2.0));
+    }
+}
 
 /// Maximum number of undo/redo operations stored in history.
 const TEXT_UNDO_CAPACITY: usize = 100;

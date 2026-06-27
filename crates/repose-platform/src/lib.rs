@@ -411,26 +411,6 @@ pub fn run_desktop_app(
             rc::tf_ensure_caret_visible(st, is_multiline);
         }
 
-        fn copy_to_clipboard(&self, text: String) {
-            if let Some(cb) = &self.clipboard {
-                let _ = pollster::block_on(cb.write(&text));
-            }
-        }
-
-        fn paste_from_clipboard(&self) -> Option<String> {
-            if let Some(cb) = &self.clipboard {
-                match pollster::block_on(cb.read()) {
-                    Ok(t) => Some(t),
-                    Err(e) => {
-                        eprintln!("Paste error: {}", e);
-                        None
-                    }
-                }
-            } else {
-                None
-            }
-        }
-
         fn paste_from_primary(&self) -> Option<String> {
             let opts = clipawl::ClipboardOptions {
                 linux: clipawl::LinuxOptions {
@@ -572,6 +552,9 @@ pub fn run_desktop_app(
                     e
                 })
                 .ok();
+            repose_core::clipboard::set_clipboard_read_fn(Box::new(|| {
+                clipawl::blocking::read().ok()
+            }));
             // Register for SelectableText (Ctrl+C) — use blocking API directly
             repose_core::clipboard::set_clipboard_fn(Box::new(move |text| {
                 if let Err(e) = clipawl::blocking::write(text) {
@@ -977,8 +960,9 @@ pub fn run_desktop_app(
                                     let pad = self.padding_px();
                                     let inner_x = hit.rect.x + pad;
                                     let inner_y = hit.rect.y + self.dp_px(8.0);
-                                    let content_x =
-                                        (self.mouse_pos_px.0 - inner_x + st.scroll_offset).max(0.0);
+                                    let content_x = (self.mouse_pos_px.0 - inner_x
+                                        + st.scroll_offset)
+                                        .max(0.0);
                                     let content_y = (self.mouse_pos_px.1 - inner_y
                                         + st.scroll_offset_y)
                                         .max(0.0);
@@ -1008,10 +992,17 @@ pub fn run_desktop_app(
                                         let (cx, cy, _) = textfield::caret_xy_for_byte(
                                             &st.text, font_px, wrap_w, caret_idx,
                                         );
-                                        st.ensure_caret_visible_xy(cx, cy, iw, ih, self.dp_px(2.0));
+                                        st.ensure_caret_visible_xy(
+                                            cx,
+                                            cy,
+                                            iw,
+                                            ih,
+                                            self.dp_px(2.0),
+                                        );
                                     } else {
                                         let m = measure_text(&st.text, font_px, None);
-                                        let cx = m.positions.get(caret_idx).copied().unwrap_or(0.0);
+                                        let cx =
+                                            m.positions.get(caret_idx).copied().unwrap_or(0.0);
                                         st.ensure_caret_visible(cx, iw, self.dp_px(2.0));
                                     }
                                 }
@@ -1916,105 +1907,7 @@ pub fn run_desktop_app(
                 return true;
             }
 
-            use repose_core::shortcuts::Action;
-
-            let Some(fid) = self.sched.focused else {
-                return false;
-            };
-            let key = self.tf_key_of(fid);
-            let Some(state_rc) = self.textfield_states.get(&key).cloned() else {
-                return false;
-            };
-
-            match action {
-                Action::Copy => {
-                    let txt = state_rc.borrow().selected_text();
-                    if txt.is_empty() {
-                        return false;
-                    }
-                    self.copy_to_clipboard(txt);
-                    true
-                }
-                Action::Undo => {
-                    let mut st = state_rc.borrow_mut();
-                    if !st.can_undo() {
-                        return false;
-                    }
-                    st.undo();
-                    self.notify_text_change(fid, st.text.clone());
-                    if let Some(f) = &self.frame_cache
-                        && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
-                    {
-                        App::tf_ensure_caret_visible(&mut st, hit.tf_multiline);
-                    }
-                    true
-                }
-                Action::Redo => {
-                    let mut st = state_rc.borrow_mut();
-                    if !st.can_redo() {
-                        return false;
-                    }
-                    st.redo();
-                    self.notify_text_change(fid, st.text.clone());
-                    if let Some(f) = &self.frame_cache
-                        && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
-                    {
-                        App::tf_ensure_caret_visible(&mut st, hit.tf_multiline);
-                    }
-                    true
-                }
-                Action::Cut => {
-                    let txt = state_rc.borrow().selected_text();
-                    if txt.is_empty() {
-                        return false;
-                    }
-                    self.copy_to_clipboard(txt);
-                    {
-                        let mut st = state_rc.borrow_mut();
-                        st.insert_text_atomic("");
-                        self.notify_text_change(fid, st.text.clone());
-                        if let Some(f) = &self.frame_cache
-                            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
-                        {
-                            App::tf_ensure_caret_visible(&mut st, hit.tf_multiline);
-                        }
-                    }
-                    true
-                }
-                Action::Paste => {
-                    let Some(mut txt) = self.paste_from_clipboard() else {
-                        return false;
-                    };
-                    txt.retain(|c| !c.is_control() && c != '\n' && c != '\r');
-                    if txt.is_empty() {
-                        return false;
-                    }
-                    {
-                        let mut st = state_rc.borrow_mut();
-                        st.insert_text_atomic(&txt);
-                        self.notify_text_change(fid, st.text.clone());
-                        if let Some(f) = &self.frame_cache
-                            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
-                        {
-                            App::tf_ensure_caret_visible(&mut st, hit.tf_multiline);
-                        }
-                    }
-                    true
-                }
-                Action::SelectAll => {
-                    {
-                        let mut st = state_rc.borrow_mut();
-                        st.selection = 0..st.text.len();
-                        if let Some(f) = &self.frame_cache
-                            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
-                        {
-                            App::tf_ensure_caret_visible(&mut st, hit.tf_multiline);
-                        }
-                    }
-                    true
-                }
-                _ => false,
-            }
+            false
         }
 
         fn dnd_slop_px(&self) -> f32 {

@@ -439,89 +439,13 @@ impl App {
             return true;
         }
 
-        use repose_core::shortcuts::Action;
-
-        let Some(fid) = self.sched.focused else {
-            return false;
-        };
-        let key = self.tf_key_of(fid);
-        let Some(state_rc) = self.textfield_states.get(&key).cloned() else {
-            return false;
-        };
-
-        match action {
-            Action::Copy => {
-                let txt = state_rc.borrow().selected_text();
-                if txt.is_empty() {
-                    return false;
-                }
-                self.copy_to_clipboard_async(txt);
-                true
-            }
-            Action::Cut => {
-                let txt = state_rc.borrow().selected_text();
-                if txt.is_empty() {
-                    return false;
-                }
-                self.copy_to_clipboard_async(txt);
-                {
-                    let mut st = state_rc.borrow_mut();
-                    st.insert_text("");
-                    self.notify_text_change(fid, st.text.clone());
-                    if let Some(f) = &self.frame_cache
-                        && let Some(i) = rc::hit_index_by_id(f, fid)
-                    {
-                        self.tf_ensure_caret_visible_in_hit(&mut st, f.hit_regions[i].tf_multiline);
-                    }
-                }
-                true
-            }
-            Action::Undo => {
-                let mut st = state_rc.borrow_mut();
-                if !st.can_undo() {
-                    return false;
-                }
-                st.undo();
-                self.notify_text_change(fid, st.text.clone());
-                if let Some(f) = &self.frame_cache
-                    && let Some(i) = rc::hit_index_by_id(f, fid)
-                {
-                    self.tf_ensure_caret_visible_in_hit(&mut st, f.hit_regions[i].tf_multiline);
-                }
-                true
-            }
-            Action::Redo => {
-                let mut st = state_rc.borrow_mut();
-                if !st.can_redo() {
-                    return false;
-                }
-                st.redo();
-                self.notify_text_change(fid, st.text.clone());
-                if let Some(f) = &self.frame_cache
-                    && let Some(i) = rc::hit_index_by_id(f, fid)
-                {
-                    self.tf_ensure_caret_visible_in_hit(&mut st, f.hit_regions[i].tf_multiline);
-                }
-                true
-            }
-            Action::Paste => {
-                self.request_paste_async();
-                true
-            }
-            Action::SelectAll => {
-                {
-                    let mut st = state_rc.borrow_mut();
-                    st.selection = 0..st.text.len();
-                    if let Some(f) = &self.frame_cache
-                        && let Some(i) = rc::hit_index_by_id(f, fid)
-                    {
-                        self.tf_ensure_caret_visible_in_hit(&mut st, f.hit_regions[i].tf_multiline);
-                    }
-                }
-                true
-            }
-            _ => false,
+        // Web clipboard read is async, so Paste needs a platform fallback
+        if matches!(action, repose_core::shortcuts::Action::Paste) {
+            self.request_paste_async();
+            return true;
         }
+
+        false
     }
 
     fn drain_render_commands(&self) {
@@ -791,6 +715,9 @@ impl ApplicationHandler<()> for App {
                 }
             }
         });
+
+        // Clipboard read is async on web; register a no-op and handle Paste in platform fallback
+        repose_core::clipboard::set_clipboard_read_fn(Box::new(|| None));
 
         repose_core::clipboard::set_clipboard_fn(Box::new(|text| {
             let text = text.to_string();
