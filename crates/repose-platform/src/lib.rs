@@ -291,10 +291,6 @@ pub fn run_desktop_app(
         capture_id: Option<u64>,
         pressed_ids: HashSet<u64>,
 
-        // Drag & Drop (internal)
-        mouse_down_pos_px: Option<(f32, f32)>,
-        drag: Option<rc::DragSession>,
-
         // Files
         pending_dropped_files: Vec<std::path::PathBuf>,
         pending_drop_pos_px: Option<(f32, f32)>,
@@ -368,8 +364,6 @@ pub fn run_desktop_app(
                 hover_id: None,
                 capture_id: None,
                 pressed_ids: HashSet::new(),
-                mouse_down_pos_px: None,
-                drag: None,
                 pending_dropped_files: Vec::new(),
                 pending_drop_pos_px: None,
 
@@ -441,78 +435,7 @@ pub fn run_desktop_app(
         fn reset_pointer_state(&mut self) {
             self.capture_id = None;
             self.pressed_ids.clear();
-            self.mouse_down_pos_px = None;
-            self.drag = None;
             self.hover_id = None;
-        }
-
-        fn overlay_drag_indicator(&self, scene: &mut Scene) {
-            let dragging_internal = self.drag.is_some();
-            let dragging_files = self.external_file_drag;
-
-            if !(dragging_internal || dragging_files) {
-                return;
-            }
-
-            let pos = Vec2 {
-                x: self.mouse_pos_px.0,
-                y: self.mouse_pos_px.1,
-            };
-
-            // Highlight best drop target under cursor (if we have a frame)
-            if let Some(f) = &self.frame_cache
-                && let Some(tid) = rc::dnd_target_id_at(f, pos)
-                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid)
-            {
-                let color = if dragging_files {
-                    Color::from_hex("#FFAA00")
-                } else {
-                    Color::from_hex("#44AAFF")
-                };
-                scene.nodes.push(SceneNode::Border {
-                    rect: hit.rect,
-                    color,
-                    width: dp_to_px(2.0),
-                    radius: dp_to_px(8.0),
-                });
-            }
-
-            // Cursor badge
-            let label = if dragging_files {
-                "" // Wont be displayed
-            } else {
-                " " // Add an icon (for android/web?)
-            };
-            let bg = if dragging_files {
-                Color::from_hex("#FFAA0077")
-            } else {
-                Color::from_hex("#44AAFF77")
-            };
-
-            let badge = Rect {
-                x: pos.x + dp_to_px(12.0),
-                y: pos.y + dp_to_px(12.0),
-                w: dp_to_px(110.0), // Looks similar to showcase rects, so let it be, for now
-                h: dp_to_px(24.0),
-            };
-
-            scene.nodes.push(SceneNode::Rect {
-                rect: badge,
-                brush: Brush::Solid(bg),
-                radius: dp_to_px(8.0),
-            });
-            scene.nodes.push(SceneNode::Text {
-                rect: Rect {
-                    x: badge.x + dp_to_px(8.0),
-                    y: badge.y + dp_to_px(6.0),
-                    w: 0.0,
-                    h: dp_to_px(14.0),
-                },
-                text: Arc::<str>::from(label),
-                color: Color::WHITE,
-                size: dp_to_px(12.0),
-                font_family: None,
-            });
         }
 
         fn is_textfield(&self, id: u64) -> bool {
@@ -661,6 +584,10 @@ pub fn run_desktop_app(
                 }
 
                 WindowEvent::Focused(false) => {
+                    // Cancel any active drag operation
+                    repose_core::dnd::handle_drag_action(
+                        &repose_core::shortcuts::DragAction::Cancel,
+                    );
                     // Defensive reset: Wayland/KDE can "eat" releases during DnD.
                     self.external_file_drag = false;
                     self.hovered_files.clear();
@@ -744,14 +671,13 @@ pub fn run_desktop_app(
                         y: self.mouse_pos_px.1,
                     };
 
-                    if self.drag.is_some() {
-                        self.dnd_update_over(pos);
+                    if repose_core::dnd::handle_drag_action(
+                        &repose_core::shortcuts::DragAction::Move {
+                            position: pos,
+                            modifiers: self.modifiers,
+                        },
+                    ) {
                         self.request_redraw();
-                        return;
-                    }
-
-                    if self.dnd_try_begin(pos) {
-                        self.dnd_update_over(pos);
                         return;
                     }
 
@@ -943,8 +869,17 @@ pub fn run_desktop_app(
                         };
                         if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos))
                         {
-                            self.mouse_down_pos_px = Some(self.mouse_pos_px);
-                            self.drag = None;
+                            repose_core::dnd::handle_drag_action(
+                                &repose_core::shortcuts::DragAction::Press {
+                                    position: Vec2 {
+                                        x: self.mouse_pos_px.0,
+                                        y: self.mouse_pos_px.1,
+                                    },
+                                    capture_id: hit.id,
+                                    kind: repose_core::input::PointerKind::Mouse,
+                                    modifiers: self.modifiers,
+                                },
+                            );
 
                             // Capture starts on press
                             self.capture_id = Some(hit.id);
@@ -1119,8 +1054,12 @@ pub fn run_desktop_app(
                         y: self.mouse_pos_px.1,
                     };
 
-                    if self.drag.is_some() {
-                        self.dnd_finish(pos, true);
+                    if repose_core::dnd::handle_drag_action(
+                        &repose_core::shortcuts::DragAction::Release {
+                            position: pos,
+                            modifiers: self.modifiers,
+                        },
+                    ) {
                         self.capture_id = None;
                         self.pressed_ids.clear();
                         repose_core::request_frame();
@@ -1230,8 +1169,9 @@ pub fn run_desktop_app(
                             | PhysicalKey::Code(KeyCode::Escape) => {
                                 use repose_navigation::back;
 
-                                if self.drag.is_some() {
-                                    self.dnd_cancel();
+                                if repose_core::dnd::handle_drag_action(
+                                    &repose_core::shortcuts::DragAction::Cancel,
+                                ) {
                                     return;
                                 }
 
@@ -1669,7 +1609,11 @@ pub fn run_desktop_app(
                     self.inspector.frame(&mut scene);
 
                     // Drag indicator overlay (internal + file drop)
-                    self.overlay_drag_indicator(&mut scene);
+                    repose_core::dnd::overlay_drag_indicator(
+                        &mut scene,
+                        self.mouse_pos_px,
+                        self.external_file_drag,
+                    );
 
                     // Now borrow backend mutably only for the frame() call
                     let win = self.window.as_ref().unwrap();
@@ -1695,7 +1639,9 @@ pub fn run_desktop_app(
                         }
                     }
 
+                    repose_core::dnd::set_dnd_frame(Some(frame.clone()));
                     self.frame_cache = Some(frame);
+                    repose_core::dnd::set_dnd_scale(scale);
 
                     self.dispatch_file_drop_now();
 
@@ -1857,96 +1803,6 @@ pub fn run_desktop_app(
             false
         }
 
-        fn dnd_slop_px(&self) -> f32 {
-            dp_to_px(6.0)
-        }
-
-        fn dnd_update_over(&mut self, pos: Vec2) {
-            rc::dnd_update_over_in_frame(&self.frame_cache, &mut self.drag, self.modifiers, pos);
-        }
-
-        fn dnd_try_begin(&mut self, pos: Vec2) -> bool {
-            if self.drag.is_some() {
-                return true;
-            }
-
-            let Some((sx, sy)) = self.mouse_down_pos_px else {
-                return false;
-            };
-            let Some(cid) = self.capture_id else {
-                return false;
-            };
-            if !self.pressed_ids.contains(&cid) {
-                return false;
-            }
-
-            let dx = pos.x - sx;
-            let dy = pos.y - sy;
-            let dist = (dx * dx + dy * dy).sqrt();
-            if dist < self.dnd_slop_px() {
-                return false;
-            }
-
-            let Some(f) = &self.frame_cache else {
-                return false;
-            };
-            let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) else {
-                return false;
-            };
-
-            let Some(cb) = &hit.on_drag_start else {
-                return false;
-            };
-
-            let payload = cb(repose_core::dnd::DragStart {
-                source_id: cid,
-                position: pos,
-                modifiers: self.modifiers,
-            });
-            let Some(payload) = payload else {
-                return false;
-            };
-
-            self.drag = Some(rc::DragSession {
-                source_id: cid,
-                payload,
-                start_px: (sx, sy),
-                over_id: None,
-            });
-
-            // Don't keep "pressed" visuals once dragging
-            self.pressed_ids.remove(&cid);
-            self.request_redraw();
-            true
-        }
-
-        fn dnd_finish(&mut self, pos: Vec2, accept_if_possible: bool) {
-            let Some(f) = &self.frame_cache else {
-                self.drag = None;
-                self.capture_id = None;
-                self.mouse_down_pos_px = None;
-                self.request_redraw();
-                return;
-            };
-
-            let Some(session) = self.drag.take() else {
-                return;
-            };
-
-            let _accepted = rc::dnd_finish(f, session, self.modifiers, pos, accept_if_possible);
-            self.capture_id = None;
-            self.mouse_down_pos_px = None;
-            self.request_redraw();
-        }
-
-        fn dnd_cancel(&mut self) {
-            let pos = Vec2 {
-                x: self.mouse_pos_px.0,
-                y: self.mouse_pos_px.1,
-            };
-            self.dnd_finish(pos, false);
-        }
-
         fn dispatch_file_drop_now(&mut self) {
             let Some(f) = &self.frame_cache else {
                 self.pending_dropped_files.clear();
@@ -1980,7 +1836,7 @@ pub fn run_desktop_app(
             let payload: repose_core::dnd::DragPayload =
                 std::rc::Rc::new(repose_core::dnd::DroppedFiles { files });
 
-            let Some(target_id) = rc::dnd_target_id_at(f, pos) else {
+            let Some(target_id) = repose_core::dnd::dnd_target_id_at(f, pos) else {
                 self.pending_drop_pos_px = None;
                 return;
             };

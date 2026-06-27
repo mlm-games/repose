@@ -1,8 +1,6 @@
 use crate::*;
-use repose_core::HitRegion;
 use repose_core::Modifiers;
 use repose_core::Vec2;
-use repose_core::dnd::{DragOver, DragPayload, DropEvent};
 use repose_core::input::{PointerButton, PointerEvent, PointerEventKind, PointerId, PointerKind};
 use repose_core::locals::dp_to_px;
 use repose_core::runtime::Frame;
@@ -42,21 +40,6 @@ pub(crate) fn is_textfield_in_frame(frame_cache: &Option<Frame>, id: u64) -> boo
     } else {
         false
     }
-}
-
-pub(crate) fn dnd_update_over_in_frame(
-    frame_cache: &Option<Frame>,
-    drag: &mut Option<DragSession>,
-    modifiers: Modifiers,
-    pos: Vec2,
-) {
-    let Some(f) = frame_cache else {
-        return;
-    };
-    let Some(session) = drag.as_mut() else {
-        return;
-    };
-    dnd_update_over(f, session, modifiers, pos);
 }
 
 pub(crate) fn update_modifiers(modifiers: &mut Modifiers, state: &winit::keyboard::ModifiersState) {
@@ -317,26 +300,6 @@ pub(crate) fn tf_place_caret_at_pointer(
     }
 }
 
-pub(crate) fn touch_slop_px(scale: f32) -> f32 {
-    6.0 * scale
-}
-
-pub(crate) fn is_dnd_target(hit: &HitRegion) -> bool {
-    hit.on_drop.is_some()
-        || hit.on_drag_enter.is_some()
-        || hit.on_drag_over.is_some()
-        || hit.on_drag_leave.is_some()
-}
-
-pub(crate) fn dnd_target_id_at(frame: &Frame, pos: Vec2) -> Option<u64> {
-    frame
-        .hit_regions
-        .iter()
-        .rev()
-        .filter(|h| h.rect.contains(pos))
-        .find(|h| is_dnd_target(h))
-        .map(|h| h.id)
-}
 /// Dispatch wheel/touch-scroll to scroll consumers under `pos`, propagating
 /// leftovers to parent hit regions.
 ///
@@ -478,104 +441,4 @@ pub(crate) fn process_render_commands(
             }
         }
     }
-}
-
-/// Update drag-over state: dispatch enter/leave/over events as the cursor moves.
-pub(crate) fn dnd_update_over(
-    frame: &Frame,
-    session: &mut DragSession,
-    modifiers: Modifiers,
-    pos: Vec2,
-) {
-    let new_over = dnd_target_id_at(frame, pos);
-
-    if new_over != session.over_id {
-        if let Some(prev) = session.over_id {
-            if let Some(i) = hit_index_by_id(frame, prev) {
-                if let Some(cb) = &frame.hit_regions[i].on_drag_leave {
-                    cb(DragOver {
-                        source_id: session.source_id,
-                        target_id: prev,
-                        position: pos,
-                        modifiers,
-                        payload: session.payload.clone(),
-                    });
-                }
-            }
-        }
-
-        if let Some(now) = new_over {
-            if let Some(i) = hit_index_by_id(frame, now) {
-                if let Some(cb) = &frame.hit_regions[i].on_drag_enter {
-                    cb(DragOver {
-                        source_id: session.source_id,
-                        target_id: now,
-                        position: pos,
-                        modifiers,
-                        payload: session.payload.clone(),
-                    });
-                }
-            }
-        }
-
-        session.over_id = new_over;
-    }
-
-    if let Some(over) = session.over_id {
-        if let Some(i) = hit_index_by_id(frame, over) {
-            if let Some(cb) = &frame.hit_regions[i].on_drag_over {
-                cb(DragOver {
-                    source_id: session.source_id,
-                    target_id: over,
-                    position: pos,
-                    modifiers,
-                    payload: session.payload.clone(),
-                });
-            }
-        }
-    }
-}
-
-/// Finish a drag-and-drop session: deliver the drop event and the drag-end
-/// callback, then clean up the session.
-pub(crate) fn dnd_finish(
-    frame: &Frame,
-    session: DragSession,
-    modifiers: Modifiers,
-    pos: Vec2,
-    accept_if_possible: bool,
-) -> bool {
-    let mut accepted = false;
-    if accept_if_possible {
-        let drop_target = dnd_target_id_at(frame, pos);
-        if let Some(tid) = drop_target {
-            if let Some(i) = hit_index_by_id(frame, tid) {
-                if let Some(cb) = &frame.hit_regions[i].on_drop {
-                    accepted = cb(DropEvent {
-                        source_id: session.source_id,
-                        target_id: tid,
-                        position: pos,
-                        modifiers,
-                        payload: session.payload.clone(),
-                    });
-                }
-            }
-        }
-    }
-
-    if let Some(i) = hit_index_by_id(frame, session.source_id) {
-        if let Some(cb) = &frame.hit_regions[i].on_drag_end {
-            cb(repose_core::dnd::DragEnd { accepted });
-        }
-    }
-
-    accepted
-}
-
-#[derive(Clone)]
-pub(crate) struct DragSession {
-    pub source_id: u64,
-    pub payload: DragPayload,
-    pub start_px: (f32, f32),
-    pub over_id: Option<u64>,
 }

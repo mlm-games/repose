@@ -324,6 +324,7 @@ pub fn remember_state_with_key<T: 'static>(
 }
 
 /// Frame - output of composition for a tick: scene + input/semantics.
+#[derive(Clone)]
 pub struct Frame {
     pub scene: Scene,
     pub hit_regions: Vec<HitRegion>,

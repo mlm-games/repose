@@ -1,5 +1,6 @@
+use crate::Vec2;
 use crate::effects::{Dispose, on_unmount};
-use crate::input::{Key, Modifiers};
+use crate::input::{Key, Modifiers, PointerKind};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -11,6 +12,32 @@ pub enum Gesture {
     Pinch {
         delta_scale: f32,
     },
+}
+
+/// Low-level drag-and-drop actions dispatched by the platform.
+/// The framework handles gesture detection (mouse drag vs touch long press)
+/// and the DnD state machine internally.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DragAction {
+    /// Pointer button pressed (mouse down / touch start).
+    Press {
+        position: Vec2,
+        capture_id: u64,
+        kind: PointerKind,
+        modifiers: Modifiers,
+    },
+    /// Pointer moved while button is pressed or touch is active.
+    Move {
+        position: Vec2,
+        modifiers: Modifiers,
+    },
+    /// Pointer released.
+    Release {
+        position: Vec2,
+        modifiers: Modifiers,
+    },
+    /// Drag cancelled (e.g. Escape key).
+    Cancel,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -34,6 +61,7 @@ pub enum Action {
     FocusDown,
 
     Gesture(Gesture),
+    Drag(DragAction),
     Custom(Rc<str>),
 }
 
@@ -191,9 +219,13 @@ pub fn default_chord_for(action: &Action) -> Option<KeyChord> {
         Action::Find => Some(KeyChord::new(Key::Character('f'), cmd)),
         Action::Save => Some(KeyChord::new(Key::Character('s'), cmd)),
         Action::FocusNext => Some(KeyChord::new(Key::Tab, Modifiers::default())),
-        Action::FocusPrevious => {
-            Some(KeyChord::new(Key::Tab, Modifiers { shift: true, ..Modifiers::default() }))
-        }
+        Action::FocusPrevious => Some(KeyChord::new(
+            Key::Tab,
+            Modifiers {
+                shift: true,
+                ..Modifiers::default()
+            },
+        )),
         Action::FocusLeft => Some(KeyChord::new(Key::ArrowLeft, Modifiers::default())),
         Action::FocusRight => Some(KeyChord::new(Key::ArrowRight, Modifiers::default())),
         Action::FocusUp => Some(KeyChord::new(Key::ArrowUp, Modifiers::default())),

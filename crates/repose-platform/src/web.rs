@@ -162,9 +162,6 @@ struct App {
     capture_id: Option<u64>,
     pressed_ids: HashSet<u64>,
 
-    mouse_down_pos_px: Option<(f32, f32)>,
-    drag: Option<rc::DragSession>,
-
     // touch click-cancel after scroll
     touch_scrolled: bool,
     scroll_capture_id: Option<u64>,
@@ -193,9 +190,6 @@ struct App {
     // swipe tracking
     touch_start: Option<(web_time::Instant, (f32, f32))>,
 
-    // long-press DnD initiation
-    touch_long_press_pending: bool,
-
     key_pressed_active: Option<u64>,
 
     last_redraw: web_time::Instant,
@@ -222,9 +216,6 @@ impl App {
             capture_id: None,
             pressed_ids: HashSet::new(),
 
-            mouse_down_pos_px: None,
-            drag: None,
-
             touch_scrolled: false,
             scroll_capture_id: None,
             touch_scroll_accum_x_px: 0.0,
@@ -244,8 +235,6 @@ impl App {
             primary_touch_id: None,
             pinch_last_dist: None,
             touch_start: None,
-
-            touch_long_press_pending: false,
 
             key_pressed_active: None,
 
@@ -267,7 +256,7 @@ impl App {
     }
 
     fn touch_slop_px(&self, window: &Window) -> f32 {
-        rc::touch_slop_px(self.scale(window))
+        6.0 * self.scale(window)
     }
 
     fn tf_key_of(&self, visual_id: u64) -> u64 {
@@ -485,187 +474,6 @@ impl App {
         };
         rc::process_render_commands(backend, cmds);
     }
-    fn dnd_slop_px(&self, window: &Window) -> f32 {
-        rc::touch_slop_px(self.scale(window))
-    }
-
-    fn dnd_update_over(&mut self, pos: Vec2) {
-        rc::dnd_update_over_in_frame(&self.frame_cache, &mut self.drag, self.modifiers, pos);
-    }
-
-    fn dnd_try_begin_mouse(&mut self, window: &Window, pos: Vec2) -> bool {
-        if self.drag.is_some() {
-            return true;
-        }
-
-        let Some((sx, sy)) = self.mouse_down_pos_px else {
-            return false;
-        };
-        let Some(cid) = self.capture_id else {
-            return false;
-        };
-        if !self.pressed_ids.contains(&cid) {
-            return false;
-        }
-
-        let dx = pos.x - sx;
-        let dy = pos.y - sy;
-        let dist = (dx * dx + dy * dy).sqrt();
-        if dist < self.dnd_slop_px(window) {
-            return false;
-        }
-
-        let Some(f) = &self.frame_cache else {
-            return false;
-        };
-        let Some(i) = rc::hit_index_by_id(f, cid) else {
-            return false;
-        };
-        let Some(cb) = &f.hit_regions[i].on_drag_start else {
-            return false;
-        };
-
-        let payload = cb(repose_core::dnd::DragStart {
-            source_id: cid,
-            position: pos,
-            modifiers: self.modifiers,
-        });
-        let Some(payload) = payload else {
-            return false;
-        };
-
-        self.drag = Some(rc::DragSession {
-            source_id: cid,
-            payload,
-            start_px: (sx, sy),
-            over_id: None,
-        });
-        self.pressed_ids.remove(&cid);
-        self.request_redraw();
-        true
-    }
-
-    const LONG_PRESS_MS: u128 = 400;
-
-    fn dnd_try_begin_touch(&mut self, window: &Window, pos: Vec2) -> bool {
-        if self.drag.is_some() {
-            return true;
-        }
-        let Some(cid) = self.capture_id else {
-            return false;
-        };
-        let Some((_t0, (sx, sy))) = self.touch_start else {
-            return false;
-        };
-
-        let Some(f) = &self.frame_cache else {
-            return false;
-        };
-        let Some(i) = rc::hit_index_by_id(f, cid) else {
-            return false;
-        };
-        let Some(cb) = &f.hit_regions[i].on_drag_start else {
-            return false;
-        };
-
-        let payload = cb(repose_core::dnd::DragStart {
-            source_id: cid,
-            position: pos,
-            modifiers: self.modifiers,
-        });
-        let Some(payload) = payload else {
-            return false;
-        };
-
-        self.drag = Some(rc::DragSession {
-            source_id: cid,
-            payload,
-            start_px: (sx, sy),
-            over_id: None,
-        });
-        self.pressed_ids.remove(&cid);
-        self.touch_scrolled = true; // Prevent click-on-release
-        self.request_redraw();
-        true
-    }
-
-    fn dnd_finish(&mut self, pos: Vec2, accept_if_possible: bool) {
-        let Some(f) = &self.frame_cache else {
-            self.drag = None;
-            self.capture_id = None;
-            self.mouse_down_pos_px = None;
-            self.request_redraw();
-            return;
-        };
-
-        let Some(session) = self.drag.take() else {
-            return;
-        };
-
-        let _accepted = rc::dnd_finish(f, session, self.modifiers, pos, accept_if_possible);
-        self.capture_id = None;
-        self.mouse_down_pos_px = None;
-        self.request_redraw();
-    }
-
-    fn dnd_cancel(&mut self) {
-        let pos = Vec2 {
-            x: self.mouse_pos_px.0,
-            y: self.mouse_pos_px.1,
-        };
-        self.dnd_finish(pos, false);
-    }
-
-    fn overlay_drag_indicator(&self, scene: &mut Scene) {
-        if self.drag.is_none() {
-            return;
-        }
-
-        let pos = Vec2 {
-            x: self.mouse_pos_px.0,
-            y: self.mouse_pos_px.1,
-        };
-
-        // Highlight best drop target under cursor
-        if let Some(f) = &self.frame_cache
-            && let Some(tid) = rc::dnd_target_id_at(f, pos)
-            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid)
-        {
-            scene.nodes.push(SceneNode::Border {
-                rect: hit.rect,
-                color: Color::from_hex("#44AAFF"),
-                width: dp_to_px(2.0),
-                radius: dp_to_px(8.0),
-            });
-        }
-
-        // Cursor badge
-        let badge = Rect {
-            x: pos.x + dp_to_px(12.0),
-            y: pos.y + dp_to_px(12.0),
-            w: dp_to_px(110.0),
-            h: dp_to_px(24.0),
-        };
-
-        scene.nodes.push(SceneNode::Rect {
-            rect: badge,
-            brush: Brush::Solid(Color::from_hex("#44AAFF77")),
-            radius: dp_to_px(8.0),
-        });
-        scene.nodes.push(SceneNode::Text {
-            rect: Rect {
-                x: badge.x + dp_to_px(8.0),
-                y: badge.y + dp_to_px(6.0),
-                w: 0.0,
-                h: dp_to_px(14.0),
-            },
-            text: std::sync::Arc::<str>::from(" "),
-            color: Color::WHITE,
-            size: dp_to_px(12.0),
-            font_family: None,
-        });
-    }
-
     fn dispatch_dropped_files(&mut self, window: &Window, names: Vec<String>, pos_px: (f32, f32)) {
         let Some(f) = &self.frame_cache else {
             return;
@@ -684,7 +492,7 @@ impl App {
         let payload: repose_core::dnd::DragPayload =
             std::rc::Rc::new(repose_core::dnd::DroppedFiles { files });
 
-        let Some(target_id) = rc::dnd_target_id_at(f, pos) else {
+        let Some(target_id) = repose_core::dnd::dnd_target_id_at(f, pos) else {
             return;
         };
 
@@ -887,15 +695,11 @@ impl ApplicationHandler<()> for App {
                     y: self.mouse_pos_px.1,
                 };
 
-                if self.drag.is_some() {
-                    self.dnd_update_over(pos);
+                if repose_core::dnd::handle_drag_action(&repose_core::shortcuts::DragAction::Move {
+                    position: pos,
+                    modifiers: self.modifiers,
+                }) {
                     self.request_redraw();
-                    return;
-                }
-
-                // DnD (mouse)
-                if self.dnd_try_begin_mouse(&window, pos) {
-                    self.dnd_update_over(pos);
                     return;
                 }
 
@@ -1041,14 +845,24 @@ impl ApplicationHandler<()> for App {
 
                     match state {
                         ElementState::Pressed => {
-                            self.mouse_down_pos_px = Some(self.mouse_pos_px);
-                            self.drag = None;
+                            let mp = Vec2 {
+                                x: self.mouse_pos_px.0,
+                                y: self.mouse_pos_px.1,
+                            };
 
                             // Find top-most hit for capture
                             if let Some(i) = rc::top_hit_index(f, pos) {
                                 let hit = &f.hit_regions[i];
                                 self.capture_id = Some(hit.id);
                                 self.pressed_ids.insert(hit.id);
+                                repose_core::dnd::handle_drag_action(
+                                    &repose_core::shortcuts::DragAction::Press {
+                                        position: mp,
+                                        capture_id: hit.id,
+                                        kind: repose_core::input::PointerKind::Mouse,
+                                        modifiers: self.modifiers,
+                                    },
+                                );
 
                                 if hit.focusable {
                                     self.sched.focused = Some(hit.id);
@@ -1100,8 +914,12 @@ impl ApplicationHandler<()> for App {
                                 y: self.mouse_pos_px.1,
                             };
 
-                            if self.drag.is_some() {
-                                self.dnd_finish(pos, true);
+                            if repose_core::dnd::handle_drag_action(
+                                &repose_core::shortcuts::DragAction::Release {
+                                    position: pos,
+                                    modifiers: self.modifiers,
+                                },
+                            ) {
                                 self.capture_id = None;
                                 self.pressed_ids.clear();
                                 self.request_redraw();
@@ -1236,7 +1054,6 @@ impl ApplicationHandler<()> for App {
                         if self.primary_touch_id.is_none() {
                             self.primary_touch_id = Some(tid);
                             self.touch_start = Some((web_time::Instant::now(), pos_px));
-                            self.touch_long_press_pending = true;
                         }
 
                         if let Some(f) = &self.frame_cache {
@@ -1244,6 +1061,14 @@ impl ApplicationHandler<()> for App {
                                 let hit = &f.hit_regions[i];
                                 self.capture_id = Some(hit.id);
                                 self.pressed_ids.insert(hit.id);
+                                repose_core::dnd::handle_drag_action(
+                                    &repose_core::shortcuts::DragAction::Press {
+                                        position: pos,
+                                        capture_id: hit.id,
+                                        kind: repose_core::input::PointerKind::Touch,
+                                        modifiers: self.modifiers,
+                                    },
+                                );
 
                                 if let Some(cb) = &hit.on_pointer_down {
                                     cb(rc::pe_down_primary(
@@ -1282,36 +1107,14 @@ impl ApplicationHandler<()> for App {
                     }
 
                     TouchPhase::Moved => {
-                        if self.drag.is_some() {
-                            self.dnd_update_over(pos);
+                        if repose_core::dnd::handle_drag_action(
+                            &repose_core::shortcuts::DragAction::Move {
+                                position: pos,
+                                modifiers: self.modifiers,
+                            },
+                        ) {
                             self.request_redraw();
                             return;
-                        }
-
-                        // Long-press DnD initiation (Compose style)
-                        if self.touch_long_press_pending {
-                            if let Some((t0, p0)) = self.touch_start {
-                                let elapsed_ms =
-                                    (web_time::Instant::now() - t0).as_millis() as u128;
-                                let dx = pos.x - p0.0;
-                                let dy = pos.y - p0.1;
-                                let dist = (dx * dx + dy * dy).sqrt();
-                                if elapsed_ms >= LONG_PRESS_MS
-                                    && dist <= self.dnd_slop_px(&window)
-                                {
-                                    if self.dnd_try_begin_touch(&window, pos) {
-                                        self.dnd_update_over(pos);
-                                        self.touch_long_press_pending = false;
-                                        self.request_redraw();
-                                        return;
-                                    }
-                                    // Widget has no on_drag_start — cancel long press
-                                    self.touch_long_press_pending = false;
-                                }
-                                if dist > self.dnd_slop_px(&window) {
-                                    self.touch_long_press_pending = false;
-                                }
-                            }
                         }
 
                         // Handle pinch gesture with two touches
@@ -1387,9 +1190,12 @@ impl ApplicationHandler<()> for App {
                     }
 
                     TouchPhase::Ended | TouchPhase::Cancelled => {
-                        self.touch_long_press_pending = false;
-                        if self.drag.is_some() {
-                            self.dnd_finish(pos, true);
+                        if repose_core::dnd::handle_drag_action(
+                            &repose_core::shortcuts::DragAction::Release {
+                                position: pos,
+                                modifiers: self.modifiers,
+                            },
+                        ) {
                             self.capture_id = None;
                             self.scroll_capture_id = None;
                             self.prev_touch_px = None;
@@ -1478,9 +1284,10 @@ impl ApplicationHandler<()> for App {
                 if key_event.state == ElementState::Pressed
                     && !key_event.repeat
                     && matches!(key_event.physical_key, PhysicalKey::Code(KeyCode::Escape))
-                    && self.drag.is_some()
+                    && repose_core::dnd::handle_drag_action(
+                        &repose_core::shortcuts::DragAction::Cancel,
+                    )
                 {
-                    self.dnd_cancel();
                     return;
                 }
 
@@ -1870,8 +1677,6 @@ impl ApplicationHandler<()> for App {
                     self.ime_preedit = false;
                 }
 
-                self.overlay_drag_indicator(&mut frame.scene);
-
                 if let Some(backend) = self.backend.borrow_mut().as_mut() {
                     backend.frame(&frame.scene, GlyphRasterConfig { px: 18.0 * scale });
                 }
@@ -1889,6 +1694,8 @@ impl ApplicationHandler<()> for App {
                     }
                 }
 
+                repose_core::dnd::set_dnd_frame(Some(frame.clone()));
+                repose_core::dnd::set_dnd_scale(scale);
                 self.frame_cache = Some(frame);
                 self.last_redraw = web_time::Instant::now();
 
