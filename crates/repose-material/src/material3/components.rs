@@ -982,7 +982,7 @@ pub fn ExtendedFAB(
             disabled: theme().on_surface.with_alpha_f32(0.12),
         })
         .state_elevation(config.state_elevation)
-        .clip_rounded(16.0)
+        .clip_rounded(FABDefaults::SHAPE_RADIUS)
         .padding_values(PaddingValues {
             left: 16.0,
             right: 20.0,

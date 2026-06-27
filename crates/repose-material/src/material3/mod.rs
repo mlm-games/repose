@@ -906,7 +906,7 @@ pub fn NavigationDrawerItem(
         .clickable()
         .on_pointer_down(move |_| on_click())
         .background(bg)
-        .clip_rounded(28.0))
+        .clip_rounded(th.shapes.large))
     .child(with_content_color(fg, || {
         Row(Modifier::new()
             .align_items(AlignItems::Center)
@@ -1337,7 +1337,7 @@ pub fn SearchBar(
                 .width(width)
                 .max_height(400.0)
                 .background(th.surface_container)
-                .clip_rounded(th.shapes.small))
+        .clip_rounded(th.shapes.extra_small))
             .child(content),
         ))
     } else {

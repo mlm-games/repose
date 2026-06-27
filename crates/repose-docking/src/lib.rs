@@ -482,13 +482,13 @@ fn render_tabs(
                             .key(pid)
                             .height(32.0)
                             .padding(4.0)
-                            .clip_rounded(8.0)
+                            .clip_rounded(th.shapes.small)
                             .background(if is_active {
                                 th.primary.with_alpha(80)
                             } else {
                                 th.surface
                             })
-                            .border(1.0, th.outline, 8.0),
+                            .border(1.0, th.outline, th.shapes.small),
                     )
                     .child((
                         Box(Modifier::new()

@@ -396,7 +396,7 @@ pub fn WindowHost(
                                 top: 4.0,
                                 bottom: 4.0,
                             })
-                            .clip_rounded(6.0)
+                            .clip_rounded(th.shapes.small)
                             .background(th.surface_variant)
                             .clickable()
                             .on_pointer_down(move |_| {
@@ -406,7 +406,7 @@ pub fn WindowHost(
                             })
                             .z_index(1.0)
                             .key(key_for(window_id, 60 + idx as u64)))
-                        .child(Text(label).size(11.0).color(th.primary).single_line()),
+                        .child(Text(label).size(th.typography.label_medium).color(th.primary).single_line()),
                     );
                 }
 
@@ -421,7 +421,7 @@ pub fn WindowHost(
                                 top: 4.0,
                                 bottom: 4.0,
                             })
-                            .clip_rounded(6.0)
+                            .clip_rounded(th.shapes.small)
                             .background(th.error.with_alpha(20))
                             .clickable()
                             .on_pointer_down(move |_| {
@@ -435,7 +435,7 @@ pub fn WindowHost(
                             })
                             .z_index(1.0)
                             .key(key_for(window_id, 90)))
-                        .child(Text("x").size(12.0).color(th.error)),
+                        .child(Text("x").size(th.typography.label_large).color(th.error)),
                     );
                 }
 
@@ -467,7 +467,7 @@ pub fn WindowHost(
 
                 let bar = Row(bar_mod).child((
                     Text(window_title)
-                        .size(13.0)
+                        .size(th.typography.title_small)
                         .color(title_fg)
                         .single_line()
                         .overflow_ellipsize(),
@@ -525,9 +525,9 @@ pub fn WindowHost(
                 .absolute()
                 .offset(Some(window_pos.x), Some(window_pos.y), None, None)
                 .size(window_size.width, window_size.height)
-                .background(th.surface)
-                .border(1.0, border_color, 10.0)
-                .clip_rounded(10.0)
+                .background(th.surface_container_high)
+                .border(1.0, border_color, th.shapes.medium)
+                .clip_rounded(th.shapes.medium)
                 .z_index(-1.0)
                 .on_pointer_down(focus_on_pointer_down))
             .child(ZStack(Modifier::new().fill_max_size()).child((column, resize_handles)));

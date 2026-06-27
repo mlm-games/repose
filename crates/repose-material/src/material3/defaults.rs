@@ -665,7 +665,7 @@ impl AlertDialogDefaults {
     pub const MAX_WIDTH: f32 = 560.0;
     pub const HORIZONTAL_PADDING: f32 = 24.0;
     pub fn scrim_color() -> Color {
-        theme().scrim.with_alpha(170)
+        theme().scrim.with_alpha(82)
     }
 }
 
