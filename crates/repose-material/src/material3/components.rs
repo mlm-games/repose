@@ -203,7 +203,7 @@ pub struct IconButtonConfig {
     pub content_color: Option<Color>,
     pub container_size: Option<f32>,
     pub filler_container_color: Option<Color>,
-    pub state_colors: Option<StateColors>,
+    pub state_colors: StateColors,
 }
 
 impl Default for IconButtonConfig {
@@ -213,7 +213,7 @@ impl Default for IconButtonConfig {
             content_color: None,
             container_size: None,
             filler_container_color: None,
-            state_colors: None,
+            state_colors: IconButtonDefaults::state_colors_default(),
         }
     }
 }
@@ -223,13 +223,10 @@ pub fn IconButton(icon: View, on_click: impl Fn() + 'static, config: IconButtonC
     let sz = config
         .container_size
         .unwrap_or(IconButtonDefaults::CONTAINER_SIZE);
-    let colors = config
-        .state_colors
-        .unwrap_or_else(IconButtonDefaults::state_colors_default);
     Box(Modifier::new()
         .size(sz, sz)
         .clip_rounded(sz * 0.5)
-        .state_colors(colors)
+        .state_colors(config.state_colors)
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
         .clickable()
@@ -316,13 +313,10 @@ pub fn OutlinedIconButton(
     let sz = config
         .container_size
         .unwrap_or(IconButtonDefaults::CONTAINER_SIZE);
-    let colors = config
-        .state_colors
-        .unwrap_or_else(IconButtonDefaults::state_colors_default);
     Box(Modifier::new()
         .size(sz, sz)
         .clip_rounded(sz * 0.5)
-        .state_colors(colors)
+        .state_colors(config.state_colors)
         .border(1.0, th.outline, sz * 0.5)
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
@@ -339,7 +333,7 @@ pub struct ButtonConfig {
     pub enabled: bool,
     pub content_color: Option<Color>,
     pub container_color: Option<Color>,
-    pub state_colors: Option<StateColors>,
+    pub state_colors: StateColors,
     pub state_elevation: Option<StateElevation>,
     pub border: Option<(f32, Color, f32)>,
     pub shape_radius: f32,
@@ -354,7 +348,7 @@ impl Default for ButtonConfig {
             enabled: true,
             content_color: None,
             container_color: None,
-            state_colors: None,
+            state_colors: ButtonDefaults::state_colors_default(),
             state_elevation: None,
             border: None,
             shape_radius: ButtonDefaults::SHAPE_RADIUS,
@@ -429,9 +423,6 @@ pub fn Button(
     let bg = config
         .container_color
         .unwrap_or_else(ButtonDefaults::container_color);
-    let sc = config
-        .state_colors
-        .unwrap_or_else(ButtonDefaults::state_colors_default);
     let se = config
         .state_elevation
         .unwrap_or_else(ButtonDefaults::state_elevation_default);
@@ -447,7 +438,7 @@ pub fn Button(
         content,
         cc,
         Some(bg),
-        sc,
+        config.state_colors,
         Some(se),
         config.border,
         pad.left,
@@ -471,9 +462,6 @@ pub fn FilledTonalButton(
     let bg = config
         .container_color
         .unwrap_or_else(ButtonDefaults::tonal_container_color);
-    let sc = config
-        .state_colors
-        .unwrap_or_else(ButtonDefaults::state_colors_default);
     let se = config
         .state_elevation
         .unwrap_or_else(ButtonDefaults::state_elevation_default);
@@ -489,7 +477,7 @@ pub fn FilledTonalButton(
         content,
         cc,
         Some(bg),
-        sc,
+        config.state_colors,
         Some(se),
         config.border,
         pad.left,
@@ -510,9 +498,6 @@ pub fn OutlinedButton(
     let cc = config
         .content_color
         .unwrap_or_else(ButtonDefaults::outlined_content_color);
-    let sc = config
-        .state_colors
-        .unwrap_or_else(ButtonDefaults::state_colors_default);
     let border = config
         .border
         .unwrap_or((1.0, ButtonDefaults::outlined_border_color(), 20.0));
@@ -528,7 +513,7 @@ pub fn OutlinedButton(
         content,
         cc,
         None,
-        sc,
+        config.state_colors,
         None,
         Some(border),
         pad.left,
@@ -549,9 +534,6 @@ pub fn TextButton(
     let cc = config
         .content_color
         .unwrap_or_else(ButtonDefaults::text_content_color);
-    let sc = config
-        .state_colors
-        .unwrap_or_else(ButtonDefaults::state_colors_default);
     let pad = config.content_padding.unwrap_or(PaddingValues {
         left: 12.0,
         right: 12.0,
@@ -564,7 +546,7 @@ pub fn TextButton(
         content,
         cc,
         None,
-        sc,
+        config.state_colors,
         None,
         None,
         pad.left,
@@ -588,9 +570,6 @@ pub fn ElevatedButton(
     let bg = config
         .container_color
         .unwrap_or_else(ButtonDefaults::elevated_container_color);
-    let sc = config
-        .state_colors
-        .unwrap_or_else(ButtonDefaults::state_colors_default);
     let se = config
         .state_elevation
         .unwrap_or_else(ButtonDefaults::elevated_state_elevation);
@@ -606,7 +585,7 @@ pub fn ElevatedButton(
         content,
         cc,
         Some(bg),
-        sc,
+        config.state_colors,
         Some(se),
         config.border,
         pad.left,
@@ -626,7 +605,7 @@ pub struct ToggleButtonConfig {
     pub content_color: Option<Color>,
     pub checked_container_color: Option<Color>,
     pub checked_content_color: Option<Color>,
-    pub state_colors: Option<StateColors>,
+    pub state_colors: StateColors,
     pub state_elevation: Option<StateElevation>,
     pub border: Option<(f32, Color, f32)>,
     pub shape_radius: f32,
@@ -642,7 +621,7 @@ impl Default for ToggleButtonConfig {
             content_color: None,
             checked_container_color: None,
             checked_content_color: None,
-            state_colors: None,
+            state_colors: ToggleButtonDefaults::state_colors_default(),
             state_elevation: None,
             border: None,
             shape_radius: ToggleButtonDefaults::SHAPE_RADIUS,
@@ -721,9 +700,6 @@ pub fn ToggleButton(
     let checked_bg = config
         .checked_container_color
         .unwrap_or_else(ToggleButtonDefaults::checked_container_color);
-    let sc = config
-        .state_colors
-        .unwrap_or_else(ToggleButtonDefaults::state_colors_default);
     let se = config
         .state_elevation
         .unwrap_or_else(ToggleButtonDefaults::state_elevation_default);
@@ -735,7 +711,7 @@ pub fn ToggleButton(
         None,
         Some(checked_bg),
         Some(checked_cc),
-        sc,
+        config.state_colors,
         se,
         config.border,
         ToggleButtonDefaults::HORIZONTAL_PADDING,
@@ -762,9 +738,6 @@ pub fn TonalToggleButton(
     let checked_bg = config
         .checked_container_color
         .unwrap_or_else(ToggleButtonDefaults::tonal_checked_container_color);
-    let sc = config
-        .state_colors
-        .unwrap_or_else(ToggleButtonDefaults::state_colors_default);
     let se = config
         .state_elevation
         .unwrap_or_else(ToggleButtonDefaults::state_elevation_default);
@@ -776,7 +749,7 @@ pub fn TonalToggleButton(
         None,
         Some(checked_bg),
         Some(checked_cc),
-        sc,
+        config.state_colors,
         se,
         config.border,
         ToggleButtonDefaults::HORIZONTAL_PADDING,
@@ -803,9 +776,6 @@ pub fn OutlinedToggleButton(
     let checked_bg = config
         .checked_container_color
         .unwrap_or_else(ToggleButtonDefaults::outlined_checked_container_color);
-    let sc = config
-        .state_colors
-        .unwrap_or_else(ToggleButtonDefaults::state_colors_default);
     let se = config
         .state_elevation
         .unwrap_or_else(ToggleButtonDefaults::state_elevation_default);
@@ -826,7 +796,7 @@ pub fn OutlinedToggleButton(
         None,
         Some(checked_bg),
         Some(checked_cc),
-        sc,
+        config.state_colors,
         se,
         border,
         ToggleButtonDefaults::HORIZONTAL_PADDING,
@@ -853,9 +823,6 @@ pub fn ElevatedToggleButton(
     let checked_bg = config
         .checked_container_color
         .unwrap_or_else(ToggleButtonDefaults::elevated_checked_container_color);
-    let sc = config
-        .state_colors
-        .unwrap_or_else(ToggleButtonDefaults::state_colors_default);
     let se = config
         .state_elevation
         .unwrap_or_else(ToggleButtonDefaults::elevated_state_elevation);
@@ -867,7 +834,7 @@ pub fn ElevatedToggleButton(
         None,
         Some(checked_bg),
         Some(checked_cc),
-        sc,
+        config.state_colors,
         se,
         config.border,
         ToggleButtonDefaults::HORIZONTAL_PADDING,
@@ -1431,7 +1398,7 @@ pub fn SegmentedButton(
                 let cb = seg.on_click.clone();
                 let radii = segment_radii(i);
 
-                let state_colors = config.state_colors.clone();
+                    let state_colors = config.state_colors;
                 let mut modifier = Modifier::new()
                     .flex_grow(1.0)
                     .fill_max_height()
@@ -2220,7 +2187,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         .padding(0.0)
         .clip_rounded(20.0)
         .background(Color::TRANSPARENT)
-        .state_colors(config.state_colors.clone())
+        .state_colors(config.state_colors)
         .clickable()
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
@@ -2409,7 +2376,7 @@ pub fn RadioButton(
         .padding(0.0)
         .clip_rounded(20.0)
         .background(Color::TRANSPARENT)
-        .state_colors(config.state_colors.clone())
+        .state_colors(config.state_colors)
         .clickable()
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
@@ -2526,7 +2493,7 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         .padding(0.0)
         .clip_rounded(track_h * 0.5)
         .background(track_bg)
-        .state_colors(config.state_colors.clone())
+        .state_colors(config.state_colors)
         .border(track_border, border_color, track_h * 0.5)
         .clickable()
         .on_pointer_down(move |_| on_change(!checked))
@@ -2590,15 +2557,18 @@ pub fn Slider(
     let id = *remember(|| SLIDER_COUNTER.fetch_add(1, Ordering::Relaxed));
     let track_rect = remember_state_with_key(format!("ms_rect_{}", id), || Rect::default());
     let drag_active = remember_state_with_key(format!("ms_da_{}", id), || false);
+    let hovered = remember_state_with_key(format!("ms_hv_{}", id), || false);
 
     let track_rect_p = track_rect.clone();
     let drag_active_p = drag_active.clone();
+    let hovered_p = hovered.clone();
 
     let min = range.0;
     let max = range.1;
     let oc = Rc::new(on_change);
     let range_size = (max - min).max(1e-6);
     let t = ((value - min) / range_size).clamp(0.0, 1.0);
+    let sc = config.state_colors;
 
     let tick_frac: Vec<f32> = if let Some(s) = step {
         let n = ((max - min) / s.max(1e-6)).round() as usize;
@@ -2630,7 +2600,6 @@ pub fn Slider(
             let track_w = (rect.w - thumb_w).max(0.0);
             let cy = rect.y + rect.h * 0.5;
 
-            // Thumb center: for steps, clamp within corner inset (Compose SliderImpl:924-930)
             let kx = if step.is_some() && !tick_frac.is_empty() {
                 let is_first = (t - tick_frac[0]).abs() < 1e-6;
                 let is_last = (t - tick_frac[tick_frac.len() - 1]).abs() < 1e-6;
@@ -2650,7 +2619,6 @@ pub fn Slider(
                 h: rect.h,
             };
 
-            // Inactive track (after thumb gap)
             let inactive_x = track_x.max(kx + gap);
             let inactive_w = (track_x + track_w - inactive_x).max(0.0);
             if inactive_w > 0.0 {
@@ -2665,7 +2633,6 @@ pub fn Slider(
                     radius: [corner; 4],
                 });
             }
-            // Active track fill (from left to thumb gap)
             let fill_w = (kx - gap - track_x).max(0.0);
             if fill_w > 0.0 {
                 scene.nodes.push(SceneNode::Rect {
@@ -2679,7 +2646,6 @@ pub fn Slider(
                     radius: [corner; 4],
                 });
             }
-            // Tick marks at step positions (skipping gap region)
             let tick_start = track_x + corner;
             let tick_end = track_x + track_w - corner;
             for &tf in &tick_frac {
@@ -2702,7 +2668,6 @@ pub fn Slider(
                     })),
                 });
             }
-            // Stop indicator at right end (only when inactive track visible)
             if inactive_w > 0.0 {
                 let sx = track_x + track_w - corner;
                 scene.nodes.push(SceneNode::Ellipse {
@@ -2715,8 +2680,8 @@ pub fn Slider(
                     brush: Brush::Solid(mul_c(config.active_track_color)),
                 });
             }
-            // Thumb pill (shrinks to 2dp when dragging, matching Compose Thumb:2469-2478)
             let da = *drag_active_p.borrow();
+            let hv = *hovered_p.borrow();
             let tw = if da { thumb_w * 0.5 } else { thumb_w };
             scene.nodes.push(SceneNode::Rect {
                 rect: Rect {
@@ -2728,6 +2693,33 @@ pub fn Slider(
                 brush: Brush::Solid(mul_c(config.thumb_color)),
                 radius: [tw * 0.5; 4],
             });
+            let sc_target = if da {
+                sc.pressed
+            } else if hv {
+                sc.hovered
+            } else {
+                sc.default
+            };
+            if sc_target.3 > 0 {
+                scene.nodes.push(SceneNode::Rect {
+                    rect: Rect {
+                        x: kx - tw * 0.5,
+                        y: cy - thumb_h * 0.5,
+                        w: tw,
+                        h: thumb_h,
+                    },
+                    brush: Brush::Solid(mul_c(sc_target)),
+                    radius: [tw * 0.5; 4],
+                });
+            }
+        })
+        .on_pointer_enter({
+            let h = hovered.clone();
+            move |_pe: PointerEvent| *h.borrow_mut() = true
+        })
+        .on_pointer_leave({
+            let h = hovered.clone();
+            move |_pe: PointerEvent| *h.borrow_mut() = false
         })
         .on_pointer_down({
             let oc = oc.clone();
@@ -2798,6 +2790,7 @@ pub fn RangeSlider(
     let track_rect = remember_state_with_key(format!("mrs_rect_{}", id), || Rect::default());
     let drag_active = remember_state_with_key(format!("mrs_da_{}", id), || false);
     let active_thumb = remember_state_with_key(format!("mrs_at_{}", id), || false);
+    let hovered = remember_state_with_key(format!("mrs_hv_{}", id), || false);
 
     let min = range.0;
     let max = range.1;
@@ -2805,6 +2798,7 @@ pub fn RangeSlider(
     let range_size = (max - min).max(1e-6);
     let t0 = ((start - min) / range_size).clamp(0.0, 1.0);
     let t1 = ((end - min) / range_size).clamp(0.0, 1.0);
+    let sc = config.state_colors;
 
     let tick_frac: Vec<f32> = if let Some(s) = step {
         let n = ((max - min) / s.max(1e-6)).round() as usize;
@@ -2816,6 +2810,7 @@ pub fn RangeSlider(
     let track_rect_p = track_rect.clone();
     let drag_active_p = drag_active.clone();
     let active_thumb_p = active_thumb.clone();
+    let hovered_p = hovered.clone();
 
     Box(Modifier::new()
         .min_width(200.0)
@@ -2840,7 +2835,6 @@ pub fn RangeSlider(
             let track_w = (rect.w - thumb_w).max(0.0);
             let cy = rect.y + rect.h * 0.5;
 
-            // Thumb centers with corner-inset for steps
             let thumb_pos = |tf: f32, fracs: &[f32]| {
                 if step.is_some() && !fracs.is_empty() {
                     let is_first = (tf - fracs[0]).abs() < 1e-6;
@@ -2893,7 +2887,6 @@ pub fn RangeSlider(
                     radius: [corner; 4],
                 });
             }
-            // Active range between thumbs
             let active_w = (active_r - gap - (active_l + gap)).max(0.0);
             if active_w > 0.0 {
                 scene.nodes.push(SceneNode::Rect {
@@ -2907,7 +2900,6 @@ pub fn RangeSlider(
                     radius: [corner; 4],
                 });
             }
-            // Tick marks at step positions (skipping gap regions)
             let tick_start = track_x + corner;
             let tick_end = track_x + track_w - corner;
             for &tf in &tick_frac {
@@ -2930,7 +2922,6 @@ pub fn RangeSlider(
                     })),
                 });
             }
-            // Stop indicators (only when corresponding inactive track visible)
             if linactive_w > 0.0 {
                 let sx0 = track_x + corner;
                 scene.nodes.push(SceneNode::Ellipse {
@@ -2955,14 +2946,13 @@ pub fn RangeSlider(
                     brush: Brush::Solid(mul_c(config.active_track_color)),
                 });
             }
-            // Thumb pills (shrink to 2dp when dragging that specific thumb)
             let da = *drag_active_p.borrow();
             let at = *active_thumb_p.borrow();
-            let thumb_sizes = [
-                (k0, if da && !at { thumb_w * 0.5 } else { thumb_w }),
-                (k1, if da && at { thumb_w * 0.5 } else { thumb_w }),
-            ];
-            for &(kx, tw) in &thumb_sizes {
+            let hv = *hovered_p.borrow();
+            let thumbs = [k0, k1];
+            for (idx, &kx) in thumbs.iter().enumerate() {
+                let is_active = da && (if idx == 0 { !at } else { at });
+                let tw = if is_active { thumb_w * 0.5 } else { thumb_w };
                 scene.nodes.push(SceneNode::Rect {
                     rect: Rect {
                         x: kx - tw * 0.5,
@@ -2973,7 +2963,34 @@ pub fn RangeSlider(
                     brush: Brush::Solid(mul_c(config.thumb_color)),
                     radius: [tw * 0.5; 4],
                 });
+                let sc_target = if is_active {
+                    sc.pressed
+                } else if hv {
+                    sc.hovered
+                } else {
+                    sc.default
+                };
+                if sc_target.3 > 0 {
+                    scene.nodes.push(SceneNode::Rect {
+                        rect: Rect {
+                            x: kx - tw * 0.5,
+                            y: cy - thumb_h * 0.5,
+                            w: tw,
+                            h: thumb_h,
+                        },
+                        brush: Brush::Solid(mul_c(sc_target)),
+                        radius: [tw * 0.5; 4],
+                    });
+                }
             }
+        })
+        .on_pointer_enter({
+            let h = hovered.clone();
+            move |_pe: PointerEvent| *h.borrow_mut() = true
+        })
+        .on_pointer_leave({
+            let h = hovered.clone();
+            move |_pe: PointerEvent| *h.borrow_mut() = false
         })
         .on_pointer_down({
             let oc = oc.clone();
