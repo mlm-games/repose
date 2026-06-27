@@ -18,6 +18,17 @@ struct VSOut {
     @location(9) @interpolate(flat) cap: f32,
 };
 
+fn ellipse_pt_at_angle(center: vec2<f32>, half: vec2<f32>, angle: f32, sc: vec2<f32>) -> vec2<f32> {
+    let c = cos(angle);
+    let s = sin(angle);
+    let denom = sqrt(half.y * half.y * c * c + half.x * half.x * s * s);
+    let local = vec2(half.x * half.y * c / denom, -half.x * half.y * s / denom);
+    return center + vec2(
+        local.x * sc.x - local.y * sc.y,
+        local.x * sc.y + local.y * sc.x
+    );
+}
+
 @vertex
 fn vs_main(
     @location(0) xywh: vec4<f32>,
@@ -43,18 +54,9 @@ fn vs_main(
     let pos_ndc = xywh.xy + rotated;
 
     let center = xywh.xy;
-    // Compute arc endpoints in NDC (on the ellipse boundary)
-    // The local_angle fn returns -atan2(dy,dx), so (dx,dy) at angle theta = (R*cos(theta), -R*sin(theta))
-    let start_local = vec2(half.x * cos(start_angle), -half.y * sin(start_angle));
-    let end_local = vec2(half.x * cos(start_angle + sweep_angle), -half.y * sin(start_angle + sweep_angle));
-    let start_endpoint = center + vec2(
-        start_local.x * sin_cos.x - start_local.y * sin_cos.y,
-        start_local.x * sin_cos.y + start_local.y * sin_cos.x
-    );
-    let end_endpoint = center + vec2(
-        end_local.x * sin_cos.x - end_local.y * sin_cos.y,
-        end_local.x * sin_cos.y + end_local.y * sin_cos.x
-    );
+    // Compute points on the ellipse at polar angles matching local_angle's convention.
+    let start_endpoint = ellipse_pt_at_angle(center, half, start_angle, sin_cos);
+    let end_endpoint = ellipse_pt_at_angle(center, half, start_angle + sweep_angle, sin_cos);
 
     var out: VSOut;
     out.pos = vec4(pos_ndc, 0.0, 1.0);
