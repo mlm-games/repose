@@ -35,7 +35,7 @@ smallvec = "1.15"
 slotmap = "1.1"
 bitflags = "2.13"
 unicode-segmentation = "1.13"
-clipawl = { version = "0.2.1" }
+clipawl = { version = "0.3.1" }
 
 # Common
 serde_json = "1"

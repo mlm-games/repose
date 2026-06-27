@@ -160,8 +160,10 @@ pub fn InstallShortcutHandler(handler: Handler) -> Dispose {
 }
 
 pub fn default_chord_for(action: &Action) -> Option<KeyChord> {
+    // On non-macOS, sets ctrl true
     let cmd = Modifiers {
         command: true,
+        ctrl: !cfg!(target_os = "macos"),
         ..Modifiers::default()
     };
     match action {
@@ -175,6 +177,7 @@ pub fn default_chord_for(action: &Action) -> Option<KeyChord> {
             Modifiers {
                 command: true,
                 shift: true,
+                ctrl: !cfg!(target_os = "macos"),
                 ..Modifiers::default()
             },
         )),

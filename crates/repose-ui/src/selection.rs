@@ -176,6 +176,25 @@ pub fn SelectableText(
         .on_pointer_down(on_down)
         .on_pointer_move(on_move)
         .on_pointer_up(on_up)
-        .painter(painter);
+        .painter(painter)
+        .on_action({
+            let selection = selection.clone();
+            let text = text_for_handlers.clone();
+            move |action| match action {
+                repose_core::shortcuts::Action::Copy => {
+                    let sel = *selection.borrow();
+                    if let Some((a, b)) = sel {
+                        let s = a.min(b);
+                        let e = a.max(b);
+                        if e > s {
+                            repose_core::clipboard::copy_to_clipboard(&text[s..e]);
+                            return true;
+                        }
+                    }
+                    false
+                }
+                _ => false,
+            }
+        });
     v
 }

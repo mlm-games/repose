@@ -268,15 +268,15 @@ pub fn run_android_app_with_options(
             self.update_ime_inset();
         }
 
-        fn copy_to_clipboard(&mut self, text: &str) {
-            if let Some(cb) = &mut self.clipboard {
-                let _ = pollster::block_on(cb.set_text(text));
+        fn copy_to_clipboard(&self, text: &str) {
+            if let Some(cb) = &self.clipboard {
+                let _ = pollster::block_on(cb.write(text));
             }
         }
 
-        fn paste_from_clipboard(&mut self) -> Option<String> {
-            if let Some(cb) = &mut self.clipboard {
-                pollster::block_on(cb.get_text()).ok()
+        fn paste_from_clipboard(&self) -> Option<String> {
+            if let Some(cb) = &self.clipboard {
+                pollster::block_on(cb.read()).ok()
             } else {
                 None
             }

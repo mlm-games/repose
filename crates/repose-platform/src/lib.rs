@@ -411,15 +411,15 @@ pub fn run_desktop_app(
             rc::tf_ensure_caret_visible(st, is_multiline);
         }
 
-        fn copy_to_clipboard(&mut self, text: String) {
-            if let Some(cb) = &mut self.clipboard {
-                let _ = pollster::block_on(cb.set_text(&text));
+        fn copy_to_clipboard(&self, text: String) {
+            if let Some(cb) = &self.clipboard {
+                let _ = pollster::block_on(cb.write(&text));
             }
         }
 
-        fn paste_from_clipboard(&mut self) -> Option<String> {
-            if let Some(cb) = &mut self.clipboard {
-                match pollster::block_on(cb.get_text()) {
+        fn paste_from_clipboard(&self) -> Option<String> {
+            if let Some(cb) = &self.clipboard {
+                match pollster::block_on(cb.read()) {
                     Ok(t) => Some(t),
                     Err(e) => {
                         eprintln!("Paste error: {}", e);
@@ -546,7 +546,17 @@ pub fn run_desktop_app(
 
     impl ApplicationHandler<()> for App {
         fn resumed(&mut self, el: &winit::event_loop::ActiveEventLoop) {
-            self.clipboard = clipawl::Clipboard::new().ok();
+            self.clipboard = clipawl::Clipboard::new().map_err(|e| {
+                eprintln!("clipawl clipboard init failed: {e}");
+                e
+            }).ok();
+            // Register for SelectableText (Ctrl+C) — use blocking API directly
+            repose_core::clipboard::set_clipboard_fn(Box::new(move |text| {
+                if let Err(e) = clipawl::blocking::write(text) {
+                    eprintln!("clipboard write error: {e}");
+                }
+            }));
+
 
             if self.window.is_none() {
                 match el.create_window(

@@ -355,8 +355,8 @@ impl App {
 
     fn copy_to_clipboard_async(&self, text: String) {
         spawn_local(async move {
-            if let Ok(mut cb) = clipawl::Clipboard::new() {
-                let _ = cb.set_text(&text).await;
+            if let Ok(cb) = clipawl::Clipboard::new() {
+                let _ = cb.write(&text).await;
             }
         });
     }
@@ -366,8 +366,8 @@ impl App {
         let win = self.window.clone();
 
         spawn_local(async move {
-            if let Ok(mut cb) = clipawl::Clipboard::new() {
-                if let Ok(t) = cb.get_text().await {
+            if let Ok(cb) = clipawl::Clipboard::new() {
+                if let Ok(t) = cb.read().await {
                     actions.borrow_mut().push(ClipboardAction::PasteText(t));
                     if let Some(w) = win.as_ref() {
                         w.request_redraw();
