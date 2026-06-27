@@ -960,9 +960,8 @@ pub fn run_desktop_app(
                                     let pad = self.padding_px();
                                     let inner_x = hit.rect.x + pad;
                                     let inner_y = hit.rect.y + self.dp_px(8.0);
-                                    let content_x = (self.mouse_pos_px.0 - inner_x
-                                        + st.scroll_offset)
-                                        .max(0.0);
+                                    let content_x =
+                                        (self.mouse_pos_px.0 - inner_x + st.scroll_offset).max(0.0);
                                     let content_y = (self.mouse_pos_px.1 - inner_y
                                         + st.scroll_offset_y)
                                         .max(0.0);
@@ -992,17 +991,10 @@ pub fn run_desktop_app(
                                         let (cx, cy, _) = textfield::caret_xy_for_byte(
                                             &st.text, font_px, wrap_w, caret_idx,
                                         );
-                                        st.ensure_caret_visible_xy(
-                                            cx,
-                                            cy,
-                                            iw,
-                                            ih,
-                                            self.dp_px(2.0),
-                                        );
+                                        st.ensure_caret_visible_xy(cx, cy, iw, ih, self.dp_px(2.0));
                                     } else {
                                         let m = measure_text(&st.text, font_px, None);
-                                        let cx =
-                                            m.positions.get(caret_idx).copied().unwrap_or(0.0);
+                                        let cx = m.positions.get(caret_idx).copied().unwrap_or(0.0);
                                         st.ensure_caret_visible(cx, iw, self.dp_px(2.0));
                                     }
                                 }
@@ -1075,7 +1067,9 @@ pub fn run_desktop_app(
                     button: MouseButton::Middle,
                     ..
                 } => {
-                    let Some(f) = &self.frame_cache else { return; };
+                    let Some(f) = &self.frame_cache else {
+                        return;
+                    };
                     let pos = Vec2 {
                         x: self.mouse_pos_px.0,
                         y: self.mouse_pos_px.1,
@@ -1103,7 +1097,8 @@ pub fn run_desktop_app(
                                     st.insert_text_atomic(&txt);
                                     self.notify_text_change(hit.id, st.text.clone());
                                     if let Some(f) = &self.frame_cache
-                                        && let Some(h) = f.hit_regions.iter().find(|h| h.id == hit.id)
+                                        && let Some(h) =
+                                            f.hit_regions.iter().find(|h| h.id == hit.id)
                                     {
                                         App::tf_ensure_caret_visible(&mut st, h.tf_multiline);
                                     }
@@ -1204,7 +1199,8 @@ pub fn run_desktop_app(
                             x: self.mouse_pos_px.0,
                             y: self.mouse_pos_px.1,
                         };
-                        if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos)) {
+                        if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos))
+                        {
                             if let Some(cb) = &hit.on_pointer_up {
                                 cb(repose_core::input::PointerEvent {
                                     id: repose_core::input::PointerId(0),
@@ -1247,85 +1243,6 @@ pub fn run_desktop_app(
                             _ => {}
                         }
                     }
-                    // Focus traversal: Tab / Shift+Tab
-                    if matches!(key_event.physical_key, PhysicalKey::Code(KeyCode::Tab)) {
-                        // Only act on initial press, ignore repeats
-                        if key_event.state == ElementState::Pressed
-                            && !key_event.repeat
-                            && let Some(f) = &self.frame_cache
-                            && let Some(next) = rc::focus_in_direction(
-                                &f.focus_chain,
-                                &f.hit_regions,
-                                self.sched.focused,
-                                if self.modifiers.shift {
-                                    FocusDirection::Previous
-                                } else {
-                                    FocusDirection::Next
-                                },
-                            )
-                        {
-                            // If a button was "pressed" via keyboard, clear it when we move focus
-                            if let Some(active) = self.key_pressed_active.take() {
-                                self.pressed_ids.remove(&active);
-                            }
-
-                            self.sched.focused = Some(next);
-
-                            // For when a TextField gains focus via keyboard
-                            let tf_state_key = f
-                                .hit_regions
-                                .iter()
-                                .find(|h| h.id == next)
-                                .and_then(|h| h.tf_state_key);
-                            if let Some(key) = tf_state_key {
-                                self.textfield_states.entry(key).or_insert_with(|| {
-                                    Rc::new(RefCell::new(repose_ui::TextFieldState::new()))
-                                });
-                                if let Some(state_rc) = self.textfield_states.get(&key) {
-                                    state_rc.borrow_mut().reset_caret_blink();
-                                }
-                            }
-
-                            // IME only for TextField
-                            if let Some(win) = &self.window {
-                                let is_textfield = f
-                                    .semantics_nodes
-                                    .iter()
-                                    .any(|n| n.id == next && n.role == Role::TextField);
-                                rc_web::set_ime_for_textfield(win, is_textfield);
-                            }
-                            self.announce_focus_change();
-                            self.request_redraw();
-                        }
-                        return; // swallow Tab
-                    }
-
-                    handle_arrow_key_spatial_nav!(self, key_event, f, next, {
-                        if let Some(active) = self.key_pressed_active.take() {
-                            self.pressed_ids.remove(&active);
-                        }
-                        let tf_state_key = f
-                            .hit_regions
-                            .iter()
-                            .find(|h| h.id == next)
-                            .and_then(|h| h.tf_state_key);
-                        if let Some(key) = tf_state_key {
-                            self.textfield_states.entry(key).or_insert_with(|| {
-                                Rc::new(RefCell::new(repose_ui::TextFieldState::new()))
-                            });
-                            if let Some(state_rc) = self.textfield_states.get(&key) {
-                                state_rc.borrow_mut().reset_caret_blink();
-                            }
-                        }
-                        if let Some(win) = &self.window {
-                            let is_textfield = f
-                                .semantics_nodes
-                                .iter()
-                                .any(|n| n.id == next && n.role == Role::TextField);
-                            rc_web::set_ime_for_textfield(win, is_textfield);
-                        }
-                        self.announce_focus_change();
-                    });
 
                     if key_event.state == ElementState::Pressed
                         && !key_event.repeat
@@ -1905,6 +1822,37 @@ pub fn run_desktop_app(
 
             if shortcuts::handle(action.clone()) {
                 return true;
+            }
+
+            // Focus navigation (Tab/arrows)
+            if let Some(f) = &self.frame_cache {
+                if let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.sched, f)
+                {
+                    if let Some(active) = self.key_pressed_active.take() {
+                        self.pressed_ids.remove(&active);
+                    }
+                    let tf_state_key = f
+                        .hit_regions
+                        .iter()
+                        .find(|h| h.id == new_id)
+                        .and_then(|h| h.tf_state_key);
+                    if let Some(key) = tf_state_key {
+                        self.textfield_states.entry(key).or_insert_with(|| {
+                            Rc::new(RefCell::new(repose_ui::TextFieldState::new()))
+                        });
+                        if let Some(state_rc) = self.textfield_states.get(&key) {
+                            state_rc.borrow_mut().reset_caret_blink();
+                        }
+                    }
+                    if let Some(win) = &self.window {
+                        let is_textfield = f.semantics_nodes.iter().any(|n| {
+                            n.id == new_id && n.role == repose_core::semantics::Role::TextField
+                        });
+                        rc_web::set_ime_for_textfield(win, is_textfield);
+                    }
+                    self.announce_focus_change();
+                    return true;
+                }
             }
 
             false

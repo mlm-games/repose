@@ -321,17 +321,6 @@ pub(crate) fn touch_slop_px(scale: f32) -> f32 {
     6.0 * scale
 }
 
-/// Delegate focus movement to the core spatial focus algorithm.
-/// Now lives in `repose_core::spatial_focus_next`.
-pub(crate) fn focus_in_direction(
-    chain: &[u64],
-    hit_regions: &[HitRegion],
-    current: Option<u64>,
-    dir: FocusDirection,
-) -> Option<u64> {
-    repose_core::spatial_focus_next(chain, hit_regions, current, dir)
-}
-
 pub(crate) fn is_dnd_target(hit: &HitRegion) -> bool {
     hit.on_drop.is_some()
         || hit.on_drag_enter.is_some()
@@ -450,43 +439,6 @@ macro_rules! handle_text_undo_redo {
         }
         __handled
     }};
-}
-
-/// Handle arrow key spatial focus navigation.
-///
-/// Skips when the focused element is a TextField (those handle arrows for cursor movement)
-#[macro_export]
-macro_rules! handle_arrow_key_spatial_nav {
-    ($app:expr, $key_event:expr, $f:ident, $next:ident, $on_focus:expr) => {
-        if $key_event.state == ElementState::Pressed && !$key_event.repeat {
-            let nav_dir = match $key_event.physical_key {
-                PhysicalKey::Code(KeyCode::ArrowLeft) => Some(FocusDirection::Left),
-                PhysicalKey::Code(KeyCode::ArrowRight) => Some(FocusDirection::Right),
-                PhysicalKey::Code(KeyCode::ArrowUp) => Some(FocusDirection::Up),
-                PhysicalKey::Code(KeyCode::ArrowDown) => Some(FocusDirection::Down),
-                _ => None,
-            };
-            if let Some(dir) = nav_dir
-                && let Some($f) = &$app.frame_cache
-                && !$f
-                    .semantics_nodes
-                    .iter()
-                    .any(|n| $app.sched.focused == Some(n.id) && n.role == Role::TextField)
-            {
-                if let Some($next) = $crate::common::focus_in_direction(
-                    &$f.focus_chain,
-                    &$f.hit_regions,
-                    $app.sched.focused,
-                    dir,
-                ) {
-                    $app.sched.focused = Some($next);
-                    $on_focus;
-                    $app.request_redraw();
-                }
-                return; // swallow arrow key
-            }
-        }
-    };
 }
 
 pub(crate) fn process_render_commands(

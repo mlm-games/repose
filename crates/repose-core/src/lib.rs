@@ -101,6 +101,7 @@
 pub mod animation;
 pub mod clipboard;
 pub mod color;
+pub mod focus;
 pub mod cursor;
 pub mod dnd;
 pub mod effects;
@@ -129,6 +130,7 @@ pub use cursor::*;
 pub use dnd::*;
 pub use effects::*;
 pub use effects_ext::*;
+pub use focus::*;
 pub use frame_clock::{peek_frame_request, request_frame, signal_fired, take_frame_request, take_signal_fired};
 pub use geometry::*;
 pub use locals::*;

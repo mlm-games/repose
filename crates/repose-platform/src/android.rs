@@ -306,6 +306,30 @@ pub fn run_android_app_with_options(
                 return true;
             }
 
+            // Focus navigation (Tab/arrows)
+            if let Some(f) = &self.frame_cache {
+                if let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.sched, f)
+                {
+                    let tf_state_key = f
+                        .hit_regions
+                        .iter()
+                        .find(|h| h.id == new_id)
+                        .and_then(|h| h.tf_state_key);
+                    if let Some(key) = tf_state_key {
+                        self.textfield_states
+                            .entry(key)
+                            .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
+                        if let Some(state_rc) = self.textfield_states.get(&key) {
+                            state_rc.borrow_mut().reset_caret_blink();
+                        }
+                    }
+                    if let Some(win) = &self.window {
+                        rc_web::set_ime_for_textfield(win, self.is_textfield(new_id));
+                    }
+                    return true;
+                }
+            }
+
             false
         }
         fn dnd_slop_px(&self) -> f32 {
@@ -827,69 +851,7 @@ pub fn run_android_app_with_options(
                                 return;
                             }
                         }
-
                     }
-
-                    // Tab traversal
-                    if matches!(key_event.physical_key, PhysicalKey::Code(KeyCode::Tab)) {
-                        if key_event.state == ElementState::Pressed && !key_event.repeat {
-                            if let Some(f) = &self.frame_cache {
-                                if let Some(next) = rc::focus_in_direction(
-                                    &f.focus_chain,
-                                    &f.hit_regions,
-                                    self.sched.focused,
-                                    if self.modifiers.shift {
-                                        FocusDirection::Previous
-                                    } else {
-                                        FocusDirection::Next
-                                    },
-                                ) {
-                                    self.sched.focused = Some(next);
-
-                                    let tf_state_key = f
-                                        .hit_regions
-                                        .iter()
-                                        .find(|h| h.id == next)
-                                        .and_then(|h| h.tf_state_key);
-                                    if let Some(key) = tf_state_key {
-                                        self.textfield_states.entry(key).or_insert_with(|| {
-                                            Rc::new(RefCell::new(TextFieldState::new()))
-                                        });
-                                        if let Some(state_rc) = self.textfield_states.get(&key) {
-                                            state_rc.borrow_mut().reset_caret_blink();
-                                        }
-                                    }
-
-                                    if let Some(win) = &self.window {
-                                        win.set_ime_allowed(self.is_textfield(next));
-                                    }
-                                    self.dirty = true;
-                                    self.request_redraw();
-                                }
-                            }
-                        }
-                        return;
-                    }
-
-                    handle_arrow_key_spatial_nav!(self, key_event, f, next, {
-                        let tf_state_key = f
-                            .hit_regions
-                            .iter()
-                            .find(|h| h.id == next)
-                            .and_then(|h| h.tf_state_key);
-                        if let Some(key) = tf_state_key {
-                            self.textfield_states
-                                .entry(key)
-                                .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
-                            if let Some(state_rc) = self.textfield_states.get(&key) {
-                                state_rc.borrow_mut().reset_caret_blink();
-                            }
-                        }
-                        if let Some(win) = &self.window {
-                            win.set_ime_allowed(self.is_textfield(next));
-                        }
-                        self.dirty = true;
-                    });
 
                     // Keyboard activation for focused buttons (Space/Enter)
                     if let Some(fid) = self.sched.focused {

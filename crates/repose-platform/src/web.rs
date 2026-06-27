@@ -439,6 +439,27 @@ impl App {
             return true;
         }
 
+        // Focus navigation (Tab/arrows)
+        if let Some(f) = &self.frame_cache {
+            if let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.sched, f) {
+                let tf_state_key = f
+                    .hit_regions
+                    .iter()
+                    .find(|h| h.id == new_id)
+                    .and_then(|h| h.tf_state_key);
+                if let Some(key) = tf_state_key {
+                    self.textfield_states
+                        .entry(key)
+                        .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
+                    if let Some(state_rc) = self.textfield_states.get(&key) {
+                        state_rc.borrow_mut().reset_caret_blink();
+                    }
+                }
+                rc_web::set_ime_for_textfield(&window, self.is_textfield(new_id));
+                return true;
+            }
+        }
+
         // Web clipboard read is async, so Paste needs a platform fallback
         if matches!(action, repose_core::shortcuts::Action::Paste) {
             self.request_paste_async();
@@ -1332,69 +1353,6 @@ impl ApplicationHandler<()> for App {
                         }
                     }
                 }
-
-                // focus traversal: Tab / Shift+Tab
-                if matches!(key_event.physical_key, PhysicalKey::Code(KeyCode::Tab)) {
-                    if key_event.state == ElementState::Pressed && !key_event.repeat {
-                        if let Some(f) = &self.frame_cache {
-                            if let Some(next) = rc::focus_in_direction(
-                                &f.focus_chain,
-                                &f.hit_regions,
-                                self.sched.focused,
-                                if self.modifiers.shift {
-                                    FocusDirection::Previous
-                                } else {
-                                    FocusDirection::Next
-                                },
-                            ) {
-                                // If a button was "pressed" via keyboard, clear it when we move focus
-                                if let Some(active) = self.key_pressed_active.take() {
-                                    self.pressed_ids.remove(&active);
-                                }
-
-                                self.sched.focused = Some(next);
-
-                                let tf_state_key = f
-                                    .hit_regions
-                                    .iter()
-                                    .find(|h| h.id == next)
-                                    .and_then(|h| h.tf_state_key);
-                                if let Some(key) = tf_state_key {
-                                    self.textfield_states.entry(key).or_insert_with(|| {
-                                        Rc::new(RefCell::new(TextFieldState::new()))
-                                    });
-                                    if let Some(state_rc) = self.textfield_states.get(&key) {
-                                        state_rc.borrow_mut().reset_caret_blink();
-                                    }
-                                }
-
-                                rc_web::set_ime_for_textfield(&window, self.is_textfield(next));
-                                self.request_redraw();
-                            }
-                        }
-                    }
-                    return;
-                }
-
-                handle_arrow_key_spatial_nav!(self, key_event, f, next, {
-                    if let Some(active) = self.key_pressed_active.take() {
-                        self.pressed_ids.remove(&active);
-                    }
-                    let tf_state_key = f
-                        .hit_regions
-                        .iter()
-                        .find(|h| h.id == next)
-                        .and_then(|h| h.tf_state_key);
-                    if let Some(key) = tf_state_key {
-                        self.textfield_states
-                            .entry(key)
-                            .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
-                        if let Some(state_rc) = self.textfield_states.get(&key) {
-                            state_rc.borrow_mut().reset_caret_blink();
-                        }
-                    }
-                    rc_web::set_ime_for_textfield(&window, self.is_textfield(next));
-                });
 
                 if let Some(fid) = self.sched.focused {
                     // If focused is NOT a TextField, allow Space/Enter activation

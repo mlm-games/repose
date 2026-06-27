@@ -26,6 +26,13 @@ pub enum Action {
     Find,
     Save,
 
+    FocusNext,
+    FocusPrevious,
+    FocusLeft,
+    FocusRight,
+    FocusUp,
+    FocusDown,
+
     Gesture(Gesture),
     Custom(Rc<str>),
 }
@@ -183,13 +190,21 @@ pub fn default_chord_for(action: &Action) -> Option<KeyChord> {
         )),
         Action::Find => Some(KeyChord::new(Key::Character('f'), cmd)),
         Action::Save => Some(KeyChord::new(Key::Character('s'), cmd)),
+        Action::FocusNext => Some(KeyChord::new(Key::Tab, Modifiers::default())),
+        Action::FocusPrevious => {
+            Some(KeyChord::new(Key::Tab, Modifiers { shift: true, ..Modifiers::default() }))
+        }
+        Action::FocusLeft => Some(KeyChord::new(Key::ArrowLeft, Modifiers::default())),
+        Action::FocusRight => Some(KeyChord::new(Key::ArrowRight, Modifiers::default())),
+        Action::FocusUp => Some(KeyChord::new(Key::ArrowUp, Modifiers::default())),
+        Action::FocusDown => Some(KeyChord::new(Key::ArrowDown, Modifiers::default())),
         _ => None,
     }
 }
 
 pub fn default_map() -> ShortcutMap {
     let mut map = ShortcutMap::new();
-    let actions = [
+    let mut actions = vec![
         Action::Copy,
         Action::Cut,
         Action::Paste,
@@ -198,6 +213,12 @@ pub fn default_map() -> ShortcutMap {
         Action::Redo,
         Action::Find,
         Action::Save,
+        Action::FocusNext,
+        Action::FocusPrevious,
+        Action::FocusLeft,
+        Action::FocusRight,
+        Action::FocusUp,
+        Action::FocusDown,
     ];
     for action in actions {
         if let Some(chord) = default_chord_for(&action) {
