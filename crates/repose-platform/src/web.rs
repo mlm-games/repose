@@ -1088,6 +1088,63 @@ impl ApplicationHandler<()> for App {
                 }
             }
 
+            WindowEvent::MouseInput {
+                state,
+                button: MouseButton::Middle,
+                ..
+            } => {
+                if let Some(f) = &self.frame_cache {
+                    let pos = Vec2 {
+                        x: self.mouse_pos_px.0,
+                        y: self.mouse_pos_px.1,
+                    };
+                    match state {
+                        ElementState::Pressed => {
+                            if let Some(i) = rc::top_hit_index(f, pos) {
+                                let hit = &f.hit_regions[i];
+                                if let Some(cb) = &hit.on_pointer_down {
+                                    cb(repose_core::input::PointerEvent {
+                                        id: repose_core::input::PointerId(0),
+                                        kind: repose_core::input::PointerKind::Mouse,
+                                        event: repose_core::input::PointerEventKind::Down(
+                                            repose_core::input::PointerButton::Tertiary,
+                                        ),
+                                        position: pos,
+                                        pressure: 1.0,
+                                        modifiers: self.modifiers,
+                                    });
+                                }
+                                // Paste from clipboard as a best-effort for middle-click
+                                if self.is_textfield(hit.id) {
+                                    self.request_paste_async();
+                                }
+                            }
+                            self.request_redraw();
+                        }
+                        ElementState::Released => {
+                            let pos = Vec2 {
+                                x: self.mouse_pos_px.0,
+                                y: self.mouse_pos_px.1,
+                            };
+                            if let Some(i) = rc::top_hit_index(f, pos)
+                                && let Some(cb) = &f.hit_regions[i].on_pointer_up
+                            {
+                                cb(repose_core::input::PointerEvent {
+                                    id: repose_core::input::PointerId(0),
+                                    kind: repose_core::input::PointerKind::Mouse,
+                                    event: repose_core::input::PointerEventKind::Up(
+                                        repose_core::input::PointerButton::Tertiary,
+                                    ),
+                                    position: pos,
+                                    pressure: 1.0,
+                                    modifiers: self.modifiers,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
             WindowEvent::Touch(t) => {
                 use repose_core::shortcuts::{Action, Gesture};
 

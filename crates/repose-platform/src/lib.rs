@@ -431,6 +431,26 @@ pub fn run_desktop_app(
             }
         }
 
+        fn paste_from_primary(&self) -> Option<String> {
+            let opts = clipawl::ClipboardOptions {
+                linux: clipawl::LinuxOptions {
+                    selection: clipawl::LinuxSelection::Primary,
+                    ..Default::default()
+                },
+            };
+            if let Ok(cb) = clipawl::Clipboard::new_with_options(opts) {
+                match pollster::block_on(cb.read()) {
+                    Ok(t) => Some(t),
+                    Err(e) => {
+                        eprintln!("Primary paste error: {}", e);
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        }
+
         fn process_render_commands(&mut self) {
             let Some(backend) = self.backend.as_mut() else {
                 return;
@@ -546,10 +566,12 @@ pub fn run_desktop_app(
 
     impl ApplicationHandler<()> for App {
         fn resumed(&mut self, el: &winit::event_loop::ActiveEventLoop) {
-            self.clipboard = clipawl::Clipboard::new().map_err(|e| {
-                eprintln!("clipawl clipboard init failed: {e}");
-                e
-            }).ok();
+            self.clipboard = clipawl::Clipboard::new()
+                .map_err(|e| {
+                    eprintln!("clipawl clipboard init failed: {e}");
+                    e
+                })
+                .ok();
             // Register for SelectableText (Ctrl+C) — use blocking API directly
             repose_core::clipboard::set_clipboard_fn(Box::new(move |text| {
                 if let Err(e) = clipawl::blocking::write(text) {
@@ -557,6 +579,17 @@ pub fn run_desktop_app(
                 }
             }));
 
+            repose_core::clipboard::set_primary_fn(Box::new(|text| {
+                let opts = clipawl::ClipboardOptions {
+                    linux: clipawl::LinuxOptions {
+                        selection: clipawl::LinuxSelection::Primary,
+                        ..Default::default()
+                    },
+                };
+                if let Ok(cb) = clipawl::Clipboard::new_with_options(opts) {
+                    let _ = pollster::block_on(cb.write(text));
+                }
+            }));
 
             if self.window.is_none() {
                 match el.create_window(
@@ -1042,6 +1075,50 @@ pub fn run_desktop_app(
                 }
 
                 WindowEvent::MouseInput {
+                    state: ElementState::Pressed,
+                    button: MouseButton::Middle,
+                    ..
+                } => {
+                    let Some(f) = &self.frame_cache else { return; };
+                    let pos = Vec2 {
+                        x: self.mouse_pos_px.0,
+                        y: self.mouse_pos_px.1,
+                    };
+                    if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos)) {
+                        // Dispatch Tertiary pointer event
+                        if let Some(cb) = &hit.on_pointer_down {
+                            cb(repose_core::input::PointerEvent {
+                                id: repose_core::input::PointerId(0),
+                                kind: repose_core::input::PointerKind::Mouse,
+                                event: repose_core::input::PointerEventKind::Down(
+                                    repose_core::input::PointerButton::Tertiary,
+                                ),
+                                position: pos,
+                                pressure: 1.0,
+                                modifiers: self.modifiers,
+                            });
+                        }
+                        // Paste primary selection into textfield
+                        if self.is_textfield(hit.id) {
+                            let key = self.tf_key_of(hit.id);
+                            if let Some(state_rc) = self.textfield_states.get(&key) {
+                                if let Some(txt) = self.paste_from_primary() {
+                                    let mut st = state_rc.borrow_mut();
+                                    st.insert_text_atomic(&txt);
+                                    self.notify_text_change(hit.id, st.text.clone());
+                                    if let Some(f) = &self.frame_cache
+                                        && let Some(h) = f.hit_regions.iter().find(|h| h.id == hit.id)
+                                    {
+                                        App::tf_ensure_caret_visible(&mut st, h.tf_multiline);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    self.request_redraw();
+                }
+
+                WindowEvent::MouseInput {
                     state: ElementState::Released,
                     button: MouseButton::Left,
                     ..
@@ -1119,6 +1196,33 @@ pub fn run_desktop_app(
                     self.capture_id = None;
 
                     repose_core::request_frame();
+                }
+
+                WindowEvent::MouseInput {
+                    state: ElementState::Released,
+                    button: MouseButton::Middle,
+                    ..
+                } => {
+                    if let Some(f) = &self.frame_cache {
+                        let pos = Vec2 {
+                            x: self.mouse_pos_px.0,
+                            y: self.mouse_pos_px.1,
+                        };
+                        if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos)) {
+                            if let Some(cb) = &hit.on_pointer_up {
+                                cb(repose_core::input::PointerEvent {
+                                    id: repose_core::input::PointerId(0),
+                                    kind: repose_core::input::PointerKind::Mouse,
+                                    event: repose_core::input::PointerEventKind::Up(
+                                        repose_core::input::PointerButton::Tertiary,
+                                    ),
+                                    position: pos,
+                                    pressure: 1.0,
+                                    modifiers: self.modifiers,
+                                });
+                            }
+                        }
+                    }
                 }
 
                 WindowEvent::ModifiersChanged(new_mods) => {

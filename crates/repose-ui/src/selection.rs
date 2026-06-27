@@ -56,6 +56,7 @@ pub fn SelectableText(
     };
 
     let cb_move = callback.clone();
+    let text_for_primary = text_for_handlers.clone();
     let on_move = {
         let text = text_for_handlers.clone();
         let selection = selection.clone();
@@ -76,18 +77,31 @@ pub fn SelectableText(
             let wrap_w = r.w.max(1.0);
             let byte = index_for_xy_bytes(&text, font_px, wrap_w, lx, ly);
             let a = *anchor.borrow();
-            *selection.borrow_mut() = Some((a, byte));
-            cb_move(Some((a, byte)));
+            let sel = Some((a.min(byte), a.max(byte)));
+            *selection.borrow_mut() = sel;
+            cb_move(sel);
+            if let Some((s, e)) = sel && e > s {
+                repose_core::clipboard::set_primary_selection(&text[s..e]);
+            }
         }
     };
 
     let cb_up = callback.clone();
     let on_up = {
+        let text = text_for_primary.clone();
         let selection = selection.clone();
         let dragging = dragging.clone();
         move |_ev: PointerEvent| {
             *dragging.borrow_mut() = false;
-            cb_up(*selection.borrow());
+            let sel = *selection.borrow();
+            if let Some((a, b)) = sel {
+                let s = a.min(b);
+                let e = a.max(b);
+                if e > s {
+                    repose_core::clipboard::set_primary_selection(&text[s..e]);
+                }
+            }
+            cb_up(sel);
         }
     };
 
