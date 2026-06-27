@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use web_time::Duration;
 
-use repose_core::animation::{AnimationSpec, CubicBezier, Easing, RepeatableSpec};
+use repose_core::animation::{AnimationSpec, CubicBezier, Easing, KeyframesSpec, RepeatableSpec};
 use repose_core::*;
 use repose_ui::anim::{animate_color, animate_f32};
 use repose_ui::{Box, Column, Row, Stack, Text, TextStyle, ViewExt};
@@ -1506,67 +1506,47 @@ pub fn CircularProgressIndicator(
     //   2. Additional rotation — 90° stepped jumps with EmphasizedDecelerate
     //   3. Sweep — oscillates 0.1 → 0.87 → 0.1 over 6000ms
     let (global_rotation, additional_rotation, sweep_val) = if value.is_none() {
-        let anim_global = remember_state_with_key("circ_ind_global_rot", || {
+        let shared = remember_state_with_key("circ_ind_shared", || {
             let mut a = AnimatedValue::new(
                 0.0f32,
                 AnimationSpec::tween(Duration::from_millis(6000), Easing::Linear)
                     .repeated(RepeatableSpec::infinite()),
             );
-            a.set_target(1080.0);
+            a.set_target(1.0);
             a
         });
-        let mut a = anim_global.borrow_mut();
-        a.update();
-        let gv = *a.get();
-        drop(a);
+        let mut s = shared.borrow_mut();
+        s.update();
+        let t = *s.get();
+        drop(s);
 
-        let anim_add = remember_state_with_key("circ_ind_add_rot", || {
-            let mut a = AnimatedValue::new(
-                0.0f32,
-                AnimationSpec::tween(Duration::from_millis(6000), Easing::Linear)
-                    .repeated(RepeatableSpec::infinite()),
-            );
-            let emph = Easing::Custom(CubicBezier::new(0.05, 0.7, 0.1, 1.0));
-            a.set_keyframes(KeyframesSpec {
-                keyframes: vec![
-                    (0.0, 0.0, None),
-                    (0.05, 90.0, Some(emph)),
-                    (0.25, 90.0, None),
-                    (0.30, 180.0, None),
-                    (0.50, 180.0, None),
-                    (0.55, 270.0, None),
-                    (0.75, 270.0, None),
-                    (0.80, 360.0, None),
-                    (1.0, 360.0, None),
-                ],
-            });
-            a
-        });
-        let mut a = anim_add.borrow_mut();
-        a.update();
-        let av = *a.get();
-        drop(a);
+        let gv = t * 1080.0;
 
-        let anim_sweep = remember_state_with_key("circ_ind_sweep", || {
-            let mut a = AnimatedValue::new(
-                0.1f32,
-                AnimationSpec::tween(Duration::from_millis(6000), Easing::Linear)
-                    .repeated(RepeatableSpec::infinite()),
-            );
-            let std_dec = Easing::Custom(CubicBezier::new(0.2, 0.0, 0.0, 1.0));
-            a.set_keyframes(KeyframesSpec {
-                keyframes: vec![
-                    (0.0, 0.1, None),
-                    (0.5, 0.87, Some(std_dec)),
-                    (1.0, 0.1, None),
-                ],
-            });
-            a
+        let emph = Easing::Custom(CubicBezier::new(0.05, 0.7, 0.1, 1.0));
+        let add_kf = remember_state_with_key("circ_ind_add_kf", || KeyframesSpec {
+            keyframes: vec![
+                (0.0, 0.0, None),
+                (0.05, 90.0, Some(emph)),
+                (0.25, 90.0, None),
+                (0.30, 180.0, None),
+                (0.50, 180.0, None),
+                (0.55, 270.0, None),
+                (0.75, 270.0, None),
+                (0.80, 360.0, None),
+                (1.0, 360.0, None),
+            ],
         });
-        let mut a = anim_sweep.borrow_mut();
-        a.update();
-        let sv = *a.get();
-        drop(a);
+        let av = add_kf.borrow().evaluate(t);
+
+        let std_dec = Easing::Custom(CubicBezier::new(0.2, 0.0, 0.0, 1.0));
+        let sweep_kf = remember_state_with_key("circ_ind_sweep_kf", || KeyframesSpec {
+            keyframes: vec![
+                (0.0, 0.1, None),
+                (0.5, 0.87, Some(std_dec)),
+                (1.0, 0.1, None),
+            ],
+        });
+        let sv = sweep_kf.borrow().evaluate(t);
 
         (gv, av, sv)
     } else {
