@@ -240,13 +240,13 @@ pub enum SceneNode {
     Rect {
         rect: Rect,
         brush: Brush,
-        radius: f32,
+        radius: [f32; 4],
     },
     Border {
         rect: Rect,
         color: Color,
         width: f32,
-        radius: f32,
+        radius: [f32; 4],
     },
     Text {
         rect: Rect,
@@ -266,7 +266,7 @@ pub enum SceneNode {
     },
     PushClip {
         rect: Rect,
-        radius: f32,
+        radius: [f32; 4],
     },
     PopClip,
     PushTransform {
@@ -283,7 +283,7 @@ pub enum SceneNode {
     /// The `elevation` field controls offset and alpha.
     Shadow {
         rect: Rect,
-        radius: f32,
+        radius: [f32; 4],
         elevation: f32,
         color: Color,
     },

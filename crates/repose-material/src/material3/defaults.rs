@@ -477,6 +477,15 @@ impl SegmentedButtonDefaults {
     pub fn unselected_content_color() -> Color {
         theme().on_surface
     }
+    pub fn state_colors_default() -> StateColors {
+        let th = theme();
+        StateColors {
+            default: Color::TRANSPARENT,
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
+            disabled: Color::TRANSPARENT,
+        }
+    }
 }
 
 /// Default values for FAB.

@@ -121,14 +121,14 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                     scene.nodes.push(SceneNode::Rect {
                         rect: to_global(*r),
                         brush: Brush::Solid(*color),
-                        radius: *radius,
+                        radius: [*radius; 4],
                     });
                     if let Some((w, c)) = stroke {
                         scene.nodes.push(SceneNode::Border {
                             rect: to_global(*r),
                             color: *c,
                             width: *w,
-                            radius: *radius,
+                            radius: [*radius; 4],
                         });
                     }
                 }

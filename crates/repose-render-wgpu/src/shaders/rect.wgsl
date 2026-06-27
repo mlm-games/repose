@@ -10,7 +10,7 @@ struct VSOut {
     @location(1) color0: vec4<f32>,
     @location(2) color1: vec4<f32>,
     @location(3) xywh: vec4<f32>,
-    @location(4) radius: f32,
+    @location(4) radii: vec4<f32>,
     @location(5) grad_start: vec2<f32>,
     @location(6) grad_end: vec2<f32>,
     @location(7) pos_ndc: vec2<f32>,
@@ -20,7 +20,7 @@ struct VSOut {
 @vertex
 fn vs_main(
     @location(0) xywh: vec4<f32>,
-    @location(1) radius: f32,
+    @location(1) radii: vec4<f32>,
     @location(2) @interpolate(flat) brush_type: u32,
     @location(3) color0: vec4<f32>,
     @location(4) color1: vec4<f32>,
@@ -42,7 +42,7 @@ fn vs_main(
     var out: VSOut;
     out.pos = vec4(pos_ndc, 0.0, 1.0);
     out.xywh = xywh;
-    out.radius = radius;
+    out.radii = radii;
     out.brush_type = brush_type;
     out.color0 = color0;
     out.color1 = color1;
@@ -53,12 +53,21 @@ fn vs_main(
     return out;
 }
 
-fn sdf_round_box_px(p_px: vec2<f32>, half_px: vec2<f32>, r_px: f32) -> f32 {
-    let r = max(r_px, 0.0);
-    let q = abs(p_px) - (half_px - vec2<f32>(r, r));
-    let outside = max(q, vec2<f32>(0.0, 0.0));
+fn corner_radius(p: vec2<f32>, r: vec4<f32>) -> f32 {
+    return select(
+        select(r[3], r[2], p.x >= 0.0),
+        select(r[0], r[1], p.x >= 0.0),
+        p.y >= 0.0
+    );
+}
+
+fn sdf_round_box_px(p_px: vec2<f32>, half_px: vec2<f32>, r: vec4<f32>) -> f32 {
+    let ri = corner_radius(p_px, r);
+    let ri_clamped = max(ri, 0.0);
+    let q = abs(p_px) - (half_px - vec2<f32>(ri_clamped, ri_clamped));
+    let outside = max(q, vec2<f32>(0.0));
     let inside = min(max(q.x, q.y), 0.0);
-    return length(outside) + inside - r;
+    return length(outside) + inside - ri_clamped;
 }
 
 fn eval_brush(in: VSOut) -> vec4<f32> {
@@ -93,7 +102,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         -p_px.x * in.sin_cos.y + p_px.y * in.sin_cos.x
     );
 
-    let d = sdf_round_box_px(unrotated_px, half_px, in.radius);
+    let d = sdf_round_box_px(unrotated_px, half_px, in.radii);
 
     let w = max(fwidth(d), 1e-4);
     let alpha_cov = 1.0 - smoothstep(-w, w, d);

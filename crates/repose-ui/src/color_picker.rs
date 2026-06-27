@@ -115,7 +115,7 @@ fn gradient_painter(stops: Vec<(f32, Color)>) -> Painter {
                         h: rect.h,
                     },
                     brush: Brush::Solid(col),
-                    radius: 0.0,
+                    radius: [0.0; 4],
                 });
             }
         },

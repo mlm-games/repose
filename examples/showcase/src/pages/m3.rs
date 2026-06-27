@@ -6,8 +6,8 @@ use repose_material::material3::{
     BottomSheet, BottomSheetConfig, Button, ButtonConfig, CircularProgressIndicator,
     CircularProgressIndicatorConfig, DatePickerState, DropdownMenu, DropdownMenuConfig,
     DropdownMenuEntry, DropdownMenuItem, LinearProgressIndicator, LinearProgressIndicatorConfig,
-    MenuState, ModalBottomSheet, NavRailItem, NavigationRail, NavigationRailConfig, SheetState,
-    TextButton, TimePickerState,
+    MenuState, ModalBottomSheet, NavRailItem, NavigationRail, NavigationRailConfig,
+    SegmentedButton, SegmentedButtonConfig, Segment, SheetState, TextButton, TimePickerState,
 };
 use repose_material::{Icon, material_symbols};
 
@@ -314,6 +314,42 @@ pub fn screen(overlay: OverlayHandle) -> View {
                     ),
                 ),
             )),
+        ),
+        Section(
+            "SegmentedButton",
+            Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child({
+                let seg_sel = remember(|| signal(0usize));
+                SegmentedButton(
+                    &[seg_sel.get()],
+                    vec![
+                        Segment {
+                            label: "Day".into(),
+                            icon: None,
+                            on_click: Rc::new({
+                                let s = seg_sel.clone();
+                                move || s.set(0)
+                            }),
+                        },
+                        Segment {
+                            label: "Week".into(),
+                            icon: None,
+                            on_click: Rc::new({
+                                let s = seg_sel.clone();
+                                move || s.set(1)
+                            }),
+                        },
+                        Segment {
+                            label: "Month".into(),
+                            icon: None,
+                            on_click: Rc::new({
+                                let s = seg_sel.clone();
+                                move || s.set(2)
+                            }),
+                        },
+                    ],
+                    SegmentedButtonConfig::default(),
+                )
+            }),
         ),
         Section(
             "Progress Indicators",

@@ -1252,7 +1252,7 @@ pub(crate) fn paint_text_field(
     text_input: &TextInputConfig,
     state: Option<&Rc<RefCell<TextFieldState>>>,
     is_focused: bool,
-    clip_rounded: Option<f32>,
+    clip_rounded: Option<[f32; 4]>,
 ) {
     let pad_x = dp_to_px(TF_PADDING_X_DP);
     let inner = repose_core::Rect {
@@ -1268,16 +1268,16 @@ pub(crate) fn paint_text_field(
 
     scene.nodes.push(SceneNode::PushClip {
         rect: inner,
-        radius: 0.0,
+        radius: [0.0; 4],
     });
 
     if is_focused {
-        let radius = clip_rounded.unwrap_or(6.0);
+        let radius = clip_rounded.unwrap_or([4.0; 4]).map(dp_to_px);
         scene.nodes.push(SceneNode::Border {
             rect,
             color: locals::theme().focus,
             width: dp_to_px(2.0),
-            radius: dp_to_px(radius),
+            radius,
         });
     }
 
@@ -1338,7 +1338,7 @@ pub(crate) fn paint_text_field(
                         h: line_h,
                     },
                     brush: Brush::Solid(selection),
-                    radius: 0.0,
+                    radius: [0.0; 4],
                 });
             }
 
@@ -1387,7 +1387,7 @@ pub(crate) fn paint_text_field(
                         h: line_h,
                     },
                     brush: Brush::Solid(th.on_surface),
-                    radius: 0.0,
+                    radius: [0.0; 4],
                 });
             }
         } else {
@@ -1466,7 +1466,7 @@ pub(crate) fn paint_text_field(
                             h: lh,
                         },
                         brush: Brush::Solid(selection),
-                        radius: 0.0,
+                        radius: [0.0; 4],
                     });
                 }
             }
@@ -1485,7 +1485,7 @@ pub(crate) fn paint_text_field(
                         h: lh,
                     },
                     brush: Brush::Solid(th.on_surface),
-                    radius: 0.0,
+                    radius: [0.0; 4],
                 });
             }
         }

@@ -135,7 +135,9 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     if let Some(b) = &m.border {
         ((b.width * 100.0) as i32).hash(hasher);
         hash_color(&b.color, hasher);
-        ((b.radius * 100.0) as i32).hash(hasher);
+        for &r in &b.radius {
+            ((r * 100.0) as i32).hash(hasher);
+        }
     }
 
     // Flex
@@ -158,7 +160,11 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
         .hash(hasher);
 
     // Clip
-    m.clip_rounded.map(|v| (v * 100.0) as i32).hash(hasher);
+    if let Some(r) = &m.clip_rounded {
+        for &v in r {
+            ((v * 100.0) as i32).hash(hasher);
+        }
+    }
 
     // Transform
     if let Some(t) = &m.transform {

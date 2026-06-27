@@ -147,7 +147,7 @@ pub fn SelectableText(
                         h: line_h,
                     },
                     brush,
-                    radius: 0.0,
+                    radius: [0.0; 4],
                 });
             } else {
                 scene.nodes.push(SceneNode::Rect {
@@ -158,7 +158,7 @@ pub fn SelectableText(
                         h: line_h,
                     },
                     brush: brush,
-                    radius: 0.0,
+                    radius: [0.0; 4],
                 });
                 if eli > sli + 1 {
                     scene.nodes.push(SceneNode::Rect {
@@ -169,7 +169,7 @@ pub fn SelectableText(
                             h: (eli as f32 - sli as f32 - 1.0) * line_h,
                         },
                         brush: brush,
-                        radius: 0.0,
+                        radius: [0.0; 4],
                     });
                 }
                 scene.nodes.push(SceneNode::Rect {
@@ -180,7 +180,7 @@ pub fn SelectableText(
                         h: line_h,
                     },
                     brush,
-                    radius: 0.0,
+                    radius: [0.0; 4],
                 });
             }
         }

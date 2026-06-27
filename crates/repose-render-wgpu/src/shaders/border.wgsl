@@ -8,7 +8,7 @@ struct VSOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) color: vec4<f32>,
     @location(1) xywh: vec4<f32>,
-    @location(2) radius: f32,
+    @location(2) radii: vec4<f32>,
     @location(3) stroke_px: f32,
     @location(4) pos_ndc: vec2<f32>,
     @location(5) sin_cos: vec2<f32>,
@@ -17,7 +17,7 @@ struct VSOut {
 @vertex
 fn vs_main(
     @location(0) xywh: vec4<f32>,
-    @location(1) radius: f32,
+    @location(1) radii: vec4<f32>,
     @location(2) stroke_px: f32,
     @location(3) color: vec4<f32>,
     @location(4) sin_cos: vec2<f32>,
@@ -36,7 +36,7 @@ fn vs_main(
     var out: VSOut;
     out.pos = vec4(pos_ndc, 0.0, 1.0);
     out.xywh = xywh;
-    out.radius = radius;
+    out.radii = radii;
     out.stroke_px = stroke_px;
     out.color = color;
     out.pos_ndc = pos_ndc;
@@ -44,12 +44,21 @@ fn vs_main(
     return out;
 }
 
-fn sdf_round_box_px(p_px: vec2<f32>, half_px: vec2<f32>, r_px: f32) -> f32 {
-    let r = max(r_px, 0.0);
-    let q = abs(p_px) - (half_px - vec2<f32>(r, r));
-    let outside = max(q, vec2<f32>(0.0, 0.0));
+fn corner_radius(p: vec2<f32>, r: vec4<f32>) -> f32 {
+    return select(
+        select(r[3], r[2], p.x >= 0.0),
+        select(r[0], r[1], p.x >= 0.0),
+        p.y >= 0.0
+    );
+}
+
+fn sdf_round_box_px(p_px: vec2<f32>, half_px: vec2<f32>, r: vec4<f32>) -> f32 {
+    let ri = corner_radius(p_px, r);
+    let ri_clamped = max(ri, 0.0);
+    let q = abs(p_px) - (half_px - vec2<f32>(ri_clamped, ri_clamped));
+    let outside = max(q, vec2<f32>(0.0));
     let inside = min(max(q.x, q.y), 0.0);
-    return length(outside) + inside - r;
+    return length(outside) + inside - ri_clamped;
 }
 
 @fragment
@@ -64,12 +73,12 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     );
 
     let stroke = max(in.stroke_px, 0.0);
-    let r_outer = max(in.radius, 0.0);
+    let radii_clamped = max(in.radii, vec4<f32>(0.0));
 
-    let d_outer = sdf_round_box_px(unrotated_px, half_px, r_outer);
+    let d_outer = sdf_round_box_px(unrotated_px, half_px, radii_clamped);
 
-    let half_inner = max(half_px - vec2<f32>(stroke, stroke), vec2<f32>(0.0, 0.0));
-    let r_inner = max(r_outer - stroke, 0.0);
+    let half_inner = max(half_px - vec2<f32>(stroke, stroke), vec2<f32>(0.0));
+    let r_inner = max(radii_clamped - vec4<f32>(stroke), vec4<f32>(0.0));
     let d_inner = sdf_round_box_px(unrotated_px, half_inner, r_inner);
 
     let w0 = max(fwidth(d_outer), 1e-4);

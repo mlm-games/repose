@@ -87,7 +87,7 @@ macro_rules! impl_option_fields {
 pub struct Border {
     pub width: f32,
     pub color: Color,
-    pub radius: f32,
+    pub radius: [f32; 4],
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -201,7 +201,7 @@ pub struct Modifier {
     pub justify_content: Option<JustifyContent>,
     pub align_items_container: Option<AlignItems>,
     pub align_content: Option<AlignContent>,
-    pub clip_rounded: Option<f32>,
+    pub clip_rounded: Option<[f32; 4]>,
     /// Z-index for hit-testing order (higher = receives events first).
     pub z_index: f32,
     /// Z-index for render order (higher = painted on top). If None, uses tree order.
@@ -503,7 +503,15 @@ impl Modifier {
         self.border = Some(Border {
             width,
             color,
-            radius,
+            radius: [radius; 4],
+        });
+        self
+    }
+    pub fn border_radii(mut self, width: f32, color: Color, radii: [f32; 4]) -> Self {
+        self.border = Some(Border {
+            width,
+            color,
+            radius: radii,
         });
         self
     }
@@ -563,7 +571,11 @@ impl Modifier {
         self
     }
     pub fn clip_rounded(mut self, radius: f32) -> Self {
-        self.clip_rounded = Some(radius);
+        self.clip_rounded = Some([radius; 4]);
+        self
+    }
+    pub fn clip_rounded_radii(mut self, radii: [f32; 4]) -> Self {
+        self.clip_rounded = Some(radii);
         self
     }
     pub fn z_index(mut self, z: f32) -> Self {

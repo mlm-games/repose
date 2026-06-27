@@ -294,36 +294,36 @@ impl Pipelines {
             wgpu::VertexAttribute {
                 shader_location: 1,
                 offset: 16,
-                format: wgpu::VertexFormat::Float32,
+                format: wgpu::VertexFormat::Float32x4,
             },
             wgpu::VertexAttribute {
                 shader_location: 2,
-                offset: 20,
+                offset: 32,
                 format: wgpu::VertexFormat::Uint32,
             },
             wgpu::VertexAttribute {
                 shader_location: 3,
-                offset: 24,
+                offset: 48,
                 format: wgpu::VertexFormat::Float32x4,
             },
             wgpu::VertexAttribute {
                 shader_location: 4,
-                offset: 40,
+                offset: 64,
                 format: wgpu::VertexFormat::Float32x4,
             },
             wgpu::VertexAttribute {
                 shader_location: 5,
-                offset: 56,
+                offset: 80,
                 format: wgpu::VertexFormat::Float32x2,
             },
             wgpu::VertexAttribute {
                 shader_location: 6,
-                offset: 64,
+                offset: 88,
                 format: wgpu::VertexFormat::Float32x2,
             },
             wgpu::VertexAttribute {
                 shader_location: 7,
-                offset: 72,
+                offset: 96,
                 format: wgpu::VertexFormat::Float32x2,
             },
         ];
@@ -336,21 +336,21 @@ impl Pipelines {
             wgpu::VertexAttribute {
                 shader_location: 1,
                 offset: 16,
-                format: wgpu::VertexFormat::Float32,
+                format: wgpu::VertexFormat::Float32x4,
             },
             wgpu::VertexAttribute {
                 shader_location: 2,
-                offset: 20,
+                offset: 32,
                 format: wgpu::VertexFormat::Float32,
             },
             wgpu::VertexAttribute {
                 shader_location: 3,
-                offset: 24,
+                offset: 36,
                 format: wgpu::VertexFormat::Float32x4,
             },
             wgpu::VertexAttribute {
                 shader_location: 4,
-                offset: 40,
+                offset: 52,
                 format: wgpu::VertexFormat::Float32x2,
             },
         ];
@@ -923,8 +923,9 @@ struct GlyphInfo {
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct RectInstance {
     xywh: [f32; 4],
-    radius: f32,
+    radii: [f32; 4],
     brush_type: u32,
+    _pad: [f32; 3],
     color0: [f32; 4],
     color1: [f32; 4],
     grad_start: [f32; 2],
@@ -936,7 +937,7 @@ struct RectInstance {
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct BorderInstance {
     xywh: [f32; 4],
-    radius: f32,
+    radii: [f32; 4],
     stroke: f32,
     color: [f32; 4],
     sin_cos: [f32; 2],
@@ -1007,7 +1008,7 @@ struct Nv12Instance {
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct ClipInstance {
     xywh: [f32; 4],
-    radius: f32,
+    radii: [f32; 4],
     sin_cos: [f32; 2],
 }
 
@@ -1283,11 +1284,11 @@ impl WgpuBackend {
                 wgpu::VertexAttribute {
                     shader_location: 1,
                     offset: 16,
-                    format: wgpu::VertexFormat::Float32,
+                    format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
                     shader_location: 2,
-                    offset: 20,
+                    offset: 32,
                     format: wgpu::VertexFormat::Float32x2,
                 },
             ],
@@ -2598,8 +2599,9 @@ impl RenderBackend for WgpuBackend {
                         brush_to_instance_fields(brush);
                     batch.rects.push(RectInstance {
                         xywh: ndc,
-                        radius: *radius,
+                        radii: *radius,
                         brush_type,
+                        _pad: [0.0; 3],
                         color0,
                         color1,
                         grad_start,
@@ -2622,7 +2624,7 @@ impl RenderBackend for WgpuBackend {
                     );
                     batch.borders.push(BorderInstance {
                         xywh: ndc,
-                        radius: *radius,
+                        radii: *radius,
                         stroke: *width,
                         color: color.to_linear(),
                         sin_cos,
@@ -3053,7 +3055,7 @@ impl RenderBackend for WgpuBackend {
                             clip_ndc_tl[2],
                             clip_ndc_tl[3],
                         ],
-                        radius: *radius,
+                        radii: *radius,
                         sin_cos: [1.0, 0.0],
                     };
                     let bytes = bytemuck::bytes_of(&inst);
@@ -3100,8 +3102,9 @@ impl RenderBackend for WgpuBackend {
                         brush_to_instance_fields(&Brush::Solid(*color));
                     batch.rects.push(RectInstance {
                         xywh: ndc,
-                        radius: *radius,
+                        radii: *radius,
                         brush_type,
+                        _pad: [0.0; 3],
                         color0,
                         color1: [0.0; 4],
                         grad_start: [0.0; 2],

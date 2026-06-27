@@ -518,11 +518,12 @@ pub fn overlay_drag_indicator(
     if let Some(tid) = dnd_target_id_at(f, pos)
         && let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid)
     {
+        let r = crate::locals::dp_to_px(8.0);
         scene.nodes.push(SceneNode::Border {
             rect: hit.rect,
             color,
             width: crate::locals::dp_to_px(2.0),
-            radius: crate::locals::dp_to_px(8.0),
+            radius: [r; 4],
         });
     }
 
@@ -540,10 +541,11 @@ pub fn overlay_drag_indicator(
         Color::from_hex("#44AAFF77")
     };
 
+    let r = crate::locals::dp_to_px(8.0);
     scene.nodes.push(SceneNode::Rect {
         rect: badge,
         brush: Brush::Solid(bg),
-        radius: crate::locals::dp_to_px(8.0),
+        radius: [r; 4],
     });
     scene.nodes.push(SceneNode::Text {
         rect: Rect {

@@ -24,12 +24,12 @@ fn push_focus_ring(scene: &mut Scene, rect: repose_core::Rect, radius_dp: f32) {
         rect,
         color: locals::theme().focus,
         width: dp_to_px(2.0),
-        radius: dp_to_px(radius_dp),
+        radius: [dp_to_px(radius_dp); 4],
     });
 }
 
 fn focus_radius(modifier: &Modifier) -> f32 {
-    modifier.clip_rounded.unwrap_or(6.0)
+    modifier.clip_rounded.map(|r| r[0]).unwrap_or(6.0)
 }
 
 /// Associate a `FocusRequester` (if present on the modifier) with the view.
@@ -1405,12 +1405,12 @@ impl LayoutEngine {
             return;
         }
 
-        let round_clip_px = clamp_radius(
-            modifier.clip_rounded.map(dp_to_px).unwrap_or(0.0),
+        let round_clip_px = clamp_radii(
+            modifier.clip_rounded.map(|r| r.map(dp_to_px)).unwrap_or([0.0; 4]),
             rect.w,
             rect.h,
         );
-        let push_round_clip = round_clip_px > 0.5 && rect.w > 0.5 && rect.h > 0.5;
+        let push_round_clip = round_clip_px.iter().any(|&r| r > 0.5) && rect.w > 0.5 && rect.h > 0.5;
 
         if let Some(anim_spec) = &modifier.animate_content_size {
             let target = repose_core::Size {
@@ -1541,8 +1541,11 @@ impl LayoutEngine {
                 rect,
                 color: mul_alpha_color(b.color, alpha_accum),
                 width: dp_to_px(b.width),
-                radius: clamp_radius(
-                    dp_to_px(b.radius.max(modifier.clip_rounded.unwrap_or(0.0))),
+                radius: clamp_radii(
+                    max_radii(
+                        b.radius.map(dp_to_px),
+                        modifier.clip_rounded.map(|r| r.map(dp_to_px)).unwrap_or([0.0; 4]),
+                    ),
                     rect.w,
                     rect.h,
                 ),
@@ -1663,7 +1666,7 @@ impl LayoutEngine {
                 if need_clip {
                     scene.nodes.push(SceneNode::PushClip {
                         rect: content_rect,
-                        radius: 0.0,
+                        radius: [0.0; 4],
                     });
                 }
 
@@ -2047,7 +2050,7 @@ impl LayoutEngine {
                     scene.nodes.push(SceneNode::Rect {
                         rect,
                         brush: Brush::Solid(th.primary.with_alpha_f32(0.15)),
-                        radius: 0.0,
+                        radius: [0.0; 4],
                     });
                 }
 
@@ -2174,7 +2177,7 @@ impl LayoutEngine {
 
                 scene.nodes.push(SceneNode::PushClip {
                     rect: vp,
-                    radius: 0.0,
+                    radius: [0.0; 4],
                 });
 
                 let hits_start = hits.len();
@@ -2288,7 +2291,7 @@ impl LayoutEngine {
 
                 scene.nodes.push(SceneNode::PushClip {
                     rect: vp,
-                    radius: 0.0,
+                    radius: [0.0; 4],
                 });
                 let hits_start = hits.len();
                 let scrolled_offset = (child_offset_px.0 - ox, child_offset_px.1 - oy);
@@ -2533,6 +2536,17 @@ fn mul_alpha_brush(b: Brush, a: f32) -> Brush {
 fn clamp_radius(r: f32, w: f32, h: f32) -> f32 {
     r.max(0.0).min(0.5 * w.max(0.0)).min(0.5 * h.max(0.0))
 }
+fn clamp_radii(r: [f32; 4], w: f32, h: f32) -> [f32; 4] {
+    [
+        clamp_radius(r[0], w, h),
+        clamp_radius(r[1], w, h),
+        clamp_radius(r[2], w, h),
+        clamp_radius(r[3], w, h),
+    ]
+}
+fn max_radii(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2]), a[3].max(b[3])]
+}
 
 #[derive(Clone, Copy)]
 enum ScrollAxis {
@@ -2620,12 +2634,12 @@ fn push_scrollbar(
     scene.nodes.push(SceneNode::Rect {
         rect: track_rect,
         brush: Brush::Solid(locals::theme().scrollbar_track),
-        radius: thick * 0.5,
+        radius: [thick * 0.5; 4],
     });
     scene.nodes.push(SceneNode::Rect {
         rect: thumb_rect,
         brush: Brush::Solid(locals::theme().scrollbar_thumb),
-        radius: thick * 0.5,
+        radius: [thick * 0.5; 4],
     });
 
     if let Some(s) = set_offset {

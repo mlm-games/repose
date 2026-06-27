@@ -104,7 +104,7 @@ impl Hud {
                     h: bar_h,
                 },
                 brush: Brush::Solid(Color::from_hex("#1A1A1ACC")),
-                radius: 4.0,
+                radius: [4.0; 4],
             });
 
             let fps_norm = (self.fps_smooth / 60.0).min(1.0);
@@ -123,7 +123,7 @@ impl Hud {
                 } else {
                     Color::from_hex("#FF4444")
                 }),
-                radius: 2.0,
+                radius: [2.0; 4],
             });
 
             let mut text_y = bar_y + bar_h + 4.0;
@@ -269,7 +269,7 @@ impl Hud {
                 rect: r,
                 color: Color::from_hex("#44AAFF"),
                 width: 2.0,
-                radius: 2.0,
+                radius: [2.0; 4],
             });
         }
 
@@ -278,7 +278,7 @@ impl Hud {
                 rect: sel.bounds,
                 color: Color::from_hex("#FFAA00"),
                 width: 2.0,
-                radius: 2.0,
+                radius: [2.0; 4],
             });
         }
     }

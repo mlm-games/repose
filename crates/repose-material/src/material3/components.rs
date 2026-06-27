@@ -1346,6 +1346,7 @@ pub struct SegmentedButtonConfig {
     pub selected_container_color: Color,
     pub selected_content_color: Color,
     pub unselected_content_color: Color,
+    pub state_colors: StateColors,
     pub height: f32,
     pub shape_radius: f32,
 }
@@ -1358,6 +1359,7 @@ impl Default for SegmentedButtonConfig {
             selected_container_color: SegmentedButtonDefaults::selected_container_color(),
             selected_content_color: SegmentedButtonDefaults::selected_content_color(),
             unselected_content_color: SegmentedButtonDefaults::unselected_content_color(),
+            state_colors: SegmentedButtonDefaults::state_colors_default(),
             height: SegmentedButtonDefaults::HEIGHT,
             shape_radius: SegmentedButtonDefaults::SHAPE_RADIUS,
         }
@@ -1368,6 +1370,8 @@ static SEGBUTTON_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// M3 Segmented Button - a row of toggle segments. `selected` contains the
 /// indices of selected segments (single-select: pass a single-element set).
+/// Each segment is shaped independently: first has rounded left corners,
+/// last has rounded right corners, middle segments are rectangular.
 pub fn SegmentedButton(
     selected: &[usize],
     segments: Vec<Segment>,
@@ -1377,11 +1381,26 @@ pub fn SegmentedButton(
     let count = segments.len();
     let id = remember(|| SEGBUTTON_COUNTER.fetch_add(1, Ordering::Relaxed));
     let spec = th.motion.color;
+    let shape_r = config.shape_radius;
 
+    // corner order: [BL, BR, TR, TL]
+    let segment_radii = |i: usize| -> [f32; 4] {
+        if count == 1 {
+            [shape_r, shape_r, shape_r, shape_r]
+        } else if i == 0 {
+            [shape_r, 0.0, 0.0, shape_r]
+        } else if i == count - 1 {
+            [0.0, shape_r, shape_r, 0.0]
+        } else {
+            [0.0, 0.0, 0.0, 0.0]
+        }
+    };
+
+    // outer border with per-segment corner radii requires iterating over segments
+    // to build a Row whose border uses the overall shape_r uniformly
     Row(Modifier::new()
         .height(config.height)
-        .border(1.0, config.border_color, config.shape_radius)
-        .clip_rounded(config.shape_radius)
+        .border(1.0, config.border_color, shape_r)
         .then(config.modifier))
     .child(
         segments
@@ -1410,11 +1429,15 @@ pub fn SegmentedButton(
                 );
 
                 let cb = seg.on_click.clone();
+                let radii = segment_radii(i);
 
+                let state_colors = config.state_colors.clone();
                 let mut modifier = Modifier::new()
                     .flex_grow(1.0)
                     .fill_max_height()
+                    .clip_rounded_radii(radii)
                     .background(bg)
+                    .state_colors(state_colors)
                     .align_items(AlignItems::Center)
                     .justify_content(JustifyContent::Center)
                     .padding_values(PaddingValues {
@@ -1427,7 +1450,7 @@ pub fn SegmentedButton(
                     .on_pointer_down(move |_| cb());
 
                 if i < count - 1 {
-                    modifier = modifier.border(1.0, th.outline, 0.0);
+                    modifier = modifier.border_radii(1.0, th.outline, [0.0; 4]);
                 }
 
                 Row(modifier).child((
@@ -1675,7 +1698,7 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(config.color)),
-                    radius: corner,
+                    radius: [corner; 4],
                 });
             }
 
@@ -1691,7 +1714,7 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(config.track_color)),
-                    radius: corner,
+                    radius: [corner; 4],
                 });
             }
 
@@ -2634,7 +2657,7 @@ pub fn Slider(
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(config.inactive_track_color)),
-                    radius: corner,
+                    radius: [corner; 4],
                 });
             }
             // Active track fill (from left to thumb gap)
@@ -2648,7 +2671,7 @@ pub fn Slider(
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(config.active_track_color)),
-                    radius: corner,
+                    radius: [corner; 4],
                 });
             }
             // Tick marks at step positions (skipping gap region)
@@ -2698,7 +2721,7 @@ pub fn Slider(
                     h: thumb_h,
                 },
                 brush: Brush::Solid(mul_c(config.thumb_color)),
-                radius: tw * 0.5,
+                radius: [tw * 0.5; 4],
             });
         })
         .on_pointer_down({
@@ -2848,7 +2871,7 @@ pub fn RangeSlider(
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(config.inactive_track_color)),
-                    radius: corner,
+                    radius: [corner; 4],
                 });
             }
             let rinactive_x = (active_r + gap).min(track_x + track_w);
@@ -2862,7 +2885,7 @@ pub fn RangeSlider(
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(config.inactive_track_color)),
-                    radius: corner,
+                    radius: [corner; 4],
                 });
             }
             // Active range between thumbs
@@ -2876,7 +2899,7 @@ pub fn RangeSlider(
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(config.active_track_color)),
-                    radius: corner,
+                    radius: [corner; 4],
                 });
             }
             // Tick marks at step positions (skipping gap regions)
@@ -2943,7 +2966,7 @@ pub fn RangeSlider(
                         h: thumb_h,
                     },
                     brush: Brush::Solid(mul_c(config.thumb_color)),
-                    radius: tw * 0.5,
+                    radius: [tw * 0.5; 4],
                 });
             }
         })
