@@ -2796,9 +2796,15 @@ impl RenderBackend for WgpuBackend {
                                 let tty = current_transform.translate_y;
 
                                 let tf = |x: f32, y: f32| -> (f32, f32) {
-                                    let sx = x * scx;
-                                    let sy = y * scy;
-                                    (sx * cos_a - sy * sin_a + ttx, sx * sin_a + sy * cos_a + tty)
+                                    if has_rotation {
+                                        let dx = x - pivot_x;
+                                        let dy = y - pivot_y;
+                                        let rx = pivot_x + dx * cos_a - dy * sin_a;
+                                        let ry = pivot_y + dx * sin_a + dy * cos_a;
+                                        (rx, ry)
+                                    } else {
+                                        (x * scx + ttx, y * scy + tty)
+                                    }
                                 };
 
                                 let tw = current_target_size.0;

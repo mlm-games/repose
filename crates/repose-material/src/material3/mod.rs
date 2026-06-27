@@ -1337,7 +1337,7 @@ pub fn SearchBar(
                 .width(width)
                 .max_height(400.0)
                 .background(th.surface_container)
-        .clip_rounded(th.shapes.extra_small))
+                .clip_rounded(th.shapes.extra_small))
             .child(content),
         ))
     } else {
@@ -1790,18 +1790,27 @@ pub fn PullToRefresh(
     let raw_frac = if refreshing {
         1.0
     } else if pull > 0.0 {
-        (pull / threshold).min(1.0)
+        pull / threshold
     } else {
         0.0
     };
     let distance_fraction = animate_f32_from(frac_key, 0.0, raw_frac, theme().motion.color);
 
+    let adjusted_percent = (distance_fraction.min(1.0) - 0.4).max(0.0) * 5.0 / 3.0;
+    let overshoot_percent = (distance_fraction - 1.0).max(0.0);
+    let linear_tension = overshoot_percent.min(2.0);
+    let tension_percent = linear_tension - linear_tension.powi(2) / 4.0;
+    let rotation_turns = (-0.25 + 0.4 * adjusted_percent + tension_percent) * 0.5;
+    // rotate by 360° to convert turns → degrees, then to radians for the modifier
+    let spinner_rotation_rad = rotation_turns * std::f32::consts::TAU;
+
     // Indicator at top (pushed into view by overscroll) + content below.
     let indicator_h = distance_fraction * threshold;
+    let comp_scale = adjusted_percent.min(1.0);
     let icon_size = if refreshing {
         24.0
     } else {
-        (16.0 + distance_fraction * 8.0).min(24.0)
+        (16.0 + comp_scale * 8.0).min(24.0)
     };
     let rotation = if refreshing {
         animate_f32_from(
@@ -1812,7 +1821,14 @@ pub fn PullToRefresh(
                 .repeated(RepeatableSpec::infinite()),
         )
     } else {
-        (distance_fraction * 180.0).to_radians()
+        spinner_rotation_rad
+    };
+    let alpha = if refreshing {
+        1.0
+    } else if distance_fraction >= 1.0 {
+        1.0
+    } else {
+        0.3
     };
     Column(modifier).child((
         if distance_fraction > 0.01 {
@@ -1834,11 +1850,7 @@ pub fn PullToRefresh(
                 } else {
                     Icon(Symbol::new("arrow_downward", '\u{E5DB}'))
                         .size(icon_size)
-                        .color(
-                            config
-                                .indicator_color
-                                .with_alpha_f32(distance_fraction.min(1.0)),
-                        )
+                        .color(config.indicator_color.with_alpha_f32(alpha))
                 }),
             )
         } else {
