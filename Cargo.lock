@@ -649,9 +649,9 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "clipawl"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af9118948d264cf5f182ebc981bac27ca372a88fcb4ccebf94d18ae306fe47e7"
+checksum = "1b89902e9a5f672dc56123de78c52ef825f9acab979842b8fa2d4689f812ddfc"
 dependencies = [
  "cfg-if",
  "clipboard_x11",

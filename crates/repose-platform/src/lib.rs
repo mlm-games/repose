@@ -586,8 +586,13 @@ pub fn run_desktop_app(
                         ..Default::default()
                     },
                 };
-                if let Ok(cb) = clipawl::Clipboard::new_with_options(opts) {
-                    let _ = pollster::block_on(cb.write(text));
+                match clipawl::Clipboard::new_with_options(opts) {
+                    Ok(cb) => {
+                        if let Err(e) = pollster::block_on(cb.write(text)) {
+                            eprintln!("primary selection write error: {e}");
+                        }
+                    }
+                    Err(e) => eprintln!("primary clipboard init error: {e}"),
                 }
             }));
 

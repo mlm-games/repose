@@ -12,7 +12,7 @@ pub fn set_clipboard_fn(f: Box<dyn Fn(&str)>) {
 
 /// Copy text to the system clipboard via the registered setter.
 pub fn copy_to_clipboard(text: &str) {
-    CLIPBOARD.with(|slot| {
+    let _ = CLIPBOARD.try_with(|slot| {
         if let Some(f) = slot.borrow().as_ref() {
             f(text);
         }
@@ -26,7 +26,7 @@ pub fn set_primary_fn(f: Box<dyn Fn(&str)>) {
 
 /// Write text to the primary selection (middle-click paste on Linux/X11).
 pub fn set_primary_selection(text: &str) {
-    PRIMARY.with(|slot| {
+    let _ = PRIMARY.try_with(|slot| {
         if let Some(f) = slot.borrow().as_ref() {
             f(text);
         }
