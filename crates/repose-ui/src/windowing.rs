@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_core::{
-    AlignItems, CursorIcon, Modifier, PaddingValues, PointerButton, PointerEvent, PointerEventKind,
-    Rect, Size, Vec2, View, ViewKind, request_frame,
+    AlignItems, Color, CursorIcon, JustifyContent, Modifier, PaddingValues, PointerButton,
+    PointerEvent, PointerEventKind, Rect, Size, StateColors, Vec2, View, ViewKind, request_frame,
 };
 
 use crate::{Box, Column, Row, Spacer, Stack, Text, TextStyle, ViewExt, ZStack};
@@ -389,24 +389,39 @@ pub fn WindowHost(
                     let focus_state = focus_state.clone();
                     let action_id = window_id;
                     action_views.push(
-                        Box(Modifier::new()
-                            .padding_values(PaddingValues {
-                                left: 6.0,
-                                right: 6.0,
-                                top: 4.0,
-                                bottom: 4.0,
-                            })
-                            .clip_rounded(th.shapes.small)
-                            .background(th.surface_variant)
-                            .clickable()
-                            .on_pointer_down(move |_| {
-                                focus_state.borrow_mut().bring_to_front(action_id);
-                                (on_click)();
-                                request_frame();
-                            })
-                            .z_index(1.0)
-                            .key(key_for(window_id, 60 + idx as u64)))
-                        .child(Text(label).size(th.typography.label_medium).color(th.primary).single_line()),
+                        Row(
+                            Modifier::new()
+                                .padding_values(PaddingValues {
+                                    left: 6.0,
+                                    right: 6.0,
+                                    top: 0.0,
+                                    bottom: 0.0,
+                                })
+                                .height(20.0)
+                                .clip_rounded(10.0)
+                                .justify_content(JustifyContent::Center)
+                                .align_items(AlignItems::Center)
+                                .state_colors(StateColors {
+                                    default: th.surface_variant,
+                                    hovered: th.on_surface.with_alpha(16),
+                                    pressed: th.on_surface.with_alpha(24),
+                                    disabled: Color::TRANSPARENT,
+                                })
+                                .clickable()
+                                .on_pointer_down(move |_| {
+                                    focus_state.borrow_mut().bring_to_front(action_id);
+                                    (on_click)();
+                                    request_frame();
+                                })
+                                .z_index(1.0)
+                                .key(key_for(window_id, 60 + idx as u64)),
+                        )
+                        .child(
+                            Text(label)
+                                .size(th.typography.label_medium)
+                                .color(th.primary)
+                                .single_line(),
+                        ),
                     );
                 }
 
@@ -414,15 +429,18 @@ pub fn WindowHost(
                     let close_id = window_id;
                     let focus_state = focus_state.clone();
                     action_views.push(
-                        Box(Modifier::new()
-                            .padding_values(PaddingValues {
-                                left: 6.0,
-                                right: 6.0,
-                                top: 4.0,
-                                bottom: 4.0,
+                        Row(Modifier::new()
+                            .width(20.0)
+                            .height(20.0)
+                            .clip_rounded(10.0)
+                            .justify_content(JustifyContent::Center)
+                            .align_items(AlignItems::Center)
+                            .state_colors(StateColors {
+                                default: th.error.with_alpha(20),
+                                hovered: th.error.with_alpha(40),
+                                pressed: th.error.with_alpha(60),
+                                disabled: Color::TRANSPARENT,
                             })
-                            .clip_rounded(th.shapes.small)
-                            .background(th.error.with_alpha(20))
                             .clickable()
                             .on_pointer_down(move |_| {
                                 focus_state.borrow_mut().bring_to_front(close_id);
@@ -435,7 +453,12 @@ pub fn WindowHost(
                             })
                             .z_index(1.0)
                             .key(key_for(window_id, 90)))
-                        .child(Text("x").size(th.typography.label_large).color(th.error)),
+                        .child(
+                            Text("\u{E5CD}")
+                                .font_family("Material Symbols Outlined")
+                                .size(14.0)
+                                .color(th.error),
+                        ),
                     );
                 }
 
