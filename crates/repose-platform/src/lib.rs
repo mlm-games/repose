@@ -1245,7 +1245,6 @@ pub fn run_desktop_app(
                     }
 
                     if key_event.state == ElementState::Pressed
-                        && !key_event.repeat
                         && let Some(action) = repose_core::shortcuts::resolve_action(
                             repose_core::shortcuts::KeyChord::new(
                                 rc::map_key(key_event.physical_key),

@@ -1340,7 +1340,7 @@ impl ApplicationHandler<()> for App {
                     return;
                 }
 
-                if key_event.state == ElementState::Pressed && !key_event.repeat {
+                if key_event.state == ElementState::Pressed {
                     if let Some(action) = repose_core::shortcuts::resolve_action(
                         repose_core::shortcuts::KeyChord::new(
                             rc::map_key(key_event.physical_key),
