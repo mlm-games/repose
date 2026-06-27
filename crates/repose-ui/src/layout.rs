@@ -2553,20 +2553,20 @@ fn push_scrollbar(
         return;
     }
 
-    let thick = dp_to_px(6.0);
-    let m = dp_to_px(2.0);
+    let thick = dp_to_px(4.0);
+    let main_inset = dp_to_px(2.0);
 
     let (track_x, track_y, track_main, track_cross) = match axis {
         ScrollAxis::V => (
-            vp.x + vp.w - m - thick,
-            vp.y + m,
-            (vp.h - 2.0 * m).max(0.0),
+            vp.x + vp.w - thick,
+            vp.y + main_inset,
+            (vp.h - 2.0 * main_inset).max(0.0),
             thick,
         ),
         ScrollAxis::H => (
-            vp.x + m,
-            vp.y + vp.h - m - thick,
-            (vp.w - 2.0 * m).max(0.0),
+            vp.x + main_inset,
+            vp.y + vp.h - thick,
+            (vp.w - 2.0 * main_inset).max(0.0),
             thick,
         ),
     };

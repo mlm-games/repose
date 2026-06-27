@@ -92,10 +92,7 @@ impl Route {
 }
 
 fn light_theme() -> Theme {
-    let mut t = Theme::default().with_colors(ColorScheme::light());
-    t.scrollbar_track = t.on_surface.with_alpha(24);
-    t.scrollbar_thumb = t.on_surface.with_alpha(96);
-    t
+    Theme::default().with_colors(ColorScheme::light())
 }
 
 /// One place that builds the "saved" snackbar; the undo action is shared
