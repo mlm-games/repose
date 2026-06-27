@@ -161,7 +161,7 @@ pub fn new_observer(f: impl Fn() + 'static) -> ObserverId {
 
 /// Remove an observer and all of its dependency edges.
 pub fn remove_observer(id: ObserverId) {
-    GRAPH.with(|g| {
+    let _ = GRAPH.try_with(|g| {
         let mut g = g.borrow_mut();
         g.remove_observer(id);
     });

@@ -373,17 +373,18 @@ pub mod back {
     }
 
     pub fn set(handler: Option<Handler>) {
-        H.with(|h| *h.borrow_mut() = handler);
+        let _ = H.try_with(|h| *h.borrow_mut() = handler);
     }
 
     pub fn handle() -> bool {
-        H.with(|h| {
+        H.try_with(|h| {
             if let Some(handler) = h.borrow().as_ref() {
                 handler()
             } else {
                 false
             }
         })
+        .unwrap_or(false)
     }
 }
 

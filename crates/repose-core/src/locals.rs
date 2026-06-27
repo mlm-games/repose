@@ -106,7 +106,7 @@ fn with_locals_frame<R>(f: impl FnOnce() -> R) -> R {
     struct Guard;
     impl Drop for Guard {
         fn drop(&mut self) {
-            LOCALS_STACK.with(|st| {
+            let _ = LOCALS_STACK.try_with(|st| {
                 st.borrow_mut().pop();
             });
         }

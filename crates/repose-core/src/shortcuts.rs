@@ -178,7 +178,7 @@ pub fn set_default_map(map: ShortcutMap) {
 pub fn InstallShortcutMap(map: ShortcutMap) -> Dispose {
     SCOPES.with(|scopes| scopes.borrow_mut().push(map));
     on_unmount(|| {
-        SCOPES.with(|scopes| {
+        let _ = SCOPES.try_with(|scopes| {
             scopes.borrow_mut().pop();
         });
     })
@@ -190,7 +190,7 @@ pub fn InstallShortcutMap(map: ShortcutMap) -> Dispose {
 pub fn InstallShortcutHandler(handler: Handler) -> Dispose {
     let prev = HANDLER.with(|h| h.borrow_mut().replace(handler));
     on_unmount(move || {
-        HANDLER.with(|h| *h.borrow_mut() = prev);
+        let _ = HANDLER.try_with(|h| *h.borrow_mut() = prev);
     })
 }
 
