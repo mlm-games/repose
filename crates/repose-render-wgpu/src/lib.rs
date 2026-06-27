@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use repose_core::request_frame;
-use repose_core::{Brush, GlyphRasterConfig, RenderBackend, Scene, SceneNode, StrokeCap, Transform};
+use repose_core::{
+    Brush, GlyphRasterConfig, RenderBackend, Scene, SceneNode, StrokeCap, Transform,
+};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use wgpu::Instance;
 
@@ -2659,7 +2661,14 @@ impl RenderBackend for WgpuBackend {
                         sin_cos,
                     });
                 }
-                SceneNode::Arc { rect, start_angle, sweep_angle, stroke_width, color, cap } => {
+                SceneNode::Arc {
+                    rect,
+                    start_angle,
+                    sweep_angle,
+                    stroke_width,
+                    color,
+                    cap,
+                } => {
                     flush_if_prim_changed!("arc", &self.arcs);
                     let (ndc, sin_cos) = rect_to_instance_ndc(
                         *rect,
@@ -2770,19 +2779,14 @@ impl RenderBackend for WgpuBackend {
                                         repose_text::lookup_and_extract_outline(sg.key)
                                     {
                                         let font_size_px = f32::from_bits(ck2.font_size_bits);
-                                        self.slug_cache.get_or_insert(
-                                            ck2,
-                                            font_size_px,
-                                            &commands,
-                                        );
+                                        self.slug_cache.get_or_insert(ck2, font_size_px, &commands);
                                     }
                                 }
                             }
                             if let Some(ref ck) = ck {
                                 self.slug_cache.touch(ck);
                             }
-                            if let Some(entry) =
-                                ck.as_ref().and_then(|ck| self.slug_cache.get(ck))
+                            if let Some(entry) = ck.as_ref().and_then(|ck| self.slug_cache.get(ck))
                             {
                                 let ox = rect.x + sg.x;
                                 let oy = rect.y + sg.y;
@@ -2794,10 +2798,7 @@ impl RenderBackend for WgpuBackend {
                                 let tf = |x: f32, y: f32| -> (f32, f32) {
                                     let sx = x * scx;
                                     let sy = y * scy;
-                                    (
-                                        sx * cos_a - sy * sin_a + ttx,
-                                        sx * sin_a + sy * cos_a + tty,
-                                    )
+                                    (sx * cos_a - sy * sin_a + ttx, sx * sin_a + sy * cos_a + tty)
                                 };
 
                                 let tw = current_target_size.0;
@@ -3472,13 +3473,7 @@ impl RenderBackend for WgpuBackend {
                     }
 
                     Cmd::Arc { off, cnt: n } => {
-                        draw_simple!(
-                            &pipes.arcs,
-                            self.arcs.ring,
-                            ArcInstance,
-                            off,
-                            n
-                        );
+                        draw_simple!(&pipes.arcs, self.arcs.ring, ArcInstance, off, n);
                     }
 
                     Cmd::PushTransform(_) => {}

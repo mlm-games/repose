@@ -680,20 +680,48 @@ impl OutlinedTextFieldDefaults {
     pub const TEXT_FIELD_PADDING: f32 = 16.0;
     pub const VERTICAL_PADDING_WITH_LABEL: f32 = 8.0;
 
-    pub fn label_color() -> Color { theme().on_surface_variant }
-    pub fn focused_label_color() -> Color { theme().primary }
-    pub fn error_label_color() -> Color { theme().error }
-    pub fn input_color() -> Color { theme().on_surface }
-    pub fn disabled_input_color() -> Color { theme().on_surface.with_alpha_f32(0.38) }
-    pub fn supporting_color() -> Color { theme().on_surface_variant }
-    pub fn placeholder_color() -> Color { theme().on_surface_variant }
-    pub fn leading_icon_color() -> Color { theme().on_surface_variant }
-    pub fn trailing_icon_color() -> Color { theme().on_surface_variant }
-    pub fn unfocused_border_color() -> Color { theme().outline }
-    pub fn focused_border_color() -> Color { theme().primary }
-    pub fn error_border_color() -> Color { theme().error }
-    pub fn cursor_color() -> Color { theme().primary }
-    pub fn container_color() -> Color { theme().surface }
+    pub fn label_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn focused_label_color() -> Color {
+        theme().primary
+    }
+    pub fn error_label_color() -> Color {
+        theme().error
+    }
+    pub fn input_color() -> Color {
+        theme().on_surface
+    }
+    pub fn disabled_input_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
+    pub fn supporting_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn placeholder_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn leading_icon_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn trailing_icon_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn unfocused_border_color() -> Color {
+        theme().outline
+    }
+    pub fn focused_border_color() -> Color {
+        theme().primary
+    }
+    pub fn error_border_color() -> Color {
+        theme().error
+    }
+    pub fn cursor_color() -> Color {
+        theme().primary
+    }
+    pub fn container_color() -> Color {
+        theme().surface
+    }
 }
 
 /// Default values for date picker.
@@ -709,17 +737,39 @@ impl DatePickerDefaults {
     pub const TODAY_BORDER_WIDTH: f32 = 1.0;
     pub const HORIZONTAL_PADDING: f32 = 12.0;
 
-    pub fn container_color() -> Color { theme().surface_container_high }
-    pub fn header_color() -> Color { theme().on_surface_variant }
-    pub fn weekday_color() -> Color { theme().on_surface }
-    pub fn day_color() -> Color { theme().on_surface }
-    pub fn selected_day_color() -> Color { theme().on_primary }
-    pub fn selected_day_container_color() -> Color { theme().primary }
-    pub fn today_content_color() -> Color { theme().primary }
-    pub fn today_border_color() -> Color { theme().primary }
-    pub fn year_selected_container_color() -> Color { theme().primary }
-    pub fn year_selected_content_color() -> Color { theme().on_primary }
-    pub fn year_unselected_content_color() -> Color { theme().on_surface_variant }
+    pub fn container_color() -> Color {
+        theme().surface_container_high
+    }
+    pub fn header_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn weekday_color() -> Color {
+        theme().on_surface
+    }
+    pub fn day_color() -> Color {
+        theme().on_surface
+    }
+    pub fn selected_day_color() -> Color {
+        theme().on_primary
+    }
+    pub fn selected_day_container_color() -> Color {
+        theme().primary
+    }
+    pub fn today_content_color() -> Color {
+        theme().primary
+    }
+    pub fn today_border_color() -> Color {
+        theme().primary
+    }
+    pub fn year_selected_container_color() -> Color {
+        theme().primary
+    }
+    pub fn year_selected_content_color() -> Color {
+        theme().on_primary
+    }
+    pub fn year_unselected_content_color() -> Color {
+        theme().on_surface_variant
+    }
 }
 
 /// Default values for time picker.
@@ -737,20 +787,48 @@ impl TimePickerDefaults {
     pub const TIME_SELECTOR_24H_WIDTH: f32 = 114.0;
     pub const MAX_HEIGHT: f32 = 384.0;
 
-    pub fn clock_dial_color() -> Color { theme().surface_container_highest }
-    pub fn clock_dial_selected_content_color() -> Color { theme().on_primary }
-    pub fn clock_dial_unselected_content_color() -> Color { theme().on_surface }
-    pub fn selector_color() -> Color { theme().primary }
-    pub fn container_color() -> Color { theme().surface_container_high }
-    pub fn period_selector_selected_container_color() -> Color { theme().tertiary_container }
-    pub fn period_selector_selected_content_color() -> Color { theme().on_tertiary_container }
-    pub fn period_selector_unselected_content_color() -> Color { theme().on_surface_variant }
-    pub fn period_selector_border_color() -> Color { theme().outline }
-    pub fn time_selector_selected_container_color() -> Color { theme().primary_container }
-    pub fn time_selector_selected_content_color() -> Color { theme().on_primary_container }
-    pub fn time_selector_unselected_container_color() -> Color { theme().surface_container_highest }
-    pub fn time_selector_unselected_content_color() -> Color { theme().on_surface }
-    pub fn time_selector_separator_color() -> Color { theme().on_surface }
+    pub fn clock_dial_color() -> Color {
+        theme().surface_container_highest
+    }
+    pub fn clock_dial_selected_content_color() -> Color {
+        theme().on_primary
+    }
+    pub fn clock_dial_unselected_content_color() -> Color {
+        theme().on_surface
+    }
+    pub fn selector_color() -> Color {
+        theme().primary
+    }
+    pub fn container_color() -> Color {
+        theme().surface_container_high
+    }
+    pub fn period_selector_selected_container_color() -> Color {
+        theme().tertiary_container
+    }
+    pub fn period_selector_selected_content_color() -> Color {
+        theme().on_tertiary_container
+    }
+    pub fn period_selector_unselected_content_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn period_selector_border_color() -> Color {
+        theme().outline
+    }
+    pub fn time_selector_selected_container_color() -> Color {
+        theme().primary_container
+    }
+    pub fn time_selector_selected_content_color() -> Color {
+        theme().on_primary_container
+    }
+    pub fn time_selector_unselected_container_color() -> Color {
+        theme().surface_container_highest
+    }
+    pub fn time_selector_unselected_content_color() -> Color {
+        theme().on_surface
+    }
+    pub fn time_selector_separator_color() -> Color {
+        theme().on_surface
+    }
 }
 
 /// Default values for swipe-to-dismiss.

@@ -2,11 +2,10 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
 use cosmic_text::{CacheKey, Command};
-use lyon_tessellation::{
-    FillTessellator, FillOptions, VertexBuffers,
-    geometry_builder::simple_builder,
-};
 use lyon_path::math::Point;
+use lyon_tessellation::{
+    FillOptions, FillTessellator, VertexBuffers, geometry_builder::simple_builder,
+};
 
 use crate::slug::outline::commands_to_path;
 
@@ -63,7 +62,8 @@ impl GlyphSlugCache {
                     &path,
                     &FillOptions::default().with_tolerance(tolerance),
                     &mut simple_builder(&mut buffers),
-                ).ok()?;
+                )
+                .ok()?;
 
                 if buffers.indices.is_empty() {
                     return None;

@@ -80,7 +80,9 @@ pub fn SelectableText(
             let sel = Some((a.min(byte), a.max(byte)));
             *selection.borrow_mut() = sel;
             cb_move(sel);
-            if let Some((s, e)) = sel && e > s {
+            if let Some((s, e)) = sel
+                && e > s
+            {
                 repose_core::clipboard::set_primary_selection(&text[s..e]);
             }
         }

@@ -1900,7 +1900,10 @@ impl LayoutEngine {
                                     if !txt.is_empty() {
                                         repose_core::clipboard::copy_to_clipboard(&txt);
                                         s.insert_text_atomic("");
-                                        crate::textfield::ensure_caret_visible(&mut s, is_multiline);
+                                        crate::textfield::ensure_caret_visible(
+                                            &mut s,
+                                            is_multiline,
+                                        );
                                         let text = s.text.clone();
                                         drop(s);
                                         if let Some(cb) = &change_cb {
@@ -1910,8 +1913,7 @@ impl LayoutEngine {
                                     }
                                 }
                                 Action::Paste => {
-                                    let Some(mut txt) = repose_core::clipboard::paste_text()
-                                    else {
+                                    let Some(mut txt) = repose_core::clipboard::paste_text() else {
                                         return false;
                                     };
                                     if is_multiline {
@@ -1939,7 +1941,10 @@ impl LayoutEngine {
                                 Action::Undo => {
                                     if s.can_undo() {
                                         s.undo();
-                                        crate::textfield::ensure_caret_visible(&mut s, is_multiline);
+                                        crate::textfield::ensure_caret_visible(
+                                            &mut s,
+                                            is_multiline,
+                                        );
                                         let text = s.text.clone();
                                         drop(s);
                                         if let Some(cb) = &change_cb {
@@ -1951,7 +1956,10 @@ impl LayoutEngine {
                                 Action::Redo => {
                                     if s.can_redo() {
                                         s.redo();
-                                        crate::textfield::ensure_caret_visible(&mut s, is_multiline);
+                                        crate::textfield::ensure_caret_visible(
+                                            &mut s,
+                                            is_multiline,
+                                        );
                                         let text = s.text.clone();
                                         drop(s);
                                         if let Some(cb) = &change_cb {
@@ -1965,14 +1973,13 @@ impl LayoutEngine {
                             handled
                         }));
 
-                    let combined: Option<
-                        Rc<dyn Fn(repose_core::shortcuts::Action) -> bool>,
-                    > = match (user_on_action, tf_on_action) {
-                        (Some(u), Some(t)) => Some(Rc::new(move |a| u(a.clone()) || t(a))),
-                        (Some(u), None) => Some(u),
-                        (None, Some(t)) => Some(t),
-                        (None, None) => None,
-                    };
+                    let combined: Option<Rc<dyn Fn(repose_core::shortcuts::Action) -> bool>> =
+                        match (user_on_action, tf_on_action) {
+                            (Some(u), Some(t)) => Some(Rc::new(move |a| u(a.clone()) || t(a))),
+                            (Some(u), None) => Some(u),
+                            (None, Some(t)) => Some(t),
+                            (None, None) => None,
+                        };
 
                     hits.push(HitRegion {
                         id: view_id,
@@ -2313,12 +2320,12 @@ impl LayoutEngine {
                     }
                 }
                 if *show_scrollbar {
-                    let set_y = set_scroll_offset_xy.clone().map(|s| {
-                        Rc::new(move |y| s(ox, y)) as Rc<dyn Fn(f32)>
-                    });
-                    let set_x = set_scroll_offset_xy.clone().map(|s| {
-                        Rc::new(move |x| s(x, oy)) as Rc<dyn Fn(f32)>
-                    });
+                    let set_y = set_scroll_offset_xy
+                        .clone()
+                        .map(|s| Rc::new(move |y| s(ox, y)) as Rc<dyn Fn(f32)>);
+                    let set_x = set_scroll_offset_xy
+                        .clone()
+                        .map(|s| Rc::new(move |x| s(x, oy)) as Rc<dyn Fn(f32)>);
                     push_scrollbar(
                         scene,
                         hits,

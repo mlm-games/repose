@@ -5,7 +5,8 @@ use std::rc::Rc;
 use repose_core::prelude::*;
 use repose_material::material3::dialog::{Dialog, DialogState};
 use repose_material::material3::{
-    Card, CardConfig, ElevatedCard, IconButton, IconButtonConfig, Slider, SliderConfig, Switch, SwitchConfig,
+    Card, CardConfig, ElevatedCard, IconButton, IconButtonConfig, Slider, SliderConfig, Switch,
+    SwitchConfig,
 };
 use repose_material::{Icon, material_symbols};
 use repose_navigation::Navigator;
@@ -193,28 +194,31 @@ pub fn TopBar(overlay: OverlayHandle, vm: SettingsVm) -> View {
 
 pub fn NavRail(current: Route, nav: Navigator<Route>) -> View {
     let th = theme();
-    Card(CardConfig {
-        modifier: Modifier::new()
-            .width(220.0)
-            .fill_max_height()
-            .padding(sp::SM),
-        ..Default::default()
-    }, ||
-        Column(Modifier::new().fill_max_size().gap(2.0)).child(
-            std::iter::once(
-                Text("Navigation")
-                    .size(13.0)
-                    .color(th.on_surface_variant)
-                    .modifier(Modifier::new().padding(sp::SM)),
+    Card(
+        CardConfig {
+            modifier: Modifier::new()
+                .width(220.0)
+                .fill_max_height()
+                .padding(sp::SM),
+            ..Default::default()
+        },
+        || {
+            Column(Modifier::new().fill_max_size().gap(2.0)).child(
+                std::iter::once(
+                    Text("Navigation")
+                        .size(13.0)
+                        .color(th.on_surface_variant)
+                        .modifier(Modifier::new().padding(sp::SM)),
+                )
+                .chain(Route::ALL.iter().map(|&r| {
+                    NavItem(r, r == current, {
+                        let nav = nav.clone();
+                        move || nav.push(r)
+                    })
+                }))
+                .collect::<Vec<_>>(),
             )
-            .chain(Route::ALL.iter().map(|&r| {
-                NavItem(r, r == current, {
-                    let nav = nav.clone();
-                    move || nav.push(r)
-                })
-            }))
-            .collect::<Vec<_>>(),
-        ),
+        },
     )
 }
 

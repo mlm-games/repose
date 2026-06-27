@@ -1,6 +1,6 @@
+use crate::ViewExt;
 use crate::anim::animate_f32_from;
 use crate::lazy_states::*;
-use crate::ViewExt;
 use repose_core::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -545,13 +545,17 @@ where
             .map(|col_items| {
                 let items: Vec<View> = col_items
                     .into_iter()
-                    .map(|item| crate::Box(Modifier::new().flex_grow(1.0).flex_basis(0.0)).child(item))
+                    .map(|item| {
+                        crate::Box(Modifier::new().flex_grow(1.0).flex_basis(0.0)).child(item)
+                    })
                     .collect();
-                crate::Column(col_mod.clone().align_items(AlignItems::Stretch).row_gap(rg)).with_children(items)
+                crate::Column(col_mod.clone().align_items(AlignItems::Stretch).row_gap(rg))
+                    .with_children(items)
             })
             .collect();
         let cg = modifier.column_gap.or(modifier.gap).unwrap_or(0.0);
-        children.push(crate::Row(Modifier::new().column_gap(cg).fill_max_height()).with_children(cols));
+        children
+            .push(crate::Row(Modifier::new().column_gap(cg).fill_max_height()).with_children(cols));
     }
 
     if last_col < total_cols {
@@ -609,7 +613,8 @@ where
         })
     };
 
-    let content = crate::Row(Modifier::new().flex_shrink(0.0).fill_max_height()).with_children(children);
+    let content =
+        crate::Row(Modifier::new().flex_shrink(0.0).fill_max_height()).with_children(children);
 
     View::new(
         0,

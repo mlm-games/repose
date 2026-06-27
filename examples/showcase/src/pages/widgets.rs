@@ -1,7 +1,7 @@
 use repose_core::{prelude::*, signal};
 use repose_material::material3::{
     AssistChip, ButtonConfig, CardConfig, Checkbox, CheckboxConfig, ChipConfig, FilterChip,
-    LinearProgressIndicator, RangeSlider, Slider, RadioButton, RadioButtonConfig, SliderConfig,
+    LinearProgressIndicator, RadioButton, RadioButtonConfig, RangeSlider, Slider, SliderConfig,
     Switch, SwitchConfig, TextButton,
 };
 use repose_material::{Icon, material_symbols};

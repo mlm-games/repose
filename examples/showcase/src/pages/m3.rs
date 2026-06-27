@@ -1,15 +1,13 @@
 use std::rc::Rc;
 
 use repose_core::prelude::*;
-use repose_material::material3::dialog::{
-    DatePickerDialog, DialogState, TimePickerDialog,
-};
+use repose_material::material3::dialog::{DatePickerDialog, DialogState, TimePickerDialog};
 use repose_material::material3::{
-    BottomSheet, BottomSheetConfig, ButtonConfig, CircularProgressIndicator,
+    BottomSheet, BottomSheetConfig, Button, ButtonConfig, CircularProgressIndicator,
     CircularProgressIndicatorConfig, DatePickerState, DropdownMenu, DropdownMenuConfig,
-    DropdownMenuEntry, DropdownMenuItem, Button, LinearProgressIndicator,
-    LinearProgressIndicatorConfig, MenuState, ModalBottomSheet, NavRailItem, NavigationRail,
-    NavigationRailConfig, SheetState, TextButton, TimePickerState,
+    DropdownMenuEntry, DropdownMenuItem, LinearProgressIndicator, LinearProgressIndicatorConfig,
+    MenuState, ModalBottomSheet, NavRailItem, NavigationRail, NavigationRailConfig, SheetState,
+    TextButton, TimePickerState,
 };
 use repose_material::{Icon, material_symbols};
 
@@ -325,7 +323,10 @@ pub fn screen(overlay: OverlayHandle) -> View {
                         .size(14.0)
                         .color(th.on_surface_variant),
                     Row(Modifier::new().gap(sp::MD).align_items(AlignItems::Center)).child((
-                        CircularProgressIndicator(Some(0.6), CircularProgressIndicatorConfig::default()),
+                        CircularProgressIndicator(
+                            Some(0.6),
+                            CircularProgressIndicatorConfig::default(),
+                        ),
                         CircularProgressIndicator(None, CircularProgressIndicatorConfig::default()),
                     )),
                 )),

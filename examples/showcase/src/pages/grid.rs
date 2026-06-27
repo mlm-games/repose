@@ -2,7 +2,7 @@ use repose_core::{prelude::*, signal};
 use repose_ui::lazy::{LazyHorizontalGrid, LazyVerticalGrid};
 use repose_ui::*;
 
-use crate::ui::{sp, DemoTile};
+use crate::ui::{DemoTile, sp};
 
 #[derive(Clone)]
 struct GridItem {

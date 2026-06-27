@@ -1,4 +1,4 @@
-use crate::runtime::{Frame, FocusDirection, Scheduler, spatial_focus_next};
+use crate::runtime::{FocusDirection, Frame, Scheduler, spatial_focus_next};
 use crate::semantics::Role;
 use crate::shortcuts::Action;
 
@@ -16,7 +16,10 @@ pub fn handle_action(action: &Action, sched: &mut Scheduler, frame: &Frame) -> O
     };
 
     // For spatial arrows, skip if focused element is a text field (arrows are for cursor)
-    if matches!(dir, FocusDirection::Left | FocusDirection::Right | FocusDirection::Up | FocusDirection::Down) {
+    if matches!(
+        dir,
+        FocusDirection::Left | FocusDirection::Right | FocusDirection::Up | FocusDirection::Down
+    ) {
         let is_textfield = frame
             .semantics_nodes
             .iter()

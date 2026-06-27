@@ -211,9 +211,7 @@ pub fn DatePickerDialog(
         state,
         overlay,
         Modifier::new(),
-        Column(Modifier::new()).child((
-            DatePicker(picker_state.clone(), on_confirm, on_dismiss),
-        )),
+        Column(Modifier::new()).child((DatePicker(picker_state.clone(), on_confirm, on_dismiss),)),
     )
 }
 
@@ -233,8 +231,6 @@ pub fn TimePickerDialog(
         state,
         overlay,
         Modifier::new(),
-        Column(Modifier::new()).child((
-            TimePicker(picker_state.clone(), on_confirm, on_dismiss),
-        )),
+        Column(Modifier::new()).child((TimePicker(picker_state.clone(), on_confirm, on_dismiss),)),
     )
 }

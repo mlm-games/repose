@@ -64,7 +64,10 @@ pub fn ensure_caret_visible(state: &mut TextFieldState, multiline: bool) {
     let wrap_width = state.inner_width;
     if multiline {
         let (cx, cy, _) = crate::textfield::caret_xy_for_byte(
-            &state.text, font_px, wrap_width, state.caret_index(),
+            &state.text,
+            font_px,
+            wrap_width,
+            state.caret_index(),
         );
         let iw = state.inner_width;
         let ih = state.inner_height;
