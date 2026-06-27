@@ -106,6 +106,8 @@ pub fn run_android_app_with_options(
         // swipe tracking
         touch_start: Option<(web_time::Instant, (f32, f32))>,
 
+        touch_long_press_pending: bool,
+
         drag: Option<rc::DragSession>,
 
         last_redraw: web_time::Instant,
@@ -148,6 +150,8 @@ pub fn run_android_app_with_options(
                 primary_touch_id: None,
                 pinch_last_dist: None,
                 touch_start: None,
+
+                touch_long_press_pending: false,
 
                 drag: None,
 
@@ -332,6 +336,8 @@ pub fn run_android_app_with_options(
 
             false
         }
+        const LONG_PRESS_MS: u128 = 400;
+
         fn dnd_slop_px(&self) -> f32 {
             rc::touch_slop_px(self.scale())
         }
@@ -351,12 +357,7 @@ pub fn run_android_app_with_options(
                 return false;
             };
 
-            let dx = pos.x - sx;
-            let dy = pos.y - sy;
-            let dist = (dx * dx + dy * dy).sqrt();
-            if dist < self.dnd_slop_px() {
-                return false;
-            }
+            // Distance check is caller's responsibility (long-press vs drag)
 
             let Some(f) = &self.frame_cache else {
                 return false;
@@ -387,6 +388,55 @@ pub fn run_android_app_with_options(
             // Prevent click-on-release behavior
             self.touch_scrolled = true;
             true
+        }
+
+        fn overlay_drag_indicator(&self, scene: &mut Scene) {
+            if self.drag.is_none() {
+                return;
+            }
+
+            let pos = Vec2 {
+                x: self.last_pos_px.0,
+                y: self.last_pos_px.1,
+            };
+
+            // Highlight best drop target under cursor
+            if let Some(f) = &self.frame_cache
+                && let Some(tid) = rc::dnd_target_id_at(f, pos)
+                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid)
+            {
+                scene.nodes.push(SceneNode::Border {
+                    rect: hit.rect,
+                    color: Color::from_hex("#44AAFF"),
+                    width: dp_to_px(2.0),
+                    radius: dp_to_px(8.0),
+                });
+            }
+
+            let badge = Rect {
+                x: pos.x + dp_to_px(12.0),
+                y: pos.y + dp_to_px(12.0),
+                w: dp_to_px(110.0),
+                h: dp_to_px(24.0),
+            };
+
+            scene.nodes.push(SceneNode::Rect {
+                rect: badge,
+                brush: Brush::Solid(Color::from_hex("#44AAFF77")),
+                radius: dp_to_px(8.0),
+            });
+            scene.nodes.push(SceneNode::Text {
+                rect: Rect {
+                    x: badge.x + dp_to_px(8.0),
+                    y: badge.y + dp_to_px(6.0),
+                    w: 0.0,
+                    h: dp_to_px(14.0),
+                },
+                text: std::sync::Arc::<str>::from(" "),
+                color: Color::WHITE,
+                size: dp_to_px(12.0),
+                font_family: None,
+            });
         }
 
         fn dnd_finish(&mut self, pos: Vec2, accept_if_possible: bool) {
@@ -493,6 +543,7 @@ pub fn run_android_app_with_options(
                             if self.primary_touch_id.is_none() {
                                 self.primary_touch_id = Some(tid);
                                 self.touch_start = Some((web_time::Instant::now(), pos_px));
+                                self.touch_long_press_pending = true;
                             }
 
                             if let Some(f) = &self.frame_cache {
@@ -581,11 +632,29 @@ pub fn run_android_app_with_options(
                                 return;
                             }
 
-                            if self.dnd_try_begin_touch(pos) {
-                                self.dnd_update_over(pos);
-                                self.dirty = true;
-                                self.request_redraw();
-                                return;
+                            // Long-press DnD initiation (Compose style: touch DnD starts on long press)
+                            if self.touch_long_press_pending {
+                                if let Some((t0, p0)) = self.touch_start {
+                                    let elapsed_ms =
+                                        (web_time::Instant::now() - t0).as_millis() as u128;
+                                    let dx = pos.x - p0.0;
+                                    let dy = pos.y - p0.1;
+                                    let dist = (dx * dx + dy * dy).sqrt();
+                                    if elapsed_ms >= LONG_PRESS_MS && dist <= self.dnd_slop_px() {
+                                        if self.dnd_try_begin_touch(pos) {
+                                            self.dnd_update_over(pos);
+                                            self.touch_long_press_pending = false;
+                                            self.dirty = true;
+                                            self.request_redraw();
+                                            return;
+                                        }
+                                        // Widget has no on_drag_start — cancel long press
+                                        self.touch_long_press_pending = false;
+                                    }
+                                    if dist > self.dnd_slop_px() {
+                                        self.touch_long_press_pending = false;
+                                    }
+                                }
                             }
                             // Pinch gesture detection
                             if self.active_touches.len() == 2 {
@@ -660,6 +729,7 @@ pub fn run_android_app_with_options(
                         }
 
                         winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
+                            self.touch_long_press_pending = false;
                             if self.drag.is_some() {
                                 self.dnd_finish(pos, true);
                                 self.capture_id = None;
@@ -1068,6 +1138,8 @@ pub fn run_android_app_with_options(
                         self.ime_preedit = false;
                         win.set_ime_allowed(false);
                     }
+
+                    self.overlay_drag_indicator(&mut frame.scene);
 
                     backend.frame(&frame.scene, GlyphRasterConfig { px: 18.0 * scale });
 

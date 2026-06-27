@@ -193,6 +193,9 @@ struct App {
     // swipe tracking
     touch_start: Option<(web_time::Instant, (f32, f32))>,
 
+    // long-press DnD initiation
+    touch_long_press_pending: bool,
+
     key_pressed_active: Option<u64>,
 
     last_redraw: web_time::Instant,
@@ -241,6 +244,8 @@ impl App {
             primary_touch_id: None,
             pinch_last_dist: None,
             touch_start: None,
+
+            touch_long_press_pending: false,
 
             key_pressed_active: None,
 
@@ -540,6 +545,50 @@ impl App {
         true
     }
 
+    const LONG_PRESS_MS: u128 = 400;
+
+    fn dnd_try_begin_touch(&mut self, window: &Window, pos: Vec2) -> bool {
+        if self.drag.is_some() {
+            return true;
+        }
+        let Some(cid) = self.capture_id else {
+            return false;
+        };
+        let Some((_t0, (sx, sy))) = self.touch_start else {
+            return false;
+        };
+
+        let Some(f) = &self.frame_cache else {
+            return false;
+        };
+        let Some(i) = rc::hit_index_by_id(f, cid) else {
+            return false;
+        };
+        let Some(cb) = &f.hit_regions[i].on_drag_start else {
+            return false;
+        };
+
+        let payload = cb(repose_core::dnd::DragStart {
+            source_id: cid,
+            position: pos,
+            modifiers: self.modifiers,
+        });
+        let Some(payload) = payload else {
+            return false;
+        };
+
+        self.drag = Some(rc::DragSession {
+            source_id: cid,
+            payload,
+            start_px: (sx, sy),
+            over_id: None,
+        });
+        self.pressed_ids.remove(&cid);
+        self.touch_scrolled = true; // Prevent click-on-release
+        self.request_redraw();
+        true
+    }
+
     fn dnd_finish(&mut self, pos: Vec2, accept_if_possible: bool) {
         let Some(f) = &self.frame_cache else {
             self.drag = None;
@@ -566,6 +615,57 @@ impl App {
         };
         self.dnd_finish(pos, false);
     }
+
+    fn overlay_drag_indicator(&self, scene: &mut Scene) {
+        if self.drag.is_none() {
+            return;
+        }
+
+        let pos = Vec2 {
+            x: self.mouse_pos_px.0,
+            y: self.mouse_pos_px.1,
+        };
+
+        // Highlight best drop target under cursor
+        if let Some(f) = &self.frame_cache
+            && let Some(tid) = rc::dnd_target_id_at(f, pos)
+            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid)
+        {
+            scene.nodes.push(SceneNode::Border {
+                rect: hit.rect,
+                color: Color::from_hex("#44AAFF"),
+                width: dp_to_px(2.0),
+                radius: dp_to_px(8.0),
+            });
+        }
+
+        // Cursor badge
+        let badge = Rect {
+            x: pos.x + dp_to_px(12.0),
+            y: pos.y + dp_to_px(12.0),
+            w: dp_to_px(110.0),
+            h: dp_to_px(24.0),
+        };
+
+        scene.nodes.push(SceneNode::Rect {
+            rect: badge,
+            brush: Brush::Solid(Color::from_hex("#44AAFF77")),
+            radius: dp_to_px(8.0),
+        });
+        scene.nodes.push(SceneNode::Text {
+            rect: Rect {
+                x: badge.x + dp_to_px(8.0),
+                y: badge.y + dp_to_px(6.0),
+                w: 0.0,
+                h: dp_to_px(14.0),
+            },
+            text: std::sync::Arc::<str>::from(" "),
+            color: Color::WHITE,
+            size: dp_to_px(12.0),
+            font_family: None,
+        });
+    }
+
     fn dispatch_dropped_files(&mut self, window: &Window, names: Vec<String>, pos_px: (f32, f32)) {
         let Some(f) = &self.frame_cache else {
             return;
@@ -1136,6 +1236,7 @@ impl ApplicationHandler<()> for App {
                         if self.primary_touch_id.is_none() {
                             self.primary_touch_id = Some(tid);
                             self.touch_start = Some((web_time::Instant::now(), pos_px));
+                            self.touch_long_press_pending = true;
                         }
 
                         if let Some(f) = &self.frame_cache {
@@ -1181,6 +1282,38 @@ impl ApplicationHandler<()> for App {
                     }
 
                     TouchPhase::Moved => {
+                        if self.drag.is_some() {
+                            self.dnd_update_over(pos);
+                            self.request_redraw();
+                            return;
+                        }
+
+                        // Long-press DnD initiation (Compose style)
+                        if self.touch_long_press_pending {
+                            if let Some((t0, p0)) = self.touch_start {
+                                let elapsed_ms =
+                                    (web_time::Instant::now() - t0).as_millis() as u128;
+                                let dx = pos.x - p0.0;
+                                let dy = pos.y - p0.1;
+                                let dist = (dx * dx + dy * dy).sqrt();
+                                if elapsed_ms >= LONG_PRESS_MS
+                                    && dist <= self.dnd_slop_px(&window)
+                                {
+                                    if self.dnd_try_begin_touch(&window, pos) {
+                                        self.dnd_update_over(pos);
+                                        self.touch_long_press_pending = false;
+                                        self.request_redraw();
+                                        return;
+                                    }
+                                    // Widget has no on_drag_start — cancel long press
+                                    self.touch_long_press_pending = false;
+                                }
+                                if dist > self.dnd_slop_px(&window) {
+                                    self.touch_long_press_pending = false;
+                                }
+                            }
+                        }
+
                         // Handle pinch gesture with two touches
                         if self.active_touches.len() == 2 {
                             let mut it = self.active_touches.values();
@@ -1254,6 +1387,17 @@ impl ApplicationHandler<()> for App {
                     }
 
                     TouchPhase::Ended | TouchPhase::Cancelled => {
+                        self.touch_long_press_pending = false;
+                        if self.drag.is_some() {
+                            self.dnd_finish(pos, true);
+                            self.capture_id = None;
+                            self.scroll_capture_id = None;
+                            self.prev_touch_px = None;
+                            self.pressed_ids.clear();
+                            self.request_redraw();
+                            return;
+                        }
+
                         self.active_touches.remove(&tid);
                         if self.active_touches.len() < 2 {
                             self.pinch_last_dist = None;
@@ -1725,6 +1869,8 @@ impl ApplicationHandler<()> for App {
                     rc_web::set_ime_for_textfield(&window, false);
                     self.ime_preedit = false;
                 }
+
+                self.overlay_drag_indicator(&mut frame.scene);
 
                 if let Some(backend) = self.backend.borrow_mut().as_mut() {
                     backend.frame(&frame.scene, GlyphRasterConfig { px: 18.0 * scale });
