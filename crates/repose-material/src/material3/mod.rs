@@ -906,6 +906,12 @@ pub fn NavigationDrawerItem(
         .clickable()
         .on_pointer_down(move |_| on_click())
         .background(bg)
+        .state_colors(StateColors {
+            default: Color::TRANSPARENT,
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
+            disabled: Color::TRANSPARENT,
+        })
         .clip_rounded(th.shapes.large))
     .child(with_content_color(fg, || {
         Row(Modifier::new()

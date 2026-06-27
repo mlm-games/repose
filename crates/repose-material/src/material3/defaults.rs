@@ -274,6 +274,15 @@ impl CheckboxDefaults {
     pub fn checkmark_color() -> Color {
         theme().on_primary
     }
+    pub fn state_colors_default() -> StateColors {
+        let th = theme();
+        StateColors {
+            default: Color::TRANSPARENT,
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
+            disabled: Color::TRANSPARENT,
+        }
+    }
 }
 
 /// Default values for radio button.
@@ -289,6 +298,15 @@ impl RadioButtonDefaults {
     }
     pub fn unselected_color() -> Color {
         theme().on_surface_variant
+    }
+    pub fn state_colors_default() -> StateColors {
+        let th = theme();
+        StateColors {
+            default: Color::TRANSPARENT,
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
+            disabled: Color::TRANSPARENT,
+        }
     }
 }
 
@@ -315,6 +333,15 @@ impl SwitchDefaults {
     pub fn unchecked_border_color() -> Color {
         theme().outline
     }
+    pub fn state_colors_default() -> StateColors {
+        let th = theme();
+        StateColors {
+            default: Color::TRANSPARENT,
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
+            disabled: Color::TRANSPARENT,
+        }
+    }
 }
 
 /// Default values for slider.
@@ -331,6 +358,15 @@ impl SliderDefaults {
     }
     pub fn thumb_color() -> Color {
         theme().primary
+    }
+    pub fn state_colors_default() -> StateColors {
+        let th = theme();
+        StateColors {
+            default: Color::TRANSPARENT,
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
+            disabled: Color::TRANSPARENT,
+        }
     }
 }
 

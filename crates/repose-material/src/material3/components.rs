@@ -2155,6 +2155,7 @@ pub struct CheckboxConfig {
     pub checked_color: Color,
     pub unchecked_color: Color,
     pub checkmark_color: Color,
+    pub state_colors: StateColors,
 }
 
 impl Default for CheckboxConfig {
@@ -2164,6 +2165,7 @@ impl Default for CheckboxConfig {
             checked_color: CheckboxDefaults::checked_color(),
             unchecked_color: CheckboxDefaults::unchecked_color(),
             checkmark_color: CheckboxDefaults::checkmark_color(),
+            state_colors: CheckboxDefaults::state_colors_default(),
         }
     }
 }
@@ -2218,6 +2220,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         .padding(0.0)
         .clip_rounded(20.0)
         .background(Color::TRANSPARENT)
+        .state_colors(config.state_colors.clone())
         .clickable()
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
@@ -2351,6 +2354,7 @@ pub struct RadioButtonConfig {
     pub modifier: Modifier,
     pub selected_color: Color,
     pub unselected_color: Color,
+    pub state_colors: StateColors,
 }
 
 impl Default for RadioButtonConfig {
@@ -2359,6 +2363,7 @@ impl Default for RadioButtonConfig {
             modifier: Modifier::new(),
             selected_color: RadioButtonDefaults::selected_color(),
             unselected_color: RadioButtonDefaults::unselected_color(),
+            state_colors: RadioButtonDefaults::state_colors_default(),
         }
     }
 }
@@ -2404,6 +2409,7 @@ pub fn RadioButton(
         .padding(0.0)
         .clip_rounded(20.0)
         .background(Color::TRANSPARENT)
+        .state_colors(config.state_colors.clone())
         .clickable()
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
@@ -2436,6 +2442,7 @@ pub struct SwitchConfig {
     pub checked_thumb_color: Color,
     pub unchecked_thumb_color: Color,
     pub unchecked_border_color: Color,
+    pub state_colors: StateColors,
 }
 
 impl Default for SwitchConfig {
@@ -2447,6 +2454,7 @@ impl Default for SwitchConfig {
             checked_thumb_color: SwitchDefaults::checked_thumb_color(),
             unchecked_thumb_color: SwitchDefaults::unchecked_thumb_color(),
             unchecked_border_color: SwitchDefaults::unchecked_border_color(),
+            state_colors: SwitchDefaults::state_colors_default(),
         }
     }
 }
@@ -2517,23 +2525,18 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         .size(track_w, track_h)
         .padding(0.0)
         .clip_rounded(track_h * 0.5)
-        .background(Color::TRANSPARENT)
+        .background(track_bg)
+        .state_colors(config.state_colors.clone())
+        .border(track_border, border_color, track_h * 0.5)
         .clickable()
         .on_pointer_down(move |_| on_change(!checked))
         .then(config.modifier))
-    .child(
-        Box(Modifier::new()
-            .size(track_w, track_h)
-            .background(track_bg)
-            .border(track_border, border_color, track_h * 0.5)
-            .clip_rounded(track_h * 0.5))
-        .child(Box(Modifier::new()
-            .size(thumb_d, thumb_d)
-            .background(thumb_bg)
-            .clip_rounded(thumb_d * 0.5)
-            .absolute()
-            .offset(Some(thumb_left), Some(thumb_top), None, None))),
-    )
+    .child(Box(Modifier::new()
+        .size(thumb_d, thumb_d)
+        .background(thumb_bg)
+        .clip_rounded(thumb_d * 0.5)
+        .absolute()
+        .offset(Some(thumb_left), Some(thumb_top), None, None)))
 }
 
 /// Configuration for [`Slider`] and [`RangeSlider`].
@@ -2543,6 +2546,7 @@ pub struct SliderConfig {
     pub active_track_color: Color,
     pub inactive_track_color: Color,
     pub thumb_color: Color,
+    pub state_colors: StateColors,
 }
 
 impl Default for SliderConfig {
@@ -2552,6 +2556,7 @@ impl Default for SliderConfig {
             active_track_color: SliderDefaults::active_track_color(),
             inactive_track_color: SliderDefaults::inactive_track_color(),
             thumb_color: SliderDefaults::thumb_color(),
+            state_colors: SliderDefaults::state_colors_default(),
         }
     }
 }
