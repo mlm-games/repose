@@ -439,14 +439,6 @@ impl App {
             return true;
         }
 
-        self.dispatch_default_action(window, action)
-    }
-
-    fn dispatch_default_action(
-        &mut self,
-        window: &Window,
-        action: repose_core::shortcuts::Action,
-    ) -> bool {
         use repose_core::shortcuts::Action;
 
         let Some(fid) = self.sched.focused else {
@@ -481,6 +473,34 @@ impl App {
                     {
                         self.tf_ensure_caret_visible_in_hit(&mut st, f.hit_regions[i].tf_multiline);
                     }
+                }
+                true
+            }
+            Action::Undo => {
+                let mut st = state_rc.borrow_mut();
+                if !st.can_undo() {
+                    return false;
+                }
+                st.undo();
+                self.notify_text_change(fid, st.text.clone());
+                if let Some(f) = &self.frame_cache
+                    && let Some(i) = rc::hit_index_by_id(f, fid)
+                {
+                    self.tf_ensure_caret_visible_in_hit(&mut st, f.hit_regions[i].tf_multiline);
+                }
+                true
+            }
+            Action::Redo => {
+                let mut st = state_rc.borrow_mut();
+                if !st.can_redo() {
+                    return false;
+                }
+                st.redo();
+                self.notify_text_change(fid, st.text.clone());
+                if let Some(f) = &self.frame_cache
+                    && let Some(i) = rc::hit_index_by_id(f, fid)
+                {
+                    self.tf_ensure_caret_visible_in_hit(&mut st, f.hit_regions[i].tf_multiline);
                 }
                 true
             }
@@ -1384,25 +1404,6 @@ impl ApplicationHandler<()> for App {
                             return;
                         }
                     }
-
-                    if handle_text_undo_redo!(self, key_event) {
-                        if let Some(fid) = self.sched.focused {
-                            let key = self.tf_key_of(fid);
-                            if let Some(state_rc) = self.textfield_states.get(&key) {
-                                let mut st = state_rc.borrow_mut();
-                                if let Some(f) = &self.frame_cache
-                                    && let Some(i) = rc::hit_index_by_id(f, fid)
-                                {
-                                    self.tf_ensure_caret_visible_in_hit(
-                                        &mut st,
-                                        f.hit_regions[i].tf_multiline,
-                                    );
-                                }
-                            }
-                        }
-                        self.request_redraw();
-                        return;
-                    }
                 }
 
                 // focus traversal: Tab / Shift+Tab
@@ -1680,11 +1681,7 @@ impl ApplicationHandler<()> for App {
                                     let end = st.text.len();
                                     st.selection = end..end;
                                 }
-                                PhysicalKey::Code(KeyCode::KeyA)
-                                    if self.modifiers.ctrl || self.modifiers.meta =>
-                                {
-                                    st.selection = 0..st.text.len();
-                                }
+
                                 _ => {}
                             }
 

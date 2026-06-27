@@ -1583,111 +1583,6 @@ pub fn run_desktop_app(
                                         );
                                         self.request_redraw();
                                     }
-                                    PhysicalKey::Code(KeyCode::KeyA) if self.modifiers.ctrl => {
-                                        state.selection = 0..state.text.len();
-                                        App::tf_ensure_caret_visible(
-                                            &mut state,
-                                            self.is_multiline_id(focused_id),
-                                        );
-                                        self.request_redraw();
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            if handle_text_undo_redo!(self, key_event) {
-                                if let Some(fid) = self.sched.focused {
-                                    let key = self.tf_key_of(fid);
-                                    if let Some(state_rc) = self.textfield_states.get(&key) {
-                                        let mut st = state_rc.borrow_mut();
-                                        App::tf_ensure_caret_visible(
-                                            &mut st,
-                                            self.is_multiline_id(fid),
-                                        );
-                                    }
-                                }
-                                self.request_redraw();
-                                return;
-                            }
-
-                            if self.modifiers.ctrl {
-                                match key_event.physical_key {
-                                    PhysicalKey::Code(KeyCode::KeyC) => {
-                                        if let Some(fid) = self.sched.focused {
-                                            let key = self.tf_key_of(fid);
-                                            if let Some(state) = self.textfield_states.get(&key) {
-                                                let txt = state.borrow().selected_text();
-                                                if !txt.is_empty() {
-                                                    self.copy_to_clipboard(txt);
-                                                }
-                                            }
-                                        }
-                                        return;
-                                    }
-                                    PhysicalKey::Code(KeyCode::KeyX) => {
-                                        if let Some(fid) = self.sched.focused {
-                                            let key = self.tf_key_of(fid);
-                                            if let Some(state_rc) =
-                                                self.textfield_states.get(&key).cloned()
-                                            {
-                                                // Copy
-                                                let txt = state_rc.borrow().selected_text();
-                                                if !txt.is_empty() {
-                                                    {
-                                                        self.copy_to_clipboard(txt.clone());
-                                                    }
-                                                    // Cut (delete selection)
-                                                    {
-                                                        let mut st = state_rc.borrow_mut();
-                                                        st.insert_text(""); // replace selection with empty
-                                                        let new_text = st.text.clone();
-                                                        self.notify_text_change(
-                                                            focused_id, new_text,
-                                                        );
-                                                        App::tf_ensure_caret_visible(
-                                                            &mut st,
-                                                            self.is_multiline_id(focused_id),
-                                                        );
-                                                    }
-                                                    self.request_redraw();
-                                                }
-                                            }
-                                        }
-                                        return;
-                                    }
-                                    PhysicalKey::Code(KeyCode::KeyV) => {
-                                        if let Some(fid) = self.sched.focused {
-                                            let key = self.tf_key_of(fid);
-                                            let is_multiline = self.is_multiline_id(fid);
-                                            if let Some(state_rc) =
-                                                self.textfield_states.get(&key).cloned()
-                                                && let Some(mut txt) = self.paste_from_clipboard()
-                                            {
-                                                // For multiline: allow newlines but strip other control chars
-                                                // For single-line: strip all control chars including newlines
-                                                if is_multiline {
-                                                    txt.retain(|c| {
-                                                        c == '\n' || (!c.is_control() && c != '\r')
-                                                    });
-                                                } else {
-                                                    txt.retain(|c| {
-                                                        !c.is_control() && c != '\n' && c != '\r'
-                                                    });
-                                                }
-                                                if !txt.is_empty() {
-                                                    let mut st = state_rc.borrow_mut();
-                                                    st.insert_text(&txt);
-                                                    let new_text = st.text.clone();
-                                                    self.notify_text_change(focused_id, new_text);
-                                                    App::tf_ensure_caret_visible(
-                                                        &mut st,
-                                                        is_multiline,
-                                                    );
-                                                    self.request_redraw();
-                                                }
-                                            }
-                                        }
-                                        return;
-                                    }
                                     _ => {}
                                 }
                             }
@@ -2021,10 +1916,6 @@ pub fn run_desktop_app(
                 return true;
             }
 
-            self.dispatch_default_action(action)
-        }
-
-        fn dispatch_default_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
             use repose_core::shortcuts::Action;
 
             let Some(fid) = self.sched.focused else {

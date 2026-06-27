@@ -306,10 +306,6 @@ pub fn run_android_app_with_options(
                 return true;
             }
 
-            self.dispatch_default_action(action)
-        }
-
-        fn dispatch_default_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
             use repose_core::shortcuts::Action;
 
             let Some(fid) = self.sched.focused else {
@@ -344,6 +340,34 @@ pub fn run_android_app_with_options(
                         {
                             self.ensure_caret_visible_in_hit(&mut st, f.hit_regions[i].rect);
                         }
+                    }
+                    true
+                }
+                Action::Undo => {
+                    let mut st = state_rc.borrow_mut();
+                    if !st.can_undo() {
+                        return false;
+                    }
+                    st.undo();
+                    self.notify_text_change(fid, st.text.clone());
+                    if let Some(f) = &self.frame_cache
+                        && let Some(i) = rc::hit_index_by_id(f, fid)
+                    {
+                        self.ensure_caret_visible_in_hit(&mut st, f.hit_regions[i].rect);
+                    }
+                    true
+                }
+                Action::Redo => {
+                    let mut st = state_rc.borrow_mut();
+                    if !st.can_redo() {
+                        return false;
+                    }
+                    st.redo();
+                    self.notify_text_change(fid, st.text.clone());
+                    if let Some(f) = &self.frame_cache
+                        && let Some(i) = rc::hit_index_by_id(f, fid)
+                    {
+                        self.ensure_caret_visible_in_hit(&mut st, f.hit_regions[i].rect);
                     }
                     true
                 }
@@ -899,11 +923,6 @@ pub fn run_android_app_with_options(
                             }
                         }
 
-                        if handle_text_undo_redo!(self, key_event) {
-                            self.dirty = true;
-                            self.request_redraw();
-                            return;
-                        }
                     }
 
                     // Tab traversal
