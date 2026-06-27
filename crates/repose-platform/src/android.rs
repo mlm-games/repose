@@ -478,6 +478,11 @@ pub fn run_android_app_with_options(
                             self.backend = Some(b);
                             self.window = Some(w);
                             self.clipboard = clipawl::Clipboard::new().ok();
+                            repose_core::clipboard::set_clipboard_fn(Box::new(|text| {
+                                if let Ok(cb) = clipawl::Clipboard::new() {
+                                    let _ = pollster::block_on(cb.write(text));
+                                }
+                            }));
                             self.dirty = true;
                             self.request_redraw();
                         }

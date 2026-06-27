@@ -772,6 +772,15 @@ impl ApplicationHandler<()> for App {
             }
         });
 
+        repose_core::clipboard::set_clipboard_fn(Box::new(|text| {
+            let text = text.to_string();
+            spawn_local(async move {
+                if let Ok(cb) = clipawl::Clipboard::new() {
+                    let _ = cb.write(&text).await;
+                }
+            });
+        }));
+
         self.request_redraw();
     }
 
