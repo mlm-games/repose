@@ -1699,6 +1699,7 @@ pub fn run_desktop_app(
             if now.saturating_duration_since(self.last_redraw) >= interval {
                 self.pending_redraw = false;
                 if repose_core::take_signal_fired() {
+                    self.redraw_requested.set(true);
                     rc::request_redraw(&self.window);
                 }
                 self.last_redraw = now;

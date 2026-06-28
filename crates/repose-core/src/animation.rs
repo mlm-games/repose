@@ -789,6 +789,7 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
 
         if still {
             request_frame();
+            crate::signal_fired();
         }
         still
     }

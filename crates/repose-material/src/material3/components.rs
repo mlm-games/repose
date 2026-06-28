@@ -2532,18 +2532,20 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
             move |_| p.set(false)
         })
         .then(config.modifier))
-    .child(Box(Modifier::new()
-        .size(40.0, 40.0)
-        .clip_rounded(20.0)
-        .background(state_overlay)
-        .absolute()
-        .offset(Some(thumb_left + thumb_d * 0.5 - 20.0), Some(track_h * 0.5 - 20.0), None, None)))
-    .child(Box(Modifier::new()
-        .size(thumb_d, thumb_d)
-        .background(thumb_bg)
-        .clip_rounded(thumb_d * 0.5)
-        .absolute()
-        .offset(Some(thumb_left), Some(thumb_top), None, None)))
+    .child((
+        Box(Modifier::new()
+            .size(40.0, 40.0)
+            .clip_rounded(20.0)
+            .background(state_overlay)
+            .absolute()
+            .offset(Some(thumb_left + thumb_d * 0.5 - 20.0), Some(track_h * 0.5 - 20.0), None, None)),
+        Box(Modifier::new()
+            .size(thumb_d, thumb_d)
+            .background(thumb_bg)
+            .clip_rounded(thumb_d * 0.5)
+            .absolute()
+            .offset(Some(thumb_left), Some(thumb_top), None, None)),
+    ))
 }
 
 /// Configuration for [`Slider`] and [`RangeSlider`].
