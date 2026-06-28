@@ -208,18 +208,15 @@ pub fn Snackbar(
         .min_width(280.0)
         .max_width(600.0)
         .background(bg)
-        .clip_rounded(config.shape_radius))
-    .child(
-        Row(Modifier::new()
-            .fill_max_width()
-            .padding_values(PaddingValues {
-                left: 16.0,
-                right: 8.0,
-                top: 0.0,
-                bottom: 0.0,
-            })
-            .align_items(repose_core::AlignItems::Center))
-        .child((
+        .clip_rounded(config.shape_radius));
+
+    let snackbar = if config.action_on_new_line {
+        snackbar.child(Column(Modifier::new().padding_values(PaddingValues {
+            left: 16.0,
+            right: 8.0,
+            top: 0.0,
+            bottom: 0.0,
+        })).child((
             Text(msg)
                 .modifier(Modifier::new().padding_values(PaddingValues {
                     left: 0.0,
@@ -231,25 +228,68 @@ pub fn Snackbar(
                 .size(th.typography.body_medium)
                 .max_lines(2)
                 .overflow_ellipsize(),
-            Spacer(),
             action
                 .map(|a| {
                     let label = a.label.clone();
-                    TextButton(
-                        Modifier::new(),
-                        move || (a.on_click)(),
-                        ButtonConfig::default(),
-                        || {
-                            Text(label)
-                                .color(action_color)
-                                .size(th.typography.label_large)
-                                .single_line()
-                        },
+                    Row(Modifier::new().fill_max_width().justify_content(repose_core::JustifyContent::End)).child(
+                        TextButton(
+                            Modifier::new(),
+                            move || (a.on_click)(),
+                            ButtonConfig::default(),
+                            || {
+                                Text(label)
+                                    .color(action_color)
+                                    .size(th.typography.label_large)
+                                    .single_line()
+                            },
+                        )
                     )
                 })
                 .unwrap_or(Box(Modifier::new())),
-        )),
-    );
+        )))
+    } else {
+        snackbar.child(
+            Row(Modifier::new()
+                .fill_max_width()
+                .padding_values(PaddingValues {
+                    left: 16.0,
+                    right: 8.0,
+                    top: 0.0,
+                    bottom: 0.0,
+                })
+                .align_items(repose_core::AlignItems::Center))
+            .child((
+                Text(msg)
+                    .modifier(Modifier::new().padding_values(PaddingValues {
+                        left: 0.0,
+                        right: 0.0,
+                        top: 14.0,
+                        bottom: 14.0,
+                    }))
+                    .color(fg)
+                    .size(th.typography.body_medium)
+                    .max_lines(2)
+                    .overflow_ellipsize(),
+                Spacer(),
+                action
+                    .map(|a| {
+                        let label = a.label.clone();
+                        TextButton(
+                            Modifier::new(),
+                            move || (a.on_click)(),
+                            ButtonConfig::default(),
+                            || {
+                                Text(label)
+                                    .color(action_color)
+                                    .size(th.typography.label_large)
+                                    .single_line()
+                            },
+                        )
+                    })
+                    .unwrap_or(Box(Modifier::new())),
+            ))
+        )
+    };
 
     Box(Modifier::new()
         .absolute()

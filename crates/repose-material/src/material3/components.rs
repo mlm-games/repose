@@ -214,10 +214,18 @@ pub struct IconButtonColors {
 
 impl IconButtonColors {
     pub fn container(&self, enabled: bool) -> Color {
-        if enabled { self.container_color } else { self.disabled_container_color }
+        if enabled {
+            self.container_color
+        } else {
+            self.disabled_container_color
+        }
     }
     pub fn content(&self, enabled: bool) -> Color {
-        if enabled { self.content_color } else { self.disabled_content_color }
+        if enabled {
+            self.content_color
+        } else {
+            self.disabled_content_color
+        }
     }
 }
 
@@ -281,13 +289,23 @@ fn icon_button_render(
 /// M3 Icon Button - a tappable circular container for an icon.
 pub fn IconButton(icon: View, on_click: impl Fn() + 'static, config: IconButtonConfig) -> View {
     let th = theme();
-    let sz = config.container_size.unwrap_or(IconButtonDefaults::CONTAINER_SIZE);
-    icon_button_render(icon, on_click, &config, sz, None, None, StateColors {
-        default: Color::TRANSPARENT,
-        hovered: th.on_surface.with_alpha_f32(0.08),
-        pressed: th.on_surface.with_alpha_f32(0.12),
-        disabled: Color::TRANSPARENT,
-    })
+    let sz = config
+        .container_size
+        .unwrap_or(IconButtonDefaults::CONTAINER_SIZE);
+    icon_button_render(
+        icon,
+        on_click,
+        &config,
+        sz,
+        None,
+        None,
+        StateColors {
+            default: Color::TRANSPARENT,
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
+            disabled: Color::TRANSPARENT,
+        },
+    )
 }
 
 /// M3 Filled Icon Button - icon button with a filled container background.
@@ -298,15 +316,25 @@ pub fn FilledIconButton(
 ) -> View {
     let th = theme();
     let is_enabled = config.enabled;
-    let sz = config.container_size.unwrap_or(IconButtonDefaults::FILLED_CONTAINER_SIZE);
+    let sz = config
+        .container_size
+        .unwrap_or(IconButtonDefaults::FILLED_CONTAINER_SIZE);
     let bg = config.colors.container(is_enabled);
     let content_color = config.colors.content(is_enabled);
-    icon_button_render(icon, on_click, &config, sz, Some(bg), None, StateColors {
-        default: Color::TRANSPARENT,
-        hovered: content_color.with_alpha_f32(0.08),
-        pressed: content_color.with_alpha_f32(0.12),
-        disabled: th.on_surface.with_alpha_f32(0.12),
-    })
+    icon_button_render(
+        icon,
+        on_click,
+        &config,
+        sz,
+        Some(bg),
+        None,
+        StateColors {
+            default: Color::TRANSPARENT,
+            hovered: content_color.with_alpha_f32(0.08),
+            pressed: content_color.with_alpha_f32(0.12),
+            disabled: th.on_surface.with_alpha_f32(0.12),
+        },
+    )
 }
 
 /// M3 Filled Tonal Icon Button - icon button with a secondary container background.
@@ -317,15 +345,25 @@ pub fn FilledTonalIconButton(
 ) -> View {
     let th = theme();
     let is_enabled = config.enabled;
-    let sz = config.container_size.unwrap_or(IconButtonDefaults::FILLED_CONTAINER_SIZE);
+    let sz = config
+        .container_size
+        .unwrap_or(IconButtonDefaults::FILLED_CONTAINER_SIZE);
     let bg = config.colors.container(is_enabled);
     let content_color = config.colors.content(is_enabled);
-    icon_button_render(icon, on_click, &config, sz, Some(bg), None, StateColors {
-        default: Color::TRANSPARENT,
-        hovered: content_color.with_alpha_f32(0.08),
-        pressed: content_color.with_alpha_f32(0.12),
-        disabled: th.on_surface.with_alpha_f32(0.12),
-    })
+    icon_button_render(
+        icon,
+        on_click,
+        &config,
+        sz,
+        Some(bg),
+        None,
+        StateColors {
+            default: Color::TRANSPARENT,
+            hovered: content_color.with_alpha_f32(0.08),
+            pressed: content_color.with_alpha_f32(0.12),
+            disabled: th.on_surface.with_alpha_f32(0.12),
+        },
+    )
 }
 
 /// M3 Outlined Icon Button - icon button with a transparent background and border.
@@ -335,14 +373,64 @@ pub fn OutlinedIconButton(
     config: IconButtonConfig,
 ) -> View {
     let th = theme();
-    let sz = config.container_size.unwrap_or(IconButtonDefaults::CONTAINER_SIZE);
-    let border_color = if config.enabled { th.outline } else { th.on_surface.with_alpha_f32(0.12) };
-    icon_button_render(icon, on_click, &config, sz, None, Some((1.0, border_color)), StateColors {
-        default: Color::TRANSPARENT,
-        hovered: th.on_surface.with_alpha_f32(0.08),
-        pressed: th.on_surface.with_alpha_f32(0.12),
-        disabled: Color::TRANSPARENT,
-    })
+    let sz = config
+        .container_size
+        .unwrap_or(IconButtonDefaults::CONTAINER_SIZE);
+    let border_color = if config.enabled {
+        th.outline
+    } else {
+        th.on_surface.with_alpha_f32(0.12)
+    };
+    icon_button_render(
+        icon,
+        on_click,
+        &config,
+        sz,
+        None,
+        Some((1.0, border_color)),
+        StateColors {
+            default: Color::TRANSPARENT,
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
+            disabled: Color::TRANSPARENT,
+        },
+    )
+}
+
+/// Color slots for buttons (matching Compose Material3 `ButtonColors`).
+#[derive(Clone, Copy, Debug)]
+pub struct ButtonColors {
+    pub container_color: Color,
+    pub content_color: Color,
+    pub disabled_container_color: Color,
+    pub disabled_content_color: Color,
+}
+
+impl ButtonColors {
+    pub fn container(&self, enabled: bool) -> Color {
+        if enabled {
+            self.container_color
+        } else {
+            self.disabled_container_color
+        }
+    }
+    pub fn content(&self, enabled: bool) -> Color {
+        if enabled {
+            self.content_color
+        } else {
+            self.disabled_content_color
+        }
+    }
+}
+
+/// Elevation levels for buttons (matching Compose Material3 `ButtonElevation`).
+#[derive(Clone, Copy, Debug)]
+pub struct ButtonElevation {
+    pub default: f32,
+    pub pressed: f32,
+    pub focused: f32,
+    pub hovered: f32,
+    pub disabled: f32,
 }
 
 /// Configuration for button components.
@@ -358,6 +446,8 @@ pub struct ButtonConfig {
     pub shape_radius: f32,
     pub content_padding: Option<PaddingValues>,
     pub height: f32,
+    pub colors: Option<ButtonColors>,
+    pub elevation: Option<ButtonElevation>,
 }
 
 impl Default for ButtonConfig {
@@ -373,7 +463,57 @@ impl Default for ButtonConfig {
             shape_radius: ButtonDefaults::SHAPE_RADIUS,
             content_padding: None,
             height: ButtonDefaults::HEIGHT,
+            colors: None,
+            elevation: None,
         }
+    }
+}
+
+/// Resolve effective button colors from config, given the variant's default colors.
+/// When `config.colors` is set, it takes priority over individual fields.
+fn resolve_button_colors(
+    config: &ButtonConfig,
+    def: ButtonColors,
+) -> (Color, Option<Color>, StateColors, Option<StateElevation>) {
+    if let Some(colors) = &config.colors {
+        let bg = if config.enabled {
+            colors.container_color
+        } else {
+            colors.disabled_container_color
+        };
+        let cc = if config.enabled {
+            colors.content_color
+        } else {
+            colors.disabled_content_color
+        };
+        let sc = StateColors {
+            default: Color::TRANSPARENT,
+            hovered: colors.content_color.with_alpha_f32(0.08),
+            pressed: colors.content_color.with_alpha_f32(0.12),
+            disabled: Color::TRANSPARENT,
+        };
+        let se = config.elevation.map(|e| StateElevation {
+            default: e.default,
+            hovered: e.hovered,
+            pressed: e.pressed,
+            disabled: e.disabled,
+        });
+        (cc, Some(bg), sc, se)
+    } else {
+        let cc = config.content_color.unwrap_or(def.content_color);
+        let bg = Some(config.container_color.unwrap_or(def.container_color));
+        let sc = if config.enabled {
+            config.state_colors
+        } else {
+            StateColors {
+                default: Color::TRANSPARENT,
+                hovered: Color::TRANSPARENT,
+                pressed: Color::TRANSPARENT,
+                disabled: config.state_colors.disabled,
+            }
+        };
+        let se = config.state_elevation;
+        (cc, bg, sc, se)
     }
 }
 
@@ -396,7 +536,16 @@ fn button_impl(
     if let Some(bg) = container_color {
         m = m.background(bg);
     }
-    m = m.state_colors(state_colors);
+    m = m.state_colors(if enabled {
+        state_colors
+    } else {
+        StateColors {
+            default: Color::TRANSPARENT,
+            hovered: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
+            disabled: state_colors.disabled,
+        }
+    });
     if let Some(se) = state_elevation {
         m = m.state_elevation(se);
     }
@@ -417,14 +566,12 @@ fn button_impl(
         m = m.clickable().on_pointer_down(move |_| on_click());
     }
     m = m.then(outer_modifier);
-    let content = with_content_color(
-        if enabled {
-            content_color
-        } else {
-            content_color.with_alpha_f32(0.38)
-        },
-        content,
-    );
+    let effective = if enabled {
+        content_color
+    } else {
+        content_color.with_alpha_f32(0.38)
+    };
+    let content = with_content_color(effective, content);
     Box(m).child(content)
 }
 
@@ -436,15 +583,15 @@ pub fn Button(
     config: ButtonConfig,
     content: impl FnOnce() -> View,
 ) -> View {
-    let cc = config
-        .content_color
-        .unwrap_or_else(ButtonDefaults::content_color);
-    let bg = config
-        .container_color
-        .unwrap_or_else(ButtonDefaults::container_color);
-    let se = config
-        .state_elevation
-        .unwrap_or_else(ButtonDefaults::state_elevation_default);
+    let def = ButtonColors {
+        container_color: ButtonDefaults::container_color(),
+        content_color: ButtonDefaults::content_color(),
+        disabled_container_color: ButtonDefaults::container_color()
+            .with_alpha_f32(0.12)
+            .composite_over(theme().surface_container_low),
+        disabled_content_color: ButtonDefaults::content_color().with_alpha_f32(0.38),
+    };
+    let (cc, bg, sc, se) = resolve_button_colors(&config, def);
     let pad = config.content_padding.unwrap_or(PaddingValues {
         left: 24.0,
         right: 24.0,
@@ -456,9 +603,9 @@ pub fn Button(
         on_click,
         content,
         cc,
-        Some(bg),
-        config.state_colors,
-        Some(se),
+        bg,
+        sc,
+        se.or(Some(ButtonDefaults::state_elevation_default())),
         config.border,
         pad.left,
         pad.right,
@@ -475,15 +622,17 @@ pub fn FilledTonalButton(
     config: ButtonConfig,
     content: impl FnOnce() -> View,
 ) -> View {
-    let cc = config
-        .content_color
-        .unwrap_or_else(ButtonDefaults::tonal_content_color);
-    let bg = config
-        .container_color
-        .unwrap_or_else(ButtonDefaults::tonal_container_color);
-    let se = config
-        .state_elevation
-        .unwrap_or_else(ButtonDefaults::state_elevation_default);
+    let th = theme();
+    let def = ButtonColors {
+        container_color: ButtonDefaults::tonal_container_color(),
+        content_color: ButtonDefaults::tonal_content_color(),
+        disabled_container_color: th
+            .on_surface
+            .with_alpha_f32(0.12)
+            .composite_over(th.surface_container_low),
+        disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+    };
+    let (cc, bg, sc, se) = resolve_button_colors(&config, def);
     let pad = config.content_padding.unwrap_or(PaddingValues {
         left: 24.0,
         right: 24.0,
@@ -495,9 +644,9 @@ pub fn FilledTonalButton(
         on_click,
         content,
         cc,
-        Some(bg),
-        config.state_colors,
-        Some(se),
+        bg,
+        sc,
+        se.or(Some(ButtonDefaults::state_elevation_default())),
         config.border,
         pad.left,
         pad.right,
@@ -514,9 +663,14 @@ pub fn OutlinedButton(
     config: ButtonConfig,
     content: impl FnOnce() -> View,
 ) -> View {
-    let cc = config
-        .content_color
-        .unwrap_or_else(ButtonDefaults::outlined_content_color);
+    let th = theme();
+    let def = ButtonColors {
+        container_color: Color::TRANSPARENT,
+        content_color: ButtonDefaults::outlined_content_color(),
+        disabled_container_color: Color::TRANSPARENT,
+        disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+    };
+    let (cc, bg, sc, se) = resolve_button_colors(&config, def);
     let border = config
         .border
         .unwrap_or((1.0, ButtonDefaults::outlined_border_color(), 20.0));
@@ -531,9 +685,9 @@ pub fn OutlinedButton(
         on_click,
         content,
         cc,
-        None,
-        config.state_colors,
-        None,
+        bg,
+        sc,
+        se,
         Some(border),
         pad.left,
         pad.right,
@@ -550,9 +704,14 @@ pub fn TextButton(
     config: ButtonConfig,
     content: impl FnOnce() -> View,
 ) -> View {
-    let cc = config
-        .content_color
-        .unwrap_or_else(ButtonDefaults::text_content_color);
+    let th = theme();
+    let def = ButtonColors {
+        container_color: Color::TRANSPARENT,
+        content_color: ButtonDefaults::text_content_color(),
+        disabled_container_color: Color::TRANSPARENT,
+        disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+    };
+    let (cc, bg, sc, se) = resolve_button_colors(&config, def);
     let pad = config.content_padding.unwrap_or(PaddingValues {
         left: 12.0,
         right: 12.0,
@@ -564,9 +723,9 @@ pub fn TextButton(
         on_click,
         content,
         cc,
-        None,
-        config.state_colors,
-        None,
+        bg,
+        sc,
+        se,
         None,
         pad.left,
         pad.right,
@@ -583,15 +742,14 @@ pub fn ElevatedButton(
     config: ButtonConfig,
     content: impl FnOnce() -> View,
 ) -> View {
-    let cc = config
-        .content_color
-        .unwrap_or_else(ButtonDefaults::elevated_content_color);
-    let bg = config
-        .container_color
-        .unwrap_or_else(ButtonDefaults::elevated_container_color);
-    let se = config
-        .state_elevation
-        .unwrap_or_else(ButtonDefaults::elevated_state_elevation);
+    let th = theme();
+    let def = ButtonColors {
+        container_color: ButtonDefaults::elevated_container_color(),
+        content_color: ButtonDefaults::elevated_content_color(),
+        disabled_container_color: th.on_surface.with_alpha_f32(0.04),
+        disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+    };
+    let (cc, bg, sc, se) = resolve_button_colors(&config, def);
     let pad = config.content_padding.unwrap_or(PaddingValues {
         left: 24.0,
         right: 24.0,
@@ -603,9 +761,9 @@ pub fn ElevatedButton(
         on_click,
         content,
         cc,
-        Some(bg),
-        config.state_colors,
-        Some(se),
+        bg,
+        sc,
+        se.or(Some(ButtonDefaults::elevated_state_elevation())),
         config.border,
         pad.left,
         pad.right,
@@ -899,8 +1057,18 @@ fn fab_impl(
 ) -> View {
     let th = theme();
     let is_enabled = config.enabled;
-    let bg = if is_enabled { config.container_color } else { th.on_surface.with_alpha_f32(0.12).composite_over(th.surface_container_low) };
-    let content_color = if is_enabled { config.content_color } else { th.on_surface.with_alpha_f32(0.38) };
+    let bg = if is_enabled {
+        config.container_color
+    } else {
+        th.on_surface
+            .with_alpha_f32(0.12)
+            .composite_over(th.surface_container_low)
+    };
+    let content_color = if is_enabled {
+        config.content_color
+    } else {
+        th.on_surface.with_alpha_f32(0.38)
+    };
 
     let mut m = Modifier::new()
         .size(size, size)
@@ -967,8 +1135,18 @@ pub fn ExtendedFAB(
     let th = theme();
     let has_icon = icon.is_some();
     let is_enabled = config.enabled;
-    let bg = if is_enabled { config.container_color } else { th.on_surface.with_alpha_f32(0.12).composite_over(th.surface_container_low) };
-    let content_color = if is_enabled { config.content_color } else { th.on_surface.with_alpha_f32(0.38) };
+    let bg = if is_enabled {
+        config.container_color
+    } else {
+        th.on_surface
+            .with_alpha_f32(0.12)
+            .composite_over(th.surface_container_low)
+    };
+    let content_color = if is_enabled {
+        config.content_color
+    } else {
+        th.on_surface.with_alpha_f32(0.38)
+    };
 
     let mut m = Modifier::new()
         .height(56.0)
@@ -1052,69 +1230,90 @@ pub fn VerticalDivider(config: DividerConfig) -> View {
 #[derive(Clone, Debug)]
 pub struct BadgeConfig {
     pub modifier: Modifier,
-    pub color: Color,
-    pub label_color: Color,
+    pub container_color: Color,
+    pub content_color: Color,
 }
 
 impl Default for BadgeConfig {
     fn default() -> Self {
         Self {
             modifier: Modifier::new(),
-            color: BadgeDefaults::color(),
-            label_color: BadgeDefaults::label_color(),
+            container_color: BadgeDefaults::container_color(),
+            content_color: BadgeDefaults::content_color(),
         }
     }
 }
 
-/// M3 Badge - a small notification indicator. If `label` is `None`, shows a
-/// small 6dp dot; otherwise shows the label text inside a 16dp pill.
-pub fn Badge(label: Option<impl Into<String>>, config: BadgeConfig) -> View {
-    let th = theme();
-    match label {
+/// M3 Badge - a small notification indicator. If `content` is `None`, shows a
+/// small 6dp dot; otherwise shows the content inside a 16dp pill.
+pub fn Badge(content: Option<View>, config: BadgeConfig) -> View {
+    match content {
         None => Box(Modifier::new()
             .size(BadgeDefaults::DOT_SIZE, BadgeDefaults::DOT_SIZE)
-            .background(config.color)
+            .background(config.container_color)
             .clip_rounded(BadgeDefaults::DOT_SIZE * 0.5)
             .then(config.modifier)),
-        Some(text) => {
-            let text = text.into();
-            Box(Modifier::new()
-                .min_width(BadgeDefaults::LABEL_MIN_WIDTH)
-                .height(BadgeDefaults::LABEL_HEIGHT)
-                .background(config.color)
-                .clip_rounded(BadgeDefaults::LABEL_HEIGHT * 0.5)
-                .padding_values(PaddingValues {
-                    left: 4.0,
-                    right: 4.0,
-                    top: 0.0,
-                    bottom: 0.0,
-                })
-                .align_items(AlignItems::Center)
-                .justify_content(JustifyContent::Center)
-                .then(config.modifier))
-            .child(
-                Text(text)
-                    .color(config.label_color)
-                    .size(th.typography.label_small)
-                    .single_line(),
-            )
+        Some(view) => Box(Modifier::new()
+            .min_width(BadgeDefaults::LABEL_MIN_WIDTH)
+            .height(BadgeDefaults::LABEL_HEIGHT)
+            .background(config.container_color)
+            .clip_rounded(BadgeDefaults::LABEL_HEIGHT * 0.5)
+            .padding_values(PaddingValues {
+                left: 4.0,
+                right: 4.0,
+                top: 0.0,
+                bottom: 0.0,
+            })
+            .align_items(AlignItems::Center)
+            .justify_content(JustifyContent::Center)
+            .then(config.modifier))
+        .child(view),
+    }
+}
+
+/// Configuration for [`BadgedBox`].
+#[derive(Clone, Debug)]
+pub struct BadgedBoxConfig {
+    pub modifier: Modifier,
+    /// Horizontal offset for the badge when it's a small dot.
+    pub dot_offset_x: f32,
+    /// Vertical offset for the badge when it's a small dot.
+    pub dot_offset_y: f32,
+    /// Horizontal offset for the badge when it has content.
+    pub content_offset_x: f32,
+    /// Vertical offset for the badge when it has content.
+    pub content_offset_y: f32,
+}
+
+impl Default for BadgedBoxConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            dot_offset_x: BadgeDefaults::DOT_OFFSET_X,
+            dot_offset_y: BadgeDefaults::DOT_OFFSET_Y,
+            content_offset_x: BadgeDefaults::CONTENT_OFFSET_X,
+            content_offset_y: BadgeDefaults::CONTENT_OFFSET_Y,
         }
     }
 }
 
 /// M3 BadgedBox - wraps `content` and shows a `badge` anchored to the top-end corner.
-/// The badge is positioned at (top: 0, end: 0) relative to the content.
-pub fn BadgedBox(badge: View, content: View) -> View {
+/// The badge is positioned at the top-end corner of the content.
+pub fn BadgedBox(badge: View, content: View, config: BadgedBoxConfig) -> View {
     Stack(Modifier::new()).child((
         content,
-        Box(Modifier::new()
-            .absolute()
-            .offset(None, Some(0.0), Some(0.0), None))
+        Box(Modifier::new().absolute().offset(
+            None,
+            Some(config.dot_offset_y),
+            Some(config.dot_offset_x),
+            None,
+        ))
         .child(badge),
     ))
 }
 
-/// Colors for [`ListItem`].
+/// Colors for [`ListItem`] — matches Compose Material3 `ListItemColors` with
+/// 4 state groups (default, disabled, selected, dragged) × 6 slots each.
 #[derive(Clone, Debug)]
 pub struct ListItemColors {
     pub container_color: Color,
@@ -1123,10 +1322,96 @@ pub struct ListItemColors {
     pub overline_color: Color,
     pub leading_icon_color: Color,
     pub trailing_icon_color: Color,
+
+    pub disabled_container_color: Color,
     pub disabled_headline_color: Color,
     pub disabled_supporting_color: Color,
+    pub disabled_overline_color: Color,
     pub disabled_leading_icon_color: Color,
     pub disabled_trailing_icon_color: Color,
+
+    pub selected_container_color: Color,
+    pub selected_headline_color: Color,
+    pub selected_supporting_color: Color,
+    pub selected_overline_color: Color,
+    pub selected_leading_icon_color: Color,
+    pub selected_trailing_icon_color: Color,
+
+    pub dragged_container_color: Color,
+    pub dragged_headline_color: Color,
+    pub dragged_supporting_color: Color,
+    pub dragged_overline_color: Color,
+    pub dragged_leading_icon_color: Color,
+    pub dragged_trailing_icon_color: Color,
+}
+
+impl ListItemColors {
+    pub fn container(&self, enabled: bool, selected: bool, dragged: bool) -> Color {
+        if !enabled {
+            self.disabled_container_color
+        } else if dragged {
+            self.dragged_container_color
+        } else if selected {
+            self.selected_container_color
+        } else {
+            self.container_color
+        }
+    }
+    pub fn headline(&self, enabled: bool, selected: bool, dragged: bool) -> Color {
+        if !enabled {
+            self.disabled_headline_color
+        } else if dragged {
+            self.dragged_headline_color
+        } else if selected {
+            self.selected_headline_color
+        } else {
+            self.headline_color
+        }
+    }
+    pub fn supporting(&self, enabled: bool, selected: bool, dragged: bool) -> Color {
+        if !enabled {
+            self.disabled_supporting_color
+        } else if dragged {
+            self.dragged_supporting_color
+        } else if selected {
+            self.selected_supporting_color
+        } else {
+            self.supporting_color
+        }
+    }
+    pub fn overline(&self, enabled: bool, selected: bool, dragged: bool) -> Color {
+        if !enabled {
+            self.disabled_overline_color
+        } else if dragged {
+            self.dragged_overline_color
+        } else if selected {
+            self.selected_overline_color
+        } else {
+            self.overline_color
+        }
+    }
+    pub fn leading_icon(&self, enabled: bool, selected: bool, dragged: bool) -> Color {
+        if !enabled {
+            self.disabled_leading_icon_color
+        } else if dragged {
+            self.dragged_leading_icon_color
+        } else if selected {
+            self.selected_leading_icon_color
+        } else {
+            self.leading_icon_color
+        }
+    }
+    pub fn trailing_icon(&self, enabled: bool, selected: bool, dragged: bool) -> Color {
+        if !enabled {
+            self.disabled_trailing_icon_color
+        } else if dragged {
+            self.dragged_trailing_icon_color
+        } else if selected {
+            self.selected_trailing_icon_color
+        } else {
+            self.trailing_icon_color
+        }
+    }
 }
 
 impl Default for ListItemColors {
@@ -1138,10 +1423,24 @@ impl Default for ListItemColors {
             overline_color: ListItemDefaults::overline_color(),
             leading_icon_color: ListItemDefaults::leading_icon_color(),
             trailing_icon_color: ListItemDefaults::trailing_icon_color(),
+            disabled_container_color: ListItemDefaults::disabled_container_color(),
             disabled_headline_color: ListItemDefaults::disabled_headline_color(),
             disabled_supporting_color: ListItemDefaults::disabled_supporting_color(),
+            disabled_overline_color: ListItemDefaults::disabled_overline_color(),
             disabled_leading_icon_color: ListItemDefaults::disabled_leading_icon_color(),
             disabled_trailing_icon_color: ListItemDefaults::disabled_trailing_icon_color(),
+            selected_container_color: ListItemDefaults::selected_container_color(),
+            selected_headline_color: ListItemDefaults::selected_headline_color(),
+            selected_supporting_color: ListItemDefaults::selected_supporting_color(),
+            selected_overline_color: ListItemDefaults::selected_overline_color(),
+            selected_leading_icon_color: ListItemDefaults::selected_leading_icon_color(),
+            selected_trailing_icon_color: ListItemDefaults::selected_trailing_icon_color(),
+            dragged_container_color: ListItemDefaults::dragged_container_color(),
+            dragged_headline_color: ListItemDefaults::dragged_headline_color(),
+            dragged_supporting_color: ListItemDefaults::dragged_supporting_color(),
+            dragged_overline_color: ListItemDefaults::dragged_overline_color(),
+            dragged_leading_icon_color: ListItemDefaults::dragged_leading_icon_color(),
+            dragged_trailing_icon_color: ListItemDefaults::dragged_trailing_icon_color(),
         }
     }
 }
@@ -1194,11 +1493,11 @@ pub fn ListItem(
     let is_enabled = config.enabled;
     let c = &config.colors;
 
-    let hd_col = if is_enabled { c.headline_color } else { c.disabled_headline_color };
-    let sp_col = if is_enabled { c.supporting_color } else { c.disabled_supporting_color };
-    let ld_col = if is_enabled { c.leading_icon_color } else { c.disabled_leading_icon_color };
-    let tr_col = if is_enabled { c.trailing_icon_color } else { c.disabled_trailing_icon_color };
-    let bg = if is_enabled { c.container_color } else { c.container_color }; // container stays same, content dims
+    let hd_col = c.headline(is_enabled, false, false);
+    let sp_col = c.supporting(is_enabled, false, false);
+    let ld_col = c.leading_icon(is_enabled, false, false);
+    let tr_col = c.trailing_icon(is_enabled, false, false);
+    let bg = c.container(is_enabled, false, false);
 
     let line_count = if supporting_text.is_some() { 2 } else { 1 };
     let min_h = match line_count {
@@ -1242,13 +1541,13 @@ pub fn ListItem(
     if let Some(cb) = on_click {
         let cb = cb.clone();
         modifier = modifier.clickable().on_pointer_down(move |_| {
-            if is_enabled { cb(); }
+            if is_enabled {
+                cb();
+            }
         });
     }
 
-    let wrap_icon = |color: Color, v: View| -> View {
-        with_content_color(color, move || v)
-    };
+    let wrap_icon = |color: Color, v: View| -> View { with_content_color(color, move || v) };
 
     Row(modifier).child((
         leading
@@ -1369,23 +1668,22 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                         );
                         let cb = tab.on_click.clone();
 
-                            let mut tab_m = Modifier::new()
-                                .flex_grow(1.0)
-                                .fill_max_height()
-                                .align_items(AlignItems::Center)
-                                .justify_content(JustifyContent::Center)
-                                .state_colors(StateColors {
-                                    default: Color::TRANSPARENT,
-                                    hovered: th.on_surface.with_alpha_f32(0.08),
-                                    pressed: th.on_surface.with_alpha_f32(0.12),
-                                    disabled: Color::TRANSPARENT,
-                                });
+                        let mut tab_m = Modifier::new()
+                            .flex_grow(1.0)
+                            .fill_max_height()
+                            .align_items(AlignItems::Center)
+                            .justify_content(JustifyContent::Center)
+                            .state_colors(StateColors {
+                                default: Color::TRANSPARENT,
+                                hovered: th.on_surface.with_alpha_f32(0.08),
+                                pressed: th.on_surface.with_alpha_f32(0.12),
+                                disabled: Color::TRANSPARENT,
+                            });
                         if tab.enabled {
                             tab_m = tab_m.clickable().on_pointer_down(move |_| cb());
                         }
 
-                        Column(tab_m)
-                        .child((
+                        Column(tab_m).child((
                             tab.icon.unwrap_or(Box(Modifier::new())),
                             Text(tab.label)
                                 .color(color)
@@ -1842,6 +2140,207 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
     })
 }
 
+/// Color slots for text fields — matches Compose Material3 `TextFieldColors`.
+/// All 42 color fields (focused/unfocused/disabled/error variants of each slot).
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub struct TextFieldColors {
+    pub focused_text_color: Color,
+    pub unfocused_text_color: Color,
+    pub disabled_text_color: Color,
+    pub error_text_color: Color,
+    pub focused_container_color: Color,
+    pub unfocused_container_color: Color,
+    pub disabled_container_color: Color,
+    pub error_container_color: Color,
+    pub cursor_color: Color,
+    pub error_cursor_color: Color,
+    pub focused_indicator_color: Color,
+    pub unfocused_indicator_color: Color,
+    pub disabled_indicator_color: Color,
+    pub error_indicator_color: Color,
+    pub focused_leading_icon_color: Color,
+    pub unfocused_leading_icon_color: Color,
+    pub disabled_leading_icon_color: Color,
+    pub error_leading_icon_color: Color,
+    pub focused_trailing_icon_color: Color,
+    pub unfocused_trailing_icon_color: Color,
+    pub disabled_trailing_icon_color: Color,
+    pub error_trailing_icon_color: Color,
+    pub focused_label_color: Color,
+    pub unfocused_label_color: Color,
+    pub disabled_label_color: Color,
+    pub error_label_color: Color,
+    pub focused_placeholder_color: Color,
+    pub unfocused_placeholder_color: Color,
+    pub disabled_placeholder_color: Color,
+    pub error_placeholder_color: Color,
+    pub focused_supporting_text_color: Color,
+    pub unfocused_supporting_text_color: Color,
+    pub disabled_supporting_text_color: Color,
+    pub error_supporting_text_color: Color,
+    pub focused_prefix_color: Color,
+    pub unfocused_prefix_color: Color,
+    pub disabled_prefix_color: Color,
+    pub error_prefix_color: Color,
+    pub focused_suffix_color: Color,
+    pub unfocused_suffix_color: Color,
+    pub disabled_suffix_color: Color,
+    pub error_suffix_color: Color,
+}
+
+#[allow(dead_code)]
+impl TextFieldColors {
+    pub fn text_color(&self, enabled: bool, is_error: bool, focused: bool) -> Color {
+        if !enabled {
+            self.disabled_text_color
+        } else if is_error {
+            self.error_text_color
+        } else if focused {
+            self.focused_text_color
+        } else {
+            self.unfocused_text_color
+        }
+    }
+    pub fn container_color(&self, enabled: bool, is_error: bool, focused: bool) -> Color {
+        if !enabled {
+            self.disabled_container_color
+        } else if is_error {
+            self.error_container_color
+        } else if focused {
+            self.focused_container_color
+        } else {
+            self.unfocused_container_color
+        }
+    }
+    pub fn cursor_color(&self, is_error: bool) -> Color {
+        if is_error {
+            self.error_cursor_color
+        } else {
+            self.cursor_color
+        }
+    }
+    pub fn indicator_color(&self, enabled: bool, is_error: bool, focused: bool) -> Color {
+        if !enabled {
+            self.disabled_indicator_color
+        } else if is_error {
+            self.error_indicator_color
+        } else if focused {
+            self.focused_indicator_color
+        } else {
+            self.unfocused_indicator_color
+        }
+    }
+    pub fn leading_icon_color(&self, enabled: bool, is_error: bool, focused: bool) -> Color {
+        if !enabled {
+            self.disabled_leading_icon_color
+        } else if is_error {
+            self.error_leading_icon_color
+        } else if focused {
+            self.focused_leading_icon_color
+        } else {
+            self.unfocused_leading_icon_color
+        }
+    }
+    pub fn trailing_icon_color(&self, enabled: bool, is_error: bool, focused: bool) -> Color {
+        if !enabled {
+            self.disabled_trailing_icon_color
+        } else if is_error {
+            self.error_trailing_icon_color
+        } else if focused {
+            self.focused_trailing_icon_color
+        } else {
+            self.unfocused_trailing_icon_color
+        }
+    }
+    pub fn label_color(&self, enabled: bool, is_error: bool, focused: bool) -> Color {
+        if !enabled {
+            self.disabled_label_color
+        } else if is_error {
+            self.error_label_color
+        } else if focused {
+            self.focused_label_color
+        } else {
+            self.unfocused_label_color
+        }
+    }
+    pub fn placeholder_color(&self, enabled: bool, is_error: bool, focused: bool) -> Color {
+        if !enabled {
+            self.disabled_placeholder_color
+        } else if is_error {
+            self.error_placeholder_color
+        } else if focused {
+            self.focused_placeholder_color
+        } else {
+            self.unfocused_placeholder_color
+        }
+    }
+    pub fn supporting_text_color(&self, enabled: bool, is_error: bool, focused: bool) -> Color {
+        if !enabled {
+            self.disabled_supporting_text_color
+        } else if is_error {
+            self.error_supporting_text_color
+        } else if focused {
+            self.focused_supporting_text_color
+        } else {
+            self.unfocused_supporting_text_color
+        }
+    }
+}
+
+/// Default values for text field colors.
+pub struct TextFieldDefaults;
+
+impl TextFieldDefaults {
+    pub fn colors() -> TextFieldColors {
+        let th = theme();
+        TextFieldColors {
+            focused_text_color: th.on_surface,
+            unfocused_text_color: th.on_surface,
+            disabled_text_color: th.on_surface.with_alpha_f32(0.38),
+            error_text_color: th.on_surface,
+            focused_container_color: th.surface_container_highest,
+            unfocused_container_color: th.surface_container_highest,
+            disabled_container_color: th.on_surface.with_alpha_f32(0.04),
+            error_container_color: th.surface_container_highest,
+            cursor_color: th.primary,
+            error_cursor_color: th.error,
+            focused_indicator_color: th.primary,
+            unfocused_indicator_color: th.on_surface_variant,
+            disabled_indicator_color: th.on_surface.with_alpha_f32(0.12),
+            error_indicator_color: th.error,
+            focused_leading_icon_color: th.on_surface_variant,
+            unfocused_leading_icon_color: th.on_surface_variant,
+            disabled_leading_icon_color: th.on_surface.with_alpha_f32(0.38),
+            error_leading_icon_color: th.error,
+            focused_trailing_icon_color: th.on_surface_variant,
+            unfocused_trailing_icon_color: th.on_surface_variant,
+            disabled_trailing_icon_color: th.on_surface.with_alpha_f32(0.38),
+            error_trailing_icon_color: th.error,
+            focused_label_color: th.primary,
+            unfocused_label_color: th.on_surface_variant,
+            disabled_label_color: th.on_surface.with_alpha_f32(0.38),
+            error_label_color: th.error,
+            focused_placeholder_color: th.on_surface_variant,
+            unfocused_placeholder_color: th.on_surface_variant,
+            disabled_placeholder_color: th.on_surface.with_alpha_f32(0.38),
+            error_placeholder_color: th.error,
+            focused_supporting_text_color: th.on_surface_variant,
+            unfocused_supporting_text_color: th.on_surface_variant,
+            disabled_supporting_text_color: th.on_surface.with_alpha_f32(0.38),
+            error_supporting_text_color: th.error,
+            focused_prefix_color: th.on_surface,
+            unfocused_prefix_color: th.on_surface,
+            disabled_prefix_color: th.on_surface.with_alpha_f32(0.38),
+            error_prefix_color: th.on_surface,
+            focused_suffix_color: th.on_surface,
+            unfocused_suffix_color: th.on_surface,
+            disabled_suffix_color: th.on_surface.with_alpha_f32(0.38),
+            error_suffix_color: th.on_surface,
+        }
+    }
+}
+
 /// Configuration for an `OutlinedTextField`.
 #[derive(Clone)]
 pub struct OutlinedTextFieldConfig {
@@ -1865,6 +2364,8 @@ pub struct OutlinedTextFieldConfig {
     pub enabled: bool,
     /// Called when the user presses Enter on a single-line field.
     pub on_submit: Option<Rc<dyn Fn(String)>>,
+    /// Colors for all text field UI elements.
+    pub colors: Option<TextFieldColors>,
 }
 
 impl Default for OutlinedTextFieldConfig {
@@ -1878,6 +2379,7 @@ impl Default for OutlinedTextFieldConfig {
             is_error: false,
             enabled: true,
             on_submit: None,
+            colors: None,
         }
     }
 }
@@ -1933,22 +2435,30 @@ pub fn OutlinedTextField(
         th.motion.color,
     );
 
-    // Border color: error > focused (float) > default
-    let border_color = if config.is_error {
-        th.error
-    } else if float_t > 0.5 {
-        th.primary
+    // Resolve colors from config.colors if set, otherwise use legacy theme-based approach
+    let (border_color, label_color) = if let Some(ref tc) = config.colors {
+        let enf = config.enabled && is_focused;
+        (
+            tc.indicator_color(config.enabled, config.is_error, enf),
+            tc.label_color(config.enabled, config.is_error, enf),
+        )
     } else {
-        th.outline
-    };
-
-    // Label color: error > focused > default
-    let label_color = if config.is_error {
-        th.error
-    } else if float_t > 0.5 {
-        th.primary
-    } else {
-        th.on_surface_variant
+        (
+            if config.is_error {
+                th.error
+            } else if float_t > 0.5 {
+                th.primary
+            } else {
+                th.outline
+            },
+            if config.is_error {
+                th.error
+            } else if float_t > 0.5 {
+                th.primary
+            } else {
+                th.on_surface_variant
+            },
+        )
     };
 
     // Label font size: 16dp at rest (placeholder position) → 12dp when floating
@@ -2064,6 +2574,7 @@ pub struct TextFieldConfig {
     pub is_error: bool,
     pub enabled: bool,
     pub on_submit: Option<Rc<dyn Fn(String)>>,
+    pub colors: Option<TextFieldColors>,
 }
 
 impl Default for TextFieldConfig {
@@ -2077,6 +2588,7 @@ impl Default for TextFieldConfig {
             is_error: false,
             enabled: true,
             on_submit: None,
+            colors: None,
         }
     }
 }
@@ -2113,32 +2625,36 @@ pub fn TextField(
         th.motion.color,
     );
 
-    // Indicator: unfocused = on_surface_variant/1dp, focused = primary/2dp, error = error/2dp
-    let indicator_is_active = config.is_error || float_t > 0.5;
-    let indicator_color = if config.is_error {
-        th.error
-    } else if float_t > 0.5 {
-        th.primary
+    // Resolve colors from config.colors if set, otherwise use legacy theme-based approach
+    let (indicator_color, label_color, container_bg) = if let Some(ref tc) = config.colors {
+        let enf = config.enabled && is_focused;
+        let ind = tc.indicator_color(config.enabled, config.is_error, enf);
+        let lb = tc.label_color(config.enabled, config.is_error, enf);
+        let bg = tc.container_color(config.enabled, config.is_error, enf);
+        (ind, lb, bg)
     } else {
-        th.on_surface_variant
-    };
-    let indicator_target_w = if config.enabled && indicator_is_active {
-        2.0
-    } else {
-        1.0
-    };
-    let indicator_w = animate_f32(
-        format!("tf_ind_w_{}", anim_key),
-        indicator_target_w,
-        th.motion.color,
-    );
-
-    let label_color = if config.is_error {
-        th.error
-    } else if float_t > 0.5 {
-        th.primary
-    } else {
-        th.on_surface_variant
+        let ind = if config.is_error {
+            th.error
+        } else if float_t > 0.5 {
+            th.primary
+        } else {
+            th.on_surface_variant
+        };
+        let lb = if config.is_error {
+            th.error
+        } else if float_t > 0.5 {
+            th.primary
+        } else {
+            th.on_surface_variant
+        };
+        let bg = if config.enabled {
+            th.surface_container_highest
+        } else {
+            th.on_surface
+                .with_alpha_f32(0.04)
+                .composite_over(th.surface)
+        };
+        (ind, lb, bg)
     };
 
     let label_size = 16.0 - 4.0 * float_t;
@@ -2150,13 +2666,13 @@ pub fn TextField(
         config.placeholder.unwrap_or_default()
     };
 
-    let container_bg = if config.enabled {
-        th.surface_container_highest
-    } else {
-        th.on_surface
-            .with_alpha_f32(0.04)
-            .composite_over(th.surface)
-    };
+    let indicator_active = config.is_error || (config.enabled && is_focused);
+    let indicator_target_w = if indicator_active { 2.0 } else { 1.0 };
+    let indicator_w = animate_f32(
+        format!("tf_ind_w_{}", anim_key),
+        indicator_target_w,
+        th.motion.color,
+    );
 
     Box(modifier
         .clip_rounded(th.shapes.extra_small)
@@ -2444,7 +2960,11 @@ pub fn TriStateCheckbox(
     let bd_w = animate_f32(
         format!("tc_bw_{}", id),
         if !is_enabled {
-            if has_fill { 0.0 } else { CheckboxDefaults::STROKE_WIDTH }
+            if has_fill {
+                0.0
+            } else {
+                CheckboxDefaults::STROKE_WIDTH
+            }
         } else if has_fill {
             0.0
         } else {
@@ -2756,7 +3276,11 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         format!("sw_tb_{}", id),
         if !is_enabled {
             if checked { 0.0 } else { 2.0 }
-        } else if checked { 0.0 } else { 2.0 },
+        } else if checked {
+            0.0
+        } else {
+            2.0
+        },
         color_spec,
     );
     let border_color = animate_color(
@@ -3157,11 +3681,31 @@ pub fn RangeSlider(
     let sc = config.state_colors;
     let is_enabled = config.enabled;
 
-    let act_trk = if !is_enabled { config.disabled_active_track_color } else { config.active_track_color };
-    let inact_trk = if !is_enabled { config.disabled_inactive_track_color } else { config.inactive_track_color };
-    let act_tick = if !is_enabled { config.disabled_active_tick_color } else { config.active_tick_color };
-    let inact_tick = if !is_enabled { config.disabled_inactive_tick_color } else { config.inactive_tick_color };
-    let thumb_col = if !is_enabled { config.disabled_thumb_color } else { config.thumb_color };
+    let act_trk = if !is_enabled {
+        config.disabled_active_track_color
+    } else {
+        config.active_track_color
+    };
+    let inact_trk = if !is_enabled {
+        config.disabled_inactive_track_color
+    } else {
+        config.inactive_track_color
+    };
+    let act_tick = if !is_enabled {
+        config.disabled_active_tick_color
+    } else {
+        config.active_tick_color
+    };
+    let inact_tick = if !is_enabled {
+        config.disabled_inactive_tick_color
+    } else {
+        config.inactive_tick_color
+    };
+    let thumb_col = if !is_enabled {
+        config.disabled_thumb_color
+    } else {
+        config.thumb_color
+    };
 
     let tick_frac: Vec<f32> = if let Some(s) = step {
         let n = ((max - min) / s.max(1e-6)).round() as usize;
@@ -3278,11 +3822,7 @@ pub fn RangeSlider(
                         w: dot_r * 2.0,
                         h: dot_r * 2.0,
                     },
-                    brush: Brush::Solid(mul_c(if on_active {
-                        inact_tick
-                    } else {
-                        act_tick
-                    })),
+                    brush: Brush::Solid(mul_c(if on_active { inact_tick } else { act_tick })),
                 });
             }
             if linactive_w > 0.0 {
@@ -3352,7 +3892,11 @@ pub fn RangeSlider(
         .on_pointer_enter({
             let h = hovered.clone();
             let en = is_enabled;
-            move |_pe: PointerEvent| { if en { h.set(true); } }
+            move |_pe: PointerEvent| {
+                if en {
+                    h.set(true);
+                }
+            }
         })
         .on_pointer_leave({
             let h = hovered.clone();
@@ -3365,7 +3909,9 @@ pub fn RangeSlider(
             let active_thumb = active_thumb.clone();
             let en = is_enabled;
             move |pe: PointerEvent| {
-                if !en { return; }
+                if !en {
+                    return;
+                }
                 *drag_active.borrow_mut() = true;
                 let r = *track_rect.borrow();
                 let v = value_from_x(pe.position.x, r, min, max, step);
@@ -3412,7 +3958,9 @@ pub fn RangeSlider(
             let active_thumb = active_thumb.clone();
             let en = is_enabled;
             move |d: Vec2| -> Vec2 {
-                if !en { return d; }
+                if !en {
+                    return d;
+                }
                 let dir = if d.y < -0.5 {
                     1
                 } else if d.y > 0.5 {
@@ -3569,7 +4117,11 @@ fn clickable_card_impl(
         .on_pointer_down({
             let cb = on_click;
             let en = config.enabled;
-            move |_| { if en { cb(); } }
+            move |_| {
+                if en {
+                    cb();
+                }
+            }
         });
     Card(
         CardConfig {
@@ -3662,6 +4214,8 @@ pub struct SnackbarConfig {
     pub container_color: Color,
     pub content_color: Color,
     pub action_color: Color,
+    pub dismiss_action_content_color: Color,
+    pub action_on_new_line: bool,
     pub shape_radius: f32,
     pub min_height: f32,
     pub min_width: f32,
@@ -3675,6 +4229,8 @@ impl Default for SnackbarConfig {
             container_color: SnackbarDefaults::container_color(),
             content_color: SnackbarDefaults::content_color(),
             action_color: SnackbarDefaults::action_color(),
+            dismiss_action_content_color: SnackbarDefaults::dismiss_action_content_color(),
+            action_on_new_line: false,
             shape_radius: SnackbarDefaults::SHAPE_RADIUS,
             min_height: SnackbarDefaults::MIN_HEIGHT,
             min_width: SnackbarDefaults::MIN_WIDTH,
@@ -3711,19 +4267,31 @@ impl ChipColors {
         }
     }
     pub fn label(&self, enabled: bool, selected: bool) -> Color {
-        if !enabled { self.disabled_label_color }
-        else if selected { self.selected_label_color }
-        else { self.label_color }
+        if !enabled {
+            self.disabled_label_color
+        } else if selected {
+            self.selected_label_color
+        } else {
+            self.label_color
+        }
     }
     pub fn leading_icon(&self, enabled: bool, selected: bool) -> Color {
-        if !enabled { self.disabled_leading_icon_color }
-        else if selected { self.selected_leading_icon_color }
-        else { self.leading_icon_color }
+        if !enabled {
+            self.disabled_leading_icon_color
+        } else if selected {
+            self.selected_leading_icon_color
+        } else {
+            self.leading_icon_color
+        }
     }
     pub fn trailing_icon(&self, enabled: bool, selected: bool) -> Color {
-        if !enabled { self.disabled_trailing_icon_color }
-        else if selected { self.selected_trailing_icon_color }
-        else { self.trailing_icon_color }
+        if !enabled {
+            self.disabled_trailing_icon_color
+        } else if selected {
+            self.selected_trailing_icon_color
+        } else {
+            self.trailing_icon_color
+        }
     }
 }
 
@@ -3796,7 +4364,8 @@ impl Default for ChipConfig {
                 selected_label_color: ChipDefaults::selected_label_color(),
                 selected_leading_icon_color: ChipDefaults::selected_leading_icon_color(),
                 selected_trailing_icon_color: ChipDefaults::selected_trailing_icon_color(),
-                disabled_selected_container_color: ChipDefaults::disabled_selected_container_color(),
+                disabled_selected_container_color: ChipDefaults::disabled_selected_container_color(
+                ),
             },
             elevation: ChipElevation::default(),
             border_width: ChipDefaults::BORDER_WIDTH,
@@ -3825,7 +4394,11 @@ pub fn AssistChip(
     let label_color = colors.label(is_enabled, false);
     let leading_color = colors.leading_icon(is_enabled, false);
     let trailing_color = colors.trailing_icon(is_enabled, false);
-    let border = if is_enabled { config.border_color } else { config.disabled_border_color };
+    let border = if is_enabled {
+        config.border_color
+    } else {
+        config.disabled_border_color
+    };
     let shape = config.shape_radius;
 
     let mut m = Modifier::new()

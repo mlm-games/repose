@@ -193,6 +193,9 @@ impl SnackbarDefaults {
     pub fn action_color() -> Color {
         theme().inverse_primary
     }
+    pub fn dismiss_action_content_color() -> Color {
+        theme().inverse_on_surface
+    }
 }
 
 /// Default values for card components.
@@ -472,10 +475,14 @@ impl BadgeDefaults {
     pub const DOT_SIZE: f32 = 6.0;
     pub const LABEL_MIN_WIDTH: f32 = 16.0;
     pub const LABEL_HEIGHT: f32 = 16.0;
-    pub fn color() -> Color {
+    pub const DOT_OFFSET_X: f32 = 6.0;
+    pub const DOT_OFFSET_Y: f32 = 6.0;
+    pub const CONTENT_OFFSET_X: f32 = 12.0;
+    pub const CONTENT_OFFSET_Y: f32 = 14.0;
+    pub fn container_color() -> Color {
         theme().error
     }
-    pub fn label_color() -> Color {
+    pub fn content_color() -> Color {
         theme().on_error
     }
 }
@@ -504,10 +511,17 @@ impl ListItemDefaults {
     pub fn trailing_icon_color() -> Color {
         theme().on_surface_variant
     }
+    // disabled
+    pub fn disabled_container_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.04)
+    }
     pub fn disabled_headline_color() -> Color {
         theme().on_surface.with_alpha_f32(0.38)
     }
     pub fn disabled_supporting_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
+    pub fn disabled_overline_color() -> Color {
         theme().on_surface.with_alpha_f32(0.38)
     }
     pub fn disabled_leading_icon_color() -> Color {
@@ -515,6 +529,44 @@ impl ListItemDefaults {
     }
     pub fn disabled_trailing_icon_color() -> Color {
         theme().on_surface.with_alpha_f32(0.38)
+    }
+    // selected
+    pub fn selected_container_color() -> Color {
+        theme().surface_container_high
+    }
+    pub fn selected_headline_color() -> Color {
+        theme().on_surface
+    }
+    pub fn selected_supporting_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn selected_overline_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn selected_leading_icon_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn selected_trailing_icon_color() -> Color {
+        theme().on_surface_variant
+    }
+    // dragged
+    pub fn dragged_container_color() -> Color {
+        theme().surface_container_high
+    }
+    pub fn dragged_headline_color() -> Color {
+        theme().on_surface
+    }
+    pub fn dragged_supporting_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn dragged_overline_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn dragged_leading_icon_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn dragged_trailing_icon_color() -> Color {
+        theme().on_surface_variant
     }
 }
 
