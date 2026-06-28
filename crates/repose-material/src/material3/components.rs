@@ -1398,7 +1398,7 @@ pub fn SegmentedButton(
                 let cb = seg.on_click.clone();
                 let radii = segment_radii(i);
 
-                    let state_colors = config.state_colors;
+                let state_colors = config.state_colors;
                 let mut modifier = Modifier::new()
                     .flex_grow(1.0)
                     .fill_max_height()
@@ -1437,6 +1437,9 @@ pub fn SegmentedButton(
 pub struct CircularProgressIndicatorConfig {
     pub color: Color,
     pub track_color: Color,
+    pub stroke_width: f32,
+    pub stroke_cap: StrokeCap,
+    pub gap_size: f32,
 }
 
 impl Default for CircularProgressIndicatorConfig {
@@ -1444,39 +1447,11 @@ impl Default for CircularProgressIndicatorConfig {
         Self {
             color: ProgressIndicatorDefaults::circular_color(),
             track_color: ProgressIndicatorDefaults::circular_track_color(),
+            stroke_width: ProgressIndicatorDefaults::CIRCULAR_STROKE_WIDTH,
+            stroke_cap: StrokeCap::Round,
+            gap_size: 0.0,
         }
     }
-}
-
-fn draw_sweep_arc(
-    scene: &mut Scene,
-    cx: f32,
-    cy: f32,
-    r: f32,
-    stroke: f32,
-    progress: f32,
-    color: Color,
-    cap: StrokeCap,
-) {
-    if progress <= 0.0 {
-        return;
-    }
-    let sweep_rad = progress * std::f32::consts::TAU;
-    let start_angle = -std::f32::consts::FRAC_PI_2;
-    let rect = Rect {
-        x: cx - r,
-        y: cy - r,
-        w: r * 2.0,
-        h: r * 2.0,
-    };
-    scene.nodes.push(SceneNode::Arc {
-        rect,
-        start_angle,
-        sweep_angle: sweep_rad,
-        stroke_width: stroke,
-        color,
-        cap,
-    });
 }
 
 /// M3 Circular Progress Indicator.
@@ -1488,7 +1463,7 @@ pub fn CircularProgressIndicator(
     config: CircularProgressIndicatorConfig,
 ) -> View {
     let sz = dp_to_px(ProgressIndicatorDefaults::CIRCULAR_INDICATOR_SIZE);
-    let stroke_px = dp_to_px(ProgressIndicatorDefaults::CIRCULAR_STROKE_WIDTH);
+    let stroke_px = dp_to_px(config.stroke_width);
     let val = value.map(|v| v.clamp(0.0, 1.0));
 
     // Three concurrent animations matching Compose Material3 indeterminate spec:
@@ -1543,6 +1518,15 @@ pub fn CircularProgressIndicator(
         (0.0, 0.0, 0.0)
     };
 
+    // Pre-compute gap angular size in radians
+    let indicator_size_dp = ProgressIndicatorDefaults::CIRCULAR_INDICATOR_SIZE;
+    let adjusted_gap_dp = if config.stroke_cap == StrokeCap::Butt {
+        config.gap_size
+    } else {
+        config.gap_size + config.stroke_width
+    };
+    let gap_sweep_rad = 2.0 * adjusted_gap_dp / indicator_size_dp;
+
     Box(Modifier::new()
         .size(sz, sz)
         .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
@@ -1564,39 +1548,68 @@ pub fn CircularProgressIndicator(
                 h: r * 2.0,
             };
 
-            // Track ring
-            scene.nodes.push(SceneNode::EllipseBorder {
-                rect: circle,
-                color: mul_c(config.track_color),
-                width: stroke_px,
-            });
-
             match val {
                 Some(p) => {
-                    draw_sweep_arc(
-                        scene,
-                        cx,
-                        cy,
-                        r,
-                        stroke_px,
-                        p,
-                        mul_c(config.color),
-                        StrokeCap::Round,
-                    );
+                    let sweep_rad = p * std::f32::consts::TAU;
+                    let start_angle = -std::f32::consts::FRAC_PI_2;
+                    let effective_gap = gap_sweep_rad.min(sweep_rad);
+
+                    // Indicator arc
+                    if p > 0.0 {
+                        scene.nodes.push(SceneNode::Arc {
+                            rect: circle,
+                            start_angle,
+                            sweep_angle: sweep_rad,
+                            stroke_width: stroke_px,
+                            color: mul_c(config.color),
+                            cap: config.stroke_cap,
+                        });
+                    }
+
+                    // Track arc (with gap from indicator)
+                    let track_start = start_angle + sweep_rad + effective_gap;
+                    let track_sweep = std::f32::consts::TAU - sweep_rad - 2.0 * effective_gap;
+                    if track_sweep > 0.0 {
+                        scene.nodes.push(SceneNode::Arc {
+                            rect: circle,
+                            start_angle: track_start,
+                            sweep_angle: track_sweep,
+                            stroke_width: stroke_px,
+                            color: mul_c(config.track_color),
+                            cap: config.stroke_cap,
+                        });
+                    }
                 }
                 None => {
                     let radians =
                         (global_rotation + additional_rotation) * std::f32::consts::PI / 180.0;
                     let start_angle = -std::f32::consts::FRAC_PI_2 + radians;
                     let sweep_rad = sweep_val * std::f32::consts::TAU;
+                    let effective_gap = gap_sweep_rad.min(sweep_rad);
+
+                    // Indicator arc
                     scene.nodes.push(SceneNode::Arc {
                         rect: circle,
                         start_angle,
                         sweep_angle: sweep_rad,
                         stroke_width: stroke_px,
                         color: mul_c(config.color),
-                        cap: StrokeCap::Round,
+                        cap: config.stroke_cap,
                     });
+
+                    // Track arc (with gap from indicator)
+                    let track_start = start_angle + sweep_rad + effective_gap;
+                    let track_sweep = std::f32::consts::TAU - sweep_rad - 2.0 * effective_gap;
+                    if track_sweep > 0.0 {
+                        scene.nodes.push(SceneNode::Arc {
+                            rect: circle,
+                            start_angle: track_start,
+                            sweep_angle: track_sweep,
+                            stroke_width: stroke_px,
+                            color: mul_c(config.track_color),
+                            cap: config.stroke_cap,
+                        });
+                    }
                 }
             }
         }))
@@ -2517,7 +2530,10 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         .on_pointer_leave({
             let h = hovered.clone();
             let p = pressed.clone();
-            move |_| { h.set(false); p.set(false); }
+            move |_| {
+                h.set(false);
+                p.set(false);
+            }
         })
         .on_pointer_down({
             let p = pressed.clone();
@@ -2544,7 +2560,12 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
             .clip_rounded(20.0)
             .background(state_overlay)
             .absolute()
-            .offset(Some(thumb_left + thumb_d * 0.5 - 20.0), Some(track_h * 0.5 - 20.0), None, None)),
+            .offset(
+                Some(thumb_left + thumb_d * 0.5 - 20.0),
+                Some(track_h * 0.5 - 20.0),
+                None,
+                None,
+            )),
     ))
 }
 
