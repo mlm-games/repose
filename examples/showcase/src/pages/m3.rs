@@ -329,6 +329,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                                 let s = seg_sel.clone();
                                 move || s.set(0)
                             }),
+                            enabled: true,
                         },
                         Segment {
                             label: "Week".into(),
@@ -337,6 +338,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                                 let s = seg_sel.clone();
                                 move || s.set(1)
                             }),
+                            enabled: true,
                         },
                         Segment {
                             label: "Month".into(),
@@ -345,6 +347,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                                 let s = seg_sel.clone();
                                 move || s.set(2)
                             }),
+                            enabled: true,
                         },
                     ],
                     SegmentedButtonConfig::default(),

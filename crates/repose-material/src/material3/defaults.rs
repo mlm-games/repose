@@ -252,6 +252,9 @@ impl IconButtonDefaults {
     pub fn content_color() -> Color {
         theme().on_surface_variant
     }
+    pub fn disabled_content_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
     pub fn filled_content_color() -> Color {
         theme().on_primary
     }
@@ -560,9 +563,13 @@ pub struct NavigationBarDefaults;
 
 impl NavigationBarDefaults {
     pub const HEIGHT: f32 = 80.0;
+    pub const TONAL_ELEVATION: f32 = 0.0;
     pub const ITEM_ACTIVE_INDICATOR_OPACITY: f32 = 0.12;
     pub fn container_color() -> Color {
         theme().surface_container
+    }
+    pub fn content_color() -> Color {
+        theme().on_surface
     }
     pub fn selected_icon_color() -> Color {
         theme().primary
@@ -660,32 +667,58 @@ impl ChipDefaults {
     pub const HEIGHT: f32 = 32.0;
     pub const HORIZONTAL_PADDING: f32 = 16.0;
     pub const SHAPE_RADIUS: f32 = 8.0;
-    pub fn surface_color() -> Color {
-        theme().surface
+    pub const BORDER_WIDTH: f32 = 1.0;
+
+    // Colors for non-selected state
+    pub fn container_color() -> Color { Color::TRANSPARENT }
+    pub fn label_color() -> Color { theme().on_surface_variant }
+    pub fn leading_icon_color() -> Color { theme().primary }
+    pub fn trailing_icon_color() -> Color { theme().primary }
+
+    // Disabled colors (non-selected)
+    pub fn disabled_container_color() -> Color { Color::TRANSPARENT }
+    pub fn disabled_label_color() -> Color { theme().on_surface.with_alpha_f32(0.38) }
+    pub fn disabled_leading_icon_color() -> Color { theme().on_surface.with_alpha_f32(0.38) }
+    pub fn disabled_trailing_icon_color() -> Color { theme().on_surface.with_alpha_f32(0.38) }
+
+    // Colors for selected state
+    pub fn selected_container_color() -> Color { theme().secondary_container }
+    pub fn selected_label_color() -> Color { theme().on_secondary_container }
+    pub fn selected_leading_icon_color() -> Color { theme().primary }
+    pub fn selected_trailing_icon_color() -> Color { theme().on_secondary_container }
+
+    // Disabled selected container
+    pub fn disabled_selected_container_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.12).composite_over(theme().secondary_container)
     }
-    pub fn selected_container_color() -> Color {
-        theme().secondary_container
-    }
-    pub fn selected_content_color() -> Color {
-        theme().on_secondary_container
-    }
-    pub fn unselected_content_color() -> Color {
-        theme().on_surface_variant
-    }
-    pub fn unselected_border_color() -> Color {
-        theme().outline_variant
-    }
-    pub fn assist_icon_color() -> Color {
-        theme().primary
-    }
-    pub fn input_selected_icon_color() -> Color {
-        theme().primary
-    }
-    pub fn input_unselected_icon_color() -> Color {
-        theme().on_surface_variant
-    }
-    pub fn suggestion_icon_color() -> Color {
-        theme().primary
+
+    // Border colors
+    pub fn border_color() -> Color { theme().outline_variant }
+    pub fn selected_border_color() -> Color { Color::TRANSPARENT }
+    pub fn disabled_border_color() -> Color { theme().on_surface.with_alpha_f32(0.12) }
+    pub fn disabled_selected_border_color() -> Color { Color::TRANSPARENT }
+
+    // Elevation defaults (flat chip — no elevation)
+    pub fn elevation_default() -> f32 { 0.0 }
+    pub fn elevation_hovered() -> f32 { 0.0 }
+    pub fn elevation_focused() -> f32 { 0.0 }
+    pub fn elevation_pressed() -> f32 { 0.0 }
+    pub fn elevation_dragged() -> f32 { 0.0 }
+    pub fn elevation_disabled() -> f32 { 0.0 }
+
+    // Elevated chip defaults
+    pub fn elevated_elevation_default() -> f32 { theme().elevation.level1 }
+    pub fn elevated_elevation_hovered() -> f32 { theme().elevation.level2 }
+    pub fn elevated_elevation_focused() -> f32 { theme().elevation.level1 }
+    pub fn elevated_elevation_pressed() -> f32 { theme().elevation.level1 }
+    pub fn elevated_elevation_dragged() -> f32 { theme().elevation.level3 }
+    pub fn elevated_elevation_disabled() -> f32 { 0.0 }
+
+    // Elevated chip container colors
+    pub fn elevated_container_color() -> Color { theme().surface_container_low }
+    pub fn elevated_selected_container_color() -> Color { theme().secondary_container }
+    pub fn disabled_elevated_container_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.12).composite_over(theme().surface_container_low)
     }
 }
 
@@ -706,8 +739,12 @@ pub struct NavigationDrawerDefaults;
 
 impl NavigationDrawerDefaults {
     pub const WIDTH: f32 = 300.0;
+    pub const TONAL_ELEVATION: f32 = 0.0;
     pub fn container_color() -> Color {
         theme().surface_container_low
+    }
+    pub fn content_color() -> Color {
+        theme().on_surface_variant
     }
     pub fn scrim_color() -> Color {
         theme().scrim.with_alpha(82)
@@ -719,8 +756,12 @@ impl NavigationDrawerDefaults {
 pub struct BottomSheetDefaults;
 
 impl BottomSheetDefaults {
+    pub const TONAL_ELEVATION: f32 = 0.0;
     pub fn container_color() -> Color {
         theme().surface_container_low
+    }
+    pub fn content_color() -> Color {
+        theme().on_surface
     }
     pub fn drag_handle_color() -> Color {
         theme().on_surface_variant

@@ -94,39 +94,51 @@ pub fn NavigationBar(
     let th = theme();
     let id = remember(|| NAVBAR_COUNTER.fetch_add(1, Ordering::Relaxed));
     let spec = th.motion.shape;
-    Row(Modifier::new()
+
+    let mut bar_m = Modifier::new()
         .fill_max_size()
         .min_height(config.height)
         .background(config.container_color)
         .padding(8.0)
-        .then(config.modifier))
-    .child(
-        items
-            .into_iter()
-            .enumerate()
-            .map(|(i, item)| {
-                let selected = i == selected_index;
-                let fg = animate_color(
-                    format!("nb_fg_{}_{}", id, i),
-                    if selected {
-                        config.selected_icon_color
-                    } else {
-                        config.unselected_icon_color
-                    },
-                    spec,
-                );
-                let bg_alpha = animate_f32(
-                    format!("nb_bg_{}_{}", id, i),
-                    if selected { 1.0 } else { 0.0 },
-                    spec,
-                );
-                let indicator_bg = config
-                    .indicator_color
-                    .with_alpha_f32(bg_alpha * config.indicator_opacity);
-                let cb = item.on_click.clone();
+        .then(config.modifier);
 
-                Column(
-                    Modifier::new()
+    if config.tonal_elevation > 0.0 {
+        bar_m = bar_m.state_elevation(StateElevation {
+            default: config.tonal_elevation,
+            hovered: config.tonal_elevation,
+            pressed: config.tonal_elevation,
+            disabled: 0.0,
+        });
+    }
+
+    Box(bar_m).child(
+        Row(Modifier::new().fill_max_size().align_items(AlignItems::Center)).child(
+            items
+                .into_iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    let selected = i == selected_index;
+                    let is_enabled = item.enabled;
+                    let fg = animate_color(
+                        format!("nb_fg_{}_{}", id, i),
+                        if selected {
+                            config.selected_icon_color
+                        } else {
+                            config.unselected_icon_color
+                        },
+                        spec,
+                    );
+                    let bg_alpha = animate_f32(
+                        format!("nb_bg_{}_{}", id, i),
+                        if selected { 1.0 } else { 0.0 },
+                        spec,
+                    );
+                    let indicator_bg = config
+                        .indicator_color
+                        .with_alpha_f32(bg_alpha * config.indicator_opacity);
+                    let cb = item.on_click.clone();
+
+                    let mut item_m = Modifier::new()
                         .flex_grow(1.0)
                         .padding_values(PaddingValues {
                             left: config.item_horizontal_padding,
@@ -143,19 +155,22 @@ pub fn NavigationBar(
                             hovered: th.on_surface.with_alpha_f32(0.08),
                             pressed: th.on_surface.with_alpha_f32(0.12),
                             disabled: Color::TRANSPARENT,
-                        })
-                        .clickable()
-                        .on_pointer_down(move |_| cb()),
-                )
-                .child((
-                    item.icon,
-                    Text(item.label)
-                        .color(fg)
-                        .size(th.typography.label_medium)
-                        .single_line(),
-                ))
-            })
-            .collect::<Vec<_>>(),
+                        });
+
+                    if is_enabled {
+                        item_m = item_m.clickable().on_pointer_down(move |_| cb());
+                    }
+
+                    Column(item_m).child((
+                        item.icon,
+                        Text(item.label)
+                            .color(fg)
+                            .size(th.typography.label_medium)
+                            .single_line(),
+                    ))
+                })
+                .collect::<Vec<_>>(),
+        ),
     )
 }
 
@@ -163,6 +178,7 @@ pub struct NavItem {
     pub icon: View,
     pub label: String,
     pub on_click: Rc<dyn Fn()>,
+    pub enabled: bool,
 }
 
 pub fn Snackbar(
@@ -255,41 +271,37 @@ pub fn FilterChip(
     let th = theme();
     let id = remember(|| FILTERCHIP_COUNTER.fetch_add(1, Ordering::Relaxed));
     let spec = th.motion.color;
+    let is_enabled = config.enabled;
+    let colors = &config.colors;
 
     let bg = animate_color(
         format!("fc_bg_{}", id),
-        if selected {
-            config.selected_container_color
-        } else {
-            config.container_color
-        },
+        colors.container(is_enabled, selected),
         spec,
     );
     let label_color = animate_color(
         format!("fc_lc_{}", id),
-        if selected {
-            config.selected_content_color
-        } else {
-            config.content_color
-        },
+        colors.label(is_enabled, selected),
         spec,
     );
-    let border_color = if selected {
-        Color::TRANSPARENT
-    } else {
-        config.border_color
-    };
     let leading_color = animate_color(
         format!("fc_lic_{}", id),
-        if selected {
-            config.selected_content_color
-        } else {
-            config.content_color
-        },
+        colors.leading_icon(is_enabled, selected),
         spec,
     );
+    let trailing_color = animate_color(
+        format!("fc_tic_{}", id),
+        colors.trailing_icon(is_enabled, selected),
+        spec,
+    );
+    let border = if !is_enabled {
+        if selected { config.disabled_selected_border_color } else { config.disabled_border_color }
+    } else {
+        if selected { config.selected_border_color } else { config.border_color }
+    };
+    let shape = config.shape_radius;
 
-    Box(Modifier::new()
+    let mut m = Modifier::new()
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
@@ -302,12 +314,18 @@ pub fn FilterChip(
             top: 8.0,
             bottom: 8.0,
         })
-        .clickable()
-        .on_pointer_down(move |_| on_click())
         .background(bg)
-        .clip_rounded(config.shape_radius)
-        .border(1.0, border_color, config.shape_radius))
-    .child(
+        .clip_rounded(shape)
+        .then(config.modifier);
+
+    if config.border_width > 0.0 && border != Color::TRANSPARENT {
+        m = m.border(config.border_width, border, shape);
+    }
+    if is_enabled {
+        m = m.clickable().on_pointer_down(move |_| on_click());
+    }
+
+    Box(m).child(
         Row(Modifier::new().align_items(AlignItems::Center)).child((
             leading_icon
                 .map(|v| {
@@ -329,7 +347,7 @@ pub fn FilterChip(
                         top: 0.0,
                         bottom: 0.0,
                     }))
-                    .child(with_content_color(config.content_color, move || v))
+                    .child(with_content_color(trailing_color, move || v))
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
@@ -348,60 +366,54 @@ pub fn ElevatedFilterChip(
     let th = theme();
     let id = remember(|| FILTERCHIP_COUNTER.fetch_add(1, Ordering::Relaxed));
     let spec = th.motion.color;
+    let is_enabled = config.enabled;
+    let colors = &config.colors;
 
     let bg = animate_color(
         format!("efc_bg_{}", id),
-        if selected {
-            config.selected_container_color
-        } else {
-            th.surface_container_low
-        },
+        colors.container(is_enabled, selected),
         spec,
     );
     let label_color = animate_color(
         format!("efc_lc_{}", id),
-        if selected {
-            config.selected_content_color
-        } else {
-            config.content_color
-        },
+        colors.label(is_enabled, selected),
         spec,
     );
     let leading_color = animate_color(
         format!("efc_lic_{}", id),
-        if selected {
-            config.selected_content_color
-        } else {
-            config.content_color
-        },
+        colors.leading_icon(is_enabled, selected),
         spec,
     );
+    let trailing_color = animate_color(
+        format!("efc_tic_{}", id),
+        colors.trailing_icon(is_enabled, selected),
+        spec,
+    );
+    let shape = config.shape_radius;
 
-    Box(Modifier::new()
+    let mut m = Modifier::new()
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
             pressed: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
             disabled: Color::TRANSPARENT,
         })
-        .state_elevation(StateElevation {
-            default: th.elevation.level1,
-            hovered: th.elevation.level2,
-            pressed: th.elevation.level1,
-            disabled: 0.0,
-        })
+        .state_elevation(config.elevation.to_state_elevation())
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.horizontal_padding,
             top: 8.0,
             bottom: 8.0,
         })
-        .clickable()
-        .on_pointer_down(move |_| on_click())
         .background(bg)
-        .clip_rounded(config.shape_radius)
-        .then(config.modifier))
-    .child(
+        .clip_rounded(shape)
+        .then(config.modifier);
+
+    if is_enabled {
+        m = m.clickable().on_pointer_down(move |_| on_click());
+    }
+
+    Box(m).child(
         Row(Modifier::new().align_items(AlignItems::Center)).child((
             leading_icon
                 .map(|v| {
@@ -423,16 +435,29 @@ pub fn ElevatedFilterChip(
                         top: 0.0,
                         bottom: 0.0,
                     }))
-                    .child(with_content_color(config.content_color, move || v))
+                    .child(with_content_color(trailing_color, move || v))
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
     )
 }
 
-pub fn SuggestionChip(on_click: impl Fn() + 'static, label: View, icon: Option<View>) -> View {
+pub fn SuggestionChip(
+    on_click: impl Fn() + 'static,
+    label: View,
+    icon: Option<View>,
+    config: ChipConfig,
+) -> View {
     let th = theme();
-    Box(Modifier::new()
+    let is_enabled = config.enabled;
+    let colors = &config.colors;
+    let bg = colors.container(is_enabled, false);
+    let label_color = colors.label(is_enabled, false);
+    let leading_color = colors.leading_icon(is_enabled, false);
+    let border = if is_enabled { config.border_color } else { config.disabled_border_color };
+    let shape = config.shape_radius;
+
+    let mut m = Modifier::new()
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
@@ -440,17 +465,23 @@ pub fn SuggestionChip(on_click: impl Fn() + 'static, label: View, icon: Option<V
             disabled: Color::TRANSPARENT,
         })
         .padding_values(PaddingValues {
-            left: 16.0,
-            right: 16.0,
+            left: config.horizontal_padding,
+            right: config.horizontal_padding,
             top: 8.0,
             bottom: 8.0,
         })
-        .clickable()
-        .on_pointer_down(move |_| on_click())
-        .background(Color::TRANSPARENT)
-        .clip_rounded(8.0)
-        .border(1.0, th.outline_variant, 8.0))
-    .child(
+        .background(bg)
+        .clip_rounded(shape)
+        .then(config.modifier);
+
+    if config.border_width > 0.0 && border != Color::TRANSPARENT {
+        m = m.border(config.border_width, border, shape);
+    }
+    if is_enabled {
+        m = m.clickable().on_pointer_down(move |_| on_click());
+    }
+
+    Box(m).child(
         Row(Modifier::new().align_items(AlignItems::Center)).child((
             icon.map(|v| {
                 Box(Modifier::new().padding_values(PaddingValues {
@@ -459,10 +490,10 @@ pub fn SuggestionChip(on_click: impl Fn() + 'static, label: View, icon: Option<V
                     top: 0.0,
                     bottom: 0.0,
                 }))
-                .child(with_content_color(th.primary, move || v))
+                .child(with_content_color(leading_color, move || v))
             })
             .unwrap_or(Box(Modifier::new())),
-            with_content_color(th.on_surface_variant, move || label),
+            with_content_color(label_color, move || label),
         )),
     )
 }
@@ -472,32 +503,39 @@ pub fn ElevatedSuggestionChip(
     on_click: impl Fn() + 'static,
     label: View,
     icon: Option<View>,
+    config: ChipConfig,
 ) -> View {
     let th = theme();
-    Box(Modifier::new()
+    let is_enabled = config.enabled;
+    let colors = &config.colors;
+    let bg = colors.container(is_enabled, false);
+    let label_color = colors.label(is_enabled, false);
+    let leading_color = colors.leading_icon(is_enabled, false);
+    let shape = config.shape_radius;
+
+    let mut m = Modifier::new()
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
-        .state_elevation(StateElevation {
-            default: th.elevation.level1,
-            hovered: th.elevation.level2,
-            pressed: th.elevation.level1,
-            disabled: 0.0,
-        })
+        .state_elevation(config.elevation.to_state_elevation())
         .padding_values(PaddingValues {
-            left: 16.0,
-            right: 16.0,
+            left: config.horizontal_padding,
+            right: config.horizontal_padding,
             top: 8.0,
             bottom: 8.0,
         })
-        .clickable()
-        .on_pointer_down(move |_| on_click())
-        .background(th.surface_container_low)
-        .clip_rounded(8.0))
-    .child(
+        .background(bg)
+        .clip_rounded(shape)
+        .then(config.modifier);
+
+    if is_enabled {
+        m = m.clickable().on_pointer_down(move |_| on_click());
+    }
+
+    Box(m).child(
         Row(Modifier::new().align_items(AlignItems::Center)).child((
             icon.map(|v| {
                 Box(Modifier::new().padding_values(PaddingValues {
@@ -506,10 +544,10 @@ pub fn ElevatedSuggestionChip(
                     top: 0.0,
                     bottom: 0.0,
                 }))
-                .child(with_content_color(th.primary, move || v))
+                .child(with_content_color(leading_color, move || v))
             })
             .unwrap_or(Box(Modifier::new())),
-            with_content_color(th.on_surface_variant, move || label),
+            with_content_color(label_color, move || label),
         )),
     )
 }
@@ -521,45 +559,42 @@ pub fn InputChip(
     leading_icon: Option<View>,
     avatar: Option<View>,
     trailing_icon: Option<View>,
+    config: ChipConfig,
 ) -> View {
     let th = theme();
     let id = remember(|| FILTERCHIP_COUNTER.fetch_add(1, Ordering::Relaxed));
     let spec = th.motion.color;
+    let is_enabled = config.enabled;
+    let colors = &config.colors;
 
     let bg = animate_color(
         format!("ic_bg_{}", id),
-        if selected {
-            th.secondary_container
-        } else {
-            th.surface
-        },
+        colors.container(is_enabled, selected),
         spec,
     );
     let label_color = animate_color(
         format!("ic_lc_{}", id),
-        if selected {
-            th.on_secondary_container
-        } else {
-            th.on_surface_variant
-        },
+        colors.label(is_enabled, selected),
         spec,
     );
-    let border_color = if selected {
-        Color::TRANSPARENT
-    } else {
-        th.outline_variant
-    };
     let leading_color = animate_color(
         format!("ic_lic_{}", id),
-        if selected {
-            th.primary
-        } else {
-            th.on_surface_variant
-        },
+        colors.leading_icon(is_enabled, selected),
         spec,
     );
+    let trailing_color = animate_color(
+        format!("ic_tic_{}", id),
+        colors.trailing_icon(is_enabled, selected),
+        spec,
+    );
+    let border = if !is_enabled {
+        if selected { config.disabled_selected_border_color } else { config.disabled_border_color }
+    } else {
+        if selected { config.selected_border_color } else { config.border_color }
+    };
+    let shape = config.shape_radius;
 
-    Box(Modifier::new()
+    let mut m = Modifier::new()
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
@@ -567,17 +602,23 @@ pub fn InputChip(
             disabled: Color::TRANSPARENT,
         })
         .padding_values(PaddingValues {
-            left: 16.0,
-            right: 16.0,
+            left: config.horizontal_padding,
+            right: config.horizontal_padding,
             top: 8.0,
             bottom: 8.0,
         })
-        .clickable()
-        .on_pointer_down(move |_| on_click())
         .background(bg)
-        .clip_rounded(8.0)
-        .border(1.0, border_color, 8.0))
-    .child(
+        .clip_rounded(shape)
+        .then(config.modifier);
+
+    if config.border_width > 0.0 && border != Color::TRANSPARENT {
+        m = m.border(config.border_width, border, shape);
+    }
+    if is_enabled {
+        m = m.clickable().on_pointer_down(move |_| on_click());
+    }
+
+    Box(m).child(
         Row(Modifier::new().align_items(AlignItems::Center)).child((
             avatar
                 .or(leading_icon)
@@ -600,7 +641,7 @@ pub fn InputChip(
                         top: 0.0,
                         bottom: 0.0,
                     }))
-                    .child(with_content_color(th.on_surface_variant, move || v))
+                    .child(with_content_color(trailing_color, move || v))
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
@@ -790,6 +831,7 @@ pub fn ModalNavigationDrawer(
     drawer_state: Rc<DrawerState>,
     drawer_content: View,
     content: View,
+    config: NavigationDrawerConfig,
 ) -> View {
     let th = theme();
 
@@ -799,12 +841,29 @@ pub fn ModalNavigationDrawer(
         theme().motion.spring,
     );
 
+    let mut drawer_m = Modifier::new()
+        .absolute()
+        .offset(Some(drawer_offset), Some(0.0), None, Some(0.0))
+        .fill_max_height()
+        .width(config.width)
+        .background(config.container_color)
+        .clip_rounded(config.shape_radius);
+
+    if config.tonal_elevation > 0.0 {
+        drawer_m = drawer_m.state_elevation(StateElevation {
+            default: config.tonal_elevation,
+            hovered: config.tonal_elevation,
+            pressed: config.tonal_elevation,
+            disabled: 0.0,
+        });
+    }
+
     ZStack(Modifier::new().fill_max_size()).child((
-        Box(Modifier::new().fill_max_size()).child(content),
+        Box(Modifier::new().fill_max_size().background(config.content_color)).child(content),
         if drawer_state.is_open() {
             Box(Modifier::new()
                 .fill_max_size()
-                .background(th.scrim.with_alpha(82))
+                .background(config.scrim_color)
                 .clickable()
                 .on_pointer_down({
                     let ds = drawer_state.clone();
@@ -814,14 +873,7 @@ pub fn ModalNavigationDrawer(
         } else {
             Box(Modifier::new())
         },
-        Box(Modifier::new()
-            .absolute()
-            .offset(Some(drawer_offset), Some(0.0), None, Some(0.0))
-            .fill_max_height()
-            .width(300.0)
-            .background(th.surface_container_low)
-            .clip_rounded(th.shapes.large))
-        .child(drawer_content),
+        Box(drawer_m).child(drawer_content),
     ))
 }
 
@@ -831,6 +883,7 @@ pub fn DismissibleNavigationDrawer(
     drawer_state: Rc<DrawerState>,
     drawer_content: View,
     content: View,
+    config: NavigationDrawerConfig,
 ) -> View {
     let th = theme();
     let drawer_offset = animate_f32(
@@ -839,27 +892,41 @@ pub fn DismissibleNavigationDrawer(
         theme().motion.spring,
     );
 
+    let mut drawer_m = Modifier::new()
+        .absolute()
+        .offset(Some(drawer_offset), Some(0.0), None, Some(0.0))
+        .fill_max_height()
+        .width(config.width)
+        .background(config.container_color)
+        .clip_rounded(config.shape_radius);
+
+    if config.tonal_elevation > 0.0 {
+        drawer_m = drawer_m.state_elevation(StateElevation {
+            default: config.tonal_elevation,
+            hovered: config.tonal_elevation,
+            pressed: config.tonal_elevation,
+            disabled: 0.0,
+        });
+    }
+
     ZStack(Modifier::new().fill_max_size()).child((
-        Box(Modifier::new().fill_max_size()).child(content),
-        Box(Modifier::new()
-            .absolute()
-            .offset(Some(drawer_offset), Some(0.0), None, Some(0.0))
-            .fill_max_height()
-            .width(300.0)
-            .background(th.surface_container_low)
-            .clip_rounded(th.shapes.large))
-        .child(drawer_content),
+        Box(Modifier::new().fill_max_size().background(config.content_color)).child(content),
+        Box(drawer_m).child(drawer_content),
     ))
 }
 
 /// M3 Permanent Navigation Drawer - always visible alongside content.
-pub fn PermanentNavigationDrawer(drawer_content: View, content: View) -> View {
+pub fn PermanentNavigationDrawer(
+    drawer_content: View,
+    content: View,
+    config: NavigationDrawerConfig,
+) -> View {
     Row(Modifier::new().fill_max_size()).child((
         Box(Modifier::new()
-            .width(300.0)
+            .width(config.width)
             .fill_max_height()
-            .background(theme().surface_container_low))
-        .child(drawer_content),
+            .background(config.container_color))
+        .child(Box(Modifier::new()).color(config.content_color).child(drawer_content)),
         Box(Modifier::new().flex_grow(1.0)).child(content),
     ))
 }
@@ -871,6 +938,7 @@ pub fn NavigationDrawerItem(
     on_click: impl Fn() + 'static,
     icon: Option<View>,
     badge: Option<View>,
+    enabled: bool,
 ) -> View {
     let th = theme();
     let id = remember(|| FILTERCHIP_COUNTER.fetch_add(1, Ordering::Relaxed));
@@ -894,7 +962,7 @@ pub fn NavigationDrawerItem(
         spec,
     );
 
-    Box(Modifier::new()
+    let mut m = Modifier::new()
         .fill_max_width()
         .padding_values(PaddingValues {
             left: 12.0,
@@ -903,8 +971,6 @@ pub fn NavigationDrawerItem(
             bottom: 0.0,
         })
         .min_height(56.0)
-        .clickable()
-        .on_pointer_down(move |_| on_click())
         .background(bg)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
@@ -912,8 +978,13 @@ pub fn NavigationDrawerItem(
             pressed: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
-        .clip_rounded(th.shapes.large))
-    .child(with_content_color(fg, || {
+        .clip_rounded(th.shapes.large);
+
+    if enabled {
+        m = m.clickable().on_pointer_down(move |_| on_click());
+    }
+
+    Box(m).child(with_content_color(fg, || {
         Row(Modifier::new()
             .align_items(AlignItems::Center)
             .padding_values(PaddingValues {

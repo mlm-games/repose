@@ -203,43 +203,91 @@ pub fn Surface(config: SurfaceConfig, content: impl FnOnce() -> View) -> View {
     Box(m).color(config.content_color).child(content())
 }
 
-/// Configuration for [`IconButton`] and [`FilledIconButton`].
+/// Color slots for icon buttons.
+#[derive(Clone, Copy, Debug)]
+pub struct IconButtonColors {
+    pub container_color: Color,
+    pub content_color: Color,
+    pub disabled_container_color: Color,
+    pub disabled_content_color: Color,
+}
+
+impl IconButtonColors {
+    pub fn container(&self, enabled: bool) -> Color {
+        if enabled { self.container_color } else { self.disabled_container_color }
+    }
+    pub fn content(&self, enabled: bool) -> Color {
+        if enabled { self.content_color } else { self.disabled_content_color }
+    }
+}
+
+/// Configuration for [`IconButton`], [`FilledIconButton`], [`FilledTonalIconButton`], and [`OutlinedIconButton`].
 #[derive(Clone, Debug)]
 pub struct IconButtonConfig {
     pub modifier: Modifier,
-    pub content_color: Option<Color>,
+    pub enabled: bool,
+    pub colors: IconButtonColors,
     pub container_size: Option<f32>,
-    pub filler_container_color: Option<Color>,
-    pub state_colors: StateColors,
 }
 
 impl Default for IconButtonConfig {
     fn default() -> Self {
         Self {
             modifier: Modifier::new(),
-            content_color: None,
+            enabled: true,
+            colors: IconButtonColors {
+                container_color: Color::TRANSPARENT,
+                content_color: IconButtonDefaults::content_color(),
+                disabled_container_color: Color::TRANSPARENT,
+                disabled_content_color: IconButtonDefaults::disabled_content_color(),
+            },
             container_size: None,
-            filler_container_color: None,
-            state_colors: IconButtonDefaults::state_colors_default(),
         }
     }
 }
 
-/// M3 Icon Button - a tappable circular container for an icon.
-pub fn IconButton(icon: View, on_click: impl Fn() + 'static, config: IconButtonConfig) -> View {
-    let sz = config
-        .container_size
-        .unwrap_or(IconButtonDefaults::CONTAINER_SIZE);
-    Box(Modifier::new()
+fn icon_button_render(
+    icon: View,
+    on_click: impl Fn() + 'static,
+    config: &IconButtonConfig,
+    sz: f32,
+    bg: Option<Color>,
+    bdr: Option<(f32, Color)>,
+    state_colors: StateColors,
+) -> View {
+    let is_enabled = config.enabled;
+    let content_color = config.colors.content(is_enabled);
+    let mut m = Modifier::new()
         .size(sz, sz)
         .clip_rounded(sz * 0.5)
-        .state_colors(config.state_colors)
+        .state_colors(state_colors)
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
-        .clickable()
-        .on_pointer_down(move |_| on_click())
-        .then(config.modifier))
-    .child(icon)
+        .then(config.modifier.clone());
+
+    if let Some(bg_color) = bg {
+        m = m.background(bg_color);
+    }
+    if let Some((w, c)) = bdr {
+        m = m.border(w, c, sz * 0.5);
+    }
+    if is_enabled {
+        m = m.clickable().on_pointer_down(move |_| on_click());
+    }
+
+    Box(m).child(icon)
+}
+
+/// M3 Icon Button - a tappable circular container for an icon.
+pub fn IconButton(icon: View, on_click: impl Fn() + 'static, config: IconButtonConfig) -> View {
+    let th = theme();
+    let sz = config.container_size.unwrap_or(IconButtonDefaults::CONTAINER_SIZE);
+    icon_button_render(icon, on_click, &config, sz, None, None, StateColors {
+        default: Color::TRANSPARENT,
+        hovered: th.on_surface.with_alpha_f32(0.08),
+        pressed: th.on_surface.with_alpha_f32(0.12),
+        disabled: Color::TRANSPARENT,
+    })
 }
 
 /// M3 Filled Icon Button - icon button with a filled container background.
@@ -249,31 +297,16 @@ pub fn FilledIconButton(
     config: IconButtonConfig,
 ) -> View {
     let th = theme();
-    let content_color = config
-        .content_color
-        .unwrap_or_else(IconButtonDefaults::filled_content_color);
-    let bg = config
-        .filler_container_color
-        .unwrap_or_else(IconButtonDefaults::filled_container_color);
-    let sz = config
-        .container_size
-        .unwrap_or(IconButtonDefaults::FILLED_CONTAINER_SIZE);
-    Box(Modifier::new()
-        .size(sz, sz)
-        .clip_rounded(sz * 0.5)
-        .background(bg)
-        .state_colors(StateColors {
-            default: Color::TRANSPARENT,
-            hovered: content_color.with_alpha_f32(0.08),
-            pressed: content_color.with_alpha_f32(0.12),
-            disabled: th.on_surface.with_alpha_f32(0.12),
-        })
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
-        .clickable()
-        .on_pointer_down(move |_| on_click())
-        .then(config.modifier))
-    .child(icon)
+    let is_enabled = config.enabled;
+    let sz = config.container_size.unwrap_or(IconButtonDefaults::FILLED_CONTAINER_SIZE);
+    let bg = config.colors.container(is_enabled);
+    let content_color = config.colors.content(is_enabled);
+    icon_button_render(icon, on_click, &config, sz, Some(bg), None, StateColors {
+        default: Color::TRANSPARENT,
+        hovered: content_color.with_alpha_f32(0.08),
+        pressed: content_color.with_alpha_f32(0.12),
+        disabled: th.on_surface.with_alpha_f32(0.12),
+    })
 }
 
 /// M3 Filled Tonal Icon Button - icon button with a secondary container background.
@@ -283,31 +316,16 @@ pub fn FilledTonalIconButton(
     config: IconButtonConfig,
 ) -> View {
     let th = theme();
-    let content_color = config
-        .content_color
-        .unwrap_or_else(IconButtonDefaults::filled_tonal_content_color);
-    let bg = config
-        .filler_container_color
-        .unwrap_or_else(IconButtonDefaults::filled_tonal_container_color);
-    let sz = config
-        .container_size
-        .unwrap_or(IconButtonDefaults::FILLED_CONTAINER_SIZE);
-    Box(Modifier::new()
-        .size(sz, sz)
-        .clip_rounded(sz * 0.5)
-        .background(bg)
-        .state_colors(StateColors {
-            default: Color::TRANSPARENT,
-            hovered: content_color.with_alpha_f32(0.08),
-            pressed: content_color.with_alpha_f32(0.12),
-            disabled: th.on_surface.with_alpha_f32(0.12),
-        })
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
-        .clickable()
-        .on_pointer_down(move |_| on_click())
-        .then(config.modifier))
-    .child(icon)
+    let is_enabled = config.enabled;
+    let sz = config.container_size.unwrap_or(IconButtonDefaults::FILLED_CONTAINER_SIZE);
+    let bg = config.colors.container(is_enabled);
+    let content_color = config.colors.content(is_enabled);
+    icon_button_render(icon, on_click, &config, sz, Some(bg), None, StateColors {
+        default: Color::TRANSPARENT,
+        hovered: content_color.with_alpha_f32(0.08),
+        pressed: content_color.with_alpha_f32(0.12),
+        disabled: th.on_surface.with_alpha_f32(0.12),
+    })
 }
 
 /// M3 Outlined Icon Button - icon button with a transparent background and border.
@@ -317,20 +335,14 @@ pub fn OutlinedIconButton(
     config: IconButtonConfig,
 ) -> View {
     let th = theme();
-    let sz = config
-        .container_size
-        .unwrap_or(IconButtonDefaults::CONTAINER_SIZE);
-    Box(Modifier::new()
-        .size(sz, sz)
-        .clip_rounded(sz * 0.5)
-        .state_colors(config.state_colors)
-        .border(1.0, th.outline, sz * 0.5)
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
-        .clickable()
-        .on_pointer_down(move |_| on_click())
-        .then(config.modifier))
-    .child(icon)
+    let sz = config.container_size.unwrap_or(IconButtonDefaults::CONTAINER_SIZE);
+    let border_color = if config.enabled { th.outline } else { th.on_surface.with_alpha_f32(0.12) };
+    icon_button_render(icon, on_click, &config, sz, None, Some((1.0, border_color)), StateColors {
+        default: Color::TRANSPARENT,
+        hovered: th.on_surface.with_alpha_f32(0.08),
+        pressed: th.on_surface.with_alpha_f32(0.12),
+        disabled: Color::TRANSPARENT,
+    })
 }
 
 /// Configuration for button components.
@@ -856,6 +868,7 @@ pub fn ElevatedToggleButton(
 #[derive(Clone, Debug)]
 pub struct FABConfig {
     pub modifier: Modifier,
+    pub enabled: bool,
     pub container_color: Color,
     pub content_color: Color,
     pub state_elevation: StateElevation,
@@ -867,6 +880,7 @@ impl Default for FABConfig {
     fn default() -> Self {
         Self {
             modifier: Modifier::new(),
+            enabled: true,
             container_color: FABDefaults::container_color(),
             content_color: FABDefaults::content_color(),
             state_elevation: FABDefaults::state_elevation(),
@@ -884,9 +898,13 @@ fn fab_impl(
     config: FABConfig,
 ) -> View {
     let th = theme();
-    Box(Modifier::new()
+    let is_enabled = config.enabled;
+    let bg = if is_enabled { config.container_color } else { th.on_surface.with_alpha_f32(0.12).composite_over(th.surface_container_low) };
+    let content_color = if is_enabled { config.content_color } else { th.on_surface.with_alpha_f32(0.38) };
+
+    let mut m = Modifier::new()
         .size(size, size)
-        .background(config.container_color)
+        .background(bg)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: config.content_color.with_alpha_f32(0.08),
@@ -897,10 +915,13 @@ fn fab_impl(
         .clip_rounded(shape_r)
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
-        .clickable()
-        .on_pointer_down(move |_| on_click())
-        .then(config.modifier))
-    .child(icon)
+        .then(config.modifier);
+
+    if is_enabled {
+        m = m.clickable().on_pointer_down(move |_| on_click());
+    }
+
+    Box(m).child(icon)
 }
 
 /// M3 Floating Action Button (regular, 56dp).
@@ -945,10 +966,14 @@ pub fn ExtendedFAB(
 ) -> View {
     let th = theme();
     let has_icon = icon.is_some();
-    Row(Modifier::new()
+    let is_enabled = config.enabled;
+    let bg = if is_enabled { config.container_color } else { th.on_surface.with_alpha_f32(0.12).composite_over(th.surface_container_low) };
+    let content_color = if is_enabled { config.content_color } else { th.on_surface.with_alpha_f32(0.38) };
+
+    let mut m = Modifier::new()
         .height(56.0)
         .min_width(80.0)
-        .background(config.container_color)
+        .background(bg)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: config.content_color.with_alpha_f32(0.08),
@@ -963,17 +988,19 @@ pub fn ExtendedFAB(
             top: 0.0,
             bottom: 0.0,
         })
-        .align_items(AlignItems::Center)
-        .clickable()
-        .on_pointer_down(move |_| on_click())
-        .then(config.modifier))
-    .child((
+        .align_items(AlignItems::Center);
+
+    if is_enabled {
+        m = m.clickable().on_pointer_down(move |_| on_click());
+    }
+    m = m.then(config.modifier);
+    Row(m).child((
         icon.unwrap_or(Box(Modifier::new())),
         Box(Modifier::new()
             .width(if has_icon { 12.0 } else { 0.0 })
             .fill_max_height()),
         Text(label)
-            .color(config.content_color)
+            .color(content_color)
             .size(th.typography.label_large)
             .single_line(),
     ))
@@ -1274,6 +1301,7 @@ pub struct Tab {
     pub label: String,
     pub icon: Option<View>,
     pub on_click: Rc<dyn Fn()>,
+    pub enabled: bool,
 }
 
 /// Configuration for [`TabRow`].
@@ -1341,8 +1369,7 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                         );
                         let cb = tab.on_click.clone();
 
-                        Column(
-                            Modifier::new()
+                            let mut tab_m = Modifier::new()
                                 .flex_grow(1.0)
                                 .fill_max_height()
                                 .align_items(AlignItems::Center)
@@ -1352,10 +1379,12 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                                     hovered: th.on_surface.with_alpha_f32(0.08),
                                     pressed: th.on_surface.with_alpha_f32(0.12),
                                     disabled: Color::TRANSPARENT,
-                                })
-                                .clickable()
-                                .on_pointer_down(move |_| cb()),
-                        )
+                                });
+                        if tab.enabled {
+                            tab_m = tab_m.clickable().on_pointer_down(move |_| cb());
+                        }
+
+                        Column(tab_m)
                         .child((
                             tab.icon.unwrap_or(Box(Modifier::new())),
                             Text(tab.label)
@@ -1384,6 +1413,7 @@ pub struct Segment {
     pub label: String,
     pub icon: Option<View>,
     pub on_click: Rc<dyn Fn()>,
+    pub enabled: bool,
 }
 
 /// Configuration for [`SegmentedButton`].
@@ -1478,6 +1508,7 @@ pub fn SegmentedButton(
 
                 let cb = seg.on_click.clone();
                 let radii = segment_radii(i);
+                let is_enabled = seg.enabled;
 
                 let state_colors = config.state_colors;
                 let mut modifier = Modifier::new()
@@ -1493,10 +1524,11 @@ pub fn SegmentedButton(
                         right: 12.0,
                         top: 0.0,
                         bottom: 0.0,
-                    })
-                    .clickable()
-                    .on_pointer_down(move |_| cb());
+                    });
 
+                if is_enabled {
+                    modifier = modifier.clickable().on_pointer_down(move |_| cb());
+                }
                 if i < count - 1 {
                     modifier = modifier.border_radii(1.0, th.outline, [0.0; 4]);
                 }
@@ -3651,17 +3683,97 @@ impl Default for SnackbarConfig {
     }
 }
 
+/// Color slots for chips (both non-selectable and selectable).
+#[derive(Clone, Copy, Debug)]
+pub struct ChipColors {
+    pub container_color: Color,
+    pub label_color: Color,
+    pub leading_icon_color: Color,
+    pub trailing_icon_color: Color,
+    pub disabled_container_color: Color,
+    pub disabled_label_color: Color,
+    pub disabled_leading_icon_color: Color,
+    pub disabled_trailing_icon_color: Color,
+    pub selected_container_color: Color,
+    pub selected_label_color: Color,
+    pub selected_leading_icon_color: Color,
+    pub selected_trailing_icon_color: Color,
+    pub disabled_selected_container_color: Color,
+}
+
+impl ChipColors {
+    pub fn container(&self, enabled: bool, selected: bool) -> Color {
+        match (enabled, selected) {
+            (true, true) => self.selected_container_color,
+            (true, false) => self.container_color,
+            (false, true) => self.disabled_selected_container_color,
+            (false, false) => self.disabled_container_color,
+        }
+    }
+    pub fn label(&self, enabled: bool, selected: bool) -> Color {
+        if !enabled { self.disabled_label_color }
+        else if selected { self.selected_label_color }
+        else { self.label_color }
+    }
+    pub fn leading_icon(&self, enabled: bool, selected: bool) -> Color {
+        if !enabled { self.disabled_leading_icon_color }
+        else if selected { self.selected_leading_icon_color }
+        else { self.leading_icon_color }
+    }
+    pub fn trailing_icon(&self, enabled: bool, selected: bool) -> Color {
+        if !enabled { self.disabled_trailing_icon_color }
+        else if selected { self.selected_trailing_icon_color }
+        else { self.trailing_icon_color }
+    }
+}
+
+/// Elevation levels for chips.
+#[derive(Clone, Copy, Debug)]
+pub struct ChipElevation {
+    pub default: f32,
+    pub hovered: f32,
+    pub focused: f32,
+    pub pressed: f32,
+    pub dragged: f32,
+    pub disabled: f32,
+}
+
+impl ChipElevation {
+    pub fn to_state_elevation(&self) -> StateElevation {
+        StateElevation {
+            default: self.default,
+            hovered: self.hovered,
+            pressed: self.pressed,
+            disabled: self.disabled,
+        }
+    }
+}
+
+impl Default for ChipElevation {
+    fn default() -> Self {
+        Self {
+            default: ChipDefaults::elevation_default(),
+            hovered: ChipDefaults::elevation_hovered(),
+            focused: ChipDefaults::elevation_focused(),
+            pressed: ChipDefaults::elevation_pressed(),
+            dragged: ChipDefaults::elevation_dragged(),
+            disabled: ChipDefaults::elevation_disabled(),
+        }
+    }
+}
+
 /// Configuration for chips.
 #[derive(Clone, Debug)]
 pub struct ChipConfig {
     pub modifier: Modifier,
     pub enabled: bool,
-    pub selected: bool,
-    pub container_color: Color,
-    pub selected_container_color: Color,
-    pub content_color: Color,
-    pub selected_content_color: Color,
+    pub colors: ChipColors,
+    pub elevation: ChipElevation,
+    pub border_width: f32,
     pub border_color: Color,
+    pub selected_border_color: Color,
+    pub disabled_border_color: Color,
+    pub disabled_selected_border_color: Color,
     pub shape_radius: f32,
     pub horizontal_padding: f32,
 }
@@ -3671,12 +3783,27 @@ impl Default for ChipConfig {
         Self {
             modifier: Modifier::new(),
             enabled: true,
-            selected: false,
-            container_color: ChipDefaults::surface_color(),
-            selected_container_color: ChipDefaults::selected_container_color(),
-            content_color: ChipDefaults::unselected_content_color(),
-            selected_content_color: ChipDefaults::selected_content_color(),
-            border_color: ChipDefaults::unselected_border_color(),
+            colors: ChipColors {
+                container_color: ChipDefaults::container_color(),
+                label_color: ChipDefaults::label_color(),
+                leading_icon_color: ChipDefaults::leading_icon_color(),
+                trailing_icon_color: ChipDefaults::trailing_icon_color(),
+                disabled_container_color: ChipDefaults::disabled_container_color(),
+                disabled_label_color: ChipDefaults::disabled_label_color(),
+                disabled_leading_icon_color: ChipDefaults::disabled_leading_icon_color(),
+                disabled_trailing_icon_color: ChipDefaults::disabled_trailing_icon_color(),
+                selected_container_color: ChipDefaults::selected_container_color(),
+                selected_label_color: ChipDefaults::selected_label_color(),
+                selected_leading_icon_color: ChipDefaults::selected_leading_icon_color(),
+                selected_trailing_icon_color: ChipDefaults::selected_trailing_icon_color(),
+                disabled_selected_container_color: ChipDefaults::disabled_selected_container_color(),
+            },
+            elevation: ChipElevation::default(),
+            border_width: ChipDefaults::BORDER_WIDTH,
+            border_color: ChipDefaults::border_color(),
+            selected_border_color: ChipDefaults::selected_border_color(),
+            disabled_border_color: ChipDefaults::disabled_border_color(),
+            disabled_selected_border_color: ChipDefaults::disabled_selected_border_color(),
             shape_radius: ChipDefaults::SHAPE_RADIUS,
             horizontal_padding: ChipDefaults::HORIZONTAL_PADDING,
         }
@@ -3692,8 +3819,16 @@ pub fn AssistChip(
     config: ChipConfig,
 ) -> View {
     let th = theme();
+    let is_enabled = config.enabled;
+    let colors = &config.colors;
+    let bg = colors.container(is_enabled, false);
+    let label_color = colors.label(is_enabled, false);
+    let leading_color = colors.leading_icon(is_enabled, false);
+    let trailing_color = colors.trailing_icon(is_enabled, false);
+    let border = if is_enabled { config.border_color } else { config.disabled_border_color };
     let shape = config.shape_radius;
-    Box(Modifier::new()
+
+    let mut m = Modifier::new()
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
@@ -3706,13 +3841,19 @@ pub fn AssistChip(
             top: 8.0,
             bottom: 8.0,
         })
-        .clickable()
-        .on_pointer_down(move |_| on_click())
-        .background(Color::TRANSPARENT)
+        .background(bg)
         .clip_rounded(shape)
-        .border(1.0, config.border_color, shape)
-        .then(config.modifier))
-    .child(
+        .then(config.modifier);
+
+    if config.border_width > 0.0 && border != Color::TRANSPARENT {
+        m = m.border(config.border_width, border, shape);
+    }
+
+    if is_enabled {
+        m = m.clickable().on_pointer_down(move |_| on_click());
+    }
+
+    Box(m).child(
         Row(Modifier::new().align_items(AlignItems::Center)).child((
             leading_icon
                 .map(|v| {
@@ -3722,10 +3863,10 @@ pub fn AssistChip(
                         top: 0.0,
                         bottom: 0.0,
                     }))
-                    .child(with_content_color(config.content_color, move || v))
+                    .child(with_content_color(leading_color, move || v))
                 })
                 .unwrap_or(Box(Modifier::new())),
-            with_content_color(config.content_color, move || label),
+            with_content_color(label_color, move || label),
             trailing_icon
                 .map(|v| {
                     Box(Modifier::new().padding_values(PaddingValues {
@@ -3734,7 +3875,7 @@ pub fn AssistChip(
                         top: 0.0,
                         bottom: 0.0,
                     }))
-                    .child(with_content_color(config.content_color, move || v))
+                    .child(with_content_color(trailing_color, move || v))
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
@@ -3750,32 +3891,37 @@ pub fn ElevatedAssistChip(
     config: ChipConfig,
 ) -> View {
     let th = theme();
+    let is_enabled = config.enabled;
+    let colors = &config.colors;
+    let bg = colors.container(is_enabled, false);
+    let label_color = colors.label(is_enabled, false);
+    let leading_color = colors.leading_icon(is_enabled, false);
+    let trailing_color = colors.trailing_icon(is_enabled, false);
     let shape = config.shape_radius;
-    Box(Modifier::new()
+
+    let mut m = Modifier::new()
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
-        .state_elevation(StateElevation {
-            default: th.elevation.level1,
-            hovered: th.elevation.level2,
-            pressed: th.elevation.level1,
-            disabled: 0.0,
-        })
+        .state_elevation(config.elevation.to_state_elevation())
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.horizontal_padding,
             top: 8.0,
             bottom: 8.0,
         })
-        .clickable()
-        .on_pointer_down(move |_| on_click())
-        .background(th.surface_container_low)
+        .background(bg)
         .clip_rounded(shape)
-        .then(config.modifier))
-    .child(
+        .then(config.modifier);
+
+    if is_enabled {
+        m = m.clickable().on_pointer_down(move |_| on_click());
+    }
+
+    Box(m).child(
         Row(Modifier::new().align_items(AlignItems::Center)).child((
             leading_icon
                 .map(|v| {
@@ -3785,10 +3931,10 @@ pub fn ElevatedAssistChip(
                         top: 0.0,
                         bottom: 0.0,
                     }))
-                    .child(with_content_color(config.content_color, move || v))
+                    .child(with_content_color(leading_color, move || v))
                 })
                 .unwrap_or(Box(Modifier::new())),
-            with_content_color(config.content_color, move || label),
+            with_content_color(label_color, move || label),
             trailing_icon
                 .map(|v| {
                     Box(Modifier::new().padding_values(PaddingValues {
@@ -3797,7 +3943,7 @@ pub fn ElevatedAssistChip(
                         top: 0.0,
                         bottom: 0.0,
                     }))
-                    .child(with_content_color(config.content_color, move || v))
+                    .child(with_content_color(trailing_color, move || v))
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
@@ -3809,10 +3955,12 @@ pub fn ElevatedAssistChip(
 pub struct NavigationBarConfig {
     pub modifier: Modifier,
     pub container_color: Color,
+    pub content_color: Color,
     pub selected_icon_color: Color,
     pub unselected_icon_color: Color,
     pub indicator_color: Color,
     pub height: f32,
+    pub tonal_elevation: f32,
     pub indicator_opacity: f32,
     pub item_horizontal_padding: f32,
     pub item_vertical_padding: f32,
@@ -3824,10 +3972,12 @@ impl Default for NavigationBarConfig {
         Self {
             modifier: Modifier::new(),
             container_color: NavigationBarDefaults::container_color(),
+            content_color: NavigationBarDefaults::content_color(),
             selected_icon_color: NavigationBarDefaults::selected_icon_color(),
             unselected_icon_color: NavigationBarDefaults::unselected_icon_color(),
             indicator_color: NavigationBarDefaults::indicator_color(),
             height: NavigationBarDefaults::HEIGHT,
+            tonal_elevation: NavigationBarDefaults::TONAL_ELEVATION,
             indicator_opacity: NavigationBarDefaults::ITEM_ACTIVE_INDICATOR_OPACITY,
             item_horizontal_padding: NavigationBarDefaults::ITEM_HORIZONTAL_PADDING,
             item_vertical_padding: NavigationBarDefaults::ITEM_VERTICAL_PADDING,
@@ -3889,7 +4039,9 @@ impl Default for ScaffoldConfig {
 pub struct NavigationDrawerConfig {
     pub modifier: Modifier,
     pub container_color: Color,
+    pub content_color: Color,
     pub scrim_color: Color,
+    pub tonal_elevation: f32,
     pub width: f32,
     pub shape_radius: f32,
 }
@@ -3899,7 +4051,9 @@ impl Default for NavigationDrawerConfig {
         Self {
             modifier: Modifier::new(),
             container_color: NavigationDrawerDefaults::container_color(),
+            content_color: NavigationDrawerDefaults::content_color(),
             scrim_color: NavigationDrawerDefaults::scrim_color(),
+            tonal_elevation: NavigationDrawerDefaults::TONAL_ELEVATION,
             width: NavigationDrawerDefaults::WIDTH,
             shape_radius: NavigationDrawerDefaults::SHAPE_RADIUS,
         }
@@ -3911,7 +4065,9 @@ impl Default for NavigationDrawerConfig {
 pub struct BottomSheetConfig {
     pub modifier: Modifier,
     pub container_color: Color,
+    pub content_color: Color,
     pub scrim_color: Color,
+    pub tonal_elevation: f32,
     pub drag_handle_color: Color,
     pub shape_radius: f32,
     pub max_width: f32,
@@ -3925,7 +4081,9 @@ impl Default for BottomSheetConfig {
         Self {
             modifier: Modifier::new(),
             container_color: BottomSheetDefaults::container_color(),
+            content_color: BottomSheetDefaults::content_color(),
             scrim_color: BottomSheetDefaults::scrim_color(),
+            tonal_elevation: BottomSheetDefaults::TONAL_ELEVATION,
             drag_handle_color: BottomSheetDefaults::drag_handle_color(),
             shape_radius: BottomSheetDefaults::SHAPE_RADIUS,
             max_width: BottomSheetDefaults::MAX_WIDTH,
