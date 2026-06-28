@@ -158,8 +158,10 @@ pub fn CenterAlignedTopAppBar(
 pub struct SurfaceConfig {
     pub modifier: Modifier,
     pub color: Color,
+    pub content_color: Color,
     pub shape_radius: f32,
     pub tonal_elevation: f32,
+    pub shadow_elevation: f32,
     pub border: Option<(f32, Color)>,
 }
 
@@ -168,8 +170,10 @@ impl Default for SurfaceConfig {
         Self {
             modifier: Modifier::new(),
             color: SurfaceDefaults::color(),
+            content_color: SurfaceDefaults::content_color(),
             shape_radius: SurfaceDefaults::SHAPE_RADIUS,
             tonal_elevation: SurfaceDefaults::TONAL_ELEVATION,
+            shadow_elevation: SurfaceDefaults::SHADOW_ELEVATION,
             border: None,
         }
     }
@@ -190,10 +194,13 @@ pub fn Surface(config: SurfaceConfig, content: impl FnOnce() -> View) -> View {
             disabled: 0.0,
         });
     }
+    if config.shadow_elevation > 0.0 {
+        m = m.shadow(config.shadow_elevation, 0.0);
+    }
     if let Some((w, c)) = config.border {
         m = m.border(w, c, config.shape_radius);
     }
-    Box(m).child(content())
+    Box(m).color(config.content_color).child(content())
 }
 
 /// Configuration for [`IconButton`] and [`FilledIconButton`].
@@ -2736,9 +2743,18 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
 #[derive(Clone, Debug)]
 pub struct SliderConfig {
     pub modifier: Modifier,
+    /// When false, renders disabled colors and does not respond to input.
+    pub enabled: bool,
     pub active_track_color: Color,
     pub inactive_track_color: Color,
     pub thumb_color: Color,
+    pub active_tick_color: Color,
+    pub inactive_tick_color: Color,
+    pub disabled_thumb_color: Color,
+    pub disabled_active_track_color: Color,
+    pub disabled_inactive_track_color: Color,
+    pub disabled_active_tick_color: Color,
+    pub disabled_inactive_tick_color: Color,
     pub state_colors: StateColors,
 }
 
@@ -2746,9 +2762,17 @@ impl Default for SliderConfig {
     fn default() -> Self {
         Self {
             modifier: Modifier::new(),
+            enabled: true,
             active_track_color: SliderDefaults::active_track_color(),
             inactive_track_color: SliderDefaults::inactive_track_color(),
             thumb_color: SliderDefaults::thumb_color(),
+            active_tick_color: SliderDefaults::active_tick_color(),
+            inactive_tick_color: SliderDefaults::inactive_tick_color(),
+            disabled_thumb_color: SliderDefaults::disabled_thumb_color(),
+            disabled_active_track_color: SliderDefaults::disabled_active_track_color(),
+            disabled_inactive_track_color: SliderDefaults::disabled_inactive_track_color(),
+            disabled_active_tick_color: SliderDefaults::disabled_active_tick_color(),
+            disabled_inactive_tick_color: SliderDefaults::disabled_inactive_tick_color(),
             state_colors: SliderDefaults::state_colors_default(),
         }
     }
@@ -3025,6 +3049,13 @@ pub fn RangeSlider(
     let t0 = ((start - min) / range_size).clamp(0.0, 1.0);
     let t1 = ((end - min) / range_size).clamp(0.0, 1.0);
     let sc = config.state_colors;
+    let is_enabled = config.enabled;
+
+    let act_trk = if !is_enabled { config.disabled_active_track_color } else { config.active_track_color };
+    let inact_trk = if !is_enabled { config.disabled_inactive_track_color } else { config.inactive_track_color };
+    let act_tick = if !is_enabled { config.disabled_active_tick_color } else { config.active_tick_color };
+    let inact_tick = if !is_enabled { config.disabled_inactive_tick_color } else { config.inactive_tick_color };
+    let thumb_col = if !is_enabled { config.disabled_thumb_color } else { config.thumb_color };
 
     let tick_frac: Vec<f32> = if let Some(s) = step {
         let n = ((max - min) / s.max(1e-6)).round() as usize;
@@ -3095,7 +3126,7 @@ pub fn RangeSlider(
                         w: linactive_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(config.inactive_track_color)),
+                    brush: Brush::Solid(mul_c(inact_trk)),
                     radius: [corner; 4],
                 });
             }
@@ -3109,7 +3140,7 @@ pub fn RangeSlider(
                         w: rinactive_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(config.inactive_track_color)),
+                    brush: Brush::Solid(mul_c(inact_trk)),
                     radius: [corner; 4],
                 });
             }
@@ -3122,7 +3153,7 @@ pub fn RangeSlider(
                         w: active_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(config.active_track_color)),
+                    brush: Brush::Solid(mul_c(act_trk)),
                     radius: [corner; 4],
                 });
             }
@@ -3142,9 +3173,9 @@ pub fn RangeSlider(
                         h: dot_r * 2.0,
                     },
                     brush: Brush::Solid(mul_c(if on_active {
-                        config.inactive_track_color
+                        inact_tick
                     } else {
-                        config.active_track_color
+                        act_tick
                     })),
                 });
             }
@@ -3157,7 +3188,7 @@ pub fn RangeSlider(
                         w: dot_r * 2.0,
                         h: dot_r * 2.0,
                     },
-                    brush: Brush::Solid(mul_c(config.active_track_color)),
+                    brush: Brush::Solid(mul_c(act_tick)),
                 });
             }
             if rinactive_w > 0.0 {
@@ -3169,7 +3200,7 @@ pub fn RangeSlider(
                         w: dot_r * 2.0,
                         h: dot_r * 2.0,
                     },
-                    brush: Brush::Solid(mul_c(config.active_track_color)),
+                    brush: Brush::Solid(mul_c(act_tick)),
                 });
             }
             let da = *drag_active_p.borrow();
@@ -3186,10 +3217,12 @@ pub fn RangeSlider(
                         w: tw,
                         h: thumb_h,
                     },
-                    brush: Brush::Solid(mul_c(config.thumb_color)),
+                    brush: Brush::Solid(mul_c(thumb_col)),
                     radius: [tw * 0.5; 4],
                 });
-                let sc_target = if is_active {
+                let sc_target = if !is_enabled {
+                    Color::TRANSPARENT
+                } else if is_active {
                     sc.pressed
                 } else if hv {
                     sc.hovered
@@ -3212,7 +3245,8 @@ pub fn RangeSlider(
         })
         .on_pointer_enter({
             let h = hovered.clone();
-            move |_pe: PointerEvent| h.set(true)
+            let en = is_enabled;
+            move |_pe: PointerEvent| { if en { h.set(true); } }
         })
         .on_pointer_leave({
             let h = hovered.clone();
@@ -3223,7 +3257,9 @@ pub fn RangeSlider(
             let track_rect = track_rect.clone();
             let drag_active = drag_active.clone();
             let active_thumb = active_thumb.clone();
+            let en = is_enabled;
             move |pe: PointerEvent| {
+                if !en { return; }
                 *drag_active.borrow_mut() = true;
                 let r = *track_rect.borrow();
                 let v = value_from_x(pe.position.x, r, min, max, step);
@@ -3268,7 +3304,9 @@ pub fn RangeSlider(
         .on_scroll({
             let oc = oc.clone();
             let active_thumb = active_thumb.clone();
+            let en = is_enabled;
             move |d: Vec2| -> Vec2 {
+                if !en { return d; }
                 let dir = if d.y < -0.5 {
                     1
                 } else if d.y > 0.5 {
@@ -3300,7 +3338,7 @@ pub fn RangeSlider(
         role: Role::Slider,
         label: None,
         focused: false,
-        enabled: true,
+        enabled: is_enabled,
     })
 }
 
@@ -3308,7 +3346,12 @@ pub fn RangeSlider(
 #[derive(Clone, Debug)]
 pub struct CardConfig {
     pub modifier: Modifier,
+    /// When false, renders disabled colors and does not respond to clicks.
+    pub enabled: bool,
     pub container_color: Color,
+    pub content_color: Color,
+    pub disabled_container_color: Color,
+    pub disabled_content_color: Color,
     pub shape_radius: f32,
     pub tonal_elevation: f32,
     pub state_elevation: Option<StateElevation>,
@@ -3319,7 +3362,11 @@ impl Default for CardConfig {
     fn default() -> Self {
         Self {
             modifier: Modifier::new(),
+            enabled: true,
             container_color: CardDefaults::filled_container_color(),
+            content_color: CardDefaults::filled_content_color(),
+            disabled_container_color: CardDefaults::disabled_container_color(),
+            disabled_content_color: CardDefaults::disabled_content_color(),
             shape_radius: CardDefaults::SHAPE_RADIUS,
             tonal_elevation: CardDefaults::ELEVATION,
             state_elevation: None,
@@ -3330,8 +3377,18 @@ impl Default for CardConfig {
 
 /// M3 Card - a configurable container surface.
 pub fn Card(config: CardConfig, content: impl FnOnce() -> View) -> View {
+    let bg = if !config.enabled {
+        config.disabled_container_color
+    } else {
+        config.container_color
+    };
+    let fg = if !config.enabled {
+        config.disabled_content_color
+    } else {
+        config.content_color
+    };
     let mut m = Modifier::new()
-        .background(config.container_color)
+        .background(bg)
         .clip_rounded(config.shape_radius)
         .then(config.modifier);
     if let Some((w, c)) = config.border {
@@ -3347,7 +3404,7 @@ pub fn Card(config: CardConfig, content: impl FnOnce() -> View) -> View {
             disabled: 0.0,
         });
     }
-    Box(m).child(content())
+    Box(m).color(fg).child(content())
 }
 
 /// M3 Elevated Card - card with elevation.
@@ -3403,11 +3460,19 @@ fn clickable_card_impl(
     let m = modifier
         .state_colors(card_state_colors(bg))
         .clickable()
-        .on_pointer_down(move |_| on_click());
+        .on_pointer_down({
+            let cb = on_click;
+            let en = config.enabled;
+            move |_| { if en { cb(); } }
+        });
     Card(
         CardConfig {
             modifier: m,
+            enabled: config.enabled,
             container_color: bg,
+            content_color: config.content_color,
+            disabled_container_color: config.disabled_container_color,
+            disabled_content_color: config.disabled_content_color,
             shape_radius,
             border: config.border,
             state_elevation: config.state_elevation,
@@ -3491,6 +3556,7 @@ pub struct SnackbarConfig {
     pub container_color: Color,
     pub content_color: Color,
     pub action_color: Color,
+    pub shape_radius: f32,
     pub min_height: f32,
     pub min_width: f32,
     pub max_width: f32,
@@ -3503,6 +3569,7 @@ impl Default for SnackbarConfig {
             container_color: SnackbarDefaults::container_color(),
             content_color: SnackbarDefaults::content_color(),
             action_color: SnackbarDefaults::action_color(),
+            shape_radius: SnackbarDefaults::SHAPE_RADIUS,
             min_height: SnackbarDefaults::MIN_HEIGHT,
             min_width: SnackbarDefaults::MIN_WIDTH,
             max_width: SnackbarDefaults::MAX_WIDTH,

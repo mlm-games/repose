@@ -7,8 +7,12 @@ impl SurfaceDefaults {
     pub fn color() -> Color {
         theme().surface
     }
+    pub fn content_color() -> Color {
+        theme().on_surface
+    }
     pub const SHAPE_RADIUS: f32 = 0.0;
     pub const TONAL_ELEVATION: f32 = 0.0;
+    pub const SHADOW_ELEVATION: f32 = 0.0;
 }
 
 /// Default values for toggle button components.
@@ -207,6 +211,21 @@ impl CardDefaults {
     pub fn outlined_border_color() -> Color {
         theme().outline_variant
     }
+    pub fn filled_content_color() -> Color {
+        theme().on_surface
+    }
+    pub fn elevated_content_color() -> Color {
+        theme().on_surface
+    }
+    pub fn outlined_content_color() -> Color {
+        theme().on_surface
+    }
+    pub fn disabled_container_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.04)
+    }
+    pub fn disabled_content_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
     pub const SHAPE_RADIUS: f32 = 12.0;
     pub const ELEVATION: f32 = 0.0;
 }
@@ -400,6 +419,27 @@ impl SliderDefaults {
     }
     pub fn thumb_color() -> Color {
         theme().primary
+    }
+    pub fn active_tick_color() -> Color {
+        theme().secondary_container
+    }
+    pub fn inactive_tick_color() -> Color {
+        theme().primary
+    }
+    pub fn disabled_thumb_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
+    pub fn disabled_active_track_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
+    pub fn disabled_inactive_track_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.12)
+    }
+    pub fn disabled_active_tick_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.12)
+    }
+    pub fn disabled_inactive_tick_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
     }
     pub fn state_colors_default() -> StateColors {
         let th = theme();

@@ -192,7 +192,7 @@ pub fn Snackbar(
         .min_width(280.0)
         .max_width(600.0)
         .background(bg)
-        .clip_rounded(th.shapes.small))
+        .clip_rounded(config.shape_radius))
     .child(
         Row(Modifier::new()
             .fill_max_width()
