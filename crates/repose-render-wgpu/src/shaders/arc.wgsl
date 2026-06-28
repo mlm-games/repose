@@ -54,14 +54,20 @@ fn vs_main(
     let pos_ndc = xywh.xy + rotated;
 
     let center = xywh.xy;
+    // Compensate for round cap (slightly smaller on one side, but looks good as is)
+    let half_px = 0.5 * stroke_ndc;
+    let r_px = half.x * G.ndc_to_px.x;
+    let cap_offset = half_px / max(r_px, 1.0);
+    let adjusted_start = start_angle + cap_offset;
+
     // Compute points on the ellipse at polar angles matching local_angle's convention.
-    let start_endpoint = ellipse_pt_at_angle(center, half, start_angle, sin_cos);
-    let end_endpoint = ellipse_pt_at_angle(center, half, start_angle + sweep_angle, sin_cos);
+    let start_endpoint = ellipse_pt_at_angle(center, half, adjusted_start, sin_cos);
+    let end_endpoint = ellipse_pt_at_angle(center, half, adjusted_start + sweep_angle, sin_cos);
 
     var out: VSOut;
     out.pos = vec4(pos_ndc, 0.0, 1.0);
     out.xywh = xywh;
-    out.start_angle = start_angle;
+    out.start_angle = adjusted_start;
     out.sweep_angle = sweep_angle;
     out.stroke_ndc = stroke_ndc;
     out.color = color;
