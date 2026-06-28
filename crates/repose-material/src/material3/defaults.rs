@@ -630,16 +630,20 @@ impl NavigationBarDefaults {
         theme().on_surface
     }
     pub fn selected_icon_color() -> Color {
-        theme().primary
+        theme().on_secondary_container
+    }
+    pub fn selected_text_color() -> Color {
+        theme().secondary
     }
     pub fn unselected_icon_color() -> Color {
         theme().on_surface_variant
     }
-    pub fn indicator_color() -> Color {
-        theme().primary
+    pub fn unselected_text_color() -> Color {
+        theme().on_surface_variant
     }
-    pub const ITEM_HORIZONTAL_PADDING: f32 = 4.0;
-    pub const ITEM_VERTICAL_PADDING: f32 = 6.0;
+    pub fn indicator_color() -> Color {
+        theme().secondary_container
+    }
     pub const INDICATOR_RADIUS: f32 = 16.0;
 }
 

@@ -93,7 +93,6 @@ pub fn NavigationBar(
 ) -> View {
     let th = theme();
     let id = remember(|| NAVBAR_COUNTER.fetch_add(1, Ordering::Relaxed));
-    let spec = th.motion.shape;
 
     let mut bar_m = Modifier::new()
         .fill_max_size()
@@ -123,19 +122,28 @@ pub fn NavigationBar(
                 .map(|(i, item)| {
                     let selected = i == selected_index;
                     let is_enabled = item.enabled;
-                    let fg = animate_color(
-                        format!("nb_fg_{}_{}", id, i),
+                    let fg_icon = animate_color(
+                        format!("nb_fi_{}_{}", id, i),
                         if selected {
                             config.selected_icon_color
                         } else {
                             config.unselected_icon_color
                         },
-                        spec,
+                        th.motion.color,
+                    );
+                    let fg_label = animate_color(
+                        format!("nb_fl_{}_{}", id, i),
+                        if selected {
+                            config.selected_text_color
+                        } else {
+                            config.unselected_text_color
+                        },
+                        th.motion.color,
                     );
                     let bg_alpha = animate_f32(
                         format!("nb_bg_{}_{}", id, i),
                         if selected { 1.0 } else { 0.0 },
-                        spec,
+                        th.motion.color,
                     );
                     let indicator_bg = config
                         .indicator_color
@@ -143,19 +151,13 @@ pub fn NavigationBar(
                     let indicator_scale = animate_f32(
                         format!("nb_sc_{}_{}", id, i),
                         if selected { 1.0 } else { 0.0 },
-                        spec,
+                        th.motion.shape,
                     );
                     let cb = item.on_click.clone();
 
                     let mut item_m = Modifier::new()
                         .flex_grow(1.0)
-                        .semantics(Semantics::new(Role::Tab).with_label(&item.label))
-                        .state_colors(StateColors {
-                            default: Color::TRANSPARENT,
-                            hovered: th.on_surface.with_alpha_f32(0.08),
-                            pressed: th.on_surface.with_alpha_f32(0.12),
-                            disabled: Color::TRANSPARENT,
-                        });
+                        .semantics(Semantics::new(Role::Tab).with_label(&item.label));
 
                     if is_enabled {
                         item_m = item_m.clickable().on_pointer_down({
@@ -171,22 +173,35 @@ pub fn NavigationBar(
                             .justify_content(JustifyContent::Center))
                         .child((
                             // Indicator pill behind icon
-                            ZStack(Modifier::new()
+                            Stack(Modifier::new()
                                 .align_items(AlignItems::Center)
                                 .justify_content(JustifyContent::Center))
                             .child((
                                 Box(Modifier::new()
+                                    .absolute()
+                                    .offset(
+                                        Some((24.0 - config.indicator_width) / 2.0),
+                                        Some((24.0 - config.indicator_height) / 2.0),
+                                        None,
+                                        None,
+                                    )
                                     .width(config.indicator_width)
                                     .height(config.indicator_height)
                                     .background(indicator_bg)
                                     .clip_rounded(config.indicator_radius)
-                                    .scale2(indicator_scale, 1.0)),
-                                item.icon,
+                                    .scale2(indicator_scale, 1.0)
+                                    .state_colors(StateColors {
+                                        default: Color::TRANSPARENT,
+                                        hovered: th.on_surface.with_alpha_f32(0.08),
+                                        pressed: th.on_surface.with_alpha_f32(0.12),
+                                        disabled: Color::TRANSPARENT,
+                                    })),
+                                with_content_color(fg_icon, move || item.icon),
                             )),
-                            // 4dp gap between icon and label
-                            Box(Modifier::new().height(4.0)),
+                            // 8dp gap: 4dp IndicatorVerticalPadding + 4dp IndicatorToLabelPadding
+                            Box(Modifier::new().height(8.0)),
                             Text(item.label)
-                                .color(fg)
+                                .color(fg_label)
                                 .size(th.typography.label_medium)
                                 .single_line(),
                         )),

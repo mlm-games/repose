@@ -1115,6 +1115,7 @@ impl LayoutEngine {
             (0.0, 0.0),
             1.0,
             None,
+            None, // interaction_source
             font_px,
             true,
             &mut deferred,
@@ -1150,6 +1151,7 @@ impl LayoutEngine {
                 parent_offset_px,
                 alpha_accum,
                 sem_parent,
+                None, // interaction_source
                 font_px,
                 true,
                 &mut Vec::new(), // No further deferral in second pass
@@ -1283,6 +1285,7 @@ impl LayoutEngine {
             parent_offset_px,
             alpha_accum,
             sem_parent,
+            None, // interaction_source
             font_px,
             false,
             &mut Vec::new(),
@@ -1302,6 +1305,7 @@ impl LayoutEngine {
         parent_offset_px: (f32, f32),
         alpha_accum: f32,
         sem_parent: Option<u64>,
+        interaction_source: Option<u64>,
         font_px: &dyn Fn(f32) -> f32,
         allow_cache: bool,
         deferred: &mut Vec<(NodeId, (f32, f32), f32, Option<u64>, f32)>,
@@ -1369,6 +1373,9 @@ impl LayoutEngine {
 
         let is_hovered = interactions.hover == Some(view_id);
         let is_pressed = interactions.pressed.contains(&view_id);
+        let effective_interaction = interaction_source.unwrap_or(view_id);
+        let state_hovered = interactions.hover == Some(effective_interaction);
+        let state_pressed = interactions.pressed.contains(&effective_interaction);
         let is_focused = focused == Some(view_id);
         let this_alpha = modifier.alpha.unwrap_or(1.0);
         let alpha_accum = (alpha_accum * this_alpha).clamp(0.0, 1.0);
@@ -1415,6 +1422,7 @@ impl LayoutEngine {
                 parent_offset_px,
                 alpha_accum / this_alpha.max(1e-6),
                 sem_parent,
+                interaction_source,
                 font_px,
                 false,
                 &mut Vec::new(), // Don't defer within repaint boundary
@@ -1507,9 +1515,9 @@ impl LayoutEngine {
         if let Some(se) = &modifier.state_elevation {
             let target = if modifier.disabled {
                 se.disabled
-            } else if is_pressed {
+            } else if state_pressed {
                 se.pressed
-            } else if is_hovered {
+            } else if state_hovered {
                 se.hovered
             } else {
                 se.default
@@ -1548,9 +1556,9 @@ impl LayoutEngine {
         if let Some(sc) = &modifier.state_colors {
             let target = if modifier.disabled {
                 sc.disabled
-            } else if is_pressed {
+            } else if state_pressed {
                 sc.pressed
-            } else if is_hovered {
+            } else if state_hovered {
                 sc.hovered
             } else {
                 sc.default
@@ -1665,6 +1673,13 @@ impl LayoutEngine {
         if is_focused && (has_pointer || modifier.click || modifier.on_action.is_some()) {
             push_focus_ring(scene, rect, focus_radius(&modifier));
         }
+
+        let child_interaction_source =
+            if needs_hit && !kind_handles_hit && !modifier.hit_passthrough {
+                Some(view_id)
+            } else {
+                interaction_source
+            };
 
         let mut next_sem_parent = sem_parent;
 
@@ -2302,9 +2317,10 @@ impl LayoutEngine {
                         interactions,
                         focused,
                         scrolled_offset,
-                        alpha_accum,
-                        next_sem_parent,
-                        font_px,
+                    alpha_accum,
+                    next_sem_parent,
+                    child_interaction_source,
+                    font_px,
                         allow_cache,
                         deferred,
                         skip_defer,
@@ -2401,9 +2417,10 @@ impl LayoutEngine {
                         interactions,
                         focused,
                         scrolled_offset,
-                        alpha_accum,
-                        next_sem_parent,
-                        font_px,
+                    alpha_accum,
+                    next_sem_parent,
+                    child_interaction_source,
+                    font_px,
                         allow_cache,
                         deferred,
                         skip_defer,
@@ -2463,9 +2480,10 @@ impl LayoutEngine {
                         interactions,
                         focused,
                         child_offset_px,
-                        alpha_accum,
-                        next_sem_parent,
-                        font_px,
+                    alpha_accum,
+                    next_sem_parent,
+                    child_interaction_source,
+                    font_px,
                         allow_cache,
                         deferred,
                         skip_defer,
@@ -2484,9 +2502,10 @@ impl LayoutEngine {
                         interactions,
                         focused,
                         child_offset_px,
-                        alpha_accum,
-                        next_sem_parent,
-                        font_px,
+                    alpha_accum,
+                    next_sem_parent,
+                    child_interaction_source,
+                    font_px,
                         allow_cache,
                         deferred,
                         skip_defer,
@@ -2506,6 +2525,7 @@ impl LayoutEngine {
                             child_offset_px,
                             alpha_accum,
                             next_sem_parent,
+                            child_interaction_source,
                             font_px,
                             allow_cache,
                             deferred,
@@ -2525,9 +2545,10 @@ impl LayoutEngine {
                         interactions,
                         focused,
                         child_offset_px,
-                        alpha_accum,
-                        next_sem_parent,
-                        font_px,
+                    alpha_accum,
+                    next_sem_parent,
+                    child_interaction_source,
+                    font_px,
                         allow_cache,
                         deferred,
                         skip_defer,
