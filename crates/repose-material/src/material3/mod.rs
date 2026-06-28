@@ -2526,6 +2526,7 @@ pub struct NavRailItem {
     pub label: String,
     pub on_click: Rc<dyn Fn()>,
     pub badge: Option<View>,
+    pub enabled: bool,
 }
 
 static NAVRAIL_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -2544,7 +2545,8 @@ pub fn NavigationRail(
 ) -> View {
     let th = theme();
     let id = remember(|| NAVRAIL_COUNTER.fetch_add(1, Ordering::Relaxed));
-    let spec = th.motion.shape;
+    let default_effects = AnimationSpec::spring_crit(40.0);
+    let fast_spatial = AnimationSpec::spring(SpringSpec::new(0.9, 1400.0));
 
     let mut top_children: Vec<View> = Vec::new();
     let mut item_views: Vec<View> = Vec::new();
@@ -2589,70 +2591,101 @@ pub fn NavigationRail(
 
     for (i, item) in items.into_iter().enumerate() {
         let selected = i == selected_index;
+        let is_enabled = item.enabled;
 
-        let fg = animate_color(
-            format!("nr_fg_{}_{}", id, i),
+        let fg_icon = animate_color(
+            format!("nr_fi_{}_{}", id, i),
             if selected {
                 config.selected_icon_color
             } else {
                 config.unselected_icon_color
             },
-            spec,
+            default_effects,
         );
-        let bg = animate_color(
-            format!("nr_bg_{}_{}", id, i),
+        let fg_label = animate_color(
+            format!("nr_fl_{}_{}", id, i),
             if selected {
-                config.selected_container_color
+                config.selected_text_color
             } else {
-                Color::TRANSPARENT
+                config.unselected_text_color
             },
-            spec,
+            default_effects,
+        );
+        let bg_alpha = animate_f32(
+            format!("nr_ba_{}_{}", id, i),
+            if selected { 1.0 } else { 0.0 },
+            default_effects,
+        );
+        let indicator_bg = config
+            .indicator_color
+            .with_alpha_f32(bg_alpha * config.indicator_opacity);
+        let indicator_scale = animate_f32(
+            format!("nr_sc_{}_{}", id, i),
+            if selected { 1.0 } else { 0.0 },
+            fast_spatial,
         );
 
         let cb = item.on_click.clone();
 
+        let mut item_m = Modifier::new()
+            .fill_max_width()
+            .min_height(NavigationRailDefaults::ITEM_MIN_HEIGHT)
+            .padding_values(PaddingValues {
+                left: 4.0,
+                right: 4.0,
+                top: 0.0,
+                bottom: 0.0,
+            })
+            .semantics(Semantics::new(Role::Tab).with_label(&item.label));
+
+        if is_enabled {
+            item_m = item_m.clickable().on_pointer_down({
+                let cb = cb.clone();
+                move |_| cb()
+            });
+        }
+
         item_views.push(
-            Column(
-                Modifier::new()
+            Box(item_m).child(
+                Column(Modifier::new()
                     .fill_max_width()
-                    .padding_values(PaddingValues {
-                        left: 4.0,
-                        right: 4.0,
-                        top: 4.0,
-                        bottom: 4.0,
-                    })
                     .align_items(AlignItems::Center)
-                    .justify_content(JustifyContent::Center)
-                    .background(bg)
-                    .state_colors(StateColors {
-                        default: Color::TRANSPARENT,
-                        hovered: th.on_surface.with_alpha_f32(0.08),
-                        pressed: th.on_surface.with_alpha_f32(0.12),
-                        disabled: Color::TRANSPARENT,
-                    })
-                    .clip_rounded(config.item_radius)
-                    .clickable()
-                    .on_pointer_down(move |_| cb()),
-            )
-            .child((
-                Stack(Modifier::new()).child((
-                    Box(Modifier::new().size(24.0, 24.0))
-                        .child(with_content_color(fg, move || item.icon)),
-                    item.badge
-                        .map(|b| {
-                            Box(Modifier::new()
-                                .absolute()
-                                .offset(None, None, None, Some(0.0)))
-                            .child(b)
-                        })
-                        .unwrap_or(Box(Modifier::new())),
+                    .justify_content(JustifyContent::Center))
+                .child((
+                    // Indicator pill behind icon
+                    Stack(Modifier::new()
+                        .align_items(AlignItems::Center)
+                        .justify_content(JustifyContent::Center))
+                    .child((
+                        Box(Modifier::new()
+                            .absolute()
+                            .offset(
+                                Some((24.0 - config.indicator_width) / 2.0),
+                                Some((24.0 - config.indicator_height) / 2.0),
+                                None,
+                                None,
+                            )
+                            .width(config.indicator_width)
+                            .height(config.indicator_height)
+                            .background(indicator_bg)
+                            .clip_rounded(config.item_radius)
+                            .scale2(indicator_scale, 1.0)
+                            .state_colors(StateColors {
+                                default: Color::TRANSPARENT,
+                                hovered: th.on_surface.with_alpha_f32(0.08),
+                                pressed: th.on_surface.with_alpha_f32(0.12),
+                                disabled: Color::TRANSPARENT,
+                            })),
+                        with_content_color(fg_icon, move || item.icon),
+                    )),
+                    // 8dp gap: 4dp IndicatorVerticalPadding + 4dp IndicatorToLabelPadding
+                    Box(Modifier::new().height(8.0)),
+                    Text(item.label)
+                        .color(fg_label)
+                        .size(th.typography.label_medium)
+                        .single_line(),
                 )),
-                Box(Modifier::new().fill_max_width().height(4.0)),
-                Text(item.label)
-                    .color(fg)
-                    .size(th.typography.label_medium)
-                    .single_line(),
-            )),
+            ),
         );
     }
 
@@ -2662,6 +2695,7 @@ pub fn NavigationRail(
             .fill_max_height()
             .background(config.container_color)
             .align_items(AlignItems::Center)
+            .semantics(Semantics::new(Role::Container).with_selectable_group())
             .then(config.modifier),
     )
     .child((
@@ -2670,8 +2704,14 @@ pub fn NavigationRail(
             Column(
                 Modifier::new()
                     .fill_max_size()
-                    .justify_content(JustifyContent::SpaceBetween)
-                    .align_items(AlignItems::Center),
+                    .column_gap(config.item_spacing)
+                    .align_items(AlignItems::Center)
+                    .padding_values(PaddingValues {
+                        left: 0.0,
+                        right: 0.0,
+                        top: 4.0,
+                        bottom: 4.0,
+                    }),
             )
             .with_children(item_views),
         ),

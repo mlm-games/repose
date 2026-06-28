@@ -652,19 +652,30 @@ pub struct NavigationRailDefaults;
 
 impl NavigationRailDefaults {
     pub const WIDTH: f32 = 80.0;
+    pub const ITEM_RADIUS: f32 = 16.0;
+    pub const ITEM_MIN_HEIGHT: f32 = 56.0;
+    pub const ITEM_ACTIVE_INDICATOR_OPACITY: f32 = 1.0;
+    pub const ITEM_SPACING: f32 = 4.0;
+    pub const ACTIVE_INDICATOR_WIDTH: f32 = 56.0;
+    pub const ACTIVE_INDICATOR_HEIGHT: f32 = 32.0;
     pub fn container_color() -> Color {
         theme().surface
     }
     pub fn selected_icon_color() -> Color {
         theme().on_secondary_container
     }
+    pub fn selected_text_color() -> Color {
+        theme().secondary
+    }
     pub fn unselected_icon_color() -> Color {
         theme().on_surface_variant
     }
-    pub fn selected_container_color() -> Color {
+    pub fn unselected_text_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn indicator_color() -> Color {
         theme().secondary_container
     }
-    pub const ITEM_RADIUS: f32 = 16.0;
 }
 
 /// Default values for segmented button.

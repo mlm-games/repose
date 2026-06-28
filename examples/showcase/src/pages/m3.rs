@@ -37,6 +37,7 @@ fn rail_item(
         label: label.into(),
         on_click: Rc::new(sel),
         badge,
+        enabled: true,
     }
 }
 

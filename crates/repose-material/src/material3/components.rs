@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use web_time::Duration;
 
-use repose_core::animation::{AnimationSpec, CubicBezier, Easing, KeyframesSpec, RepeatableSpec};
+use repose_core::animation::{AnimationSpec, CubicBezier, Easing, KeyframesSpec, RepeatableSpec, SpringSpec};
 use repose_core::*;
 use repose_ui::anim::{animate_color, animate_f32};
 use repose_ui::{Box, Column, Row, Stack, Text, TextStyle, ViewExt};
@@ -1632,22 +1632,29 @@ impl Default for TabRowConfig {
 static TABROW_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// M3 Tab Row - a horizontal row of tabs with an active indicator.
-/// Text colors and indicator height animate with 150ms FastOutSlowIn.
+/// Text colors animate with DefaultEffects (spring_crit 40.0).
+/// Indicator alpha animates with DefaultSpatial (spring 0.9, 1400.0).
 pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> View {
     let th = theme();
     let id = remember(|| TABROW_COUNTER.fetch_add(1, Ordering::Relaxed));
-    let spec = th.motion.color;
-    Column(Modifier::new().fill_max_width())
+    let default_effects = AnimationSpec::spring_crit(40.0);
+    let fast_spatial = AnimationSpec::spring(SpringSpec::new(0.9, 1400.0));
+    let mut outer_m = Modifier::new()
+        .fill_max_width()
+        .then(config.modifier);
+    Column(outer_m)
         .child((
             Row(Modifier::new()
                 .fill_max_width()
                 .height(config.height)
-                .background(config.container_color))
+                .background(config.container_color)
+                .semantics(Semantics::new(Role::Container).with_selectable_group()))
             .child(
                 tabs.into_iter()
                     .enumerate()
                     .map(|(i, tab)| {
                         let selected = i == selected_index;
+                        let is_enabled = tab.enabled;
                         let color = animate_color(
                             format!("tab_clr_{}_{}", id, i),
                             if selected {
@@ -1655,16 +1662,12 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                             } else {
                                 config.unselected_content_color
                             },
-                            spec,
+                            default_effects,
                         );
-                        let indicator_h = animate_f32(
+                        let indicator_alpha = animate_f32(
                             format!("tab_ind_{}_{}", id, i),
-                            if selected {
-                                config.indicator_height
-                            } else {
-                                0.0
-                            },
-                            spec,
+                            if selected { 1.0 } else { 0.0 },
+                            fast_spatial,
                         );
                         let cb = tab.on_click.clone();
 
@@ -1678,8 +1681,10 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                                 hovered: th.on_surface.with_alpha_f32(0.08),
                                 pressed: th.on_surface.with_alpha_f32(0.12),
                                 disabled: Color::TRANSPARENT,
-                            });
-                        if tab.enabled {
+                            })
+                            .semantics(Semantics::new(Role::Tab).with_label(&tab.label));
+
+                        if is_enabled {
                             tab_m = tab_m.clickable().on_pointer_down(move |_| cb());
                         }
 
@@ -1690,20 +1695,20 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                                 .size(th.typography.title_small)
                                 .single_line(),
                             Box(Modifier::new()
-                                .min_width(200.0)
-                                .height(indicator_h)
+                                .fill_max_width()
+                                .height(config.indicator_height)
                                 .background(config.indicator_color)
+                                .alpha(indicator_alpha)
                                 .clip_rounded(TabDefaults::INDICATOR_CORNER)),
                         ))
                     })
                     .collect::<Vec<_>>(),
             ),
             Box(Modifier::new()
-                .min_width(200.0)
+                .fill_max_width()
                 .height(1.0)
                 .background(th.outline_variant)),
         ))
-        .modifier(config.modifier)
 }
 
 /// A single segment definition for `SegmentedButton`.
@@ -4622,10 +4627,16 @@ pub struct NavigationRailConfig {
     pub modifier: Modifier,
     pub container_color: Color,
     pub selected_icon_color: Color,
+    pub selected_text_color: Color,
     pub unselected_icon_color: Color,
-    pub selected_container_color: Color,
+    pub unselected_text_color: Color,
+    pub indicator_color: Color,
     pub width: f32,
     pub item_radius: f32,
+    pub indicator_opacity: f32,
+    pub item_spacing: f32,
+    pub indicator_width: f32,
+    pub indicator_height: f32,
 }
 
 impl Default for NavigationRailConfig {
@@ -4634,10 +4645,16 @@ impl Default for NavigationRailConfig {
             modifier: Modifier::new(),
             container_color: NavigationRailDefaults::container_color(),
             selected_icon_color: NavigationRailDefaults::selected_icon_color(),
+            selected_text_color: NavigationRailDefaults::selected_text_color(),
             unselected_icon_color: NavigationRailDefaults::unselected_icon_color(),
-            selected_container_color: NavigationRailDefaults::selected_container_color(),
+            unselected_text_color: NavigationRailDefaults::unselected_text_color(),
+            indicator_color: NavigationRailDefaults::indicator_color(),
             width: NavigationRailDefaults::WIDTH,
             item_radius: NavigationRailDefaults::ITEM_RADIUS,
+            indicator_opacity: NavigationRailDefaults::ITEM_ACTIVE_INDICATOR_OPACITY,
+            item_spacing: NavigationRailDefaults::ITEM_SPACING,
+            indicator_width: NavigationRailDefaults::ACTIVE_INDICATOR_WIDTH,
+            indicator_height: NavigationRailDefaults::ACTIVE_INDICATOR_HEIGHT,
         }
     }
 }
