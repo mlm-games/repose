@@ -3554,10 +3554,22 @@ pub fn Slider(
                         h: dot_r * 2.0,
                     },
                     brush: Brush::Solid(mul_c(if on_active {
-                        config.inactive_track_color
+                        config.active_tick_color
                     } else {
-                        config.active_track_color
+                        config.inactive_tick_color
                     })),
+                });
+            }
+            if fill_w > 0.0 {
+                let sx0 = track_x + corner;
+                scene.nodes.push(SceneNode::Ellipse {
+                    rect: Rect {
+                        x: sx0 - dot_r,
+                        y: cy - dot_r,
+                        w: dot_r * 2.0,
+                        h: dot_r * 2.0,
+                    },
+                    brush: Brush::Solid(mul_c(config.active_tick_color)),
                 });
             }
             if inactive_w > 0.0 {
@@ -3569,7 +3581,7 @@ pub fn Slider(
                         w: dot_r * 2.0,
                         h: dot_r * 2.0,
                     },
-                    brush: Brush::Solid(mul_c(config.active_track_color)),
+                    brush: Brush::Solid(mul_c(config.inactive_tick_color)),
                 });
             }
             let da = *drag_active_p.borrow();
@@ -3823,7 +3835,9 @@ pub fn RangeSlider(
             let tick_end = track_x + track_w - corner;
             for &tf in &tick_frac {
                 let tx = tick_start + tf * (tick_end - tick_start);
-                if tx >= active_l - gap && tx <= active_r + gap {
+                let in_lgap = tx >= active_l - gap && tx <= active_l + gap;
+                let in_rgap = tx >= active_r - gap && tx <= active_r + gap;
+                if in_lgap || in_rgap {
                     continue;
                 }
                 let on_active = tx >= active_l + gap && tx <= active_r - gap;
@@ -3834,7 +3848,7 @@ pub fn RangeSlider(
                         w: dot_r * 2.0,
                         h: dot_r * 2.0,
                     },
-                    brush: Brush::Solid(mul_c(if on_active { inact_tick } else { act_tick })),
+                    brush: Brush::Solid(mul_c(if on_active { act_tick } else { inact_tick })),
                 });
             }
             if linactive_w > 0.0 {
@@ -3846,7 +3860,7 @@ pub fn RangeSlider(
                         w: dot_r * 2.0,
                         h: dot_r * 2.0,
                     },
-                    brush: Brush::Solid(mul_c(act_tick)),
+                    brush: Brush::Solid(mul_c(inact_tick)),
                 });
             }
             if rinactive_w > 0.0 {
@@ -3858,7 +3872,7 @@ pub fn RangeSlider(
                         w: dot_r * 2.0,
                         h: dot_r * 2.0,
                     },
-                    brush: Brush::Solid(mul_c(act_tick)),
+                    brush: Brush::Solid(mul_c(inact_tick)),
                 });
             }
             let da = *drag_active_p.borrow();
