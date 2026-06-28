@@ -8,7 +8,9 @@ use web_time::Duration;
 use repose_core::animation::{AnimationSpec, CubicBezier, Easing, KeyframesSpec, RepeatableSpec, SpringSpec};
 use repose_core::*;
 use repose_ui::anim::{animate_color, animate_f32};
-use repose_ui::{Box, Column, Row, Stack, Text, TextStyle, ViewExt};
+use repose_ui::{
+    Box, Column, Row, Stack, Text, TextStyle, ViewExt, box_with_constraints_with_key,
+};
 
 use super::*;
 
@@ -1631,84 +1633,120 @@ impl Default for TabRowConfig {
 
 static TABROW_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// M3 Tab Row - a horizontal row of tabs with an active indicator.
+/// M3 Tab Row — a horizontal row of tabs with a single sliding indicator.
 /// Text colors animate with DefaultEffects (spring_crit 40.0).
-/// Indicator alpha animates with DefaultSpatial (spring 0.9, 1400.0).
+/// Indicator offset and width animate with DefaultSpatial (spring 0.9, 1400.0).
+///
+/// The indicator is a single absolutely-positioned Box inside a Stack, using
+/// `box_with_constraints_with_key` with a frame-counter key. The key changes
+/// every frame which forces the SubcomposeLayout closure to re-run, allowing
+/// `animate_f32` inside it to advance on every frame.
 pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> View {
-    let th = theme();
     let id = remember(|| TABROW_COUNTER.fetch_add(1, Ordering::Relaxed));
     let default_effects = AnimationSpec::spring_crit(40.0);
     let fast_spatial = AnimationSpec::spring(SpringSpec::new(0.9, 1400.0));
-    let mut outer_m = Modifier::new()
-        .fill_max_width()
-        .then(config.modifier);
-    Column(outer_m)
-        .child((
-            Row(Modifier::new()
-                .fill_max_width()
-                .height(config.height)
-                .background(config.container_color)
-                .semantics(Semantics::new(Role::Container).with_selectable_group()))
-            .child(
-                tabs.into_iter()
-                    .enumerate()
-                    .map(|(i, tab)| {
-                        let selected = i == selected_index;
-                        let is_enabled = tab.enabled;
-                        let color = animate_color(
-                            format!("tab_clr_{}_{}", id, i),
-                            if selected {
-                                config.selected_content_color
-                            } else {
-                                config.unselected_content_color
-                            },
-                            default_effects,
-                        );
-                        let indicator_alpha = animate_f32(
-                            format!("tab_ind_{}_{}", id, i),
-                            if selected { 1.0 } else { 0.0 },
-                            fast_spatial,
-                        );
-                        let cb = tab.on_click.clone();
 
-                        let mut tab_m = Modifier::new()
-                            .flex_grow(1.0)
-                            .fill_max_height()
-                            .align_items(AlignItems::Center)
-                            .justify_content(JustifyContent::Center)
-                            .state_colors(StateColors {
-                                default: Color::TRANSPARENT,
-                                hovered: th.on_surface.with_alpha_f32(0.08),
-                                pressed: th.on_surface.with_alpha_f32(0.12),
-                                disabled: Color::TRANSPARENT,
+    // Frame counter — changes every frame to force SubcomposeLayout cache
+    // invalidation so animate_f32 inside the closure advances each frame.
+    let frame_counter = remember_state_with_key(format!("tab_fc_{}", id), || 0u64);
+    *frame_counter.borrow_mut() += 1;
+    let key = *frame_counter.borrow();
+
+    let modifier = config.modifier.clone();
+    let outer_m = Modifier::new().fill_max_width().then(modifier);
+
+    box_with_constraints_with_key(key, outer_m, move |scope| {
+        let th = theme();
+        let n = tabs.len();
+        let nf = n as f32;
+        let total_w = if scope.has_bounded_width() && nf > 0.0 {
+            scope.max_width
+        } else {
+            360.0
+        };
+        let tab_w = total_w / nf;
+
+        let animated_x = animate_f32(
+            format!("tab_x_{}", id),
+            (selected_index as f32) * tab_w,
+            fast_spatial,
+        );
+        let animated_w = animate_f32(format!("tab_w_{}", id), tab_w, fast_spatial);
+
+        let indicator_top = config.height - config.indicator_height;
+
+        Column(Modifier::new().fill_max_width())
+            .child((
+                // Tab container with sliding indicator
+                Box(Modifier::new()
+                    .fill_max_width()
+                    .height(config.height)
+                    .background(config.container_color)
+                    .semantics(Semantics::new(Role::Container).with_selectable_group()))
+                .child((
+                    Row(Modifier::new().fill_max_width().fill_max_height()).child(
+                        tabs
+                            .iter()
+                            .enumerate()
+                            .map(|(i, tab)| {
+                                let selected = i == selected_index;
+                                let is_enabled = tab.enabled;
+                                let color = animate_color(
+                                    format!("tab_clr_{}_{}", id, i),
+                                    if selected {
+                                        config.selected_content_color
+                                    } else {
+                                        config.unselected_content_color
+                                    },
+                                    default_effects,
+                                );
+                                let cb = tab.on_click.clone();
+
+                                let mut tab_m = Modifier::new()
+                                    .flex_grow(1.0)
+                                    .fill_max_height()
+                                    .align_items(AlignItems::Center)
+                                    .justify_content(JustifyContent::Center)
+                                    .state_colors(StateColors {
+                                        default: Color::TRANSPARENT,
+                                        hovered: th.on_surface.with_alpha_f32(0.08),
+                                        pressed: th.on_surface.with_alpha_f32(0.12),
+                                        disabled: Color::TRANSPARENT,
+                                    })
+                                    .semantics(
+                                        Semantics::new(Role::Tab).with_label(&tab.label),
+                                    );
+
+                                if is_enabled {
+                                    tab_m = tab_m.clickable().on_pointer_down(move |_| cb());
+                                }
+
+                                Column(tab_m).child((
+                                    tab.icon.clone().unwrap_or(Box(Modifier::new())),
+                                    Text(tab.label.clone())
+                                        .color(color)
+                                        .size(th.typography.title_small)
+                                        .single_line(),
+                                ))
                             })
-                            .semantics(Semantics::new(Role::Tab).with_label(&tab.label));
-
-                        if is_enabled {
-                            tab_m = tab_m.clickable().on_pointer_down(move |_| cb());
-                        }
-
-                        Column(tab_m).child((
-                            tab.icon.unwrap_or(Box(Modifier::new())),
-                            Text(tab.label)
-                                .color(color)
-                                .size(th.typography.title_small)
-                                .single_line(),
-                            Box(Modifier::new()
-                                .fill_max_width()
-                                .height(config.indicator_height)
-                                .background(config.indicator_color)
-                                .alpha(indicator_alpha)
-                                .clip_rounded(TabDefaults::INDICATOR_CORNER)),
-                        ))
-                    })
-                    .collect::<Vec<_>>(),
-            ),
-            Box(Modifier::new()
-                .fill_max_width()
-                .height(1.0)
-                .background(th.outline_variant)),
-        ))
+                            .collect::<Vec<_>>(),
+                    ),
+                    // Sliding indicator — absolutely positioned inside the Stack
+                    Box(Modifier::new()
+                        .absolute()
+                        .offset(Some(animated_x), Some(indicator_top), None, None)
+                        .width(animated_w)
+                        .height(config.indicator_height)
+                        .background(config.indicator_color)
+                        .clip_rounded(TabDefaults::INDICATOR_CORNER)),
+                )),
+                // Divider
+                Box(Modifier::new()
+                    .fill_max_width()
+                    .height(1.0)
+                    .background(th.outline_variant)),
+            ))
+    })
 }
 
 /// A single segment definition for `SegmentedButton`.
