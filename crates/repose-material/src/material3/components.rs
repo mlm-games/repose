@@ -1936,7 +1936,8 @@ pub fn CircularProgressIndicator(
     } else {
         config.gap_size + config.stroke_width
     };
-    let gap_sweep_rad = 2.0 * adjusted_gap_dp / indicator_size_dp;
+    let circle_dia_dp = indicator_size_dp - config.stroke_width;
+    let gap_sweep_rad = 2.0 * adjusted_gap_dp / circle_dia_dp;
 
     Box(Modifier::new()
         .size(sz, sz)
@@ -2086,9 +2087,8 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
                 corner
             };
 
-            // Compensate stroke for caps.
             let gap = dp_to_px(config.gap_size)
-                + if config.stroke_cap == StrokeCap::Butt {
+                - if config.stroke_cap == StrokeCap::Butt {
                     0.0
                 } else {
                     cap_radius
@@ -2117,7 +2117,7 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
             let track_w = (rect.x + rect.w - track_start).max(0.0);
             if t < 1.0 && track_w > 0.0 {
                 let track_left = track_start + cap_ofs;
-                let track_right = rect.x + rect.w - cap_ofs;
+                let track_right = rect.x + rect.w;
                 if track_right > track_left {
                     scene.nodes.push(SceneNode::Rect {
                         rect: Rect {
@@ -2133,7 +2133,7 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
             }
 
             // Stop indicator at right end circle
-            if t < 1.0 {
+            {
                 let sx = rect.x + rect.w - dot_r;
                 scene.nodes.push(SceneNode::Ellipse {
                     rect: Rect {
@@ -3506,7 +3506,7 @@ pub fn Slider(
             let thumb_h = dp_to_px(44.0);
             let dot_r = dp_to_px(2.0);
             let corner = track_h * 0.5;
-            let gap = dp_to_px(8.0);
+            let gap = thumb_w * 0.5 + dp_to_px(ProgressIndicatorDefaults::SLIDER_THUMB_TRACK_GAP);
             let pad = thumb_w * 0.5;
             let track_x = rect.x + pad;
             let track_w = (rect.w - thumb_w).max(0.0);
@@ -3560,8 +3560,12 @@ pub fn Slider(
             }
             let tick_start = track_x + corner;
             let tick_end = track_x + track_w - corner;
-            for &tf in &tick_frac {
+            for (i, &tf) in tick_frac.iter().enumerate() {
                 let tx = tick_start + tf * (tick_end - tick_start);
+                // skip ticks that fall on the stop indicator (last)
+                if i == tick_frac.len() - 1 {
+                    continue;
+                }
                 if tx >= kx - gap && tx <= kx + gap {
                     continue;
                 }
@@ -3580,30 +3584,16 @@ pub fn Slider(
                     })),
                 });
             }
-            if fill_w > 0.0 {
-                let sx0 = track_x + corner;
-                scene.nodes.push(SceneNode::Ellipse {
-                    rect: Rect {
-                        x: sx0 - dot_r,
-                        y: cy - dot_r,
-                        w: dot_r * 2.0,
-                        h: dot_r * 2.0,
-                    },
-                    brush: Brush::Solid(mul_c(config.active_tick_color)),
-                });
-            }
-            if inactive_w > 0.0 {
-                let sx = track_x + track_w - corner;
-                scene.nodes.push(SceneNode::Ellipse {
-                    rect: Rect {
-                        x: sx - dot_r,
-                        y: cy - dot_r,
-                        w: dot_r * 2.0,
-                        h: dot_r * 2.0,
-                    },
-                    brush: Brush::Solid(mul_c(config.inactive_tick_color)),
-                });
-            }
+            let sx = track_x + track_w - corner;
+            scene.nodes.push(SceneNode::Ellipse {
+                rect: Rect {
+                    x: sx - dot_r,
+                    y: cy - dot_r,
+                    w: dot_r * 2.0,
+                    h: dot_r * 2.0,
+                },
+                brush: Brush::Solid(mul_c(config.inactive_tick_color)),
+            });
             let da = *drag_active_p.borrow();
             let hv = hovered_sig.get();
             let tw = if da { thumb_w * 0.5 } else { thumb_w };
@@ -3780,7 +3770,7 @@ pub fn RangeSlider(
             let thumb_h = dp_to_px(44.0);
             let dot_r = dp_to_px(2.0);
             let corner = track_h * 0.5;
-            let gap = dp_to_px(8.0);
+            let gap = thumb_w * 0.5 + dp_to_px(ProgressIndicatorDefaults::SLIDER_THUMB_TRACK_GAP);
             let pad = thumb_w * 0.5;
             let track_x = rect.x + pad;
             let track_w = (rect.w - thumb_w).max(0.0);
@@ -3853,8 +3843,12 @@ pub fn RangeSlider(
             }
             let tick_start = track_x + corner;
             let tick_end = track_x + track_w - corner;
-            for &tf in &tick_frac {
+            for (i, &tf) in tick_frac.iter().enumerate() {
                 let tx = tick_start + tf * (tick_end - tick_start);
+                // skip ticks that fall on the stop indicators (first and last)
+                if i == 0 || i == tick_frac.len() - 1 {
+                    continue;
+                }
                 let in_lgap = tx >= active_l - gap && tx <= active_l + gap;
                 let in_rgap = tx >= active_r - gap && tx <= active_r + gap;
                 if in_lgap || in_rgap {
@@ -3871,30 +3865,27 @@ pub fn RangeSlider(
                     brush: Brush::Solid(mul_c(if on_active { act_tick } else { inact_tick })),
                 });
             }
-            if linactive_w > 0.0 {
-                let sx0 = track_x + corner;
-                scene.nodes.push(SceneNode::Ellipse {
-                    rect: Rect {
-                        x: sx0 - dot_r,
-                        y: cy - dot_r,
-                        w: dot_r * 2.0,
-                        h: dot_r * 2.0,
-                    },
-                    brush: Brush::Solid(mul_c(inact_tick)),
-                });
-            }
-            if rinactive_w > 0.0 {
-                let sx = track_x + track_w - corner;
-                scene.nodes.push(SceneNode::Ellipse {
-                    rect: Rect {
-                        x: sx - dot_r,
-                        y: cy - dot_r,
-                        w: dot_r * 2.0,
-                        h: dot_r * 2.0,
-                    },
-                    brush: Brush::Solid(mul_c(inact_tick)),
-                });
-            }
+            // Stop indicators at both track ends (always drawn, matching Compose)
+            let sx0 = track_x + corner;
+            scene.nodes.push(SceneNode::Ellipse {
+                rect: Rect {
+                    x: sx0 - dot_r,
+                    y: cy - dot_r,
+                    w: dot_r * 2.0,
+                    h: dot_r * 2.0,
+                },
+                brush: Brush::Solid(mul_c(inact_tick)),
+            });
+            let sx = track_x + track_w - corner;
+            scene.nodes.push(SceneNode::Ellipse {
+                rect: Rect {
+                    x: sx - dot_r,
+                    y: cy - dot_r,
+                    w: dot_r * 2.0,
+                    h: dot_r * 2.0,
+                },
+                brush: Brush::Solid(mul_c(inact_tick)),
+            });
             let da = *drag_active_p.borrow();
             let at = *active_thumb_p.borrow();
             let hv = hovered_sig.get();

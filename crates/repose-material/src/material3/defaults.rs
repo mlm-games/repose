@@ -111,6 +111,9 @@ impl ProgressIndicatorDefaults {
     }
     pub const CIRCULAR_INDICATOR_SIZE: f32 = 40.0;
     pub const CIRCULAR_STROKE_WIDTH: f32 = 4.0;
+
+    /// M3 `ActiveHandleLeadingSpace` / `ActiveHandleTrailingSpace`
+    pub const SLIDER_THUMB_TRACK_GAP: f32 = 6.0;
 }
 
 /// Default values for button components.
@@ -722,55 +725,121 @@ impl ChipDefaults {
     pub const BORDER_WIDTH: f32 = 1.0;
 
     // Colors for non-selected state
-    pub fn container_color() -> Color { Color::TRANSPARENT }
-    pub fn label_color() -> Color { theme().on_surface_variant }
-    pub fn leading_icon_color() -> Color { theme().primary }
-    pub fn trailing_icon_color() -> Color { theme().primary }
+    pub fn container_color() -> Color {
+        Color::TRANSPARENT
+    }
+    pub fn label_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn leading_icon_color() -> Color {
+        theme().primary
+    }
+    pub fn trailing_icon_color() -> Color {
+        theme().primary
+    }
 
     // Disabled colors (non-selected)
-    pub fn disabled_container_color() -> Color { Color::TRANSPARENT }
-    pub fn disabled_label_color() -> Color { theme().on_surface.with_alpha_f32(0.38) }
-    pub fn disabled_leading_icon_color() -> Color { theme().on_surface.with_alpha_f32(0.38) }
-    pub fn disabled_trailing_icon_color() -> Color { theme().on_surface.with_alpha_f32(0.38) }
+    pub fn disabled_container_color() -> Color {
+        Color::TRANSPARENT
+    }
+    pub fn disabled_label_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
+    pub fn disabled_leading_icon_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
+    pub fn disabled_trailing_icon_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
 
     // Colors for selected state
-    pub fn selected_container_color() -> Color { theme().secondary_container }
-    pub fn selected_label_color() -> Color { theme().on_secondary_container }
-    pub fn selected_leading_icon_color() -> Color { theme().primary }
-    pub fn selected_trailing_icon_color() -> Color { theme().on_secondary_container }
+    pub fn selected_container_color() -> Color {
+        theme().secondary_container
+    }
+    pub fn selected_label_color() -> Color {
+        theme().on_secondary_container
+    }
+    pub fn selected_leading_icon_color() -> Color {
+        theme().primary
+    }
+    pub fn selected_trailing_icon_color() -> Color {
+        theme().on_secondary_container
+    }
 
     // Disabled selected container
     pub fn disabled_selected_container_color() -> Color {
-        theme().on_surface.with_alpha_f32(0.12).composite_over(theme().secondary_container)
+        theme()
+            .on_surface
+            .with_alpha_f32(0.12)
+            .composite_over(theme().secondary_container)
     }
 
     // Border colors
-    pub fn border_color() -> Color { theme().outline_variant }
-    pub fn selected_border_color() -> Color { Color::TRANSPARENT }
-    pub fn disabled_border_color() -> Color { theme().on_surface.with_alpha_f32(0.12) }
-    pub fn disabled_selected_border_color() -> Color { Color::TRANSPARENT }
+    pub fn border_color() -> Color {
+        theme().outline_variant
+    }
+    pub fn selected_border_color() -> Color {
+        Color::TRANSPARENT
+    }
+    pub fn disabled_border_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.12)
+    }
+    pub fn disabled_selected_border_color() -> Color {
+        Color::TRANSPARENT
+    }
 
     // Elevation defaults (flat chip — no elevation)
-    pub fn elevation_default() -> f32 { 0.0 }
-    pub fn elevation_hovered() -> f32 { 0.0 }
-    pub fn elevation_focused() -> f32 { 0.0 }
-    pub fn elevation_pressed() -> f32 { 0.0 }
-    pub fn elevation_dragged() -> f32 { 0.0 }
-    pub fn elevation_disabled() -> f32 { 0.0 }
+    pub fn elevation_default() -> f32 {
+        0.0
+    }
+    pub fn elevation_hovered() -> f32 {
+        0.0
+    }
+    pub fn elevation_focused() -> f32 {
+        0.0
+    }
+    pub fn elevation_pressed() -> f32 {
+        0.0
+    }
+    pub fn elevation_dragged() -> f32 {
+        0.0
+    }
+    pub fn elevation_disabled() -> f32 {
+        0.0
+    }
 
     // Elevated chip defaults
-    pub fn elevated_elevation_default() -> f32 { theme().elevation.level1 }
-    pub fn elevated_elevation_hovered() -> f32 { theme().elevation.level2 }
-    pub fn elevated_elevation_focused() -> f32 { theme().elevation.level1 }
-    pub fn elevated_elevation_pressed() -> f32 { theme().elevation.level1 }
-    pub fn elevated_elevation_dragged() -> f32 { theme().elevation.level3 }
-    pub fn elevated_elevation_disabled() -> f32 { 0.0 }
+    pub fn elevated_elevation_default() -> f32 {
+        theme().elevation.level1
+    }
+    pub fn elevated_elevation_hovered() -> f32 {
+        theme().elevation.level2
+    }
+    pub fn elevated_elevation_focused() -> f32 {
+        theme().elevation.level1
+    }
+    pub fn elevated_elevation_pressed() -> f32 {
+        theme().elevation.level1
+    }
+    pub fn elevated_elevation_dragged() -> f32 {
+        theme().elevation.level3
+    }
+    pub fn elevated_elevation_disabled() -> f32 {
+        0.0
+    }
 
     // Elevated chip container colors
-    pub fn elevated_container_color() -> Color { theme().surface_container_low }
-    pub fn elevated_selected_container_color() -> Color { theme().secondary_container }
+    pub fn elevated_container_color() -> Color {
+        theme().surface_container_low
+    }
+    pub fn elevated_selected_container_color() -> Color {
+        theme().secondary_container
+    }
     pub fn disabled_elevated_container_color() -> Color {
-        theme().on_surface.with_alpha_f32(0.12).composite_over(theme().surface_container_low)
+        theme()
+            .on_surface
+            .with_alpha_f32(0.12)
+            .composite_over(theme().surface_container_low)
     }
 }
 
