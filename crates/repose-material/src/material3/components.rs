@@ -1087,28 +1087,69 @@ pub fn BadgedBox(badge: View, content: View) -> View {
     ))
 }
 
+/// Colors for [`ListItem`].
+#[derive(Clone, Debug)]
+pub struct ListItemColors {
+    pub container_color: Color,
+    pub headline_color: Color,
+    pub supporting_color: Color,
+    pub overline_color: Color,
+    pub leading_icon_color: Color,
+    pub trailing_icon_color: Color,
+    pub disabled_headline_color: Color,
+    pub disabled_supporting_color: Color,
+    pub disabled_leading_icon_color: Color,
+    pub disabled_trailing_icon_color: Color,
+}
+
+impl Default for ListItemColors {
+    fn default() -> Self {
+        Self {
+            container_color: Color::TRANSPARENT,
+            headline_color: ListItemDefaults::headline_color(),
+            supporting_color: ListItemDefaults::supporting_color(),
+            overline_color: ListItemDefaults::overline_color(),
+            leading_icon_color: ListItemDefaults::leading_icon_color(),
+            trailing_icon_color: ListItemDefaults::trailing_icon_color(),
+            disabled_headline_color: ListItemDefaults::disabled_headline_color(),
+            disabled_supporting_color: ListItemDefaults::disabled_supporting_color(),
+            disabled_leading_icon_color: ListItemDefaults::disabled_leading_icon_color(),
+            disabled_trailing_icon_color: ListItemDefaults::disabled_trailing_icon_color(),
+        }
+    }
+}
+
 /// Configuration for [`ListItem`].
 #[derive(Clone, Debug)]
 pub struct ListItemConfig {
     pub modifier: Modifier,
-    pub headline_color: Color,
-    pub supporting_color: Color,
+    /// When false, renders disabled colors and suppresses clicks.
+    pub enabled: bool,
+    pub colors: ListItemColors,
+    pub tonal_elevation: f32,
+    pub shadow_elevation: f32,
+    pub shape_radius: f32,
     pub horizontal_padding: f32,
     pub trailing_padding: f32,
     pub one_line_height: f32,
     pub two_line_height: f32,
+    pub three_line_height: f32,
 }
 
 impl Default for ListItemConfig {
     fn default() -> Self {
         Self {
             modifier: Modifier::new(),
-            headline_color: ListItemDefaults::headline_color(),
-            supporting_color: ListItemDefaults::supporting_color(),
+            enabled: true,
+            colors: ListItemColors::default(),
+            tonal_elevation: 0.0,
+            shadow_elevation: 0.0,
+            shape_radius: 0.0,
             horizontal_padding: ListItemDefaults::HORIZONTAL_PADDING,
             trailing_padding: ListItemDefaults::TRAILING_PADDING,
             one_line_height: ListItemDefaults::ONE_LINE_HEIGHT,
             two_line_height: ListItemDefaults::TWO_LINE_HEIGHT,
+            three_line_height: ListItemDefaults::THREE_LINE_HEIGHT,
         }
     }
 }
@@ -1123,13 +1164,27 @@ pub fn ListItem(
     config: ListItemConfig,
 ) -> View {
     let th = theme();
+    let is_enabled = config.enabled;
+    let c = &config.colors;
+
+    let hd_col = if is_enabled { c.headline_color } else { c.disabled_headline_color };
+    let sp_col = if is_enabled { c.supporting_color } else { c.disabled_supporting_color };
+    let ld_col = if is_enabled { c.leading_icon_color } else { c.disabled_leading_icon_color };
+    let tr_col = if is_enabled { c.trailing_icon_color } else { c.disabled_trailing_icon_color };
+    let bg = if is_enabled { c.container_color } else { c.container_color }; // container stays same, content dims
+
+    let line_count = if supporting_text.is_some() { 2 } else { 1 };
+    let min_h = match line_count {
+        2 => config.two_line_height,
+        3 => config.three_line_height,
+        _ => config.one_line_height,
+    };
+
     let mut modifier = Modifier::new()
         .min_width(200.0)
-        .min_height(if supporting_text.is_some() {
-            config.two_line_height
-        } else {
-            config.one_line_height
-        })
+        .min_height(min_h)
+        .background(bg)
+        .clip_rounded(config.shape_radius)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
@@ -1145,9 +1200,28 @@ pub fn ListItem(
         .align_items(AlignItems::Center)
         .then(config.modifier);
 
-    if let Some(cb) = on_click {
-        modifier = modifier.clickable().on_pointer_down(move |_| cb());
+    if config.tonal_elevation > 0.0 {
+        modifier = modifier.state_elevation(StateElevation {
+            default: config.tonal_elevation,
+            hovered: config.tonal_elevation,
+            pressed: config.tonal_elevation,
+            disabled: 0.0,
+        });
     }
+    if config.shadow_elevation > 0.0 {
+        modifier = modifier.shadow(config.shadow_elevation, 0.0);
+    }
+
+    if let Some(cb) = on_click {
+        let cb = cb.clone();
+        modifier = modifier.clickable().on_pointer_down(move |_| {
+            if is_enabled { cb(); }
+        });
+    }
+
+    let wrap_icon = |color: Color, v: View| -> View {
+        with_content_color(color, move || v)
+    };
 
     Row(modifier).child((
         leading
@@ -1158,7 +1232,7 @@ pub fn ListItem(
                     top: 0.0,
                     bottom: 0.0,
                 }))
-                .child(v)
+                .child(wrap_icon(ld_col, v))
             })
             .unwrap_or(Box(Modifier::new())),
         Column(
@@ -1168,13 +1242,13 @@ pub fn ListItem(
         )
         .child((
             Text(headline)
-                .color(config.headline_color)
+                .color(hd_col)
                 .size(th.typography.body_large)
                 .single_line(),
             supporting_text
                 .map(|st| {
                     Text(st)
-                        .color(config.supporting_color)
+                        .color(sp_col)
                         .size(th.typography.body_medium)
                         .max_lines(2)
                         .overflow_ellipsize()
@@ -1189,7 +1263,7 @@ pub fn ListItem(
                     top: 0.0,
                     bottom: 0.0,
                 }))
-                .child(v)
+                .child(wrap_icon(tr_col, v))
             })
             .unwrap_or(Box(Modifier::new())),
     ))

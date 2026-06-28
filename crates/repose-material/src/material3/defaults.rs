@@ -492,6 +492,27 @@ impl ListItemDefaults {
     pub fn supporting_color() -> Color {
         theme().on_surface_variant
     }
+    pub fn overline_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn leading_icon_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn trailing_icon_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn disabled_headline_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
+    pub fn disabled_supporting_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
+    pub fn disabled_leading_icon_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
+    pub fn disabled_trailing_icon_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
 }
 
 /// Default values for top app bar.
