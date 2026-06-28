@@ -6,6 +6,7 @@ use repose_core::{
     Rect, Size, Vec2,
     animation::{AnimatedValue, AnimationSpec, KeyframesSpec, RepeatableSpec, SplineKeyframes},
     remember_state_with_key,
+    request_frame, signal_fired,
 };
 
 /// Animate f32 from an explicit initial value to a target.
@@ -64,6 +65,11 @@ macro_rules! animate_from_impl {
                 a.set_spec(spec);
                 a.set_target(target);
                 *lt = Some(target);
+                drop(lt);
+                a.update();
+                request_frame();
+                signal_fired();
+                return *a.get();
             }
             drop(lt);
 

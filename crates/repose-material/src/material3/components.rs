@@ -2437,6 +2437,9 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
 
     let id = remember(|| SWITCH_COUNTER.fetch_add(1, Ordering::Relaxed));
 
+    let hovered = remember(|| Signal::new(false));
+    let pressed = remember(|| Signal::new(false));
+
     // Thumb: spring-animated position and size
     let thumb_target_pos = if checked {
         track_w - SwitchDefaults::THUMB_CHECKED_SIZE - 4.0
@@ -2488,16 +2491,53 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         color_spec,
     );
 
+    let state_overlay = animate_color(
+        format!("sw_ol_{}", id),
+        if pressed.get() {
+            config.state_colors.pressed
+        } else if hovered.get() {
+            config.state_colors.hovered
+        } else {
+            config.state_colors.default
+        },
+        color_spec,
+    );
+
     Box(Modifier::new()
         .size(track_w, track_h)
         .padding(0.0)
         .clip_rounded(track_h * 0.5)
         .background(track_bg)
-        .state_colors(config.state_colors)
         .border(track_border, border_color, track_h * 0.5)
         .clickable()
-        .on_pointer_down(move |_| on_change(!checked))
+        .on_pointer_enter({
+            let h = hovered.clone();
+            move |_| h.set(true)
+        })
+        .on_pointer_leave({
+            let h = hovered.clone();
+            let p = pressed.clone();
+            move |_| { h.set(false); p.set(false); }
+        })
+        .on_pointer_down({
+            let p = pressed.clone();
+            let cb = on_change;
+            move |_| {
+                p.set(true);
+                cb(!checked);
+            }
+        })
+        .on_pointer_up({
+            let p = pressed.clone();
+            move |_| p.set(false)
+        })
         .then(config.modifier))
+    .child(Box(Modifier::new()
+        .size(40.0, 40.0)
+        .clip_rounded(20.0)
+        .background(state_overlay)
+        .absolute()
+        .offset(Some(thumb_left + thumb_d * 0.5 - 20.0), Some(track_h * 0.5 - 20.0), None, None)))
     .child(Box(Modifier::new()
         .size(thumb_d, thumb_d)
         .background(thumb_bg)
@@ -2557,18 +2597,18 @@ pub fn Slider(
     let id = *remember(|| SLIDER_COUNTER.fetch_add(1, Ordering::Relaxed));
     let track_rect = remember_state_with_key(format!("ms_rect_{}", id), || Rect::default());
     let drag_active = remember_state_with_key(format!("ms_da_{}", id), || false);
-    let hovered = remember_state_with_key(format!("ms_hv_{}", id), || false);
+    let hovered = remember(|| Signal::new(false));
 
     let track_rect_p = track_rect.clone();
     let drag_active_p = drag_active.clone();
-    let hovered_p = hovered.clone();
+    let hovered_sig = hovered.clone();
+    let sc = config.state_colors;
 
     let min = range.0;
     let max = range.1;
     let oc = Rc::new(on_change);
     let range_size = (max - min).max(1e-6);
     let t = ((value - min) / range_size).clamp(0.0, 1.0);
-    let sc = config.state_colors;
 
     let tick_frac: Vec<f32> = if let Some(s) = step {
         let n = ((max - min) / s.max(1e-6)).round() as usize;
@@ -2681,7 +2721,7 @@ pub fn Slider(
                 });
             }
             let da = *drag_active_p.borrow();
-            let hv = *hovered_p.borrow();
+            let hv = hovered_sig.get();
             let tw = if da { thumb_w * 0.5 } else { thumb_w };
             scene.nodes.push(SceneNode::Rect {
                 rect: Rect {
@@ -2715,11 +2755,11 @@ pub fn Slider(
         })
         .on_pointer_enter({
             let h = hovered.clone();
-            move |_pe: PointerEvent| *h.borrow_mut() = true
+            move |_pe: PointerEvent| h.set(true)
         })
         .on_pointer_leave({
             let h = hovered.clone();
-            move |_pe: PointerEvent| *h.borrow_mut() = false
+            move |_pe: PointerEvent| h.set(false)
         })
         .on_pointer_down({
             let oc = oc.clone();
@@ -2790,7 +2830,7 @@ pub fn RangeSlider(
     let track_rect = remember_state_with_key(format!("mrs_rect_{}", id), || Rect::default());
     let drag_active = remember_state_with_key(format!("mrs_da_{}", id), || false);
     let active_thumb = remember_state_with_key(format!("mrs_at_{}", id), || false);
-    let hovered = remember_state_with_key(format!("mrs_hv_{}", id), || false);
+    let hovered = remember(|| Signal::new(false));
 
     let min = range.0;
     let max = range.1;
@@ -2810,7 +2850,7 @@ pub fn RangeSlider(
     let track_rect_p = track_rect.clone();
     let drag_active_p = drag_active.clone();
     let active_thumb_p = active_thumb.clone();
-    let hovered_p = hovered.clone();
+    let hovered_sig = hovered.clone();
 
     Box(Modifier::new()
         .min_width(200.0)
@@ -2948,7 +2988,7 @@ pub fn RangeSlider(
             }
             let da = *drag_active_p.borrow();
             let at = *active_thumb_p.borrow();
-            let hv = *hovered_p.borrow();
+            let hv = hovered_sig.get();
             let thumbs = [k0, k1];
             for (idx, &kx) in thumbs.iter().enumerate() {
                 let is_active = da && (if idx == 0 { !at } else { at });
@@ -2986,11 +3026,11 @@ pub fn RangeSlider(
         })
         .on_pointer_enter({
             let h = hovered.clone();
-            move |_pe: PointerEvent| *h.borrow_mut() = true
+            move |_pe: PointerEvent| h.set(true)
         })
         .on_pointer_leave({
             let h = hovered.clone();
-            move |_pe: PointerEvent| *h.borrow_mut() = false
+            move |_pe: PointerEvent| h.set(false)
         })
         .on_pointer_down({
             let oc = oc.clone();
