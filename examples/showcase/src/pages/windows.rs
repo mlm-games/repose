@@ -25,18 +25,22 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
         let note_text = note_text.clone();
         Rc::new(move || {
             let hint = note_text.get();
-            TextArea(
+            BasicTextField(
                 hint,
                 note_text.get(),
                 Modifier::new().fill_max_size(),
-                Some({
-                    let t = note_text.clone();
-                    move |v| t.set(v)
-                }),
-                Some({
-                    let t = note_text.clone();
-                    move |v| t.set(v)
-                }),
+                BasicTextFieldConfig {
+                    single_line: false,
+                    on_change: Some(Rc::new({
+                        let t = note_text.clone();
+                        move |v| t.set(v)
+                    })),
+                    on_submit: Some(Rc::new({
+                        let t = note_text.clone();
+                        move |v| t.set(v)
+                    })),
+                    ..Default::default()
+                },
             )
         })
     };

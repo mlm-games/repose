@@ -2,6 +2,18 @@ use crate::Color;
 use std::rc::Rc;
 use std::sync::Arc;
 
+/// Result of text layout computation, provided to the `on_text_layout` callback.
+/// Exposes key information about the rendered text layout.
+#[derive(Clone, Debug)]
+pub struct TextLayoutResult {
+    /// Number of visual lines in the layout.
+    pub line_count: usize,
+    /// Total content width in px.
+    pub width_px: f32,
+    /// Total content height in px.
+    pub height_px: f32,
+}
+
 /// Transforms the visual representation of a text field's text without changing
 /// the underlying value. For example, password masking.
 pub trait VisualTransformation: std::fmt::Debug + Send + Sync + 'static {

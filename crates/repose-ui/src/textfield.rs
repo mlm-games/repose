@@ -919,40 +919,115 @@ impl TextFieldState {
     }
 }
 
-// Platform-managed view: hint shown only when `value` is empty.
+//// Configuration for `BasicTextField`, equivalent to Compose `BasicTextField` default params.
+///
+/// Use `..Default::default()` for unset fields:
+/// ```ignore
+/// BasicTextField("Hint", text, modifier, BasicTextFieldConfig {
+///     enabled: false,
+///     ..Default::default()
+/// })
+/// ```
+#[derive(Clone)]
+pub struct BasicTextFieldConfig {
+    /// Callback when text changes (↔ `onValueChange`).
+    pub on_change: Option<Rc<dyn Fn(String)>>,
+    /// Callback when Enter is pressed on a single-line field.
+    pub on_submit: Option<Rc<dyn Fn(String)>>,
+    /// Optional visual transformation (↔ `visualTransformation`).
+    pub visual_transformation: Option<Rc<dyn repose_core::VisualTransformation>>,
+    /// Platform keyboard configuration hints (↔ `keyboardOptions`).
+    pub keyboard_options: Option<KeyboardOptions>,
+    /// IME action button (↔ `ImeAction` within `keyboardOptions`).
+    pub ime_action: Option<repose_core::ImeAction>,
+    /// When false, the text field is not editable, not focusable, and input is not selectable (↔ `enabled`).
+    pub enabled: bool,
+    /// When true, the text field can be focused and text can be selected/copied, but not modified (↔ `readOnly`).
+    pub read_only: bool,
+    /// When true, text is single-line (horizontal scroll); when false, multi-line (↔ `singleLine`).
+    pub single_line: bool,
+    /// Maximum visible lines. Only effective when `single_line` is false (↔ `maxLines`).
+    pub max_lines: Option<usize>,
+    /// Minimum visible lines. Only effective when `single_line` is false (↔ `minLines`).
+    pub min_lines: Option<usize>,
+    /// Override the cursor color (↔ `cursorBrush` as `SolidColor`).
+    pub cursor_color: Option<Color>,
+    /// Callback invoked after each text layout computation (↔ `onTextLayout`).
+    pub on_text_layout: Option<Rc<dyn Fn(&repose_core::TextLayoutResult)>>,
+}
+
+impl Default for BasicTextFieldConfig {
+    fn default() -> Self {
+        Self {
+            on_change: None,
+            on_submit: None,
+            visual_transformation: None,
+            keyboard_options: None,
+            ime_action: None,
+            enabled: true,
+            read_only: false,
+            single_line: true,
+            max_lines: None,
+            min_lines: None,
+            cursor_color: None,
+            on_text_layout: None,
+        }
+    }
+}
+
+/// Platform-managed text input view. Hint shown only when `value` is empty.
+///
+/// Compose-equivalent: `BasicTextField(value, onValueChange, modifier, enabled, readOnly, ...)`
+///
+/// By default creates a **single-line** field. Pass `single_line: false` for multiline.
+///
+/// # Example
+/// ```ignore
+/// BasicTextField("Email", email, modifier, BasicTextFieldConfig {
+///     keyboard_options: Some(KeyboardOptions { keyboard_type: KeyboardType::Email, ..Default::default() }),
+///     ..Default::default()
+/// })
+/// ```
 pub fn BasicTextField(
     hint: impl Into<String>,
     value: String,
     modifier: repose_core::Modifier,
-    on_change: Option<impl Fn(String) + 'static>,
-    on_submit: Option<impl Fn(String) + 'static>,
+    config: BasicTextFieldConfig,
 ) -> repose_core::View {
-    BasicTextFieldEx {
-        hint: hint.into(),
-        value,
+    let multiline = !config.single_line;
+    text_field_view(
         modifier,
-        on_change: on_change.map(|f| Rc::new(f) as _),
-        on_submit: on_submit.map(|f| Rc::new(f) as _),
-        visual_transformation: None,
-        keyboard_options: None,
-        ime_action: None,
-    }
-    .build()
+        hint.into(),
+        value,
+        multiline,
+        config.on_change,
+        config.on_submit,
+        config.visual_transformation,
+        config.keyboard_options.map(|o| o.keyboard_type),
+        config.ime_action,
+        config.enabled,
+        config.read_only,
+        if config.single_line { None } else { config.max_lines },
+        if config.single_line { None } else { config.min_lines },
+        config.cursor_color,
+        config.on_text_layout,
+    )
 }
 
-/// Extended BasicTextField with optional visual transformation, keyboard options, and IME action.
+/// Builder-style helper for `BasicTextFieldConfig`, allowing method chaining.
+///
+/// Equivalent to Compose's named-parameter style:
+/// ```ignore
+/// BasicTextFieldEx::new("Hint", text, modifier)
+///     .on_change(|v| ...)
+///     .enabled(false)
+///     .build()
+/// ```
 pub struct BasicTextFieldEx {
-    pub hint: String,
-    pub value: String,
-    pub modifier: repose_core::Modifier,
-    pub on_change: Option<Rc<dyn Fn(String)>>,
-    pub on_submit: Option<Rc<dyn Fn(String)>>,
-    /// Optional visual transformation (e.g., password masking).
-    pub visual_transformation: Option<Rc<dyn repose_core::VisualTransformation>>,
-    /// Platform keyboard configuration hints.
-    pub keyboard_options: Option<KeyboardOptions>,
-    /// IME action button configuration.
-    pub ime_action: Option<repose_core::ImeAction>,
+    hint: String,
+    value: String,
+    modifier: repose_core::Modifier,
+    config: BasicTextFieldConfig,
 }
 
 impl BasicTextFieldEx {
@@ -961,146 +1036,78 @@ impl BasicTextFieldEx {
             hint: hint.into(),
             value,
             modifier,
-            on_change: None,
-            on_submit: None,
-            visual_transformation: None,
-            keyboard_options: None,
-            ime_action: None,
+            config: BasicTextFieldConfig::default(),
         }
     }
 
     pub fn on_change(mut self, f: impl Fn(String) + 'static) -> Self {
-        self.on_change = Some(Rc::new(f));
+        self.config.on_change = Some(Rc::new(f));
         self
     }
 
     pub fn on_submit(mut self, f: impl Fn(String) + 'static) -> Self {
-        self.on_submit = Some(Rc::new(f));
+        self.config.on_submit = Some(Rc::new(f));
         self
     }
 
     pub fn visual_transformation(mut self, vt: impl repose_core::VisualTransformation) -> Self {
-        self.visual_transformation = Some(Rc::new(vt));
+        self.config.visual_transformation = Some(Rc::new(vt));
         self
     }
 
     pub fn keyboard_options(mut self, opts: KeyboardOptions) -> Self {
-        self.keyboard_options = Some(opts);
+        self.config.keyboard_options = Some(opts);
         self
     }
 
     pub fn ime_action(mut self, action: repose_core::ImeAction) -> Self {
-        self.ime_action = Some(action);
+        self.config.ime_action = Some(action);
         self
     }
 
     pub fn password(mut self) -> Self {
-        self.visual_transformation =
+        self.config.visual_transformation =
             Some(Rc::new(repose_core::PasswordVisualTransformation::default()));
         self
     }
 
-    pub fn build(self) -> repose_core::View {
-        text_field_view(
-            self.modifier,
-            self.hint,
-            self.value,
-            false,
-            self.on_change,
-            self.on_submit,
-            self.visual_transformation,
-            self.keyboard_options.map(|o| o.keyboard_type),
-            self.ime_action,
-        )
-    }
-}
-
-/// Platform-managed view: multiline text input.
-/// - Allows '\n' insertion
-/// - Renders wrapped lines + vertical scrolling
-pub fn TextArea(
-    hint: impl Into<String>,
-    value: String,
-    modifier: repose_core::Modifier,
-    on_change: Option<impl Fn(String) + 'static>,
-    on_submit: Option<impl Fn(String) + 'static>,
-) -> repose_core::View {
-    TextAreaEx {
-        hint: hint.into(),
-        value,
-        modifier,
-        on_change: on_change.map(|f| Rc::new(f) as _),
-        on_submit: on_submit.map(|f| Rc::new(f) as _),
-        visual_transformation: None,
-        keyboard_options: None,
-        ime_action: None,
-    }
-    .build()
-}
-
-/// Extended TextArea with optional visual transformation, keyboard options, and IME action.
-pub struct TextAreaEx {
-    pub hint: String,
-    pub value: String,
-    pub modifier: repose_core::Modifier,
-    pub on_change: Option<Rc<dyn Fn(String)>>,
-    pub on_submit: Option<Rc<dyn Fn(String)>>,
-    pub visual_transformation: Option<Rc<dyn repose_core::VisualTransformation>>,
-    pub keyboard_options: Option<KeyboardOptions>,
-    pub ime_action: Option<repose_core::ImeAction>,
-}
-
-impl TextAreaEx {
-    pub fn new(hint: impl Into<String>, value: String, modifier: repose_core::Modifier) -> Self {
-        Self {
-            hint: hint.into(),
-            value,
-            modifier,
-            on_change: None,
-            on_submit: None,
-            visual_transformation: None,
-            keyboard_options: None,
-            ime_action: None,
-        }
-    }
-
-    pub fn on_change(mut self, f: impl Fn(String) + 'static) -> Self {
-        self.on_change = Some(Rc::new(f));
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.config.enabled = enabled;
         self
     }
 
-    pub fn on_submit(mut self, f: impl Fn(String) + 'static) -> Self {
-        self.on_submit = Some(Rc::new(f));
+    pub fn read_only(mut self, read_only: bool) -> Self {
+        self.config.read_only = read_only;
         self
     }
 
-    pub fn visual_transformation(mut self, vt: impl repose_core::VisualTransformation) -> Self {
-        self.visual_transformation = Some(Rc::new(vt));
+    pub fn single_line(mut self, single_line: bool) -> Self {
+        self.config.single_line = single_line;
         self
     }
 
-    pub fn keyboard_options(mut self, opts: KeyboardOptions) -> Self {
-        self.keyboard_options = Some(opts);
+    pub fn max_lines(mut self, max_lines: usize) -> Self {
+        self.config.max_lines = Some(max_lines);
         self
     }
 
-    pub fn ime_action(mut self, action: repose_core::ImeAction) -> Self {
-        self.ime_action = Some(action);
+    pub fn min_lines(mut self, min_lines: usize) -> Self {
+        self.config.min_lines = Some(min_lines);
+        self
+    }
+
+    pub fn cursor_color(mut self, color: Color) -> Self {
+        self.config.cursor_color = Some(color);
+        self
+    }
+
+    pub fn on_text_layout(mut self, f: impl Fn(&repose_core::TextLayoutResult) + 'static) -> Self {
+        self.config.on_text_layout = Some(Rc::new(f));
         self
     }
 
     pub fn build(self) -> repose_core::View {
-        text_field_view(
-            self.modifier,
-            self.hint,
-            self.value,
-            true,
-            self.on_change,
-            self.on_submit,
-            self.visual_transformation,
-            self.keyboard_options.map(|o| o.keyboard_type),
-            self.ime_action,
-        )
+        BasicTextField(self.hint, self.value, self.modifier, self.config)
     }
 }
 
@@ -1246,6 +1253,13 @@ fn char_to_byte(s: &str, ci: usize) -> usize {
 /// `modifier.text_input.is_some()`. This is the Compose-equivalent of
 /// `TextFieldCoreModifierNode.draw()` — the engine handles painting natively
 /// when the text_input modifier is present (no caller-side painter needed).
+///
+/// Behavior per Compose BasicTextField:
+/// - `text_input.enabled=false`: no cursor, no selection highlight, text rendered normally
+/// - `text_input.read_only=true`: no cursor, selection highlight rendered
+/// - `cursor_color`: overrides cursor brush
+/// - `max_lines`: caps rendered lines (clip applied by container)
+/// - `on_text_layout`: called after layout computation
 pub(crate) fn paint_text_field(
     scene: &mut Scene,
     rect: repose_core::Rect,
@@ -1282,6 +1296,9 @@ pub(crate) fn paint_text_field(
     }
 
     let th = locals::theme();
+    let show_selection = text_input.enabled;
+    let show_cursor = text_input.enabled && !text_input.read_only;
+    let cursor_color = text_input.cursor_color.unwrap_or(th.on_surface);
     let rendered_by_vt = |original: &str| -> String {
         if let Some(ref vt) = text_input.visual_transformation {
             vt.filter(original).text
@@ -1304,7 +1321,7 @@ pub(crate) fn paint_text_field(
             let m = measure_text(&measure_for, font_val, None);
 
             // Selection highlight
-            if st.selection.start != st.selection.end {
+            if show_selection && st.selection.start != st.selection.end {
                 let start_off = if has_vt {
                     original_offset_to_display(&st.text, &measure_for, st.selection.start)
                 } else {
@@ -1366,8 +1383,8 @@ pub(crate) fn paint_text_field(
                 font_family: None,
             });
 
-            // Caret
-            if is_focused && st.selection.start == st.selection.end && st.caret_visible() {
+            // Caret (only when enabled && !readOnly)
+            if show_cursor && is_focused && st.selection.start == st.selection.end && st.caret_visible() {
                 let caret_off = if has_vt {
                     original_offset_to_display(&st.text, &measure_for, st.selection.end)
                 } else {
@@ -1386,7 +1403,7 @@ pub(crate) fn paint_text_field(
                         w: dp_to_px(1.0),
                         h: line_h,
                     },
-                    brush: Brush::Solid(th.on_surface),
+                    brush: Brush::Solid(cursor_color),
                     radius: [0.0; 4],
                 });
             }
@@ -1394,6 +1411,7 @@ pub(crate) fn paint_text_field(
             // --- Multi-line ---
             let layout = layout_text_area(&st.text, font_val, inner.w.max(1.0));
             let lh = layout.line_h_px;
+            let max_line_count = text_input.max_lines.unwrap_or(usize::MAX);
 
             // Hint text (empty field)
             if st.text.is_empty() {
@@ -1412,6 +1430,9 @@ pub(crate) fn paint_text_field(
             } else {
                 let display_full = rendered_by_vt(&st.text);
                 for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
+                    if i >= max_line_count {
+                        break;
+                    }
                     let ln = display_full[s..e].to_string();
                     let draw_y = inner.y + (i as f32) * lh - st.scroll_offset_y;
                     if draw_y + lh < inner.y - 1.0 || draw_y > inner.y + inner.h + 1.0 {
@@ -1433,11 +1454,14 @@ pub(crate) fn paint_text_field(
             }
 
             // Selection (multi-line)
-            if st.selection.start != st.selection.end {
+            if show_selection && st.selection.start != st.selection.end {
                 let sel_a: usize = st.selection.start.min(st.selection.end);
                 let sel_b: usize = st.selection.start.max(st.selection.end);
                 let selection = th.focus.with_alpha_f32(85.0 / 255.0);
                 for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
+                    if i >= max_line_count {
+                        break;
+                    }
                     let os = sel_a.max(s);
                     let oe = sel_b.min(e);
                     if os >= oe {
@@ -1471,8 +1495,8 @@ pub(crate) fn paint_text_field(
                 }
             }
 
-            // Caret (multi-line)
-            if is_focused && st.selection.start == st.selection.end && st.caret_visible() {
+            // Caret (multi-line) — only when enabled && !readOnly
+            if show_cursor && is_focused && st.selection.start == st.selection.end && st.caret_visible() {
                 let caret = st.selection.end.min(st.text.len());
                 let (cx, cy, _li) = caret_xy_for_byte(&st.text, font_val, inner.w.max(1.0), caret);
                 let draw_x = inner.x + cx;
@@ -1484,7 +1508,7 @@ pub(crate) fn paint_text_field(
                         w: dp_to_px(1.0),
                         h: lh,
                     },
-                    brush: Brush::Solid(th.on_surface),
+                    brush: Brush::Solid(cursor_color),
                     radius: [0.0; 4],
                 });
             }
@@ -1543,10 +1567,40 @@ pub(crate) fn paint_text_field(
         }
     }
 
+    // Fire on_text_layout callback with computed layout info
+    if let Some(ref cb) = text_input.on_text_layout {
+        let (line_count, content_w, content_h) = if let Some(state_rc) = state {
+            let st = state_rc.borrow();
+            let display = if st.text.is_empty() {
+                text_input.hint.clone()
+            } else if let Some(ref vt) = text_input.visual_transformation {
+                vt.filter(&st.text).text
+            } else {
+                st.text.clone()
+            };
+            if text_input.multiline {
+                let l = layout_text_area(&display, font_val, inner.w.max(1.0));
+                let lc = l.ranges.len();
+                (lc, inner.w.max(0.0), (lc as f32 * l.line_h_px).max(0.0))
+            } else {
+                let m = measure_text(&display, font_val, None);
+                let w = m.positions.last().copied().unwrap_or(0.0);
+                (1, w.max(0.0), line_h.max(0.0))
+            }
+        } else {
+            (0, 0.0, 0.0)
+        };
+        cb(&repose_core::TextLayoutResult {
+            line_count,
+            width_px: content_w,
+            height_px: content_h,
+        });
+    }
+
     scene.nodes.push(SceneNode::PopClip);
 }
 
-/// Shared view-builder for both `BasicTextField` and `TextArea`.
+/// Shared view-builder for `BasicTextField`.
 /// Creates the view with text_input modifier. Painting is handled natively
 /// by layout.rs when it encounters `modifier.text_input` (Compose-aligned).
 fn text_field_view(
@@ -1559,6 +1613,12 @@ fn text_field_view(
     visual_transformation: Option<Rc<dyn repose_core::VisualTransformation>>,
     keyboard_type: Option<KeyboardType>,
     ime_action: Option<ImeAction>,
+    enabled: bool,
+    read_only: bool,
+    max_lines: Option<usize>,
+    min_lines: Option<usize>,
+    cursor_color: Option<Color>,
+    on_text_layout: Option<Rc<dyn Fn(&repose_core::TextLayoutResult)>>,
 ) -> View {
     let modif = modifier.text_input(TextInputConfig {
         hint,
@@ -1570,6 +1630,12 @@ fn text_field_view(
         visual_transformation,
         keyboard_type,
         ime_action,
+        enabled,
+        read_only,
+        max_lines,
+        min_lines,
+        cursor_color,
+        on_text_layout,
     });
 
     View::new(0, ViewKind::Box)
@@ -1578,7 +1644,7 @@ fn text_field_view(
             role: Role::TextField,
             label: None,
             focused: false,
-            enabled: true,
+            enabled,
         })
 }
 

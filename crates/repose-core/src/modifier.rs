@@ -70,10 +70,11 @@ macro_rules! impl_option_fields {
                     on_action, cursor, animate_content_size, focus_requester, on_focus_changed,
                     text_input,
                 );
-                merge_flags!(self, other;
+                        merge_flags!(self, other;
                     fill_max, fill_max_w, fill_max_h,
                     hit_passthrough, input_blocker, repaint_boundary, click, disabled,
                 );
+            
                 if other.z_index != 0.0 {
                     self.z_index = other.z_index;
                 }
@@ -137,6 +138,19 @@ pub struct TextInputConfig {
     pub visual_transformation: Option<Rc<dyn crate::text::VisualTransformation>>,
     pub keyboard_type: Option<crate::text::KeyboardType>,
     pub ime_action: Option<crate::text::ImeAction>,
+    /// When false, the text field is not editable, not focusable, and input is not selectable.
+    pub enabled: bool,
+    /// When true, the text field can be focused and text can be selected/copied, but not modified.
+    pub read_only: bool,
+    /// Maximum visible lines. Only effective when `multiline` is true.
+    pub max_lines: Option<usize>,
+    /// Minimum visible lines. Only effective when `multiline` is true.
+    pub min_lines: Option<usize>,
+    /// Override the cursor color. When None, uses the theme's `on_surface`.
+    pub cursor_color: Option<Color>,
+    /// Callback invoked after each text layout computation, providing layout details
+    /// such as line count and content size.
+    pub on_text_layout: Option<Rc<dyn Fn(&crate::text::TextLayoutResult)>>,
 }
 
 impl std::fmt::Debug for TextInputConfig {
@@ -159,6 +173,14 @@ impl std::fmt::Debug for TextInputConfig {
         }
         s.field("keyboard_type", &self.keyboard_type);
         s.field("ime_action", &self.ime_action);
+        s.field("enabled", &self.enabled);
+        s.field("read_only", &self.read_only);
+        s.field("max_lines", &self.max_lines);
+        s.field("min_lines", &self.min_lines);
+        s.field("cursor_color", &self.cursor_color);
+        if self.on_text_layout.is_some() {
+            s.field("on_text_layout", &"…");
+        }
         s.finish()
     }
 }

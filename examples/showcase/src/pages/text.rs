@@ -161,7 +161,7 @@ pub fn screen() -> View {
         Section(
             "TextArea (multi-line)",
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
-                TextArea(
+                BasicTextField(
                     "Write notes…",
                     multi_text.get(),
                     Modifier::new()
@@ -170,18 +170,22 @@ pub fn screen() -> View {
                         .background(theme().surface)
                         .border(1.0, theme().outline, 10.0)
                         .clip_rounded(10.0),
-                    Some({
-                        let t = multi_text.clone();
-                        let last_change = last_change_multi.clone();
-                        move |s: String| {
-                            t.set(s.clone());
-                            last_change.set(s);
-                        }
-                    }),
-                    Some({
-                        let last_submit = last_submit_multi.clone();
-                        move |s| last_submit.set(s)
-                    }),
+                    BasicTextFieldConfig {
+                        single_line: false,
+                        on_change: Some(Rc::new({
+                            let t = multi_text.clone();
+                            let last_change = last_change_multi.clone();
+                            move |s: String| {
+                                t.set(s.clone());
+                                last_change.set(s);
+                            }
+                        })),
+                        on_submit: Some(Rc::new({
+                            let last_submit = last_submit_multi.clone();
+                            move |s| last_submit.set(s)
+                        })),
+                        ..Default::default()
+                    },
                 ),
                 Hint("Multi-line: Enter inserts newline. Cmd/Ctrl+Enter submits (if wired)."),
                 field_status(last_change_multi.get(), last_submit_multi.get()),

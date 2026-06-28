@@ -2517,6 +2517,12 @@ pub fn OutlinedTextField(
                                 visual_transformation: None,
                                 keyboard_type: None,
                                 ime_action: None,
+                                enabled: config.enabled,
+                                read_only: false,
+                                max_lines: None,
+                                min_lines: None,
+                                cursor_color: config.colors.as_ref().map(|c| c.cursor_color(config.is_error)),
+                                on_text_layout: None,
                             }),
                     )
                     .semantics(Semantics {
@@ -2722,6 +2728,12 @@ pub fn TextField(
                                 visual_transformation: None,
                                 keyboard_type: None,
                                 ime_action: None,
+                                enabled: config.enabled,
+                                read_only: false,
+                                max_lines: None,
+                                min_lines: None,
+                                cursor_color: config.colors.as_ref().map(|c| c.cursor_color(config.is_error)),
+                                on_text_layout: None,
                             }),
                     )
                     .semantics(Semantics {

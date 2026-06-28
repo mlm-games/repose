@@ -1376,17 +1376,19 @@ pub fn SearchBar(
             placeholder.clone(),
             query.clone(),
             Modifier::new().flex_grow(1.0).padding(4.0),
-            Some({
-                let s = state.clone();
-                let cb = on_query_change.clone();
-                move |text| {
-                    s.set_query(text);
-                    if let Some(ref cb) = cb {
-                        cb(s.query());
-                    }
-                }
-            }),
-            None::<fn(String)>,
+            repose_ui::BasicTextFieldConfig {
+                on_change: Some({
+                    let s = state.clone();
+                    let cb = on_query_change.clone();
+                    Rc::new(move |text| {
+                        s.set_query(text);
+                        if let Some(ref cb) = cb {
+                            cb(s.query());
+                        }
+                    })
+                }),
+                ..Default::default()
+            },
         )
         .color(th.on_surface)
         .size(th.typography.body_large)
@@ -1491,17 +1493,19 @@ pub fn DockedSearchBar(
             placeholder.clone(),
             query.clone(),
             Modifier::new().flex_grow(1.0),
-            Some({
-                let s = state.clone();
-                let cb = on_query_change.clone();
-                move |text| {
-                    s.set_query(text);
-                    if let Some(ref cb) = cb {
-                        cb(s.query());
-                    }
-                }
-            }),
-            None::<fn(String)>,
+            repose_ui::BasicTextFieldConfig {
+                on_change: Some({
+                    let s = state.clone();
+                    let cb = on_query_change.clone();
+                    Rc::new(move |text| {
+                        s.set_query(text);
+                        if let Some(ref cb) = cb {
+                            cb(s.query());
+                        }
+                    })
+                }),
+                ..Default::default()
+            },
         )
         .color(th.on_surface)
         .size(th.typography.body_large)
