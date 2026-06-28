@@ -2038,6 +2038,7 @@ pub fn CircularProgressIndicator(
         label: None,
         focused: false,
         enabled: true,
+        selectable_group: false,
     })
 }
 
@@ -2159,6 +2160,7 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
         label: None,
         focused: false,
         enabled: true,
+        selectable_group: false,
     })
 }
 
@@ -2555,6 +2557,7 @@ pub fn OutlinedTextField(
                         label: None,
                         focused: false,
                         enabled: true,
+                        selectable_group: false,
                     }),
                 config.trailing_icon.unwrap_or(Box(Modifier::new())),
             )),
@@ -2769,6 +2772,7 @@ pub fn TextField(
                         label: None,
                         focused: false,
                         enabled: true,
+                        selectable_group: false,
                     }),
                 config.trailing_icon.unwrap_or(Box(Modifier::new())),
             )),
@@ -3697,6 +3701,7 @@ pub fn Slider(
         label: None,
         focused: false,
         enabled: true,
+        selectable_group: false,
     })
 }
 
@@ -4038,6 +4043,7 @@ pub fn RangeSlider(
         label: None,
         focused: false,
         enabled: is_enabled,
+        selectable_group: false,
     })
 }
 
@@ -4583,6 +4589,9 @@ pub struct NavigationBarConfig {
     pub item_horizontal_padding: f32,
     pub item_vertical_padding: f32,
     pub indicator_radius: f32,
+    pub item_spacing: f32,
+    pub indicator_width: f32,
+    pub indicator_height: f32,
 }
 
 impl Default for NavigationBarConfig {
@@ -4600,6 +4609,9 @@ impl Default for NavigationBarConfig {
             item_horizontal_padding: NavigationBarDefaults::ITEM_HORIZONTAL_PADDING,
             item_vertical_padding: NavigationBarDefaults::ITEM_VERTICAL_PADDING,
             indicator_radius: NavigationBarDefaults::INDICATOR_RADIUS,
+            item_spacing: NavigationBarDefaults::ITEM_SPACING,
+            indicator_width: NavigationBarDefaults::ACTIVE_INDICATOR_WIDTH,
+            indicator_height: NavigationBarDefaults::ACTIVE_INDICATOR_HEIGHT,
         }
     }
 }

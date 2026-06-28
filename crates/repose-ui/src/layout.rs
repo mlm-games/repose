@@ -1845,6 +1845,7 @@ impl LayoutEngine {
                     rect,
                     focused: is_focused,
                     enabled: true,
+                    selectable_group: false,
                 });
                 next_sem_parent = Some(view_id);
             }
@@ -2080,6 +2081,7 @@ impl LayoutEngine {
                     rect,
                     focused: is_focused,
                     enabled: true,
+                    selectable_group: false,
                 });
                 next_sem_parent = Some(view_id);
             }
@@ -2102,6 +2104,7 @@ impl LayoutEngine {
                     rect,
                     focused: is_focused,
                     enabled: !modifier.disabled,
+                    selectable_group: false,
                 });
                 next_sem_parent = Some(view_id);
             }
@@ -2192,10 +2195,25 @@ impl LayoutEngine {
                     rect,
                     focused: is_focused,
                     enabled: !modifier.disabled,
+                    selectable_group: false,
                 });
                 next_sem_parent = Some(view_id);
             }
-            _ => {}
+            _ => {
+                if let Some(s) = &modifier.semantics {
+                    sems.push(SemNode {
+                        id: view_id,
+                        parent: sem_parent,
+                        role: s.role,
+                        label: s.label.clone(),
+                        rect,
+                        focused: is_focused,
+                        enabled: !modifier.disabled,
+                        selectable_group: s.selectable_group,
+                    });
+                    next_sem_parent = Some(view_id);
+                }
+            }
         }
 
         // Children

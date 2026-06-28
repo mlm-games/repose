@@ -1699,6 +1699,7 @@ fn text_field_view(
             label: None,
             focused: false,
             enabled,
+            selectable_group: false,
         })
 }
 

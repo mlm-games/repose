@@ -99,7 +99,6 @@ pub fn NavigationBar(
         .fill_max_size()
         .min_height(config.height)
         .background(config.container_color)
-        .padding(8.0)
         .then(config.modifier);
 
     if config.tonal_elevation > 0.0 {
@@ -112,7 +111,12 @@ pub fn NavigationBar(
     }
 
     Box(bar_m).child(
-        Row(Modifier::new().fill_max_size().align_items(AlignItems::Center)).child(
+        Row(Modifier::new()
+            .fill_max_size()
+            .align_items(AlignItems::Center)
+            .column_gap(config.item_spacing)
+            .semantics(Semantics::new(Role::Container).with_selectable_group()))
+        .child(
             items
                 .into_iter()
                 .enumerate()
@@ -136,20 +140,16 @@ pub fn NavigationBar(
                     let indicator_bg = config
                         .indicator_color
                         .with_alpha_f32(bg_alpha * config.indicator_opacity);
+                    let indicator_scale = animate_f32(
+                        format!("nb_sc_{}_{}", id, i),
+                        if selected { 1.0 } else { 0.0 },
+                        spec,
+                    );
                     let cb = item.on_click.clone();
 
                     let mut item_m = Modifier::new()
                         .flex_grow(1.0)
-                        .padding_values(PaddingValues {
-                            left: config.item_horizontal_padding,
-                            right: config.item_horizontal_padding,
-                            top: config.item_vertical_padding,
-                            bottom: config.item_vertical_padding,
-                        })
-                        .align_items(AlignItems::Center)
-                        .justify_content(JustifyContent::Center)
-                        .background(indicator_bg)
-                        .clip_rounded(config.indicator_radius)
+                        .semantics(Semantics::new(Role::Tab).with_label(&item.label))
                         .state_colors(StateColors {
                             default: Color::TRANSPARENT,
                             hovered: th.on_surface.with_alpha_f32(0.08),
@@ -158,16 +158,39 @@ pub fn NavigationBar(
                         });
 
                     if is_enabled {
-                        item_m = item_m.clickable().on_pointer_down(move |_| cb());
+                        item_m = item_m.clickable().on_pointer_down({
+                            let cb = cb.clone();
+                            move |_| cb()
+                        });
                     }
 
-                    Column(item_m).child((
-                        item.icon,
-                        Text(item.label)
-                            .color(fg)
-                            .size(th.typography.label_medium)
-                            .single_line(),
-                    ))
+                    Box(item_m).child(
+                        Column(Modifier::new()
+                            .fill_max_size()
+                            .align_items(AlignItems::Center)
+                            .justify_content(JustifyContent::Center))
+                        .child((
+                            // Indicator pill behind icon
+                            ZStack(Modifier::new()
+                                .align_items(AlignItems::Center)
+                                .justify_content(JustifyContent::Center))
+                            .child((
+                                Box(Modifier::new()
+                                    .width(config.indicator_width)
+                                    .height(config.indicator_height)
+                                    .background(indicator_bg)
+                                    .clip_rounded(config.indicator_radius)
+                                    .scale2(indicator_scale, 1.0)),
+                                item.icon,
+                            )),
+                            // 4dp gap between icon and label
+                            Box(Modifier::new().height(4.0)),
+                            Text(item.label)
+                                .color(fg)
+                                .size(th.typography.label_medium)
+                                .single_line(),
+                        )),
+                    )
                 })
                 .collect::<Vec<_>>(),
         ),

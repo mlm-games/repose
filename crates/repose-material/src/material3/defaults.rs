@@ -619,7 +619,10 @@ pub struct NavigationBarDefaults;
 impl NavigationBarDefaults {
     pub const HEIGHT: f32 = 80.0;
     pub const TONAL_ELEVATION: f32 = 0.0;
-    pub const ITEM_ACTIVE_INDICATOR_OPACITY: f32 = 0.12;
+    pub const ITEM_ACTIVE_INDICATOR_OPACITY: f32 = 1.0;
+    pub const ITEM_SPACING: f32 = 8.0;
+    pub const ACTIVE_INDICATOR_WIDTH: f32 = 56.0;
+    pub const ACTIVE_INDICATOR_HEIGHT: f32 = 32.0;
     pub fn container_color() -> Color {
         theme().surface_container
     }

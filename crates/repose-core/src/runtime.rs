@@ -415,6 +415,8 @@ pub struct SemNode {
     pub rect: Rect,
     pub focused: bool,
     pub enabled: bool,
+    /// Marks this node as a collection of selectable children (e.g., Tabs).
+    pub selectable_group: bool,
 }
 
 pub struct Scheduler {

@@ -3,6 +3,7 @@
 pub enum Role {
     Text,
     Button,
+    Tab,
     TextField,
     Container,
     Checkbox,
@@ -25,6 +26,9 @@ pub struct Semantics {
     /// Whether this node is actionable; disabled nodes remain in the tree
     /// but are marked not enabled.
     pub enabled: bool,
+    /// Marks this node as a collection of horizontally or vertically stacked
+    /// selectable elements (ex: Tabs, RadioButtons).
+    pub selectable_group: bool,
     // pub value: Option<String>,
     // pub checked: Option<bool>,
 }
@@ -36,8 +40,17 @@ impl Semantics {
             label: None,
             focused: false,
             enabled: true,
+            selectable_group: false,
             // value: None,
             // checked: None,
         }
+    }
+    pub fn with_label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+    pub fn with_selectable_group(mut self) -> Self {
+        self.selectable_group = true;
+        self
     }
 }

@@ -154,7 +154,7 @@ fn build_accesskit_node(sem: &SemNode, children: &[u64], scale: f64) -> Node {
 
     if sem.enabled {
         match sem.role {
-            CoreRole::Button | CoreRole::Checkbox | CoreRole::Switch | CoreRole::RadioButton => {
+            CoreRole::Button | CoreRole::Checkbox | CoreRole::Switch | CoreRole::RadioButton | CoreRole::Tab => {
                 node.add_action(Action::Click);
             }
             CoreRole::TextField | CoreRole::Slider => {
@@ -178,6 +178,7 @@ fn map_role(role: CoreRole) -> Role {
         CoreRole::Switch => Role::Switch,
         CoreRole::Slider => Role::Slider,
         CoreRole::ProgressBar => Role::ProgressIndicator,
+        CoreRole::Tab => Role::Tab,
     }
 }
 
@@ -199,6 +200,7 @@ fn hash_sem_node(sem: &SemNode, children: &[u64], scale: f64) -> u64 {
 
     sem.focused.hash(&mut h);
     sem.enabled.hash(&mut h);
+    sem.selectable_group.hash(&mut h);
 
     if let Some(lbl) = &sem.label {
         lbl.hash(&mut h);
