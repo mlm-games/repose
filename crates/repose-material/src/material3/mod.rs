@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use web_time::Duration;
 
 use crate::{Icon, Symbol};
-use repose_core::animation::{AnimationSpec, Easing, RepeatableSpec};
+use repose_core::animation::{AnimationSpec, Easing, RepeatableSpec, SpringSpec};
 use repose_core::*;
 use repose_ui::LazyRowState;
 use repose_ui::lazy::LazyRow;
@@ -122,6 +122,8 @@ pub fn NavigationBar(
                 .map(|(i, item)| {
                     let selected = i == selected_index;
                     let is_enabled = item.enabled;
+                    let default_effects = AnimationSpec::spring_crit(40.0);
+                    let fast_spatial = AnimationSpec::spring(SpringSpec::new(0.9, 1400.0));
                     let fg_icon = animate_color(
                         format!("nb_fi_{}_{}", id, i),
                         if selected {
@@ -129,7 +131,7 @@ pub fn NavigationBar(
                         } else {
                             config.unselected_icon_color
                         },
-                        th.motion.color,
+                        default_effects,
                     );
                     let fg_label = animate_color(
                         format!("nb_fl_{}_{}", id, i),
@@ -138,12 +140,12 @@ pub fn NavigationBar(
                         } else {
                             config.unselected_text_color
                         },
-                        th.motion.color,
+                        default_effects,
                     );
                     let bg_alpha = animate_f32(
                         format!("nb_bg_{}_{}", id, i),
                         if selected { 1.0 } else { 0.0 },
-                        th.motion.color,
+                        default_effects,
                     );
                     let indicator_bg = config
                         .indicator_color
@@ -151,7 +153,7 @@ pub fn NavigationBar(
                     let indicator_scale = animate_f32(
                         format!("nb_sc_{}_{}", id, i),
                         if selected { 1.0 } else { 0.0 },
-                        th.motion.shape,
+                        fast_spatial,
                     );
                     let cb = item.on_click.clone();
 
