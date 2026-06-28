@@ -220,7 +220,7 @@ where
 /// Helper: ensure caret visibility for a TextFieldState inside a given rect (px).
 pub fn tf_ensure_visible_in_rect(state: &mut repose_ui::TextFieldState, inner_rect: Rect) {
     let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-    let m = measure_text(&state.text, font_px, None);
+    let m = measure_text(&state.text, font_px, None, 400, 0);
     let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
     state.ensure_caret_visible(
         caret_x_px,
@@ -747,7 +747,7 @@ pub fn run_desktop_app(
                                     caret_xy_for_byte(&st.text, font_px, inner_w, st.caret_index());
                                 st.ensure_caret_visible_xy(cx, cy, inner_w, inner_h, dp_to_px(2.0));
                             } else {
-                                let m = measure_text(&st.text, font_px, None);
+                                let m = measure_text(&st.text, font_px, None, 400, 0);
                                 let cx = m.positions.get(st.caret_index()).copied().unwrap_or(0.0);
                                 st.ensure_caret_visible(cx, inner_w, dp_to_px(2.0));
                             }
@@ -928,7 +928,7 @@ pub fn run_desktop_app(
                                         );
                                         st.ensure_caret_visible_xy(cx, cy, iw, ih, self.dp_px(2.0));
                                     } else {
-                                        let m = measure_text(&st.text, font_px, None);
+                                        let m = measure_text(&st.text, font_px, None, 400, 0);
                                         let cx = m.positions.get(caret_idx).copied().unwrap_or(0.0);
                                         st.ensure_caret_visible(cx, iw, self.dp_px(2.0));
                                     }

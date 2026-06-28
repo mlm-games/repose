@@ -3,7 +3,10 @@
 #[cfg(test)]
 mod tests {
     use crate::ViewTree;
-    use repose_core::{Color, Modifier, TextOverflow, View, ViewKind};
+    use repose_core::{
+        Color, FontStyle, FontWeight, Modifier, TextAlign, TextDecoration, TextOverflow, View,
+        ViewKind,
+    };
 
     fn make_text(s: &str) -> View {
         View::new(
@@ -17,6 +20,12 @@ mod tests {
                 overflow: TextOverflow::Visible,
                 font_family: None,
                 annotations: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
             },
         )
     }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use repose_core::request_frame;
 use repose_core::{
-    Brush, GlyphRasterConfig, RenderBackend, Scene, SceneNode, StrokeCap, Transform,
+    Brush, FontStyle, GlyphRasterConfig, RenderBackend, Scene, SceneNode, StrokeCap, Transform,
 };
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use wgpu::Instance;
@@ -2702,11 +2702,19 @@ impl RenderBackend for WgpuBackend {
                     color,
                     size,
                     font_family,
+                    text_align: _,
+                    font_weight,
+                    font_style,
+                    text_decoration: _,
+                    letter_spacing: _,
+                    line_height: _,
                 } => {
                     flush_batch!(); // flush any prior primitives
 
                     let px = (*size).clamp(8.0, 96.0);
-                    let shaped = repose_text::shape_line(text.as_ref(), px, *font_family);
+                    let fw = font_weight.0;
+                    let fs = if *font_style == FontStyle::Italic { 1 } else { 0 };
+                    let shaped = repose_text::shape_line(text.as_ref(), px, *font_family, fw, fs);
 
                     let cos_a = current_transform.rotate.cos();
                     let sin_a = current_transform.rotate.sin();

@@ -52,6 +52,12 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             overflow,
             font_family,
             annotations,
+            text_align,
+            font_weight,
+            font_style,
+            text_decoration,
+            letter_spacing,
+            line_height,
         } => {
             font_family.hash(hasher);
             text.hash(hasher);
@@ -60,6 +66,16 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             soft_wrap.hash(hasher);
             max_lines.hash(hasher);
             hash_text_overflow(overflow, hasher);
+            text_align.hash(hasher);
+            font_weight.0.hash(hasher);
+            font_style.hash(hasher);
+            text_decoration.underline.hash(hasher);
+            text_decoration.strikethrough.hash(hasher);
+            if let Some(c) = &text_decoration.color {
+                hash_color(c, hasher);
+            }
+            ((letter_spacing * 100.0) as u32).hash(hasher);
+            ((line_height * 100.0) as u32).hash(hasher);
             if let Some(annos) = annotations {
                 annos.len().hash(hasher);
                 for span in annos.iter() {
@@ -304,7 +320,9 @@ fn hash_text_overflow(o: &TextOverflow, hasher: &mut impl Hasher) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use repose_core::{Modifier, View, ViewKind};
+    use repose_core::{
+        FontStyle, FontWeight, Modifier, TextAlign, TextDecoration, View, ViewKind,
+    };
 
     #[test]
     fn test_same_view_same_hash() {
@@ -335,6 +353,12 @@ mod tests {
                 overflow: TextOverflow::Visible,
                 font_family: None,
                 annotations: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
             },
         );
         let v2 = View::new(
@@ -348,6 +372,12 @@ mod tests {
                 overflow: TextOverflow::Visible,
                 font_family: None,
                 annotations: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
             },
         );
         let v3 = View::new(
@@ -361,6 +391,12 @@ mod tests {
                 overflow: TextOverflow::Visible,
                 font_family: None,
                 annotations: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
             },
         );
 

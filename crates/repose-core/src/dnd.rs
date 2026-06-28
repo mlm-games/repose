@@ -1,6 +1,7 @@
 use crate::Vec2;
 use crate::color::{Brush, Color};
 use crate::geometry::Rect;
+use crate::text::{FontStyle, FontWeight, TextAlign, TextDecoration};
 use crate::input::{Modifiers, PointerKind};
 use crate::runtime::{Frame, HitRegion};
 use crate::shortcuts::DragAction;
@@ -558,5 +559,11 @@ pub fn overlay_drag_indicator(
         color: Color::WHITE,
         size: crate::locals::dp_to_px(12.0),
         font_family: None,
+        text_align: TextAlign::Unspecified,
+        font_weight: FontWeight::NORMAL,
+        font_style: FontStyle::Normal,
+        text_decoration: TextDecoration::default(),
+        letter_spacing: 0.0,
+        line_height: 0.0,
     });
 }

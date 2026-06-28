@@ -81,7 +81,7 @@ pub fn ensure_caret_visible(state: &mut TextFieldState, multiline: bool) {
         } else {
             (state.text.clone(), caret_idx)
         };
-        let m = crate::textfield::measure_text(&display, font_px, None);
+        let m = crate::textfield::measure_text(&display, font_px, None, 400, 0);
         let caret_x = m.positions.get(caret_display_off).copied().unwrap_or(0.0);
         state.ensure_caret_visible(caret_x, wrap_width, repose_core::dp_to_px(2.0));
     }
@@ -280,8 +280,14 @@ pub struct TextMetrics {
 /// Measure caret positions for a single-line textfield using shaping.
 /// `font_px` must match the px size used for rendering the text.
 /// `font_family` optionally overrides the default font (e.g. for icons).
-pub fn measure_text(text: &str, font_px: f32, font_family: Option<&'static str>) -> TextMetrics {
-    let m = repose_text::metrics_for_textfield(text, font_px, font_family);
+pub fn measure_text(
+    text: &str,
+    font_px: f32,
+    font_family: Option<&'static str>,
+    font_weight: u16,
+    font_style: u8,
+) -> TextMetrics {
+    let m = repose_text::metrics_for_textfield(text, font_px, font_family, font_weight, font_style);
     TextMetrics {
         positions: m.positions,
         byte_offsets: m.byte_offsets,
@@ -295,8 +301,14 @@ pub fn byte_to_char_index(m: &TextMetrics, byte: usize) -> usize {
 }
 
 /// Given an x position (px), return the nearest grapheme boundary byte index.
-pub fn index_for_x_bytes(text: &str, font_px: f32, x_px: f32) -> usize {
-    let m = measure_text(text, font_px, None);
+pub fn index_for_x_bytes(
+    text: &str,
+    font_px: f32,
+    x_px: f32,
+    font_weight: u16,
+    font_style: u8,
+) -> usize {
+    let m = measure_text(text, font_px, None, font_weight, font_style);
 
     let mut best_i = 0usize;
     let mut best_d = f32::INFINITY;
@@ -919,7 +931,7 @@ impl TextFieldState {
     }
 }
 
-//// Configuration for `BasicTextField`, equivalent to Compose `BasicTextField` default params.
+/// Configuration for `BasicTextField`, equivalent to Compose `BasicTextField` default params.
 ///
 /// Use `..Default::default()` for unset fields:
 /// ```ignore
@@ -1117,9 +1129,15 @@ pub struct TextAreaLayout {
     pub line_h_px: f32,
 }
 
-pub fn layout_text_area(text: &str, font_px: f32, wrap_w_px: f32) -> TextAreaLayout {
+pub fn layout_text_area(
+    text: &str,
+    font_px: f32,
+    wrap_w_px: f32,
+    font_weight: u16,
+    font_style: u8,
+) -> TextAreaLayout {
     let line_h = font_px * 1.3;
-    let (ranges, _) = repose_text::wrap_line_ranges(text, font_px, wrap_w_px.max(1.0), None, true);
+    let (ranges, _) = repose_text::wrap_line_ranges(text, font_px, wrap_w_px.max(1.0), None, true, font_weight, font_style);
     TextAreaLayout {
         ranges,
         line_h_px: line_h,
@@ -1166,12 +1184,12 @@ pub fn caret_xy_for_byte(
     wrap_w_px: f32,
     byte: usize,
 ) -> (f32, f32, usize) {
-    let layout = layout_text_area(text, font_px, wrap_w_px);
+    let layout = layout_text_area(text, font_px, wrap_w_px, 400, 0);
     let (ranges, line_h) = (&layout.ranges, layout.line_h_px);
     let (li, local, _) = locate_byte_in_ranges(ranges, byte);
     let (s, e) = ranges.get(li).copied().unwrap_or((0, 0));
     let line = &text[s..e];
-    let m = measure_text(line, font_px, None);
+    let m = measure_text(line, font_px, None, 400, 0);
     let ci = byte_to_char_index(&m, local);
     let x = m.positions.get(ci).copied().unwrap_or(0.0);
     let y = (li as f32) * line_h;
@@ -1180,12 +1198,12 @@ pub fn caret_xy_for_byte(
 
 /// Given x/y (px) relative to inner content (not scrolled), return nearest grapheme boundary byte index.
 pub fn index_for_xy_bytes(text: &str, font_px: f32, wrap_w_px: f32, x_px: f32, y_px: f32) -> usize {
-    let layout = layout_text_area(text, font_px, wrap_w_px);
+    let layout = layout_text_area(text, font_px, wrap_w_px, 400, 0);
     let li = ((y_px / layout.line_h_px).floor() as isize).max(0) as usize;
     let li = li.min(layout.ranges.len().saturating_sub(1));
     let (s, e) = layout.ranges.get(li).copied().unwrap_or((0, 0));
     let line = &text[s..e];
-    let local = index_for_x_bytes(line, font_px, x_px.max(0.0));
+    let local = index_for_x_bytes(line, font_px, x_px.max(0.0), 400, 0);
     (s + local).min(text.len())
 }
 
@@ -1198,7 +1216,7 @@ pub fn move_caret_vertical(
     dir: i32, // -1 up, +1 down
     preferred_x: Option<f32>,
 ) -> (usize, f32) {
-    let layout = layout_text_area(text, font_px, wrap_w_px);
+    let layout = layout_text_area(text, font_px, wrap_w_px, 400, 0);
     if layout.ranges.is_empty() {
         return (cur_byte, preferred_x.unwrap_or(0.0));
     }
@@ -1209,7 +1227,7 @@ pub fn move_caret_vertical(
     let nli = nli as usize;
     let (s, e) = layout.ranges[nli];
     let line = &text[s..e];
-    let local = index_for_x_bytes(line, font_px, px.max(0.0));
+    let local = index_for_x_bytes(line, font_px, px.max(0.0), 400, 0);
     ((s + local).min(text.len()), px)
 }
 
@@ -1221,7 +1239,7 @@ pub fn line_home_end(
     cur_byte: usize,
     to_end: bool,
 ) -> usize {
-    let layout = layout_text_area(text, font_px, wrap_w_px);
+    let layout = layout_text_area(text, font_px, wrap_w_px, 400, 0);
     let (li, _local, _) = locate_byte_in_ranges(&layout.ranges, cur_byte);
     let (s, e) = layout.ranges.get(li).copied().unwrap_or((0, 0));
     if to_end { e } else { s }
@@ -1318,7 +1336,7 @@ pub(crate) fn paint_text_field(
                 st.text.clone()
             };
             let has_vt = text_input.visual_transformation.is_some();
-            let m = measure_text(&measure_for, font_val, None);
+            let m = measure_text(&measure_for, font_val, None, 400, 0);
 
             // Selection highlight
             if show_selection && st.selection.start != st.selection.end {
@@ -1381,6 +1399,12 @@ pub(crate) fn paint_text_field(
                 color: txt_col,
                 size: font_val,
                 font_family: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
             });
 
             // Caret (only when enabled && !readOnly)
@@ -1409,7 +1433,7 @@ pub(crate) fn paint_text_field(
             }
         } else {
             // --- Multi-line ---
-            let layout = layout_text_area(&st.text, font_val, inner.w.max(1.0));
+            let layout = layout_text_area(&st.text, font_val, inner.w.max(1.0), 400, 0);
             let lh = layout.line_h_px;
             let max_line_count = text_input.max_lines.unwrap_or(usize::MAX);
 
@@ -1426,6 +1450,12 @@ pub(crate) fn paint_text_field(
                     color: th.on_surface_variant,
                     size: font_val,
                     font_family: None,
+                    text_align: TextAlign::Unspecified,
+                    font_weight: FontWeight::NORMAL,
+                    font_style: FontStyle::Normal,
+                    text_decoration: TextDecoration::default(),
+                    letter_spacing: 0.0,
+                    line_height: 0.0,
                 });
             } else {
                 let display_full = rendered_by_vt(&st.text);
@@ -1449,6 +1479,12 @@ pub(crate) fn paint_text_field(
                         color: th.on_surface,
                         size: font_val,
                         font_family: None,
+                        text_align: TextAlign::Unspecified,
+                        font_weight: FontWeight::NORMAL,
+                        font_style: FontStyle::Normal,
+                        text_decoration: TextDecoration::default(),
+                        letter_spacing: 0.0,
+                        line_height: 0.0,
                     });
                 }
             }
@@ -1468,7 +1504,7 @@ pub(crate) fn paint_text_field(
                         continue;
                     }
                     let ln = &st.text[s..e];
-                    let m = measure_text(ln, font_val, None);
+                    let m = measure_text(ln, font_val, None, 400, 0);
                     let ls = os - s;
                     let le = oe - s;
                     let sx = m
@@ -1527,9 +1563,15 @@ pub(crate) fn paint_text_field(
                 color: th.on_surface_variant,
                 size: font_val,
                 font_family: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
             });
         } else if text_input.multiline {
-            let layout = layout_text_area(&text_input.value, font_val, inner.w.max(1.0));
+            let layout = layout_text_area(&text_input.value, font_val, inner.w.max(1.0), 400, 0);
             let lh = layout.line_h_px;
             let display_full = rendered_by_vt(&text_input.value);
             for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
@@ -1549,6 +1591,12 @@ pub(crate) fn paint_text_field(
                     color: th.on_surface,
                     size: font_val,
                     font_family: None,
+                    text_align: TextAlign::Unspecified,
+                    font_weight: FontWeight::NORMAL,
+                    font_style: FontStyle::Normal,
+                    text_decoration: TextDecoration::default(),
+                    letter_spacing: 0.0,
+                    line_height: 0.0,
                 });
             }
         } else {
@@ -1563,6 +1611,12 @@ pub(crate) fn paint_text_field(
                 color: th.on_surface,
                 size: font_val,
                 font_family: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
             });
         }
     }
@@ -1579,11 +1633,11 @@ pub(crate) fn paint_text_field(
                 st.text.clone()
             };
             if text_input.multiline {
-                let l = layout_text_area(&display, font_val, inner.w.max(1.0));
+                let l = layout_text_area(&display, font_val, inner.w.max(1.0), 400, 0);
                 let lc = l.ranges.len();
                 (lc, inner.w.max(0.0), (lc as f32 * l.line_h_px).max(0.0))
             } else {
-                let m = measure_text(&display, font_val, None);
+                let m = measure_text(&display, font_val, None, 400, 0);
                 let w = m.positions.last().copied().unwrap_or(0.0);
                 (1, w.max(0.0), line_h.max(0.0))
             }
@@ -1656,7 +1710,7 @@ mod tests {
     fn test_index_for_x_bytes_grapheme() {
         let t = "A👍🏽B";
         let font_px = 16.0; // in tests, exact px isn't important-boundaries are.
-        let m = measure_text(t, font_px, None);
+        let m = measure_text(t, font_px, None, 400, 0);
         for i in 0..m.byte_offsets.len() - 1 {
             let b = m.byte_offsets[i];
             let _ = &t[..b];

@@ -149,6 +149,12 @@ enum NodeContext {
         overflow: TextOverflow,
         font_family: Option<&'static str>,
         annotations: Option<Arc<[TextSpan]>>,
+        text_align: TextAlign,
+        font_weight: FontWeight,
+        font_style: FontStyle,
+        text_decoration: TextDecoration,
+        letter_spacing: f32,
+        line_height: f32,
     },
     Container,
     ScrollContainer,
@@ -888,6 +894,12 @@ impl LayoutEngine {
                 overflow,
                 font_family,
                 annotations,
+                text_align,
+                font_weight,
+                font_style,
+                text_decoration,
+                letter_spacing,
+                line_height,
                 ..
             } => NodeContext::Text {
                 text: text.clone(),
@@ -898,6 +910,12 @@ impl LayoutEngine {
                 overflow: *overflow,
                 font_family: *font_family,
                 annotations: annotations.clone(),
+                text_align: *text_align,
+                font_weight: *font_weight,
+                font_style: *font_style,
+                text_decoration: *text_decoration,
+                letter_spacing: *letter_spacing,
+                line_height: *line_height,
             },
             ViewKind::Expander { .. } => NodeContext::Container,
             ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. } => NodeContext::ScrollContainer,
@@ -928,10 +946,23 @@ impl LayoutEngine {
                 overflow,
                 font_family,
                 annotations: _,
+                text_align,
+                font_weight,
+                font_style,
+                text_decoration,
+                letter_spacing,
+                line_height,
             }) => {
                 let size_px_val = font_px(*font_dp);
-                let line_h_px_val = size_px_val * 1.3;
-                let max_content_w = measure_text(text, size_px_val, *font_family)
+                let lh = if *line_height > 0.0 {
+                    size_px_val * *line_height
+                } else {
+                    size_px_val * 1.3
+                };
+                let line_h_px_val = lh;
+                let fw = font_weight.0;
+                let fs = if matches!(font_style, FontStyle::Italic) { 1 } else { 0 };
+                let max_content_w = measure_text(text, size_px_val, *font_family, fw, fs)
                     .positions
                     .last()
                     .copied()
@@ -940,7 +971,7 @@ impl LayoutEngine {
 
                 let mut min_content_w = 0.0f32;
                 for w in text.split_whitespace() {
-                    let ww = measure_text(w, size_px_val, *font_family)
+                    let ww = measure_text(w, size_px_val, *font_family, fw, fs)
                         .positions
                         .last()
                         .copied()
@@ -969,6 +1000,8 @@ impl LayoutEngine {
                         wrap_w_px,
                         *max_lines,
                         true,
+                        fw,
+                        fs,
                     );
                     let lns: Vec<String> = ranges
                         .iter()
@@ -978,7 +1011,7 @@ impl LayoutEngine {
                 } else if matches!(overflow, TextOverflow::Ellipsis)
                     && max_content_w > wrap_w_px + 0.5
                 {
-                    let elided = repose_text::ellipsize_line(text, size_px_val, wrap_w_px);
+                    let elided = repose_text::ellipsize_line(text, size_px_val, wrap_w_px, fw, fs);
                     let elided_len = elided.len();
                     (vec![elided], vec![(0, elided_len)])
                 } else {
@@ -989,7 +1022,7 @@ impl LayoutEngine {
                 let line_widths: Vec<f32> = lines
                     .iter()
                     .map(|line| {
-                        measure_text(line, size_px_val, *font_family)
+                        measure_text(line, size_px_val, *font_family, fw, fs)
                             .positions
                             .last()
                             .copied()
@@ -1643,6 +1676,12 @@ impl LayoutEngine {
                 overflow,
                 font_family,
                 annotations,
+                text_align,
+                font_weight,
+                font_style,
+                text_decoration,
+                letter_spacing,
+                line_height,
                 ..
             } => {
                 let tl = self.text_cache.get(&node_id);
@@ -1655,7 +1694,8 @@ impl LayoutEngine {
                     )
                 } else {
                     let px = font_px(*font_size);
-                    (px, px * 1.3, vec![text.clone()], None)
+                    let lh = if *line_height > 0.0 { px * *line_height } else { px * 1.3 };
+                    (px, lh, vec![text.clone()], None)
                 };
                 let total_h = lines.len() as f32 * line_h_px;
                 let need_v_clip =
@@ -1719,13 +1759,15 @@ impl LayoutEngine {
                         let seg_font_px =
                             |dp: f32| dp_to_px(dp) * repose_core::locals::text_scale().0;
                         let mut seg_x = content_rect.x;
+                        let fw_val = font_weight.0;
+                        let fs_val = if matches!(font_style, FontStyle::Italic) { 1 } else { 0 };
                         for (seg_start, seg_end, seg_color, seg_font_dp) in &segments {
                             let seg_text = &text[*seg_start..*seg_end];
                             if seg_text.is_empty() {
                                 continue;
                             }
                             let seg_px = seg_font_px(*seg_font_dp);
-                            let seg_w = measure_text(seg_text, seg_px, *font_family)
+                            let seg_w = measure_text(seg_text, seg_px, *font_family, fw_val, fs_val)
                                 .positions
                                 .last()
                                 .copied()
@@ -1741,15 +1783,39 @@ impl LayoutEngine {
                                 color: mul_alpha_color(*seg_color, alpha_accum),
                                 size: seg_px,
                                 font_family: *font_family,
+                                text_align: *text_align,
+                                font_weight: *font_weight,
+                                font_style: *font_style,
+                                text_decoration: *text_decoration,
+                                letter_spacing: *letter_spacing,
+                                line_height: *line_height,
                             });
                             seg_x += seg_w;
                         }
                     }
                 } else {
+                    let fw_val = font_weight.0;
+                    let fs_val = if matches!(font_style, FontStyle::Italic) { 1 } else { 0 };
                     for (i, ln) in lines.iter().enumerate() {
+                        let line_w = measure_text(ln, size_px, *font_family, fw_val, fs_val)
+                            .positions
+                            .last()
+                            .copied()
+                            .unwrap_or(0.0);
+                        let align_x = |line_w: f32| -> f32 {
+                            match text_align {
+                                TextAlign::End | TextAlign::Right => {
+                                    content_rect.x + (content_rect.w - line_w).max(0.0)
+                                }
+                                TextAlign::Center => {
+                                    content_rect.x + (content_rect.w - line_w).max(0.0) * 0.5
+                                }
+                                _ => content_rect.x,
+                            }
+                        };
                         scene.nodes.push(SceneNode::Text {
                             rect: repose_core::Rect {
-                                x: content_rect.x,
+                                x: align_x(line_w),
                                 y: content_rect.y + i as f32 * line_h_px,
                                 w: content_rect.w,
                                 h: line_h_px,
@@ -1758,6 +1824,12 @@ impl LayoutEngine {
                             color: mul_alpha_color(*color, alpha_accum),
                             size: size_px,
                             font_family: *font_family,
+                            text_align: *text_align,
+                            font_weight: *font_weight,
+                            font_style: *font_style,
+                            text_decoration: *text_decoration,
+                            letter_spacing: *letter_spacing,
+                            line_height: *line_height,
                         });
                     }
                 }
@@ -1836,7 +1908,7 @@ impl LayoutEngine {
                         };
                         let mut st = st_rc.borrow_mut();
                         st.set_inner_height(h);
-                        let layout = crate::textfield::layout_text_area(&st.text, font_val, wrap_w);
+                        let layout = crate::textfield::layout_text_area(&st.text, font_val, wrap_w, 400, 0);
                         let content_h = layout.ranges.len().max(1) as f32 * layout.line_h_px;
                         let max_y = (content_h - st.inner_height).max(0.0);
 
@@ -1862,7 +1934,7 @@ impl LayoutEngine {
                         };
                         let mut st = st_rc.borrow_mut();
                         st.set_inner_width(inner_w);
-                        let m = crate::textfield::measure_text(&st.text, font_val, None);
+                        let m = crate::textfield::measure_text(&st.text, font_val, None, 400, 0);
                         let content_w = m.positions.last().copied().unwrap_or(0.0);
                         let max_x = (content_w - st.inner_width).max(0.0);
 
@@ -2069,6 +2141,12 @@ impl LayoutEngine {
                         color: mul_alpha_color(locals::theme().on_surface, alpha_accum),
                         size: chevron_px,
                         font_family: None,
+                        text_align: TextAlign::Start,
+                        font_weight: FontWeight::NORMAL,
+                        font_style: FontStyle::Normal,
+                        text_decoration: TextDecoration::default(),
+                        letter_spacing: 0.0,
+                        line_height: 0.0,
                     });
 
                     // Toggle hit region (chevron area)

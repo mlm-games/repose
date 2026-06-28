@@ -225,6 +225,12 @@ pub fn Text(text: impl Into<String>) -> View {
             overflow: TextOverflow::Visible,
             font_family: None,
             annotations: None,
+            text_align: TextAlign::Start,
+            font_weight: FontWeight::NORMAL,
+            font_style: FontStyle::Normal,
+            text_decoration: TextDecoration::default(),
+            letter_spacing: 0.0,
+            line_height: 0.0,
         },
     )
 }
@@ -249,6 +255,12 @@ pub fn AnnotatedText(annotated: AnnotatedString) -> View {
             overflow: TextOverflow::Visible,
             font_family: None,
             annotations,
+            text_align: TextAlign::Start,
+            font_weight: FontWeight::NORMAL,
+            font_style: FontStyle::Normal,
+            text_decoration: TextDecoration::default(),
+            letter_spacing: 0.0,
+            line_height: 0.0,
         },
     )
 }
@@ -521,6 +533,12 @@ pub trait TextStyle {
     fn overflow_clip(self) -> View;
     fn overflow_visible(self) -> View;
     fn font_family(self, family: &'static str) -> View;
+    fn text_align(self, align: TextAlign) -> View;
+    fn font_weight(self, weight: FontWeight) -> View;
+    fn font_style(self, style: FontStyle) -> View;
+    fn text_decoration(self, decoration: TextDecoration) -> View;
+    fn letter_spacing(self, spacing: f32) -> View;
+    fn line_height(self, height: f32) -> View;
 }
 impl TextStyle for View {
     fn color(mut self, c: Color) -> View {
@@ -590,6 +608,48 @@ impl TextStyle for View {
         } = &mut self.kind
         {
             *ff = Some(family);
+        }
+        self
+    }
+    fn text_align(mut self, align: TextAlign) -> View {
+        if let ViewKind::Text { text_align, .. } = &mut self.kind {
+            *text_align = align;
+        }
+        self
+    }
+    fn font_weight(mut self, weight: FontWeight) -> View {
+        if let ViewKind::Text { font_weight, .. } = &mut self.kind {
+            *font_weight = weight;
+        }
+        self
+    }
+    fn font_style(mut self, style: FontStyle) -> View {
+        if let ViewKind::Text { font_style, .. } = &mut self.kind {
+            *font_style = style;
+        }
+        self
+    }
+    fn text_decoration(mut self, decoration: TextDecoration) -> View {
+        if let ViewKind::Text {
+            text_decoration, ..
+        } = &mut self.kind
+        {
+            *text_decoration = decoration;
+        }
+        self
+    }
+    fn letter_spacing(mut self, spacing: f32) -> View {
+        if let ViewKind::Text {
+            letter_spacing, ..
+        } = &mut self.kind
+        {
+            *letter_spacing = spacing;
+        }
+        self
+    }
+    fn line_height(mut self, height: f32) -> View {
+        if let ViewKind::Text { line_height, .. } = &mut self.kind {
+            *line_height = height;
         }
         self
     }

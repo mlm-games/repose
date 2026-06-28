@@ -273,6 +273,77 @@ impl AnnotatedStringBuilder {
     }
 }
 
+/// Horizontal text alignment.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum TextAlign {
+    Left,
+    Right,
+    Center,
+    Justify,
+    Start,
+    End,
+    Unspecified,
+}
+
+impl Default for TextAlign {
+    fn default() -> Self {
+        TextAlign::Unspecified
+    }
+}
+
+/// Font weight as a numeric value 100-900, matching CSS `font-weight`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FontWeight(pub u16);
+
+impl FontWeight {
+    pub const THIN: FontWeight = FontWeight(100);
+    pub const EXTRA_LIGHT: FontWeight = FontWeight(200);
+    pub const LIGHT: FontWeight = FontWeight(300);
+    pub const NORMAL: FontWeight = FontWeight(400);
+    pub const MEDIUM: FontWeight = FontWeight(500);
+    pub const SEMI_BOLD: FontWeight = FontWeight(600);
+    pub const BOLD: FontWeight = FontWeight(700);
+    pub const EXTRA_BOLD: FontWeight = FontWeight(800);
+    pub const BLACK: FontWeight = FontWeight(900);
+}
+
+impl Default for FontWeight {
+    fn default() -> Self {
+        FontWeight::NORMAL
+    }
+}
+
+/// Font style: normal or italic.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum FontStyle {
+    Normal,
+    Italic,
+}
+
+impl Default for FontStyle {
+    fn default() -> Self {
+        FontStyle::Normal
+    }
+}
+
+/// Text decoration state.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextDecoration {
+    pub underline: bool,
+    pub strikethrough: bool,
+    pub color: Option<Color>,
+}
+
+impl Default for TextDecoration {
+    fn default() -> Self {
+        Self {
+            underline: false,
+            strikethrough: false,
+            color: None,
+        }
+    }
+}
+
 /// Convenience function to build an `AnnotatedString`.
 pub fn build_annotated_string(b: impl FnOnce(&mut AnnotatedStringBuilder)) -> AnnotatedString {
     let mut builder = AnnotatedStringBuilder::new();

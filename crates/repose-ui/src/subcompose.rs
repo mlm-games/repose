@@ -153,7 +153,9 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn text_view(text: &str) -> View {
-        use repose_core::{Color, TextOverflow, ViewKind};
+        use repose_core::{
+            Color, FontStyle, FontWeight, TextAlign, TextDecoration, TextOverflow, ViewKind,
+        };
         View {
             id: 0,
             kind: ViewKind::Text {
@@ -165,6 +167,12 @@ mod tests {
                 overflow: TextOverflow::Visible,
                 font_family: None,
                 annotations: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
             },
             modifier: Modifier::default(),
             children: vec![],

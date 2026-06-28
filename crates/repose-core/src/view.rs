@@ -1,4 +1,7 @@
-use crate::{Brush, Color, Modifier, Rect, TextSpan, Transform};
+use crate::{
+    Brush, Color, FontStyle, FontWeight, Modifier, Rect, TextAlign, TextDecoration, TextSpan,
+    Transform,
+};
 use std::{fmt::Formatter, rc::Rc, sync::Arc};
 
 /// The constraints that will be passed to a subcomposed child. Values are in
@@ -113,6 +116,12 @@ pub enum ViewKind {
         overflow: TextOverflow,
         font_family: Option<&'static str>,
         annotations: Option<Arc<[TextSpan]>>,
+        text_align: TextAlign,
+        font_weight: FontWeight,
+        font_style: FontStyle,
+        text_decoration: TextDecoration,
+        letter_spacing: f32,
+        line_height: f32,
     },
 
     Image {
@@ -254,6 +263,12 @@ pub enum SceneNode {
         color: Color,
         size: f32,
         font_family: Option<&'static str>,
+        text_align: TextAlign,
+        font_weight: FontWeight,
+        font_style: FontStyle,
+        text_decoration: TextDecoration,
+        letter_spacing: f32,
+        line_height: f32,
     },
     Ellipse {
         rect: Rect,

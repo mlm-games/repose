@@ -174,6 +174,12 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                         color: *color,
                         size: *size,
                         font_family: None,
+                        text_align: TextAlign::Unspecified,
+                        font_weight: FontWeight::NORMAL,
+                        font_style: FontStyle::Normal,
+                        text_decoration: TextDecoration::default(),
+                        letter_spacing: 0.0,
+                        line_height: 0.0,
                     });
                 }
             }

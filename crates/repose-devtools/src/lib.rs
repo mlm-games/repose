@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use web_time::Instant;
 
-use repose_core::{Brush, Color, Rect, Scene, SceneNode};
+use repose_core::{
+    Brush, Color, FontStyle, FontWeight, Rect, Scene, SceneNode, TextAlign, TextDecoration,
+};
 
 const FPS_HISTORY_LEN: usize = 60;
 
@@ -139,6 +141,12 @@ impl Hud {
                 color: Color::from_hex("#AAAAAA"),
                 size: 12.0,
                 font_family: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
             });
             text_y += 16.0;
 
@@ -154,6 +162,12 @@ impl Hud {
                 color: Color::from_hex("#888888"),
                 size: 11.0,
                 font_family: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
             });
             text_y += 14.0;
 
@@ -169,6 +183,12 @@ impl Hud {
                 color: Color::from_hex("#888888"),
                 size: 11.0,
                 font_family: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
             });
             text_y += 14.0;
 
@@ -184,6 +204,12 @@ impl Hud {
                 color: Color::from_hex("#888888"),
                 size: 11.0,
                 font_family: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
             });
             text_y += 14.0;
 
@@ -199,6 +225,12 @@ impl Hud {
                 color: Color::from_hex("#888888"),
                 size: 11.0,
                 font_family: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
             });
             text_y += 14.0;
 
@@ -214,6 +246,12 @@ impl Hud {
                 color: Color::from_hex("#888888"),
                 size: 11.0,
                 font_family: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
             });
             text_y += 14.0;
 
@@ -229,6 +267,12 @@ impl Hud {
                 color: Color::from_hex("#888888"),
                 size: 11.0,
                 font_family: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
             });
 
             if let Some(hover) = &self.hovered_semantics {
@@ -245,6 +289,12 @@ impl Hud {
                     color: Color::from_hex("#44AAFF"),
                     size: 11.0,
                     font_family: None,
+                    text_align: TextAlign::Unspecified,
+                    font_weight: FontWeight::NORMAL,
+                    font_style: FontStyle::Normal,
+                    text_decoration: TextDecoration::default(),
+                    letter_spacing: 0.0,
+                    line_height: 0.0,
                 });
                 if let Some(lbl) = &hover.label {
                     text_y += 14.0;
@@ -259,6 +309,12 @@ impl Hud {
                         color: Color::from_hex("#66CCFF"),
                         size: 10.0,
                         font_family: None,
+                        text_align: TextAlign::Unspecified,
+                        font_weight: FontWeight::NORMAL,
+                        font_style: FontStyle::Normal,
+                        text_decoration: TextDecoration::default(),
+                        letter_spacing: 0.0,
+                        line_height: 0.0,
                     });
                 }
             }

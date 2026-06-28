@@ -436,6 +436,12 @@ pub fn run_android_app_with_options(
                 color: Color::WHITE,
                 size: dp_to_px(12.0),
                 font_family: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
             });
         }
 

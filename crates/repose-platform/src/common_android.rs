@@ -41,7 +41,7 @@ pub(crate) fn handle_ime_event(
 
 fn ensure_caret_visible_in_hit(state: &mut TextFieldState, hit_rect: Rect) {
     let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-    let m = measure_text(&state.text, font_px, None);
+    let m = measure_text(&state.text, font_px, None, 400, 0);
     let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
     state.ensure_caret_visible(
         caret_x_px,

@@ -729,7 +729,10 @@ fn intersect_scope_with_modifier(scope: SubcomposeScope, modifier: &Modifier) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use repose_core::{Color, Modifier, SubcomposeScope, View, ViewKind};
+        use repose_core::{
+            Color, FontStyle, FontWeight, Modifier, SubcomposeScope, TextAlign, TextDecoration,
+            View, ViewKind,
+        };
     use std::sync::Arc;
 
     fn text_view(text: &str) -> View {
@@ -744,6 +747,12 @@ mod tests {
                 overflow: repose_core::TextOverflow::Visible,
                 font_family: None,
                 annotations: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
             },
         )
     }

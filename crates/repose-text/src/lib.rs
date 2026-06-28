@@ -1,5 +1,6 @@
 use cosmic_text::{
-    Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, SwashCache, SwashContent,
+    Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, Style as CosmicStyle,
+    SwashCache, SwashContent, Weight as CosmicWeight,
 };
 use once_cell::sync::OnceCell;
 use rapidhash::{HashMapExt, RapidHashMap, fast::RapidHasher};
@@ -26,8 +27,8 @@ pub fn current_frame() -> u64 {
 const WRAP_CACHE_CAP: usize = 1024;
 const ELLIP_CACHE_CAP: usize = 2048;
 
-static METRICS_LRU: OnceCell<Mutex<Lru<(u64, u32, u64), TextMetrics>>> = OnceCell::new();
-fn metrics_cache() -> &'static Mutex<Lru<(u64, u32, u64), TextMetrics>> {
+static METRICS_LRU: OnceCell<Mutex<Lru<(u64, u32, u64, u16, u8), TextMetrics>>> = OnceCell::new();
+fn metrics_cache() -> &'static Mutex<Lru<(u64, u32, u64, u16, u8), TextMetrics>> {
     METRICS_LRU.get_or_init(|| Mutex::new(Lru::new(4096)))
 }
 
@@ -73,31 +74,32 @@ impl<K: std::hash::Hash + Eq + Clone, V> Lru<K, V> {
     }
 }
 
-static WRAP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32, u16, bool), (Vec<String>, bool)>>> =
+static WRAP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8), (Vec<String>, bool)>>> =
     OnceCell::new();
 
 static WRAP_RANGES_LRU: OnceCell<
-    Mutex<Lru<(u64, u32, u32, u16, bool), (Vec<(usize, usize)>, bool)>>,
+    Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8), (Vec<(usize, usize)>, bool)>>,
 > = OnceCell::new();
 
-static ELLIP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32), String>>> = OnceCell::new();
+static ELLIP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32, u16, u8), String>>> = OnceCell::new();
 
-fn wrap_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, bool), (Vec<String>, bool)>> {
+fn wrap_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8), (Vec<String>, bool)>> {
     WRAP_LRU.get_or_init(|| Mutex::new(Lru::new(WRAP_CACHE_CAP)))
 }
 
 fn wrap_ranges_cache()
--> &'static Mutex<Lru<(u64, u32, u32, u16, bool), (Vec<(usize, usize)>, bool)>> {
+-> &'static Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8), (Vec<(usize, usize)>, bool)>> {
     WRAP_RANGES_LRU.get_or_init(|| Mutex::new(Lru::new(WRAP_CACHE_CAP)))
 }
 
-fn ellip_cache() -> &'static Mutex<Lru<(u64, u32, u32), String>> {
+fn ellip_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, u8), String>> {
     ELLIP_LRU.get_or_init(|| Mutex::new(Lru::new(ELLIP_CACHE_CAP)))
 }
 
 fn fast_hash(s: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = RapidHasher::default();
+    s.len().hash(&mut h);
     s.hash(&mut h);
     h.finish()
 }
@@ -190,7 +192,13 @@ fn key_from_cachekey(k: &CacheKey) -> GlyphKey {
 
 // Shape a single-line string (no wrapping). Returns positioned glyphs relative to baseline y=0.
 // `font_family` optionally overrides the default font (e.g. "Material Symbols Outlined").
-pub fn shape_line(text: &str, px: f32, font_family: Option<&str>) -> Vec<ShapedGlyph> {
+pub fn shape_line(
+    text: &str,
+    px: f32,
+    font_family: Option<&str>,
+    font_weight: u16,
+    font_style: u8,
+) -> Vec<ShapedGlyph> {
     let mut eng = engine().lock().unwrap();
 
     // Construct a temporary buffer each call; FontSystem and caches are retained globally
@@ -200,8 +208,13 @@ pub fn shape_line(text: &str, px: f32, font_family: Option<&str>) -> Vec<ShapedG
         let mut b = buf.borrow_with(&mut eng.fs);
         b.set_size(None, None);
         let attrs = match font_family {
-            Some(family) => Attrs::new().family(Family::Name(family)),
-            None => Attrs::new(),
+            Some(family) => Attrs::new()
+                .family(Family::Name(family))
+                .weight(CosmicWeight(font_weight))
+                .style(if font_style == 1 { CosmicStyle::Italic } else { CosmicStyle::Normal }),
+            None => Attrs::new()
+                .weight(CosmicWeight(font_weight))
+                .style(if font_style == 1 { CosmicStyle::Italic } else { CosmicStyle::Normal }),
         };
         b.set_text(text, &attrs, Shaping::Advanced, None);
         b.shape_until_scroll(true);
@@ -304,9 +317,21 @@ pub struct TextMetrics {
 
 /// Computes caret mapping using shaping (no wrapping).
 /// `font_family` optionally overrides the default font (e.g. "Material Symbols Outlined").
-pub fn metrics_for_textfield(text: &str, px: f32, font_family: Option<&str>) -> TextMetrics {
+pub fn metrics_for_textfield(
+    text: &str,
+    px: f32,
+    font_family: Option<&str>,
+    font_weight: u16,
+    font_style: u8,
+) -> TextMetrics {
     let family_hash = font_family.map(fast_hash).unwrap_or(0);
-    let key = (fast_hash(text), (px * 100.0) as u32, family_hash);
+    let key = (
+        fast_hash(text),
+        (px * 100.0) as u32,
+        family_hash,
+        font_weight,
+        font_style,
+    );
     if let Some(m) = metrics_cache().lock().unwrap().get(&key).cloned() {
         return m;
     }
@@ -316,8 +341,13 @@ pub fn metrics_for_textfield(text: &str, px: f32, font_family: Option<&str>) -> 
         let mut b = buf.borrow_with(&mut eng.fs);
         b.set_size(None, None);
         let attrs = match font_family {
-            Some(family) => Attrs::new().family(Family::Name(family)),
-            None => Attrs::new(),
+            Some(family) => Attrs::new()
+                .family(Family::Name(family))
+                .weight(CosmicWeight(font_weight))
+                .style(if font_style == 1 { CosmicStyle::Italic } else { CosmicStyle::Normal }),
+            None => Attrs::new()
+                .weight(CosmicWeight(font_weight))
+                .style(if font_style == 1 { CosmicStyle::Italic } else { CosmicStyle::Normal }),
         };
         b.set_text(text, &attrs, Shaping::Advanced, None);
         b.shape_until_scroll(true);
@@ -386,6 +416,8 @@ pub fn wrap_lines(
     max_width: f32,
     max_lines: Option<usize>,
     soft_wrap: bool,
+    font_weight: u16,
+    font_style: u8,
 ) -> (Vec<String>, bool) {
     if text.is_empty() || max_width <= 0.0 {
         return (vec![String::new()], false);
@@ -407,13 +439,15 @@ pub fn wrap_lines(
         (max_width * 100.0) as u32,
         max_lines_key,
         soft_wrap,
+        font_weight,
+        font_style,
     );
     if let Some(h) = wrap_cache().lock().unwrap().get(&key).cloned() {
         return h;
     }
 
     // Shape once and reuse positions/byte mapping.
-    let m = metrics_for_textfield(text, px, None);
+    let m = metrics_for_textfield(text, px, None, font_weight, font_style);
     // Fast path: fits
     if let Some(&last) = m.positions.last()
         && last <= max_width + 0.5
@@ -523,6 +557,8 @@ pub fn wrap_line_ranges(
     max_width: f32,
     max_lines: Option<usize>,
     soft_wrap: bool,
+    font_weight: u16,
+    font_style: u8,
 ) -> (Vec<(usize, usize)>, bool) {
     if text.is_empty() || max_width <= 0.0 {
         return (vec![(0, 0)], false);
@@ -554,13 +590,15 @@ pub fn wrap_line_ranges(
         (max_width * 100.0) as u32,
         max_lines_key,
         soft_wrap,
+        font_weight,
+        font_style,
     );
     if let Some(v) = wrap_ranges_cache().lock().unwrap().get(&key).cloned() {
         return v;
     }
 
     // Shape once for width queries (whole string)
-    let m = metrics_for_textfield(text, px, None);
+    let m = metrics_for_textfield(text, px, None, font_weight, font_style);
 
     // Helper: width of substring [start..end] in bytes using m
     let width_of = |start_b: usize, end_b: usize| -> f32 {
@@ -707,7 +745,13 @@ fn wrap_one_hard_line_ranges(
 }
 
 /// Return a string truncated to fit max_width at the given px size, appending '…' if truncated.
-pub fn ellipsize_line(text: &str, px: f32, max_width: f32) -> String {
+pub fn ellipsize_line(
+    text: &str,
+    px: f32,
+    max_width: f32,
+    font_weight: u16,
+    font_style: u8,
+) -> String {
     if text.is_empty() || max_width <= 0.0 {
         return String::new();
     }
@@ -715,11 +759,13 @@ pub fn ellipsize_line(text: &str, px: f32, max_width: f32) -> String {
         fast_hash(text),
         (px * 100.0) as u32,
         (max_width * 100.0) as u32,
+        font_weight,
+        font_style,
     );
     if let Some(s) = ellip_cache().lock().unwrap().get(&key).cloned() {
         return s;
     }
-    let m = metrics_for_textfield(text, px, None);
+    let m = metrics_for_textfield(text, px, None, font_weight, font_style);
     if let Some(&last) = m.positions.last()
         && last <= max_width + 0.5
     {
@@ -762,7 +808,7 @@ fn ellipsis_width(px: f32) -> f32 {
     if let Some(w) = cache.lock().unwrap().get(&key).copied() {
         return w;
     }
-    let w = if let Some(g) = crate::shape_line("…", px, None).last() {
+    let w = if let Some(g) = crate::shape_line("…", px, None, 400, 0).last() {
         g.x + g.advance
     } else {
         0.0
