@@ -1772,8 +1772,7 @@ pub fn SegmentedButton(
         }
     };
 
-    // outer border with per-segment corner radii requires iterating over segments
-    // to build a Row whose border uses the overall shape_r uniformly
+    // Outer border wraps the entire group. Internal dividers are inside each segment Row.
     Row(Modifier::new()
         .height(config.height)
         .border(1.0, config.border_color, shape_r)
@@ -1809,7 +1808,7 @@ pub fn SegmentedButton(
                 let is_enabled = seg.enabled;
 
                 let state_colors = config.state_colors;
-                let mut modifier = Modifier::new()
+                let content_modifier = Modifier::new()
                     .flex_grow(1.0)
                     .fill_max_height()
                     .clip_rounded_radii(radii)
@@ -1824,19 +1823,28 @@ pub fn SegmentedButton(
                         bottom: 0.0,
                     });
 
-                if is_enabled {
-                    modifier = modifier.clickable().on_pointer_down(move |_| cb());
-                }
-                if i < count - 1 {
-                    modifier = modifier.border_radii(1.0, th.outline, [0.0; 4]);
-                }
+                let content_modifier = if is_enabled {
+                    content_modifier.clickable().on_pointer_down(move |_| cb())
+                } else {
+                    content_modifier
+                };
 
-                Row(modifier).child((
-                    seg.icon.unwrap_or(Box(Modifier::new())),
-                    Text(seg.label)
-                        .color(fg)
-                        .size(th.typography.label_large)
-                        .single_line(),
+                Row(Modifier::new().flex_grow(1.0).fill_max_height()).child((
+                    Row(content_modifier).child((
+                        seg.icon.unwrap_or(Box(Modifier::new())),
+                        Text(seg.label)
+                            .color(fg)
+                            .size(th.typography.label_large)
+                            .single_line(),
+                    )),
+                    if i < count - 1 {
+                        Box(Modifier::new()
+                            .width(1.0)
+                            .fill_max_height()
+                            .background(th.outline))
+                    } else {
+                        Box(Modifier::new())
+                    },
                 ))
             })
             .collect::<Vec<_>>(),
