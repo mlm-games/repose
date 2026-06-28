@@ -2076,7 +2076,6 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
             };
             let track_h = rect.h;
             let corner = track_h * 0.5;
-            let gap = dp_to_px(config.gap_size);
             let dot_r = dp_to_px(config.stop_size) * 0.5;
             let cy = rect.y + rect.h * 0.5;
             let t = value.unwrap_or(0.0).clamp(0.0, 1.0);
@@ -2087,12 +2086,23 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
                 corner
             };
 
+            // Compensate stroke for caps.
+            let gap = dp_to_px(config.gap_size)
+                + if config.stroke_cap == StrokeCap::Butt {
+                    0.0
+                } else {
+                    cap_radius
+                };
+
+            let cap_ofs = cap_radius;
+            let ind_end = (t * rect.w).clamp(cap_ofs, rect.w - cap_ofs);
+            let ind_w = (ind_end - cap_ofs).max(0.0);
+
             // Indicator (active portion from left)
-            if t > 0.0 {
-                let ind_w = t * rect.w;
+            if t > 0.0 && ind_w > 0.0 {
                 scene.nodes.push(SceneNode::Rect {
                     rect: Rect {
-                        x: rect.x,
+                        x: rect.x + cap_ofs,
                         y: cy - corner,
                         w: ind_w,
                         h: track_h,
@@ -2103,22 +2113,26 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
             }
 
             // Track (inactive portion after gap)
-            let track_start = rect.x + t * rect.w + gap;
+            let track_start = (rect.x + ind_end + gap).min(rect.x + rect.w);
             let track_w = (rect.x + rect.w - track_start).max(0.0);
             if t < 1.0 && track_w > 0.0 {
-                scene.nodes.push(SceneNode::Rect {
-                    rect: Rect {
-                        x: track_start,
-                        y: cy - corner,
-                        w: track_w,
-                        h: track_h,
-                    },
-                    brush: Brush::Solid(mul_c(config.track_color)),
-                    radius: [cap_radius; 4],
-                });
+                let track_left = track_start + cap_ofs;
+                let track_right = rect.x + rect.w - cap_ofs;
+                if track_right > track_left {
+                    scene.nodes.push(SceneNode::Rect {
+                        rect: Rect {
+                            x: track_left,
+                            y: cy - corner,
+                            w: track_right - track_left,
+                            h: track_h,
+                        },
+                        brush: Brush::Solid(mul_c(config.track_color)),
+                        radius: [cap_radius; 4],
+                    });
+                }
             }
 
-            // Stop indicator at right end (4dp circle, Primary)
+            // Stop indicator at right end circle
             if t < 1.0 {
                 let sx = rect.x + rect.w - dot_r;
                 scene.nodes.push(SceneNode::Ellipse {
@@ -2521,7 +2535,10 @@ pub fn OutlinedTextField(
                                 read_only: false,
                                 max_lines: None,
                                 min_lines: None,
-                                cursor_color: config.colors.as_ref().map(|c| c.cursor_color(config.is_error)),
+                                cursor_color: config
+                                    .colors
+                                    .as_ref()
+                                    .map(|c| c.cursor_color(config.is_error)),
                                 on_text_layout: None,
                             }),
                     )
@@ -2732,7 +2749,10 @@ pub fn TextField(
                                 read_only: false,
                                 max_lines: None,
                                 min_lines: None,
-                                cursor_color: config.colors.as_ref().map(|c| c.cursor_color(config.is_error)),
+                                cursor_color: config
+                                    .colors
+                                    .as_ref()
+                                    .map(|c| c.cursor_color(config.is_error)),
                                 on_text_layout: None,
                             }),
                     )
