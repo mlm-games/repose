@@ -144,7 +144,7 @@ pub fn screen() -> View {
         Section("Password TextField", {
             let pw = remember_with_key("pw_value", || signal(String::new()));
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
-                TextFieldEx::new("Password", pw.get(), Modifier::new().fill_max_width())
+                BasicTextFieldEx::new("Password", pw.get(), Modifier::new().fill_max_width())
                     .password()
                     .on_change({
                         let p = pw.clone();

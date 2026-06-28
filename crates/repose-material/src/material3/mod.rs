@@ -20,7 +20,7 @@ use repose_core::*;
 use repose_ui::LazyRowState;
 use repose_ui::lazy::LazyRow;
 use repose_ui::{
-    Box, Column, Row, Spacer, Stack, Text, TextField as UiTextField, TextStyle, ViewExt, ZStack,
+    BasicTextField as UiTextField, Box, Column, Row, Spacer, Stack, Text, TextStyle, ViewExt, ZStack,
     anim::{animate_color, animate_f32, animate_f32_from},
     overlay::OverlayHandle,
     overlay::SnackbarAction,

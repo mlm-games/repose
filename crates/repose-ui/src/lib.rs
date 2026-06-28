@@ -141,7 +141,7 @@ pub mod textfield;
 use repose_core::locals;
 pub use selection::SelectableText;
 pub use textfield::{
-    KeyboardOptions, TextArea, TextAreaEx, TextField, TextFieldEx, TextFieldState,
+    BasicTextField, BasicTextFieldEx, KeyboardOptions, TextArea, TextAreaEx, TextFieldState,
 };
 
 thread_local! {

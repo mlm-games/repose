@@ -920,14 +920,14 @@ impl TextFieldState {
 }
 
 // Platform-managed view: hint shown only when `value` is empty.
-pub fn TextField(
+pub fn BasicTextField(
     hint: impl Into<String>,
     value: String,
     modifier: repose_core::Modifier,
     on_change: Option<impl Fn(String) + 'static>,
     on_submit: Option<impl Fn(String) + 'static>,
 ) -> repose_core::View {
-    TextFieldEx {
+    BasicTextFieldEx {
         hint: hint.into(),
         value,
         modifier,
@@ -940,8 +940,8 @@ pub fn TextField(
     .build()
 }
 
-/// Extended TextField with optional visual transformation, keyboard options, and IME action.
-pub struct TextFieldEx {
+/// Extended BasicTextField with optional visual transformation, keyboard options, and IME action.
+pub struct BasicTextFieldEx {
     pub hint: String,
     pub value: String,
     pub modifier: repose_core::Modifier,
@@ -955,7 +955,7 @@ pub struct TextFieldEx {
     pub ime_action: Option<repose_core::ImeAction>,
 }
 
-impl TextFieldEx {
+impl BasicTextFieldEx {
     pub fn new(hint: impl Into<String>, value: String, modifier: repose_core::Modifier) -> Self {
         Self {
             hint: hint.into(),
@@ -1546,7 +1546,7 @@ pub(crate) fn paint_text_field(
     scene.nodes.push(SceneNode::PopClip);
 }
 
-/// Shared view-builder for both `TextField` and `TextArea`.
+/// Shared view-builder for both `BasicTextField` and `TextArea`.
 /// Creates the view with text_input modifier. Painting is handled natively
 /// by layout.rs when it encounters `modifier.text_input` (Compose-aligned).
 fn text_field_view(
