@@ -1626,6 +1626,8 @@ pub fn CircularProgressIndicator(
 pub struct LinearProgressIndicatorConfig {
     pub color: Color,
     pub track_color: Color,
+    /// Stroke cap style for the indicator ends. Default: `StrokeCap::Round`
+    pub stroke_cap: StrokeCap,
     /// Gap between indicator and track, in dp.
     pub gap_size: f32,
     /// Diameter of the stop indicator dot, in dp.
@@ -1637,6 +1639,7 @@ impl Default for LinearProgressIndicatorConfig {
         Self {
             color: ProgressIndicatorDefaults::linear_color(),
             track_color: ProgressIndicatorDefaults::linear_track_color(),
+            stroke_cap: StrokeCap::Round,
             gap_size: ProgressIndicatorDefaults::LINEAR_INDICATOR_GAP_SIZE,
             stop_size: ProgressIndicatorDefaults::LINEAR_TRACK_STOP_SIZE,
         }
@@ -1667,6 +1670,12 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
             let cy = rect.y + rect.h * 0.5;
             let t = value.unwrap_or(0.0).clamp(0.0, 1.0);
 
+            let cap_radius = if config.stroke_cap == StrokeCap::Butt {
+                0.0
+            } else {
+                corner
+            };
+
             // Indicator (active portion from left)
             if t > 0.0 {
                 let ind_w = t * rect.w;
@@ -1678,7 +1687,7 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(config.color)),
-                    radius: [corner; 4],
+                    radius: [cap_radius; 4],
                 });
             }
 
@@ -1694,7 +1703,7 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(config.track_color)),
-                    radius: [corner; 4],
+                    radius: [cap_radius; 4],
                 });
             }
 
@@ -2132,9 +2141,22 @@ pub fn TextField(
 #[derive(Clone, Debug)]
 pub struct CheckboxConfig {
     pub modifier: Modifier,
+    /// When false, the checkbox renders disabled colors and does not respond to clicks.
+    pub enabled: bool,
     pub checked_color: Color,
     pub unchecked_color: Color,
     pub checkmark_color: Color,
+    /// Border color when checked. Default: same as `checked_color`.
+    pub checked_border_color: Color,
+    /// Border color when unchecked. Default: same as `unchecked_color`.
+    pub unchecked_border_color: Color,
+    pub disabled_checked_box_color: Color,
+    pub disabled_unchecked_box_color: Color,
+    pub disabled_indeterminate_box_color: Color,
+    pub disabled_checkmark_color: Color,
+    pub disabled_checked_border_color: Color,
+    pub disabled_unchecked_border_color: Color,
+    pub disabled_indeterminate_border_color: Color,
     pub state_colors: StateColors,
 }
 
@@ -2142,9 +2164,19 @@ impl Default for CheckboxConfig {
     fn default() -> Self {
         Self {
             modifier: Modifier::new(),
+            enabled: true,
             checked_color: CheckboxDefaults::checked_color(),
             unchecked_color: CheckboxDefaults::unchecked_color(),
             checkmark_color: CheckboxDefaults::checkmark_color(),
+            checked_border_color: CheckboxDefaults::checked_color(),
+            unchecked_border_color: CheckboxDefaults::unchecked_color(),
+            disabled_checked_box_color: CheckboxDefaults::disabled_checked_box_color(),
+            disabled_unchecked_box_color: Color::TRANSPARENT,
+            disabled_indeterminate_box_color: CheckboxDefaults::disabled_checked_box_color(),
+            disabled_checkmark_color: CheckboxDefaults::disabled_checkmark_color(),
+            disabled_checked_border_color: CheckboxDefaults::disabled_checked_box_color(),
+            disabled_unchecked_border_color: CheckboxDefaults::disabled_unchecked_border_color(),
+            disabled_indeterminate_border_color: CheckboxDefaults::disabled_checked_box_color(),
             state_colors: CheckboxDefaults::state_colors_default(),
         }
     }
@@ -2161,9 +2193,17 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
     let id = remember(|| CHECKBOX_COUNTER.fetch_add(1, Ordering::Relaxed));
     let spec = th.motion.color_fast;
 
+    let is_enabled = config.enabled;
+
     let fill = animate_color(
         format!("cb_fill_{}", id),
-        if checked {
+        if !is_enabled {
+            if checked {
+                config.disabled_checked_box_color
+            } else {
+                config.disabled_unchecked_box_color
+            }
+        } else if checked {
             config.checked_color
         } else {
             Color::TRANSPARENT
@@ -2172,7 +2212,11 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
     );
     let bd_w = animate_f32(
         format!("cb_bw_{}", id),
-        if checked {
+        if !is_enabled && checked {
+            0.0
+        } else if !is_enabled {
+            CheckboxDefaults::STROKE_WIDTH
+        } else if checked {
             0.0
         } else {
             CheckboxDefaults::STROKE_WIDTH
@@ -2181,10 +2225,16 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
     );
     let bd = animate_color(
         format!("cb_bd_{}", id),
-        if checked {
+        if !is_enabled {
+            if checked {
+                config.disabled_checked_border_color
+            } else {
+                config.disabled_unchecked_border_color
+            }
+        } else if checked {
             Color::TRANSPARENT
         } else {
-            config.unchecked_color
+            config.unchecked_border_color
         },
         spec,
     );
@@ -2193,6 +2243,17 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         if checked { 1.0 } else { 0.0 },
         spec,
     );
+    let check_col = if !is_enabled {
+        config.disabled_checkmark_color
+    } else {
+        config.checkmark_color
+    };
+
+    let cb = move |_| {
+        if config.enabled {
+            on_change(!checked)
+        }
+    };
 
     Box(Modifier::new()
         .width(CheckboxDefaults::TOUCH_TARGET_SIZE)
@@ -2204,7 +2265,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         .clickable()
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
-        .on_pointer_down(move |_| on_change(!checked))
+        .on_pointer_down(cb)
         .then(config.modifier))
     .child(
         Box(Modifier::new()
@@ -2217,7 +2278,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         .child(if check_alpha > 0.01 {
             Box(Modifier::new().alpha(check_alpha)).child(
                 Icon(Symbol::new("done", '\u{E876}'))
-                    .color(config.checkmark_color)
+                    .color(check_col)
                     .size(CheckboxDefaults::CHECK_ICON_SIZE),
             )
         } else {
@@ -2250,10 +2311,17 @@ pub fn TriStateCheckbox(
     let is_checked = state == TriState::Checked;
     let is_indeterminate = state == TriState::Indeterminate;
     let has_fill = is_checked || is_indeterminate;
+    let is_enabled = config.enabled;
 
     let fill = animate_color(
         format!("tc_fill_{}", id),
-        if has_fill {
+        if !is_enabled {
+            if has_fill {
+                config.disabled_indeterminate_box_color
+            } else {
+                config.disabled_unchecked_box_color
+            }
+        } else if has_fill {
             config.checked_color
         } else {
             Color::TRANSPARENT
@@ -2262,7 +2330,9 @@ pub fn TriStateCheckbox(
     );
     let bd_w = animate_f32(
         format!("tc_bw_{}", id),
-        if has_fill {
+        if !is_enabled {
+            if has_fill { 0.0 } else { CheckboxDefaults::STROKE_WIDTH }
+        } else if has_fill {
             0.0
         } else {
             CheckboxDefaults::STROKE_WIDTH
@@ -2271,10 +2341,16 @@ pub fn TriStateCheckbox(
     );
     let bd = animate_color(
         format!("tc_bd_{}", id),
-        if has_fill {
+        if !is_enabled {
+            if has_fill {
+                config.disabled_indeterminate_border_color
+            } else {
+                config.disabled_unchecked_border_color
+            }
+        } else if has_fill {
             Color::TRANSPARENT
         } else {
-            config.unchecked_color
+            config.unchecked_border_color
         },
         spec,
     );
@@ -2283,6 +2359,11 @@ pub fn TriStateCheckbox(
         if has_fill { 1.0 } else { 0.0 },
         spec,
     );
+    let symbol_col = if !is_enabled {
+        config.disabled_checkmark_color
+    } else {
+        config.checkmark_color
+    };
 
     Box(Modifier::new()
         .width(CheckboxDefaults::TOUCH_TARGET_SIZE)
@@ -2294,11 +2375,13 @@ pub fn TriStateCheckbox(
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
         .on_pointer_down(move |_| {
-            on_change(match state {
-                TriState::Checked => TriState::Unchecked,
-                TriState::Indeterminate => TriState::Checked,
-                TriState::Unchecked => TriState::Checked,
-            })
+            if is_enabled {
+                on_change(match state {
+                    TriState::Checked => TriState::Unchecked,
+                    TriState::Indeterminate => TriState::Checked,
+                    TriState::Unchecked => TriState::Checked,
+                })
+            }
         })
         .then(config.modifier))
     .child(
@@ -2315,11 +2398,11 @@ pub fn TriStateCheckbox(
                 Box(Modifier::new()
                     .width(10.0)
                     .height(2.0)
-                    .background(config.checkmark_color)
+                    .background(symbol_col)
                     .clip_rounded(1.0))
             } else {
                 Icon(Symbol::new("done", '\u{E876}'))
-                    .color(config.checkmark_color)
+                    .color(symbol_col)
                     .size(CheckboxDefaults::CHECK_ICON_SIZE)
             })
         } else {
@@ -2332,8 +2415,12 @@ pub fn TriStateCheckbox(
 #[derive(Clone, Debug)]
 pub struct RadioButtonConfig {
     pub modifier: Modifier,
+    /// When false, renders disabled colors and does not respond to clicks.
+    pub enabled: bool,
     pub selected_color: Color,
     pub unselected_color: Color,
+    pub disabled_selected_color: Color,
+    pub disabled_unselected_color: Color,
     pub state_colors: StateColors,
 }
 
@@ -2341,8 +2428,11 @@ impl Default for RadioButtonConfig {
     fn default() -> Self {
         Self {
             modifier: Modifier::new(),
+            enabled: true,
             selected_color: RadioButtonDefaults::selected_color(),
             unselected_color: RadioButtonDefaults::unselected_color(),
+            disabled_selected_color: RadioButtonDefaults::disabled_selected_color(),
+            disabled_unselected_color: RadioButtonDefaults::disabled_unselected_color(),
             state_colors: RadioButtonDefaults::state_colors_default(),
         }
     }
@@ -2366,7 +2456,13 @@ pub fn RadioButton(
 
     let ring_col = animate_color(
         format!("rb_ring_{}", id),
-        if selected {
+        if !config.enabled {
+            if selected {
+                config.disabled_selected_color
+            } else {
+                config.disabled_unselected_color
+            }
+        } else if selected {
             config.selected_color
         } else {
             config.unselected_color
@@ -2382,6 +2478,17 @@ pub fn RadioButton(
         },
         spring,
     );
+    let dot_col = if !config.enabled {
+        config.disabled_selected_color
+    } else {
+        config.selected_color
+    };
+
+    let cb = move |_| {
+        if config.enabled {
+            on_select()
+        }
+    };
 
     Box(Modifier::new()
         .width(RadioButtonDefaults::TOUCH_TARGET_SIZE)
@@ -2393,7 +2500,7 @@ pub fn RadioButton(
         .clickable()
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
-        .on_pointer_down(move |_| on_select())
+        .on_pointer_down(cb)
         .then(config.modifier))
     .child(
         Box(Modifier::new()
@@ -2405,7 +2512,7 @@ pub fn RadioButton(
         .child(if dot_size > 0.5 {
             Box(Modifier::new()
                 .size(dot_size, dot_size)
-                .background(config.selected_color)
+                .background(dot_col)
                 .clip_rounded(dot_size * 0.5))
         } else {
             Box(Modifier::new())
@@ -2417,11 +2524,28 @@ pub fn RadioButton(
 #[derive(Clone, Debug)]
 pub struct SwitchConfig {
     pub modifier: Modifier,
+    /// When false, renders disabled colors and does not respond to clicks.
+    pub enabled: bool,
     pub checked_track_color: Color,
     pub unchecked_track_color: Color,
     pub checked_thumb_color: Color,
     pub unchecked_thumb_color: Color,
+    /// Icon color for the thumb content when checked. Default: `on_primary`.
+    pub checked_icon_color: Color,
+    /// Icon color for the thumb content when unchecked. Default: `outline`.
+    pub unchecked_icon_color: Color,
+    /// Border color when checked. Default: transparent.
+    pub checked_border_color: Color,
+    /// Border color when unchecked.
     pub unchecked_border_color: Color,
+    pub disabled_checked_thumb_color: Color,
+    pub disabled_checked_track_color: Color,
+    pub disabled_checked_border_color: Color,
+    pub disabled_checked_icon_color: Color,
+    pub disabled_unchecked_thumb_color: Color,
+    pub disabled_unchecked_track_color: Color,
+    pub disabled_unchecked_border_color: Color,
+    pub disabled_unchecked_icon_color: Color,
     pub state_colors: StateColors,
 }
 
@@ -2429,11 +2553,23 @@ impl Default for SwitchConfig {
     fn default() -> Self {
         Self {
             modifier: Modifier::new(),
+            enabled: true,
             checked_track_color: SwitchDefaults::checked_track_color(),
             unchecked_track_color: SwitchDefaults::unchecked_track_color(),
             checked_thumb_color: SwitchDefaults::checked_thumb_color(),
             unchecked_thumb_color: SwitchDefaults::unchecked_thumb_color(),
+            checked_icon_color: SwitchDefaults::checked_icon_color(),
+            unchecked_icon_color: SwitchDefaults::unchecked_icon_color(),
+            checked_border_color: Color::TRANSPARENT,
             unchecked_border_color: SwitchDefaults::unchecked_border_color(),
+            disabled_checked_thumb_color: SwitchDefaults::disabled_checked_thumb_color(),
+            disabled_checked_track_color: SwitchDefaults::disabled_checked_track_color(),
+            disabled_checked_border_color: Color::TRANSPARENT,
+            disabled_checked_icon_color: SwitchDefaults::disabled_checked_icon_color(),
+            disabled_unchecked_thumb_color: SwitchDefaults::disabled_unchecked_thumb_color(),
+            disabled_unchecked_track_color: SwitchDefaults::disabled_unchecked_track_color(),
+            disabled_unchecked_border_color: SwitchDefaults::disabled_unchecked_border_color(),
+            disabled_unchecked_icon_color: SwitchDefaults::disabled_unchecked_icon_color(),
             state_colors: SwitchDefaults::state_colors_default(),
         }
     }
@@ -2471,9 +2607,17 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
     let thumb_top = (track_h - thumb_d) * 0.5;
 
     let color_spec = th.motion.color_fast;
+    let is_enabled = config.enabled;
+
     let track_bg = animate_color(
         format!("sw_tbg_{}", id),
-        if checked {
+        if !is_enabled {
+            if checked {
+                config.disabled_checked_track_color
+            } else {
+                config.disabled_unchecked_track_color
+            }
+        } else if checked {
             config.checked_track_color
         } else {
             config.unchecked_track_color
@@ -2482,7 +2626,13 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
     );
     let thumb_bg = animate_color(
         format!("sw_tmbg_{}", id),
-        if checked {
+        if !is_enabled {
+            if checked {
+                config.disabled_checked_thumb_color
+            } else {
+                config.disabled_unchecked_thumb_color
+            }
+        } else if checked {
             config.checked_thumb_color
         } else {
             config.unchecked_thumb_color
@@ -2491,13 +2641,21 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
     );
     let track_border = animate_f32(
         format!("sw_tb_{}", id),
-        if checked { 0.0 } else { 2.0 },
+        if !is_enabled {
+            if checked { 0.0 } else { 2.0 }
+        } else if checked { 0.0 } else { 2.0 },
         color_spec,
     );
     let border_color = animate_color(
         format!("sw_bc_{}", id),
-        if checked {
-            Color::TRANSPARENT
+        if !is_enabled {
+            if checked {
+                config.disabled_checked_border_color
+            } else {
+                config.disabled_unchecked_border_color
+            }
+        } else if checked {
+            config.checked_border_color
         } else {
             config.unchecked_border_color
         },
@@ -2506,7 +2664,9 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
 
     let state_overlay = animate_color(
         format!("sw_ol_{}", id),
-        if pressed.get() {
+        if !is_enabled {
+            Color::TRANSPARENT
+        } else if pressed.get() {
             config.state_colors.pressed
         } else if hovered.get() {
             config.state_colors.hovered
@@ -2538,9 +2698,12 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         .on_pointer_down({
             let p = pressed.clone();
             let cb = on_change;
+            let en = is_enabled;
             move |_| {
                 p.set(true);
-                cb(!checked);
+                if en {
+                    cb(!checked);
+                }
             }
         })
         .on_pointer_up({

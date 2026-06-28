@@ -274,6 +274,15 @@ impl CheckboxDefaults {
     pub fn checkmark_color() -> Color {
         theme().on_primary
     }
+    pub fn disabled_checked_box_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
+    pub fn disabled_checkmark_color() -> Color {
+        theme().surface
+    }
+    pub fn disabled_unchecked_border_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
     pub fn state_colors_default() -> StateColors {
         let th = theme();
         StateColors {
@@ -298,6 +307,12 @@ impl RadioButtonDefaults {
     }
     pub fn unselected_color() -> Color {
         theme().on_surface_variant
+    }
+    pub fn disabled_selected_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
+    pub fn disabled_unselected_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
     }
     pub fn state_colors_default() -> StateColors {
         let th = theme();
@@ -330,8 +345,35 @@ impl SwitchDefaults {
     pub fn unchecked_thumb_color() -> Color {
         theme().outline
     }
+    pub fn checked_icon_color() -> Color {
+        theme().on_primary
+    }
+    pub fn unchecked_icon_color() -> Color {
+        theme().outline
+    }
     pub fn unchecked_border_color() -> Color {
         theme().outline
+    }
+    pub fn disabled_checked_thumb_color() -> Color {
+        theme().surface
+    }
+    pub fn disabled_checked_track_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.12)
+    }
+    pub fn disabled_checked_icon_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
+    pub fn disabled_unchecked_thumb_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.38)
+    }
+    pub fn disabled_unchecked_track_color() -> Color {
+        theme().surface_container_highest.with_alpha_f32(0.12)
+    }
+    pub fn disabled_unchecked_border_color() -> Color {
+        theme().on_surface.with_alpha_f32(0.12)
+    }
+    pub fn disabled_unchecked_icon_color() -> Color {
+        theme().surface_container_highest.with_alpha_f32(0.38)
     }
     pub fn state_colors_default() -> StateColors {
         let th = theme();
