@@ -6,6 +6,12 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+fn scope_item(mut view: View, key: u64, state_id: usize) -> View {
+    view.scope_key = Some(format!("lazy_{:x}_{}", state_id, key));
+    view.modifier.repaint_boundary = true;
+    view
+}
+
 struct AnimState<T> {
     prev_keys: Vec<u64>,
     exiting: Vec<(u64, usize, T, u64)>,
@@ -159,6 +165,7 @@ where
         let vis_end = last_with_buffer.max(max_exit_slot + 1 + buffer);
         total_slots = items.len().max(max_exit_slot + 1);
 
+        let state_id = Rc::as_ptr(&state) as usize;
         let mut normal_ptr = 0usize;
         for visual_i in first_with_buffer..vis_end {
             let entry = still_exiting.iter().find(|(_, oi, _, _)| *oi == visual_i);
@@ -176,13 +183,17 @@ where
                 if in_view {
                     let exit_view = item_builder(old_item.clone(), *old_idx);
                     combined_children.push(
-                        crate::Box(
-                            Modifier::new()
-                                .fill_max_width()
-                                .height(exit_h_dp)
-                                .alpha(alpha),
-                        )
-                        .child(exit_view),
+                        scope_item(
+                            crate::Box(
+                                Modifier::new()
+                                    .fill_max_width()
+                                    .height(exit_h_dp)
+                                    .alpha(alpha),
+                            )
+                            .child(exit_view),
+                            *key,
+                            state_id,
+                        ),
                     );
                 }
             } else if let Some(item) = items.get(normal_ptr) {
@@ -191,11 +202,21 @@ where
                     let enter_key = format!("_lz_n:{aid}:{key}");
                     let alpha = animate_f32_from(enter_key, 0.0, 1.0, spec);
                     combined_children.push(
-                        crate::Box(Modifier::new().fill_max_width().alpha(alpha))
-                            .child(item_builder(item.clone(), normal_ptr)),
+                        scope_item(
+                            crate::Box(Modifier::new().fill_max_width().alpha(alpha))
+                                .child(item_builder(item.clone(), normal_ptr)),
+                            key,
+                            state_id,
+                        ),
                     );
                 } else {
-                    combined_children.push(item_builder(item.clone(), normal_ptr));
+                    combined_children.push(
+                        scope_item(
+                            item_builder(item.clone(), normal_ptr),
+                            key,
+                            state_id,
+                        ),
+                    );
                 }
                 normal_ptr += 1;
             }
@@ -204,12 +225,17 @@ where
         s.exiting = still_exiting;
         s.prev_keys = curr_keys;
     } else {
+        let state_id = Rc::as_ptr(&state) as usize;
         for i in first_with_buffer..last_with_buffer {
             if let Some(item) = items.get(i) {
                 let h_dp = item_height.get(item).max(1.0);
                 combined_children.push(
-                    crate::Box(Modifier::new().fill_max_width().height(h_dp))
-                        .child(item_builder(item.clone(), i)),
+                    scope_item(
+                        crate::Box(Modifier::new().fill_max_width().height(h_dp))
+                            .child(item_builder(item.clone(), i)),
+                        get_key(item),
+                        state_id,
+                    ),
                 );
             }
         }
@@ -382,8 +408,9 @@ where
     }
 
     if first_item < last_item {
+        let state_id = Rc::as_ptr(&state) as usize;
         let visible_items: Vec<View> = (first_item..last_item)
-            .map(|i| item_builder(items[i].clone(), i))
+            .map(|i| scope_item(item_builder(items[i].clone(), i), i as u64, state_id))
             .collect();
 
         let rg = modifier.row_gap.or(modifier.gap).unwrap_or(0.0);
@@ -529,12 +556,13 @@ where
     if first_item < last_item {
         let visible_count = last_item - first_item;
         let total_chunks = visible_count.div_ceil(rows);
+        let state_id = Rc::as_ptr(&state) as usize;
         let chunked: Vec<Vec<View>> = (0..total_chunks)
             .map(|ci| {
                 let start = first_item + ci * rows;
                 let end = (start + rows).min(last_item);
                 (start..end)
-                    .map(|i| item_builder(items[i].clone(), i))
+                    .map(|i| scope_item(item_builder(items[i].clone(), i), i as u64, state_id))
                     .collect()
             })
             .collect();
@@ -684,9 +712,10 @@ where
         ));
     }
 
+    let state_id = Rc::as_ptr(&state) as usize;
     for i in first_with_buffer..last_visible {
         if let Some(item) = items.get(i) {
-            children.push(item_builder(item.clone(), i));
+            children.push(scope_item(item_builder(item.clone(), i), i as u64, state_id));
         }
     }
 
@@ -876,6 +905,7 @@ where
     let first_idx = first_visible.saturating_sub(buffer);
     let last_idx = (last_visible + buffer).min(items.len());
 
+    let state_id = Rc::as_ptr(&state) as usize;
     let mut col_children: Vec<Vec<View>> = (0..columns).map(|_| Vec::new()).collect();
     for col in 0..columns {
         let mut prev_y = 0.0_f32;
@@ -899,8 +929,12 @@ where
                     vis_bot > scroll_offset_px && vis_top < scroll_offset_px + viewport_height_px;
                 if in_view {
                     col_children[col].push(
-                        crate::Box(Modifier::new().fill_max_width().height(h_dp))
-                            .child(item_builder(item.clone(), i)),
+                        scope_item(
+                            crate::Box(Modifier::new().fill_max_width().height(h_dp))
+                                .child(item_builder(item.clone(), i)),
+                            i as u64,
+                            state_id,
+                        ),
                     );
                 } else {
                     col_children[col]
