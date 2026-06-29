@@ -8,9 +8,7 @@ use web_time::Duration;
 use repose_core::animation::{AnimationSpec, CubicBezier, Easing, KeyframesSpec, RepeatableSpec};
 use repose_core::*;
 use repose_ui::anim::{animate_color, animate_f32};
-use repose_ui::{
-    Box, Column, Row, Text, TextStyle, ViewExt,
-};
+use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt};
 
 use super::*;
 
@@ -1640,73 +1638,76 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
     let th = theme();
     let id = remember(|| TABROW_COUNTER.fetch_add(1, Ordering::Relaxed));
     let default_effects = AnimationSpec::spring_crit(40.0);
-    Column(Modifier::new().fill_max_width().then(config.modifier))
-        .child((
-            Row(Modifier::new()
-                .fill_max_width()
-                .height(config.height)
-                .background(config.container_color)
-                .semantics(Semantics::new(Role::Container).with_selectable_group()))
-            .child(
-                tabs.into_iter()
-                    .enumerate()
-                    .map(|(i, tab)| {
-                        let selected = i == selected_index;
-                        let is_enabled = tab.enabled;
-                        let color = animate_color(
-                            format!("tab_clr_{}_{}", id, i),
-                            if selected {
-                                config.selected_content_color
-                            } else {
-                                config.unselected_content_color
-                            },
-                            default_effects,
-                        );
-                        let indicator_h = animate_f32(
-                            format!("tab_ind_h_{}_{}", id, i),
-                            if selected { config.indicator_height } else { 0.0 },
-                            default_effects,
-                        );
-                        let cb = tab.on_click.clone();
+    Column(Modifier::new().fill_max_width().then(config.modifier)).child((
+        Row(Modifier::new()
+            .fill_max_width()
+            .height(config.height)
+            .background(config.container_color)
+            .semantics(Semantics::new(Role::Container).with_selectable_group()))
+        .child(
+            tabs.into_iter()
+                .enumerate()
+                .map(|(i, tab)| {
+                    let selected = i == selected_index;
+                    let is_enabled = tab.enabled;
+                    let color = animate_color(
+                        format!("tab_clr_{}_{}", id, i),
+                        if selected {
+                            config.selected_content_color
+                        } else {
+                            config.unselected_content_color
+                        },
+                        default_effects,
+                    );
+                    let indicator_h = animate_f32(
+                        format!("tab_ind_h_{}_{}", id, i),
+                        if selected {
+                            config.indicator_height
+                        } else {
+                            0.0
+                        },
+                        default_effects,
+                    );
+                    let cb = tab.on_click.clone();
 
-                        let mut tab_m = Modifier::new()
-                            .flex_grow(1.0)
-                            .fill_max_height()
-                            .align_items(AlignItems::Center)
-                            .justify_content(JustifyContent::Center)
-                            .state_colors(StateColors {
-                                default: Color::TRANSPARENT,
-                                hovered: th.on_surface.with_alpha_f32(0.08),
-                                pressed: th.on_surface.with_alpha_f32(0.12),
-                                disabled: Color::TRANSPARENT,
-                            })
-                            .semantics(Semantics::new(Role::Tab).with_label(&tab.label));
+                    let mut tab_m = Modifier::new()
+                        .flex_grow(1.0)
+                        .fill_max_height()
+                        .align_items(AlignItems::Center)
+                        .justify_content(JustifyContent::Center)
+                        .state_colors(StateColors {
+                            default: Color::TRANSPARENT,
+                            hovered: th.on_surface.with_alpha_f32(0.08),
+                            pressed: th.on_surface.with_alpha_f32(0.12),
+                            disabled: Color::TRANSPARENT,
+                        })
+                        .semantics(Semantics::new(Role::Tab).with_label(&tab.label));
 
-                        if is_enabled {
-                            tab_m = tab_m.clickable().on_pointer_down(move |_| cb());
-                        }
+                    if is_enabled {
+                        tab_m = tab_m.clickable().on_pointer_down(move |_| cb());
+                    }
 
-                        Column(tab_m).child((
-                            tab.icon.unwrap_or(Box(Modifier::new())),
-                            Text(tab.label)
-                                .color(color)
-                                .size(th.typography.title_small)
-                                .single_line(),
-                            Box(Modifier::new()
-                                .fill_max_width()
-                                .height(indicator_h)
-                                .background(config.indicator_color)
-                                .clip_rounded(TabDefaults::INDICATOR_CORNER)),
-                        ))
-                    })
-                    .collect::<Vec<_>>(),
-            ),
-            // Divider
-            Box(Modifier::new()
-                .fill_max_width()
-                .height(1.0)
-                .background(th.outline_variant)),
-        ))
+                    Column(tab_m).child((
+                        tab.icon.unwrap_or(Box(Modifier::new())),
+                        Text(tab.label)
+                            .color(color)
+                            .size(th.typography.title_small)
+                            .single_line(),
+                        Box(Modifier::new()
+                            .fill_max_width()
+                            .height(indicator_h)
+                            .background(config.indicator_color)
+                            .clip_rounded(TabDefaults::INDICATOR_CORNER)),
+                    ))
+                })
+                .collect::<Vec<_>>(),
+        ),
+        // Divider
+        Box(Modifier::new()
+            .fill_max_width()
+            .height(1.0)
+            .background(th.outline_variant)),
+    ))
 }
 
 /// A single segment definition for `SegmentedButton`.

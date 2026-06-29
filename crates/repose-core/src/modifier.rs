@@ -74,7 +74,7 @@ macro_rules! impl_option_fields {
                     fill_max, fill_max_w, fill_max_h,
                     hit_passthrough, input_blocker, repaint_boundary, click, disabled,
                 );
-            
+
                 if other.z_index != 0.0 {
                     self.z_index = other.z_index;
                 }

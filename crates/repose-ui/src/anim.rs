@@ -18,9 +18,7 @@ pub fn animate_f32_from(
 ) -> f32 {
     let key = key.into();
     let anim_key = format!("anim:f32:{key}");
-    let anim = remember_state_with_key(&anim_key, || {
-        AnimatedValue::new(initial, spec)
-    });
+    let anim = remember_state_with_key(&anim_key, || AnimatedValue::new(initial, spec));
     let last = remember_state_with_key(format!("anim:f32_last:{key}"), || f32::NAN);
 
     let mut a = anim.borrow_mut();
@@ -35,9 +33,10 @@ pub fn animate_f32_from(
         // Register with AnimationDriver for pre-composition advancement.
         let reg_key = anim_key;
         let reg_anim = anim.clone();
-        animation_driver::register(reg_key, Rc::new(RefCell::new(move || {
-            reg_anim.borrow_mut().update()
-        })));
+        animation_driver::register(
+            reg_key,
+            Rc::new(RefCell::new(move || reg_anim.borrow_mut().update())),
+        );
         request_frame();
 
         *a.get()
@@ -62,9 +61,7 @@ macro_rules! animate_from_impl {
         ) -> $type {
             let key = key.into();
             let anim_key = format!("anim:{}:{}", $prefix, key);
-            let anim = remember_state_with_key(&anim_key, || {
-                AnimatedValue::new(initial, spec)
-            });
+            let anim = remember_state_with_key(&anim_key, || AnimatedValue::new(initial, spec));
             let last =
                 remember_state_with_key(format!("anim:{}_last:{}", $prefix, key), || None::<$type>);
 

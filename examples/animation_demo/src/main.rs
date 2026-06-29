@@ -75,19 +75,28 @@ fn app(s: &mut Scheduler, _rc: &RenderContext) -> View {
                         Modifier::new(),
                         on_color(th.primary),
                         ButtonConfig::default(),
-                        || Text("🔵 Blue").modifier(Modifier::new().padding(8.0).align_self_center()),
+                        || {
+                            Text("🔵 Blue")
+                                .modifier(Modifier::new().padding(8.0).align_self_center())
+                        },
                     ),
                     Button(
                         Modifier::new(),
                         on_color(th.secondary),
                         ButtonConfig::default(),
-                        || Text("🟢 Green").modifier(Modifier::new().padding(8.0).align_self_center()),
+                        || {
+                            Text("🟢 Green")
+                                .modifier(Modifier::new().padding(8.0).align_self_center())
+                        },
                     ),
                     Button(
                         Modifier::new(),
                         on_color(th.error),
                         ButtonConfig::default(),
-                        || Text("🔴 Red").modifier(Modifier::new().padding(8.0).align_self_center()),
+                        || {
+                            Text("🔴 Red")
+                                .modifier(Modifier::new().padding(8.0).align_self_center())
+                        },
                     ),
                 ))
             }),
@@ -103,7 +112,10 @@ fn app(s: &mut Scheduler, _rc: &RenderContext) -> View {
                         Modifier::new(),
                         on_size(150.0),
                         ButtonConfig::default(),
-                        || Text("Medium").modifier(Modifier::new().padding(8.0).align_self_center()),
+                        || {
+                            Text("Medium")
+                                .modifier(Modifier::new().padding(8.0).align_self_center())
+                        },
                     ),
                     Button(
                         Modifier::new(),

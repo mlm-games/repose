@@ -154,7 +154,11 @@ fn build_accesskit_node(sem: &SemNode, children: &[u64], scale: f64) -> Node {
 
     if sem.enabled {
         match sem.role {
-            CoreRole::Button | CoreRole::Checkbox | CoreRole::Switch | CoreRole::RadioButton | CoreRole::Tab => {
+            CoreRole::Button
+            | CoreRole::Checkbox
+            | CoreRole::Switch
+            | CoreRole::RadioButton
+            | CoreRole::Tab => {
                 node.add_action(Action::Click);
             }
             CoreRole::TextField | CoreRole::Slider => {

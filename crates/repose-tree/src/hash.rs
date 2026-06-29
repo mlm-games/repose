@@ -320,9 +320,7 @@ fn hash_text_overflow(o: &TextOverflow, hasher: &mut impl Hasher) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use repose_core::{
-        FontStyle, FontWeight, Modifier, TextAlign, TextDecoration, View, ViewKind,
-    };
+    use repose_core::{FontStyle, FontWeight, Modifier, TextAlign, TextDecoration, View, ViewKind};
 
     #[test]
     fn test_same_view_same_hash() {

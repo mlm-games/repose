@@ -731,10 +731,10 @@ fn intersect_scope_with_modifier(scope: SubcomposeScope, modifier: &Modifier) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-        use repose_core::{
-            Color, FontStyle, FontWeight, Modifier, SubcomposeScope, TextAlign, TextDecoration,
-            View, ViewKind,
-        };
+    use repose_core::{
+        Color, FontStyle, FontWeight, Modifier, SubcomposeScope, TextAlign, TextDecoration, View,
+        ViewKind,
+    };
     use std::sync::Arc;
 
     fn text_view(text: &str) -> View {

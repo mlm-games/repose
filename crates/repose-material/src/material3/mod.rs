@@ -20,7 +20,8 @@ use repose_core::*;
 use repose_ui::LazyRowState;
 use repose_ui::lazy::LazyRow;
 use repose_ui::{
-    BasicTextField as UiTextField, Box, Column, Row, Spacer, Stack, Text, TextStyle, ViewExt, ZStack,
+    BasicTextField as UiTextField, Box, Column, Row, Spacer, Stack, Text, TextStyle, ViewExt,
+    ZStack,
     anim::{animate_color, animate_f32, animate_f32_from},
     overlay::OverlayHandle,
     overlay::SnackbarAction,
@@ -163,15 +164,19 @@ pub fn NavigationBar(
                     }
 
                     Box(item_m).child(
-                        Column(Modifier::new()
-                            .fill_max_size()
-                            .align_items(AlignItems::Center)
-                            .justify_content(JustifyContent::Center))
+                        Column(
+                            Modifier::new()
+                                .fill_max_size()
+                                .align_items(AlignItems::Center)
+                                .justify_content(JustifyContent::Center),
+                        )
                         .child((
                             // Indicator pill behind icon
-                            Stack(Modifier::new()
-                                .align_items(AlignItems::Center)
-                                .justify_content(JustifyContent::Center))
+                            Stack(
+                                Modifier::new()
+                                    .align_items(AlignItems::Center)
+                                    .justify_content(JustifyContent::Center),
+                            )
                             .child((
                                 Box(Modifier::new()
                                     .absolute()
@@ -244,28 +249,32 @@ pub fn Snackbar(
         .clip_rounded(config.shape_radius));
 
     let snackbar = if config.action_on_new_line {
-        snackbar.child(Column(Modifier::new().padding_values(PaddingValues {
-            left: 16.0,
-            right: 8.0,
-            top: 0.0,
-            bottom: 0.0,
-        })).child((
-            Text(msg)
-                .modifier(Modifier::new().padding_values(PaddingValues {
-                    left: 0.0,
-                    right: 0.0,
-                    top: 14.0,
-                    bottom: 14.0,
-                }))
-                .color(fg)
-                .size(th.typography.body_medium)
-                .max_lines(2)
-                .overflow_ellipsize(),
-            action
-                .map(|a| {
-                    let label = a.label.clone();
-                    Row(Modifier::new().fill_max_width().justify_content(repose_core::JustifyContent::End)).child(
-                        TextButton(
+        snackbar.child(
+            Column(Modifier::new().padding_values(PaddingValues {
+                left: 16.0,
+                right: 8.0,
+                top: 0.0,
+                bottom: 0.0,
+            }))
+            .child((
+                Text(msg)
+                    .modifier(Modifier::new().padding_values(PaddingValues {
+                        left: 0.0,
+                        right: 0.0,
+                        top: 14.0,
+                        bottom: 14.0,
+                    }))
+                    .color(fg)
+                    .size(th.typography.body_medium)
+                    .max_lines(2)
+                    .overflow_ellipsize(),
+                action
+                    .map(|a| {
+                        let label = a.label.clone();
+                        Row(Modifier::new()
+                            .fill_max_width()
+                            .justify_content(repose_core::JustifyContent::End))
+                        .child(TextButton(
                             Modifier::new(),
                             move || (a.on_click)(),
                             ButtonConfig::default(),
@@ -275,11 +284,11 @@ pub fn Snackbar(
                                     .size(th.typography.label_large)
                                     .single_line()
                             },
-                        )
-                    )
-                })
-                .unwrap_or(Box(Modifier::new())),
-        )))
+                        ))
+                    })
+                    .unwrap_or(Box(Modifier::new())),
+            )),
+        )
     } else {
         snackbar.child(
             Row(Modifier::new()
@@ -320,7 +329,7 @@ pub fn Snackbar(
                         )
                     })
                     .unwrap_or(Box(Modifier::new())),
-            ))
+            )),
         )
     };
 
@@ -368,9 +377,17 @@ pub fn FilterChip(
         spec,
     );
     let border = if !is_enabled {
-        if selected { config.disabled_selected_border_color } else { config.disabled_border_color }
+        if selected {
+            config.disabled_selected_border_color
+        } else {
+            config.disabled_border_color
+        }
     } else {
-        if selected { config.selected_border_color } else { config.border_color }
+        if selected {
+            config.selected_border_color
+        } else {
+            config.border_color
+        }
     };
     let shape = config.shape_radius;
 
@@ -527,7 +544,11 @@ pub fn SuggestionChip(
     let bg = colors.container(is_enabled, false);
     let label_color = colors.label(is_enabled, false);
     let leading_color = colors.leading_icon(is_enabled, false);
-    let border = if is_enabled { config.border_color } else { config.disabled_border_color };
+    let border = if is_enabled {
+        config.border_color
+    } else {
+        config.disabled_border_color
+    };
     let shape = config.shape_radius;
 
     let mut m = Modifier::new()
@@ -661,9 +682,17 @@ pub fn InputChip(
         spec,
     );
     let border = if !is_enabled {
-        if selected { config.disabled_selected_border_color } else { config.disabled_border_color }
+        if selected {
+            config.disabled_selected_border_color
+        } else {
+            config.disabled_border_color
+        }
     } else {
-        if selected { config.selected_border_color } else { config.border_color }
+        if selected {
+            config.selected_border_color
+        } else {
+            config.border_color
+        }
     };
     let shape = config.shape_radius;
 
@@ -932,7 +961,10 @@ pub fn ModalNavigationDrawer(
     }
 
     ZStack(Modifier::new().fill_max_size()).child((
-        Box(Modifier::new().fill_max_size().background(config.content_color)).child(content),
+        Box(Modifier::new()
+            .fill_max_size()
+            .background(config.content_color))
+        .child(content),
         if drawer_state.is_open() {
             Box(Modifier::new()
                 .fill_max_size()
@@ -983,7 +1015,10 @@ pub fn DismissibleNavigationDrawer(
     }
 
     ZStack(Modifier::new().fill_max_size()).child((
-        Box(Modifier::new().fill_max_size().background(config.content_color)).child(content),
+        Box(Modifier::new()
+            .fill_max_size()
+            .background(config.content_color))
+        .child(content),
         Box(drawer_m).child(drawer_content),
     ))
 }
@@ -999,7 +1034,11 @@ pub fn PermanentNavigationDrawer(
             .width(config.width)
             .fill_max_height()
             .background(config.container_color))
-        .child(Box(Modifier::new()).color(config.content_color).child(drawer_content)),
+        .child(
+            Box(Modifier::new())
+                .color(config.content_color)
+                .child(drawer_content),
+        ),
         Box(Modifier::new().flex_grow(1.0)).child(content),
     ))
 }

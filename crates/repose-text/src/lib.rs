@@ -211,10 +211,18 @@ pub fn shape_line(
             Some(family) => Attrs::new()
                 .family(Family::Name(family))
                 .weight(CosmicWeight(font_weight))
-                .style(if font_style == 1 { CosmicStyle::Italic } else { CosmicStyle::Normal }),
+                .style(if font_style == 1 {
+                    CosmicStyle::Italic
+                } else {
+                    CosmicStyle::Normal
+                }),
             None => Attrs::new()
                 .weight(CosmicWeight(font_weight))
-                .style(if font_style == 1 { CosmicStyle::Italic } else { CosmicStyle::Normal }),
+                .style(if font_style == 1 {
+                    CosmicStyle::Italic
+                } else {
+                    CosmicStyle::Normal
+                }),
         };
         b.set_text(text, &attrs, Shaping::Advanced, None);
         b.shape_until_scroll(true);
@@ -344,10 +352,18 @@ pub fn metrics_for_textfield(
             Some(family) => Attrs::new()
                 .family(Family::Name(family))
                 .weight(CosmicWeight(font_weight))
-                .style(if font_style == 1 { CosmicStyle::Italic } else { CosmicStyle::Normal }),
+                .style(if font_style == 1 {
+                    CosmicStyle::Italic
+                } else {
+                    CosmicStyle::Normal
+                }),
             None => Attrs::new()
                 .weight(CosmicWeight(font_weight))
-                .style(if font_style == 1 { CosmicStyle::Italic } else { CosmicStyle::Normal }),
+                .style(if font_style == 1 {
+                    CosmicStyle::Italic
+                } else {
+                    CosmicStyle::Normal
+                }),
         };
         b.set_text(text, &attrs, Shaping::Advanced, None);
         b.shape_until_scroll(true);

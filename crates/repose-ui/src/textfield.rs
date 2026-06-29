@@ -1019,8 +1019,16 @@ pub fn BasicTextField(
         config.ime_action,
         config.enabled,
         config.read_only,
-        if config.single_line { None } else { config.max_lines },
-        if config.single_line { None } else { config.min_lines },
+        if config.single_line {
+            None
+        } else {
+            config.max_lines
+        },
+        if config.single_line {
+            None
+        } else {
+            config.min_lines
+        },
         config.cursor_color,
         config.on_text_layout,
     )
@@ -1137,7 +1145,15 @@ pub fn layout_text_area(
     font_style: u8,
 ) -> TextAreaLayout {
     let line_h = font_px * 1.3;
-    let (ranges, _) = repose_text::wrap_line_ranges(text, font_px, wrap_w_px.max(1.0), None, true, font_weight, font_style);
+    let (ranges, _) = repose_text::wrap_line_ranges(
+        text,
+        font_px,
+        wrap_w_px.max(1.0),
+        None,
+        true,
+        font_weight,
+        font_style,
+    );
     TextAreaLayout {
         ranges,
         line_h_px: line_h,
@@ -1408,7 +1424,11 @@ pub(crate) fn paint_text_field(
             });
 
             // Caret (only when enabled && !readOnly)
-            if show_cursor && is_focused && st.selection.start == st.selection.end && st.caret_visible() {
+            if show_cursor
+                && is_focused
+                && st.selection.start == st.selection.end
+                && st.caret_visible()
+            {
                 let caret_off = if has_vt {
                     original_offset_to_display(&st.text, &measure_for, st.selection.end)
                 } else {
@@ -1532,7 +1552,11 @@ pub(crate) fn paint_text_field(
             }
 
             // Caret (multi-line) - only when enabled && !readOnly
-            if show_cursor && is_focused && st.selection.start == st.selection.end && st.caret_visible() {
+            if show_cursor
+                && is_focused
+                && st.selection.start == st.selection.end
+                && st.caret_visible()
+            {
                 let caret = st.selection.end.min(st.text.len());
                 let (cx, cy, _li) = caret_xy_for_byte(&st.text, font_val, inner.w.max(1.0), caret);
                 let draw_x = inner.x + cx;

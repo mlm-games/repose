@@ -6,8 +6,8 @@ use repose_material::material3::{
     BottomSheet, BottomSheetConfig, Button, ButtonConfig, CircularProgressIndicator,
     CircularProgressIndicatorConfig, DatePickerState, DropdownMenu, DropdownMenuConfig,
     DropdownMenuEntry, DropdownMenuItem, LinearProgressIndicator, LinearProgressIndicatorConfig,
-    MenuState, ModalBottomSheet, NavRailItem, NavigationRail, NavigationRailConfig,
-    SegmentedButton, SegmentedButtonConfig, Segment, SheetState, TextButton, TimePickerState,
+    MenuState, ModalBottomSheet, NavRailItem, NavigationRail, NavigationRailConfig, Segment,
+    SegmentedButton, SegmentedButtonConfig, SheetState, TextButton, TimePickerState,
 };
 use repose_material::{Icon, material_symbols};
 

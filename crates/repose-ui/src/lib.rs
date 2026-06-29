@@ -639,10 +639,7 @@ impl TextStyle for View {
         self
     }
     fn letter_spacing(mut self, spacing: f32) -> View {
-        if let ViewKind::Text {
-            letter_spacing, ..
-        } = &mut self.kind
-        {
+        if let ViewKind::Text { letter_spacing, .. } = &mut self.kind {
             *letter_spacing = spacing;
         }
         self

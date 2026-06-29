@@ -389,33 +389,31 @@ pub fn WindowHost(
                     let focus_state = focus_state.clone();
                     let action_id = window_id;
                     action_views.push(
-                        Row(
-                            Modifier::new()
-                                .padding_values(PaddingValues {
-                                    left: 6.0,
-                                    right: 6.0,
-                                    top: 0.0,
-                                    bottom: 0.0,
-                                })
-                                .height(20.0)
-                                .clip_rounded(10.0)
-                                .justify_content(JustifyContent::Center)
-                                .align_items(AlignItems::Center)
-                                .state_colors(StateColors {
-                                    default: th.surface_variant,
-                                    hovered: th.on_surface.with_alpha(16),
-                                    pressed: th.on_surface.with_alpha(24),
-                                    disabled: Color::TRANSPARENT,
-                                })
-                                .clickable()
-                                .on_pointer_down(move |_| {
-                                    focus_state.borrow_mut().bring_to_front(action_id);
-                                    (on_click)();
-                                    request_frame();
-                                })
-                                .z_index(1.0)
-                                .key(key_for(window_id, 60 + idx as u64)),
-                        )
+                        Row(Modifier::new()
+                            .padding_values(PaddingValues {
+                                left: 6.0,
+                                right: 6.0,
+                                top: 0.0,
+                                bottom: 0.0,
+                            })
+                            .height(20.0)
+                            .clip_rounded(10.0)
+                            .justify_content(JustifyContent::Center)
+                            .align_items(AlignItems::Center)
+                            .state_colors(StateColors {
+                                default: th.surface_variant,
+                                hovered: th.on_surface.with_alpha(16),
+                                pressed: th.on_surface.with_alpha(24),
+                                disabled: Color::TRANSPARENT,
+                            })
+                            .clickable()
+                            .on_pointer_down(move |_| {
+                                focus_state.borrow_mut().bring_to_front(action_id);
+                                (on_click)();
+                                request_frame();
+                            })
+                            .z_index(1.0)
+                            .key(key_for(window_id, 60 + idx as u64)))
                         .child(
                             Text(label)
                                 .size(th.typography.label_medium)

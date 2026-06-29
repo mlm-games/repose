@@ -315,7 +315,9 @@ impl LayoutEngine {
         let active_keys: Vec<String> = self.scope_root_map.values().cloned().collect();
         self.scope_trees.retain(|k, _| active_keys.contains(k));
         for key in &active_keys {
-            self.scope_trees.entry(key.clone()).or_insert_with(|| ScopeLayoutTree::new(key.clone()));
+            self.scope_trees
+                .entry(key.clone())
+                .or_insert_with(|| ScopeLayoutTree::new(key.clone()));
         }
     }
 
@@ -470,7 +472,8 @@ impl LayoutEngine {
                                         if let Some(st) = scope_trees.get_mut(key) {
                                             // Compose-style constraint-equality skip:
                                             // if content unchanged (valid) AND constraints match → skip scope compute
-                                            let constraints_changed = st.last_constraints
+                                            let constraints_changed = st
+                                                .last_constraints
                                                 .map(|(k, a)| k != known || a != avail)
                                                 .unwrap_or(true);
                                             let can_skip = st.valid && !constraints_changed;
@@ -483,16 +486,24 @@ impl LayoutEngine {
                                             if let Some(root_tid) = st.root_taffy_id {
                                                 let scope_avail = taffy::geometry::Size {
                                                     width: match known.width {
-                                                        Some(w) if w.is_finite() => AvailableSpace::Definite(w),
+                                                        Some(w) if w.is_finite() => {
+                                                            AvailableSpace::Definite(w)
+                                                        }
                                                         _ => match avail.width {
-                                                            AvailableSpace::Definite(w) => AvailableSpace::Definite(w),
+                                                            AvailableSpace::Definite(w) => {
+                                                                AvailableSpace::Definite(w)
+                                                            }
                                                             _ => AvailableSpace::MaxContent,
                                                         },
                                                     },
                                                     height: match known.height {
-                                                        Some(h) if h.is_finite() => AvailableSpace::Definite(h),
+                                                        Some(h) if h.is_finite() => {
+                                                            AvailableSpace::Definite(h)
+                                                        }
                                                         _ => match avail.height {
-                                                            AvailableSpace::Definite(h) => AvailableSpace::Definite(h),
+                                                            AvailableSpace::Definite(h) => {
+                                                                AvailableSpace::Definite(h)
+                                                            }
                                                             _ => AvailableSpace::MaxContent,
                                                         },
                                                     },
@@ -504,10 +515,15 @@ impl LayoutEngine {
                                                     scope_avail,
                                                     |known2, avail2, tn, ctx2, _style2| {
                                                         Self::measure_node(
-                                                            known2, avail2, tn,
+                                                            known2,
+                                                            avail2,
+                                                            tn,
                                                             ctx2.as_deref(),
-                                                            st_tc, st_rev, tree,
-                                                            &font_px, &px,
+                                                            st_tc,
+                                                            st_rev,
+                                                            tree,
+                                                            &font_px,
+                                                            &px,
                                                         )
                                                     },
                                                 );
@@ -686,10 +702,14 @@ impl LayoutEngine {
         let removed_ids: Vec<NodeId> = self.tree.removed_ids.iter().copied().collect();
         let dirty_nodes: Vec<NodeId> = self.tree.dirty_nodes().iter().copied().collect();
         let scope_keys: Vec<String> = self.scope_trees.keys().cloned().collect();
-        let node_to_scope: FxHashMap<NodeId, String> = self.node_to_scope.iter()
+        let node_to_scope: FxHashMap<NodeId, String> = self
+            .node_to_scope
+            .iter()
             .map(|(k, v)| (*k, v.clone()))
             .collect();
-        let scope_root_map: FxHashMap<NodeId, String> = self.scope_root_map.iter()
+        let scope_root_map: FxHashMap<NodeId, String> = self
+            .scope_root_map
+            .iter()
             .map(|(k, v)| (*k, v.clone()))
             .collect();
 
@@ -717,12 +737,15 @@ impl LayoutEngine {
             }
 
             // Ensure scope root exists
-            let root_ids: Vec<NodeId> = scope_root_map.iter()
+            let root_ids: Vec<NodeId> = scope_root_map
+                .iter()
                 .filter(|(_, k)| k.as_str() == key)
                 .map(|(id, _)| *id)
                 .collect();
             for &root_id in &root_ids {
-                let exists = self.scope_trees.get(key)
+                let exists = self
+                    .scope_trees
+                    .get(key)
                     .map(|st| st.taffy_map.contains_key(&root_id))
                     .unwrap_or(false);
                 if !exists {
@@ -748,7 +771,10 @@ impl LayoutEngine {
         let ctx = self.context_from_node(node);
         let children = node.children.clone();
         let is_zstack = matches!(node.kind, ViewKind::ZStack);
-        let is_scroll = matches!(node.kind, ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. });
+        let is_scroll = matches!(
+            node.kind,
+            ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }
+        );
         drop(node);
 
         // Recurse into children but stop at nested scope boundaries
@@ -971,7 +997,11 @@ impl LayoutEngine {
         self.stats.taffy_reused += 1;
     }
 
-    fn make_children_absolute_on(is_zstack: bool, child_taffy_ids: &[taffy::NodeId], taffy: &mut TaffyTree<NodeContext>) {
+    fn make_children_absolute_on(
+        is_zstack: bool,
+        child_taffy_ids: &[taffy::NodeId],
+        taffy: &mut TaffyTree<NodeContext>,
+    ) {
         if !is_zstack {
             return;
         }
@@ -984,7 +1014,11 @@ impl LayoutEngine {
         }
     }
 
-    fn make_scroll_child_on(is_scroll: bool, child_taffy_ids: &[taffy::NodeId], taffy: &mut TaffyTree<NodeContext>) {
+    fn make_scroll_child_on(
+        is_scroll: bool,
+        child_taffy_ids: &[taffy::NodeId],
+        taffy: &mut TaffyTree<NodeContext>,
+    ) {
         if !is_scroll {
             return;
         }
@@ -1337,7 +1371,11 @@ impl LayoutEngine {
                 };
                 let line_h_px_val = lh;
                 let fw = font_weight.0;
-                let fs = if matches!(font_style, FontStyle::Italic) { 1 } else { 0 };
+                let fs = if matches!(font_style, FontStyle::Italic) {
+                    1
+                } else {
+                    0
+                };
                 let max_content_w = measure_text(text, size_px_val, *font_family, fw, fs)
                     .positions
                     .last()
@@ -1821,11 +1859,15 @@ impl LayoutEngine {
         }
 
         let round_clip_px = clamp_radii(
-            modifier.clip_rounded.map(|r| r.map(dp_to_px)).unwrap_or([0.0; 4]),
+            modifier
+                .clip_rounded
+                .map(|r| r.map(dp_to_px))
+                .unwrap_or([0.0; 4]),
             rect.w,
             rect.h,
         );
-        let push_round_clip = round_clip_px.iter().any(|&r| r > 0.5) && rect.w > 0.5 && rect.h > 0.5;
+        let push_round_clip =
+            round_clip_px.iter().any(|&r| r > 0.5) && rect.w > 0.5 && rect.h > 0.5;
 
         if let Some(anim_spec) = &modifier.animate_content_size {
             let target = repose_core::Size {
@@ -1834,9 +1876,8 @@ impl LayoutEngine {
             };
 
             let anim_key = format!("anim_cs:{view_id}");
-            let anim = remember_state_with_key(&anim_key, || {
-                AnimatedValue::new(target, *anim_spec)
-            });
+            let anim =
+                remember_state_with_key(&anim_key, || AnimatedValue::new(target, *anim_spec));
             let last_target = remember_state_with_key(format!("anim_cs_last:{view_id}"), || {
                 repose_core::Size::default()
             });
@@ -1963,7 +2004,10 @@ impl LayoutEngine {
                 radius: clamp_radii(
                     max_radii(
                         b.radius.map(dp_to_px),
-                        modifier.clip_rounded.map(|r| r.map(dp_to_px)).unwrap_or([0.0; 4]),
+                        modifier
+                            .clip_rounded
+                            .map(|r| r.map(dp_to_px))
+                            .unwrap_or([0.0; 4]),
                     ),
                     rect.w,
                     rect.h,
@@ -2087,7 +2131,11 @@ impl LayoutEngine {
                     )
                 } else {
                     let px = font_px(*font_size);
-                    let lh = if *line_height > 0.0 { px * *line_height } else { px * 1.3 };
+                    let lh = if *line_height > 0.0 {
+                        px * *line_height
+                    } else {
+                        px * 1.3
+                    };
                     (px, lh, vec![text.clone()], None)
                 };
                 let total_h = lines.len() as f32 * line_h_px;
@@ -2153,18 +2201,23 @@ impl LayoutEngine {
                             |dp: f32| dp_to_px(dp) * repose_core::locals::text_scale().0;
                         let mut seg_x = content_rect.x;
                         let fw_val = font_weight.0;
-                        let fs_val = if matches!(font_style, FontStyle::Italic) { 1 } else { 0 };
+                        let fs_val = if matches!(font_style, FontStyle::Italic) {
+                            1
+                        } else {
+                            0
+                        };
                         for (seg_start, seg_end, seg_color, seg_font_dp) in &segments {
                             let seg_text = &text[*seg_start..*seg_end];
                             if seg_text.is_empty() {
                                 continue;
                             }
                             let seg_px = seg_font_px(*seg_font_dp);
-                            let seg_w = measure_text(seg_text, seg_px, *font_family, fw_val, fs_val)
-                                .positions
-                                .last()
-                                .copied()
-                                .unwrap_or(0.0);
+                            let seg_w =
+                                measure_text(seg_text, seg_px, *font_family, fw_val, fs_val)
+                                    .positions
+                                    .last()
+                                    .copied()
+                                    .unwrap_or(0.0);
                             scene.nodes.push(SceneNode::Text {
                                 rect: repose_core::Rect {
                                     x: seg_x,
@@ -2188,7 +2241,11 @@ impl LayoutEngine {
                     }
                 } else {
                     let fw_val = font_weight.0;
-                    let fs_val = if matches!(font_style, FontStyle::Italic) { 1 } else { 0 };
+                    let fs_val = if matches!(font_style, FontStyle::Italic) {
+                        1
+                    } else {
+                        0
+                    };
                     for (i, ln) in lines.iter().enumerate() {
                         let line_w = measure_text(ln, size_px, *font_family, fw_val, fs_val)
                             .positions
@@ -2302,7 +2359,8 @@ impl LayoutEngine {
                         };
                         let mut st = st_rc.borrow_mut();
                         st.set_inner_height(h);
-                        let layout = crate::textfield::layout_text_area(&st.text, font_val, wrap_w, 400, 0);
+                        let layout =
+                            crate::textfield::layout_text_area(&st.text, font_val, wrap_w, 400, 0);
                         let content_h = layout.ranges.len().max(1) as f32 * layout.line_h_px;
                         let max_y = (content_h - st.inner_height).max(0.0);
 
@@ -2695,10 +2753,10 @@ impl LayoutEngine {
                         interactions,
                         focused,
                         scrolled_offset,
-                    alpha_accum,
-                    next_sem_parent,
-                    child_interaction_source,
-                    font_px,
+                        alpha_accum,
+                        next_sem_parent,
+                        child_interaction_source,
+                        font_px,
                         allow_cache,
                         deferred,
                         skip_defer,
@@ -2794,10 +2852,10 @@ impl LayoutEngine {
                         interactions,
                         focused,
                         scrolled_offset,
-                    alpha_accum,
-                    next_sem_parent,
-                    child_interaction_source,
-                    font_px,
+                        alpha_accum,
+                        next_sem_parent,
+                        child_interaction_source,
+                        font_px,
                         allow_cache,
                         deferred,
                         skip_defer,
@@ -2857,10 +2915,10 @@ impl LayoutEngine {
                         interactions,
                         focused,
                         child_offset_px,
-                    alpha_accum,
-                    next_sem_parent,
-                    child_interaction_source,
-                    font_px,
+                        alpha_accum,
+                        next_sem_parent,
+                        child_interaction_source,
+                        font_px,
                         allow_cache,
                         deferred,
                         skip_defer,
@@ -2879,10 +2937,10 @@ impl LayoutEngine {
                         interactions,
                         focused,
                         child_offset_px,
-                    alpha_accum,
-                    next_sem_parent,
-                    child_interaction_source,
-                    font_px,
+                        alpha_accum,
+                        next_sem_parent,
+                        child_interaction_source,
+                        font_px,
                         allow_cache,
                         deferred,
                         skip_defer,
@@ -2922,10 +2980,10 @@ impl LayoutEngine {
                         interactions,
                         focused,
                         child_offset_px,
-                    alpha_accum,
-                    next_sem_parent,
-                    child_interaction_source,
-                    font_px,
+                        alpha_accum,
+                        next_sem_parent,
+                        child_interaction_source,
+                        font_px,
                         allow_cache,
                         deferred,
                         skip_defer,
@@ -3039,7 +3097,12 @@ fn clamp_radii(r: [f32; 4], w: f32, h: f32) -> [f32; 4] {
     ]
 }
 fn max_radii(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
-    [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2]), a[3].max(b[3])]
+    [
+        a[0].max(b[0]),
+        a[1].max(b[1]),
+        a[2].max(b[2]),
+        a[3].max(b[3]),
+    ]
 }
 
 #[derive(Clone, Copy)]
