@@ -212,6 +212,9 @@ pub struct Composer {
     pub slots: Vec<Box<dyn Any>>,
     pub cursor: usize,
     pub keyed_slots: HashMap<String, Box<dyn Any>>,
+    /// Per-scope cached state for the `scope!` macro.
+    /// Keyed by the scope key string.
+    pub scope_caches: HashMap<String, crate::scope_cache::ScopeCache>,
 }
 
 pub struct ComposeGuard {
@@ -450,6 +453,24 @@ impl Scheduler {
         self.next_id - 1
     }
 
+    /// Snapshot the current ID counter (before executing a scope body) so the
+    /// delta can be computed after the body returns.
+    pub fn snapshot_id(&self) -> u64 {
+        self.next_id
+    }
+
+    /// Advance the ID counter by `count` without assigning IDs.
+    /// Used by the scope! macro to reserve IDs for a cached scope subtree.
+    pub fn advance_id(&mut self, count: u32) {
+        self.next_id += count as u64;
+    }
+
+    /// Number of IDs assigned since `prev_id` (the value returned by
+    /// `snapshot_id()` before executing a scope body).
+    pub fn ids_used_since(&self, prev_id: u64) -> u32 {
+        (self.next_id - prev_id) as u32
+    }
+
     pub fn repose<F>(
         &mut self,
         mut build_root: F,
@@ -480,6 +501,7 @@ pub fn clear_composer() {
         let mut c = c.borrow_mut();
         c.slots.clear();
         c.keyed_slots.clear();
+        c.scope_caches.clear();
         c.cursor = 0;
     });
     ROOT_SCOPE.with(|rs| {

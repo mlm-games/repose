@@ -55,9 +55,14 @@ pub fn register_signal_read(sig: SignalId) {
             });
         }
     });
+    // track also against the current composition scope (if in a `scope!` body)
+    crate::scope_cache::record_scope_signal_dep(sig);
 }
 
 pub fn signal_changed(sig: SignalId) {
+    // Mark composition scopes that depend on this signal as dirty
+    crate::scope_cache::mark_scope_deps_dirty(sig);
+
     let is_outer = SIGNAL_DEPTH.with(|depth| {
         let prev = depth.get();
         depth.set(prev + 1);

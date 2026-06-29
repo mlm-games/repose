@@ -118,6 +118,7 @@ pub mod reactive;
 pub mod render_api;
 pub mod runtime;
 pub mod scope;
+pub mod scope_cache;
 pub mod semantics;
 pub mod shortcuts;
 pub mod signal;
@@ -150,3 +151,116 @@ pub use text::*;
 pub use view::*;
 
 pub use repose_macros::View;
+
+/// Memoized composition scope with input + signal tracking.
+///
+/// Wraps a composable block, caching its output as long as:
+/// 1. The explicit inputs are unchanged (by `Hash` comparison).
+/// 2. No signal read during body execution has been written since last run.
+///
+/// When the cache is hit, the body is NOT executed — the previously-composed
+/// View is returned instead, with proper ID and composer cursor advancement
+/// to keep sibling scopes consistent.
+///
+/// # Usage
+///
+/// ```ignore
+/// use repose_core::*;
+///
+/// fn MyView(s: &mut Scheduler, title: &str, count: i32) -> View {
+///     scope!("my_view", s, [title, count], {
+///         Column(Modifier::new()).child((
+///             Text(title),
+///             Text(format!("Count: {count}")),
+///         ))
+///     })
+/// }
+/// ```
+///
+/// # Signal auto-tracking
+///
+/// Any `Signal::get()` call inside the body automatically registers the scope
+/// as a dependency. When that signal is written, the scope is marked dirty and
+/// recomposed on the next frame. You don't need to put signal values in the
+/// input list — the reactive system handles dependencies implicitly.
+///
+/// ```ignore
+/// let size = signal(100.0);
+/// scope!("animated", s, [], {
+///     let cur = size.get();  // auto-tracked; cache invalidated on write
+///     Box(Modifier::new().size(cur, cur))
+/// })
+/// ```
+///
+/// # `f32`/`f64` in explicit inputs
+///
+/// Float types don't implement `Hash`. For float inputs, use `.to_bits()`:
+///
+/// ```ignore
+/// scope!("s", s, [my_float.to_bits()], { ... })
+/// ```
+///
+/// Or — better — read floats from a `Signal<f32>` inside the body (auto-tracked).
+///
+/// # Compatibility with `remember`
+///
+/// `remember` slots consumed inside the body are tracked and properly advanced
+/// on cache hit, so sibling `remember` calls remain consistent.
+#[macro_export]
+macro_rules! scope {
+    // With explicit inputs
+    ($key:expr, $s:expr, [$($input:expr),+ $(,)?], $body:block) => {{
+        let _key: &str = $key;
+
+        let _input_hash = {
+            use std::hash::{Hash, Hasher};
+            let mut _hasher = std::collections::hash_map::DefaultHasher::new();
+            $(
+                Hash::hash(&$input, &mut _hasher);
+            )*
+            _hasher.finish()
+        };
+
+        if !$crate::scope_cache::should_run(_key, _input_hash) {
+            $crate::scope_cache::get_cached(_key, $s)
+        } else {
+            $crate::scope_cache::clear_scope_deps(_key);
+
+            let _prev_cursor = $crate::runtime::COMPOSER.with(|c| c.borrow().cursor);
+            let _prev_id = $s.snapshot_id();
+
+            let _result = $crate::scope_cache::with_scope_key(_key, || $body);
+
+            let _id_count = $s.ids_used_since(_prev_id);
+            let _slot_delta = $crate::runtime::COMPOSER.with(|c| c.borrow().cursor) - _prev_cursor;
+
+            $crate::scope_cache::set_cache(_key, _input_hash, _result.clone(), _id_count, _slot_delta);
+
+            _result
+        }
+    }};
+
+    // Without explicit inputs — skip Hash import
+    ($key:expr, $s:expr, [], $body:block) => {{
+        let _key: &str = $key;
+        let _input_hash: u64 = 0;
+
+        if !$crate::scope_cache::should_run(_key, _input_hash) {
+            $crate::scope_cache::get_cached(_key, $s)
+        } else {
+            $crate::scope_cache::clear_scope_deps(_key);
+
+            let _prev_cursor = $crate::runtime::COMPOSER.with(|c| c.borrow().cursor);
+            let _prev_id = $s.snapshot_id();
+
+            let _result = $crate::scope_cache::with_scope_key(_key, || $body);
+
+            let _id_count = $s.ids_used_since(_prev_id);
+            let _slot_delta = $crate::runtime::COMPOSER.with(|c| c.borrow().cursor) - _prev_cursor;
+
+            $crate::scope_cache::set_cache(_key, _input_hash, _result.clone(), _id_count, _slot_delta);
+
+            _result
+        }
+    }};
+}
