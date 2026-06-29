@@ -806,7 +806,7 @@ impl ChipDefaults {
         Color::TRANSPARENT
     }
 
-    // Elevation defaults (flat chip — no elevation)
+    // Elevation defaults (flat chip - no elevation)
     pub fn elevation_default() -> f32 {
         0.0
     }

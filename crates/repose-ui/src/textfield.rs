@@ -1269,7 +1269,7 @@ fn char_to_byte(s: &str, ci: usize) -> usize {
 
 /// Paint a text field into the scene. Called by layout.rs when
 /// `modifier.text_input.is_some()`. This is the Compose-equivalent of
-/// `TextFieldCoreModifierNode.draw()` — the engine handles painting natively
+/// `TextFieldCoreModifierNode.draw()` - the engine handles painting natively
 /// when the text_input modifier is present (no caller-side painter needed).
 ///
 /// Behavior per Compose BasicTextField:
@@ -1531,7 +1531,7 @@ pub(crate) fn paint_text_field(
                 }
             }
 
-            // Caret (multi-line) — only when enabled && !readOnly
+            // Caret (multi-line) - only when enabled && !readOnly
             if show_cursor && is_focused && st.selection.start == st.selection.end && st.caret_visible() {
                 let caret = st.selection.end.min(st.text.len());
                 let (cx, cy, _li) = caret_xy_for_byte(&st.text, font_val, inner.w.max(1.0), caret);
@@ -1550,7 +1550,7 @@ pub(crate) fn paint_text_field(
             }
         }
     } else {
-        // No state yet (unfocused) — render hint or raw value
+        // No state yet (unfocused) - render hint or raw value
         if text_input.value.is_empty() {
             scene.nodes.push(SceneNode::Text {
                 rect: repose_core::Rect {

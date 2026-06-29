@@ -29,7 +29,7 @@ fn vs_main(
     let p = positions[v];
     let half = 0.5 * xywh.zw;
     let corner = (p * 2.0 - 1.0) * half;
-    // Axis-aligned quad — no vertex rotation.
+    // Axis-aligned quad - no vertex rotation.
     // Rotation is handled in the fragment shader via UV rotation.
     let pos_ndc = xywh.xy + corner;
 

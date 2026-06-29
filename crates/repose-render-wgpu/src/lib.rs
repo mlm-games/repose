@@ -2391,7 +2391,7 @@ impl RenderBackend for WgpuBackend {
             // NDC center
             let ndc_cx = (tx / fb_w) * 2.0 - 1.0;
             let ndc_cy = 1.0 - (ty / fb_h) * 2.0;
-            // NDC size (after scale only, no rotation — rotation is done in shader)
+            // NDC size (after scale only, no rotation - rotation is done in shader)
             let ndc_w = (rect.w * transform.scale_x / fb_w) * 2.0;
             let ndc_h = (rect.h * transform.scale_y / fb_h) * 2.0;
 
@@ -2713,7 +2713,11 @@ impl RenderBackend for WgpuBackend {
 
                     let px = (*size).clamp(8.0, 96.0);
                     let fw = font_weight.0;
-                    let fs = if *font_style == FontStyle::Italic { 1 } else { 0 };
+                    let fs = if *font_style == FontStyle::Italic {
+                        1
+                    } else {
+                        0
+                    };
                     let shaped = repose_text::shape_line(text.as_ref(), px, *font_family, fw, fs);
 
                     let cos_a = current_transform.rotate.cos();

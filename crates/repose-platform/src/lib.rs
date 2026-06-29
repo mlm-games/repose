@@ -478,7 +478,7 @@ pub fn run_desktop_app(
             repose_core::clipboard::set_clipboard_read_fn(Box::new(|| {
                 clipawl::blocking::read().ok()
             }));
-            // Register for SelectableText (Ctrl+C) — use blocking API directly
+            // Register for SelectableText (Ctrl+C) - use blocking API directly
             repose_core::clipboard::set_clipboard_fn(Box::new(move |text| {
                 if let Err(e) = clipawl::blocking::write(text) {
                     eprintln!("clipboard write error: {e}");

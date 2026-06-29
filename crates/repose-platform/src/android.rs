@@ -654,7 +654,7 @@ pub fn run_android_app_with_options(
                                             self.request_redraw();
                                             return;
                                         }
-                                        // Widget has no on_drag_start — cancel long press
+                                        // Widget has no on_drag_start - cancel long press
                                         self.touch_long_press_pending = false;
                                     }
                                     if dist > self.dnd_slop_px() {

@@ -331,7 +331,7 @@ pub(crate) fn dispatch_scroll(
                     return (true, Some(cid));
                 }
             } else {
-                new_capture = None; // captured region exhausted — fall through
+                new_capture = None; // captured region exhausted - fall through
             }
         }
     }

@@ -1,10 +1,10 @@
 use crate::Vec2;
 use crate::color::{Brush, Color};
 use crate::geometry::Rect;
-use crate::text::{FontStyle, FontWeight, TextAlign, TextDecoration};
 use crate::input::{Modifiers, PointerKind};
 use crate::runtime::{Frame, HitRegion};
 use crate::shortcuts::DragAction;
+use crate::text::{FontStyle, FontWeight, TextAlign, TextDecoration};
 use crate::view::{Scene, SceneNode};
 use std::cell::RefCell;
 use std::{any::Any, path::PathBuf, rc::Rc, sync::Arc};
@@ -394,7 +394,7 @@ pub fn handle_drag_action(action: &DragAction) -> bool {
                             return true;
                         }
                     }
-                    // Widget doesn't support drag — try mouse down again next time
+                    // Widget doesn't support drag - try mouse down again next time
                     // (actually, clear it so we don't retry on every move)
                     DND_MOUSE_DOWN.with(|m| *m.borrow_mut() = None);
                 }
@@ -426,7 +426,7 @@ pub fn handle_drag_action(action: &DragAction) -> bool {
                                 DND_TOUCH_DOWN.with(|t| *t.borrow_mut() = None);
                                 return true;
                             }
-                            // Widget doesn't support drag — cancel long press
+                            // Widget doesn't support drag - cancel long press
                             DND_TOUCH_DOWN.with(|t| {
                                 if let Some(ref mut td) = *t.borrow_mut() {
                                     td.long_press_pending = false;

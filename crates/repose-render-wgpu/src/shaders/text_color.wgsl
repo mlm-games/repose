@@ -29,7 +29,7 @@ fn vs_main(
     let p = positions[v];
     let half = 0.5 * xywh.zw;
     let corner = (p * 2.0 - 1.0) * half;
-    // Axis-aligned quad — no vertex rotation.
+    // Axis-aligned quad - no vertex rotation.
     // Rotation is handled in the fragment shader via UV rotation.
     let pos_ndc = xywh.xy + corner;
 
@@ -51,7 +51,7 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let half = 0.5 * in.xywh.zw;
     let rel = (in.pos_ndc - in.xywh.xy) / half;
     // HACK: Inverse-rotate UV so the texture appears rotated within the axis-aligned quad.
-    // Same limitation as text.wgsl — bitmap atlas glyphs cannot be cleanly rotated.
+    // Same limitation as text.wgsl - bitmap atlas glyphs cannot be cleanly rotated.
     // Fix: vector glyph rendering via SwashCache::get_outline_commands() (cosmic-text 0.19).
     let cos = in.sin_cos.x;
     let sin = in.sin_cos.y;

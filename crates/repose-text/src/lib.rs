@@ -278,7 +278,7 @@ pub fn lookup_cache_key(key: GlyphKey) -> Option<cosmic_text::CacheKey> {
     eng.key_map.get(&key).copied()
 }
 
-/// Extract vector outline commands for a glyph (uncached — caller should cache).
+/// Extract vector outline commands for a glyph (uncached - caller should cache).
 /// Returns quadratic + cubic bezier commands in font-unit scaled coordinates.
 pub fn extract_outline_commands(
     cache_key: cosmic_text::CacheKey,
