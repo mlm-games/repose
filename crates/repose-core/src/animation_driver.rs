@@ -14,7 +14,9 @@ thread_local! {
 
 /// Register an animation tick callback keyed by `key`.
 /// The callback should return `true` if the animation is still running,
-/// `false` if it has settled (will be auto-removed).
+/// `false` if it has settled (will be kept in the registry so
+/// `set_target` can reactivate it without re-registering).
+/// Re-registering with an existing key replaces the old callback.
 pub fn register(key: String, tick: TickFn) {
     REGISTRY.with(|reg| {
         let mut list = reg.borrow_mut();
@@ -32,8 +34,6 @@ pub fn unregister(key: &str) {
 
 /// Advance all registered animations. Returns `true` if any is still running.
 /// If any animation is still running, calls `request_frame()`.
-/// Settled animations are kept in the registry so `set_target` can
-/// reactivate them without re-registering.
 pub fn tick() -> bool {
     let mut any_still = false;
     REGISTRY.with(|reg| {

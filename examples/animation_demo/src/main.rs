@@ -23,7 +23,8 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
         )))
     });
 
-    // Register with AnimationDriver
+    // Register with AnimationDriver once (callbacks persist - Rust ownership
+    // model means keys replaced on re-register, stale entries drop naturally).
     if !(*registered.borrow()) {
         let reg_color = animated_color.clone();
         repose_core::animation_driver::register(
