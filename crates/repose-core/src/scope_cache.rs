@@ -76,8 +76,6 @@ pub struct ScopeCache {
     pub input_hash: u64,
     /// The cached View tree produced by the last execution.
     pub view: View,
-    /// Number of view IDs the body consumed.
-    pub id_count: u32,
     /// How many `remember` slots the body consumed.
     pub slot_delta: usize,
     /// `true` if cached output is valid (no signal deps invalidated, inputs unchanged).
@@ -95,27 +93,27 @@ pub fn should_run(key: &str, input_hash: u64) -> bool {
     })
 }
 
-/// Retrieve the cached View for a scope being skipped, advancing cursor and ID
-/// counter so subsequent sibling scopes remain consistent.
-pub fn get_cached(key: &str, s: &mut crate::runtime::Scheduler) -> View {
+/// Retrieve the cached View for a scope being skipped, advancing the remember-slot
+/// cursor so sibling scopes remain consistent. IDs are self-contained in the cached
+/// View (packed scope-local IDs), so no global ID advance is needed.
+pub fn get_cached(key: &str, _s: &mut crate::runtime::Scheduler) -> View {
     crate::runtime::COMPOSER.with(|c| {
         let mut c = c.borrow_mut();
-        let (slot_delta, id_count, view) = {
+        let (slot_delta, view) = {
             let cache = c
                 .scope_caches
                 .get(key)
                 .expect("scope_cache::get_cached called but no cache entry found");
-            (cache.slot_delta, cache.id_count, cache.view.clone())
+            (cache.slot_delta, cache.view.clone())
         };
 
         c.cursor += slot_delta;
-        s.advance_id(id_count);
         view
     })
 }
 
 /// Store a new or updated cache entry after executing the scope body.
-pub fn set_cache(key: &str, input_hash: u64, view: View, id_count: u32, slot_delta: usize) {
+pub fn set_cache(key: &str, input_hash: u64, view: View, slot_delta: usize) {
     crate::runtime::COMPOSER.with(|c| {
         let mut c = c.borrow_mut();
         c.scope_caches.insert(
@@ -123,7 +121,6 @@ pub fn set_cache(key: &str, input_hash: u64, view: View, id_count: u32, slot_del
             ScopeCache {
                 input_hash,
                 view,
-                id_count,
                 slot_delta,
                 clean: true,
             },

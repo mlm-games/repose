@@ -51,6 +51,21 @@ impl Scope {
         self.inner.disposers.borrow_mut().push(Box::new(disposer));
     }
 
+    /// Returns a cached value from this scope's memo cache, or creates it with
+    /// `init` and stores it. The value persists for the lifetime of this scope
+    /// (i.e., until the scope key is no longer composed or the root is replaced).
+    pub fn memo<T: 'static>(&self, key: &str, init: impl FnOnce() -> T) -> Rc<T> {
+        let mut cache = self.inner.memo_cache.borrow_mut();
+        if let Some(existing) = cache.get(key) {
+            if let Some(v) = existing.downcast_ref::<Rc<T>>() {
+                return v.clone();
+            }
+        }
+        let val: Rc<T> = Rc::new(init());
+        cache.insert(key.to_string(), Box::new(val.clone()));
+        val
+    }
+
     pub fn child(&self) -> Scope {
         let child = Scope::new();
         self.inner.children.borrow_mut().push(child.clone());
@@ -90,6 +105,19 @@ pub fn current_scope() -> Option<Scope> {
             .as_ref()
             .and_then(|weak| weak.upgrade().map(|inner| Scope { inner }))
     })
+}
+
+/// Access this scope's memo cache from anywhere inside a `scope!` body.
+/// Returns the cached value for `key`, or creates it with `init` and stores it.
+/// The value persists until the scope is disposed.
+///
+/// Unlike `remember_with_key`, this is scoped to the current composition scope
+/// and is automatically cleaned up when the scope is no longer composed.
+pub fn scope_memo<T: 'static>(key: &str, init: impl FnOnce() -> T) -> Rc<T> {
+    match current_scope() {
+        Some(scope) => scope.memo(key, init),
+        None => Rc::new(init()),
+    }
 }
 
 /// Scoped effect that auto-cleans up.

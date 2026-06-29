@@ -424,6 +424,16 @@ pub struct SemNode {
 
 pub struct Scheduler {
     next_id: u64,
+    /// Per-scope unique IDs, assigned lazily when a scope first executes.
+    /// Keyed by the scope key string from `scope!`.
+    scope_key_to_id: HashMap<String, u32>,
+    next_scope_id: u32,
+    /// When set, `id()` allocates from this scope's local counter instead of the global counter.
+    /// The returned ID is `(scope_id << 32) | local_id`, which is stable even when
+    /// prior sibling scopes change their view count.
+    current_scope: Option<String>,
+    /// Per-scope local ID counters. Reset to 0 when a scope re-executes.
+    scope_local_counters: HashMap<String, u32>,
     pub focused: Option<u64>,
     pub size: (u32, u32),
 }
@@ -438,15 +448,57 @@ impl Scheduler {
     pub fn new() -> Self {
         Self {
             next_id: 1,
+            scope_key_to_id: HashMap::new(),
+            next_scope_id: 1,
+            current_scope: None,
+            scope_local_counters: HashMap::new(),
             focused: None,
             size: (1280, 800),
         }
     }
 
+    /// Enter a named scope. Subsequent `id()` calls within this scope
+    /// will allocate from the scope's local counter, producing packed
+    /// `(scope_id << 32) | local_id` values that are stable across sibling
+    /// recompositions.
+    pub fn enter_scope(&mut self, key: &str) {
+        self.current_scope = Some(key.to_string());
+        // Reset local counter — the body will re-assign IDs fresh
+        self.scope_local_counters.insert(key.to_string(), 0);
+        // Ensure a scope_id exists (lazy allocation)
+        self.get_or_create_scope_id(key);
+    }
+
+    /// Exit the current scope. Subsequent `id()` calls return global IDs again.
+    pub fn exit_scope(&mut self) {
+        self.current_scope = None;
+    }
+
+    fn get_or_create_scope_id(&mut self, key: &str) -> u32 {
+        if let Some(&id) = self.scope_key_to_id.get(key) {
+            id
+        } else {
+            let id = self.next_scope_id;
+            self.next_scope_id += 1;
+            self.scope_key_to_id.insert(key.to_string(), id);
+            id
+        }
+    }
+
     pub fn id(&mut self) -> u64 {
-        let id = self.next_id;
-        self.next_id += 1;
-        id
+        if let Some(key) = &self.current_scope {
+            // Scope-local ID: packed (scope_id << 32) | local_id
+            let scope_id = self.scope_key_to_id.get(key).copied().unwrap_or(0);
+            let local = self.scope_local_counters.get_mut(key).unwrap();
+            let id = *local;
+            *local += 1;
+            (scope_id as u64) << 32 | id as u64
+        } else {
+            // Global sequential ID (for non-scoped views)
+            let id = self.next_id;
+            self.next_id += 1;
+            id
+        }
     }
 
     pub fn id_count(&self) -> u64 {

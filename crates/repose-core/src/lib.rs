@@ -227,14 +227,16 @@ macro_rules! scope {
             $crate::scope_cache::clear_scope_deps(_key);
 
             let _prev_cursor = $crate::runtime::COMPOSER.with(|c| c.borrow().cursor);
-            let _prev_id = $s.snapshot_id();
 
-            let _result = $crate::scope_cache::with_scope_key(_key, || $body);
+            $s.enter_scope(_key);
+            let mut _result = $crate::scope_cache::with_scope_key(_key, || $body);
+            $s.exit_scope();
 
-            let _id_count = $s.ids_used_since(_prev_id);
+            _result.modifier.repaint_boundary = true;
+
             let _slot_delta = $crate::runtime::COMPOSER.with(|c| c.borrow().cursor) - _prev_cursor;
 
-            $crate::scope_cache::set_cache(_key, _input_hash, _result.clone(), _id_count, _slot_delta);
+            $crate::scope_cache::set_cache(_key, _input_hash, _result.clone(), _slot_delta);
 
             _result
         }
@@ -251,14 +253,16 @@ macro_rules! scope {
             $crate::scope_cache::clear_scope_deps(_key);
 
             let _prev_cursor = $crate::runtime::COMPOSER.with(|c| c.borrow().cursor);
-            let _prev_id = $s.snapshot_id();
 
-            let _result = $crate::scope_cache::with_scope_key(_key, || $body);
+            $s.enter_scope(_key);
+            let mut _result = $crate::scope_cache::with_scope_key(_key, || $body);
+            $s.exit_scope();
 
-            let _id_count = $s.ids_used_since(_prev_id);
+            _result.modifier.repaint_boundary = true;
+
             let _slot_delta = $crate::runtime::COMPOSER.with(|c| c.borrow().cursor) - _prev_cursor;
 
-            $crate::scope_cache::set_cache(_key, _input_hash, _result.clone(), _id_count, _slot_delta);
+            $crate::scope_cache::set_cache(_key, _input_hash, _result.clone(), _slot_delta);
 
             _result
         }
