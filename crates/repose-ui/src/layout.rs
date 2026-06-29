@@ -1222,6 +1222,19 @@ impl LayoutEngine {
             height_set = true;
         }
 
+        if let Some(sz) = m.required_size {
+            let w = length(px(sz.width.max(0.0)));
+            let h = length(px(sz.height.max(0.0)));
+            s.size.width = w;
+            s.size.height = h;
+            s.min_size.width = w;
+            s.min_size.height = h;
+            s.max_size.width = w;
+            s.max_size.height = h;
+            width_set = true;
+            height_set = true;
+        }
+
         if (m.fill_max || m.fill_max_w) && !width_set {
             s.size.width = percent(1.0);
             if s.min_size.width.is_auto() {
@@ -1253,17 +1266,19 @@ impl LayoutEngine {
             s.padding.left = length(px(indent_dp));
         }
 
-        if let Some(v) = m.min_width {
-            s.min_size.width = length(px(v.max(0.0)));
-        }
-        if let Some(v) = m.min_height {
-            s.min_size.height = length(px(v.max(0.0)));
-        }
-        if let Some(v) = m.max_width {
-            s.max_size.width = length(px(v.max(0.0)));
-        }
-        if let Some(v) = m.max_height {
-            s.max_size.height = length(px(v.max(0.0)));
+        if m.required_size.is_none() {
+            if let Some(v) = m.min_width {
+                s.min_size.width = length(px(v.max(0.0)));
+            }
+            if let Some(v) = m.min_height {
+                s.min_size.height = length(px(v.max(0.0)));
+            }
+            if let Some(v) = m.max_width {
+                s.max_size.width = length(px(v.max(0.0)));
+            }
+            if let Some(v) = m.max_height {
+                s.max_size.height = length(px(v.max(0.0)));
+            }
         }
         if let Some(r) = m.aspect_ratio {
             s.aspect_ratio = Some(r.max(0.0));
@@ -2079,20 +2094,25 @@ impl LayoutEngine {
             );
 
         let needs_hit = !modifier.disabled
-            && (has_pointer || modifier.click || has_dnd || modifier.on_action.is_some());
+            && (has_pointer || modifier.click || has_dnd || modifier.on_action.is_some()
+                || modifier.focusable == Some(true));
 
         if needs_hit && !kind_handles_hit && !modifier.hit_passthrough {
+            let focusable = modifier.focusable.unwrap_or(true);
             hits.push(HitRegion {
                 id: view_id,
                 rect,
                 z_index: modifier.z_index,
-                focusable: true,
+                focusable,
                 ..HitRegion::from_modifier(view_id, rect, &modifier)
             });
         }
 
         // Focus ring for interactive views
-        if is_focused && (has_pointer || modifier.click || modifier.on_action.is_some()) {
+        if is_focused
+            && (has_pointer || modifier.click || modifier.on_action.is_some()
+                || modifier.focusable == Some(true))
+        {
             push_focus_ring(scene, rect, focus_radius(&modifier));
         }
 

@@ -49,7 +49,7 @@ macro_rules! impl_option_fields {
             /// Useful for creating reusable modifier templates.
             pub fn then(mut self, other: Self) -> Self {
                 merge_opts!(self, other;
-                    key, size, width, height,
+                    key, size, width, height, required_size,
                     padding, padding_values,
                     min_width, min_height, max_width, max_height,
                     background, state_colors, state_elevation, border,
@@ -73,8 +73,12 @@ macro_rules! impl_option_fields {
                         merge_flags!(self, other;
                     fill_max, fill_max_w, fill_max_h,
                     hit_passthrough, input_blocker, repaint_boundary, click, disabled,
+                    propagate_min,
                 );
 
+                if let Some(f) = other.focusable {
+                    self.focusable = Some(f);
+                }
                 if other.z_index != 0.0 {
                     self.z_index = other.z_index;
                 }
@@ -197,6 +201,7 @@ pub struct Modifier {
     pub size: Option<Size>,
     pub width: Option<f32>,
     pub height: Option<f32>,
+    pub required_size: Option<Size>,
     pub fill_max: bool,
     pub fill_max_w: bool,
     pub fill_max_h: bool,
@@ -236,6 +241,12 @@ pub struct Modifier {
     pub click: bool,
     /// When true, the component ignores pointer events and appears disabled.
     pub disabled: bool,
+    /// When Some(true), the component can receive keyboard focus regardless of interactivity.
+    /// When Some(false), the component cannot receive focus even if interactive.
+    /// When None, focusability is determined implicitly by interactivity (click/pointer/dnd handlers).
+    pub focusable: Option<bool>,
+    /// When true, the Box passes its min constraints to children instead of removing them.
+    pub propagate_min: bool,
     pub on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>>,
     pub on_pointer_down: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_move: Option<Rc<dyn Fn(PointerEvent)>>,
@@ -306,6 +317,7 @@ impl std::fmt::Debug for Modifier {
             size,
             width,
             height,
+            required_size,
             padding,
             padding_values,
             min_width,
@@ -388,8 +400,12 @@ impl std::fmt::Debug for Modifier {
             repaint_boundary,
             click,
             disabled,
+            propagate_min,
         );
 
+        if let Some(f) = self.focusable {
+            s.field("focusable", &f);
+        }
         if self.z_index != 0.0 {
             s.field("z_index", &self.z_index);
         }
@@ -425,6 +441,17 @@ impl Modifier {
     }
     pub fn height(mut self, h: f32) -> Self {
         self.height = Some(h);
+        self
+    }
+    /// Set a fixed size that overrides parent constraints.
+    /// Unlike `size()` which is bounded by the parent's max constraints,
+    /// `required_size()` forces the node to this size regardless of the parent,
+    /// acting as both min and max.
+    pub fn required_size(mut self, w: f32, h: f32) -> Self {
+        self.required_size = Some(Size {
+            width: w,
+            height: h,
+        });
         self
     }
     pub fn fill_max_size(mut self) -> Self {
@@ -645,6 +672,31 @@ impl Modifier {
     /// Mark this component as enabled or disabled.
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.disabled = !enabled;
+        self
+    }
+    /// Set explicit focusability for this component.
+    /// When `true`, the component can receive keyboard focus even without
+    /// explicit click/pointer/dnd handlers. When `false`, focus is suppressed
+    /// even for interactive components.
+    pub fn focusable(mut self, focusable: bool) -> Self {
+        self.focusable = Some(focusable);
+        self
+    }
+    /// Convenience: register hover enter/leave callbacks.
+    /// Shorthand for setting `on_pointer_enter` and `on_pointer_leave`.
+    pub fn hoverable(
+        mut self,
+        on_enter: impl Fn() + 'static,
+        on_leave: impl Fn() + 'static,
+    ) -> Self {
+        self.on_pointer_enter = Some(Rc::new(move |_| on_enter()));
+        self.on_pointer_leave = Some(Rc::new(move |_| on_leave()));
+        self
+    }
+    /// When true, Box passes min-width/min-height constraints to its children
+    /// instead of allowing them to shrink below the parent's min constraints.
+    pub fn propagate_min_constraints(mut self, propagate: bool) -> Self {
+        self.propagate_min = propagate;
         self
     }
     pub fn on_scroll(mut self, f: impl Fn(Vec2) -> Vec2 + 'static) -> Self {

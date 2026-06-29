@@ -122,6 +122,10 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     }
     m.width.map(|w| (w * 100.0) as i32).hash(hasher);
     m.height.map(|h| (h * 100.0) as i32).hash(hasher);
+    if let Some(s) = &m.required_size {
+        ((s.width * 100.0) as i32).hash(hasher);
+        ((s.height * 100.0) as i32).hash(hasher);
+    }
     m.fill_max.hash(hasher);
     m.fill_max_w.hash(hasher);
     m.fill_max_h.hash(hasher);
@@ -223,6 +227,8 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     // Clickable
     m.click.hash(hasher);
     m.disabled.hash(hasher);
+    m.focusable.hash(hasher);
+    m.propagate_min.hash(hasher);
     (m.on_action.is_some()).hash(hasher);
 
     (m.on_drag_start.is_some()).hash(hasher);
