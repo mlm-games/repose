@@ -52,14 +52,19 @@ where
 
     let is_new = *prev.borrow() != target;
     if is_new {
-        let prev_view = content(prev.borrow().clone());
+        let old_ver = *version.borrow();
+        let mut prev_view = content(prev.borrow().clone());
+        prev_view.scope_key = Some(format!("cf_{key}_old_v{old_ver}"));
+        prev_view.modifier.repaint_boundary = true;
         old_content.borrow_mut().replace(prev_view);
         prev.borrow_mut().clone_from(&target);
         *version.borrow_mut() += 1;
     }
 
     let v = *version.borrow();
-    let new_view = content(target.clone());
+    let mut new_view = content(target.clone());
+    new_view.scope_key = Some(format!("cf_{key}_v{v}"));
+    new_view.modifier.repaint_boundary = true;
 
     // Exit: versioned key ensures fresh animation state per transition.
     let old_view = {
@@ -123,14 +128,19 @@ where
 
     let is_new = *prev.borrow() != target_state;
     if is_new {
-        let prev_view = content(prev.borrow().clone());
+        let old_ver = *version.borrow();
+        let mut prev_view = content(prev.borrow().clone());
+        prev_view.scope_key = Some(format!("ac_{key}_old_v{old_ver}"));
+        prev_view.modifier.repaint_boundary = true;
         old_content.borrow_mut().replace(prev_view);
         prev.borrow_mut().clone_from(&target_state);
         *version.borrow_mut() += 1;
     }
 
     let v = *version.borrow();
-    let new_view = content(target_state.clone());
+    let mut new_view = content(target_state.clone());
+    new_view.scope_key = Some(format!("ac_{key}_v{v}"));
+    new_view.modifier.repaint_boundary = true;
     let new_view = apply_enter(&key, v, &enter, &spec, new_view);
 
     let old_view = {
@@ -400,7 +410,10 @@ pub fn AnimatedVisibility(
     if *prev.borrow() != visible {
         if !visible {
             // Going hidden: capture current content for exit animation
-            old_content.borrow_mut().replace(content.clone());
+            let mut captured = content.clone();
+            captured.scope_key = Some(format!("av_{key}_old"));
+            captured.modifier.repaint_boundary = true;
+            old_content.borrow_mut().replace(captured);
         }
         *version.borrow_mut() += 1;
         prev.borrow_mut().clone_from(&visible);
@@ -424,6 +437,9 @@ pub fn AnimatedVisibility(
     };
 
     if visible {
+        let mut content = content;
+        content.scope_key = Some(format!("av_{key}_content"));
+        content.modifier.repaint_boundary = true;
         let entering = if v > 0 {
             apply_enter(&key, v, &enter, &spec, content)
         } else {

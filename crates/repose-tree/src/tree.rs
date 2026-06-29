@@ -112,6 +112,7 @@ impl ViewTree {
         for (slot_id, view) in slots.iter_mut() {
             view.modifier.key = Some(*slot_id);
             view.scope_key = Some(scope_key.clone());
+            view.modifier.repaint_boundary = true;
         }
         self.subcompose_cache
             .insert(node_id, (scope, slots.clone()));
@@ -856,6 +857,7 @@ mod tests {
             kind: ViewKind::SubcomposeLayout { content },
             modifier: Modifier::default(),
             children: Vec::new(),
+            scope_key: None,
             semantics: None,
         }
     }
@@ -1019,6 +1021,7 @@ mod tests {
             kind: ViewKind::SubcomposeLayout { content },
             modifier: Modifier::default(),
             children: Vec::new(),
+            scope_key: None,
             semantics: None,
         }
     }

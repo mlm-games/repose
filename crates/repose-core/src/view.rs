@@ -418,6 +418,7 @@ mod tests {
             },
             modifier: Modifier::default(),
             children: vec![],
+            scope_key: None,
             semantics: None,
         };
         match &v.kind {
@@ -441,6 +442,7 @@ mod tests {
             },
             modifier: Modifier::default(),
             children: vec![],
+            scope_key: None,
             semantics: None,
         };
         if let ViewKind::SubcomposeLayout { content } = &v.kind {
