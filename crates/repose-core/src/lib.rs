@@ -106,6 +106,7 @@ pub mod cursor;
 pub mod dnd;
 pub mod effects;
 pub mod effects_ext;
+pub mod indication;
 pub mod error;
 pub mod focus;
 pub mod frame_clock;
@@ -129,6 +130,7 @@ pub mod view;
 
 pub use color::*;
 pub use cursor::*;
+pub use indication::*;
 pub use dnd::*;
 pub use effects::*;
 pub use effects_ext::*;

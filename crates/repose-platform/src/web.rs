@@ -1248,21 +1248,30 @@ impl ApplicationHandler<()> for App {
                             if let Some(i) = rc::hit_index_by_id(f, cid) {
                                 let hit = &f.hit_regions[i];
 
-                                if let Some(cb) = &hit.on_pointer_up {
-                                    cb(rc::pe_up_primary(
-                                        repose_core::input::PointerKind::Touch,
-                                        pos,
-                                        self.modifiers,
-                                    ));
-                                }
+                                if t.phase == TouchPhase::Cancelled {
+                                    if let Some(cb) = &hit.on_pointer_cancel {
+                                        cb(rc::pe_touch(
+                                            repose_core::input::PointerEventKind::Cancel,
+                                            pos,
+                                            self.modifiers,
+                                        ));
+                                    }
+                                } else {
+                                    if let Some(cb) = &hit.on_pointer_up {
+                                        cb(rc::pe_up_primary(
+                                            repose_core::input::PointerKind::Touch,
+                                            pos,
+                                            self.modifiers,
+                                        ));
+                                    }
 
-                                // click only if we didn't scroll-drag
-                                if t.phase == TouchPhase::Ended
-                                    && !self.touch_scrolled
-                                    && hit.rect.contains(pos)
-                                    && let Some(cb) = &hit.on_click
-                                {
-                                    cb();
+                                    // click only if we didn't scroll-drag
+                                    if !self.touch_scrolled
+                                        && hit.rect.contains(pos)
+                                        && let Some(cb) = &hit.on_click
+                                    {
+                                        cb();
+                                    }
                                 }
                             }
                         }

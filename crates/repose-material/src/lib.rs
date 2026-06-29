@@ -1,4 +1,5 @@
 pub mod material3;
+pub mod ripple;
 mod symbol;
 pub use symbol::Symbol;
 

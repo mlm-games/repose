@@ -20,8 +20,11 @@ use std::sync::OnceLock;
 
 use parking_lot::RwLock;
 
+use std::rc::Rc;
+
 use crate::Color;
 use crate::animation::{AnimationSpec, Easing};
+use crate::indication::IndicationNodeFactory;
 use web_time::Duration;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -589,6 +592,49 @@ pub fn content_color() -> Color {
     get_local::<ContentColor>()
         .map(|c| c.0)
         .unwrap_or_else(|| theme().on_surface)
+}
+
+/// Composition-local default indication (ripple/highlight) factory.
+/// Components like `Button` read this to get the default press feedback.
+/// Mirrors Compose's `LocalIndication`.
+#[derive(Clone, Debug)]
+pub struct LocalIndication(pub Option<Rc<dyn IndicationNodeFactory>>);
+
+impl Default for LocalIndication {
+    fn default() -> Self {
+        Self(None)
+    }
+}
+
+pub fn with_local_indication<R>(
+    indication: Option<Rc<dyn IndicationNodeFactory>>,
+    f: impl FnOnce() -> R,
+) -> R {
+    with_locals_frame(|| {
+        set_local_boxed(
+            std::any::TypeId::of::<LocalIndication>(),
+            Box::new(LocalIndication(indication)),
+        );
+        f()
+    })
+}
+
+pub fn local_indication() -> Option<Rc<dyn IndicationNodeFactory>> {
+    // Manual stack walk (get_local requires Copy, which LocalIndication is not).
+    let result = LOCALS_STACK.with(|st| {
+        for frame in st.borrow().iter().rev() {
+            if let Some(v) = frame.get(&TypeId::of::<LocalIndication>())
+                && let Some(li) = v.downcast_ref::<LocalIndication>()
+            {
+                return li.0.clone();
+            }
+        }
+        None::<Rc<dyn IndicationNodeFactory>>
+    });
+    result.or_else(|| {
+        // Fall back to a default debug indication
+        Some(Rc::new(crate::indication::DebugIndication::default()) as Rc<dyn IndicationNodeFactory>)
+    })
 }
 
 /// System window insets (status bar, navigation bar, IME keyboard, etc.)

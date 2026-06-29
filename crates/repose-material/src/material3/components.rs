@@ -12,6 +12,7 @@ use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt};
 
 use super::*;
 
+use crate::ripple::{ripple, RippleConfig};
 use crate::{Icon, Symbol};
 
 /// Color slots for [`TopAppBar`].
@@ -562,6 +563,16 @@ fn button_impl(
         })
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center);
+
+    // Interaction source + ripple indication (matching Compose's clickable + indication wiring)
+    let source = remember(MutableInteractionSource::new);
+    m = m.interaction_source(&*source);
+    m = m.indication(ripple(RippleConfig {
+        color: Some(content_color),
+        bounded: true,
+        ..Default::default()
+    }));
+
     if enabled {
         m = m.clickable().on_pointer_down(move |_| on_click());
     }

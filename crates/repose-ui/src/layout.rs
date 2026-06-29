@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -815,9 +815,6 @@ impl LayoutEngine {
             st.reverse_map.insert(t_id, node_id);
             if is_root {
                 st.root_taffy_id = Some(t_id);
-                st.valid = false;
-                st.cached_size = None;
-                st.last_constraints = None;
             }
             drop(st);
             let st = self.scope_trees.get_mut(scope_key).unwrap();
@@ -880,7 +877,6 @@ impl LayoutEngine {
                 };
                 let _ = self.taffy.set_style(t_id, new_style);
                 let _ = self.taffy.set_node_context(t_id, Some(new_ctx));
-                let _ = self.taffy.set_children(t_id, &[]);
                 return t_id;
             }
             let (style, ctx) = {
@@ -2121,6 +2117,14 @@ impl LayoutEngine {
             (p)(scene, rect, alpha_accum);
         }
 
+        // Draw indication (ripple, etc.) on top of content but behind hit regions
+        if let Some(factory) = modifier.indication.clone().or_else(|| local_indication()) {
+            if let Some(ref interaction_source) = modifier.interaction_source {
+                let draw_node = factory.create(interaction_source);
+                draw_node.draw(scene, rect, alpha_accum);
+            }
+        }
+
         let has_pointer = modifier.on_pointer_down.is_some()
             || modifier.on_pointer_move.is_some()
             || modifier.on_pointer_up.is_some()
@@ -2163,25 +2167,46 @@ impl LayoutEngine {
             // The source's state is OR'd with the implicit view-ID state in state resolution above.
             if let Some(ref src) = modifier.interaction_source {
                 let msrc = src.to_mutable();
+                let last_press_id: Rc<Cell<Option<PressId>>> = Rc::new(Cell::new(None));
 
+                // Wrap on_pointer_down to emit Press with position + unique ID
                 let orig_down = hit.on_pointer_down.take();
-                let s = msrc.clone();
+                let s_down = msrc.clone();
+                let lpid_down = last_press_id.clone();
                 hit.on_pointer_down = Some(Rc::new(move |ev| {
-                    s.emit(Interaction::Press);
+                    let press = Interaction::new_press(ev.position);
+                    if let Interaction::Press(id, _) = press {
+                        lpid_down.set(Some(id));
+                    }
+                    s_down.emit(press);
                     if let Some(ref f) = orig_down { f(ev); }
                 }));
 
+                // Wrap on_pointer_up to emit Release with the last press ID.
+                // Always emit Release even when the Cell is empty (composition can
+                // change between press and release, creating a fresh Cell per frame).
                 let orig_up = hit.on_pointer_up.take();
-                let s = msrc.clone();
+                let s_up = msrc.clone();
+                let lpid_up = last_press_id.clone();
                 hit.on_pointer_up = Some(Rc::new(move |ev| {
-                    s.emit(Interaction::Release);
+                    let pid = lpid_up.take().unwrap_or(0);
+                    s_up.emit(Interaction::Release(pid));
                     if let Some(ref f) = orig_up { f(ev); }
                 }));
 
+                // Wrap on_pointer_cancel to emit Cancel with the last press ID.
+                let orig_cancel = hit.on_pointer_cancel.take();
+                let s_cancel = msrc.clone();
+                hit.on_pointer_cancel = Some(Rc::new(move |ev| {
+                    let pid = last_press_id.take().unwrap_or(0);
+                    s_cancel.emit(Interaction::Cancel(pid));
+                    if let Some(ref f) = orig_cancel { f(ev); }
+                }));
+
                 let orig_enter = hit.on_pointer_enter.take();
-                let s = msrc.clone();
+                let s_enter = msrc.clone();
                 hit.on_pointer_enter = Some(Rc::new(move |ev| {
-                    s.emit(Interaction::HoverEnter);
+                    s_enter.emit(Interaction::HoverEnter);
                     if let Some(ref f) = orig_enter { f(ev); }
                 }));
 

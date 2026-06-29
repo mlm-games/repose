@@ -5,17 +5,19 @@ pub use crate::animation::{
 };
 pub use crate::color::Color;
 pub use crate::dnd::*;
+pub use crate::indication::*;
 pub use crate::effects::{Dispose, effect, on_unmount};
 pub use crate::error::*;
 pub use crate::frame_clock::{peek_frame_request, request_frame, take_frame_request};
 pub use crate::geometry::{Rect, Size, Vec2};
 pub use crate::input::*;
 pub use crate::locals::{
-    Density, Dp, HeightClass, TextDirection, TextScale, Theme, UiScale, WidthClass, WindowInsets,
-    WindowSizeClass, calculate_window_size_class, density, dp_to_px, set_ime_inset,
-    set_window_size_class_default, text_direction, text_scale, theme, ui_scale, window_insets,
-    window_size_class, with_density, with_text_direction, with_text_scale, with_theme,
-    with_ui_scale, with_window_insets, with_window_size_class,
+    Density, Dp, HeightClass, LocalIndication, TextDirection, TextScale, Theme, UiScale,
+    WidthClass, WindowInsets, WindowSizeClass, calculate_window_size_class, content_color, density,
+    dp_to_px, local_indication, set_ime_inset, set_window_size_class_default, text_direction,
+    text_scale, theme, ui_scale, window_insets, window_size_class, with_content_color, with_density,
+    with_local_indication, with_text_direction, with_text_scale, with_theme, with_ui_scale,
+    with_window_insets, with_window_size_class,
 };
 pub use crate::modifier::Modifier;
 pub use crate::render_api::{GlyphRasterConfig, RenderBackend};

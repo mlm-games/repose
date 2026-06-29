@@ -588,6 +588,28 @@ pub fn run_desktop_app(
                     repose_core::dnd::handle_drag_action(
                         &repose_core::shortcuts::DragAction::Cancel,
                     );
+
+                    // Emit interaction Cancel for the captured hit region
+                    if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
+                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
+                            if let Some(cb) = &hit.on_pointer_cancel {
+                                let pos = repose_core::Vec2 {
+                                    x: self.mouse_pos_px.0,
+                                    y: self.mouse_pos_px.1,
+                                };
+                                let pe = repose_core::input::PointerEvent {
+                                    id: repose_core::input::PointerId(0),
+                                    kind: repose_core::input::PointerKind::Mouse,
+                                    event: repose_core::input::PointerEventKind::Cancel,
+                                    position: pos,
+                                    pressure: 1.0,
+                                    modifiers: self.modifiers,
+                                };
+                                cb(pe);
+                            }
+                        }
+                    }
+
                     // Defensive reset: Wayland/KDE can "eat" releases during DnD.
                     self.external_file_drag = false;
                     self.hovered_files.clear();

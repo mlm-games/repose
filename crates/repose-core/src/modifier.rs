@@ -1,9 +1,11 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use taffy::{AlignContent, AlignItems, AlignSelf, FlexDirection, FlexWrap, JustifyContent};
 
 use crate::animation::AnimationSpec;
+use crate::indication::IndicationNodeFactory;
 use crate::{Brush, Color, PointerEvent, Size, Transform, Vec2};
 
 /// State-driven colors for interactive components.
@@ -83,6 +85,9 @@ macro_rules! impl_option_fields {
 
                 if let Some(f) = other.focusable {
                     self.focusable = Some(f);
+                }
+                if other.indication.is_some() {
+                    self.indication = other.indication;
                 }
                 if other.z_index != 0.0 {
                     self.z_index = other.z_index;
@@ -202,13 +207,28 @@ pub enum IntrinsicSize {
     Max,
 }
 
+static PRESS_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+/// A press identifier for linking Press ↔ Release/Cancel pairs.
+pub type PressId = u64;
+
 /// An interaction event that can be emitted by a [`MutableInteractionSource`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// Compose-like per-interaction-type hierarchy:
+/// - `PressInteraction.Press(position)` / `Release(press)` / `Cancel(press)`
+/// - `HoverInteraction.Enter` / `Exit`
+/// - `FocusInteraction.Focus` / `Unfocus`
+/// - `DragInteraction.Start` / `Stop` / `Cancel`
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Interaction {
-    Press,
-    Release,
-    /// Cancels the current press (e.g., gesture disambiguation, detach during press).
-    Cancel,
+    /// A press started at the given position (in local coords).
+    /// Carries a unique `PressId` so Release/Cancel can identify which press to end.
+    Press(PressId, Vec2),
+    /// The press with the given `PressId` was released.
+    Release(PressId),
+    /// The press with the given `PressId` was cancelled
+    /// (e.g. gesture disambiguation, pointer leave during press).
+    Cancel(PressId),
     HoverEnter,
     HoverLeave,
     Focus,
@@ -216,6 +236,14 @@ pub enum Interaction {
     DragStart,
     DragStop,
     DragCancel,
+}
+
+impl Interaction {
+    /// Create a new `Press` with a fresh unique ID and the given position.
+    #[inline]
+    pub fn new_press(position: Vec2) -> Self {
+        Interaction::Press(PRESS_COUNTER.fetch_add(1, Ordering::Relaxed), position)
+    }
 }
 
 /// Read-only handle to a shared interaction state.
@@ -241,6 +269,16 @@ impl InteractionSource {
     }
     pub fn collect_is_dragged(&self) -> bool {
         self.state.borrow().dragged > 0
+    }
+    pub fn collect_last_press_position(&self) -> Option<Vec2> {
+        self.state.borrow().last_press_position
+    }
+    pub fn collect_last_press_id(&self) -> Option<PressId> {
+        self.state.borrow().last_press_id
+    }
+    /// Stable identity: the pointer of the shared state Rc.
+    pub fn stable_id(&self) -> *const () {
+        Rc::as_ptr(&self.state) as *const ()
     }
     /// Get a mutable handle to the same underlying state.
     /// Both handles share the same `Rc<RefCell<..>>`, so mutations via
@@ -277,12 +315,13 @@ impl MutableInteractionSource {
     pub fn emit(&self, interaction: Interaction) {
         let mut s = self.state.borrow_mut();
         match interaction {
-            Interaction::Press => s.pressed = s.pressed.saturating_add(1),
-            Interaction::Release => {
-                s.pressed = s.pressed.saturating_sub(1);
+            Interaction::Press(id, pos) => {
+                s.pressed = s.pressed.saturating_add(1);
+                s.last_press_id = Some(id);
+                s.last_press_position = Some(pos);
             }
-            Interaction::Cancel => {
-                s.pressed = 0;
+            Interaction::Release(_) | Interaction::Cancel(_) => {
+                s.pressed = s.pressed.saturating_sub(1);
             }
             Interaction::HoverEnter => s.hovered = true,
             Interaction::HoverLeave => s.hovered = false,
@@ -315,6 +354,10 @@ pub(crate) struct InteractionState {
     hovered: bool,
     focused: bool,
     dragged: u32,
+    /// Most recent press position (used by ripple for origin).
+    pub(crate) last_press_position: Option<Vec2>,
+    /// Most recent press ID.
+    pub(crate) last_press_id: Option<PressId>,
 }
 
 #[derive(Clone, Default)]
@@ -394,6 +437,7 @@ pub struct Modifier {
     pub on_pointer_down: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_move: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_up: Option<Rc<dyn Fn(PointerEvent)>>,
+    pub on_pointer_cancel: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_enter: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_leave: Option<Rc<dyn Fn(PointerEvent)>>,
     /// Called when the element is double-clicked/tapped.
@@ -461,6 +505,9 @@ pub struct Modifier {
 
     /// Text input configuration. When set, this box acts as a text input field.
     pub text_input: Option<TextInputConfig>,
+
+    /// Indication (ripple/overlay) factory for visual feedback on interaction.
+    pub indication: Option<Rc<dyn IndicationNodeFactory>>,
 }
 
 impl std::fmt::Debug for Modifier {
@@ -472,6 +519,10 @@ impl std::fmt::Debug for Modifier {
                 $( if self.$name.is_some() { s.field(stringify!($name), &self.$name); } )+
             };
         }
+        if self.indication.is_some() {
+            s.field("indication", &"…");
+        }
+
         opt_val!(
             key,
             size,
@@ -543,6 +594,7 @@ impl std::fmt::Debug for Modifier {
             on_pointer_down,
             on_pointer_move,
             on_pointer_up,
+            on_pointer_cancel,
             on_pointer_enter,
             on_pointer_leave,
             on_double_click,
@@ -967,6 +1019,10 @@ impl Modifier {
         self.on_pointer_up = Some(Rc::new(f));
         self
     }
+    pub fn on_pointer_cancel(mut self, f: impl Fn(PointerEvent) + 'static) -> Self {
+        self.on_pointer_cancel = Some(Rc::new(f));
+        self
+    }
     pub fn on_pointer_enter(mut self, f: impl Fn(PointerEvent) + 'static) -> Self {
         self.on_pointer_enter = Some(Rc::new(f));
         self
@@ -1236,6 +1292,14 @@ impl Modifier {
     /// Mark this Box as a text input field with the given configuration.
     pub fn text_input(mut self, config: TextInputConfig) -> Self {
         self.text_input = Some(config);
+        self
+    }
+
+    /// Attach an indication (ripple/highlight) factory for visual feedback.
+    /// The factory is paired with an `InteractionSource` (via `.interaction_source(...)`)
+    /// to draw press/hover/focus visual feedback.
+    pub fn indication(mut self, factory: Rc<dyn IndicationNodeFactory>) -> Self {
+        self.indication = Some(factory);
         self
     }
 }
