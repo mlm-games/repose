@@ -207,10 +207,15 @@ pub enum IntrinsicSize {
 pub enum Interaction {
     Press,
     Release,
+    /// Cancels the current press (e.g., gesture disambiguation, detach during press).
+    Cancel,
     HoverEnter,
     HoverLeave,
     Focus,
     Unfocus,
+    DragStart,
+    DragStop,
+    DragCancel,
 }
 
 /// Read-only handle to a shared interaction state.
@@ -233,6 +238,9 @@ impl InteractionSource {
     }
     pub fn collect_is_focused(&self) -> bool {
         self.state.borrow().focused
+    }
+    pub fn collect_is_dragged(&self) -> bool {
+        self.state.borrow().dragged > 0
     }
     /// Get a mutable handle to the same underlying state.
     /// Both handles share the same `Rc<RefCell<..>>`, so mutations via
@@ -273,10 +281,17 @@ impl MutableInteractionSource {
             Interaction::Release => {
                 s.pressed = s.pressed.saturating_sub(1);
             }
+            Interaction::Cancel => {
+                s.pressed = 0;
+            }
             Interaction::HoverEnter => s.hovered = true,
             Interaction::HoverLeave => s.hovered = false,
             Interaction::Focus => s.focused = true,
             Interaction::Unfocus => s.focused = false,
+            Interaction::DragStart => s.dragged = s.dragged.saturating_add(1),
+            Interaction::DragStop | Interaction::DragCancel => {
+                s.dragged = s.dragged.saturating_sub(1);
+            }
         }
     }
 
@@ -299,6 +314,7 @@ pub(crate) struct InteractionState {
     pressed: u32,
     hovered: bool,
     focused: bool,
+    dragged: u32,
 }
 
 #[derive(Clone, Default)]
@@ -857,6 +873,13 @@ impl Modifier {
         self.click = true;
         self
     }
+    /// Make this element clickable and attach an [`InteractionSource`] for state tracking.
+    /// Combines `.clickable()` and `.interaction_source(&source)` in one call.
+    pub fn clickable_with_source(mut self, source: &MutableInteractionSource) -> Self {
+        self.click = true;
+        self.interaction_source = Some(source.source());
+        self
+    }
     /// Set state-driven background colors for hover, press, disabled states.
     /// The layout engine automatically selects and animates between these based on interaction.
     pub fn state_colors(mut self, colors: StateColors) -> Self {
@@ -913,6 +936,13 @@ impl Modifier {
     ) -> Self {
         self.on_pointer_enter = Some(Rc::new(move |_| on_enter()));
         self.on_pointer_leave = Some(Rc::new(move |_| on_leave()));
+        self
+    }
+    /// Attach an [`InteractionSource`] to track hover state without explicit callbacks.
+    /// The source automatically receives HoverEnter/Leave events from the layout engine's
+    /// auto-wiring, so you can use it with `collect_is_hovered()` for custom visuals.
+    pub fn hoverable_with_source(mut self, source: &MutableInteractionSource) -> Self {
+        self.interaction_source = Some(source.source());
         self
     }
     /// When true, Box passes min-width/min-height constraints to its children
