@@ -1555,6 +1555,10 @@ pub fn run_desktop_app(
                         return;
                     }
 
+                    // Advance animations before composition (Compose pattern).
+                    // Mirrors broadcastFrameClock.sendFrame() before performRecompose().
+                    repose_core::animation_driver::tick();
+
                     let t0 = Instant::now();
                     let scale = win.scale_factor() as f32;
                     let size_px_u32 = self.sched.size;
@@ -1698,10 +1702,8 @@ pub fn run_desktop_app(
 
             if now.saturating_duration_since(self.last_redraw) >= interval {
                 self.pending_redraw = false;
-                if repose_core::take_signal_fired() {
-                    self.redraw_requested.set(true);
-                    rc::request_redraw(&self.window);
-                }
+                self.redraw_requested.set(true);
+                rc::request_redraw(&self.window);
                 self.last_redraw = now;
             } else {
                 el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(

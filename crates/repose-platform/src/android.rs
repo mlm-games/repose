@@ -1113,6 +1113,10 @@ pub fn run_android_app_with_options(
 
                 WindowEvent::RedrawRequested => {
                     rc::tick_snackbar(self.last_redraw);
+
+                    // Advance animations before composition (Compose pattern)
+                    repose_core::animation_driver::tick();
+
                     self.process_render_commands();
 
                     let (Some(backend), Some(win)) = (self.backend.as_mut(), self.window.as_ref())

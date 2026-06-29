@@ -1642,6 +1642,9 @@ impl ApplicationHandler<()> for App {
             WindowEvent::RedrawRequested => {
                 rc::tick_snackbar(self.last_redraw);
 
+                // Advance animations before composition (Compose pattern)
+                repose_core::animation_driver::tick();
+
                 self.ensure_fullscreen_size(&window);
                 self.sync_size_from_window(&window);
 

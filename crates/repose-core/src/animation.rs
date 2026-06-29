@@ -2,8 +2,6 @@ use parking_lot::RwLock;
 use std::sync::OnceLock;
 use web_time::{Duration, Instant};
 
-use crate::request_frame;
-
 pub(crate) fn now() -> Instant {
     let lock = CLOCK.get_or_init(|| RwLock::new(Box::new(SystemClock) as Box<dyn Clock>));
     lock.read().now()
@@ -744,6 +742,8 @@ pub struct AnimatedValue<T: Interpolate + Clone> {
     // Spring simulation state (progress-based, works for any T: Interpolate)
     progress: f32,
     velocity: f32,
+    /// Initial velocity for the current spring segment (carry-over from target changes).
+    spring_v0: f32,
     last_update: Option<Instant>,
 }
 
@@ -759,6 +759,7 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             start_time: None,
             progress: 1.0,
             velocity: 0.0,
+            spring_v0: 0.0,
             last_update: None,
         }
     }
@@ -789,6 +790,7 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
         if self.spec.spring.is_some() {
             // Spring mode: start progress at 0 (the current value), carry velocity forward
             self.progress = 0.0;
+            self.spring_v0 = self.velocity;
         }
     }
 
@@ -801,6 +803,7 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
         self.start_time = None;
         self.progress = 1.0;
         self.velocity = 0.0;
+        self.spring_v0 = 0.0;
         self.last_update = None;
     }
 
@@ -834,10 +837,6 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             }
         }
 
-        if still {
-            request_frame();
-            crate::signal_fired();
-        }
         still
     }
 
@@ -885,8 +884,8 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             spring.damping_ratio,
             spring.stiffness,
             t,
-            self.progress,
-            self.velocity,
+            0.0,
+            self.spring_v0,
         );
         let progress = progress.clamp(-0.1, 2.0);
 
@@ -896,6 +895,7 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
         {
             self.progress = 1.0;
             self.velocity = 0.0;
+            self.spring_v0 = 0.0;
             self.current = self.target.clone();
             self.start_time = None;
             self.last_update = None;

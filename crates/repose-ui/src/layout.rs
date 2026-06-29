@@ -1459,7 +1459,8 @@ impl LayoutEngine {
                 height: rect.h,
             };
 
-            let anim = remember_state_with_key(format!("anim_cs:{view_id}"), || {
+            let anim_key = format!("anim_cs:{view_id}");
+            let anim = remember_state_with_key(&anim_key, || {
                 AnimatedValue::new(target, *anim_spec)
             });
             let last_target = remember_state_with_key(format!("anim_cs_last:{view_id}"), || {
@@ -1474,23 +1475,26 @@ impl LayoutEngine {
                 let mut a = anim.borrow_mut();
                 a.set_spec(*anim_spec);
                 a.set_target(target);
+
+                // Register with AnimationDriver for pre-composition advancement
+                let reg_key = anim_key;
+                let reg_anim = anim.clone();
+                repose_core::animation_driver::register(
+                    reg_key,
+                    std::rc::Rc::new(std::cell::RefCell::new(move || {
+                        reg_anim.borrow_mut().update()
+                    })),
+                );
+                request_frame();
             } else {
                 drop(lt);
             }
 
-            let mut still = false;
-            let animated = {
-                let mut a = anim.borrow_mut();
-                still |= a.update();
-                let s = *a.get();
-                repose_core::Size {
-                    width: s.width.max(1.0),
-                    height: s.height.max(1.0),
-                }
+            let s = anim.borrow().get().clone();
+            let animated = repose_core::Size {
+                width: s.width.max(1.0),
+                height: s.height.max(1.0),
             };
-            if still {
-                request_frame();
-            }
 
             // Override rect and content_rect dimensions with animated values
             let dw = rect.w - animated.width;

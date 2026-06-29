@@ -1,12 +1,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use repose_core::Color;
 use repose_core::{
-    Rect, Size, Vec2,
+    Color, Rect, Size, Vec2,
     animation::{AnimatedValue, AnimationSpec, KeyframesSpec, RepeatableSpec, SplineKeyframes},
-    remember_state_with_key,
-    request_frame, signal_fired,
+    animation_driver, remember_state_with_key, request_frame,
 };
 
 /// Animate f32 from an explicit initial value to a target.
@@ -19,7 +17,8 @@ pub fn animate_f32_from(
     spec: AnimationSpec,
 ) -> f32 {
     let key = key.into();
-    let anim = remember_state_with_key(format!("anim:f32:{key}"), || {
+    let anim_key = format!("anim:f32:{key}");
+    let anim = remember_state_with_key(&anim_key, || {
         AnimatedValue::new(initial, spec)
     });
     let last = remember_state_with_key(format!("anim:f32_last:{key}"), || f32::NAN);
@@ -31,12 +30,21 @@ pub fn animate_f32_from(
         a.set_spec(spec);
         a.set_target(target);
         *lt = target;
+        drop(lt);
+
+        // Register with AnimationDriver for pre-composition advancement.
+        let reg_key = anim_key;
+        let reg_anim = anim.clone();
+        animation_driver::register(reg_key, Rc::new(RefCell::new(move || {
+            reg_anim.borrow_mut().update()
+        })));
+        request_frame();
+
+        *a.get()
+    } else {
+        drop(lt);
+        *a.get()
     }
-    drop(lt);
-
-    a.update();
-
-    *a.get()
 }
 
 /// Animate f32 to the given target; starts at the target on first mount (legacy behavior).
@@ -53,7 +61,8 @@ macro_rules! animate_from_impl {
             spec: AnimationSpec,
         ) -> $type {
             let key = key.into();
-            let anim = remember_state_with_key(format!("anim:{}:{}", $prefix, key), || {
+            let anim_key = format!("anim:{}:{}", $prefix, key);
+            let anim = remember_state_with_key(&anim_key, || {
                 AnimatedValue::new(initial, spec)
             });
             let last =
@@ -66,16 +75,23 @@ macro_rules! animate_from_impl {
                 a.set_target(target);
                 *lt = Some(target);
                 drop(lt);
-                a.update();
-                request_frame();
-                signal_fired();
-                return *a.get();
+
+                // Register with AnimationDriver
+                let reg_key = anim_key.clone();
+                let reg_anim = anim.clone();
+                repose_core::animation_driver::register(
+                    reg_key,
+                    std::rc::Rc::new(std::cell::RefCell::new(move || {
+                        reg_anim.borrow_mut().update()
+                    })),
+                );
+                repose_core::request_frame();
+
+                *a.get()
+            } else {
+                drop(lt);
+                *a.get()
             }
-            drop(lt);
-
-            a.update();
-
-            *a.get()
         }
     };
 }

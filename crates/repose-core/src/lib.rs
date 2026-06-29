@@ -99,6 +99,7 @@
 //! owns it disappears.
 
 pub mod animation;
+pub mod animation_driver;
 pub mod clipboard;
 pub mod color;
 pub mod cursor;
