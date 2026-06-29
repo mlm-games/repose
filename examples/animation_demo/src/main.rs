@@ -5,7 +5,7 @@ use repose_ui::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
+fn app(s: &mut Scheduler, _rc: &RenderContext) -> View {
     let th = theme();
 
     let registered = remember_state_with_key("driver_reg", || false);
@@ -62,51 +62,57 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
 
     Box(Modifier::new().fill_max_size().background(th.background)).child(
         Column(Modifier::new().padding(32.0)).child((
-            Text("Animation Demo").modifier(Modifier::new().padding(12.0)),
+            scope!("title", s, [], {
+                Text("Animation Demo").modifier(Modifier::new().padding(12.0))
+            }),
             Box(Modifier::new()
                 .size(current_size, current_size)
                 .background(current_color)
                 .border(2.0, th.on_surface, 8.0)),
-            Row(Modifier::new().padding(16.0)).child((
-                Button(
-                    Modifier::new(),
-                    on_color(th.primary),
-                    ButtonConfig::default(),
-                    || Text("🔵 Blue").modifier(Modifier::new().padding(8.0).align_self_center()),
-                ),
-                Button(
-                    Modifier::new(),
-                    on_color(th.secondary),
-                    ButtonConfig::default(),
-                    || Text("🟢 Green").modifier(Modifier::new().padding(8.0).align_self_center()),
-                ),
-                Button(
-                    Modifier::new(),
-                    on_color(th.error),
-                    ButtonConfig::default(),
-                    || Text("🔴 Red").modifier(Modifier::new().padding(8.0).align_self_center()),
-                ),
-            )),
-            Row(Modifier::new().padding(8.0)).child((
-                Button(
-                    Modifier::new(),
-                    on_size(80.0),
-                    ButtonConfig::default(),
-                    || Text("Small").modifier(Modifier::new().padding(8.0).align_self_center()),
-                ),
-                Button(
-                    Modifier::new(),
-                    on_size(150.0),
-                    ButtonConfig::default(),
-                    || Text("Medium").modifier(Modifier::new().padding(8.0).align_self_center()),
-                ),
-                Button(
-                    Modifier::new(),
-                    on_size(220.0),
-                    ButtonConfig::default(),
-                    || Text("Large").modifier(Modifier::new().padding(8.0).align_self_center()),
-                ),
-            )),
+            scope!("color_buttons", s, [], {
+                Row(Modifier::new().padding(16.0)).child((
+                    Button(
+                        Modifier::new(),
+                        on_color(th.primary),
+                        ButtonConfig::default(),
+                        || Text("🔵 Blue").modifier(Modifier::new().padding(8.0).align_self_center()),
+                    ),
+                    Button(
+                        Modifier::new(),
+                        on_color(th.secondary),
+                        ButtonConfig::default(),
+                        || Text("🟢 Green").modifier(Modifier::new().padding(8.0).align_self_center()),
+                    ),
+                    Button(
+                        Modifier::new(),
+                        on_color(th.error),
+                        ButtonConfig::default(),
+                        || Text("🔴 Red").modifier(Modifier::new().padding(8.0).align_self_center()),
+                    ),
+                ))
+            }),
+            scope!("size_buttons", s, [], {
+                Row(Modifier::new().padding(8.0)).child((
+                    Button(
+                        Modifier::new(),
+                        on_size(80.0),
+                        ButtonConfig::default(),
+                        || Text("Small").modifier(Modifier::new().padding(8.0).align_self_center()),
+                    ),
+                    Button(
+                        Modifier::new(),
+                        on_size(150.0),
+                        ButtonConfig::default(),
+                        || Text("Medium").modifier(Modifier::new().padding(8.0).align_self_center()),
+                    ),
+                    Button(
+                        Modifier::new(),
+                        on_size(220.0),
+                        ButtonConfig::default(),
+                        || Text("Large").modifier(Modifier::new().padding(8.0).align_self_center()),
+                    ),
+                ))
+            }),
             Text(
                 if animated_color.borrow().is_animating() || animated_size.borrow().is_animating() {
                     "🎬 Animating..."
