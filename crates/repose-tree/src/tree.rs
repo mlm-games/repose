@@ -107,8 +107,11 @@ impl ViewTree {
             return cached_slots.clone();
         }
         let mut slots = content(&scope);
+        // Assign each subcomposed slot its own scope tree for per-scope TaffyTree
+        let scope_key = format!("subcompose_{:?}", node_id);
         for (slot_id, view) in slots.iter_mut() {
             view.modifier.key = Some(*slot_id);
+            view.scope_key = Some(scope_key.clone());
         }
         self.subcompose_cache
             .insert(node_id, (scope, slots.clone()));
