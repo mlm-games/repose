@@ -270,6 +270,53 @@ impl MonoSpline {
     }
 }
 
+/// Returns (progress, velocity) at time `t` with initial conditions (x0, v0).
+fn spring_analytical(zeta: f32, stiffness: f32, t: f32, x0: f32, v0: f32) -> (f32, f32) {
+    if t <= 0.0 {
+        return (x0, v0);
+    }
+
+    let omega = if stiffness > 0.0 {
+        stiffness.sqrt()
+    } else {
+        return (x0 + v0 * t, v0);
+    };
+
+    let zeta = zeta.max(0.0);
+    let exp = (-zeta * omega * t).exp();
+    let a = 1.0 - x0; // amplitude coefficient
+
+    if (zeta - 1.0).abs() < 1e-6 {
+        // Critically damped: x(t) = 1 - (A + B*t) * e^{-ωt}
+        let b = v0 + omega * a;
+        let progress = 1.0 - (a + b * t) * exp;
+        let velocity = (a * omega - b + b * omega * t) * exp;
+        (progress, velocity)
+    } else if zeta < 1.0 {
+        // Underdamped: x(t) = 1 - e^{-ζωt}[A*cos(ωd*t) + C*sin(ωd*t)]
+        let wd = omega * (1.0 - zeta * zeta).sqrt();
+        let c = (v0 + zeta * omega * a) / wd;
+        let cos_wd = (wd * t).cos();
+        let sin_wd = (wd * t).sin();
+        let env = a * cos_wd + c * sin_wd;
+        let progress = 1.0 - exp * env;
+        let velocity =
+            exp * ((zeta * omega * a - wd * c) * cos_wd + (zeta * omega * c + wd * a) * sin_wd);
+        (progress, velocity)
+    } else {
+        // Overdamped: x(t) = 1 - e^{-ζωt}[A*cosh(ωd'*t) + D*sinh(ωd'*t)]
+        let wd = omega * (zeta * zeta - 1.0).sqrt();
+        let d = (v0 + zeta * omega * a) / wd;
+        let cosh_wd = (wd * t).cosh();
+        let sinh_wd = (wd * t).sinh();
+        let env = a * cosh_wd + d * sinh_wd;
+        let progress = 1.0 - exp * env;
+        let velocity =
+            exp * ((zeta * omega * a - wd * d) * cosh_wd + (zeta * omega * d - wd * a) * sinh_wd);
+        (progress, velocity)
+    }
+}
+
 fn spring_underdamped_normalized(t: f32, zeta: f32, omega: f32) -> f32 {
     let tt = t.max(0.0);
     let z = zeta.clamp(0.0, 0.999);
@@ -826,31 +873,27 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
         };
 
         let now = now();
-        let dt = match self.last_update {
-            Some(last) => now.saturating_duration_since(last).as_secs_f32().min(0.05),
-            None => 0.0,
-        };
-        self.last_update = Some(now);
+        let elapsed = now.saturating_duration_since(start);
 
         // Still in delay phase
-        let elapsed = now.saturating_duration_since(start);
         if elapsed < self.spec.delay {
             return true;
         }
 
-        if dt <= 0.0 {
-            return true;
-        }
+        let t = elapsed.as_secs_f32().max(0.0);
+        let (progress, velocity) = spring_analytical(
+            spring.damping_ratio,
+            spring.stiffness,
+            t,
+            self.progress,
+            self.velocity,
+        );
+        let progress = progress.clamp(-0.1, 2.0);
 
-        // Spring ODE (progress-based, target progress = 1.0)
-        let k = spring.stiffness;
-        let d = 2.0 * spring.damping_ratio * k.sqrt();
-        let displacement = self.progress - 1.0;
-
-        if displacement.abs() < spring.settle_progress
-            && self.velocity.abs() < spring.settle_velocity
+        // Check if settled
+        if (progress - 1.0).abs() < spring.settle_progress
+            && velocity.abs() < spring.settle_velocity
         {
-            // Settled
             self.progress = 1.0;
             self.velocity = 0.0;
             self.current = self.target.clone();
@@ -859,14 +902,8 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             return false;
         }
 
-        // Semi-implicit Euler (symplectic integrator, more stable than explicit)
-        let acceleration = -k * displacement - d * self.velocity;
-        self.velocity += acceleration * dt;
-        self.progress += self.velocity * dt;
-
-        // Clamp progress to prevent extreme overshoot
-        self.progress = self.progress.clamp(-0.1, 2.0);
-
+        self.progress = progress;
+        self.velocity = velocity;
         self.current = self.start.interpolate(&self.target, self.progress);
         true
     }
