@@ -49,6 +49,10 @@ pub struct TreeNode {
 
     /// Depth in tree (root = 0).
     pub depth: u32,
+
+    /// If this node is a scope boundary (set by `scope!` macro), this holds the
+    /// scope key (e.g., "title", "color_buttons"). `None` for non-scope nodes.
+    pub scope_key: Option<String>,
 }
 
 impl TreeNode {
@@ -73,6 +77,7 @@ impl TreeNode {
             generation,
             user_key: None,
             depth: 0,
+            scope_key: None,
         }
     }
 

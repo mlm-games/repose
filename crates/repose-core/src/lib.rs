@@ -233,6 +233,7 @@ macro_rules! scope {
             $s.exit_scope();
 
             _result.modifier.repaint_boundary = true;
+            _result.scope_key = Some(_key.to_string());
 
             let _slot_delta = $crate::runtime::COMPOSER.with(|c| c.borrow().cursor) - _prev_cursor;
 
@@ -259,6 +260,7 @@ macro_rules! scope {
             $s.exit_scope();
 
             _result.modifier.repaint_boundary = true;
+            _result.scope_key = Some(_key.to_string());
 
             let _slot_delta = $crate::runtime::COMPOSER.with(|c| c.borrow().cursor) - _prev_cursor;
 

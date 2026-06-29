@@ -331,6 +331,7 @@ impl ViewTree {
             node.modifier = view.modifier.clone();
             node.content_hash = content_hash;
             node.user_key = view.modifier.key;
+            node.scope_key = view.scope_key.clone();
 
             if content_changed {
                 node.invalidate_layout();
@@ -483,6 +484,7 @@ impl ViewTree {
             node.depth = depth;
             node.content_hash = content_hash;
             node.user_key = view.modifier.key;
+            node.scope_key = view.scope_key.clone();
         }
 
         // Now, recursively create children

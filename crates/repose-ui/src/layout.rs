@@ -39,27 +39,67 @@ fn set_focus_requester(modifier: &Modifier, view_id: u64) {
     }
 }
 
+/// Per-scope layout state for the `scope!` macro.
+/// Each scope gets its own TaffyTree so that cached scopes can skip layout
+/// computation entirely (Compose-style constraint-equality skip).
+struct ScopeLayoutTree {
+    key: String,
+    taffy: TaffyTree<NodeContext>,
+    taffy_map: FxHashMap<NodeId, taffy::NodeId>,
+    reverse_map: FxHashMap<taffy::NodeId, NodeId>,
+    root_taffy_id: Option<taffy::NodeId>,
+    last_constraints: Option<(taffy::Size<Option<f32>>, taffy::Size<taffy::AvailableSpace>)>,
+    cached_size: Option<taffy::Size<f32>>,
+    text_cache: FxHashMap<NodeId, TextLayout>,
+    valid: bool,
+}
+
+impl ScopeLayoutTree {
+    fn new(key: String) -> Self {
+        Self {
+            key,
+            taffy: TaffyTree::new(),
+            taffy_map: FxHashMap::default(),
+            reverse_map: FxHashMap::default(),
+            root_taffy_id: None,
+            last_constraints: None,
+            cached_size: None,
+            text_cache: FxHashMap::default(),
+            valid: false,
+        }
+    }
+}
+
 /// The incremental layout engine.
 pub struct LayoutEngine {
     /// Persistent view tree.
     tree: ViewTree,
 
-    /// Taffy layout tree.
+    /// Root Taffy layout tree (inter-scope layout + non-scope nodes).
     taffy: TaffyTree<NodeContext>,
 
-    /// Map from ViewTree NodeId to Taffy NodeId.
+    /// Map from ViewTree NodeId to root Taffy NodeId.
     taffy_map: FxHashMap<NodeId, taffy::NodeId>,
 
-    /// Reverse map: Taffy NodeId to ViewTree NodeId.
+    /// Reverse map: root Taffy NodeId to ViewTree NodeId.
     reverse_map: FxHashMap<taffy::NodeId, NodeId>,
 
-    /// Cached text layouts (persists across frames).
+    /// Per-scope TaffyTrees for scope! macro isolation.
+    scope_trees: HashMap<String, ScopeLayoutTree>,
+
+    /// ViewTree NodeId → scope key for scope boundary root nodes.
+    scope_root_map: FxHashMap<NodeId, String>,
+
+    /// ViewTree NodeId → scope key for ALL nodes belonging to a scope.
+    node_to_scope: FxHashMap<NodeId, String>,
+
+    /// Cached text layouts for non-scope nodes (persists across frames).
     text_cache: FxHashMap<NodeId, TextLayout>,
 
     /// Last window size used for layout.
     last_size_px: Option<(u32, u32)>,
 
-    /// Whether Taffy has a valid computed layout for `last_size_px`.
+    /// Whether root Taffy has a valid computed layout for `last_size_px`.
     layout_valid: bool,
 
     /// Repaint-boundary cache (SceneNodes + hits + semantics).
@@ -187,6 +227,9 @@ impl LayoutEngine {
             taffy: TaffyTree::new(),
             taffy_map: FxHashMap::default(),
             reverse_map: FxHashMap::default(),
+            scope_trees: HashMap::new(),
+            scope_root_map: FxHashMap::default(),
+            node_to_scope: FxHashMap::default(),
             text_cache: FxHashMap::default(),
             last_size_px: None,
             layout_valid: false,
@@ -195,11 +238,40 @@ impl LayoutEngine {
             last_locals_stamp: None,
             view_ids: FxHashMap::default(),
             next_view_id: 1,
-
             layer_id_counter: 0,
             prev_focused: None,
             focus_callbacks: FxHashMap::default(),
         }
+    }
+
+    /// Get the Taffy layout for a NodeId, resolving scope membership.
+    fn layout_for_node(&self, node_id: NodeId) -> taffy::prelude::Layout {
+        // Scope root nodes: use the root tree layout (has correct position + size after flexbox resolve).
+        // Their children use the scope tree layout (positions relative to scope root).
+        if self.scope_root_map.contains_key(&node_id) {
+            let tid = self.taffy_map[&node_id];
+            return self.taffy.layout(tid).unwrap().clone();
+        }
+        if let Some(key) = self.node_to_scope.get(&node_id) {
+            if let Some(st) = self.scope_trees.get(key) {
+                let tid = st.taffy_map[&node_id];
+                return st.taffy.layout(tid).unwrap().clone();
+            }
+        }
+        let tid = self.taffy_map[&node_id];
+        self.taffy.layout(tid).unwrap().clone()
+    }
+
+    /// Get Taffy children for a NodeId, resolving scope membership.
+    fn taffy_children_for_node(&self, node_id: NodeId) -> Vec<taffy::NodeId> {
+        if let Some(key) = self.node_to_scope.get(&node_id) {
+            if let Some(st) = self.scope_trees.get(key) {
+                let tid = st.taffy_map[&node_id];
+                return st.taffy.children(tid).unwrap_or_default();
+            }
+        }
+        let tid = self.taffy_map[&node_id];
+        self.taffy.children(tid).unwrap_or_default()
     }
 
     fn ensure_view_id(&mut self, node_id: NodeId) -> u64 {
@@ -210,6 +282,57 @@ impl LayoutEngine {
         self.next_view_id += 1;
         self.view_ids.insert(node_id, id);
         id
+    }
+
+    /// Build `scope_root_map` and `node_to_scope` from `TreeNode.scope_key`.
+    /// Must be called after `self.tree.update()` each frame.
+    fn build_scope_maps(&mut self) {
+        self.scope_root_map.clear();
+        self.node_to_scope.clear();
+
+        // Collect scope boundary nodes, sorted deepest-first so that inner
+        // scopes overwrite outer scope markings in `node_to_scope`.
+        let mut scope_roots: Vec<(NodeId, String)> = Vec::new();
+        for (id, node) in self.tree.iter_with_ids() {
+            if let Some(ref key) = node.scope_key {
+                scope_roots.push((id, key.clone()));
+            }
+        }
+        scope_roots.sort_by(|a, b| {
+            // Deeper scopes (higher depth) first — their subtree marking
+            // wins over shallower enclosing scopes.
+            let depth_a = self.tree.get(a.0).map(|n| n.depth).unwrap_or(0);
+            let depth_b = self.tree.get(b.0).map(|n| n.depth).unwrap_or(0);
+            depth_b.cmp(&depth_a)
+        });
+
+        for (node_id, key) in &scope_roots {
+            self.scope_root_map.insert(*node_id, key.clone());
+            self.mark_scope_subtree(*node_id, key);
+        }
+
+        // Create scope trees for new keys, clean up stale ones
+        let active_keys: Vec<String> = self.scope_root_map.values().cloned().collect();
+        self.scope_trees.retain(|k, _| active_keys.contains(k));
+        for key in &active_keys {
+            self.scope_trees.entry(key.clone()).or_insert_with(|| ScopeLayoutTree::new(key.clone()));
+        }
+    }
+
+    /// Recursively mark all nodes in a scope's subtree (stopping at nested scope boundaries).
+    fn mark_scope_subtree(&mut self, root_id: NodeId, key: &str) {
+        let mut stack = vec![root_id];
+        while let Some(id) = stack.pop() {
+            // Don't cross into nested scope boundaries (they handle their own marking).
+            if id != root_id && self.scope_root_map.contains_key(&id) {
+                continue;
+            }
+            self.node_to_scope.insert(id, key.to_string());
+            self.ensure_view_id(id);
+            if let Some(node) = self.tree.get(id) {
+                stack.extend(node.children.iter().copied());
+            }
+        }
     }
 
     fn locals_stamp() -> u64 {
@@ -260,6 +383,9 @@ impl LayoutEngine {
         let root_node_id = self.tree.update(root);
         self.stats.tree = self.tree.stats.clone();
 
+        // 1a. Build scope maps from TreeNode.scope_key (set by scope! macro)
+        self.build_scope_maps();
+
         // 2. Determine layout need
         let size_changed = self.last_size_px != Some(size_px);
         // 2a. Publish the current window size class as a default local so that
@@ -277,12 +403,27 @@ impl LayoutEngine {
 
         // NOTE: Needed to ensure that text is always re-measured with the new available width
         if size_changed {
+            // Root tree text cache
             for &node_id in self.text_cache.keys() {
                 if let Some(&taffy_id) = self.taffy_map.get(&node_id) {
                     let _ = self.taffy.mark_dirty(taffy_id);
                 }
             }
             self.text_cache.clear();
+            // Scope tree text caches
+            for (_, st) in &mut self.scope_trees {
+                for &node_id in st.text_cache.keys() {
+                    if let Some(&tid) = st.taffy_map.get(&node_id) {
+                        let _ = st.taffy.mark_dirty(tid);
+                    }
+                }
+                st.text_cache.clear();
+            }
+        }
+        if locals_changed {
+            for (_, st) in &mut self.scope_trees {
+                st.text_cache.clear();
+            }
         }
 
         // Helpers
@@ -290,6 +431,9 @@ impl LayoutEngine {
         let font_px = |dp_font: f32| dp_to_px(dp_font) * locals::text_scale().0;
 
         // 3. Sync Taffy
+        // 3a. Sync scope-internal TaffyTrees first
+        self.sync_scope_trees(&font_px);
+        // 3b. Sync root TaffyTree (non-scope nodes + scope root markers)
         self.sync_taffy_tree(root_node_id, &font_px);
 
         // 4. Compute Layout
@@ -308,14 +452,79 @@ impl LayoutEngine {
                 };
 
                 {
-                    let text_cache = &mut self.text_cache;
                     let reverse_map = &self.reverse_map;
+                    let scope_root_map = &self.scope_root_map;
+                    let node_to_scope = &self.node_to_scope;
+                    let scope_trees = &mut self.scope_trees;
+                    let text_cache = &mut self.text_cache;
                     let tree = &self.tree;
 
                     let _ = self.taffy.compute_layout_with_measure(
                         taffy_root,
                         available,
                         |known, avail, taffy_node, ctx, _style| {
+                            // Check if this is a scope root marker → return cached scope size
+                            if let Some(&node_id) = reverse_map.get(&taffy_node) {
+                                if scope_root_map.contains_key(&node_id) {
+                                    if let Some(key) = node_to_scope.get(&node_id) {
+                                        if let Some(st) = scope_trees.get_mut(key) {
+                                            // Compose-style constraint-equality skip:
+                                            // if content unchanged (valid) AND constraints match → skip scope compute
+                                            let constraints_changed = st.last_constraints
+                                                .map(|(k, a)| k != known || a != avail)
+                                                .unwrap_or(true);
+                                            let can_skip = st.valid && !constraints_changed;
+                                            if can_skip {
+                                                if let Some(sz) = st.cached_size {
+                                                    return sz;
+                                                }
+                                            }
+                                            // Compute scope's internal layout on-demand
+                                            if let Some(root_tid) = st.root_taffy_id {
+                                                let scope_avail = taffy::geometry::Size {
+                                                    width: match known.width {
+                                                        Some(w) if w.is_finite() => AvailableSpace::Definite(w),
+                                                        _ => match avail.width {
+                                                            AvailableSpace::Definite(w) => AvailableSpace::Definite(w),
+                                                            _ => AvailableSpace::MaxContent,
+                                                        },
+                                                    },
+                                                    height: match known.height {
+                                                        Some(h) if h.is_finite() => AvailableSpace::Definite(h),
+                                                        _ => match avail.height {
+                                                            AvailableSpace::Definite(h) => AvailableSpace::Definite(h),
+                                                            _ => AvailableSpace::MaxContent,
+                                                        },
+                                                    },
+                                                };
+                                                let st_rev = &st.reverse_map;
+                                                let st_tc = &mut st.text_cache;
+                                                let _ = st.taffy.compute_layout_with_measure(
+                                                    root_tid,
+                                                    scope_avail,
+                                                    |known2, avail2, tn, ctx2, _style2| {
+                                                        Self::measure_node(
+                                                            known2, avail2, tn,
+                                                            ctx2.as_deref(),
+                                                            st_tc, st_rev, tree,
+                                                            &font_px, &px,
+                                                        )
+                                                    },
+                                                );
+                                                st.last_constraints = Some((known, avail));
+                                                if let Ok(layout) = st.taffy.layout(root_tid) {
+                                                    st.cached_size = Some(taffy::Size {
+                                                        width: layout.size.width,
+                                                        height: layout.size.height,
+                                                    });
+                                                    st.valid = true;
+                                                    return st.cached_size.unwrap();
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             Self::measure_node(
                                 known,
                                 avail,
@@ -331,7 +540,7 @@ impl LayoutEngine {
                     );
                 }
 
-                // 4a. Store Taffy-computed sizes for all nodes
+                // 4a. Store Taffy-computed sizes for non-scope + scope-root nodes
                 for (&node_id, &taffy_id) in &self.taffy_map {
                     if let Ok(layout) = self.taffy.layout(taffy_id) {
                         let dp_w = layout.size.width / density_scale;
@@ -472,9 +681,129 @@ impl LayoutEngine {
         }
     }
 
+    /// Sync scope-internal TaffyTrees. Handles removed/dirty nodes within each scope.
+    fn sync_scope_trees(&mut self, font_px: &dyn Fn(f32) -> f32) {
+        let removed_ids: Vec<NodeId> = self.tree.removed_ids.iter().copied().collect();
+        let dirty_nodes: Vec<NodeId> = self.tree.dirty_nodes().iter().copied().collect();
+        let scope_keys: Vec<String> = self.scope_trees.keys().cloned().collect();
+        let node_to_scope: FxHashMap<NodeId, String> = self.node_to_scope.iter()
+            .map(|(k, v)| (*k, v.clone()))
+            .collect();
+        let scope_root_map: FxHashMap<NodeId, String> = self.scope_root_map.iter()
+            .map(|(k, v)| (*k, v.clone()))
+            .collect();
+
+        for key in &scope_keys {
+            // Removals from scope tree
+            for &node_id in &removed_ids {
+                if node_to_scope.get(&node_id).map(|k| k.as_str()) != Some(key) {
+                    continue;
+                }
+                if let Some(st) = self.scope_trees.get_mut(key) {
+                    if let Some(tid) = st.taffy_map.remove(&node_id) {
+                        let _ = st.taffy.remove(tid);
+                        st.reverse_map.remove(&tid);
+                        st.text_cache.remove(&node_id);
+                    }
+                }
+            }
+
+            // Dirty scope-internal nodes
+            for &node_id in &dirty_nodes {
+                if node_to_scope.get(&node_id).map(|k| k.as_str()) != Some(key) {
+                    continue;
+                }
+                self.update_scope_taffy_node(key, node_id, font_px);
+            }
+
+            // Ensure scope root exists
+            let root_ids: Vec<NodeId> = scope_root_map.iter()
+                .filter(|(_, k)| k.as_str() == key)
+                .map(|(id, _)| *id)
+                .collect();
+            for &root_id in &root_ids {
+                let exists = self.scope_trees.get(key)
+                    .map(|st| st.taffy_map.contains_key(&root_id))
+                    .unwrap_or(false);
+                if !exists {
+                    self.update_scope_taffy_node(key, root_id, font_px);
+                }
+            }
+        }
+    }
+
+    /// Create or update a Taffy node within a scope's internal TaffyTree.
+    /// Recurses into children but stops at nested scope boundaries.
+    fn update_scope_taffy_node(
+        &mut self,
+        scope_key: &str,
+        node_id: NodeId,
+        font_px: &dyn Fn(f32) -> f32,
+    ) -> taffy::NodeId {
+        let _ = self.ensure_view_id(node_id);
+
+        // Extract node data before borrowing scope_trees to avoid borrow conflicts
+        let node = self.tree.get(node_id).unwrap();
+        let style = self.style_from_node(node, font_px);
+        let ctx = self.context_from_node(node);
+        let children = node.children.clone();
+        let is_zstack = matches!(node.kind, ViewKind::ZStack);
+        let is_scroll = matches!(node.kind, ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. });
+        drop(node);
+
+        // Recurse into children but stop at nested scope boundaries
+        // Must collect entire result before holding scope_trees mutably
+        let non_scope_children: Vec<NodeId> = children
+            .iter()
+            .filter(|&c| !self.scope_root_map.contains_key(c))
+            .copied()
+            .collect();
+        let child_tids: Vec<taffy::NodeId> = non_scope_children
+            .iter()
+            .map(|&c| self.update_scope_taffy_node(scope_key, c, font_px))
+            .collect();
+
+        let is_root = self.scope_root_map.contains_key(&node_id);
+        let st = self.scope_trees.get_mut(scope_key).unwrap();
+        if let Some(&t_id) = st.taffy_map.get(&node_id) {
+            let _ = st.taffy.set_style(t_id, style);
+            let _ = st.taffy.set_node_context(t_id, Some(ctx));
+            let _ = st.taffy.set_children(t_id, &child_tids);
+            if is_root {
+                st.root_taffy_id = Some(t_id);
+            }
+            drop(st);
+            let st = self.scope_trees.get_mut(scope_key).unwrap();
+            Self::make_children_absolute_on(is_zstack, &child_tids, &mut st.taffy);
+            Self::make_scroll_child_on(is_scroll, &child_tids, &mut st.taffy);
+            t_id
+        } else {
+            let t_id = if child_tids.is_empty() {
+                st.taffy.new_leaf_with_context(style, ctx).unwrap()
+            } else {
+                let t = st.taffy.new_with_children(style, &child_tids).unwrap();
+                let _ = st.taffy.set_node_context(t, Some(ctx));
+                t
+            };
+            st.taffy_map.insert(node_id, t_id);
+            st.reverse_map.insert(t_id, node_id);
+            if is_root {
+                st.root_taffy_id = Some(t_id);
+            }
+            drop(st);
+            let st = self.scope_trees.get_mut(scope_key).unwrap();
+            Self::make_children_absolute_on(is_zstack, &child_tids, &mut st.taffy);
+            Self::make_scroll_child_on(is_scroll, &child_tids, &mut st.taffy);
+            t_id
+        }
+    }
+
     fn sync_taffy_tree(&mut self, root_id: NodeId, font_px: &dyn Fn(f32) -> f32) {
-        // Removals
+        // Removals from root tree (non-scope nodes + scope root markers)
         for &node_id in &self.tree.removed_ids {
+            if self.node_to_scope.contains_key(&node_id) {
+                continue; // scope tree handles its own removals
+            }
             if let Some(taffy_id) = self.taffy_map.remove(&node_id) {
                 let _ = self.taffy.remove(taffy_id);
                 self.reverse_map.remove(&taffy_id);
@@ -484,9 +813,15 @@ impl LayoutEngine {
             self.view_ids.remove(&node_id);
         }
 
-        // Updates
+        // Updates — only non-scope and scope-root-marker nodes
         let dirty_nodes: Vec<NodeId> = self.tree.dirty_nodes().iter().copied().collect();
         for node_id in dirty_nodes {
+            if self.node_to_scope.contains_key(&node_id)
+                && !self.scope_root_map.contains_key(&node_id)
+            {
+                // Scope-internal, non-root → handled by sync_scope_trees
+                continue;
+            }
             self.update_taffy_node(node_id, font_px);
         }
 
@@ -504,6 +839,34 @@ impl LayoutEngine {
         // Ensure this node has a stable view id
         let _ = self.ensure_view_id(node_id);
 
+        // Scope root → create leaf marker in root tree (no children in root tree).
+        // Only margin + sizing constraints are kept; padding/gap/flex are handled by the scope tree.
+        if self.scope_root_map.contains_key(&node_id) {
+            if let Some(&t_id) = self.taffy_map.get(&node_id) {
+                let (new_style, new_ctx) = {
+                    let node = self.tree.get(node_id).unwrap();
+                    let mut s = self.style_from_node(node, font_px);
+                    s.padding = taffy::geometry::Rect::zero();
+                    (s, self.context_from_node(node))
+                };
+                let _ = self.taffy.set_style(t_id, new_style);
+                let _ = self.taffy.set_node_context(t_id, Some(new_ctx));
+                return t_id;
+            }
+            let (style, ctx) = {
+                let node = self.tree.get(node_id).unwrap();
+                let mut s = self.style_from_node(node, font_px);
+                s.padding = taffy::geometry::Rect::zero();
+                (s, self.context_from_node(node))
+            };
+            let t_id = self.taffy.new_leaf_with_context(style, ctx).unwrap();
+            self.taffy_map.insert(node_id, t_id);
+            self.reverse_map.insert(t_id, node_id);
+            self.stats.taffy_created += 1;
+            return t_id;
+        }
+
+        // Non-scope node: standard path
         if let Some(&t_id) = self.taffy_map.get(&node_id) {
             self.apply_updates_to_taffy(node_id, t_id, font_px);
             return t_id;
@@ -523,7 +886,12 @@ impl LayoutEngine {
             )
         };
 
-        let child_taffy_ids: Vec<taffy::NodeId> = children
+        let non_scope_children: Vec<NodeId> = children
+            .iter()
+            .filter(|&c| !self.scope_root_map.contains_key(c))
+            .copied()
+            .collect();
+        let child_taffy_ids: Vec<taffy::NodeId> = non_scope_children
             .iter()
             .map(|&child_id| self.update_taffy_node(child_id, font_px))
             .collect();
@@ -603,32 +971,40 @@ impl LayoutEngine {
         self.stats.taffy_reused += 1;
     }
 
-    fn make_children_absolute(&mut self, is_zstack: bool, child_taffy_ids: &[taffy::NodeId]) {
+    fn make_children_absolute_on(is_zstack: bool, child_taffy_ids: &[taffy::NodeId], taffy: &mut TaffyTree<NodeContext>) {
         if !is_zstack {
             return;
         }
         for &child_tid in child_taffy_ids {
-            if let Ok(cs) = self.taffy.style(child_tid) {
+            if let Ok(cs) = taffy.style(child_tid) {
                 let mut new_cs = cs.clone();
                 new_cs.position = Position::Absolute;
-                let _ = self.taffy.set_style(child_tid, new_cs);
+                let _ = taffy.set_style(child_tid, new_cs);
             }
         }
     }
 
-    fn make_scroll_child(&mut self, is_scroll: bool, child_taffy_ids: &[taffy::NodeId]) {
+    fn make_scroll_child_on(is_scroll: bool, child_taffy_ids: &[taffy::NodeId], taffy: &mut TaffyTree<NodeContext>) {
         if !is_scroll {
             return;
         }
         for &child_tid in child_taffy_ids {
-            if let Ok(cs) = self.taffy.style(child_tid) {
+            if let Ok(cs) = taffy.style(child_tid) {
                 let mut new_cs = cs.clone();
                 new_cs.size.height = Dimension::auto();
                 new_cs.min_size.height = percent(1.0);
                 new_cs.flex_shrink = 0.0;
-                let _ = self.taffy.set_style(child_tid, new_cs);
+                let _ = taffy.set_style(child_tid, new_cs);
             }
         }
+    }
+
+    fn make_children_absolute(&mut self, is_zstack: bool, child_taffy_ids: &[taffy::NodeId]) {
+        Self::make_children_absolute_on(is_zstack, child_taffy_ids, &mut self.taffy);
+    }
+
+    fn make_scroll_child(&mut self, is_scroll: bool, child_taffy_ids: &[taffy::NodeId]) {
+        Self::make_scroll_child_on(is_scroll, child_taffy_ids, &mut self.taffy);
     }
 
     fn style_from_node(&self, node: &TreeNode, font_px: &dyn Fn(f32) -> f32) -> taffy::Style {
@@ -1126,8 +1502,7 @@ impl LayoutEngine {
         deferred.sort_by(|a, b| a.4.partial_cmp(&b.4).unwrap_or(Ordering::Equal));
         for (node_id, parent_offset_px, alpha_accum, sem_parent, z) in deferred.iter().copied() {
             let view_id = *self.view_ids.get(&node_id).unwrap_or(&0);
-            let taffy_id = self.taffy_map[&node_id];
-            let layout = self.taffy.layout(taffy_id).unwrap();
+            let layout = self.layout_for_node(node_id);
             let rect = repose_core::Rect {
                 x: parent_offset_px.0 + layout.location.x,
                 y: parent_offset_px.1 + layout.location.y,
@@ -1334,8 +1709,7 @@ impl LayoutEngine {
         }
         debug_assert!(view_id != 0);
 
-        let taffy_id = self.taffy_map[&node_id];
-        let layout = self.taffy.layout(taffy_id).unwrap();
+        let layout = self.layout_for_node(node_id);
 
         let local_rect = repose_core::Rect {
             x: layout.location.x,
@@ -2282,7 +2656,7 @@ impl LayoutEngine {
                 }
                 let mut ch = 0.0f32;
                 for &c in &children {
-                    let l = self.taffy.layout(self.taffy_map[&c]).unwrap();
+                    let l = self.layout_for_node(c);
                     ch = ch.max(l.location.y + l.size.height);
                 }
                 if let Some(s) = set_content_height {
@@ -2300,7 +2674,7 @@ impl LayoutEngine {
 
                 // Optional (recommended): cull children outside the viewport to help LazyColumn
                 for &child_id in &children {
-                    let l = self.taffy.layout(self.taffy_map[&child_id]).unwrap();
+                    let l = self.layout_for_node(child_id);
                     let child_rect = repose_core::Rect {
                         x: scrolled_offset.0 + l.location.x,
                         y: scrolled_offset.1 + l.location.y,
@@ -2379,17 +2753,16 @@ impl LayoutEngine {
                 let mut cw = 0.0f32;
                 let mut ch = 0.0f32;
                 for &c in &children {
-                    let mut stack = vec![(self.taffy_map[&c], 0.0f32, 0.0f32)];
-                    while let Some((t_id, ox, oy)) = stack.pop() {
-                        if let Ok(l) = self.taffy.layout(t_id) {
-                            let ax = ox + l.location.x;
-                            let ay = oy + l.location.y;
-                            cw = cw.max(ax + l.size.width);
-                            ch = ch.max(ay + l.size.height);
-                            if let Ok(kids) = self.taffy.children(t_id) {
-                                for k in kids {
-                                    stack.push((k, ax, ay));
-                                }
+                    let mut stack: Vec<(NodeId, f32, f32)> = vec![(c, 0.0f32, 0.0f32)];
+                    while let Some((cid, ox, oy)) = stack.pop() {
+                        let l = self.layout_for_node(cid);
+                        let ax = ox + l.location.x;
+                        let ay = oy + l.location.y;
+                        cw = cw.max(ax + l.size.width);
+                        ch = ch.max(ay + l.size.height);
+                        if let Some(node) = self.tree.get(cid) {
+                            for &k in &node.children {
+                                stack.push((k, ax, ay));
                             }
                         }
                     }

@@ -48,6 +48,7 @@ where
         kind: ViewKind::SubcomposeLayout { content: wrapped },
         modifier,
         children: Vec::new(),
+        scope_key: None,
         semantics: None,
     }
 }
@@ -67,6 +68,7 @@ where
         kind: ViewKind::SubcomposeLayout { content: wrapped },
         modifier,
         children: Vec::new(),
+        scope_key: None,
         semantics: None,
     }
 }
@@ -176,6 +178,7 @@ mod tests {
             },
             modifier: Modifier::default(),
             children: vec![],
+            scope_key: None,
             semantics: None,
         }
     }

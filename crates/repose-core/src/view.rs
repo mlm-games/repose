@@ -205,6 +205,10 @@ pub struct View {
     pub modifier: Modifier,
     pub children: Vec<View>,
     pub semantics: Option<crate::semantics::Semantics>,
+    /// Set by `scope!` macro to mark this as a scope boundary node.
+    /// Carries the scope key (e.g., "title", "color_buttons") for per-scope
+    /// TaffyTree isolation.
+    pub scope_key: Option<String>,
 }
 
 impl View {
@@ -215,6 +219,7 @@ impl View {
             modifier: Modifier::default(),
             children: vec![],
             semantics: None,
+            scope_key: None,
         }
     }
     pub fn modifier(mut self, m: Modifier) -> Self {
