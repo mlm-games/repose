@@ -1235,14 +1235,21 @@ impl LayoutEngine {
             height_set = true;
         }
 
-        if (m.fill_max || m.fill_max_w) && !width_set {
-            s.size.width = percent(1.0);
+        // Fill max (with optional fraction). Per-axis fields override both-dims field.
+        let fill_w = m.fill_max_w.or(m.fill_max);
+        if let Some(frac) = fill_w {
+            if !width_set {
+                s.size.width = percent(frac);
+            }
             if s.min_size.width.is_auto() {
                 s.min_size.width = length(0.0);
             }
         }
-        if (m.fill_max || m.fill_max_h) && !height_set {
-            s.size.height = percent(1.0);
+        let fill_h = m.fill_max_h.or(m.fill_max);
+        if let Some(frac) = fill_h {
+            if !height_set {
+                s.size.height = percent(frac);
+            }
             if matches!(kind, ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. })
                 && s.min_size.height.is_auto()
             {
@@ -1278,6 +1285,40 @@ impl LayoutEngine {
             }
             if let Some(v) = m.max_height {
                 s.max_size.height = length(px(v.max(0.0)));
+            }
+        }
+
+        // Required range (overrides constraints, like required_size but per-axis)
+        if let Some(v) = m.required_min_width {
+            s.min_size.width = length(px(v.max(0.0)));
+        }
+        if let Some(v) = m.required_max_width {
+            s.max_size.width = length(px(v.max(0.0)));
+        }
+        if let Some(v) = m.required_min_height {
+            s.min_size.height = length(px(v.max(0.0)));
+        }
+        if let Some(v) = m.required_max_height {
+            s.max_size.height = length(px(v.max(0.0)));
+        }
+
+        // Default min size (only applies when incoming constraint is 0 / unconstrained)
+        // This is handled during constraint resolution in compute_layout, but we note
+        // the values here. The actual enforcement happens when the parent gives 0 min.
+        // For Taffy, we don't apply these unconditionally — they must be constraint-aware.
+        if m.default_min_width.is_some() || m.default_min_height.is_some() {
+            // Store flags so the constraint-pass can check them.
+            // Taffy style doesn't have a direct "default min" concept, so we defer
+            // to the layout engine's constraint override logic.
+            if let Some(v) = m.default_min_width {
+                if s.min_size.width.is_auto() || s.min_size.width == length(0.0) {
+                    s.min_size.width = length(px(v.max(0.0)));
+                }
+            }
+            if let Some(v) = m.default_min_height {
+                if s.min_size.height.is_auto() || s.min_size.height == length(0.0) {
+                    s.min_size.height = length(px(v.max(0.0)));
+                }
             }
         }
         if let Some(r) = m.aspect_ratio {
@@ -1801,8 +1842,13 @@ impl LayoutEngine {
         let is_hovered = interactions.hover == Some(view_id);
         let is_pressed = interactions.pressed.contains(&view_id);
         let effective_interaction = interaction_source.unwrap_or(view_id);
-        let state_hovered = interactions.hover == Some(effective_interaction);
-        let state_pressed = interactions.pressed.contains(&effective_interaction);
+        let implicit_hovered = interactions.hover == Some(effective_interaction);
+        let implicit_pressed = interactions.pressed.contains(&effective_interaction);
+        let (state_hovered, state_pressed) = if let Some(ref src) = modifier.interaction_source {
+            (src.collect_is_hovered() || implicit_hovered, src.collect_is_pressed() || implicit_pressed)
+        } else {
+            (implicit_hovered, implicit_pressed)
+        };
         let is_focused = focused == Some(view_id);
         let this_alpha = modifier.alpha.unwrap_or(1.0);
         let alpha_accum = (alpha_accum * this_alpha).clamp(0.0, 1.0);
@@ -2075,7 +2121,9 @@ impl LayoutEngine {
             || modifier.on_pointer_move.is_some()
             || modifier.on_pointer_up.is_some()
             || modifier.on_pointer_enter.is_some()
-            || modifier.on_pointer_leave.is_some();
+            || modifier.on_pointer_leave.is_some()
+            || modifier.on_double_click.is_some()
+            || modifier.on_long_click.is_some();
 
         let has_dnd = modifier.on_drag_start.is_some()
             || modifier.on_drag_end.is_some()
@@ -2099,13 +2147,48 @@ impl LayoutEngine {
 
         if needs_hit && !kind_handles_hit && !modifier.hit_passthrough {
             let focusable = modifier.focusable.unwrap_or(true);
-            hits.push(HitRegion {
+            let mut hit = HitRegion {
                 id: view_id,
                 rect,
                 z_index: modifier.z_index,
                 focusable,
                 ..HitRegion::from_modifier(view_id, rect, &modifier)
-            });
+            };
+
+            // Auto-wire InteractionSource to pointer/hover callbacks.
+            // The source's state is OR'd with the implicit view-ID state in state resolution above.
+            if let Some(ref src) = modifier.interaction_source {
+                let msrc = src.to_mutable();
+
+                let orig_down = hit.on_pointer_down.take();
+                let s = msrc.clone();
+                hit.on_pointer_down = Some(Rc::new(move |ev| {
+                    s.emit(Interaction::Press);
+                    if let Some(ref f) = orig_down { f(ev); }
+                }));
+
+                let orig_up = hit.on_pointer_up.take();
+                let s = msrc.clone();
+                hit.on_pointer_up = Some(Rc::new(move |ev| {
+                    s.emit(Interaction::Release);
+                    if let Some(ref f) = orig_up { f(ev); }
+                }));
+
+                let orig_enter = hit.on_pointer_enter.take();
+                let s = msrc.clone();
+                hit.on_pointer_enter = Some(Rc::new(move |ev| {
+                    s.emit(Interaction::HoverEnter);
+                    if let Some(ref f) = orig_enter { f(ev); }
+                }));
+
+                let orig_leave = hit.on_pointer_leave.take();
+                hit.on_pointer_leave = Some(Rc::new(move |ev| {
+                    msrc.emit(Interaction::HoverLeave);
+                    if let Some(ref f) = orig_leave { f(ev); }
+                }));
+            }
+
+            hits.push(hit);
         }
 
         // Focus ring for interactive views

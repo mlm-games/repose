@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use taffy::{AlignContent, AlignItems, AlignSelf, FlexDirection, FlexWrap, JustifyContent};
@@ -52,6 +52,10 @@ macro_rules! impl_option_fields {
                     key, size, width, height, required_size,
                     padding, padding_values,
                     min_width, min_height, max_width, max_height,
+                    required_min_width, required_max_width,
+                    required_min_height, required_max_height,
+                    default_min_width, default_min_height,
+                    fill_max, fill_max_w, fill_max_h,
                     background, state_colors, state_elevation, border,
                     flex_grow, flex_shrink, flex_basis, flex_wrap, flex_dir,
                     gap, row_gap, column_gap,
@@ -60,20 +64,21 @@ macro_rules! impl_option_fields {
                     on_scroll,
                     on_pointer_down, on_pointer_move, on_pointer_up,
                     on_pointer_enter, on_pointer_leave,
+                    on_double_click, on_long_click,
                     semantics, alpha, transform,
                     grid, grid_col_span, grid_row_span,
                     position_type,
                     offset_left, offset_right, offset_top, offset_bottom,
                     margin_left, margin_right, margin_top, margin_bottom,
-                    aspect_ratio, painter,
+                    aspect_ratio, intrinsic_width, intrinsic_height,
+                    painter,
                     on_drag_start, on_drag_end, on_drag_enter, on_drag_over, on_drag_leave, on_drop,
                     on_action, cursor, animate_content_size, focus_requester, on_focus_changed,
-                    text_input,
+                    interaction_source, text_input,
                 );
                         merge_flags!(self, other;
-                    fill_max, fill_max_w, fill_max_h,
                     hit_passthrough, input_blocker, repaint_boundary, click, disabled,
-                    propagate_min,
+                    propagate_min, focus_group,
                 );
 
                 if let Some(f) = other.focusable {
@@ -189,6 +194,113 @@ impl std::fmt::Debug for TextInputConfig {
     }
 }
 
+/// Intrinsic sizing mode for [`Modifier::intrinsic_width`] and [`Modifier::intrinsic_height`].
+/// When set, the node sizes itself to the intrinsic content size in that dimension.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum IntrinsicSize {
+    Min,
+    Max,
+}
+
+/// An interaction event that can be emitted by a [`MutableInteractionSource`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Interaction {
+    Press,
+    Release,
+    HoverEnter,
+    HoverLeave,
+    Focus,
+    Unfocus,
+}
+
+/// Read-only handle to a shared interaction state.
+///
+/// Use [`MutableInteractionSource::source`] to obtain a read handle, or
+/// [`MutableInteractionSource::new`] + `.source()` to create a new source pair.
+///
+/// Multiple clones share the same underlying state.
+#[derive(Clone)]
+pub struct InteractionSource {
+    pub(crate) state: Rc<RefCell<InteractionState>>,
+}
+
+impl InteractionSource {
+    pub fn collect_is_pressed(&self) -> bool {
+        self.state.borrow().pressed > 0
+    }
+    pub fn collect_is_hovered(&self) -> bool {
+        self.state.borrow().hovered
+    }
+    pub fn collect_is_focused(&self) -> bool {
+        self.state.borrow().focused
+    }
+    /// Get a mutable handle to the same underlying state.
+    /// Both handles share the same `Rc<RefCell<..>>`, so mutations via
+    /// the returned `MutableInteractionSource` are reflected here.
+    pub fn to_mutable(&self) -> MutableInteractionSource {
+        MutableInteractionSource {
+            state: self.state.clone(),
+        }
+    }
+}
+
+/// Mutable handle to a shared interaction state.
+///
+/// Create one via [`MutableInteractionSource::new`], then pass the read-only
+/// [`InteractionSource`] to modifiers via `.interaction_source(&source)`.
+///
+/// ```ignore
+/// let src = remember(MutableInteractionSource::new);
+/// m = m.clickable().interaction_source(&src).state_colors(...);
+/// ```
+#[derive(Clone)]
+pub struct MutableInteractionSource {
+    pub(crate) state: Rc<RefCell<InteractionState>>,
+}
+
+impl MutableInteractionSource {
+    pub fn new() -> Self {
+        Self {
+            state: Rc::new(RefCell::new(InteractionState::default())),
+        }
+    }
+
+    /// Emit an interaction event, updating the shared state.
+    pub fn emit(&self, interaction: Interaction) {
+        let mut s = self.state.borrow_mut();
+        match interaction {
+            Interaction::Press => s.pressed = s.pressed.saturating_add(1),
+            Interaction::Release => {
+                s.pressed = s.pressed.saturating_sub(1);
+            }
+            Interaction::HoverEnter => s.hovered = true,
+            Interaction::HoverLeave => s.hovered = false,
+            Interaction::Focus => s.focused = true,
+            Interaction::Unfocus => s.focused = false,
+        }
+    }
+
+    /// Get a read-only handle to the shared state.
+    pub fn source(&self) -> InteractionSource {
+        InteractionSource {
+            state: self.state.clone(),
+        }
+    }
+}
+
+impl Default for MutableInteractionSource {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct InteractionState {
+    pressed: u32,
+    hovered: bool,
+    focused: bool,
+}
+
 #[derive(Clone, Default)]
 pub struct Modifier {
     /// Optional stable identity key for this view node.
@@ -202,15 +314,27 @@ pub struct Modifier {
     pub width: Option<f32>,
     pub height: Option<f32>,
     pub required_size: Option<Size>,
-    pub fill_max: bool,
-    pub fill_max_w: bool,
-    pub fill_max_h: bool,
+    pub fill_max: Option<f32>,
+    pub fill_max_w: Option<f32>,
+    pub fill_max_h: Option<f32>,
     pub padding: Option<f32>,
     pub padding_values: Option<PaddingValues>,
     pub min_width: Option<f32>,
     pub min_height: Option<f32>,
     pub max_width: Option<f32>,
     pub max_height: Option<f32>,
+    /// Like [`required_size`] but only for min width. Overrides parent min constraints.
+    pub required_min_width: Option<f32>,
+    /// Like [`required_size`] but only for max width. Overrides parent max constraints.
+    pub required_max_width: Option<f32>,
+    /// Like [`required_size`] but only for min height. Overrides parent min constraints.
+    pub required_min_height: Option<f32>,
+    /// Like [`required_size`] but only for max height. Overrides parent max constraints.
+    pub required_max_height: Option<f32>,
+    /// Minimum size that only applies when the incoming constraint is 0 (unconstrained).
+    /// Use [`min_width`] for an unconditional minimum.
+    pub default_min_width: Option<f32>,
+    pub default_min_height: Option<f32>,
     pub background: Option<Brush>,
     pub state_colors: Option<StateColors>,
     pub state_elevation: Option<StateElevation>,
@@ -247,12 +371,19 @@ pub struct Modifier {
     pub focusable: Option<bool>,
     /// When true, the Box passes its min constraints to children instead of removing them.
     pub propagate_min: bool,
+    /// When true, this node and its children form a focus group: focus cycles within
+    /// the group before moving outside it.
+    pub focus_group: bool,
     pub on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>>,
     pub on_pointer_down: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_move: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_up: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_enter: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_leave: Option<Rc<dyn Fn(PointerEvent)>>,
+    /// Called when the element is double-clicked/tapped.
+    pub on_double_click: Option<Rc<dyn Fn()>>,
+    /// Called when the element is long-pressed.
+    pub on_long_click: Option<Rc<dyn Fn()>>,
     pub semantics: Option<crate::Semantics>,
     pub alpha: Option<f32>,
     pub graphics_layer: Option<f32>,
@@ -266,11 +397,16 @@ pub struct Modifier {
     pub offset_right: Option<f32>,
     pub offset_top: Option<f32>,
     pub offset_bottom: Option<f32>,
+
     pub margin_left: Option<f32>,
     pub margin_right: Option<f32>,
     pub margin_top: Option<f32>,
     pub margin_bottom: Option<f32>,
     pub aspect_ratio: Option<f32>,
+    /// Size this node's width to its min or max intrinsic content size.
+    pub intrinsic_width: Option<IntrinsicSize>,
+    /// Size this node's height to its min or max intrinsic content size.
+    pub intrinsic_height: Option<IntrinsicSize>,
     pub painter: Option<Rc<dyn Fn(&mut crate::Scene, crate::Rect, f32)>>,
 
     // Drag-drop (internal)
@@ -299,6 +435,14 @@ pub struct Modifier {
     /// `true` when focused, `false` when unfocused.
     pub on_focus_changed: Option<Rc<dyn Fn(bool)>>,
 
+    /// If set, this view reads its interaction state (hover/press) from this source
+    /// in addition to the implicit view-ID-based matching. The source state is OR'd
+    /// with the implicit state, enabling programmatic override of hover/press visuals.
+    ///
+    /// When set, the layout engine also auto-wires the source to emit PointerDown/Up
+    /// and HoverEnter/Leave events into the source via the hit region's callbacks.
+    pub interaction_source: Option<InteractionSource>,
+
     /// Text input configuration. When set, this box acts as a text input field.
     pub text_input: Option<TextInputConfig>,
 }
@@ -324,6 +468,15 @@ impl std::fmt::Debug for Modifier {
             min_height,
             max_width,
             max_height,
+            required_min_width,
+            required_max_width,
+            required_min_height,
+            required_max_height,
+            default_min_width,
+            default_min_height,
+            fill_max,
+            fill_max_w,
+            fill_max_h,
             background,
             state_colors,
             state_elevation,
@@ -358,6 +511,8 @@ impl std::fmt::Debug for Modifier {
             margin_top,
             margin_bottom,
             aspect_ratio,
+            intrinsic_width,
+            intrinsic_height,
             cursor,
             animate_content_size,
         );
@@ -374,6 +529,8 @@ impl std::fmt::Debug for Modifier {
             on_pointer_up,
             on_pointer_enter,
             on_pointer_leave,
+            on_double_click,
+            on_long_click,
             painter,
             on_drag_start,
             on_drag_end,
@@ -383,6 +540,7 @@ impl std::fmt::Debug for Modifier {
             on_drop,
             on_action,
             on_focus_changed,
+            interaction_source,
             text_input,
         );
 
@@ -392,15 +550,13 @@ impl std::fmt::Debug for Modifier {
             };
         }
         flag!(
-            fill_max,
-            fill_max_w,
-            fill_max_h,
             hit_passthrough,
             input_blocker,
             repaint_boundary,
             click,
             disabled,
             propagate_min,
+            focus_group,
         );
 
         if let Some(f) = self.focusable {
@@ -454,16 +610,64 @@ impl Modifier {
         });
         self
     }
+    pub fn required_width_in(mut self, min: f32, max: f32) -> Self {
+        self.required_min_width = Some(min.max(0.0));
+        self.required_max_width = Some(max.max(0.0));
+        self
+    }
+    pub fn required_height_in(mut self, min: f32, max: f32) -> Self {
+        self.required_min_height = Some(min.max(0.0));
+        self.required_max_height = Some(max.max(0.0));
+        self
+    }
+    pub fn required_min_width(mut self, w: f32) -> Self {
+        self.required_min_width = Some(w.max(0.0));
+        self
+    }
+    pub fn required_max_width(mut self, w: f32) -> Self {
+        self.required_max_width = Some(w.max(0.0));
+        self
+    }
+    pub fn required_min_height(mut self, h: f32) -> Self {
+        self.required_min_height = Some(h.max(0.0));
+        self
+    }
+    pub fn required_max_height(mut self, h: f32) -> Self {
+        self.required_max_height = Some(h.max(0.0));
+        self
+    }
+    /// Minimum size that only takes effect when the incoming constraint is 0 (unconstrained).
+    pub fn default_min_size(mut self, w: f32, h: f32) -> Self {
+        self.default_min_width = Some(w.max(0.0));
+        self.default_min_height = Some(h.max(0.0));
+        self
+    }
+    /// Fill the available space in both dimensions.
+    /// By default fills 100% (fraction = 1.0). Pass a fraction to fill partially.
     pub fn fill_max_size(mut self) -> Self {
-        self.fill_max = true;
+        self.fill_max = Some(1.0);
         self
     }
+    pub fn fill_max_size_frac(mut self, fraction: f32) -> Self {
+        self.fill_max = Some(fraction.clamp(0.0, 1.0));
+        self
+    }
+    /// Fill the available width. By default fills 100%.
     pub fn fill_max_width(mut self) -> Self {
-        self.fill_max_w = true;
+        self.fill_max_w = Some(1.0);
         self
     }
+    pub fn fill_max_width_frac(mut self, fraction: f32) -> Self {
+        self.fill_max_w = Some(fraction.clamp(0.0, 1.0));
+        self
+    }
+    /// Fill the available height. By default fills 100%.
     pub fn fill_max_height(mut self) -> Self {
-        self.fill_max_h = true;
+        self.fill_max_h = Some(1.0);
+        self
+    }
+    pub fn fill_max_height_frac(mut self, fraction: f32) -> Self {
+        self.fill_max_h = Some(fraction.clamp(0.0, 1.0));
         self
     }
     pub fn padding(mut self, v: f32) -> Self {
@@ -682,6 +886,24 @@ impl Modifier {
         self.focusable = Some(focusable);
         self
     }
+    /// Mark this node as a focus group: focus cycles within this group before
+    /// moving to siblings outside it.
+    pub fn focus_group(mut self) -> Self {
+        self.focus_group = true;
+        self
+    }
+    /// Attach an [`InteractionSource`] to this view. The source provides shared
+    /// interaction state (hover/press) that supplements the implicit view-ID-based
+    /// state. The layout engine auto-wires pointer events into the source so it
+    /// stays in sync with user interaction.
+    ///
+    /// Use this when you need programmatic control of interaction state (e.g.,
+    /// showing pressed state during an async operation) or to share interaction
+    /// state between components.
+    pub fn interaction_source(mut self, source: &MutableInteractionSource) -> Self {
+        self.interaction_source = Some(source.source());
+        self
+    }
     /// Convenience: register hover enter/leave callbacks.
     /// Shorthand for setting `on_pointer_enter` and `on_pointer_leave`.
     pub fn hoverable(
@@ -721,6 +943,14 @@ impl Modifier {
     }
     pub fn on_pointer_leave(mut self, f: impl Fn(PointerEvent) + 'static) -> Self {
         self.on_pointer_leave = Some(Rc::new(f));
+        self
+    }
+    pub fn on_double_click(mut self, f: impl Fn() + 'static) -> Self {
+        self.on_double_click = Some(Rc::new(f));
+        self
+    }
+    pub fn on_long_click(mut self, f: impl Fn() + 'static) -> Self {
+        self.on_long_click = Some(Rc::new(f));
         self
     }
     pub fn semantics(mut self, s: crate::Semantics) -> Self {
@@ -824,7 +1054,6 @@ impl Modifier {
         self.offset_bottom = Some(v);
         self
     }
-
     pub fn margin(mut self, v: f32) -> Self {
         self.margin_left = Some(v);
         self.margin_right = Some(v);
@@ -846,6 +1075,16 @@ impl Modifier {
     }
     pub fn aspect_ratio(mut self, ratio: f32) -> Self {
         self.aspect_ratio = Some(ratio);
+        self
+    }
+    /// Size this node's width to its min or max intrinsic content size.
+    pub fn intrinsic_width(mut self, mode: IntrinsicSize) -> Self {
+        self.intrinsic_width = Some(mode);
+        self
+    }
+    /// Size this node's height to its min or max intrinsic content size.
+    pub fn intrinsic_height(mut self, mode: IntrinsicSize) -> Self {
+        self.intrinsic_height = Some(mode);
         self
     }
     pub fn painter(mut self, f: impl Fn(&mut crate::Scene, crate::Rect, f32) + 'static) -> Self {

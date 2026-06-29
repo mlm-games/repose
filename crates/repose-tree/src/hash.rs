@@ -126,9 +126,15 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
         ((s.width * 100.0) as i32).hash(hasher);
         ((s.height * 100.0) as i32).hash(hasher);
     }
-    m.fill_max.hash(hasher);
-    m.fill_max_w.hash(hasher);
-    m.fill_max_h.hash(hasher);
+    m.required_min_width.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.required_max_width.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.required_min_height.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.required_max_height.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.default_min_width.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.default_min_height.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.fill_max.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.fill_max_w.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.fill_max_h.map(|v| (v * 100.0) as i32).hash(hasher);
     m.repaint_boundary.hash(hasher);
 
     // Padding
@@ -218,6 +224,8 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
 
     // Aspect ratio
     m.aspect_ratio.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.intrinsic_width.hash(hasher);
+    m.intrinsic_height.hash(hasher);
 
     // Z-index
     ((m.z_index * 100.0) as i32).hash(hasher);
@@ -229,7 +237,10 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     m.disabled.hash(hasher);
     m.focusable.hash(hasher);
     m.propagate_min.hash(hasher);
+    m.focus_group.hash(hasher);
     (m.on_action.is_some()).hash(hasher);
+    (m.on_double_click.is_some()).hash(hasher);
+    (m.on_long_click.is_some()).hash(hasher);
 
     (m.on_drag_start.is_some()).hash(hasher);
     (m.on_drag_end.is_some()).hash(hasher);
@@ -258,6 +269,7 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     }
 
     m.focus_requester.is_some().hash(hasher);
+    m.interaction_source.is_some().hash(hasher);
 
     m.on_focus_changed.is_some().hash(hasher);
 }

@@ -191,9 +191,9 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
     let has_size = m.size.is_some()
         || m.width.is_some()
         || m.height.is_some()
-        || m.fill_max
-        || m.fill_max_w
-        || m.fill_max_h;
+        || m.fill_max.is_some()
+        || m.fill_max_w.is_some()
+        || m.fill_max_h.is_some();
     if !has_size {
         m = m.size(100.0, 100.0);
     }
