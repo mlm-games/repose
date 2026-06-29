@@ -815,6 +815,9 @@ impl LayoutEngine {
             st.reverse_map.insert(t_id, node_id);
             if is_root {
                 st.root_taffy_id = Some(t_id);
+                st.valid = false;
+                st.cached_size = None;
+                st.last_constraints = None;
             }
             drop(st);
             let st = self.scope_trees.get_mut(scope_key).unwrap();
@@ -877,6 +880,7 @@ impl LayoutEngine {
                 };
                 let _ = self.taffy.set_style(t_id, new_style);
                 let _ = self.taffy.set_node_context(t_id, Some(new_ctx));
+                let _ = self.taffy.set_children(t_id, &[]);
                 return t_id;
             }
             let (style, ctx) = {
