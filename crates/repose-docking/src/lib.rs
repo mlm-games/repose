@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use repose_core::*;
-use repose_ui::*;
 use repose_ui::TextStyle;
+use repose_ui::*;
 
 pub type PanelId = u64;
 

@@ -60,7 +60,7 @@ pub(crate) fn index_for_x_bytes_vt(state: &TextFieldState, font_px: f32, x_px: f
     if let Some(vt) = &state.visual_transformation {
         let tfmd = vt.filter(&state.text);
         let display_idx = index_for_x_bytes(&tfmd.text, font_px, x_px, 400, 0);
-        (tfmd.offset_map)(display_idx)
+        tfmd.offset_mapping.transformed_to_original(display_idx)
     } else {
         index_for_x_bytes(&state.text, font_px, x_px, 400, 0)
     }
@@ -77,7 +77,7 @@ pub(crate) fn index_for_xy_bytes_vt(
     if let Some(vt) = &state.visual_transformation {
         let tfmd = vt.filter(&state.text);
         let display_idx = index_for_xy_bytes(&tfmd.text, font_px, wrap_w, x_px, y_px);
-        (tfmd.offset_map)(display_idx)
+        tfmd.offset_mapping.transformed_to_original(display_idx)
     } else {
         index_for_xy_bytes(&state.text, font_px, wrap_w, x_px, y_px)
     }

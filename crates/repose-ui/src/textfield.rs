@@ -343,7 +343,6 @@ fn next_grapheme_boundary(text: &str, byte: usize) -> usize {
     text.len()
 }
 
-#[derive(Clone)]
 pub struct TextFieldState {
     pub text: String,
     pub selection: Range<usize>,
@@ -357,7 +356,7 @@ pub struct TextFieldState {
     pub preferred_x_px: Option<f32>,       // for Up/Down caret movement in multiline
     /// When a visual transformation is active, this maps offsets in the
     /// display text back to offsets in the original text.
-    pub offset_map: Option<Rc<dyn Fn(usize) -> usize>>,
+    pub offset_map: Option<Box<dyn OffsetMapping>>,
     /// The active visual transformation, set during layout.
     pub visual_transformation: Option<Rc<dyn VisualTransformation>>,
     /// Target horizontal scroll offset (where we're animating toward).
@@ -393,7 +392,7 @@ impl std::fmt::Debug for TextFieldState {
             .field("inner_width", &self.inner_width)
             .field("inner_height", &self.inner_height)
             .field("preferred_x_px", &self.preferred_x_px)
-            .field("offset_map", &self.offset_map.as_ref().map(|_| "<fn>"))
+            .field("offset_map", &self.offset_map.as_ref().map(|_| "<offset_mapping>"))
             .field(
                 "visual_transformation",
                 &self.visual_transformation.as_ref().map(|_| "<vt>"),
@@ -411,6 +410,33 @@ impl std::fmt::Debug for TextFieldState {
 impl Default for TextFieldState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Clone for TextFieldState {
+    fn clone(&self) -> Self {
+        Self {
+            text: self.text.clone(),
+            selection: self.selection.clone(),
+            composition: self.composition.clone(),
+            scroll_offset: self.scroll_offset,
+            scroll_offset_y: self.scroll_offset_y,
+            drag_anchor: self.drag_anchor,
+            blink_start: self.blink_start,
+            inner_width: self.inner_width,
+            inner_height: self.inner_height,
+            preferred_x_px: self.preferred_x_px,
+            offset_map: self.offset_map.as_ref().map(|m| m.clone_box()),
+            visual_transformation: self.visual_transformation.clone(),
+            scroll_target: self.scroll_target,
+            scroll_target_y: self.scroll_target_y,
+            scroll_vel: self.scroll_vel,
+            scroll_vel_y: self.scroll_vel_y,
+            last_scroll_tick: self.last_scroll_tick,
+            undo_stack: self.undo_stack.clone(),
+            redo_stack: self.redo_stack.clone(),
+            staging_undo: self.staging_undo.clone(),
+        }
     }
 }
 

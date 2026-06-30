@@ -2149,7 +2149,7 @@ impl LayoutEngine {
                 st.tick_scroll_animation();
                 if let Some(ref vt) = ti.visual_transformation.as_ref() {
                     let tfmd = vt.filter("");
-                    st.offset_map = Some(tfmd.offset_map.clone());
+                    st.offset_map = Some(tfmd.offset_mapping.clone_box());
                     st.visual_transformation = Some((*vt).clone());
                 } else {
                     st.offset_map = None;

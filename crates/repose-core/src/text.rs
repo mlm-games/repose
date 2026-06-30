@@ -1,7 +1,70 @@
 use crate::Color;
-use std::ops::Range;
+use std::fmt::Debug;
 use std::rc::Rc;
 use std::sync::Arc;
+
+/// A range of text measured in byte offsets, matching Compose's `TextRange`.
+///
+/// When `start == end`, the range is collapsed (cursor position).
+/// When `start > end`, the range is reversed (selection direction matters).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TextRange {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl TextRange {
+    pub const ZERO: TextRange = TextRange { start: 0, end: 0 };
+
+    pub fn new(start: usize, end: usize) -> Self {
+        Self { start, end }
+    }
+
+    pub fn collapsed(at: usize) -> Self {
+        Self { start: at, end: at }
+    }
+
+    pub fn min(self) -> usize {
+        self.start.min(self.end)
+    }
+
+    pub fn max(self) -> usize {
+        self.start.max(self.end)
+    }
+
+    pub fn is_collapsed(self) -> bool {
+        self.start == self.end
+    }
+
+    pub fn reversed(self) -> bool {
+        self.start > self.end
+    }
+
+    pub fn length(self) -> usize {
+        self.max() - self.min()
+    }
+
+    pub fn intersects(self, other: TextRange) -> bool {
+        self.min() < other.max() && other.min() < self.max()
+    }
+
+    pub fn contains(self, offset: usize) -> bool {
+        self.min() <= offset && offset < self.max()
+    }
+
+    pub fn coerce_in(self, min: usize, max: usize) -> Self {
+        Self {
+            start: self.start.clamp(min, max),
+            end: self.end.clamp(min, max),
+        }
+    }
+}
+
+impl From<(usize, usize)> for TextRange {
+    fn from((start, end): (usize, usize)) -> Self {
+        Self { start, end }
+    }
+}
 
 /// Snapshot of a text field's editing state including text, selection, and
 /// IME composition range. Corresponds to Compose's `TextFieldValue`.
@@ -9,9 +72,9 @@ use std::sync::Arc;
 pub struct TextFieldValue {
     pub text: String,
     /// Selection range in byte offsets. Collapsed range (start == end) = cursor.
-    pub selection: Range<usize>,
+    pub selection: TextRange,
     /// Active IME composition range in byte offsets, or None.
-    pub composition: Option<Range<usize>>,
+    pub composition: Option<TextRange>,
 }
 
 impl TextFieldValue {
@@ -19,7 +82,7 @@ impl TextFieldValue {
         let text = text.into();
         let len = text.len();
         Self {
-            selection: len..len,
+            selection: TextRange::collapsed(len),
             text,
             composition: None,
         }
@@ -27,7 +90,7 @@ impl TextFieldValue {
 
     pub fn with_selection(mut self, start: usize, end: usize) -> Self {
         let len = self.text.len();
-        self.selection = start.min(len)..end.min(len);
+        self.selection = TextRange::new(start.min(len), end.min(len));
         self
     }
 
@@ -42,7 +105,8 @@ impl TextFieldValue {
     }
 
     pub fn selected_text(&self) -> String {
-        self.text[self.selection.clone()].to_string()
+        let r = self.selection.min()..self.selection.max();
+        self.text[r].to_string()
     }
 }
 
@@ -58,9 +122,33 @@ pub struct TextLayoutResult {
     pub height_px: f32,
 }
 
+/// Bidirectional offset mapping between original and transformed text.
+/// Corresponds to Compose's `OffsetMapping` interface.
+pub trait OffsetMapping: Debug + Send + Sync + 'static {
+    fn original_to_transformed(&self, offset: usize) -> usize;
+    fn transformed_to_original(&self, offset: usize) -> usize;
+    fn clone_box(&self) -> Box<dyn OffsetMapping>;
+}
+
+/// Identity offset mapping: original and transformed offsets are the same.
+#[derive(Clone, Copy, Debug)]
+pub struct IdentityOffsetMapping;
+
+impl OffsetMapping for IdentityOffsetMapping {
+    fn original_to_transformed(&self, offset: usize) -> usize {
+        offset
+    }
+    fn transformed_to_original(&self, offset: usize) -> usize {
+        offset
+    }
+    fn clone_box(&self) -> Box<dyn OffsetMapping> {
+        Box::new(*self)
+    }
+}
+
 /// Transforms the visual representation of a text field's text without changing
 /// the underlying value. For example, password masking.
-pub trait VisualTransformation: std::fmt::Debug + Send + Sync + 'static {
+pub trait VisualTransformation: Debug + Send + Sync + 'static {
     /// Transform the text for display. Returns the transformed text and an
     /// offset-translation function that maps offsets in the display text back
     /// to the original text.
@@ -71,20 +159,20 @@ pub trait VisualTransformation: std::fmt::Debug + Send + Sync + 'static {
 pub struct TransformedText {
     /// The text to display (e.g., "•••••" for a password).
     pub text: String,
-    /// Maps an offset in `text` back to the original offset.
-    pub offset_map: Rc<dyn Fn(usize) -> usize>,
+    /// Maps offsets between original and transformed text.
+    pub offset_mapping: Box<dyn OffsetMapping>,
 }
 
 impl Clone for TransformedText {
     fn clone(&self) -> Self {
         Self {
             text: self.text.clone(),
-            offset_map: self.offset_map.clone(),
+            offset_mapping: self.offset_mapping.clone_box(),
         }
     }
 }
 
-impl std::fmt::Debug for TransformedText {
+impl Debug for TransformedText {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TransformedText")
             .field("text", &self.text)
@@ -98,10 +186,9 @@ pub struct NoVisualTransformation;
 
 impl VisualTransformation for NoVisualTransformation {
     fn filter(&self, text: &str) -> TransformedText {
-        let len = text.len();
         TransformedText {
             text: text.to_string(),
-            offset_map: Rc::new(move |offset| offset.min(len)),
+            offset_mapping: Box::new(IdentityOffsetMapping),
         }
     }
 }
@@ -122,26 +209,64 @@ impl Default for PasswordVisualTransformation {
 impl VisualTransformation for PasswordVisualTransformation {
     fn filter(&self, text: &str) -> TransformedText {
         let masked: String = text.chars().map(|_| self.mask_char).collect();
-        let len = text.len();
+        let src = text.to_string();
         TransformedText {
             text: masked,
-            offset_map: Rc::new(move |offset| offset.min(len)),
+            offset_mapping: Box::new(PasswordOffsetMapping { original: src }),
         }
     }
 }
 
+#[derive(Clone, Debug)]
+struct PasswordOffsetMapping {
+    original: String,
+}
+
+impl OffsetMapping for PasswordOffsetMapping {
+    fn original_to_transformed(&self, offset: usize) -> usize {
+        let char_idx = self.original[..offset.min(self.original.len())]
+            .chars()
+            .count();
+        char_idx
+    }
+    fn transformed_to_original(&self, offset: usize) -> usize {
+        self.original
+            .char_indices()
+            .nth(offset)
+            .map(|(i, _)| i)
+            .unwrap_or(self.original.len())
+    }
+    fn clone_box(&self) -> Box<dyn OffsetMapping> {
+        Box::new(self.clone())
+    }
+}
+
 /// Convert a byte offset in the original text to the corresponding byte offset
-/// in the visually-transformed display text, assuming each original character
-/// maps to one or more display characters starting at a predictable position.
+/// in the visually-transformed display text.
 pub fn original_offset_to_display(original: &str, display: &str, original_byte: usize) -> usize {
-    let char_idx = original[..original_byte.min(original.len())]
-        .chars()
-        .count();
-    display
-        .char_indices()
-        .nth(char_idx)
-        .map(|(i, _)| i)
-        .unwrap_or(display.len())
+    original_offset_to_display_with_mapping(original, display, original_byte, None)
+}
+
+/// Convert a byte offset in the original text to the corresponding byte offset
+/// in the visually-transformed display text, using the provided `OffsetMapping` if available.
+pub fn original_offset_to_display_with_mapping(
+    original: &str,
+    display: &str,
+    original_byte: usize,
+    offset_mapping: Option<&dyn OffsetMapping>,
+) -> usize {
+    if let Some(om) = offset_mapping {
+        om.original_to_transformed(original_byte)
+    } else {
+        let char_idx = original[..original_byte.min(original.len())]
+            .chars()
+            .count();
+        display
+            .char_indices()
+            .nth(char_idx)
+            .map(|(i, _)| i)
+            .unwrap_or(display.len())
+    }
 }
 
 /// Configures automatic capitalization behavior for the keyboard.
@@ -197,27 +322,48 @@ impl Default for TextStyle {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum KeyboardType {
     #[default]
+    Unspecified,
     Text,
     Ascii,
     Number,
     Phone,
-    Email,
     Uri,
+    Email,
+    Password,
+    NumberPassword,
     Decimal,
+    PasswordVisible,
+    PostalAddress,
+    PersonName,
+    EmailSubject,
+    ShortMessage,
+    LongMessage,
+    Filter,
+    Phonetic,
+    DateTime,
+    Date,
+    Time,
+    NumberSigned,
+    DecimalSigned,
+    DecimalPassword,
+    NumberPasswordSigned,
+    DecimalPasswordSigned,
 }
 
 /// The action button on the IME (soft keyboard).
+/// Corresponds to Compose's `ImeAction` with all 9 variants.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ImeAction {
     #[default]
     Unspecified,
     None,
+    Default,
     Go,
     Search,
     Send,
+    Previous,
     Next,
     Done,
-    Previous,
 }
 
 /// Callbacks for IME action button presses on the soft keyboard.
