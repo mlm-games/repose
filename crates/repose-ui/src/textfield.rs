@@ -1042,7 +1042,6 @@ pub fn BasicTextField(
 ) -> repose_core::View {
     let multiline = !config.single_line;
     let on_change: Option<Rc<dyn Fn(String)>> = Some(Rc::new(on_change));
-    // Merge direct on_change with config.on_change (config takes precedence if set)
     let merged_on_change = config.on_change.or(on_change);
     text_field_view(
         modifier,
@@ -1067,6 +1066,25 @@ pub fn BasicTextField(
         config.text_style,
         config.keyboard_actions,
     )
+}
+
+/// `TextFieldValue`-based overload. Corresponds to Compose's
+/// `BasicTextField(value: TextFieldValue, onValueChange: (TextFieldValue) -> Unit, ...)`.
+pub fn BasicTextFieldValue(
+    value: TextFieldValue,
+    on_value_change: impl Fn(TextFieldValue) + 'static,
+    modifier: repose_core::Modifier,
+    hint: impl Into<String>,
+    config: BasicTextFieldConfig,
+) -> repose_core::View {
+    let text = value.text().to_string();
+    let value_clone = value.clone();
+    let on_change = move |new_text: String| {
+        let mut updated = value_clone.clone();
+        updated.annotated_string = AnnotatedString::from(new_text);
+        on_value_change(updated);
+    };
+    BasicTextField(text, on_change, modifier, hint, config)
 }
 
 /// Builder-style helper for `BasicTextFieldConfig`, allowing method chaining.
@@ -1365,7 +1383,7 @@ pub(crate) fn paint_text_field(
     let ts = text_input
         .text_style
         .as_ref()
-        .map(|s| *s)
+        .map(|s| s.clone())
         .unwrap_or_default();
     let font_size_dp = if ts.font_size != 0.0 {
         ts.font_size
@@ -1493,7 +1511,7 @@ pub(crate) fn paint_text_field(
                     1 => FontStyle::Italic,
                     _ => FontStyle::Normal,
                 },
-                text_decoration: TextDecoration::default(),
+                text_decoration: ts.text_decoration.unwrap_or_default(),
                 letter_spacing: ts.letter_spacing,
                 line_height: ts.line_height,
             });
@@ -1551,7 +1569,7 @@ pub(crate) fn paint_text_field(
                         1 => FontStyle::Italic,
                         _ => FontStyle::Normal,
                     },
-                    text_decoration: TextDecoration::default(),
+                    text_decoration: ts.text_decoration.unwrap_or_default(),
                     letter_spacing: ts.letter_spacing,
                     line_height: ts.line_height,
                 });
@@ -1583,7 +1601,7 @@ pub(crate) fn paint_text_field(
                             1 => FontStyle::Italic,
                             _ => FontStyle::Normal,
                         },
-                        text_decoration: TextDecoration::default(),
+                        text_decoration: ts.text_decoration.unwrap_or_default(),
                         letter_spacing: ts.letter_spacing,
                         line_height: ts.line_height,
                     });
@@ -1677,7 +1695,7 @@ pub(crate) fn paint_text_field(
                 text_align: TextAlign::Unspecified,
                 font_weight: FontWeight::NORMAL,
                 font_style: FontStyle::Normal,
-                text_decoration: TextDecoration::default(),
+                text_decoration: ts.text_decoration.unwrap_or_default(),
                 letter_spacing: 0.0,
                 line_height: 0.0,
             });
@@ -1705,7 +1723,7 @@ pub(crate) fn paint_text_field(
                     text_align: TextAlign::Unspecified,
                     font_weight: FontWeight::NORMAL,
                     font_style: FontStyle::Normal,
-                    text_decoration: TextDecoration::default(),
+                    text_decoration: ts.text_decoration.unwrap_or_default(),
                     letter_spacing: 0.0,
                     line_height: 0.0,
                 });
@@ -1725,7 +1743,7 @@ pub(crate) fn paint_text_field(
                 text_align: TextAlign::Unspecified,
                 font_weight: FontWeight::NORMAL,
                 font_style: FontStyle::Normal,
-                text_decoration: TextDecoration::default(),
+                text_decoration: ts.text_decoration.unwrap_or_default(),
                 letter_spacing: 0.0,
                 line_height: 0.0,
             });
@@ -1734,31 +1752,94 @@ pub(crate) fn paint_text_field(
 
     // Fire on_text_layout callback with computed layout info
     if let Some(ref cb) = text_input.on_text_layout {
-        let (line_count, content_w, content_h) = if let Some(state_rc) = state {
-            let st = state_rc.borrow();
-            let display = if st.text.is_empty() {
-                text_input.hint.clone()
-            } else if let Some(ref vt) = text_input.visual_transformation {
-                vt.filter(&st.text).text
+        let (line_count, content_w, content_h, first_baseline, last_baseline, did_overflow_w, did_overflow_h, lines) =
+            if let Some(state_rc) = state {
+                let st = state_rc.borrow();
+                let display = if st.text.is_empty() {
+                    text_input.hint.clone()
+                } else if let Some(ref vt) = text_input.visual_transformation {
+                    vt.filter(&st.text).text
+                } else {
+                    st.text.clone()
+                };
+                if text_input.multiline {
+                    let l = layout_text_area(&display, font_val, inner.w.max(1.0), 400, 0);
+                    let lc = l.ranges.len();
+                    let cw = inner.w.max(0.0);
+                    let ch = (lc as f32 * l.line_h_px).max(0.0);
+                    let line_infos: Vec<_> = l
+                        .ranges
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &(s, e))| {
+                            let top = i as f32 * l.line_h_px;
+                            let bottom = top + l.line_h_px;
+                            let line_text = &display[s..e];
+                            let m = measure_text(line_text, font_val, None, 400, 0);
+                            let line_w = m.positions.last().copied().unwrap_or(0.0);
+                            TextLineInfo {
+                                start: s,
+                                end: e,
+                                top,
+                                baseline: top + l.line_h_px * 0.8,
+                                bottom,
+                                left: 0.0,
+                                right: line_w,
+                                width: line_w,
+                            }
+                        })
+                        .collect();
+                    let fb = line_infos.first().map(|l| l.baseline).unwrap_or(0.0);
+                    let lb = line_infos.last().map(|l| l.baseline).unwrap_or(0.0);
+                    (
+                        lc,
+                        cw,
+                        ch,
+                        fb,
+                        lb,
+                        cw > inner.w,
+                        ch > inner.h,
+                        line_infos,
+                    )
+                } else {
+                    let m = measure_text(&display, font_val, None, 400, 0);
+                    let w = m.positions.last().copied().unwrap_or(0.0);
+                    let top = 0.0;
+                    let bottom = line_h;
+                    let baseline = line_h * 0.8;
+                    let line_info = TextLineInfo {
+                        start: 0,
+                        end: display.len(),
+                        top,
+                        baseline,
+                        bottom,
+                        left: 0.0,
+                        right: w,
+                        width: w,
+                    };
+                    (
+                        1,
+                        w.max(0.0),
+                        line_h.max(0.0),
+                        baseline,
+                        baseline,
+                        w > inner.w,
+                        line_h > inner.h,
+                        vec![line_info],
+                    )
+                }
             } else {
-                st.text.clone()
+                (0, 0.0, 0.0, 0.0, 0.0, false, false, vec![])
             };
-            if text_input.multiline {
-                let l = layout_text_area(&display, font_val, inner.w.max(1.0), 400, 0);
-                let lc = l.ranges.len();
-                (lc, inner.w.max(0.0), (lc as f32 * l.line_h_px).max(0.0))
-            } else {
-                let m = measure_text(&display, font_val, None, 400, 0);
-                let w = m.positions.last().copied().unwrap_or(0.0);
-                (1, w.max(0.0), line_h.max(0.0))
-            }
-        } else {
-            (0, 0.0, 0.0)
-        };
         cb(&repose_core::TextLayoutResult {
             line_count,
             width_px: content_w,
             height_px: content_h,
+            first_baseline,
+            last_baseline,
+            did_overflow_width: did_overflow_w,
+            did_overflow_height: did_overflow_h,
+            lines,
         });
     }
 

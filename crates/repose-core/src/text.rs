@@ -70,7 +70,8 @@ impl From<(usize, usize)> for TextRange {
 /// IME composition range. Corresponds to Compose's `TextFieldValue`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextFieldValue {
-    pub text: String,
+    /// The annotated text. Plain text is accessible via `text()` or `annotated_string.text`.
+    pub annotated_string: AnnotatedString,
     /// Selection range in byte offsets. Collapsed range (start == end) = cursor.
     pub selection: TextRange,
     /// Active IME composition range in byte offsets, or None.
@@ -78,35 +79,51 @@ pub struct TextFieldValue {
 }
 
 impl TextFieldValue {
+    /// Create from plain text (no annotations).
     pub fn new(text: impl Into<String>) -> Self {
-        let text = text.into();
-        let len = text.len();
+        let annotated = AnnotatedString::from(text.into());
+        let len = annotated.text.len();
         Self {
             selection: TextRange::collapsed(len),
-            text,
+            annotated_string: annotated,
             composition: None,
         }
     }
 
+    /// Create from an `AnnotatedString` preserving all annotations.
+    pub fn from_annotated(annotated: AnnotatedString) -> Self {
+        let len = annotated.text.len();
+        Self {
+            selection: TextRange::collapsed(len),
+            annotated_string: annotated,
+            composition: None,
+        }
+    }
+
+    /// Convenience: plain text content (delegates to `annotated_string.text`).
+    pub fn text(&self) -> &str {
+        &self.annotated_string.text
+    }
+
     pub fn with_selection(mut self, start: usize, end: usize) -> Self {
-        let len = self.text.len();
+        let len = self.annotated_string.text.len();
         self.selection = TextRange::new(start.min(len), end.min(len));
         self
     }
 
     pub fn text_before_selection(&self, max_chars: usize) -> String {
         let start = self.selection.start.saturating_sub(max_chars);
-        self.text[start..self.selection.start].to_string()
+        self.annotated_string.text[start..self.selection.start].to_string()
     }
 
     pub fn text_after_selection(&self, max_chars: usize) -> String {
-        let end = (self.selection.end + max_chars).min(self.text.len());
-        self.text[self.selection.end..end].to_string()
+        let end = (self.selection.end + max_chars).min(self.annotated_string.text.len());
+        self.annotated_string.text[self.selection.end..end].to_string()
     }
 
     pub fn selected_text(&self) -> String {
         let r = self.selection.min()..self.selection.max();
-        self.text[r].to_string()
+        self.annotated_string.text[r].to_string()
     }
 }
 
@@ -120,10 +137,100 @@ pub struct TextLayoutResult {
     pub width_px: f32,
     /// Total content height in px.
     pub height_px: f32,
+    /// First baseline position in px.
+    pub first_baseline: f32,
+    /// Last baseline position in px.
+    pub last_baseline: f32,
+    /// Whether text overflows the available width.
+    pub did_overflow_width: bool,
+    /// Whether text overflows the available height.
+    pub did_overflow_height: bool,
+    /// Per-line layout information.
+    pub lines: Vec<TextLineInfo>,
+}
+
+/// Layout information for a single line of text.
+#[derive(Clone, Debug)]
+pub struct TextLineInfo {
+    /// Byte offset of the line start in the text.
+    pub start: usize,
+    /// Byte offset of the line end (exclusive) in the text.
+    pub end: usize,
+    /// Top y position in px relative to the text field content area.
+    pub top: f32,
+    /// Baseline y position in px relative to the text field content area.
+    pub baseline: f32,
+    /// Bottom y position in px relative to the text field content area.
+    pub bottom: f32,
+    /// Left x position in px relative to the text field content area.
+    pub left: f32,
+    /// Right x position in px relative to the text field content area.
+    pub right: f32,
+    /// Width of this line in px.
+    pub width: f32,
+}
+
+impl TextLayoutResult {
+    pub fn get_line_start(&self, line_index: usize) -> Option<usize> {
+        self.lines.get(line_index).map(|l| l.start)
+    }
+
+    pub fn get_line_end(&self, line_index: usize) -> Option<usize> {
+        self.lines.get(line_index).map(|l| l.end)
+    }
+
+    pub fn is_line_ellipsized(&self, _line_index: usize) -> bool {
+        false
+    }
+
+    pub fn get_line_top(&self, line_index: usize) -> Option<f32> {
+        self.lines.get(line_index).map(|l| l.top)
+    }
+
+    pub fn get_line_baseline(&self, line_index: usize) -> Option<f32> {
+        self.lines.get(line_index).map(|l| l.baseline)
+    }
+
+    pub fn get_line_bottom(&self, line_index: usize) -> Option<f32> {
+        self.lines.get(line_index).map(|l| l.bottom)
+    }
+
+    pub fn get_line_left(&self, line_index: usize) -> Option<f32> {
+        self.lines.get(line_index).map(|l| l.left)
+    }
+
+    pub fn get_line_right(&self, line_index: usize) -> Option<f32> {
+        self.lines.get(line_index).map(|l| l.right)
+    }
+
+    pub fn get_line_for_offset(&self, offset: usize) -> usize {
+        for (i, line) in self.lines.iter().enumerate() {
+            if offset >= line.start && offset < line.end {
+                return i;
+            }
+        }
+        self.line_count.saturating_sub(1)
+    }
+
+    pub fn get_line_for_vertical_position(&self, vertical: f32) -> usize {
+        for (i, line) in self.lines.iter().enumerate() {
+            if vertical >= line.top && vertical < line.bottom {
+                return i;
+            }
+        }
+        self.line_count.saturating_sub(1)
+    }
+
+    pub fn get_horizontal_position(&self, offset: usize, _use_primary_direction: bool) -> f32 {
+        self.lines
+            .iter()
+            .find(|l| offset >= l.start && offset <= l.end)
+            .map(|l| l.left)
+            .unwrap_or(0.0)
+    }
 }
 
 /// Bidirectional offset mapping between original and transformed text.
-/// Corresponds to Compose's `OffsetMapping` interface.
 pub trait OffsetMapping: Debug + Send + Sync + 'static {
     fn original_to_transformed(&self, offset: usize) -> usize;
     fn transformed_to_original(&self, offset: usize) -> usize;
@@ -153,6 +260,19 @@ pub trait VisualTransformation: Debug + Send + Sync + 'static {
     /// offset-translation function that maps offsets in the display text back
     /// to the original text.
     fn filter(&self, text: &str) -> TransformedText;
+}
+
+/// A pre-built identity `VisualTransformation` that displays text as-is.
+#[derive(Clone, Copy, Debug)]
+pub struct IdentityVisualTransformation;
+
+impl VisualTransformation for IdentityVisualTransformation {
+    fn filter(&self, text: &str) -> TransformedText {
+        TransformedText {
+            text: text.to_string(),
+            offset_mapping: Box::new(IdentityOffsetMapping),
+        }
+    }
 }
 
 /// The result of applying a `VisualTransformation`.
@@ -281,9 +401,86 @@ pub enum KeyboardCapitalization {
     Sentences,
 }
 
+/// Text shadow.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Shadow {
+    pub color: Color,
+    /// Horizontal offset in dp.
+    pub offset_x: f32,
+    /// Vertical offset in dp.
+    pub offset_y: f32,
+    /// Blur radius in dp.
+    pub blur_radius: f32,
+}
+
+/// Font synthesis controls whether the font renderer may synthesize
+/// bold, italic, or small-caps variants when the font lacks them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum FontSynthesis {
+    #[default]
+    Unspecified,
+    None,
+    Weight,
+    Style,
+    SmallCaps,
+    All,
+}
+
+/// Baseline shift for subscript/superscript.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum BaselineShift {
+    #[default]
+    Unspecified,
+    Superscript,
+    Subscript,
+}
+
+/// Hyphenation behavior.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Hyphens {
+    #[default]
+    Unspecified,
+    None,
+    Auto,
+}
+
+/// Line break behavior.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum LineBreak {
+    #[default]
+    Unspecified,
+    Simple,
+    Heading,
+    Paragraph,
+}
+
+/// First-line and rest-line indent in dp.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextIndent {
+    pub first_line: f32,
+    pub rest_lines: f32,
+}
+
+impl Default for TextIndent {
+    fn default() -> Self {
+        Self {
+            first_line: 0.0,
+            rest_lines: 0.0,
+        }
+    }
+}
+
+/// Draw style for text (fill or stroke).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum DrawStyle {
+    #[default]
+    Fill,
+    Stroke,
+}
+
 /// Style configuration for text displayed in a text field.
-/// Corresponds to a subset of Compose's `TextStyle`.
-#[derive(Clone, Copy, Debug)]
+/// Corresponds to Compose's `TextStyle`.
+#[derive(Clone, Debug)]
 pub struct TextStyle {
     /// Font size in dp. 0 = use default (16dp for TextField).
     pub font_size: f32,
@@ -301,6 +498,32 @@ pub struct TextStyle {
     pub letter_spacing: f32,
     /// Line height in dp. 0 = default (font_size * 1.2).
     pub line_height: f32,
+    /// Text background color. None = transparent.
+    pub background: Option<Color>,
+    /// Text decoration (underline, strikethrough). None = no decoration.
+    pub text_decoration: Option<crate::TextDecoration>,
+    /// Text shadow. None = no shadow.
+    pub shadow: Option<Shadow>,
+    /// Text direction. None = inherit from thread-local default (usually LTR).
+    pub text_direction: Option<crate::TextDirection>,
+    /// Font synthesis policy (synthesize missing bold/italic/small-caps).
+    pub font_synthesis: FontSynthesis,
+    /// Baseline shift (superscript/subscript).
+    pub baseline_shift: BaselineShift,
+    /// Hyphenation behavior.
+    pub hyphens: Hyphens,
+    /// Line break behavior.
+    pub line_break: LineBreak,
+    /// First-line and rest-line indent in dp.
+    pub text_indent: Option<TextIndent>,
+    /// Draw style (fill or stroke).
+    pub draw_style: DrawStyle,
+    /// Text opacity (0.0-1.0). 0.0 = use default (fully opaque).
+    pub alpha: f32,
+    /// Locale hint for text shaping. Empty = use default.
+    pub locale_list: Option<String>,
+    /// OpenType font feature settings (e.g. "liga", "kern").
+    pub font_feature_settings: Option<String>,
 }
 
 impl Default for TextStyle {
@@ -314,6 +537,19 @@ impl Default for TextStyle {
             text_align: crate::TextAlign::Unspecified,
             letter_spacing: 0.0,
             line_height: 0.0,
+            background: None,
+            text_decoration: None,
+            shadow: None,
+            text_direction: None,
+            font_synthesis: FontSynthesis::Unspecified,
+            baseline_shift: BaselineShift::Unspecified,
+            hyphens: Hyphens::Unspecified,
+            line_break: LineBreak::Unspecified,
+            text_indent: None,
+            draw_style: DrawStyle::Fill,
+            alpha: 0.0,
+            locale_list: None,
+            font_feature_settings: None,
         }
     }
 }
@@ -351,7 +587,6 @@ pub enum KeyboardType {
 }
 
 /// The action button on the IME (soft keyboard).
-/// Corresponds to Compose's `ImeAction` with all 9 variants.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ImeAction {
     #[default]
@@ -367,7 +602,6 @@ pub enum ImeAction {
 }
 
 /// Callbacks for IME action button presses on the soft keyboard.
-/// Corresponds to Compose's `KeyboardActions`.
 #[derive(Clone, Default)]
 pub struct KeyboardActions {
     pub on_done: Option<Rc<dyn Fn()>>,
@@ -382,6 +616,22 @@ pub struct KeyboardActions {
 pub struct SpanStyle {
     pub color: Option<Color>,
     pub font_size: Option<f32>,
+    pub font_weight: Option<u16>,
+    pub font_family: Option<&'static str>,
+    pub font_style: Option<u8>,
+    pub text_align: Option<crate::TextAlign>,
+    pub letter_spacing: Option<f32>,
+    pub line_height: Option<f32>,
+    pub background: Option<Color>,
+    pub text_decoration: Option<crate::TextDecoration>,
+    pub text_direction: Option<crate::TextDirection>,
+    pub font_synthesis: Option<FontSynthesis>,
+    pub baseline_shift: Option<BaselineShift>,
+    pub hyphens: Option<Hyphens>,
+    pub line_break: Option<LineBreak>,
+    pub text_indent: Option<TextIndent>,
+    pub draw_style: Option<DrawStyle>,
+    pub alpha: f32,
 }
 
 impl SpanStyle {
@@ -389,6 +639,22 @@ impl SpanStyle {
         Self {
             color: None,
             font_size: None,
+            font_weight: None,
+            font_family: None,
+            font_style: None,
+            text_align: None,
+            letter_spacing: None,
+            line_height: None,
+            background: None,
+            text_decoration: None,
+            text_direction: None,
+            font_synthesis: None,
+            baseline_shift: None,
+            hyphens: None,
+            line_break: None,
+            text_indent: None,
+            draw_style: None,
+            alpha: 0.0,
         }
     }
 
@@ -422,7 +688,7 @@ pub struct TextSpan {
 /// Text with multiple styled spans.
 ///
 /// Analogous to Compose's `AnnotatedString`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AnnotatedString {
     pub text: String,
     pub spans: Arc<[TextSpan]>,
