@@ -1589,17 +1589,14 @@ pub fn SearchBarInputField(
     if let Some(icon) = leading_icon {
         row_children.push(icon);
     }
+    let on_qc2 = on_qc.clone();
     row_children.push(
         UiTextField(
-            placeholder,
             query.clone(),
+            move |text| on_qc2(text),
             input_m,
+            placeholder,
             repose_ui::BasicTextFieldConfig {
-                on_change: if expanded {
-                    Some(Rc::new(move |text| on_qc(text)))
-                } else {
-                    None
-                },
                 on_submit: on_s.clone(),
                 ime_action: Some(ImeAction::Search),
                 enabled,

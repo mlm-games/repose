@@ -7,6 +7,7 @@ use std::rc::Rc;
 
 use repose_core::*;
 use repose_ui::*;
+use repose_ui::TextStyle;
 
 pub type PanelId = u64;
 

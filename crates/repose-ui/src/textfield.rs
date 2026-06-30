@@ -935,7 +935,7 @@ impl TextFieldState {
 ///
 /// Use `..Default::default()` for unset fields:
 /// ```ignore
-/// BasicTextField("Hint", text, modifier, BasicTextFieldConfig {
+/// BasicTextField(text, |v| text = v, modifier, "Hint", BasicTextFieldConfig {
 ///     enabled: false,
 ///     ..Default::default()
 /// })
@@ -1005,7 +1005,7 @@ impl Default for BasicTextFieldConfig {
 ///
 /// # Example
 /// ```ignore
-/// BasicTextField(text, |v| text = v, modifier, "Hint")
+/// BasicTextField(text, |v| text = v, modifier, "Hint", BasicTextFieldConfig::default())
 /// ```
 pub fn BasicTextField(
     value: String,

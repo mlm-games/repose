@@ -162,24 +162,24 @@ pub fn screen() -> View {
             "TextArea (multi-line)",
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 BasicTextField(
-                    "Write notes…",
                     multi_text.get(),
+                    {
+                        let t = multi_text.clone();
+                        let last_change = last_change_multi.clone();
+                        move |s: String| {
+                            t.set(s.clone());
+                            last_change.set(s);
+                        }
+                    },
                     Modifier::new()
                         .height(180.0)
                         .fill_max_width()
                         .background(theme().surface)
                         .border(1.0, theme().outline, 10.0)
                         .clip_rounded(10.0),
+                    "Write notes…",
                     BasicTextFieldConfig {
                         single_line: false,
-                        on_change: Some(Rc::new({
-                            let t = multi_text.clone();
-                            let last_change = last_change_multi.clone();
-                            move |s: String| {
-                                t.set(s.clone());
-                                last_change.set(s);
-                            }
-                        })),
                         on_submit: Some(Rc::new({
                             let last_submit = last_submit_multi.clone();
                             move |s| last_submit.set(s)
