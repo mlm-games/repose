@@ -175,7 +175,9 @@ where
         let state_id = Rc::as_ptr(&state) as usize;
         let mut normal_ptr = 0usize;
         for visual_i in first_with_buffer..vis_end {
-            let entry = still_exiting.iter().find(|(_, oi, _, _, _)| *oi == visual_i);
+            let entry = still_exiting
+                .iter()
+                .find(|(_, oi, _, _, _)| *oi == visual_i);
             if let Some((key, old_idx, old_item, version, exit_h_dp)) = entry {
                 let ek = format!("_lz_x:{aid}:{key}:v{version}");
                 let alpha = animate_f32_from(ek, 1.0, 0.0, spec);
@@ -188,19 +190,17 @@ where
                     && exit_top_px < scroll_offset_px + viewport_height_px;
                 if in_view {
                     let exit_view = item_builder(old_item.clone(), *old_idx);
-                    combined_children.push(
-                        scope_item(
-                            crate::Box(
-                                Modifier::new()
-                                    .fill_max_width()
-                                    .height(*exit_h_dp)
-                                    .alpha(alpha),
-                            )
-                            .child(exit_view),
-                            *key,
-                            state_id,
-                        ),
-                    );
+                    combined_children.push(scope_item(
+                        crate::Box(
+                            Modifier::new()
+                                .fill_max_width()
+                                .height(*exit_h_dp)
+                                .alpha(alpha),
+                        )
+                        .child(exit_view),
+                        *key,
+                        state_id,
+                    ));
                 }
             } else if let Some(item) = items.get(normal_ptr) {
                 let key = get_key(item);
@@ -208,23 +208,19 @@ where
                 if had_prev && added.contains(&key) {
                     let enter_key = format!("_lz_n:{aid}:{key}");
                     let alpha = animate_f32_from(enter_key, 0.0, 1.0, spec);
-                    combined_children.push(
-                        scope_item(
-                            crate::Box(Modifier::new().fill_max_width().height(h_dp).alpha(alpha))
-                                .child(item_builder(item.clone(), normal_ptr)),
-                            key,
-                            state_id,
-                        ),
-                    );
+                    combined_children.push(scope_item(
+                        crate::Box(Modifier::new().fill_max_width().height(h_dp).alpha(alpha))
+                            .child(item_builder(item.clone(), normal_ptr)),
+                        key,
+                        state_id,
+                    ));
                 } else {
-                    combined_children.push(
-                        scope_item(
-                            crate::Box(Modifier::new().fill_max_width().height(h_dp))
-                                .child(item_builder(item.clone(), normal_ptr)),
-                            key,
-                            state_id,
-                        ),
-                    );
+                    combined_children.push(scope_item(
+                        crate::Box(Modifier::new().fill_max_width().height(h_dp))
+                            .child(item_builder(item.clone(), normal_ptr)),
+                        key,
+                        state_id,
+                    ));
                 }
                 normal_ptr += 1;
             }
@@ -724,7 +720,11 @@ where
     let state_id = Rc::as_ptr(&state) as usize;
     for i in first_with_buffer..last_visible {
         if let Some(item) = items.get(i) {
-            children.push(scope_item(item_builder(item.clone(), i), i as u64, state_id));
+            children.push(scope_item(
+                item_builder(item.clone(), i),
+                i as u64,
+                state_id,
+            ));
         }
     }
 
@@ -939,14 +939,12 @@ where
                 let in_view =
                     vis_bot > scroll_offset_px && vis_top < scroll_offset_px + viewport_height_px;
                 if in_view {
-                    col_children[col].push(
-                        scope_item(
-                            crate::Box(Modifier::new().fill_max_width().height(h_dp))
-                                .child(item_builder(item.clone(), i)),
-                            i as u64,
-                            state_id,
-                        ),
-                    );
+                    col_children[col].push(scope_item(
+                        crate::Box(Modifier::new().fill_max_width().height(h_dp))
+                            .child(item_builder(item.clone(), i)),
+                        i as u64,
+                        state_id,
+                    ));
                 } else {
                     col_children[col]
                         .push(crate::Box(Modifier::new().fill_max_width().height(h_dp)));

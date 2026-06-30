@@ -3276,7 +3276,9 @@ impl RenderBackend for WgpuBackend {
                             .iter()
                             .find(|(id, _, _)| id == layer_id)
                             .map(|(_, bx, by)| (*bx, *by));
-                        if let Some((blur_x, blur_y)) = blur_px_val.filter(|(bx, by)| *bx > 0.0 || *by > 0.0) {
+                        if let Some((blur_x, blur_y)) =
+                            blur_px_val.filter(|(bx, by)| *bx > 0.0 || *by > 0.0)
+                        {
                             // Content blur: draw blurred version using the blur_content pipeline
                             let bw_uv = (blur_x * 1.5) / layer.width.max(1) as f32;
                             let bh_uv = (blur_y * 1.5) / layer.height.max(1) as f32;
@@ -3292,8 +3294,10 @@ impl RenderBackend for WgpuBackend {
                                 blur_uv: [bw_uv, bh_uv],
                                 sin_cos: [1.0, 0.0],
                             };
-                            self.blur_ring
-                                .grow_to_fit(&self.device, std::mem::size_of::<BlurInstance>() as u64);
+                            self.blur_ring.grow_to_fit(
+                                &self.device,
+                                std::mem::size_of::<BlurInstance>() as u64,
+                            );
                             let bytes = bytemuck::bytes_of(&inst);
                             let (off, _) = self.blur_ring.alloc_write(&self.queue, bytes);
                             current_pass.cmds.push(Cmd::CompositeBlur {

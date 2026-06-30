@@ -1,7 +1,7 @@
 use crate::Color;
+use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::ops::Range;
 
 /// Snapshot of a text field's editing state including text, selection, and
 /// IME composition range. Corresponds to Compose's `TextFieldValue`.

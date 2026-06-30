@@ -126,12 +126,22 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
         ((s.width * 100.0) as i32).hash(hasher);
         ((s.height * 100.0) as i32).hash(hasher);
     }
-    m.required_min_width.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.required_max_width.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.required_min_height.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.required_max_height.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.required_min_width
+        .map(|v| (v * 100.0) as i32)
+        .hash(hasher);
+    m.required_max_width
+        .map(|v| (v * 100.0) as i32)
+        .hash(hasher);
+    m.required_min_height
+        .map(|v| (v * 100.0) as i32)
+        .hash(hasher);
+    m.required_max_height
+        .map(|v| (v * 100.0) as i32)
+        .hash(hasher);
     m.default_min_width.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.default_min_height.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.default_min_height
+        .map(|v| (v * 100.0) as i32)
+        .hash(hasher);
     m.fill_max.map(|v| (v * 100.0) as i32).hash(hasher);
     m.fill_max_w.map(|v| (v * 100.0) as i32).hash(hasher);
     m.fill_max_h.map(|v| (v * 100.0) as i32).hash(hasher);

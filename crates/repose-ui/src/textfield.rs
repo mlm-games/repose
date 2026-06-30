@@ -1026,7 +1026,10 @@ pub fn BasicTextField(
         merged_on_change,
         config.on_submit,
         config.visual_transformation,
-        config.keyboard_options.map(|o| o.keyboard_type).unwrap_or_default(),
+        config
+            .keyboard_options
+            .map(|o| o.keyboard_type)
+            .unwrap_or_default(),
         config.keyboard_capitalization,
         config.ime_action.unwrap_or_default(),
         config.enabled,
@@ -1338,7 +1341,11 @@ pub(crate) fn paint_text_field(
         .as_ref()
         .map(|s| *s)
         .unwrap_or_default();
-    let font_size_dp = if ts.font_size != 0.0 { ts.font_size } else { TF_FONT_DP };
+    let font_size_dp = if ts.font_size != 0.0 {
+        ts.font_size
+    } else {
+        TF_FONT_DP
+    };
     let font_val = dp_to_px(font_size_dp) * locals::text_scale().0;
     let line_h = if ts.line_height != 0.0 {
         dp_to_px(ts.line_height)
@@ -1544,16 +1551,16 @@ pub(crate) fn paint_text_field(
                         color: ts.color.unwrap_or(th.on_surface),
                         size: font_val,
                         font_family: ts.font_family,
-                            text_align: ts.text_align,
-                            font_weight: FontWeight(ts.font_weight.unwrap_or(400)),
-                            font_style: match ts.font_style.unwrap_or(0) {
-                                1 => FontStyle::Italic,
-                                _ => FontStyle::Normal,
-                            },
-                            text_decoration: TextDecoration::default(),
-                            letter_spacing: ts.letter_spacing,
-                            line_height: ts.line_height,
-                        });
+                        text_align: ts.text_align,
+                        font_weight: FontWeight(ts.font_weight.unwrap_or(400)),
+                        font_style: match ts.font_style.unwrap_or(0) {
+                            1 => FontStyle::Italic,
+                            _ => FontStyle::Normal,
+                        },
+                        text_decoration: TextDecoration::default(),
+                        letter_spacing: ts.letter_spacing,
+                        line_height: ts.line_height,
+                    });
                 }
             }
 

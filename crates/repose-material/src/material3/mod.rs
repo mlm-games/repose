@@ -14,7 +14,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use web_time::Duration;
 
-use crate::ripple::{ripple, RippleConfig};
+use crate::ripple::{RippleConfig, ripple};
 use crate::{Icon, Symbol};
 use repose_core::animation::{AnimationSpec, Easing, RepeatableSpec};
 use repose_core::text::ImeAction;
@@ -1547,12 +1547,16 @@ pub fn SearchBarInputField(
             move |ev| {
                 if ev.key == Key::Escape {
                     if let Some(ref s) = s {
-                        if s.is_active() { s.deactivate(); }
+                        if s.is_active() {
+                            s.deactivate();
+                        }
                     }
                     true
                 } else if ev.key == Key::ArrowDown || ev.key == Key::ArrowUp {
                     if let Some(ref s) = s {
-                        if !s.is_expanded() { s.activate(); }
+                        if !s.is_expanded() {
+                            s.activate();
+                        }
                     }
                     true
                 } else {
@@ -1563,7 +1567,9 @@ pub fn SearchBarInputField(
     if let Some(ref s) = state {
         let s2 = s.clone();
         input_m = input_m.on_focus_changed(move |focused| {
-            if focused { s2.activate(); }
+            if focused {
+                s2.activate();
+            }
         });
     }
 
@@ -1572,7 +1578,11 @@ pub fn SearchBarInputField(
 
     // Always render UiTextField (focusable even when collapsed, matching CK).
     let read_only = !expanded;
-    let display_color = if query.is_empty() { placeholder_color } else { text_color };
+    let display_color = if query.is_empty() {
+        placeholder_color
+    } else {
+        text_color
+    };
 
     // Build the row: [leading_icon] + text_field + [trailing_icon]
     let mut row_children: Vec<View> = Vec::new();
@@ -1598,7 +1608,7 @@ pub fn SearchBarInputField(
             },
         )
         .color(display_color)
-        .size(theme().typography.body_large)
+        .size(theme().typography.body_large),
     );
     if let Some(icon) = trailing_icon {
         row_children.push(icon);
@@ -1607,8 +1617,10 @@ pub fn SearchBarInputField(
     if row_children.len() == 1 {
         row_children.into_iter().next().unwrap()
     } else {
-        Row(Modifier::new().fill_max_width().align_items(AlignItems::Center))
-            .child(row_children)
+        Row(Modifier::new()
+            .fill_max_width()
+            .align_items(AlignItems::Center))
+        .child(row_children)
     }
 }
 
@@ -1619,9 +1631,7 @@ fn apply_tonal_elevation(m: Modifier, elevation: f32, container: Color) -> Modif
         let th = theme();
         if container == th.colors.surface {
             let overlay_alpha = (elevation * 4.0 + 4.0).min(24.0) / 100.0;
-            return m.background(
-                th.colors.primary.with_alpha_f32(overlay_alpha),
-            );
+            return m.background(th.colors.primary.with_alpha_f32(overlay_alpha));
         }
     }
     m
@@ -1632,7 +1642,8 @@ fn apply_tonal_elevation(m: Modifier, elevation: f32, container: Color) -> Modif
 fn track_collapsed_layout(state: &Rc<SearchBarState>) -> Modifier {
     let s = state.clone();
     Modifier::new().on_globally_positioned(move |rect| {
-        s.collapsed_layout_rect.set((rect.x, rect.y, rect.w, rect.h));
+        s.collapsed_layout_rect
+            .set((rect.x, rect.y, rect.w, rect.h));
     })
 }
 
@@ -1703,8 +1714,7 @@ pub fn SearchBar(
 
     bar_m = apply_tonal_elevation(bar_m, config.tonal_elevation, colors.container_color);
 
-    Box(bar_m)
-    .child(
+    Box(bar_m).child(
         Row(Modifier::new()
             .fill_max_size()
             .align_items(AlignItems::Center))
@@ -1738,12 +1748,24 @@ pub fn SearchBarWithContent(
     let th = theme();
     let width = animate_f32(
         "sbwc_w",
-        if expanded { config.expanded_width } else { config.collapsed_width },
+        if expanded {
+            config.expanded_width
+        } else {
+            config.collapsed_width
+        },
         theme().motion.expand,
     );
 
-    let bar_bg = if expanded { config.colors.active_container_color } else { config.colors.container_color };
-    let shape = if expanded { config.active_shape_radius } else { config.shape_radius };
+    let bar_bg = if expanded {
+        config.colors.active_container_color
+    } else {
+        config.colors.container_color
+    };
+    let shape = if expanded {
+        config.active_shape_radius
+    } else {
+        config.shape_radius
+    };
 
     let mut bar_m = modifier
         .clone()
@@ -1770,14 +1792,9 @@ pub fn SearchBarWithContent(
     bar_m = apply_tonal_elevation(bar_m, config.tonal_elevation, bar_bg);
 
     // Content fades with separate alpha so content can fade before collapse
-    let content_alpha = animate_f32(
-        "sbwc_a",
-        if expanded { 1.0 } else { 0.0 },
-        th.motion.color,
-    );
+    let content_alpha = animate_f32("sbwc_a", if expanded { 1.0 } else { 0.0 }, th.motion.color);
 
-    let bar = Box(bar_m)
-    .child(
+    let bar = Box(bar_m).child(
         Row(Modifier::new()
             .fill_max_size()
             .align_items(AlignItems::Center))
@@ -1834,7 +1851,11 @@ pub fn DockedSearchBar(
         if expanded { 1.0 } else { 0.0 },
         theme().motion.color,
     );
-    let bar_bg = if active { colors.active_container_color } else { colors.container_color };
+    let bar_bg = if active {
+        colors.active_container_color
+    } else {
+        colors.container_color
+    };
 
     let clear_btn = if active {
         Box(Modifier::new().size(24.0, 24.0).clickable().on_click({
@@ -1855,7 +1876,11 @@ pub fn DockedSearchBar(
         .min_width(SearchBarDefaults::MIN_WIDTH)
         .height(config.height)
         .state_elevation(StateElevation {
-            default: if active { th.elevation.level3 } else { config.tonal_elevation },
+            default: if active {
+                th.elevation.level3
+            } else {
+                config.tonal_elevation
+            },
             hovered: th.elevation.level2,
             pressed: th.elevation.level3,
             disabled: 0.0,
@@ -1880,8 +1905,7 @@ pub fn DockedSearchBar(
 
     bar_m = apply_tonal_elevation(bar_m, config.tonal_elevation, bar_bg);
 
-    let bar = Box(bar_m)
-    .child(
+    let bar = Box(bar_m).child(
         Row(Modifier::new()
             .fill_max_size()
             .align_items(AlignItems::Center))
@@ -1992,24 +2016,41 @@ pub fn ExpandedFullScreenSearchBar(
                         .clone()
                         .fill_max_width()
                         .height(SearchBarDefaults::HEIGHT)
-                        .padding_values(PaddingValues { left: 16.0, right: 16.0, top: 0.0, bottom: 0.0 })
+                        .padding_values(PaddingValues {
+                            left: 16.0,
+                            right: 16.0,
+                            top: 0.0,
+                            bottom: 0.0,
+                        })
                         .background(config.colors.container_color)
                         .alpha(alpha))
                     .child(inp);
 
                     let body = Box(Modifier::new()
-                        .fill_max_width().flex_grow(1.0).alpha(c_alpha).background(th.surface))
+                        .fill_max_width()
+                        .flex_grow(1.0)
+                        .alpha(c_alpha)
+                        .background(th.surface))
                     .child(content);
 
                     let insets = config.window_insets;
-                    let full = Column(Modifier::new().fill_max_size()
-                        .padding_values(PaddingValues { left: insets.left, right: insets.right, top: insets.top, bottom: insets.bottom }))
+                    let full = Column(Modifier::new().fill_max_size().padding_values(
+                        PaddingValues {
+                            left: insets.left,
+                            right: insets.right,
+                            top: insets.top,
+                            bottom: insets.bottom,
+                        },
+                    ))
                     .child((header, body));
 
                     let scrim = Box(Modifier::new()
                         .fill_max_size()
                         .background(config.scrim_color.with_alpha((85.0 * alpha) as u8))
-                        .on_click({ let s = state.clone(); move || s.collapse() }));
+                        .on_click({
+                            let s = state.clone();
+                            move || s.collapse()
+                        }));
 
                     ZStack(Modifier::new().fill_max_size().absolute()).child((scrim, full))
                 }
@@ -2083,8 +2124,10 @@ pub fn ExpandedDockedSearchBar(
                         .background(config.colors.container_color)
                         .clip_rounded(config.shape_radius)
                         .state_elevation(StateElevation {
-                            default: th.elevation.level3, hovered: th.elevation.level2,
-                            pressed: th.elevation.level3, disabled: 0.0,
+                            default: th.elevation.level3,
+                            hovered: th.elevation.level2,
+                            pressed: th.elevation.level3,
+                            disabled: 0.0,
                         }))
                     .child(inp);
 
@@ -2095,24 +2138,38 @@ pub fn ExpandedDockedSearchBar(
                         .clip_rounded(config.dropdown_shape_radius)
                         .background(config.colors.container_color)
                         .state_elevation(StateElevation {
-                            default: th.elevation.level3, hovered: th.elevation.level3,
-                            pressed: th.elevation.level3, disabled: 0.0,
+                            default: th.elevation.level3,
+                            hovered: th.elevation.level3,
+                            pressed: th.elevation.level3,
+                            disabled: 0.0,
                         }))
                     .child(
                         Column(Modifier::new().fill_max_width()).child((
-                            Box(Modifier::new().fill_max_width().height(1.0).background(config.colors.divider_color)),
+                            Box(Modifier::new()
+                                .fill_max_width()
+                                .height(1.0)
+                                .background(config.colors.divider_color)),
                             content,
                         )),
                     );
 
-                    let col = Column(Modifier::new().fill_max_width()
-                        .padding_values(PaddingValues { left: _cx.max(16.0), right: 16.0, top: _cy + _ch + config.dropdown_gap_size, bottom: 0.0 }))
+                    let col = Column(Modifier::new().fill_max_width().padding_values(
+                        PaddingValues {
+                            left: _cx.max(16.0),
+                            right: 16.0,
+                            top: _cy + _ch + config.dropdown_gap_size,
+                            bottom: 0.0,
+                        },
+                    ))
                     .child((header, dropdown));
 
                     let scrim = Box(Modifier::new()
                         .fill_max_size()
                         .background(config.dropdown_scrim_color)
-                        .on_click({ let s = state.clone(); move || s.collapse() }));
+                        .on_click({
+                            let s = state.clone();
+                            move || s.collapse()
+                        }));
 
                     ZStack(Modifier::new().fill_max_size().absolute()).child((scrim, col))
                 }
@@ -2149,8 +2206,16 @@ pub fn AppBarWithSearch(
 
     // CK parity: when app bar container is transparent, disable tonal/shadow elevations
     let is_container_transparent = app_bar_bg.3 == 0;
-    let tonal_elevation = if is_container_transparent { 0.0 } else { config.tonal_elevation };
-    let shadow_elevation = if is_container_transparent { 0.0 } else { config.shadow_elevation };
+    let tonal_elevation = if is_container_transparent {
+        0.0
+    } else {
+        config.tonal_elevation
+    };
+    let shadow_elevation = if is_container_transparent {
+        0.0
+    } else {
+        config.shadow_elevation
+    };
 
     // Hide the collapsed bar when full-screen expanded (CK parity via expandsToFullScreen)
     let hide_collapsed = state.expands_to_full_screen.get() && state.is_expanded();
@@ -2183,9 +2248,7 @@ pub fn AppBarWithSearch(
         let collapsed_bar = SearchBar(
             state.clone(),
             input_field,
-            Modifier::new()
-                .flex_grow(1.0)
-                .alpha(collapsed_alpha),
+            Modifier::new().flex_grow(1.0).alpha(collapsed_alpha),
             None,
             None,
             SearchBarConfig {

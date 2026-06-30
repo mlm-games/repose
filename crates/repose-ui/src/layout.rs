@@ -484,14 +484,19 @@ impl LayoutEngine {
                                             AvailableSpace::Definite(h) => h / scale,
                                             _ => f32::INFINITY,
                                         };
-                                        let known_w = known.width.map(|w| w / scale).unwrap_or(f32::INFINITY);
-                                        let known_h = known.height.map(|h| h / scale).unwrap_or(f32::INFINITY);
-                                        let constraints = repose_core::modifier::LayoutConstraints {
-                                            min_width: 0.0,
-                                            max_width: avail_w.min(known_w),
-                                            min_height: 0.0,
-                                            max_height: avail_h.min(known_h),
-                                        };
+                                        let known_w =
+                                            known.width.map(|w| w / scale).unwrap_or(f32::INFINITY);
+                                        let known_h = known
+                                            .height
+                                            .map(|h| h / scale)
+                                            .unwrap_or(f32::INFINITY);
+                                        let constraints =
+                                            repose_core::modifier::LayoutConstraints {
+                                                min_width: 0.0,
+                                                max_width: avail_w.min(known_w),
+                                                min_height: 0.0,
+                                                max_height: avail_h.min(known_h),
+                                            };
                                         let (w_dp, h_dp) = layout_cb(constraints);
                                         return taffy::geometry::Size {
                                             width: w_dp * scale,
@@ -1889,7 +1894,10 @@ impl LayoutEngine {
         let implicit_hovered = interactions.hover == Some(effective_interaction);
         let implicit_pressed = interactions.pressed.contains(&effective_interaction);
         let (state_hovered, state_pressed) = if let Some(ref src) = modifier.interaction_source {
-            (src.collect_is_hovered() || implicit_hovered, src.collect_is_pressed() || implicit_pressed)
+            (
+                src.collect_is_hovered() || implicit_hovered,
+                src.collect_is_pressed() || implicit_pressed,
+            )
         } else {
             (implicit_hovered, implicit_pressed)
         };
@@ -2196,7 +2204,10 @@ impl LayoutEngine {
             );
 
         let needs_hit = !modifier.disabled
-            && (has_pointer || modifier.click || has_dnd || modifier.on_action.is_some()
+            && (has_pointer
+                || modifier.click
+                || has_dnd
+                || modifier.on_action.is_some()
                 || modifier.focusable == Some(true));
 
         if needs_hit && !kind_handles_hit && !modifier.hit_passthrough {
@@ -2225,7 +2236,9 @@ impl LayoutEngine {
                         lpid_down.set(Some(id));
                     }
                     s_down.emit(press);
-                    if let Some(ref f) = orig_down { f(ev); }
+                    if let Some(ref f) = orig_down {
+                        f(ev);
+                    }
                 }));
 
                 // Wrap on_pointer_up to emit Release with the last press ID.
@@ -2237,7 +2250,9 @@ impl LayoutEngine {
                 hit.on_pointer_up = Some(Rc::new(move |ev| {
                     let pid = lpid_up.take().unwrap_or(0);
                     s_up.emit(Interaction::Release(pid));
-                    if let Some(ref f) = orig_up { f(ev); }
+                    if let Some(ref f) = orig_up {
+                        f(ev);
+                    }
                 }));
 
                 // Wrap on_pointer_cancel to emit Cancel with the last press ID.
@@ -2246,20 +2261,26 @@ impl LayoutEngine {
                 hit.on_pointer_cancel = Some(Rc::new(move |ev| {
                     let pid = last_press_id.take().unwrap_or(0);
                     s_cancel.emit(Interaction::Cancel(pid));
-                    if let Some(ref f) = orig_cancel { f(ev); }
+                    if let Some(ref f) = orig_cancel {
+                        f(ev);
+                    }
                 }));
 
                 let orig_enter = hit.on_pointer_enter.take();
                 let s_enter = msrc.clone();
                 hit.on_pointer_enter = Some(Rc::new(move |ev| {
                     s_enter.emit(Interaction::HoverEnter);
-                    if let Some(ref f) = orig_enter { f(ev); }
+                    if let Some(ref f) = orig_enter {
+                        f(ev);
+                    }
                 }));
 
                 let orig_leave = hit.on_pointer_leave.take();
                 hit.on_pointer_leave = Some(Rc::new(move |ev| {
                     msrc.emit(Interaction::HoverLeave);
-                    if let Some(ref f) = orig_leave { f(ev); }
+                    if let Some(ref f) = orig_leave {
+                        f(ev);
+                    }
                 }));
             }
 
@@ -2268,7 +2289,9 @@ impl LayoutEngine {
 
         // Focus ring for interactive views
         if is_focused
-            && (has_pointer || modifier.click || modifier.on_action.is_some()
+            && (has_pointer
+                || modifier.click
+                || modifier.on_action.is_some()
                 || modifier.focusable == Some(true))
         {
             push_focus_ring(scene, rect, focus_radius(&modifier));
@@ -2862,7 +2885,10 @@ impl LayoutEngine {
         if let Some(cb) = &modifier.on_size_changed {
             let prev = self.prev_observed_rects.get(&view_id_for_pos).copied();
             if prev.map(|r| (r.w, r.h)) != Some((dp_rect.w, dp_rect.h)) {
-                cb(Vec2 { x: dp_rect.w, y: dp_rect.h });
+                cb(Vec2 {
+                    x: dp_rect.w,
+                    y: dp_rect.h,
+                });
             }
         }
         if modifier.on_globally_positioned.is_some() || modifier.on_size_changed.is_some() {
@@ -2871,11 +2897,17 @@ impl LayoutEngine {
 
         // Children
         let child_offset_px = base_px;
-        let has_blur = modifier.blur.map_or(false, |b| b.radius_x > 0.0 || b.radius_y > 0.0);
+        let has_blur = modifier
+            .blur
+            .map_or(false, |b| b.radius_x > 0.0 || b.radius_y > 0.0);
         let layer_id = if modifier.graphics_layer.is_some() || has_blur {
             let id = self.layer_id_counter;
             self.layer_id_counter = self.layer_id_counter.wrapping_add(1);
-            let blur_style = modifier.blur.unwrap_or(BlurStyle { radius_x: 0.0, radius_y: 0.0, edge_treatment: BlurredEdgeTreatment::Rectangle });
+            let blur_style = modifier.blur.unwrap_or(BlurStyle {
+                radius_x: 0.0,
+                radius_y: 0.0,
+                edge_treatment: BlurredEdgeTreatment::Rectangle,
+            });
             let blur_radius_x = dp_to_px(blur_style.radius_x);
             let blur_radius_y = dp_to_px(blur_style.radius_y);
             let alpha = modifier.graphics_layer.unwrap_or(1.0);
@@ -2885,7 +2917,10 @@ impl LayoutEngine {
                 alpha,
                 blur_radius_x,
                 blur_radius_y,
-                rectangle_edge: matches!(blur_style.edge_treatment, BlurredEdgeTreatment::Rectangle),
+                rectangle_edge: matches!(
+                    blur_style.edge_treatment,
+                    BlurredEdgeTreatment::Rectangle
+                ),
             });
             scene.nodes.push(SceneNode::PushTransform {
                 transform: Transform {

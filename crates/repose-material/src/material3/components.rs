@@ -13,16 +13,24 @@ use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt};
 
 use super::*;
 
-use crate::ripple::{ripple, RippleConfig};
+use crate::ripple::{RippleConfig, ripple};
 use crate::{Icon, Symbol};
 
 fn lerp_color(a: Color, b: Color, t: f32) -> Color {
     let t = t.clamp(0.0, 1.0);
     Color(
-        (a.0 as f32 + (b.0 as f32 - a.0 as f32) * t).round().clamp(0.0, 255.0) as u8,
-        (a.1 as f32 + (b.1 as f32 - a.1 as f32) * t).round().clamp(0.0, 255.0) as u8,
-        (a.2 as f32 + (b.2 as f32 - a.2 as f32) * t).round().clamp(0.0, 255.0) as u8,
-        (a.3 as f32 + (b.3 as f32 - a.3 as f32) * t).round().clamp(0.0, 255.0) as u8,
+        (a.0 as f32 + (b.0 as f32 - a.0 as f32) * t)
+            .round()
+            .clamp(0.0, 255.0) as u8,
+        (a.1 as f32 + (b.1 as f32 - a.1 as f32) * t)
+            .round()
+            .clamp(0.0, 255.0) as u8,
+        (a.2 as f32 + (b.2 as f32 - a.2 as f32) * t)
+            .round()
+            .clamp(0.0, 255.0) as u8,
+        (a.3 as f32 + (b.3 as f32 - a.3 as f32) * t)
+            .round()
+            .clamp(0.0, 255.0) as u8,
     )
 }
 
@@ -39,7 +47,11 @@ pub struct TopAppBarColors {
 
 impl TopAppBarColors {
     pub fn container_color(&self, scroll_fraction: f32) -> Color {
-        lerp_color(self.container_color, self.scrolled_container_color, scroll_fraction.clamp(0.0, 1.0))
+        lerp_color(
+            self.container_color,
+            self.scrolled_container_color,
+            scroll_fraction.clamp(0.0, 1.0),
+        )
     }
 }
 
@@ -111,7 +123,10 @@ impl TopAppBarScrollBehavior {
                 let consume = d.y.min(collapse_room);
                 off.set(current - consume);
                 repose_core::request_frame();
-                Vec2 { x: d.x, y: d.y - consume }
+                Vec2 {
+                    x: d.x,
+                    y: d.y - consume,
+                }
             } else {
                 // Scrolling up → expand bar
                 if current >= 0.0 {
@@ -121,7 +136,10 @@ impl TopAppBarScrollBehavior {
                 let consume = (-d.y).min(expansion_room);
                 off.set(current + consume);
                 repose_core::request_frame();
-                Vec2 { x: d.x, y: d.y + consume }
+                Vec2 {
+                    x: d.x,
+                    y: d.y + consume,
+                }
             }
         })
     }
@@ -223,12 +241,18 @@ fn top_app_bar_layout(
             .flex_grow(1.0))
         .child(
             Column(Modifier::new().justify_content(JustifyContent::Center)).child((
-                Box(Modifier::new())
-                    .child(with_content_color(config.colors.title_content_color, || title)),
-                subtitle.map(|s| {
-                    Box(Modifier::new())
-                        .child(with_content_color(config.colors.subtitle_content_color, || s))
-                }).unwrap_or(Box(Modifier::new())),
+                Box(Modifier::new()).child(with_content_color(
+                    config.colors.title_content_color,
+                    || title,
+                )),
+                subtitle
+                    .map(|s| {
+                        Box(Modifier::new()).child(with_content_color(
+                            config.colors.subtitle_content_color,
+                            || s,
+                        ))
+                    })
+                    .unwrap_or(Box(Modifier::new())),
             )),
         ),
         Row(Modifier::new()
@@ -1805,8 +1829,7 @@ pub fn SelectableListItem(
     mut config: ListItemConfig,
 ) -> View {
     config.selected = selected;
-    let mut m = Modifier::new()
-        .semantics(Semantics::new(Role::RadioButton));
+    let mut m = Modifier::new().semantics(Semantics::new(Role::RadioButton));
     m = m.then(config.modifier);
     config.modifier = m;
     ListItem(
@@ -1837,8 +1860,7 @@ pub fn ToggleableListItem(
     cfg.selected = checked;
     let cb = Rc::new(on_checked_change);
     let cb2 = cb.clone();
-    let mut m = Modifier::new()
-        .semantics(Semantics::new(Role::Checkbox));
+    let mut m = Modifier::new().semantics(Semantics::new(Role::Checkbox));
     m = m.then(cfg.modifier);
     cfg.modifier = m;
     ListItem(
@@ -1906,8 +1928,7 @@ pub fn SegmentedSelectableListItem(
 ) -> View {
     config.selected = selected;
     config.shape_radii = Some(segmented_item_radii(index, count, config.shape_radius));
-    let mut m = Modifier::new()
-        .semantics(Semantics::new(Role::RadioButton));
+    let mut m = Modifier::new().semantics(Semantics::new(Role::RadioButton));
     m = m.then(config.modifier);
     config.modifier = m;
     ListItem(
@@ -1939,8 +1960,7 @@ pub fn SegmentedToggleableListItem(
     cfg.selected = checked;
     cfg.shape_radii = Some(segmented_item_radii(index, count, cfg.shape_radius));
     let cb2 = Rc::new(on_checked_change);
-    let mut m = Modifier::new()
-        .semantics(Semantics::new(Role::Checkbox));
+    let mut m = Modifier::new().semantics(Semantics::new(Role::Checkbox));
     m = m.then(cfg.modifier);
     cfg.modifier = m;
     ListItem(
@@ -5333,7 +5353,10 @@ impl SearchBarScrollBehavior {
                 let new = (cur - delta.y).clamp(-max_offset, 0.0);
                 offset.set(new);
                 request_frame();
-                Vec2 { x: delta.x, y: delta.y - (cur - new) }
+                Vec2 {
+                    x: delta.x,
+                    y: delta.y - (cur - new),
+                }
             })),
             on_post_scroll: None,
         }
