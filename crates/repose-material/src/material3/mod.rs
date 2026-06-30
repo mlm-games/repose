@@ -1378,7 +1378,13 @@ pub struct SearchBarState {
     pub query: Signal<String>,
     pub expanded: Signal<bool>,
     pub active: Signal<bool>,
+    /// Whether this search bar expands to full-screen (vs docked).
+    /// Used by AppBarWithSearch to hide the collapsed bar when expanded.
+    pub expands_to_full_screen: Signal<bool>,
+    /// Container animation (shape, size, position)
     anim: Rc<RefCell<AnimatedValue<f32>>>,
+    /// Content fade animation — fades FIRST on collapse before container shrinks
+    content_anim: Rc<RefCell<AnimatedValue<f32>>>,
     /// Tracked via `on_globally_positioned` on the collapsed bar.
     /// Used by expanded docked variants for popup placement.
     pub collapsed_layout_rect: Signal<(f32, f32, f32, f32)>,
@@ -1396,7 +1402,12 @@ impl SearchBarState {
             query: signal(String::new()),
             expanded: signal(false),
             active: signal(false),
+            expands_to_full_screen: signal(true),
             anim: Rc::new(RefCell::new(AnimatedValue::new(
+                0.0,
+                AnimationSpec::spring_gentle(),
+            ))),
+            content_anim: Rc::new(RefCell::new(AnimatedValue::new(
                 0.0,
                 AnimationSpec::spring_gentle(),
             ))),
@@ -1419,12 +1430,15 @@ impl SearchBarState {
     pub fn expand(&self) {
         self.expanded.set(true);
         self.anim.borrow_mut().set_target(1.0);
+        self.content_anim.borrow_mut().set_target(1.0);
         request_frame();
     }
 
     pub fn collapse(&self) {
         self.expanded.set(false);
         self.active.set(false);
+        // Content fades first; container follows in progress()
+        self.content_anim.borrow_mut().set_target(0.0);
         self.anim.borrow_mut().set_target(0.0);
         request_frame();
     }
@@ -1437,6 +1451,7 @@ impl SearchBarState {
         self.active.set(true);
         self.expanded.set(true);
         self.anim.borrow_mut().set_target(1.0);
+        self.content_anim.borrow_mut().set_target(1.0);
         request_frame();
     }
 
@@ -1444,7 +1459,7 @@ impl SearchBarState {
         self.active.set(false);
     }
 
-    /// Current animation progress: 0.0 = collapsed, 1.0 = expanded.
+    /// Container animation progress: 0.0 = collapsed, 1.0 = expanded.
     /// Ticks the underlying AnimatedValue and requests frames while animating.
     pub fn progress(&self) -> f32 {
         let mut a = self.anim.borrow_mut();
@@ -1455,12 +1470,31 @@ impl SearchBarState {
         a.get().clamp(0.0, 1.0)
     }
 
-    /// Whether the animation is currently running.
-    pub fn is_animating(&self) -> bool {
-        self.anim.borrow().is_animating()
+    /// Content fade progress — fades ahead of container on collapse.
+    pub fn content_progress(&self) -> f32 {
+        let mut a = self.content_anim.borrow_mut();
+        let still = a.update();
+        if still {
+            request_frame();
+        }
+        a.get().clamp(0.0, 1.0)
     }
 
-    /// Snap the progress to a specific fraction (0.0 = collapsed, 1.0 = expanded).
+    /// Whether the animation is currently running.
+    pub fn is_animating(&self) -> bool {
+        self.anim.borrow().is_animating() || self.content_anim.borrow().is_animating()
+    }
+
+    /// Whether the search bar is currently expanded (with tolerance for spring overshoot).
+    pub fn current_value(&self) -> SearchBarValue {
+        if *self.anim.borrow().get() <= 0.02 {
+            SearchBarValue::Collapsed
+        } else {
+            SearchBarValue::Expanded
+        }
+    }
+
+    /// Snap the container progress to a specific fraction (0.0 = collapsed, 1.0 = expanded).
     pub fn snap_to(&self, fraction: f32) {
         self.anim.borrow_mut().snap_to(fraction.clamp(0.0, 1.0));
         request_frame();
@@ -1469,6 +1503,7 @@ impl SearchBarState {
 
 /// Build a search bar input field with proper M3 SearchBar styling.
 /// Equivalent to Compose Material3's `SearchBarDefaults.InputField`.
+/// When `state` is provided, focus gain triggers expand and Escape triggers collapse.
 pub fn SearchBarInputField(
     placeholder: String,
     query: String,
@@ -1476,12 +1511,48 @@ pub fn SearchBarInputField(
     active: bool,
     text_color: Color,
     placeholder_color: Color,
+    state: Option<Rc<SearchBarState>>,
 ) -> View {
+    let input_m = Modifier::new().flex_grow(1.0).padding(4.0)
+        .semantics(Semantics {
+            role: Role::TextField,
+            label: Some("Search".into()),
+            focused: active,
+            enabled: true,
+            selectable_group: false,
+        })
+        .on_key_event({
+            let s = state.clone();
+            move |ev| {
+                if ev.key == Key::Escape {
+                    if let Some(ref s) = s {
+                        if s.is_active() { s.deactivate(); }
+                    }
+                    true
+                } else if ev.key == Key::ArrowDown || ev.key == Key::ArrowUp {
+                    if let Some(ref s) = s {
+                        if !s.is_expanded() { s.activate(); }
+                    }
+                    true
+                } else {
+                    false
+                }
+            }
+        });
+    let input_m = if let Some(ref s) = state {
+        let s2 = s.clone();
+        input_m.on_focus_changed(move |focused| {
+            if focused { s2.activate(); }
+        })
+    } else {
+        input_m
+    };
+
     if active {
         UiTextField(
             placeholder,
             query,
-            Modifier::new().flex_grow(1.0).padding(4.0),
+            input_m,
             repose_ui::BasicTextFieldConfig {
                 on_change: Some(Rc::new(move |text| {
                     if let Some(ref cb) = on_query_change {
@@ -1495,7 +1566,7 @@ pub fn SearchBarInputField(
         .size(theme().typography.body_large)
     } else {
         let q_empty = query.is_empty();
-        Box(Modifier::new().flex_grow(1.0)).child(
+        Box(input_m).child(
             Text(if q_empty { placeholder } else { query })
                 .color(if q_empty {
                     placeholder_color
@@ -1537,11 +1608,14 @@ fn track_collapsed_layout(state: &Rc<SearchBarState>) -> Modifier {
 /// M3 Collapsed Search Bar — renders ONLY the collapsed bar surface wrapping
 /// the provided `input_field`. Does NOT manage expanded content.
 ///
-/// Equivalent to CK's `SearchBar(state, inputField)` overload.
+/// Equivalent to CK's `SearchBar(state, inputField)` overload — a passive
+/// Surface that does NOT handle clicks or ripple. The click/focus→expand
+/// behavior is managed by the `InputField` (via `SearchBarInputField`).
+///
+/// Pressing <kbd>Escape</kbd> deactivates the search bar (cross-platform back).
+///
 /// Use [`ExpandedFullScreenSearchBar`] / [`ExpandedDockedSearchBar`] for the
 /// expanded state, or [`SearchBarWithContent`] for an all-in-one variant.
-///
-/// Pressing <kbd>Escape</kbd> while the bar is active deactivates it.
 pub fn SearchBar(
     state: Rc<SearchBarState>,
     input_field: View,
@@ -1551,33 +1625,19 @@ pub fn SearchBar(
     config: SearchBarConfig,
 ) -> View {
     let th = theme();
-    let active = state.is_active();
     let colors = config.colors;
-
-    let shape = if active {
-        config.active_shape_radius
-    } else {
-        config.shape_radius
-    };
-
-    let source = remember(MutableInteractionSource::new);
 
     let mut bar_m = modifier
         .fill_max_width()
         .height(config.height)
         .state_elevation(StateElevation {
-            default: if active { th.elevation.level3 } else { config.tonal_elevation },
+            default: config.tonal_elevation,
             hovered: th.elevation.level2,
             pressed: th.elevation.level3,
             disabled: 0.0,
         })
         .shadow(config.shadow_elevation, 0.0)
         .padding_values(config.content_padding)
-        .clickable_with_source(&source)
-        .on_click({
-            let s = state.clone();
-            move || s.activate()
-        })
         .on_key_event({
             let s = state.clone();
             move |ev| {
@@ -1589,16 +1649,26 @@ pub fn SearchBar(
                 }
             }
         })
-        .indication(ripple(RippleConfig {
-            color: Some(colors.content_color),
-            bounded: true,
-            ..Default::default()
-        }))
-        .background(colors.container(active))
-        .clip_rounded(shape)
+        .on_focus_changed({
+            let s = state.clone();
+            move |focused| {
+                if focused {
+                    s.activate();
+                }
+            }
+        })
+        .semantics(Semantics {
+            role: Role::TextField,
+            label: Some("Search".into()),
+            focused: state.is_active(),
+            enabled: true,
+            selectable_group: false,
+        })
+        .background(colors.container_color)
+        .clip_rounded(config.shape_radius)
         .then(track_collapsed_layout(&state));
 
-    bar_m = apply_tonal_elevation(bar_m, config.tonal_elevation, colors.container(active));
+    bar_m = apply_tonal_elevation(bar_m, config.tonal_elevation, colors.container_color);
 
     Box(bar_m)
     .child(
@@ -1619,6 +1689,9 @@ pub fn SearchBar(
 /// M3 Search Bar that manages expanded content with animated width and
 /// suggestions dropdown. Equivalent to CK's
 /// `SearchBar(inputField, expanded, onExpandedChange, ..., content)` overload.
+///
+/// The bar itself is a passive surface (no click handling) — expansion is
+/// driven by the `InputField`'s focus tracking inside `input_field`.
 pub fn SearchBarWithContent(
     input_field: View,
     expanded: bool,
@@ -1639,8 +1712,6 @@ pub fn SearchBarWithContent(
     let bar_bg = if expanded { config.colors.active_container_color } else { config.colors.container_color };
     let shape = if expanded { config.active_shape_radius } else { config.shape_radius };
 
-    let source = remember(MutableInteractionSource::new);
-
     let mut bar_m = modifier
         .clone()
         .width(width)
@@ -1649,11 +1720,6 @@ pub fn SearchBarWithContent(
         .height(config.height)
         .shadow(config.shadow_elevation, 0.0)
         .padding_values(config.content_padding)
-        .clickable_with_source(&source)
-        .on_click({
-            let cb = on_expanded_change.clone();
-            move || cb(true)
-        })
         .on_key_event({
             let cb = on_expanded_change.clone();
             move |ev| {
@@ -1665,11 +1731,6 @@ pub fn SearchBarWithContent(
                 }
             }
         })
-        .indication(ripple(RippleConfig {
-            color: Some(config.colors.content_color),
-            bounded: true,
-            ..Default::default()
-        }))
         .background(bar_bg)
         .clip_rounded(shape);
 
@@ -1712,9 +1773,10 @@ pub fn SearchBarWithContent(
     }
 }
 
-/// M3 Docked Search Bar — full‑width variant anchored to the top of the screen
-/// with an animated suggestions dropdown (height + alpha).
-/// Equivalent to CK's `DockedSearchBar(inputField, expanded, onExpandedChange, ...)`.
+/// M3 Docked Search Bar — bounded-width variant with animated suggestions
+/// dropdown (height + alpha).  Equivalent to CK's
+/// `DockedSearchBar(inputField, expanded, onExpandedChange, ..., content)`.
+/// The bar itself is a passive Surface — expansion is driven by `InputField`.
 pub fn DockedSearchBar(
     input_field: View,
     expanded: bool,
@@ -1755,10 +1817,8 @@ pub fn DockedSearchBar(
         Box(Modifier::new())
     };
 
-    let source = remember(MutableInteractionSource::new);
-
     let mut bar_m = modifier
-        .fill_max_width()
+        .min_width(SearchBarDefaults::MIN_WIDTH)
         .height(config.height)
         .state_elevation(StateElevation {
             default: if active { th.elevation.level3 } else { config.tonal_elevation },
@@ -1768,15 +1828,6 @@ pub fn DockedSearchBar(
         })
         .shadow(config.shadow_elevation, 0.0)
         .padding_values(config.content_padding)
-        .clickable_with_source(&source)
-        .on_click({
-            let cb = on_expanded_change.clone();
-            move || {
-                if let Some(ref cb) = cb {
-                    cb(true);
-                }
-            }
-        })
         .on_key_event({
             let cb = on_expanded_change.clone();
             move |ev| {
@@ -1790,11 +1841,6 @@ pub fn DockedSearchBar(
                 }
             }
         })
-        .indication(ripple(RippleConfig {
-            color: Some(colors.content_color),
-            bounded: true,
-            ..Default::default()
-        }))
         .background(bar_bg)
         .clip_rounded(config.shape_radius);
 
@@ -1815,10 +1861,10 @@ pub fn DockedSearchBar(
 
     let show_content = expanded || content_height > 1.0;
     if show_content {
-        Column(Modifier::new().fill_max_width()).child((
+        Column(Modifier::new().min_width(SearchBarDefaults::MIN_WIDTH)).child((
             bar,
             Box(Modifier::new()
-                .fill_max_width()
+                .min_width(SearchBarDefaults::MIN_WIDTH)
                 .height(content_height)
                 .alpha(content_alpha)
                 .clip_rounded(th.shapes.small)
@@ -1830,9 +1876,9 @@ pub fn DockedSearchBar(
                     disabled: 0.0,
                 }))
             .child(
-                Column(Modifier::new().fill_max_width()).child((
+                Column(Modifier::new().min_width(SearchBarDefaults::MIN_WIDTH)).child((
                     Box(Modifier::new()
-                        .fill_max_width()
+                        .min_width(SearchBarDefaults::MIN_WIDTH)
                         .height(1.0)
                         .background(colors.divider_color)),
                     content,
@@ -1872,11 +1918,18 @@ pub fn ExpandedFullScreenSearchBar(
     config: ExpandedFullScreenSearchBarConfig,
     content: View,
 ) -> View {
+    // Mark as full-screen so AppBarWithSearch can hide the collapsed bar
+    state.expands_to_full_screen.set(true);
+
     let overlay_id = remember_with_key("efs_oid", || signal(0u64));
     let current_content = remember_state_with_key("efs_cc", || Box(Modifier::new()));
     *current_content.borrow_mut() = content;
 
     let progress = state.progress();
+
+    // Use content_progress for content fade (CK parity: fades ahead of container)
+    let _content_alpha = state.content_progress();
+
     let expanded = state.is_expanded();
     let visible = expanded || progress > 0.01;
 
@@ -1890,7 +1943,9 @@ pub fn ExpandedFullScreenSearchBar(
                 let config = config.clone();
                 move || {
                     let progress = state.progress();
+                    let content_alpha = state.content_progress();
                     let alpha = progress.clamp(0.0, 1.0);
+                    let c_alpha = content_alpha.clamp(0.0, 1.0);
                     let th = theme();
                     let content = current_content.borrow().clone();
                     let inp = input_field.clone();
@@ -1905,7 +1960,7 @@ pub fn ExpandedFullScreenSearchBar(
                     .child(inp);
 
                     let body = Box(Modifier::new()
-                        .fill_max_width().flex_grow(1.0).alpha(alpha).background(th.surface))
+                        .fill_max_width().flex_grow(1.0).alpha(c_alpha).background(th.surface))
                     .child(content);
 
                     let insets = config.window_insets;
@@ -1947,11 +2002,15 @@ pub fn ExpandedDockedSearchBar(
     config: ExpandedDockedSearchBarConfig,
     content: View,
 ) -> View {
+    // Docked search bar does NOT expand to full-screen
+    state.expands_to_full_screen.set(false);
+
     let overlay_id = remember_with_key("eds_oid", || signal(0u64));
     let current_content = remember_state_with_key("eds_cc", || Box(Modifier::new()));
     *current_content.borrow_mut() = content;
 
     let progress = state.progress();
+    let _content_alpha = state.content_progress();
     let expanded = state.is_expanded();
     let visible = expanded || progress > 0.01;
 
@@ -1965,7 +2024,9 @@ pub fn ExpandedDockedSearchBar(
                 let config = config.clone();
                 move || {
                     let progress = state.progress();
+                    let content_alpha = state.content_progress();
                     let alpha = progress.clamp(0.0, 1.0);
+                    let c_alpha = content_alpha.clamp(0.0, 1.0);
                     let th = theme();
                     let content = current_content.borrow().clone();
                     let inp = input_field.clone();
@@ -1986,7 +2047,7 @@ pub fn ExpandedDockedSearchBar(
                     let dropdown = Box(Modifier::new()
                         .fill_max_width()
                         .max_height(get_window_container_height() * 2.0 / 3.0)
-                        .alpha(alpha)
+                        .alpha(c_alpha)
                         .clip_rounded(config.dropdown_shape_radius)
                         .background(config.colors.container_color)
                         .state_elevation(StateElevation {
@@ -2029,9 +2090,9 @@ pub fn ExpandedDockedSearchBar(
 
 /// M3 App Bar With Search — integrates a search bar into a top app bar layout
 /// with optional navigation icon, action buttons, scroll behavior, and window insets.
-/// The `_state` is exposed for callers to check expanded state externally.
+/// Wraps the internal `SearchBar` collapsed component.
 pub fn AppBarWithSearch(
-    _state: Rc<SearchBarState>,
+    state: Rc<SearchBarState>,
     input_field: View,
     navigation_icon: Option<View>,
     actions: Option<Vec<View>>,
@@ -2042,6 +2103,11 @@ pub fn AppBarWithSearch(
     let app_bar_bg = config.colors.app_bar_container(config.scroll_fraction);
 
     let insets = config.window_insets;
+
+    // Hide the collapsed bar when full-screen expanded (CK parity via expandsToFullScreen)
+    let hide_collapsed = state.expands_to_full_screen.get() && state.is_expanded();
+    let collapsed_alpha = if hide_collapsed { 0.0 } else { 1.0 };
+
     let bar_m = Modifier::new()
         .fill_max_width()
         .height(config.height + insets.top)
@@ -2063,7 +2129,33 @@ pub fn AppBarWithSearch(
             children.push(nav);
             children.push(Box(Modifier::new().width(4.0)));
         }
-        children.push(input_field);
+        // Wrap input_field in collapsed SearchBar (CK parity)
+        let sb_colors = &config.colors.search_bar_colors;
+        let collapsed_bar = SearchBar(
+            state.clone(),
+            input_field,
+            Modifier::new()
+                .flex_grow(1.0)
+                .alpha(collapsed_alpha),
+            None,
+            None,
+            SearchBarConfig {
+                height: config.height - 8.0,
+                shape_radius: config.shape_radius,
+                colors: SearchBarColors {
+                    container_color: bg,
+                    active_container_color: bg,
+                    divider_color: sb_colors.divider_color,
+                    content_color: sb_colors.content_color,
+                    placeholder_color: sb_colors.placeholder_color,
+                    scrim_color: sb_colors.scrim_color,
+                },
+                tonal_elevation: config.tonal_elevation,
+                shadow_elevation: config.shadow_elevation,
+                ..Default::default()
+            },
+        );
+        children.push(Box(Modifier::new().flex_grow(1.0)).child(collapsed_bar));
         if let Some(acts) = actions {
             children.push(Spacer());
             for a in acts {
@@ -2073,20 +2165,7 @@ pub fn AppBarWithSearch(
         children
     });
 
-    let search_bar = Box(Modifier::new()
-        .flex_grow(1.0)
-        .height(config.height - 8.0)
-        .background(bg)
-        .clip_rounded(config.shape_radius)
-        .state_elevation(StateElevation {
-            default: config.tonal_elevation,
-            hovered: th.elevation.level2,
-            pressed: th.elevation.level3,
-            disabled: 0.0,
-        }))
-    .child(row);
-
-    Box(bar_m.shadow(config.shadow_elevation, 0.0)).child(search_bar)
+    Box(bar_m.shadow(config.shadow_elevation, 0.0)).child(row)
 }
 
 /// State for `ModalBottomSheet` - manages visibility and drag offset.
