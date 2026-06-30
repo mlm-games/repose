@@ -571,6 +571,15 @@ impl ListItemDefaults {
     pub fn dragged_trailing_icon_color() -> Color {
         theme().on_surface_variant
     }
+    pub fn state_colors_default() -> StateColors {
+        let th = theme();
+        StateColors {
+            default: Color::TRANSPARENT,
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
+            disabled: Color::TRANSPARENT,
+        }
+    }
 }
 
 /// Default values for top app bar.

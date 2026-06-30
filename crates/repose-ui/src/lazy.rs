@@ -14,7 +14,7 @@ fn scope_item(mut view: View, key: u64, state_id: usize) -> View {
 
 struct AnimState<T> {
     prev_keys: Vec<u64>,
-    exiting: Vec<(u64, usize, T, u64)>,
+    exiting: Vec<(u64, usize, T, u64, f32)>,
     item_cache: HashMap<u64, T>,
 }
 
@@ -138,8 +138,9 @@ where
             for (old_idx, key) in &removed {
                 if let Some(old_item) = s.item_cache.get(key) {
                     let v = s.exiting.len() as u64;
+                    let h_dp = item_height.get(old_item).max(1.0);
                     let cloned = old_item.clone();
-                    s.exiting.push((*key, *old_idx, cloned, v));
+                    s.exiting.push((*key, *old_idx, cloned, v, h_dp));
                 }
             }
         }
@@ -148,18 +149,18 @@ where
             s.item_cache.insert(get_key(item), item.clone());
         }
 
-        let mut still_exiting: Vec<(u64, usize, T, u64)> = Vec::new();
-        for (key, old_idx, old_item, version) in s.exiting.iter() {
+        let mut still_exiting: Vec<(u64, usize, T, u64, f32)> = Vec::new();
+        for (key, old_idx, old_item, version, h_dp) in s.exiting.iter() {
             let exit_key = format!("_lz_x:{aid}:{key}:v{version}");
             let alpha = animate_f32_from(exit_key, 1.0, 0.0, spec);
             if alpha > 0.005 {
-                still_exiting.push((*key, *old_idx, old_item.clone(), *version));
+                still_exiting.push((*key, *old_idx, old_item.clone(), *version, *h_dp));
             }
         }
 
         let max_exit_slot = still_exiting
             .iter()
-            .map(|(_, i, _, _)| *i)
+            .map(|(_, i, _, _, _)| *i)
             .max()
             .unwrap_or(0);
         let vis_end = last_with_buffer.max(max_exit_slot + 1 + buffer);
@@ -168,16 +169,15 @@ where
         let state_id = Rc::as_ptr(&state) as usize;
         let mut normal_ptr = 0usize;
         for visual_i in first_with_buffer..vis_end {
-            let entry = still_exiting.iter().find(|(_, oi, _, _)| *oi == visual_i);
-            if let Some((key, old_idx, old_item, version)) = entry {
+            let entry = still_exiting.iter().find(|(_, oi, _, _, _)| *oi == visual_i);
+            if let Some((key, old_idx, old_item, version, exit_h_dp)) = entry {
                 let ek = format!("_lz_x:{aid}:{key}:v{version}");
                 let alpha = animate_f32_from(ek, 1.0, 0.0, spec);
                 let exit_top_px = cumulative_px
                     .get(*old_idx)
                     .copied()
                     .unwrap_or(*old_idx as f32 * 1.0);
-                let exit_h_dp = heights_dp.get(*old_idx).copied().unwrap_or(1.0);
-                let exit_bottom_px = exit_top_px + dp_to_px(exit_h_dp);
+                let exit_bottom_px = exit_top_px + dp_to_px(*exit_h_dp);
                 let in_view = exit_bottom_px > scroll_offset_px
                     && exit_top_px < scroll_offset_px + viewport_height_px;
                 if in_view {
@@ -187,7 +187,7 @@ where
                             crate::Box(
                                 Modifier::new()
                                     .fill_max_width()
-                                    .height(exit_h_dp)
+                                    .height(*exit_h_dp)
                                     .alpha(alpha),
                             )
                             .child(exit_view),
@@ -198,12 +198,13 @@ where
                 }
             } else if let Some(item) = items.get(normal_ptr) {
                 let key = get_key(item);
+                let h_dp = item_height.get(item).max(1.0);
                 if had_prev && added.contains(&key) {
                     let enter_key = format!("_lz_n:{aid}:{key}");
                     let alpha = animate_f32_from(enter_key, 0.0, 1.0, spec);
                     combined_children.push(
                         scope_item(
-                            crate::Box(Modifier::new().fill_max_width().alpha(alpha))
+                            crate::Box(Modifier::new().fill_max_width().height(h_dp).alpha(alpha))
                                 .child(item_builder(item.clone(), normal_ptr)),
                             key,
                             state_id,
@@ -212,7 +213,8 @@ where
                 } else {
                     combined_children.push(
                         scope_item(
-                            item_builder(item.clone(), normal_ptr),
+                            crate::Box(Modifier::new().fill_max_width().height(h_dp))
+                                .child(item_builder(item.clone(), normal_ptr)),
                             key,
                             state_id,
                         ),
@@ -229,14 +231,13 @@ where
         for i in first_with_buffer..last_with_buffer {
             if let Some(item) = items.get(i) {
                 let h_dp = item_height.get(item).max(1.0);
-                combined_children.push(
-                    scope_item(
-                        crate::Box(Modifier::new().fill_max_width().height(h_dp))
-                            .child(item_builder(item.clone(), i)),
-                        get_key(item),
-                        state_id,
-                    ),
-                );
+                let key = get_key(item);
+                combined_children.push(scope_item(
+                    crate::Box(Modifier::new().fill_max_width().height(h_dp))
+                        .child(item_builder(item.clone(), i)),
+                    key,
+                    state_id,
+                ));
             }
         }
         total_slots = items.len();

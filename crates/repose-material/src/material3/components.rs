@@ -1462,10 +1462,14 @@ pub struct ListItemConfig {
     pub modifier: Modifier,
     /// When false, renders disabled colors and suppresses clicks.
     pub enabled: bool,
+    pub selected: bool,
     pub colors: ListItemColors,
+    pub state_colors: StateColors,
     pub tonal_elevation: f32,
     pub shadow_elevation: f32,
     pub shape_radius: f32,
+    /// Per-corner radii `[BL, BR, TR, TL]`. When set, overrides `shape_radius`.
+    pub shape_radii: Option<[f32; 4]>,
     pub horizontal_padding: f32,
     pub trailing_padding: f32,
     pub one_line_height: f32,
@@ -1478,10 +1482,13 @@ impl Default for ListItemConfig {
         Self {
             modifier: Modifier::new(),
             enabled: true,
+            selected: false,
             colors: ListItemColors::default(),
+            state_colors: ListItemDefaults::state_colors_default(),
             tonal_elevation: 0.0,
             shadow_elevation: 0.0,
             shape_radius: 0.0,
+            shape_radii: None,
             horizontal_padding: ListItemDefaults::HORIZONTAL_PADDING,
             trailing_padding: ListItemDefaults::TRAILING_PADDING,
             one_line_height: ListItemDefaults::ONE_LINE_HEIGHT,
@@ -1491,50 +1498,96 @@ impl Default for ListItemConfig {
     }
 }
 
-/// M3 List Item - a single row in a list with optional leading/trailing content.
+static LISTITEM_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// M3 List Item - a single row in a list with optional leading/trailing content,
+/// overline text, and click handling.
 pub fn ListItem(
     headline: impl Into<String>,
     supporting_text: Option<String>,
+    overline_text: Option<String>,
     leading: Option<View>,
     trailing: Option<View>,
     on_click: Option<Rc<dyn Fn()>>,
+    on_long_click: Option<Rc<dyn Fn()>>,
     config: ListItemConfig,
 ) -> View {
     let th = theme();
     let is_enabled = config.enabled;
+    let is_selected = config.selected;
     let c = &config.colors;
+    let id = remember(|| LISTITEM_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let spec = th.motion.color;
 
-    let hd_col = c.headline(is_enabled, false, false);
-    let sp_col = c.supporting(is_enabled, false, false);
-    let ld_col = c.leading_icon(is_enabled, false, false);
-    let tr_col = c.trailing_icon(is_enabled, false, false);
-    let bg = c.container(is_enabled, false, false);
+    let hd_col = animate_color(
+        format!("li_hd_{}", id),
+        c.headline(is_enabled, is_selected, false),
+        spec,
+    );
+    let sp_col = animate_color(
+        format!("li_sp_{}", id),
+        c.supporting(is_enabled, is_selected, false),
+        spec,
+    );
+    let ol_col = animate_color(
+        format!("li_ol_{}", id),
+        c.overline(is_enabled, is_selected, false),
+        spec,
+    );
+    let ld_col = animate_color(
+        format!("li_ld_{}", id),
+        c.leading_icon(is_enabled, is_selected, false),
+        spec,
+    );
+    let tr_col = animate_color(
+        format!("li_tr_{}", id),
+        c.trailing_icon(is_enabled, is_selected, false),
+        spec,
+    );
+    let bg = animate_color(
+        format!("li_bg_{}", id),
+        c.container(is_enabled, is_selected, false),
+        spec,
+    );
 
-    let line_count = if supporting_text.is_some() { 2 } else { 1 };
+    let line_count = match (overline_text.is_some(), supporting_text.is_some()) {
+        (true, true) => 3,
+        (true, false) | (false, true) => 2,
+        (false, false) => 1,
+    };
     let min_h = match line_count {
-        2 => config.two_line_height,
         3 => config.three_line_height,
+        2 => config.two_line_height,
         _ => config.one_line_height,
+    };
+    let top_bottom_padding = match line_count {
+        3 => 12.0,
+        _ => 8.0,
+    };
+
+    let vert_align = if min_h >= config.three_line_height {
+        AlignItems::Start
+    } else {
+        AlignItems::Center
     };
 
     let mut modifier = Modifier::new()
         .min_width(200.0)
         .min_height(min_h)
-        .background(bg)
-        .clip_rounded(config.shape_radius)
-        .state_colors(StateColors {
-            default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            pressed: th.on_surface.with_alpha_f32(0.12),
-            disabled: Color::TRANSPARENT,
-        })
+        .background(bg);
+    match config.shape_radii {
+        Some(r) => modifier = modifier.clip_rounded_radii(r),
+        None => modifier = modifier.clip_rounded(config.shape_radius),
+    }
+    modifier = modifier
+        .state_colors(config.state_colors)
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.trailing_padding,
-            top: 8.0,
-            bottom: 8.0,
+            top: top_bottom_padding,
+            bottom: top_bottom_padding,
         })
-        .align_items(AlignItems::Center)
+        .align_items(vert_align)
         .then(config.modifier);
 
     if config.tonal_elevation > 0.0 {
@@ -1549,13 +1602,24 @@ pub fn ListItem(
         modifier = modifier.shadow(config.shadow_elevation, 0.0);
     }
 
-    if let Some(cb) = on_click {
-        let cb = cb.clone();
-        modifier = modifier.clickable().on_pointer_down(move |_| {
-            if is_enabled {
-                cb();
-            }
-        });
+    if on_click.is_some() || on_long_click.is_some() {
+        modifier = modifier.clickable();
+        if let Some(cb) = on_click {
+            let cb = cb.clone();
+            modifier = modifier.on_pointer_down(move |_| {
+                if is_enabled {
+                    cb();
+                }
+            });
+        }
+        if let Some(cb) = &on_long_click {
+            let cb = cb.clone();
+            modifier = modifier.on_long_click(move || {
+                if is_enabled {
+                    cb();
+                }
+            });
+        }
     }
 
     let wrap_icon = |color: Color, v: View| -> View { with_content_color(color, move || v) };
@@ -1578,6 +1642,14 @@ pub fn ListItem(
                 .justify_content(JustifyContent::Center),
         )
         .child((
+            overline_text
+                .map(|ot| {
+                    Text(ot)
+                        .color(ol_col)
+                        .size(th.typography.label_small)
+                        .single_line()
+                })
+                .unwrap_or(Box(Modifier::new())),
             Text(headline)
                 .color(hd_col)
                 .size(th.typography.body_large)
@@ -1604,6 +1676,169 @@ pub fn ListItem(
             })
             .unwrap_or(Box(Modifier::new())),
     ))
+}
+
+/// M3 Selectable List Item — single-selection variant with `selected` state and
+/// `Role::RadioButton` semantics.
+pub fn SelectableListItem(
+    headline: impl Into<String>,
+    selected: bool,
+    supporting_text: Option<String>,
+    overline_text: Option<String>,
+    leading: Option<View>,
+    trailing: Option<View>,
+    on_click: Option<Rc<dyn Fn()>>,
+    mut config: ListItemConfig,
+) -> View {
+    config.selected = selected;
+    let mut m = Modifier::new()
+        .semantics(Semantics::new(Role::RadioButton));
+    m = m.then(config.modifier);
+    config.modifier = m;
+    ListItem(
+        headline,
+        supporting_text,
+        overline_text,
+        leading,
+        trailing,
+        on_click,
+        None,
+        config,
+    )
+}
+
+/// M3 Toggleable List Item — multi-selection variant with `checked` state and
+/// `Role::Checkbox` semantics. Clicking toggles the checked state.
+pub fn ToggleableListItem(
+    headline: impl Into<String>,
+    checked: bool,
+    on_checked_change: impl Fn(bool) + 'static,
+    supporting_text: Option<String>,
+    overline_text: Option<String>,
+    leading: Option<View>,
+    trailing: Option<View>,
+    config: ListItemConfig,
+) -> View {
+    let mut cfg = config.clone();
+    cfg.selected = checked;
+    let cb = Rc::new(on_checked_change);
+    let cb2 = cb.clone();
+    let mut m = Modifier::new()
+        .semantics(Semantics::new(Role::Checkbox));
+    m = m.then(cfg.modifier);
+    cfg.modifier = m;
+    ListItem(
+        headline,
+        supporting_text,
+        overline_text,
+        leading,
+        trailing,
+        Some(Rc::new(move || (cb2)(!checked))),
+        None,
+        cfg,
+    )
+}
+
+/// Compute per-index corner radii `[BL, BR, TR, TL]` for a segmented list item.
+fn segmented_item_radii(index: usize, count: usize, r: f32) -> [f32; 4] {
+    if count <= 1 {
+        [r, r, r, r]
+    } else if index == 0 {
+        [0.0, 0.0, r, r]
+    } else if index == count - 1 {
+        [r, r, 0.0, 0.0]
+    } else {
+        [0.0, 0.0, 0.0, 0.0]
+    }
+}
+
+/// M3 Segmented List Item — clickable variant with segmented (per-index) corner radii.
+pub fn SegmentedListItem(
+    index: usize,
+    count: usize,
+    headline: impl Into<String>,
+    supporting_text: Option<String>,
+    overline_text: Option<String>,
+    leading: Option<View>,
+    trailing: Option<View>,
+    on_click: Option<Rc<dyn Fn()>>,
+    mut config: ListItemConfig,
+) -> View {
+    config.shape_radii = Some(segmented_item_radii(index, count, config.shape_radius));
+    ListItem(
+        headline,
+        supporting_text,
+        overline_text,
+        leading,
+        trailing,
+        on_click,
+        None,
+        config,
+    )
+}
+
+/// M3 Segmented List Item — single-selection variant.
+pub fn SegmentedSelectableListItem(
+    index: usize,
+    count: usize,
+    headline: impl Into<String>,
+    selected: bool,
+    supporting_text: Option<String>,
+    overline_text: Option<String>,
+    leading: Option<View>,
+    trailing: Option<View>,
+    on_click: Option<Rc<dyn Fn()>>,
+    mut config: ListItemConfig,
+) -> View {
+    config.selected = selected;
+    config.shape_radii = Some(segmented_item_radii(index, count, config.shape_radius));
+    let mut m = Modifier::new()
+        .semantics(Semantics::new(Role::RadioButton));
+    m = m.then(config.modifier);
+    config.modifier = m;
+    ListItem(
+        headline,
+        supporting_text,
+        overline_text,
+        leading,
+        trailing,
+        on_click,
+        None,
+        config,
+    )
+}
+
+/// M3 Segmented List Item — multi-selection (toggleable) variant.
+pub fn SegmentedToggleableListItem(
+    index: usize,
+    count: usize,
+    headline: impl Into<String>,
+    checked: bool,
+    on_checked_change: impl Fn(bool) + 'static,
+    supporting_text: Option<String>,
+    overline_text: Option<String>,
+    leading: Option<View>,
+    trailing: Option<View>,
+    config: ListItemConfig,
+) -> View {
+    let mut cfg = config.clone();
+    cfg.selected = checked;
+    cfg.shape_radii = Some(segmented_item_radii(index, count, cfg.shape_radius));
+    let cb2 = Rc::new(on_checked_change);
+    let mut m = Modifier::new()
+        .semantics(Semantics::new(Role::Checkbox));
+    m = m.then(cfg.modifier);
+    cfg.modifier = m;
+    ListItem(
+        headline,
+        supporting_text,
+        overline_text,
+        leading,
+        trailing,
+        Some(Rc::new(move || (cb2)(!checked))),
+        None,
+        cfg,
+    )
 }
 
 /// A single tab definition for use with `TabRow`.

@@ -161,6 +161,7 @@ struct PaintCacheEntry {
     subtree_hash: u64,
     stamp: u64,
     rect: repose_core::Rect,
+    parent_offset_px: (f32, f32),
     sem_parent: Option<u64>,
     alpha_q: u8,
     nodes: Arc<Vec<SceneNode>>,
@@ -1868,6 +1869,7 @@ impl LayoutEngine {
                 && entry.subtree_hash == subtree_hash
                 && entry.stamp == stamp
                 && entry.rect == rect
+                && entry.parent_offset_px == parent_offset_px
                 && entry.sem_parent == sem_parent
                 && entry.alpha_q == alpha_q
             {
@@ -1906,6 +1908,7 @@ impl LayoutEngine {
                 subtree_hash,
                 stamp,
                 rect,
+                parent_offset_px,
                 sem_parent,
                 alpha_q,
                 nodes: Arc::new(local_scene.nodes.clone()),
