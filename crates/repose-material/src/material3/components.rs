@@ -15,21 +15,41 @@ use super::*;
 use crate::ripple::{ripple, RippleConfig};
 use crate::{Icon, Symbol};
 
+fn lerp_color(a: Color, b: Color, t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    Color(
+        (a.0 as f32 + (b.0 as f32 - a.0 as f32) * t).round().clamp(0.0, 255.0) as u8,
+        (a.1 as f32 + (b.1 as f32 - a.1 as f32) * t).round().clamp(0.0, 255.0) as u8,
+        (a.2 as f32 + (b.2 as f32 - a.2 as f32) * t).round().clamp(0.0, 255.0) as u8,
+        (a.3 as f32 + (b.3 as f32 - a.3 as f32) * t).round().clamp(0.0, 255.0) as u8,
+    )
+}
+
 /// Color slots for [`TopAppBar`].
 #[derive(Clone, Copy, Debug)]
 pub struct TopAppBarColors {
     pub container_color: Color,
+    pub scrolled_container_color: Color,
     pub navigation_icon_content_color: Color,
     pub title_content_color: Color,
+    pub subtitle_content_color: Color,
     pub action_icon_content_color: Color,
+}
+
+impl TopAppBarColors {
+    pub fn container_color(&self, scroll_fraction: f32) -> Color {
+        lerp_color(self.container_color, self.scrolled_container_color, scroll_fraction.clamp(0.0, 1.0))
+    }
 }
 
 impl Default for TopAppBarColors {
     fn default() -> Self {
         Self {
             container_color: TopAppBarDefaults::container_color(),
+            scrolled_container_color: TopAppBarDefaults::scrolled_container_color(),
             navigation_icon_content_color: TopAppBarDefaults::navigation_icon_content_color(),
             title_content_color: TopAppBarDefaults::title_content_color(),
+            subtitle_content_color: TopAppBarDefaults::subtitle_content_color(),
             action_icon_content_color: TopAppBarDefaults::action_icon_content_color(),
         }
     }
@@ -41,6 +61,7 @@ pub struct TopAppBarConfig {
     pub modifier: Modifier,
     pub colors: TopAppBarColors,
     pub height: f32,
+    pub scroll_fraction: f32,
     pub window_insets: WindowInsets,
     pub content_padding: PaddingValues,
 }
@@ -71,6 +92,7 @@ impl Default for TopAppBarConfig {
             modifier: Modifier::new(),
             colors: TopAppBarColors::default(),
             height: TopAppBarDefaults::HEIGHT,
+            scroll_fraction: 0.0,
             window_insets: WindowInsets::default(),
             content_padding: PaddingValues {
                 left: 4.0,
@@ -84,16 +106,18 @@ impl Default for TopAppBarConfig {
 
 fn top_app_bar_layout(
     title: View,
+    subtitle: Option<View>,
     navigation_icon: Option<View>,
     actions: Vec<View>,
     config: TopAppBarConfig,
     centered: bool,
 ) -> View {
     let insets = config.window_insets;
+    let bg = config.colors.container_color(config.scroll_fraction);
     let mut m = Modifier::new()
         .min_width(200.0)
         .height(config.height + insets.top)
-        .background(config.colors.container_color)
+        .background(bg)
         .padding_values(PaddingValues {
             left: config.content_padding.left + insets.left,
             right: config.content_padding.right + insets.right,
@@ -110,15 +134,21 @@ fn top_app_bar_layout(
         Box(Modifier::new()
             .padding_values(PaddingValues {
                 left: 16.0,
-                right: if centered { 0.0 } else { 0.0 },
+                right: 0.0,
                 top: 0.0,
                 bottom: 0.0,
             })
             .flex_grow(1.0))
-        .child(with_content_color(
-            config.colors.title_content_color,
-            || title,
-        )),
+        .child(
+            Column(Modifier::new().justify_content(JustifyContent::Center)).child((
+                Box(Modifier::new())
+                    .child(with_content_color(config.colors.title_content_color, || title)),
+                subtitle.map(|s| {
+                    Box(Modifier::new())
+                        .child(with_content_color(config.colors.subtitle_content_color, || s))
+                }).unwrap_or(Box(Modifier::new())),
+            )),
+        ),
         Row(Modifier::new()
             .align_items(AlignItems::Center)
             .clip_rounded(20.0))
@@ -133,25 +163,27 @@ fn top_app_bar_layout(
     ))
 }
 
-/// M3 Top App Bar (small). Displays a title with optional navigation icon and
-/// trailing action buttons.
+/// M3 Top App Bar (small). Displays a title with optional navigation icon,
+/// subtitle, and trailing action buttons.
 pub fn TopAppBar(
     title: View,
+    subtitle: Option<View>,
     navigation_icon: Option<View>,
     actions: Vec<View>,
     config: TopAppBarConfig,
 ) -> View {
-    top_app_bar_layout(title, navigation_icon, actions, config, false)
+    top_app_bar_layout(title, subtitle, navigation_icon, actions, config, false)
 }
 
 /// M3 Center-Aligned Top App Bar - same as TopAppBar but title is centered.
 pub fn CenterAlignedTopAppBar(
     title: View,
+    subtitle: Option<View>,
     navigation_icon: Option<View>,
     actions: Vec<View>,
     config: TopAppBarConfig,
 ) -> View {
-    top_app_bar_layout(title, navigation_icon, actions, config, true)
+    top_app_bar_layout(title, subtitle, navigation_icon, actions, config, true)
 }
 
 /// Configuration for [`Surface`].
@@ -856,6 +888,8 @@ fn toggle_button_impl(
         })
         .background(bg)
         .clip_rounded(shape_radius)
+        .align_items(AlignItems::Center)
+        .justify_content(JustifyContent::Center)
         .state_colors(state_colors)
         .state_elevation(state_elevation);
     if let Some((w, c, r)) = border {

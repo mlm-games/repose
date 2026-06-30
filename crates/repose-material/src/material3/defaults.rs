@@ -590,8 +590,14 @@ impl TopAppBarDefaults {
     pub fn container_color() -> Color {
         theme().surface
     }
+    pub fn scrolled_container_color() -> Color {
+        theme().surface_container
+    }
     pub fn title_content_color() -> Color {
         theme().on_surface
+    }
+    pub fn subtitle_content_color() -> Color {
+        theme().on_surface_variant
     }
     pub fn navigation_icon_content_color() -> Color {
         theme().on_surface
