@@ -1206,10 +1206,58 @@ pub fn run_desktop_app(
                         }
                     }
 
+                    // Dispatch key event through focus ancestor chain (Compose-compatible)
+                    let mapped_key = rc::map_key(key_event.physical_key);
+                    let utf16 = match mapped_key { repose_core::input::Key::Character(c) => c as u16, _ => 0 };
+                    let mods = self.modifiers;
+                    let repeat = key_event.repeat;
+                    let ev_type = if key_event.state == ElementState::Pressed { repose_core::input::KeyEventType::Down } else { repose_core::input::KeyEventType::Up };
+                    let consumed = self.frame_cache.as_ref().and_then(|f| {
+                        let focused = self.sched.focused.or_else(|| {
+                            f.semantics_nodes.iter().find(|n| n.parent.is_none()).map(|n| n.id)
+                        })?;
+                        let sem_parent_of: std::collections::HashMap<u64, u64> = f.semantics_nodes.iter().filter_map(|n| n.parent.map(|p| (n.id, p))).collect();
+                        let hit_by_id: std::collections::HashMap<u64, &HitRegion> = f.hit_regions.iter().map(|h| (h.id, h)).collect();
+                        let mut ancestors = Vec::new();
+                        let mut cur = focused;
+                        loop {
+                            ancestors.push(cur);
+                            if let Some(&p) = sem_parent_of.get(&cur) { cur = p; } else { break; }
+                        }
+                        let make_ke = || repose_core::input::KeyEvent {
+                            key: mapped_key.clone(),
+                            modifiers: mods,
+                            is_repeat: repeat,
+                            event_type: ev_type,
+                            utf16_code_point: utf16,
+                        };
+                        // Top-down preview: root → focused
+                        for &id in ancestors.iter().rev() {
+                            if let Some(hit) = hit_by_id.get(&id) {
+                                if let Some(cb) = &hit.on_preview_key_event {
+                                    if cb(make_ke()) { return Some(true); }
+                                }
+                            }
+                        }
+                        // Bottom-up normal: focused → root
+                        for &id in ancestors.iter() {
+                            if let Some(hit) = hit_by_id.get(&id) {
+                                if let Some(cb) = &hit.on_key_event {
+                                    if cb(make_ke()) { return Some(true); }
+                                }
+                            }
+                        }
+                        None
+                    }).unwrap_or(false);
+                    if consumed {
+                        self.request_redraw();
+                        return;
+                    }
+
                     if key_event.state == ElementState::Pressed
                         && let Some(action) = repose_core::shortcuts::resolve_action(
                             repose_core::shortcuts::KeyChord::new(
-                                rc::map_key(key_event.physical_key),
+                                mapped_key,
                                 self.modifiers,
                             ),
                         )

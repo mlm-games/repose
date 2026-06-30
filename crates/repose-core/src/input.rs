@@ -67,11 +67,26 @@ pub enum Key {
     Unknown,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeyEventType {
+    /// Key pressed down.
+    Down,
+    /// Key released.
+    Up,
+    /// Unknown or unsupported event type.
+    Unknown,
+}
+
 #[derive(Clone, Debug)]
 pub struct KeyEvent {
     pub key: Key,
     pub modifiers: Modifiers,
     pub is_repeat: bool,
+    /// Whether this is a key-down or key-up event.
+    pub event_type: KeyEventType,
+    /// UTF-16 code point for character keys, or 0 for non-characters.
+    /// Matches Compose's `utf16CodePoint`.
+    pub utf16_code_point: u16,
 }
 
 #[derive(Clone, Debug)]

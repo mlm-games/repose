@@ -310,10 +310,17 @@ pub enum SceneNode {
     /// Mark the start of a graphics layer: the contained subtree is rendered
     /// into an offscreen texture and then composited back into the parent.
     /// `alpha` is the group-compositing alpha applied at composite time.
+    /// `blur_radius_x` / `blur_radius_y` are the gaussian blur radii in pixels
+    /// applied to the layer before compositing (0.0 = no blur on that axis).
+    /// `rectangle_edge` when true means clamp edge pixels (Rectangle treatment);
+    /// when false, out-of-bounds samples are transparent (Unbounded).
     BeginLayer {
         rect: Rect,
         layer_id: u32,
         alpha: f32,
+        blur_radius_x: f32,
+        blur_radius_y: f32,
+        rectangle_edge: bool,
     },
     /// Closes the graphics layer opened by the matching `BeginLayer`.
     EndLayer {

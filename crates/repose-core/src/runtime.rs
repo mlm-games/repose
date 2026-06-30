@@ -368,6 +368,12 @@ pub struct HitRegion {
 
     pub on_action: Option<Rc<dyn Fn(crate::shortcuts::Action) -> bool>>,
 
+    /// Called when a key event is received while this element is focused.
+    /// Return `true` to consume the event.
+    pub on_key_event: Option<Rc<dyn Fn(crate::input::KeyEvent) -> bool>>,
+    /// Called before `on_key_event`. Return `true` to consume before normal dispatch.
+    pub on_preview_key_event: Option<Rc<dyn Fn(crate::input::KeyEvent) -> bool>>,
+
     /// Cursor hint for desktop/web.
     pub cursor: Option<crate::CursorIcon>,
 }
@@ -389,6 +395,8 @@ impl HitRegion {
             on_pointer_enter: m.on_pointer_enter.clone(),
             on_pointer_leave: m.on_pointer_leave.clone(),
             on_action: m.on_action.clone(),
+            on_key_event: m.on_key_event.clone(),
+            on_preview_key_event: m.on_preview_key_event.clone(),
             cursor: m.cursor,
             on_drag_start: m.on_drag_start.clone(),
             on_drag_end: m.on_drag_end.clone(),

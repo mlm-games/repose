@@ -120,6 +120,41 @@ pub struct GridConfig {
     pub column_gap: f32,
 }
 
+/// Edge treatment for `Modifier::blur` — controls how pixels at the edges
+/// of the blurred region are handled.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum BlurredEdgeTreatment {
+    /// Clip the blur to the element's bounds and clamp edge pixels
+    /// (extend the outermost pixels). This is the Compose default.
+    Rectangle,
+    /// Allow the blur to extend beyond the element's bounds.
+    /// Edge pixels are treated as transparent (decal).
+    Unbounded,
+}
+
+/// Gaussian blur parameters for `Modifier::blur`.
+#[derive(Clone, Copy, Debug)]
+pub struct BlurStyle {
+    /// Horizontal blur radius in dp.
+    pub radius_x: f32,
+    /// Vertical blur radius in dp.
+    pub radius_y: f32,
+    /// Controls edge pixel behavior.
+    pub edge_treatment: BlurredEdgeTreatment,
+}
+
+/// Constraints passed to the `Modifier::layout` callback.
+/// Mirrors Compose's `Constraints` — the element's size must fall within
+/// `[min_width, max_width]` × `[min_height, max_height]`.
+/// A dimension with `INFINITY` max means unbounded in that direction.
+#[derive(Clone, Copy, Debug)]
+pub struct LayoutConstraints {
+    pub min_width: f32,
+    pub max_width: f32,
+    pub min_height: f32,
+    pub max_height: f32,
+}
+
 /// Drop-shadow parameters applied to a graphics layer.
 ///
 /// `blur_radius` is the Gaussian blur radius in dp (1.0 = subtle, 8.0 = soft,
@@ -440,13 +475,34 @@ pub struct Modifier {
     pub on_pointer_cancel: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_enter: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_leave: Option<Rc<dyn Fn(PointerEvent)>>,
-    /// Called when the element is double-clicked/tapped.
     /// Called when the element is clicked (pointer down then up within bounds).
     pub on_click: Option<Rc<dyn Fn()>>,
     /// Called when the element is double-clicked/tapped.
     pub on_double_click: Option<Rc<dyn Fn()>>,
     /// Called when the element is long-pressed.
     pub on_long_click: Option<Rc<dyn Fn()>>,
+    /// Called when the element's global position changes after layout.
+    /// Provides the element's rect in window coordinates.
+    pub on_globally_positioned: Option<Rc<dyn Fn(crate::Rect)>>,
+    /// Called when the element's size changes after layout.
+    /// Provides the new size.
+    pub on_size_changed: Option<Rc<dyn Fn(crate::Vec2)>>,
+    /// Called when a key event is received while this element is focused.
+    /// Return `true` to consume the event. This is the normal handler.
+    pub on_key_event: Option<Rc<dyn Fn(crate::input::KeyEvent) -> bool>>,
+    /// Called before `on_key_event` — if the preview handler returns `true`,
+    /// the event is consumed and `on_key_event` is NOT called.
+    pub on_preview_key_event: Option<Rc<dyn Fn(crate::input::KeyEvent) -> bool>>,
+    /// Apply a gaussian blur to this element's rendered content.
+    /// When set, `graphics_layer` is auto-enabled if not already set.
+    /// Use `Modifier::blur(radius)` for uniform blur, or
+    /// `Modifier::blur_with_edge(rx, ry, edge)` for per-axis control.
+    pub blur: Option<BlurStyle>,
+    /// Custom layout callback. When set, the element's measurement is delegated
+    /// to this function instead of the default Taffy-based layout.
+    /// The callback receives `LayoutConstraints` (min/max width/height in dp).
+    /// Returns `(width, height)` for this element.
+    pub layout: Option<Rc<dyn Fn(LayoutConstraints) -> (f32, f32)>>,
     pub semantics: Option<crate::Semantics>,
     pub alpha: Option<f32>,
     pub graphics_layer: Option<f32>,
@@ -585,6 +641,7 @@ impl std::fmt::Debug for Modifier {
             intrinsic_height,
             cursor,
             animate_content_size,
+            blur,
         );
 
         macro_rules! opt_cb {
@@ -603,6 +660,10 @@ impl std::fmt::Debug for Modifier {
             on_click,
             on_double_click,
             on_long_click,
+            on_globally_positioned,
+            on_size_changed,
+            on_key_event,
+            on_preview_key_event,
             painter,
             on_drag_start,
             on_drag_end,
@@ -614,6 +675,7 @@ impl std::fmt::Debug for Modifier {
             on_focus_changed,
             interaction_source,
             text_input,
+            layout,
         );
 
         macro_rules! flag {
@@ -1294,6 +1356,77 @@ impl Modifier {
     /// The argument is `true` when the view receives focus, `false` when it loses it.
     pub fn on_focus_changed(mut self, f: impl Fn(bool) + 'static) -> Self {
         self.on_focus_changed = Some(Rc::new(f));
+        self
+    }
+
+    /// Called after layout when this element's position changes.
+    /// The callback receives the element's rect in dp (device-independent pixels).
+    /// Fires whenever the rect changes, including on the initial layout.
+    pub fn on_globally_positioned(mut self, f: impl Fn(crate::Rect) + 'static) -> Self {
+        self.on_globally_positioned = Some(Rc::new(f));
+        self
+    }
+
+    /// Called after layout when this element's size changes.
+    /// Provides the new (width, height) in dp.
+    pub fn on_size_changed(mut self, f: impl Fn(crate::Vec2) + 'static) -> Self {
+        self.on_size_changed = Some(Rc::new(f));
+        self
+    }
+
+    /// Called when a key event is received while this element is focused.
+    /// Return `true` to indicate the event was consumed and should not
+    /// propagate further (e.g. to text input handling or shortcut dispatch).
+    pub fn on_key_event(mut self, f: impl Fn(crate::input::KeyEvent) -> bool + 'static) -> Self {
+        self.on_key_event = Some(Rc::new(f));
+        self
+    }
+
+    /// Preview variant of `on_key_event`. Called before `on_key_event`;
+    /// if the preview handler returns `true`, the event is consumed
+    /// and `on_key_event` is NOT called.
+    pub fn on_preview_key_event(mut self, f: impl Fn(crate::input::KeyEvent) -> bool + 'static) -> Self {
+        self.on_preview_key_event = Some(Rc::new(f));
+        self
+    }
+
+    /// Apply a gaussian blur to this element's rendered content.
+    /// `radius_dp` is the uniform blur radius in device-independent pixels.
+    /// Larger values produce a stronger blur.
+    /// Uses `Rectangle` edge treatment (clip to bounds).
+    ///
+    /// Requires `graphics_layer` to be enabled (set automatically if not).
+    pub fn blur(mut self, radius_dp: f32) -> Self {
+        self.blur = Some(BlurStyle {
+            radius_x: radius_dp.max(0.0),
+            radius_y: radius_dp.max(0.0),
+            edge_treatment: BlurredEdgeTreatment::Rectangle,
+        });
+        self
+    }
+
+    /// Apply a gaussian blur with separate horizontal/vertical radii.
+    /// `edge_treatment` controls how edge pixels are handled.
+    ///
+    /// Requires `graphics_layer` to be enabled (set automatically if not).
+    pub fn blur_with_edge(mut self, radius_x: f32, radius_y: f32, edge_treatment: BlurredEdgeTreatment) -> Self {
+        self.blur = Some(BlurStyle {
+            radius_x: radius_x.max(0.0),
+            radius_y: radius_y.max(0.0),
+            edge_treatment,
+        });
+        self
+    }
+
+    /// Override this element's measured size with a custom callback.
+    /// The callback receives `LayoutConstraints` (min/max width/height in dp),
+    /// where `max_width`/`max_height` may be `f32::INFINITY` if unbounded.
+    /// Returns `(width, height)` for this element.
+    ///
+    /// Child placement is handled by the parent layout (same as Compose's
+    /// `Modifier.size` family).
+    pub fn layout(mut self, f: impl Fn(LayoutConstraints) -> (f32, f32) + 'static) -> Self {
+        self.layout = Some(Rc::new(f));
         self
     }
 

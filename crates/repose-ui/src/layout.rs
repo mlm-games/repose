@@ -123,6 +123,9 @@ pub struct LayoutEngine {
 
     /// Monotonic counter for graphics layer ids, assigned during paint.
     layer_id_counter: u32,
+
+    /// Previous absolute rects for `on_globally_positioned` / `on_size_changed` callbacks.
+    prev_observed_rects: FxHashMap<u64, repose_core::Rect>,
 }
 
 /// Statistics about layout performance.
@@ -242,6 +245,7 @@ impl LayoutEngine {
             layer_id_counter: 0,
             prev_focused: None,
             focus_callbacks: FxHashMap::default(),
+            prev_observed_rects: FxHashMap::default(),
         }
     }
 
@@ -468,6 +472,33 @@ impl LayoutEngine {
                         |known, avail, taffy_node, ctx, _style| {
                             // Check if this is a scope root marker → return cached scope size
                             if let Some(&node_id) = reverse_map.get(&taffy_node) {
+                                // Custom layout modifier: delegate measurement to user callback
+                                if let Some(node) = tree.get(node_id) {
+                                    if let Some(ref layout_cb) = node.modifier.layout {
+                                        let scale = dp_to_px(1.0);
+                                        let avail_w = match avail.width {
+                                            AvailableSpace::Definite(w) => w / scale,
+                                            _ => f32::INFINITY,
+                                        };
+                                        let avail_h = match avail.height {
+                                            AvailableSpace::Definite(h) => h / scale,
+                                            _ => f32::INFINITY,
+                                        };
+                                        let known_w = known.width.map(|w| w / scale).unwrap_or(f32::INFINITY);
+                                        let known_h = known.height.map(|h| h / scale).unwrap_or(f32::INFINITY);
+                                        let constraints = repose_core::modifier::LayoutConstraints {
+                                            min_width: 0.0,
+                                            max_width: avail_w.min(known_w),
+                                            min_height: 0.0,
+                                            max_height: avail_h.min(known_h),
+                                        };
+                                        let (w_dp, h_dp) = layout_cb(constraints);
+                                        return taffy::geometry::Size {
+                                            width: w_dp * scale,
+                                            height: h_dp * scale,
+                                        };
+                                    }
+                                }
                                 if scope_root_map.contains_key(&node_id) {
                                     if let Some(key) = node_to_scope.get(&node_id) {
                                         if let Some(st) = scope_trees.get_mut(key) {
@@ -2814,15 +2845,47 @@ impl LayoutEngine {
             }
         }
 
+        // Fire on_globally_positioned / on_size_changed if position/size changed
+        let view_id_for_pos = view_id;
+        let dp_rect = repose_core::Rect {
+            x: px_to_dp(rect.x),
+            y: px_to_dp(rect.y),
+            w: px_to_dp(rect.w),
+            h: px_to_dp(rect.h),
+        };
+        if let Some(cb) = &modifier.on_globally_positioned {
+            let prev = self.prev_observed_rects.get(&view_id_for_pos).copied();
+            if prev != Some(dp_rect) {
+                cb(dp_rect);
+            }
+        }
+        if let Some(cb) = &modifier.on_size_changed {
+            let prev = self.prev_observed_rects.get(&view_id_for_pos).copied();
+            if prev.map(|r| (r.w, r.h)) != Some((dp_rect.w, dp_rect.h)) {
+                cb(Vec2 { x: dp_rect.w, y: dp_rect.h });
+            }
+        }
+        if modifier.on_globally_positioned.is_some() || modifier.on_size_changed.is_some() {
+            self.prev_observed_rects.insert(view_id_for_pos, dp_rect);
+        }
+
         // Children
         let child_offset_px = base_px;
-        let layer_id = if let Some(layer_alpha) = modifier.graphics_layer {
+        let has_blur = modifier.blur.map_or(false, |b| b.radius_x > 0.0 || b.radius_y > 0.0);
+        let layer_id = if modifier.graphics_layer.is_some() || has_blur {
             let id = self.layer_id_counter;
             self.layer_id_counter = self.layer_id_counter.wrapping_add(1);
+            let blur_style = modifier.blur.unwrap_or(BlurStyle { radius_x: 0.0, radius_y: 0.0, edge_treatment: BlurredEdgeTreatment::Rectangle });
+            let blur_radius_x = dp_to_px(blur_style.radius_x);
+            let blur_radius_y = dp_to_px(blur_style.radius_y);
+            let alpha = modifier.graphics_layer.unwrap_or(1.0);
             scene.nodes.push(SceneNode::BeginLayer {
                 rect,
                 layer_id: id,
-                alpha: layer_alpha,
+                alpha,
+                blur_radius_x,
+                blur_radius_y,
+                rectangle_edge: matches!(blur_style.edge_treatment, BlurredEdgeTreatment::Rectangle),
             });
             scene.nodes.push(SceneNode::PushTransform {
                 transform: Transform {

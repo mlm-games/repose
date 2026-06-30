@@ -214,6 +214,7 @@ struct Pipelines {
     image_rgba: wgpu::RenderPipeline,
     image_nv12: wgpu::RenderPipeline,
     blur: wgpu::RenderPipeline,
+    blur_content: wgpu::RenderPipeline,
     clip_a2c: wgpu::RenderPipeline,
     clip_bin: wgpu::RenderPipeline,
     slug: Option<wgpu::RenderPipeline>,
@@ -618,6 +619,69 @@ impl Pipelines {
             cache: None,
         });
 
+        // Content blur pipeline (full RGBA gaussian blur)
+        let blur_content_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("blur_content.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                "shaders/blur_content.wgsl"
+            ))),
+        });
+        let blur_content = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("blur content pipeline"),
+            layout: Some(&blur_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &blur_content_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<BlurInstance>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            shader_location: 0,
+                            offset: 0,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 1,
+                            offset: 16,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 2,
+                            offset: 32,
+                            format: wgpu::VertexFormat::Float32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 3,
+                            offset: 48,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            shader_location: 4,
+                            offset: 56,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                    ],
+                }],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &blur_content_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(stencil_for_content.clone()),
+            multisample: msaa_state,
+            multiview_mask: None,
+            cache: None,
+        });
+
         // NV12 Image Pipeline
         let image_nv12_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("image_nv12.wgsl"),
@@ -768,6 +832,7 @@ impl Pipelines {
             image_rgba,
             image_nv12,
             blur,
+            blur_content,
             clip_a2c,
             clip_bin,
             slug,
@@ -853,6 +918,13 @@ enum Cmd {
     /// layer. The quad's vertex buffer lives in `self.blur_ring` (a
     /// `BlurInstance`).
     CompositeShadow {
+        off: u64,
+        cnt: u32,
+        layer_id: u32,
+    },
+    /// Apply gaussian blur to a layer and composite the blurred result.
+    /// Uses the `blur_content` pipeline (full RGBA blur).
+    CompositeBlur {
         off: u64,
         cnt: u32,
         layer_id: u32,
@@ -2436,6 +2508,7 @@ impl RenderBackend for WgpuBackend {
         };
         let mut target_stack: Vec<PassTarget> = Vec::new();
         let mut layer_alphas: Vec<(u32, f32, (u32, u32, u32, u32))> = Vec::new();
+        let mut layer_blurs: Vec<(u32, f32, f32)> = Vec::new();
         let mut current_target_size: (f32, f32) = (fb_w, fb_h);
 
         struct Batch {
@@ -3137,6 +3210,9 @@ impl RenderBackend for WgpuBackend {
                     rect,
                     layer_id,
                     alpha,
+                    blur_radius_x,
+                    blur_radius_y,
+                    rectangle_edge: _,
                 } => {
                     flush_batch!();
                     let w = (rect.w.max(1.0)).ceil() as u32;
@@ -3161,6 +3237,10 @@ impl RenderBackend for WgpuBackend {
                     self.get_or_create_layer(*layer_id, w, h, *rect);
                     current_target_size = (w as f32, h as f32);
                     layer_alphas.push((*layer_id, *alpha, current_pass.initial_scissor));
+                    // Store blur info for post-processing after EndLayer
+                    if *blur_radius_x > 0.0 || *blur_radius_y > 0.0 {
+                        layer_blurs.push((*layer_id, *blur_radius_x, *blur_radius_y));
+                    }
                 }
                 SceneNode::EndLayer { layer_id } => {
                     flush_batch!();
@@ -3191,26 +3271,59 @@ impl RenderBackend for WgpuBackend {
                             fb_w,
                             fb_h,
                         );
-                        let inst = GlyphInstance {
-                            xywh: [
-                                ndc_tl[0] + ndc_tl[2] * 0.5,
-                                ndc_tl[1] + ndc_tl[3] * 0.5,
-                                ndc_tl[2],
-                                ndc_tl[3],
-                            ],
-                            uv: [0.0, 1.0, 1.0, 0.0],
-                            color: [1.0, 1.0, 1.0, layer_alpha],
-                            sin_cos: [1.0, 0.0],
-                        };
-                        if let Some((off, cnt)) =
-                            self.glyph_color.upload(&self.device, &self.queue, &[inst])
-                        {
-                            current_pass.cmds.push(Cmd::CompositeLayer {
+                        // Check if this layer needs content blur
+                        let blur_px_val = layer_blurs
+                            .iter()
+                            .find(|(id, _, _)| id == layer_id)
+                            .map(|(_, bx, by)| (*bx, *by));
+                        if let Some((blur_x, blur_y)) = blur_px_val.filter(|(bx, by)| *bx > 0.0 || *by > 0.0) {
+                            // Content blur: draw blurred version using the blur_content pipeline
+                            let bw_uv = (blur_x * 1.5) / layer.width.max(1) as f32;
+                            let bh_uv = (blur_y * 1.5) / layer.height.max(1) as f32;
+                            let inst = BlurInstance {
+                                xywh: [
+                                    ndc_tl[0] + ndc_tl[2] * 0.5,
+                                    ndc_tl[1] + ndc_tl[3] * 0.5,
+                                    ndc_tl[2],
+                                    ndc_tl[3],
+                                ],
+                                uv: [0.0, 0.0, 1.0, 1.0],
+                                color: [1.0, 1.0, 1.0, layer_alpha],
+                                blur_uv: [bw_uv, bh_uv],
+                                sin_cos: [1.0, 0.0],
+                            };
+                            self.blur_ring
+                                .grow_to_fit(&self.device, std::mem::size_of::<BlurInstance>() as u64);
+                            let bytes = bytemuck::bytes_of(&inst);
+                            let (off, _) = self.blur_ring.alloc_write(&self.queue, bytes);
+                            current_pass.cmds.push(Cmd::CompositeBlur {
                                 off,
-                                cnt,
+                                cnt: 1,
                                 layer_id: *layer_id,
-                                alpha: layer_alpha,
                             });
+                        } else {
+                            // Normal sharp composite
+                            let inst = GlyphInstance {
+                                xywh: [
+                                    ndc_tl[0] + ndc_tl[2] * 0.5,
+                                    ndc_tl[1] + ndc_tl[3] * 0.5,
+                                    ndc_tl[2],
+                                    ndc_tl[3],
+                                ],
+                                uv: [0.0, 1.0, 1.0, 0.0],
+                                color: [1.0, 1.0, 1.0, layer_alpha],
+                                sin_cos: [1.0, 0.0],
+                            };
+                            if let Some((off, cnt)) =
+                                self.glyph_color.upload(&self.device, &self.queue, &[inst])
+                            {
+                                current_pass.cmds.push(Cmd::CompositeLayer {
+                                    off,
+                                    cnt,
+                                    layer_id: *layer_id,
+                                    alpha: layer_alpha,
+                                });
+                            }
                         }
                     }
                 }
@@ -3524,6 +3637,22 @@ impl RenderBackend for WgpuBackend {
                         if let Some(lt) = self.layer_pool.get(&layer_id).cloned() {
                             draw_with_bind!(
                                 &pipes.blur,
+                                self.blur_ring,
+                                BlurInstance,
+                                &lt.bind,
+                                off,
+                                n
+                            );
+                        }
+                    }
+                    Cmd::CompositeBlur {
+                        off,
+                        cnt: n,
+                        layer_id,
+                    } => {
+                        if let Some(lt) = self.layer_pool.get(&layer_id).cloned() {
+                            draw_with_bind!(
+                                &pipes.blur_content,
                                 self.blur_ring,
                                 BlurInstance,
                                 &lt.bind,
