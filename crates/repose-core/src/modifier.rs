@@ -185,8 +185,9 @@ pub struct TextInputConfig {
     pub focus_tracker: Option<Rc<Cell<bool>>>,
     pub value: String,
     pub visual_transformation: Option<Rc<dyn crate::text::VisualTransformation>>,
-    pub keyboard_type: Option<crate::text::KeyboardType>,
-    pub ime_action: Option<crate::text::ImeAction>,
+    pub keyboard_type: crate::text::KeyboardType,
+    pub keyboard_capitalization: crate::text::KeyboardCapitalization,
+    pub ime_action: crate::text::ImeAction,
     /// When false, the text field is not editable, not focusable, and input is not selectable.
     pub enabled: bool,
     /// When true, the text field can be focused and text can be selected/copied, but not modified.
@@ -194,12 +195,18 @@ pub struct TextInputConfig {
     /// Maximum visible lines. Only effective when `multiline` is true.
     pub max_lines: Option<usize>,
     /// Minimum visible lines. Only effective when `multiline` is true.
-    pub min_lines: Option<usize>,
+    pub min_lines: usize,
     /// Override the cursor color. When None, uses the theme's `on_surface`.
     pub cursor_color: Option<Color>,
     /// Callback invoked after each text layout computation, providing layout details
     /// such as line count and content size.
     pub on_text_layout: Option<Rc<dyn Fn(&crate::text::TextLayoutResult)>>,
+    /// Style for the text content (font size, color, weight, etc.).
+    /// None = use defaults (16dp, theme color, NORMAL weight).
+    pub text_style: Option<crate::text::TextStyle>,
+    /// Per-action IME callbacks (onDone, onGo, onNext, etc.).
+    /// None = use `on_submit` for all actions.
+    pub keyboard_actions: Option<crate::text::KeyboardActions>,
 }
 
 impl std::fmt::Debug for TextInputConfig {
@@ -221,6 +228,7 @@ impl std::fmt::Debug for TextInputConfig {
             s.field("visual_transformation", &"…");
         }
         s.field("keyboard_type", &self.keyboard_type);
+        s.field("keyboard_capitalization", &self.keyboard_capitalization);
         s.field("ime_action", &self.ime_action);
         s.field("enabled", &self.enabled);
         s.field("read_only", &self.read_only);
@@ -1392,7 +1400,10 @@ impl Modifier {
     /// Preview variant of `on_key_event`. Called before `on_key_event`;
     /// if the preview handler returns `true`, the event is consumed
     /// and `on_key_event` is NOT called.
-    pub fn on_preview_key_event(mut self, f: impl Fn(crate::input::KeyEvent) -> bool + 'static) -> Self {
+    pub fn on_preview_key_event(
+        mut self,
+        f: impl Fn(crate::input::KeyEvent) -> bool + 'static,
+    ) -> Self {
         self.on_preview_key_event = Some(Rc::new(f));
         self
     }
@@ -1416,7 +1427,12 @@ impl Modifier {
     /// `edge_treatment` controls how edge pixels are handled.
     ///
     /// Requires `graphics_layer` to be enabled (set automatically if not).
-    pub fn blur_with_edge(mut self, radius_x: f32, radius_y: f32, edge_treatment: BlurredEdgeTreatment) -> Self {
+    pub fn blur_with_edge(
+        mut self,
+        radius_x: f32,
+        radius_y: f32,
+        edge_treatment: BlurredEdgeTreatment,
+    ) -> Self {
         self.blur = Some(BlurStyle {
             radius_x: radius_x.max(0.0),
             radius_y: radius_y.max(0.0),

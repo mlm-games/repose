@@ -942,30 +942,37 @@ impl TextFieldState {
 /// ```
 #[derive(Clone)]
 pub struct BasicTextFieldConfig {
-    /// Callback when text changes (↔ `onValueChange`).
+    /// Callback when text changes (-> `onValueChange`).
     pub on_change: Option<Rc<dyn Fn(String)>>,
-    /// Callback when Enter is pressed on a single-line field.
+    /// Callback when a keyboard IME action is triggered ( `keyboardActions.onDone`/etc.).
+    /// For single-line fields, Enter triggers the action.
     pub on_submit: Option<Rc<dyn Fn(String)>>,
-    /// Optional visual transformation (↔ `visualTransformation`).
+    /// Optional visual transformation (-> `visualTransformation`).
     pub visual_transformation: Option<Rc<dyn repose_core::VisualTransformation>>,
-    /// Platform keyboard configuration hints (↔ `keyboardOptions`).
+    /// Platform keyboard configuration hints (-> `keyboardOptions`).
     pub keyboard_options: Option<KeyboardOptions>,
-    /// IME action button (↔ `ImeAction` within `keyboardOptions`).
+    /// IME action button (-> `ImeAction` within `keyboardOptions`).
     pub ime_action: Option<repose_core::ImeAction>,
-    /// When false, the text field is not editable, not focusable, and input is not selectable (↔ `enabled`).
+    /// When false, the text field is not editable, not focusable, and input is not selectable (-> `enabled`).
     pub enabled: bool,
-    /// When true, the text field can be focused and text can be selected/copied, but not modified (↔ `readOnly`).
+    /// When true, the text field can be focused and text can be selected/copied, but not modified (-> `readOnly`).
     pub read_only: bool,
-    /// When true, text is single-line (horizontal scroll); when false, multi-line (↔ `singleLine`).
+    /// When true, text is single-line (horizontal scroll); when false, multi-line (-> `singleLine`).
     pub single_line: bool,
-    /// Maximum visible lines. Only effective when `single_line` is false (↔ `maxLines`).
+    /// Maximum visible lines. Only effective when `single_line` is false (-> `maxLines`).
     pub max_lines: Option<usize>,
-    /// Minimum visible lines. Only effective when `single_line` is false (↔ `minLines`).
-    pub min_lines: Option<usize>,
-    /// Override the cursor color (↔ `cursorBrush` as `SolidColor`).
+    /// Minimum visible lines. Only effective when `single_line` is false (-> `minLines`).
+    pub min_lines: usize,
+    /// Override the cursor color (-> `cursorBrush` as `SolidColor`).
     pub cursor_color: Option<Color>,
-    /// Callback invoked after each text layout computation (↔ `onTextLayout`).
+    /// Callback invoked after each text layout computation (-> `onTextLayout`).
     pub on_text_layout: Option<Rc<dyn Fn(&repose_core::TextLayoutResult)>>,
+    /// Style for the text content (-> `textStyle`).
+    pub text_style: repose_core::TextStyle,
+    /// Keyboard capitalization mode (-> `KeyboardOptions.capitalization`).
+    pub keyboard_capitalization: repose_core::KeyboardCapitalization,
+    /// Per-action IME callbacks (-> `keyboardActions`).
+    pub keyboard_actions: repose_core::KeyboardActions,
 }
 
 impl Default for BasicTextFieldConfig {
@@ -978,59 +985,58 @@ impl Default for BasicTextFieldConfig {
             ime_action: None,
             enabled: true,
             read_only: false,
-            single_line: true,
+            single_line: false,
             max_lines: None,
-            min_lines: None,
+            min_lines: 1,
             cursor_color: None,
             on_text_layout: None,
+            text_style: Default::default(),
+            keyboard_capitalization: Default::default(),
+            keyboard_actions: Default::default(),
         }
     }
 }
 
 /// Platform-managed text input view. Hint shown only when `value` is empty.
 ///
-/// Compose-equivalent: `BasicTextField(value, onValueChange, modifier, enabled, readOnly, ...)`
+/// Compose-equivalent: `BasicTextField(value, onValueChange, modifier, ...)`
 ///
-/// By default creates a **single-line** field. Pass `single_line: false` for multiline.
+/// By default creates a **multi-line** field. Pass `single_line: true` for single-line.
 ///
 /// # Example
 /// ```ignore
-/// BasicTextField("Email", email, modifier, BasicTextFieldConfig {
-///     keyboard_options: Some(KeyboardOptions { keyboard_type: KeyboardType::Email, ..Default::default() }),
-///     ..Default::default()
-/// })
+/// BasicTextField(text, |v| text = v, modifier, "Hint")
 /// ```
 pub fn BasicTextField(
-    hint: impl Into<String>,
     value: String,
+    on_change: impl Fn(String) + 'static,
     modifier: repose_core::Modifier,
+    hint: impl Into<String>,
     config: BasicTextFieldConfig,
 ) -> repose_core::View {
     let multiline = !config.single_line;
+    let on_change: Option<Rc<dyn Fn(String)>> = Some(Rc::new(on_change));
+    // Merge direct on_change with config.on_change (config takes precedence if set)
+    let merged_on_change = config.on_change.or(on_change);
     text_field_view(
         modifier,
         hint.into(),
         value,
         multiline,
-        config.on_change,
+        merged_on_change,
         config.on_submit,
         config.visual_transformation,
-        config.keyboard_options.map(|o| o.keyboard_type),
-        config.ime_action,
+        config.keyboard_options.map(|o| o.keyboard_type).unwrap_or_default(),
+        config.keyboard_capitalization,
+        config.ime_action.unwrap_or_default(),
         config.enabled,
         config.read_only,
-        if config.single_line {
-            None
-        } else {
-            config.max_lines
-        },
-        if config.single_line {
-            None
-        } else {
-            config.min_lines
-        },
+        config.max_lines,
+        config.min_lines,
         config.cursor_color,
         config.on_text_layout,
+        config.text_style,
+        config.keyboard_actions,
     )
 }
 
@@ -1112,7 +1118,7 @@ impl BasicTextFieldEx {
     }
 
     pub fn min_lines(mut self, min_lines: usize) -> Self {
-        self.config.min_lines = Some(min_lines);
+        self.config.min_lines = min_lines;
         self
     }
 
@@ -1126,8 +1132,25 @@ impl BasicTextFieldEx {
         self
     }
 
+    pub fn text_style(mut self, ts: repose_core::TextStyle) -> Self {
+        self.config.text_style = ts;
+        self
+    }
+
+    pub fn keyboard_capitalization(mut self, kc: repose_core::KeyboardCapitalization) -> Self {
+        self.config.keyboard_capitalization = kc;
+        self
+    }
+
+    pub fn keyboard_actions(mut self, ka: repose_core::KeyboardActions) -> Self {
+        self.config.keyboard_actions = ka;
+        self
+    }
+
     pub fn build(self) -> repose_core::View {
-        BasicTextField(self.hint, self.value, self.modifier, self.config)
+        let on_change = self.config.on_change.clone();
+        // Pass a no-op closure as the direct on_change; config.on_change takes precedence
+        BasicTextField(self.value, |_| {}, self.modifier, self.hint, self.config)
     }
 }
 
@@ -1310,8 +1333,18 @@ pub(crate) fn paint_text_field(
         h: (rect.h - dp_to_px(16.0)).max(0.0),
     };
 
-    let font_val = dp_to_px(TF_FONT_DP) * locals::text_scale().0;
-    let line_h = font_val * 1.3;
+    let ts = text_input
+        .text_style
+        .as_ref()
+        .map(|s| *s)
+        .unwrap_or_default();
+    let font_size_dp = if ts.font_size != 0.0 { ts.font_size } else { TF_FONT_DP };
+    let font_val = dp_to_px(font_size_dp) * locals::text_scale().0;
+    let line_h = if ts.line_height != 0.0 {
+        dp_to_px(ts.line_height)
+    } else {
+        font_val * 1.3
+    };
     let text_off_y = (inner.h - line_h) / 2.0;
 
     scene.nodes.push(SceneNode::PushClip {
@@ -1352,7 +1385,13 @@ pub(crate) fn paint_text_field(
                 st.text.clone()
             };
             let has_vt = text_input.visual_transformation.is_some();
-            let m = measure_text(&measure_for, font_val, None, 400, 0);
+            let m = measure_text(
+                &measure_for,
+                font_val,
+                ts.font_family,
+                ts.font_weight.unwrap_or(400),
+                ts.font_style.unwrap_or(0),
+            );
 
             // Selection highlight
             if show_selection && st.selection.start != st.selection.end {
@@ -1395,9 +1434,9 @@ pub(crate) fn paint_text_field(
 
             // Text
             let txt_col = if st.text.is_empty() {
-                th.on_surface_variant
+                ts.color.unwrap_or(th.on_surface_variant)
             } else {
-                th.on_surface
+                ts.color.unwrap_or(th.on_surface)
             };
             let render_txt = if st.text.is_empty() {
                 text_input.hint.clone()
@@ -1414,13 +1453,16 @@ pub(crate) fn paint_text_field(
                 text: Arc::from(render_txt),
                 color: txt_col,
                 size: font_val,
-                font_family: None,
-                text_align: TextAlign::Unspecified,
-                font_weight: FontWeight::NORMAL,
-                font_style: FontStyle::Normal,
+                font_family: ts.font_family,
+                text_align: ts.text_align,
+                font_weight: FontWeight(ts.font_weight.unwrap_or(400)),
+                font_style: match ts.font_style.unwrap_or(0) {
+                    1 => FontStyle::Italic,
+                    _ => FontStyle::Normal,
+                },
                 text_decoration: TextDecoration::default(),
-                letter_spacing: 0.0,
-                line_height: 0.0,
+                letter_spacing: ts.letter_spacing,
+                line_height: ts.line_height,
             });
 
             // Caret (only when enabled && !readOnly)
@@ -1467,15 +1509,18 @@ pub(crate) fn paint_text_field(
                         h: inner.h,
                     },
                     text: Arc::from(text_input.hint.clone()),
-                    color: th.on_surface_variant,
+                    color: ts.color.unwrap_or(th.on_surface_variant),
                     size: font_val,
-                    font_family: None,
-                    text_align: TextAlign::Unspecified,
-                    font_weight: FontWeight::NORMAL,
-                    font_style: FontStyle::Normal,
+                    font_family: ts.font_family,
+                    text_align: ts.text_align,
+                    font_weight: FontWeight(ts.font_weight.unwrap_or(400)),
+                    font_style: match ts.font_style.unwrap_or(0) {
+                        1 => FontStyle::Italic,
+                        _ => FontStyle::Normal,
+                    },
                     text_decoration: TextDecoration::default(),
-                    letter_spacing: 0.0,
-                    line_height: 0.0,
+                    letter_spacing: ts.letter_spacing,
+                    line_height: ts.line_height,
                 });
             } else {
                 let display_full = rendered_by_vt(&st.text);
@@ -1496,16 +1541,19 @@ pub(crate) fn paint_text_field(
                             h: lh,
                         },
                         text: Arc::<str>::from(ln),
-                        color: th.on_surface,
+                        color: ts.color.unwrap_or(th.on_surface),
                         size: font_val,
-                        font_family: None,
-                        text_align: TextAlign::Unspecified,
-                        font_weight: FontWeight::NORMAL,
-                        font_style: FontStyle::Normal,
-                        text_decoration: TextDecoration::default(),
-                        letter_spacing: 0.0,
-                        line_height: 0.0,
-                    });
+                        font_family: ts.font_family,
+                            text_align: ts.text_align,
+                            font_weight: FontWeight(ts.font_weight.unwrap_or(400)),
+                            font_style: match ts.font_style.unwrap_or(0) {
+                                1 => FontStyle::Italic,
+                                _ => FontStyle::Normal,
+                            },
+                            text_decoration: TextDecoration::default(),
+                            letter_spacing: ts.letter_spacing,
+                            line_height: ts.line_height,
+                        });
                 }
             }
 
@@ -1524,7 +1572,13 @@ pub(crate) fn paint_text_field(
                         continue;
                     }
                     let ln = &st.text[s..e];
-                    let m = measure_text(ln, font_val, None, 400, 0);
+                    let m = measure_text(
+                        ln,
+                        font_val,
+                        ts.font_family,
+                        ts.font_weight.unwrap_or(400),
+                        ts.font_style.unwrap_or(0),
+                    );
                     let ls = os - s;
                     let le = oe - s;
                     let sx = m
@@ -1689,14 +1743,17 @@ fn text_field_view(
     on_change: Option<Rc<dyn Fn(String)>>,
     on_submit: Option<Rc<dyn Fn(String)>>,
     visual_transformation: Option<Rc<dyn repose_core::VisualTransformation>>,
-    keyboard_type: Option<KeyboardType>,
-    ime_action: Option<ImeAction>,
+    keyboard_type: repose_core::KeyboardType,
+    keyboard_capitalization: repose_core::KeyboardCapitalization,
+    ime_action: repose_core::ImeAction,
     enabled: bool,
     read_only: bool,
     max_lines: Option<usize>,
-    min_lines: Option<usize>,
+    min_lines: usize,
     cursor_color: Option<Color>,
     on_text_layout: Option<Rc<dyn Fn(&repose_core::TextLayoutResult)>>,
+    text_style: repose_core::TextStyle,
+    keyboard_actions: repose_core::KeyboardActions,
 ) -> View {
     let modif = modifier.text_input(TextInputConfig {
         hint,
@@ -1707,6 +1764,7 @@ fn text_field_view(
         value,
         visual_transformation,
         keyboard_type,
+        keyboard_capitalization,
         ime_action,
         enabled,
         read_only,
@@ -1714,6 +1772,8 @@ fn text_field_view(
         min_lines,
         cursor_color,
         on_text_layout,
+        text_style: Some(text_style),
+        keyboard_actions: Some(keyboard_actions),
     });
 
     View::new(0, ViewKind::Box)

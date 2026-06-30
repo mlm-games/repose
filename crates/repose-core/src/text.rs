@@ -1,6 +1,50 @@
 use crate::Color;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::ops::Range;
+
+/// Snapshot of a text field's editing state including text, selection, and
+/// IME composition range. Corresponds to Compose's `TextFieldValue`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextFieldValue {
+    pub text: String,
+    /// Selection range in byte offsets. Collapsed range (start == end) = cursor.
+    pub selection: Range<usize>,
+    /// Active IME composition range in byte offsets, or None.
+    pub composition: Option<Range<usize>>,
+}
+
+impl TextFieldValue {
+    pub fn new(text: impl Into<String>) -> Self {
+        let text = text.into();
+        let len = text.len();
+        Self {
+            selection: len..len,
+            text,
+            composition: None,
+        }
+    }
+
+    pub fn with_selection(mut self, start: usize, end: usize) -> Self {
+        let len = self.text.len();
+        self.selection = start.min(len)..end.min(len);
+        self
+    }
+
+    pub fn text_before_selection(&self, max_chars: usize) -> String {
+        let start = self.selection.start.saturating_sub(max_chars);
+        self.text[start..self.selection.start].to_string()
+    }
+
+    pub fn text_after_selection(&self, max_chars: usize) -> String {
+        let end = (self.selection.end + max_chars).min(self.text.len());
+        self.text[self.selection.end..end].to_string()
+    }
+
+    pub fn selected_text(&self) -> String {
+        self.text[self.selection.clone()].to_string()
+    }
+}
 
 /// Result of text layout computation, provided to the `on_text_layout` callback.
 /// Exposes key information about the rendered text layout.
@@ -100,6 +144,55 @@ pub fn original_offset_to_display(original: &str, display: &str, original_byte: 
         .unwrap_or(display.len())
 }
 
+/// Configures automatic capitalization behavior for the keyboard.
+/// Corresponds to Compose's `KeyboardCapitalization`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum KeyboardCapitalization {
+    #[default]
+    Unspecified,
+    None,
+    Characters,
+    Words,
+    Sentences,
+}
+
+/// Style configuration for text displayed in a text field.
+/// Corresponds to a subset of Compose's `TextStyle`.
+#[derive(Clone, Copy, Debug)]
+pub struct TextStyle {
+    /// Font size in dp. 0 = use default (16dp for TextField).
+    pub font_size: f32,
+    /// Text color. None = use theme default.
+    pub color: Option<Color>,
+    /// Font weight. None = NORMAL.
+    pub font_weight: Option<u16>,
+    /// Font family. None = use default.
+    pub font_family: Option<&'static str>,
+    /// Font style. None = Normal.
+    pub font_style: Option<u8>,
+    /// Text alignment. Unspecified = inherit.
+    pub text_align: crate::TextAlign,
+    /// Letter spacing in dp. 0 = no extra spacing.
+    pub letter_spacing: f32,
+    /// Line height in dp. 0 = default (font_size * 1.2).
+    pub line_height: f32,
+}
+
+impl Default for TextStyle {
+    fn default() -> Self {
+        Self {
+            font_size: 0.0,
+            color: None,
+            font_weight: None,
+            font_family: None,
+            font_style: None,
+            text_align: crate::TextAlign::Unspecified,
+            letter_spacing: 0.0,
+            line_height: 0.0,
+        }
+    }
+}
+
 /// Hints the platform about the type of keyboard to show.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum KeyboardType {
@@ -125,6 +218,18 @@ pub enum ImeAction {
     Next,
     Done,
     Previous,
+}
+
+/// Callbacks for IME action button presses on the soft keyboard.
+/// Corresponds to Compose's `KeyboardActions`.
+#[derive(Clone, Default)]
+pub struct KeyboardActions {
+    pub on_done: Option<Rc<dyn Fn()>>,
+    pub on_go: Option<Rc<dyn Fn()>>,
+    pub on_next: Option<Rc<dyn Fn()>>,
+    pub on_previous: Option<Rc<dyn Fn()>>,
+    pub on_search: Option<Rc<dyn Fn()>>,
+    pub on_send: Option<Rc<dyn Fn()>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

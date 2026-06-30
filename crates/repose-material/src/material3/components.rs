@@ -2903,17 +2903,20 @@ pub fn OutlinedTextField(
                                 focus_tracker: Some(focus_tracker.clone()),
                                 value: value.clone(),
                                 visual_transformation: None,
-                                keyboard_type: None,
-                                ime_action: None,
+                                keyboard_type: Default::default(),
+                                keyboard_capitalization: Default::default(),
+                                ime_action: Default::default(),
                                 enabled: config.enabled,
                                 read_only: false,
                                 max_lines: None,
-                                min_lines: None,
+                                min_lines: 1,
                                 cursor_color: config
                                     .colors
                                     .as_ref()
                                     .map(|c| c.cursor_color(config.is_error)),
                                 on_text_layout: None,
+                                text_style: None,
+                                keyboard_actions: None,
                             }),
                     )
                     .semantics(Semantics {
@@ -3118,17 +3121,20 @@ pub fn TextField(
                                 focus_tracker: Some(focus_tracker.clone()),
                                 value: value.clone(),
                                 visual_transformation: None,
-                                keyboard_type: None,
-                                ime_action: None,
+                                keyboard_type: Default::default(),
+                                keyboard_capitalization: Default::default(),
+                                ime_action: Default::default(),
                                 enabled: config.enabled,
                                 read_only: false,
                                 max_lines: None,
-                                min_lines: None,
+                                min_lines: 1,
                                 cursor_color: config
                                     .colors
                                     .as_ref()
                                     .map(|c| c.cursor_color(config.is_error)),
                                 on_text_layout: None,
+                                text_style: None,
+                                keyboard_actions: None,
                             }),
                     )
                     .semantics(Semantics {
