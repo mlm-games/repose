@@ -257,6 +257,7 @@ pub const TF_FONT_DP: f32 = 16.0;
 pub struct KeyboardOptions {
     pub keyboard_type: repose_core::KeyboardType,
     pub autocorrect: bool,
+    pub keyboard_capitalization: repose_core::KeyboardCapitalization,
 }
 
 impl Default for KeyboardOptions {
@@ -264,6 +265,7 @@ impl Default for KeyboardOptions {
         Self {
             keyboard_type: repose_core::KeyboardType::default(),
             autocorrect: true,
+            keyboard_capitalization: repose_core::KeyboardCapitalization::default(),
         }
     }
 }
@@ -999,6 +1001,18 @@ pub struct BasicTextFieldConfig {
     pub keyboard_capitalization: repose_core::KeyboardCapitalization,
     /// Per-action IME callbacks (-> `keyboardActions`).
     pub keyboard_actions: repose_core::KeyboardActions,
+    /// Line limits (-> `TextFieldLineLimits`). Overrides `single_line`/`max_lines`/`min_lines` when set.
+    pub line_limits: Option<repose_core::TextFieldLineLimits>,
+    /// Decoration box (-> `decorationBox`). Wraps the inner text field with custom decorations.
+    pub decoration_box: Option<Rc<dyn Fn(repose_core::View) -> repose_core::View>>,
+    /// Input transformation (-> `inputTransformation`). Transforms text before it is applied.
+    pub input_transformation: Option<Rc<dyn repose_core::InputTransformation>>,
+    /// Output transformation (-> `outputTransformation`). Transforms text for display.
+    pub output_transformation: Option<Rc<dyn repose_core::OutputTransformation>>,
+    /// Interaction source for tracking focus/press/hover state.
+    pub interaction_source: Option<repose_core::MutableInteractionSource>,
+    /// Internal codepoint transformation for password obfuscation (-> `codepointTransformation`).
+    pub codepoint_transformation: Option<repose_core::CodepointTransformation>,
 }
 
 impl Default for BasicTextFieldConfig {
@@ -1019,6 +1033,12 @@ impl Default for BasicTextFieldConfig {
             text_style: Default::default(),
             keyboard_capitalization: Default::default(),
             keyboard_actions: Default::default(),
+            line_limits: None,
+            decoration_box: None,
+            input_transformation: None,
+            output_transformation: None,
+            interaction_source: None,
+            codepoint_transformation: None,
         }
     }
 }
@@ -1065,6 +1085,12 @@ pub fn BasicTextField(
         config.on_text_layout,
         config.text_style,
         config.keyboard_actions,
+        config.interaction_source,
+        config.line_limits,
+        config.input_transformation,
+        config.output_transformation,
+        config.decoration_box,
+        config.codepoint_transformation,
     )
 }
 
@@ -1085,6 +1111,146 @@ pub fn BasicTextFieldValue(
         on_value_change(updated);
     };
     BasicTextField(text, on_change, modifier, hint, config)
+}
+
+/// New API: BasicTextField with `TextFieldState` (the platform-runner state).
+/// Corresponds to Compose's `BasicTextField(state: TextFieldState, ...)`.
+///
+/// The state is managed externally and all editing is reflected in the `TextFieldState`
+/// object passed to the platform runner via `set_textfield_state`.
+pub fn BasicTextFieldNew(
+    state: Rc<RefCell<TextFieldState>>,
+    modifier: repose_core::Modifier,
+    hint: impl Into<String>,
+    enabled: bool,
+    read_only: bool,
+    text_style: repose_core::TextStyle,
+    keyboard_options: KeyboardOptions,
+    ime_action: repose_core::ImeAction,
+    line_limits: repose_core::TextFieldLineLimits,
+    on_text_layout: Option<Rc<dyn Fn(&repose_core::TextLayoutResult)>>,
+    interaction_source: Option<repose_core::MutableInteractionSource>,
+    cursor_color: Option<Color>,
+    on_keyboard_action: Option<Rc<dyn repose_core::KeyboardActionHandler>>,
+    input_transformation: Option<Rc<dyn repose_core::InputTransformation>>,
+    output_transformation: Option<Rc<dyn repose_core::OutputTransformation>>,
+    decorator: Option<Rc<dyn repose_core::TextFieldDecorator>>,
+) -> repose_core::View {
+    let (single_line, max_lines, min_lines) = match line_limits {
+        repose_core::TextFieldLineLimits::SingleLine => (true, 1, 1),
+        repose_core::TextFieldLineLimits::MultiLine {
+            min_height_in_lines,
+            max_height_in_lines,
+        } => (false, max_height_in_lines, min_height_in_lines),
+    };
+
+    let ka = if let Some(ref handler) = on_keyboard_action {
+        let handler = handler.clone();
+        repose_core::KeyboardActions {
+            on_done: Some({
+                let h = handler.clone();
+                Rc::new(move || h.on_keyboard_action(&|| {}))
+            }),
+            on_go: Some({
+                let h = handler.clone();
+                Rc::new(move || h.on_keyboard_action(&|| {}))
+            }),
+            on_next: Some({
+                let h = handler.clone();
+                Rc::new(move || h.on_keyboard_action(&|| {}))
+            }),
+            on_previous: Some({
+                let h = handler.clone();
+                Rc::new(move || h.on_keyboard_action(&|| {}))
+            }),
+            on_search: Some({
+                let h = handler.clone();
+                Rc::new(move || h.on_keyboard_action(&|| {}))
+            }),
+            on_send: Some({
+                Rc::new(move || handler.on_keyboard_action(&|| {}))
+            }),
+        }
+    } else {
+        repose_core::KeyboardActions::default()
+    };
+
+    let decoration_box = decorator.map(|d| {
+        Rc::new(move |inner: repose_core::View| d.decorate(inner)) as Rc<dyn Fn(_) -> _>
+    });
+
+    let value = state.borrow().text.clone();
+    let key = state.as_ptr() as u64;
+    set_textfield_state(key, state.clone());
+
+    let on_change = {
+        let s = state.clone();
+        move |new_value: String| {
+            s.borrow_mut().text = new_value;
+        }
+    };
+
+    text_field_view(
+        modifier,
+        hint.into(),
+        value,
+        !single_line,
+        Some(Rc::new(on_change)),
+        None,
+        None,
+        keyboard_options.keyboard_type,
+        keyboard_options.keyboard_capitalization,
+        ime_action,
+        enabled,
+        read_only,
+        Some(max_lines),
+        min_lines,
+        cursor_color,
+        on_text_layout,
+        text_style,
+        ka,
+        interaction_source,
+        Some(line_limits),
+        input_transformation,
+        output_transformation,
+        decoration_box,
+        None,
+    )
+}
+
+/// Secure text field for password entry. Corresponds to Compose's `BasicSecureTextField`.
+pub fn BasicSecureTextField(
+    state: Rc<RefCell<TextFieldState>>,
+    modifier: repose_core::Modifier,
+    enabled: bool,
+    read_only: bool,
+    input_transformation: Option<Rc<dyn repose_core::InputTransformation>>,
+    text_style: repose_core::TextStyle,
+    keyboard_options: KeyboardOptions,
+    on_keyboard_action: Option<Rc<dyn repose_core::KeyboardActionHandler>>,
+    on_text_layout: Option<Rc<dyn Fn(&repose_core::TextLayoutResult)>>,
+    interaction_source: Option<repose_core::MutableInteractionSource>,
+    cursor_color: Option<Color>,
+    decorator: Option<Rc<dyn repose_core::TextFieldDecorator>>,
+) -> repose_core::View {
+    BasicTextFieldNew(
+        state,
+        modifier,
+        "",
+        enabled,
+        read_only,
+        text_style,
+        keyboard_options,
+        repose_core::ImeAction::Done,
+        repose_core::TextFieldLineLimits::SingleLine,
+        on_text_layout,
+        interaction_source,
+        cursor_color,
+        on_keyboard_action,
+        input_transformation,
+        None,
+        decorator,
+    )
 }
 
 /// Builder-style helper for `BasicTextFieldConfig`, allowing method chaining.
@@ -1191,6 +1357,34 @@ impl BasicTextFieldEx {
 
     pub fn keyboard_actions(mut self, ka: repose_core::KeyboardActions) -> Self {
         self.config.keyboard_actions = ka;
+        self
+    }
+
+    pub fn line_limits(mut self, limits: repose_core::TextFieldLineLimits) -> Self {
+        self.config.line_limits = Some(limits);
+        self
+    }
+
+    pub fn interaction_source(mut self, source: &repose_core::MutableInteractionSource) -> Self {
+        self.config.interaction_source = Some(source.clone());
+        self
+    }
+
+    pub fn decoration_box(
+        mut self,
+        decorator: impl Fn(repose_core::View) -> repose_core::View + 'static,
+    ) -> Self {
+        self.config.decoration_box = Some(Rc::new(decorator));
+        self
+    }
+
+    pub fn input_transformation(mut self, it: impl repose_core::InputTransformation) -> Self {
+        self.config.input_transformation = Some(Rc::new(it));
+        self
+    }
+
+    pub fn output_transformation(mut self, ot: impl repose_core::OutputTransformation) -> Self {
+        self.config.output_transformation = Some(Rc::new(ot));
         self
     }
 
@@ -1868,6 +2062,12 @@ fn text_field_view(
     on_text_layout: Option<Rc<dyn Fn(&repose_core::TextLayoutResult)>>,
     text_style: repose_core::TextStyle,
     keyboard_actions: repose_core::KeyboardActions,
+    interaction_source: Option<repose_core::MutableInteractionSource>,
+    line_limits: Option<repose_core::TextFieldLineLimits>,
+    _input_transformation: Option<Rc<dyn repose_core::InputTransformation>>,
+    _output_transformation: Option<Rc<dyn repose_core::OutputTransformation>>,
+    _decoration_box: Option<Rc<dyn Fn(repose_core::View) -> repose_core::View>>,
+    _codepoint_transformation: Option<repose_core::CodepointTransformation>,
 ) -> View {
     let modif = modifier.text_input(TextInputConfig {
         hint,
@@ -1888,6 +2088,8 @@ fn text_field_view(
         on_text_layout,
         text_style: Some(text_style),
         keyboard_actions: Some(keyboard_actions),
+        interaction_source: interaction_source.as_ref().map(|s| s.source()),
+        line_limits,
     });
 
     View::new(0, ViewKind::Box)

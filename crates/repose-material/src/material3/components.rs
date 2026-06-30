@@ -2937,6 +2937,8 @@ pub fn OutlinedTextField(
                                 on_text_layout: None,
                                 text_style: None,
                                 keyboard_actions: None,
+                                interaction_source: None,
+                                line_limits: None,
                             }),
                     )
                     .semantics(Semantics {
@@ -3155,6 +3157,8 @@ pub fn TextField(
                                 on_text_layout: None,
                                 text_style: None,
                                 keyboard_actions: None,
+                                interaction_source: None,
+                                line_limits: None,
                             }),
                     )
                     .semantics(Semantics {

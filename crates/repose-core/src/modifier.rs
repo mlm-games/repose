@@ -207,6 +207,10 @@ pub struct TextInputConfig {
     /// Per-action IME callbacks (onDone, onGo, onNext, etc.).
     /// None = use `on_submit` for all actions.
     pub keyboard_actions: Option<crate::text::KeyboardActions>,
+    /// Interaction source for tracking focus/press/hover state.
+    pub interaction_source: Option<InteractionSource>,
+    /// Line limits (SingleLine or MultiLine). Overrides `multiline`/`max_lines`/`min_lines`.
+    pub line_limits: Option<crate::text::TextFieldLineLimits>,
 }
 
 impl std::fmt::Debug for TextInputConfig {

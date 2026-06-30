@@ -602,6 +602,7 @@ pub enum ImeAction {
 }
 
 /// Callbacks for IME action button presses on the soft keyboard.
+/// Corresponds to Compose's legacy `KeyboardActions`.
 #[derive(Clone, Default)]
 pub struct KeyboardActions {
     pub on_done: Option<Rc<dyn Fn()>>,
@@ -610,6 +611,177 @@ pub struct KeyboardActions {
     pub on_previous: Option<Rc<dyn Fn()>>,
     pub on_search: Option<Rc<dyn Fn()>>,
     pub on_send: Option<Rc<dyn Fn()>>,
+}
+
+/// Handles IME action button presses. Single-callback interface used by the
+/// new `BasicTextField(state, ...)` API. Corresponds to Compose's `KeyboardActionHandler`.
+pub trait KeyboardActionHandler: Debug + 'static {
+    fn on_keyboard_action(&self, perform_default: &dyn Fn());
+}
+
+/// A simple `KeyboardActionHandler` that only executes the default behavior.
+#[derive(Clone, Copy, Debug)]
+pub struct DefaultKeyboardActionHandler;
+
+impl KeyboardActionHandler for DefaultKeyboardActionHandler {
+    fn on_keyboard_action(&self, perform_default: &dyn Fn()) {
+        perform_default();
+    }
+}
+
+/// Mutable text buffer used as the scope for `InputTransformation` and
+/// `OutputTransformation`. Corresponds to Compose's `TextFieldBuffer`.
+pub trait TextFieldBuffer {
+    fn text(&self) -> &str;
+    fn set_text(&mut self, text: &str);
+    fn selection(&self) -> TextRange;
+    fn set_selection(&mut self, sel: TextRange);
+    fn length(&self) -> usize;
+    fn replace(&mut self, start: usize, end: usize, text: &str);
+    fn insert(&mut self, index: usize, text: &str);
+    fn delete(&mut self, start: usize, end: usize);
+    fn place_cursor_before_char_at(&mut self, index: usize);
+    fn place_cursor_at_end(&mut self);
+    fn select_all(&mut self);
+    fn revert_all_changes(&mut self);
+    fn original_text(&self) -> &str;
+    fn original_selection(&self) -> TextRange;
+    fn has_selection(&self) -> bool;
+}
+
+/// Limits on the number of visible lines in a text field.
+/// Corresponds to Compose's `TextFieldLineLimits`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextFieldLineLimits {
+    SingleLine,
+    MultiLine {
+        min_height_in_lines: usize,
+        max_height_in_lines: usize,
+    },
+}
+
+impl TextFieldLineLimits {
+    pub fn default() -> Self {
+        TextFieldLineLimits::MultiLine {
+            min_height_in_lines: 1,
+            max_height_in_lines: usize::MAX,
+        }
+    }
+}
+
+/// Wraps the inner text field with custom decorations.
+/// Corresponds to Compose's `TextFieldDecorator`.
+pub trait TextFieldDecorator: Debug + 'static {
+    fn decorate(&self, inner: crate::View) -> crate::View;
+}
+
+/// A `TextFieldDecorator` that passes through the inner text field unchanged.
+#[derive(Clone, Copy, Debug)]
+pub struct DefaultTextFieldDecorator;
+
+impl TextFieldDecorator for DefaultTextFieldDecorator {
+    fn decorate(&self, inner: crate::View) -> crate::View {
+        inner
+    }
+}
+
+/// Transforms user input before it is applied to the text field.
+/// Corresponds to Compose's `InputTransformation`.
+pub trait InputTransformation: Debug + 'static {
+    fn keyboard_options(&self) -> Option<KeyboardOptions> {
+        None
+    }
+    fn transform_input(&self, buffer: &mut dyn TextFieldBuffer);
+}
+
+/// Transforms text output for display.
+/// Corresponds to Compose's `OutputTransformation`.
+pub trait OutputTransformation: Debug + 'static {
+    fn transform_output(&self, buffer: &mut dyn TextFieldBuffer);
+}
+
+/// Internal 1-to-1 codepoint transformation for password obfuscation.
+/// Corresponds to Compose's `CodepointTransformation`.
+pub struct CodepointTransformation {
+    pub transform: Box<dyn Fn(usize, char) -> char>,
+}
+
+impl Clone for CodepointTransformation {
+    fn clone(&self) -> Self {
+        // Cannot clone Box<dyn Fn>; this is for internal use only.
+        // In practice, CodepointTransformation is passed as an Option and
+        // constructed fresh each time. If clone is needed, wrap the Fn in Rc.
+        panic!("CodepointTransformation::clone() is not supported — use Rc instead");
+    }
+}
+
+impl CodepointTransformation {
+    pub fn new(transform: impl Fn(usize, char) -> char + 'static) -> Self {
+        CodepointTransformation {
+            transform: Box::new(transform),
+        }
+    }
+
+    pub fn transform(&self, codepoint_index: usize, codepoint: char) -> char {
+        (self.transform)(codepoint_index, codepoint)
+    }
+}
+
+/// Input transformation settings: keyboard type, capitalization, and IME action.
+/// Corresponds to Compose's `KeyboardOptions`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct KeyboardOptions {
+    pub keyboard_type: KeyboardType,
+    pub keyboard_capitalization: KeyboardCapitalization,
+    pub ime_action: ImeAction,
+    pub auto_correct: Option<bool>,
+    pub show_keyboard_on_focus: Option<bool>,
+}
+
+impl KeyboardOptions {
+    pub const fn default() -> Self {
+        KeyboardOptions {
+            keyboard_type: KeyboardType::Text,
+            keyboard_capitalization: KeyboardCapitalization::Unspecified,
+            ime_action: ImeAction::Unspecified,
+            auto_correct: None,
+            show_keyboard_on_focus: None,
+        }
+    }
+
+    pub fn fill_unspecified_values_with(&self, other: Option<&KeyboardOptions>) -> KeyboardOptions {
+        let other = match other {
+            Some(o) => o,
+            None => return *self,
+        };
+        KeyboardOptions {
+            keyboard_type: if self.keyboard_type == KeyboardType::Unspecified {
+                other.keyboard_type
+            } else {
+                self.keyboard_type
+            },
+            keyboard_capitalization: if self.keyboard_capitalization
+                == KeyboardCapitalization::Unspecified
+            {
+                other.keyboard_capitalization
+            } else {
+                self.keyboard_capitalization
+            },
+            ime_action: if self.ime_action == ImeAction::Unspecified {
+                other.ime_action
+            } else {
+                self.ime_action
+            },
+            auto_correct: self.auto_correct.or(other.auto_correct),
+            show_keyboard_on_focus: self.show_keyboard_on_focus.or(other.show_keyboard_on_focus),
+        }
+    }
+}
+
+impl Default for KeyboardOptions {
+    fn default() -> Self {
+        Self::default()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
