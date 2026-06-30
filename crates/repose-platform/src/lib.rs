@@ -173,7 +173,11 @@ where
 {
     // Process any programmatic focus request from FocusRequester
     if let Some(requested_id) = repose_core::take_focus_request() {
-        sched.focused = Some(requested_id);
+        if requested_id == repose_core::runtime::CLEAR_FOCUS_MARKER {
+            sched.focused = None;
+        } else {
+            sched.focused = Some(requested_id);
+        }
     }
 
     set_density_default(Density { scale });

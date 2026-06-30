@@ -1352,6 +1352,13 @@ impl Modifier {
         self
     }
 
+    /// Make this composable a focus target (`.focusable(true)`).
+    /// Corresponds to Compose's `Modifier.focusTarget()`.
+    pub fn focus_target(mut self) -> Self {
+        self.focusable = Some(true);
+        self
+    }
+
     /// Register a callback that fires when this view gains or loses keyboard focus.
     /// The argument is `true` when the view receives focus, `false` when it loses it.
     pub fn on_focus_changed(mut self, f: impl Fn(bool) + 'static) -> Self {

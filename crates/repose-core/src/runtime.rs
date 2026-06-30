@@ -10,10 +10,14 @@ thread_local! {
     pub static COMPOSER: RefCell<Composer> = RefCell::new(Composer::default());
     static ROOT_SCOPE: RefCell<Option<Scope>> = const { RefCell::new(None) };
 
-    /// A programmatic focus request, set by `FocusRequester::request_focus()`.
-    /// Stores the view ID that should receive focus on the next frame.
+    /// A programmatic focus request, set by `FocusRequester::request_focus()` /
+    /// `free_focus()`. Stores the view ID that should receive focus on the next frame,
+    /// or `Some(CLEAR_FOCUS_MARKER)` to clear focus.
     static FOCUS_REQUEST: Cell<Option<u64>> = const { Cell::new(None) };
 }
+
+/// Sentinel value meaning "clear focus entirely".
+pub const CLEAR_FOCUS_MARKER: u64 = u64::MAX;
 
 pub fn take_focus_request() -> Option<u64> {
     FOCUS_REQUEST.with(|r| r.replace(None))
@@ -42,6 +46,21 @@ impl FocusRequester {
         if let Some(id) = *self.target.borrow() {
             FOCUS_REQUEST.with(|r| r.set(Some(id)));
         }
+    }
+
+    /// Free/clear focus from the associated widget on the next frame.
+    /// If the associated widget currently has focus, focus is cleared entirely.
+    /// Corresponds to Compose's `freeFocus()`.
+    pub fn free_focus(&self) {
+        FOCUS_REQUEST.with(|r| r.set(Some(CLEAR_FOCUS_MARKER)));
+    }
+
+    /// Request focus for the associated widget on the next frame,
+    /// bypassing some focusability checks. Corresponds to Compose's
+    /// `captureFocus()`, which is typically used internally by the focus system.
+    /// In repose this is an alias for `request_focus()`.
+    pub fn capture_focus(&self) {
+        self.request_focus();
     }
 }
 
