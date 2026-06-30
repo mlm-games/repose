@@ -56,7 +56,7 @@ impl NestedScrollConnection {
     }
 }
 
-fn run_pre_scroll(conn: &RefCell<Option<NestedScrollConnection>>, d: Vec2) -> Vec2 {
+pub(crate) fn run_pre_scroll(conn: &RefCell<Option<NestedScrollConnection>>, d: Vec2) -> Vec2 {
     if let Some(ref parent) = *conn.borrow()
         && let Some(ref pre) = parent.on_pre_scroll
     {
@@ -65,7 +65,7 @@ fn run_pre_scroll(conn: &RefCell<Option<NestedScrollConnection>>, d: Vec2) -> Ve
     d
 }
 
-fn run_post_scroll(conn: &RefCell<Option<NestedScrollConnection>>, leftover: Vec2) -> Vec2 {
+pub(crate) fn run_post_scroll(conn: &RefCell<Option<NestedScrollConnection>>, leftover: Vec2) -> Vec2 {
     if let Some(ref parent) = *conn.borrow()
         && let Some(ref post) = parent.on_post_scroll
     {

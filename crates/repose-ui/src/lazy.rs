@@ -1,6 +1,7 @@
 use crate::ViewExt;
 use crate::anim::animate_f32_from;
 use crate::lazy_states::*;
+use crate::scroll::{run_post_scroll, run_pre_scroll};
 use repose_core::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -265,13 +266,15 @@ where
     let on_scroll = {
         let st = state.clone();
         Rc::new(move |d: repose_core::Vec2| -> repose_core::Vec2 {
+            let d = run_pre_scroll(&st.parent_connection, d);
             let ch = st.content_height.get();
             let ch = if ch > 0.0 { ch } else { content_height_px };
             let leftover_y_px = st.scroll_immediate(d.y, ch);
-            repose_core::Vec2 {
+            let result = repose_core::Vec2 {
                 x: d.x,
                 y: leftover_y_px,
-            }
+            };
+            run_post_scroll(&st.parent_connection, result)
         })
     };
 
@@ -431,12 +434,14 @@ where
     let on_scroll = {
         let st = state.clone();
         Rc::new(move |d: Vec2| -> Vec2 {
+            let d = run_pre_scroll(&st.parent_connection, d);
             let ch = st.content_height.get();
             let ch = if ch > 0.0 { ch } else { content_height_px };
-            Vec2 {
+            let result = Vec2 {
                 x: d.x,
                 y: st.scroll_immediate(d.y, ch),
-            }
+            };
+            run_post_scroll(&st.parent_connection, result)
         })
     };
 
@@ -598,12 +603,14 @@ where
     let on_scroll = {
         let st = state.clone();
         Rc::new(move |d: Vec2| -> Vec2 {
+            let d = run_pre_scroll(&st.parent_connection, d);
             let cw = st.content_width.get();
             let cw = if cw > 0.0 { cw } else { content_width_px };
-            Vec2 {
+            let result = Vec2 {
                 x: st.scroll_immediate_x(d.x, cw),
                 y: d.y,
-            }
+            };
+            run_post_scroll(&st.parent_connection, result)
         })
     };
 
@@ -732,12 +739,14 @@ where
     let on_scroll = {
         let st = state.clone();
         Rc::new(move |d: Vec2| -> Vec2 {
+            let d = run_pre_scroll(&st.parent_connection, d);
             let cw = st.content_width.get();
             let cw = if cw > 0.0 { cw } else { content_width_px };
-            Vec2 {
+            let result = Vec2 {
                 x: st.scroll_immediate(d.x, cw),
                 y: d.y,
-            }
+            };
+            run_post_scroll(&st.parent_connection, result)
         })
     };
 
@@ -964,11 +973,13 @@ where
     let on_scroll = {
         let st = state.clone();
         Rc::new(move |d: Vec2| -> Vec2 {
+            let d = run_pre_scroll(&st.parent_connection, d);
             let ch = st.content_height.get().max(st.viewport_height.get());
-            Vec2 {
+            let result = Vec2 {
                 x: d.x,
                 y: st.scroll_immediate(d.y, ch),
-            }
+            };
+            run_post_scroll(&st.parent_connection, result)
         })
     };
 

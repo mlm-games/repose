@@ -715,6 +715,8 @@ impl LayoutEngine {
             .collect();
 
         for key in &scope_keys {
+            let mut changed = false;
+
             // Removals from scope tree
             for &node_id in &removed_ids {
                 if node_to_scope.get(&node_id).map(|k| k.as_str()) != Some(key) {
@@ -725,6 +727,7 @@ impl LayoutEngine {
                         let _ = st.taffy.remove(tid);
                         st.reverse_map.remove(&tid);
                         st.text_cache.remove(&node_id);
+                        changed = true;
                     }
                 }
             }
@@ -735,6 +738,7 @@ impl LayoutEngine {
                     continue;
                 }
                 self.update_scope_taffy_node(key, node_id, font_px);
+                changed = true;
             }
 
             // Ensure scope root exists
@@ -751,6 +755,14 @@ impl LayoutEngine {
                     .unwrap_or(false);
                 if !exists {
                     self.update_scope_taffy_node(key, root_id, font_px);
+                    changed = true;
+                }
+            }
+
+            // Invalidate scope tree layout when content changed
+            if changed {
+                if let Some(st) = self.scope_trees.get_mut(key) {
+                    st.valid = false;
                 }
             }
         }
