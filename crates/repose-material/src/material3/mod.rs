@@ -14,11 +14,13 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use web_time::Duration;
 
+use crate::ripple::{ripple, RippleConfig};
 use crate::{Icon, Symbol};
 use repose_core::animation::{AnimationSpec, Easing, RepeatableSpec};
 use repose_core::*;
 use repose_ui::LazyRowState;
 use repose_ui::lazy::LazyRow;
+use repose_ui::scroll::NestedScrollConnection;
 use repose_ui::{
     BasicTextField as UiTextField, Box, Column, Row, Spacer, Stack, Text, TextStyle, ViewExt,
     ZStack,
@@ -1363,11 +1365,23 @@ fn render_dropdown_menu_content(
     .child(Column(Modifier::new()).with_children(children))
 }
 
-/// State for `SearchBar` - manages expanded/collapsed and query text.
+/// Possible values of [`SearchBarState`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SearchBarValue {
+    Collapsed,
+    Expanded,
+}
+
+/// State for `SearchBar` — manages expanded/collapsed progress, query text,
+/// active state, and collapsed layout coordinates for popup anchoring.
 pub struct SearchBarState {
     pub query: Signal<String>,
     pub expanded: Signal<bool>,
     pub active: Signal<bool>,
+    anim: Rc<RefCell<AnimatedValue<f32>>>,
+    /// Tracked via `on_globally_positioned` on the collapsed bar.
+    /// Used by expanded docked variants for popup placement.
+    pub collapsed_layout_rect: Signal<(f32, f32, f32, f32)>,
 }
 
 impl Default for SearchBarState {
@@ -1382,6 +1396,11 @@ impl SearchBarState {
             query: signal(String::new()),
             expanded: signal(false),
             active: signal(false),
+            anim: Rc::new(RefCell::new(AnimatedValue::new(
+                0.0,
+                AnimationSpec::spring_gentle(),
+            ))),
+            collapsed_layout_rect: signal((0.0, 0.0, 0.0, 0.0)),
         }
     }
 
@@ -1389,8 +1408,8 @@ impl SearchBarState {
         self.query.get()
     }
 
-    pub fn set_query(&self, q: String) {
-        self.query.set(q);
+    pub fn set_query(&self, q: impl Into<String>) {
+        self.query.set(q.into());
     }
 
     pub fn is_expanded(&self) -> bool {
@@ -1399,11 +1418,15 @@ impl SearchBarState {
 
     pub fn expand(&self) {
         self.expanded.set(true);
+        self.anim.borrow_mut().set_target(1.0);
+        request_frame();
     }
 
     pub fn collapse(&self) {
         self.expanded.set(false);
         self.active.set(false);
+        self.anim.borrow_mut().set_target(0.0);
+        request_frame();
     }
 
     pub fn is_active(&self) -> bool {
@@ -1413,102 +1436,253 @@ impl SearchBarState {
     pub fn activate(&self) {
         self.active.set(true);
         self.expanded.set(true);
+        self.anim.borrow_mut().set_target(1.0);
+        request_frame();
     }
 
     pub fn deactivate(&self) {
         self.active.set(false);
     }
+
+    /// Current animation progress: 0.0 = collapsed, 1.0 = expanded.
+    /// Ticks the underlying AnimatedValue and requests frames while animating.
+    pub fn progress(&self) -> f32 {
+        let mut a = self.anim.borrow_mut();
+        let still = a.update();
+        if still {
+            request_frame();
+        }
+        a.get().clamp(0.0, 1.0)
+    }
+
+    /// Whether the animation is currently running.
+    pub fn is_animating(&self) -> bool {
+        self.anim.borrow().is_animating()
+    }
+
+    /// Snap the progress to a specific fraction (0.0 = collapsed, 1.0 = expanded).
+    pub fn snap_to(&self, fraction: f32) {
+        self.anim.borrow_mut().snap_to(fraction.clamp(0.0, 1.0));
+        request_frame();
+    }
 }
 
-/// M3 Search Bar - an expandable search input with leading icon and optional
-/// suggestions that expand below the search bar (pushing content down).
-pub fn SearchBar(
-    state: Rc<SearchBarState>,
-    modifier: Modifier,
-    leading_icon: Option<View>,
-    trailing_icon: Option<View>,
-    placeholder: impl Into<String>,
+/// Build a search bar input field with proper M3 SearchBar styling.
+/// Equivalent to Compose Material3's `SearchBarDefaults.InputField`.
+pub fn SearchBarInputField(
+    placeholder: String,
+    query: String,
     on_query_change: Option<Rc<dyn Fn(String)>>,
-    content: View,
+    active: bool,
+    text_color: Color,
+    placeholder_color: Color,
 ) -> View {
-    let th = theme();
-    let placeholder = placeholder.into();
-    let expanded = state.is_expanded();
-    let query = state.query();
-    let active = state.is_active();
-
-    let width = animate_f32(
-        "searchbar_width",
-        if expanded { 360.0 } else { 240.0 },
-        theme().motion.expand,
-    );
-
-    let input_field: View = if active {
+    if active {
         UiTextField(
-            placeholder.clone(),
-            query.clone(),
+            placeholder,
+            query,
             Modifier::new().flex_grow(1.0).padding(4.0),
             repose_ui::BasicTextFieldConfig {
-                on_change: Some({
-                    let s = state.clone();
-                    let cb = on_query_change.clone();
-                    Rc::new(move |text| {
-                        s.set_query(text);
-                        if let Some(ref cb) = cb {
-                            cb(s.query());
-                        }
-                    })
-                }),
+                on_change: Some(Rc::new(move |text| {
+                    if let Some(ref cb) = on_query_change {
+                        cb(text);
+                    }
+                })),
                 ..Default::default()
             },
         )
-        .color(th.on_surface)
-        .size(th.typography.body_large)
+        .color(text_color)
+        .size(theme().typography.body_large)
     } else {
+        let q_empty = query.is_empty();
         Box(Modifier::new().flex_grow(1.0)).child(
-            Text(if query.is_empty() {
-                placeholder.clone()
-            } else {
-                query.clone()
-            })
-            .color(if query.is_empty() {
-                th.on_surface_variant
-            } else {
-                th.on_surface
-            })
-            .size(th.typography.body_large)
-            .single_line(),
+            Text(if q_empty { placeholder } else { query })
+                .color(if q_empty {
+                    placeholder_color
+                } else {
+                    text_color
+                })
+                .size(theme().typography.body_large)
+                .single_line(),
         )
+    }
+}
+
+/// Apply tonal elevation as a translucent primary overlay when the container
+/// color matches the surface color. This mirrors CK's Surface tonalElevation.
+fn apply_tonal_elevation(m: Modifier, elevation: f32, container: Color) -> Modifier {
+    if elevation > 0.0 {
+        let th = theme();
+        if container == th.colors.surface {
+            let overlay_alpha = (elevation * 4.0 + 4.0).min(24.0) / 100.0;
+            return m.background(
+                th.colors.primary.with_alpha_f32(overlay_alpha),
+            );
+        }
+    }
+    m
+}
+
+/// Record the collapsed bar's layout rect on the state. Returns a modifier
+/// that should be applied to the collapsed bar.
+fn track_collapsed_layout(state: &Rc<SearchBarState>) -> Modifier {
+    let s = state.clone();
+    Modifier::new().on_globally_positioned(move |rect| {
+        s.collapsed_layout_rect.set((rect.x, rect.y, rect.w, rect.h));
+    })
+}
+
+// ─── Collapsed SearchBar (state-based, no content) ─────────────────────────
+
+/// M3 Collapsed Search Bar — renders ONLY the collapsed bar surface wrapping
+/// the provided `input_field`. Does NOT manage expanded content.
+///
+/// Equivalent to CK's `SearchBar(state, inputField)` overload.
+/// Use [`ExpandedFullScreenSearchBar`] / [`ExpandedDockedSearchBar`] for the
+/// expanded state, or [`SearchBarWithContent`] for an all-in-one variant.
+///
+/// Pressing <kbd>Escape</kbd> while the bar is active deactivates it.
+pub fn SearchBar(
+    state: Rc<SearchBarState>,
+    input_field: View,
+    modifier: Modifier,
+    leading_icon: Option<View>,
+    trailing_icon: Option<View>,
+    config: SearchBarConfig,
+) -> View {
+    let th = theme();
+    let active = state.is_active();
+    let colors = config.colors;
+
+    let shape = if active {
+        config.active_shape_radius
+    } else {
+        config.shape_radius
     };
 
-    let bar_modifier = modifier.clone();
-    let bar_bg = if active {
-        th.surface_container_high
-    } else {
-        th.surface_container
-    };
-    let bar = Box(bar_modifier
-        .width(width)
-        .height(56.0)
+    let source = remember(MutableInteractionSource::new);
+
+    let mut bar_m = modifier
+        .fill_max_width()
+        .height(config.height)
         .state_elevation(StateElevation {
-            default: if active { th.elevation.level3 } else { 0.0 },
+            default: if active { th.elevation.level3 } else { config.tonal_elevation },
             hovered: th.elevation.level2,
             pressed: th.elevation.level3,
             disabled: 0.0,
         })
-        .padding_values(PaddingValues {
-            left: 16.0,
-            right: 16.0,
-            top: 0.0,
-            bottom: 0.0,
-        })
-        .clickable()
+        .shadow(config.shadow_elevation, 0.0)
+        .padding_values(config.content_padding)
+        .clickable_with_source(&source)
         .on_click({
             let s = state.clone();
             move || s.activate()
         })
+        .on_key_event({
+            let s = state.clone();
+            move |ev| {
+                if ev.key == Key::Escape && s.is_active() {
+                    s.deactivate();
+                    true
+                } else {
+                    false
+                }
+            }
+        })
+        .indication(ripple(RippleConfig {
+            color: Some(colors.content_color),
+            bounded: true,
+            ..Default::default()
+        }))
+        .background(colors.container(active))
+        .clip_rounded(shape)
+        .then(track_collapsed_layout(&state));
+
+    bar_m = apply_tonal_elevation(bar_m, config.tonal_elevation, colors.container(active));
+
+    Box(bar_m)
+    .child(
+        Row(Modifier::new()
+            .fill_max_size()
+            .align_items(AlignItems::Center))
+        .child((
+            leading_icon.unwrap_or(Box(Modifier::new().size(24.0, 24.0))),
+            Box(Modifier::new().width(8.0).fill_max_height()),
+            input_field,
+            trailing_icon.unwrap_or(Box(Modifier::new())),
+        )),
+    )
+}
+
+// ─── SearchBar with expanded content (expanded/onExpandedChange) ───────────
+
+/// M3 Search Bar that manages expanded content with animated width and
+/// suggestions dropdown. Equivalent to CK's
+/// `SearchBar(inputField, expanded, onExpandedChange, ..., content)` overload.
+pub fn SearchBarWithContent(
+    input_field: View,
+    expanded: bool,
+    on_expanded_change: Rc<dyn Fn(bool)>,
+    modifier: Modifier,
+    leading_icon: Option<View>,
+    trailing_icon: Option<View>,
+    config: SearchBarConfig,
+    content: View,
+) -> View {
+    let th = theme();
+    let width = animate_f32(
+        "sbwc_w",
+        if expanded { config.expanded_width } else { config.collapsed_width },
+        theme().motion.expand,
+    );
+
+    let bar_bg = if expanded { config.colors.active_container_color } else { config.colors.container_color };
+    let shape = if expanded { config.active_shape_radius } else { config.shape_radius };
+
+    let source = remember(MutableInteractionSource::new);
+
+    let mut bar_m = modifier
+        .clone()
+        .width(width)
+        .min_width(config.min_width)
+        .max_width(config.max_width)
+        .height(config.height)
+        .shadow(config.shadow_elevation, 0.0)
+        .padding_values(config.content_padding)
+        .clickable_with_source(&source)
+        .on_click({
+            let cb = on_expanded_change.clone();
+            move || cb(true)
+        })
+        .on_key_event({
+            let cb = on_expanded_change.clone();
+            move |ev| {
+                if ev.key == Key::Escape {
+                    cb(false);
+                    true
+                } else {
+                    false
+                }
+            }
+        })
+        .indication(ripple(RippleConfig {
+            color: Some(config.colors.content_color),
+            bounded: true,
+            ..Default::default()
+        }))
         .background(bar_bg)
-        .clip_rounded(th.shapes.large))
+        .clip_rounded(shape);
+
+    bar_m = apply_tonal_elevation(bar_m, config.tonal_elevation, bar_bg);
+
+    // Content fades with separate alpha so content can fade before collapse
+    let content_alpha = animate_f32(
+        "sbwc_a",
+        if expanded { 1.0 } else { 0.0 },
+        th.motion.color,
+    );
+
+    let bar = Box(bar_m)
     .child(
         Row(Modifier::new()
             .fill_max_size()
@@ -1521,13 +1695,15 @@ pub fn SearchBar(
         )),
     );
 
-    if expanded {
+    let show_content = expanded || content_alpha > 0.01;
+    if show_content || expanded {
         Stack(modifier).child((
             bar,
             Box(Modifier::new()
                 .width(width)
-                .max_height(400.0)
-                .background(th.surface_container)
+                .max_height(SearchBarDefaults::DOCKED_HEIGHT)
+                .alpha(content_alpha)
+                .background(config.colors.container_color)
                 .clip_rounded(th.shapes.extra_small))
             .child(content),
         ))
@@ -1536,96 +1712,95 @@ pub fn SearchBar(
     }
 }
 
-/// M3 Docked Search Bar - full-width variant anchored to the top of the screen.
-/// Shows a search bar with animated suggestions dropdown.
+/// M3 Docked Search Bar — full‑width variant anchored to the top of the screen
+/// with an animated suggestions dropdown (height + alpha).
+/// Equivalent to CK's `DockedSearchBar(inputField, expanded, onExpandedChange, ...)`.
 pub fn DockedSearchBar(
-    state: Rc<SearchBarState>,
+    input_field: View,
+    expanded: bool,
+    on_expanded_change: Option<Rc<dyn Fn(bool)>>,
     modifier: Modifier,
     leading_icon: Option<View>,
-    placeholder: impl Into<String>,
-    on_query_change: Option<Rc<dyn Fn(String)>>,
+    config: SearchBarConfig,
     content: View,
 ) -> View {
     let th = theme();
-    let placeholder = placeholder.into();
-    let expanded = state.is_expanded();
-    let query = state.query();
-    let active = state.is_active();
+    let active = expanded;
+    let colors = config.colors;
 
-    let content_target = if expanded { 400.0 } else { 0.0 };
+    let content_target = if expanded {
+        get_window_container_height() * 2.0 / 3.0
+    } else {
+        0.0
+    };
     let content_height = animate_f32("docked_sh", content_target, theme().motion.expand);
     let content_alpha = animate_f32(
         "docked_sa",
         if expanded { 1.0 } else { 0.0 },
         theme().motion.color,
     );
+    let bar_bg = if active { colors.active_container_color } else { colors.container_color };
 
-    let input_field: View = if active {
-        UiTextField(
-            placeholder.clone(),
-            query.clone(),
-            Modifier::new().flex_grow(1.0),
-            repose_ui::BasicTextFieldConfig {
-                on_change: Some({
-                    let s = state.clone();
-                    let cb = on_query_change.clone();
-                    Rc::new(move |text| {
-                        s.set_query(text);
-                        if let Some(ref cb) = cb {
-                            cb(s.query());
-                        }
-                    })
-                }),
-                ..Default::default()
-            },
-        )
-        .color(th.on_surface)
-        .size(th.typography.body_large)
+    let clear_btn = if active {
+        Box(Modifier::new().size(24.0, 24.0).clickable().on_click({
+            let cb = on_expanded_change.clone();
+            move || {
+                if let Some(ref cb) = cb {
+                    cb(false);
+                }
+            }
+        }))
+        .child(Text("✕").size(16.0).color(colors.placeholder_color))
     } else {
-        Box(Modifier::new().flex_grow(1.0)).child(if query.is_empty() {
-            Text(placeholder.clone())
-                .color(th.on_surface_variant)
-                .size(th.typography.body_large)
-                .single_line()
-        } else {
-            Text(query.clone())
-                .color(th.on_surface)
-                .size(th.typography.body_large)
-                .single_line()
-        })
+        Box(Modifier::new())
     };
 
-    let bar_bg = if active {
-        th.surface_container_high
-    } else {
-        th.surface_container
-    };
-    let bar = Box(modifier
+    let source = remember(MutableInteractionSource::new);
+
+    let mut bar_m = modifier
         .fill_max_width()
-        .height(56.0)
+        .height(config.height)
         .state_elevation(StateElevation {
-            default: if active { th.elevation.level3 } else { 0.0 },
+            default: if active { th.elevation.level3 } else { config.tonal_elevation },
             hovered: th.elevation.level2,
             pressed: th.elevation.level3,
             disabled: 0.0,
         })
-        .padding_values(PaddingValues {
-            left: 16.0,
-            right: 16.0,
-            top: 0.0,
-            bottom: 0.0,
-        })
-        .clickable()
+        .shadow(config.shadow_elevation, 0.0)
+        .padding_values(config.content_padding)
+        .clickable_with_source(&source)
         .on_click({
-            let s = state.clone();
+            let cb = on_expanded_change.clone();
             move || {
-                if !s.is_active() {
-                    s.activate()
+                if let Some(ref cb) = cb {
+                    cb(true);
                 }
             }
         })
+        .on_key_event({
+            let cb = on_expanded_change.clone();
+            move |ev| {
+                if ev.key == Key::Escape {
+                    if let Some(ref cb) = cb {
+                        cb(false);
+                    }
+                    true
+                } else {
+                    false
+                }
+            }
+        })
+        .indication(ripple(RippleConfig {
+            color: Some(colors.content_color),
+            bounded: true,
+            ..Default::default()
+        }))
         .background(bar_bg)
-        .clip_rounded(th.shapes.large))
+        .clip_rounded(config.shape_radius);
+
+    bar_m = apply_tonal_elevation(bar_m, config.tonal_elevation, bar_bg);
+
+    let bar = Box(bar_m)
     .child(
         Row(Modifier::new()
             .fill_max_size()
@@ -1634,21 +1809,7 @@ pub fn DockedSearchBar(
             leading_icon.unwrap_or(Box(Modifier::new().size(24.0, 24.0))),
             Box(Modifier::new().width(12.0).fill_max_height()),
             input_field,
-            if active {
-                Box(Modifier::new()
-                    .size(24.0, 24.0)
-                    .clickable()
-                    .on_click({
-                        let s = state.clone();
-                        move || {
-                            s.set_query(String::new());
-                            s.collapse();
-                        }
-                    }))
-                .child(Text("✕").size(16.0).color(th.on_surface_variant))
-            } else {
-                Box(Modifier::new())
-            },
+            clear_btn,
         )),
     );
 
@@ -1661,7 +1822,7 @@ pub fn DockedSearchBar(
                 .height(content_height)
                 .alpha(content_alpha)
                 .clip_rounded(th.shapes.small)
-                .background(th.surface_container)
+                .background(colors.container_color)
                 .state_elevation(StateElevation {
                     default: th.elevation.level3,
                     hovered: th.elevation.level3,
@@ -1673,7 +1834,7 @@ pub fn DockedSearchBar(
                     Box(Modifier::new()
                         .fill_max_width()
                         .height(1.0)
-                        .background(th.outline_variant)),
+                        .background(colors.divider_color)),
                     content,
                 )),
             ),
@@ -1681,6 +1842,251 @@ pub fn DockedSearchBar(
     } else {
         bar
     }
+}
+
+/// Platform-agnostic window container height. On Skiko this would read
+/// `LocalWindowInfo`, on Android `LocalConfiguration`. Defaults to 800 dp.
+/// Override via [`set_window_container_height`] if needed.
+use std::sync::Mutex;
+static WINDOW_CONTAINER_HEIGHT: Mutex<f32> = Mutex::new(800.0);
+
+/// Set the window container height (in dp) used for search bar constraints.
+pub fn set_window_container_height(h: f32) {
+    if let Ok(mut v) = WINDOW_CONTAINER_HEIGHT.lock() {
+        *v = h;
+    }
+}
+
+fn get_window_container_height() -> f32 {
+    WINDOW_CONTAINER_HEIGHT.lock().map(|v| *v).unwrap_or(800.0)
+}
+
+/// M3 Expanded Full‑Screen Search Bar — rendered in an overlay covering the
+/// entire window. Uses the state's own `progress()` for animation.
+/// Equivalent to CK's `ExpandedFullScreenSearchBar(state, inputField, ...)`.
+pub fn ExpandedFullScreenSearchBar(
+    state: Rc<SearchBarState>,
+    overlay: OverlayHandle,
+    input_field: View,
+    modifier: Modifier,
+    config: ExpandedFullScreenSearchBarConfig,
+    content: View,
+) -> View {
+    let overlay_id = remember_with_key("efs_oid", || signal(0u64));
+    let current_content = remember_state_with_key("efs_cc", || Box(Modifier::new()));
+    *current_content.borrow_mut() = content;
+
+    let progress = state.progress();
+    let expanded = state.is_expanded();
+    let visible = expanded || progress > 0.01;
+
+    if visible {
+        if overlay_id.get() == 0 {
+            let builder: Rc<dyn Fn() -> View> = Rc::new({
+                let state = state.clone();
+                let modifier = modifier.clone();
+                let input_field = input_field.clone();
+                let current_content = current_content.clone();
+                let config = config.clone();
+                move || {
+                    let progress = state.progress();
+                    let alpha = progress.clamp(0.0, 1.0);
+                    let th = theme();
+                    let content = current_content.borrow().clone();
+                    let inp = input_field.clone();
+
+                    let header = Box(modifier
+                        .clone()
+                        .fill_max_width()
+                        .height(SearchBarDefaults::HEIGHT)
+                        .padding_values(PaddingValues { left: 16.0, right: 16.0, top: 0.0, bottom: 0.0 })
+                        .background(config.colors.container_color)
+                        .alpha(alpha))
+                    .child(inp);
+
+                    let body = Box(Modifier::new()
+                        .fill_max_width().flex_grow(1.0).alpha(alpha).background(th.surface))
+                    .child(content);
+
+                    let insets = config.window_insets;
+                    let full = Column(Modifier::new().fill_max_size()
+                        .padding_values(PaddingValues { left: insets.left, right: insets.right, top: insets.top, bottom: insets.bottom }))
+                    .child((header, body));
+
+                    let scrim = Box(Modifier::new()
+                        .fill_max_size()
+                        .background(config.scrim_color.with_alpha((85.0 * alpha) as u8))
+                        .on_click({ let s = state.clone(); move || s.collapse() }));
+
+                    ZStack(Modifier::new().fill_max_size().absolute()).child((scrim, full))
+                }
+            });
+
+            let id = overlay.show_entry(builder, 900.0, false);
+            overlay_id.set(id);
+        }
+    } else {
+        let prev = overlay_id.get();
+        if prev != 0 {
+            let _ = overlay.dismiss(prev);
+            overlay_id.set(0);
+        }
+    }
+
+    Box(Modifier::new())
+}
+
+/// M3 Expanded Docked Search Bar — rendered as an overlay popup anchored below
+/// the collapsed search bar using `collapsed_layout_rect`.
+/// Equivalent to CK's `ExpandedDockedSearchBar(state, inputField, ...)`.
+pub fn ExpandedDockedSearchBar(
+    state: Rc<SearchBarState>,
+    overlay: OverlayHandle,
+    input_field: View,
+    modifier: Modifier,
+    config: ExpandedDockedSearchBarConfig,
+    content: View,
+) -> View {
+    let overlay_id = remember_with_key("eds_oid", || signal(0u64));
+    let current_content = remember_state_with_key("eds_cc", || Box(Modifier::new()));
+    *current_content.borrow_mut() = content;
+
+    let progress = state.progress();
+    let expanded = state.is_expanded();
+    let visible = expanded || progress > 0.01;
+
+    if visible {
+        if overlay_id.get() == 0 {
+            let builder: Rc<dyn Fn() -> View> = Rc::new({
+                let state = state.clone();
+                let modifier = modifier.clone();
+                let input_field = input_field.clone();
+                let current_content = current_content.clone();
+                let config = config.clone();
+                move || {
+                    let progress = state.progress();
+                    let alpha = progress.clamp(0.0, 1.0);
+                    let th = theme();
+                    let content = current_content.borrow().clone();
+                    let inp = input_field.clone();
+                    let (cx, cy, cw, _ch) = state.collapsed_layout_rect.get();
+
+                    let header = Box(modifier
+                        .clone()
+                        .fill_max_width()
+                        .height(SearchBarDefaults::HEIGHT)
+                        .background(config.colors.container_color)
+                        .clip_rounded(config.shape_radius)
+                        .state_elevation(StateElevation {
+                            default: th.elevation.level3, hovered: th.elevation.level2,
+                            pressed: th.elevation.level3, disabled: 0.0,
+                        }))
+                    .child(inp);
+
+                    let dropdown = Box(Modifier::new()
+                        .fill_max_width()
+                        .max_height(get_window_container_height() * 2.0 / 3.0)
+                        .alpha(alpha)
+                        .clip_rounded(config.dropdown_shape_radius)
+                        .background(config.colors.container_color)
+                        .state_elevation(StateElevation {
+                            default: th.elevation.level3, hovered: th.elevation.level3,
+                            pressed: th.elevation.level3, disabled: 0.0,
+                        }))
+                    .child(
+                        Column(Modifier::new().fill_max_width()).child((
+                            Box(Modifier::new().fill_max_width().height(1.0).background(config.colors.divider_color)),
+                            content,
+                        )),
+                    );
+
+                    let col = Column(Modifier::new().fill_max_width()
+                        .padding_values(PaddingValues { left: cx.max(16.0), right: 16.0, top: cy + _ch + config.dropdown_gap_size, bottom: 0.0 }))
+                    .child((header, dropdown));
+
+                    let scrim = Box(Modifier::new()
+                        .fill_max_size()
+                        .background(config.dropdown_scrim_color)
+                        .on_click({ let s = state.clone(); move || s.collapse() }));
+
+                    ZStack(Modifier::new().fill_max_size().absolute()).child((scrim, col))
+                }
+            });
+
+            let id = overlay.show_entry(builder, 900.0, false);
+            overlay_id.set(id);
+        }
+    } else {
+        let prev = overlay_id.get();
+        if prev != 0 {
+            let _ = overlay.dismiss(prev);
+            overlay_id.set(0);
+        }
+    }
+
+    Box(Modifier::new())
+}
+
+/// M3 App Bar With Search — integrates a search bar into a top app bar layout
+/// with optional navigation icon, action buttons, scroll behavior, and window insets.
+/// The `_state` is exposed for callers to check expanded state externally.
+pub fn AppBarWithSearch(
+    _state: Rc<SearchBarState>,
+    input_field: View,
+    navigation_icon: Option<View>,
+    actions: Option<Vec<View>>,
+    config: AppBarWithSearchConfig,
+) -> View {
+    let th = theme();
+    let bg = config.colors.search_bar_container(config.scroll_fraction);
+    let app_bar_bg = config.colors.app_bar_container(config.scroll_fraction);
+
+    let insets = config.window_insets;
+    let bar_m = Modifier::new()
+        .fill_max_width()
+        .height(config.height + insets.top)
+        .translate(0.0, config.scroll_offset)
+        .background(app_bar_bg);
+
+    let row = Row(Modifier::new()
+        .fill_max_size()
+        .align_items(AlignItems::Center)
+        .padding_values(PaddingValues {
+            left: config.content_padding.left + insets.left,
+            right: config.content_padding.right + insets.right,
+            top: insets.top,
+            bottom: 0.0,
+        }))
+    .child({
+        let mut children: Vec<View> = Vec::new();
+        if let Some(nav) = navigation_icon {
+            children.push(nav);
+            children.push(Box(Modifier::new().width(4.0)));
+        }
+        children.push(input_field);
+        if let Some(acts) = actions {
+            children.push(Spacer());
+            for a in acts {
+                children.push(a);
+            }
+        }
+        children
+    });
+
+    let search_bar = Box(Modifier::new()
+        .flex_grow(1.0)
+        .height(config.height - 8.0)
+        .background(bg)
+        .clip_rounded(config.shape_radius)
+        .state_elevation(StateElevation {
+            default: config.tonal_elevation,
+            hovered: th.elevation.level2,
+            pressed: th.elevation.level3,
+            disabled: 0.0,
+        }))
+    .child(row);
+
+    Box(bar_m.shadow(config.shadow_elevation, 0.0)).child(search_bar)
 }
 
 /// State for `ModalBottomSheet` - manages visibility and drag offset.
@@ -2317,9 +2723,9 @@ pub fn DatePicker(
                                     .align_items(AlignItems::Center)
                                     .justify_content(JustifyContent::Center)
                                     .clickable()
-                    .on_click(move || {
-                        s.day.set(day_num as u32);
-                    }))
+                                    .on_click(move || {
+                                        s.day.set(day_num as u32);
+                                    }))
                                 .child({
                                     let mut t = Text(day_num.to_string())
                                         .size(th.typography.body_medium)

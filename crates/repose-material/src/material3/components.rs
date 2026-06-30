@@ -5097,30 +5097,239 @@ impl Default for BottomSheetConfig {
     }
 }
 
+/// Color slots for [`SearchBar`]. Matches Compose Material3 `SearchBarColors`.
+#[derive(Clone, Copy, Debug)]
+pub struct SearchBarColors {
+    pub container_color: Color,
+    pub active_container_color: Color,
+    pub divider_color: Color,
+    pub content_color: Color,
+    pub placeholder_color: Color,
+    pub scrim_color: Color,
+}
+
+impl SearchBarColors {
+    pub fn container(&self, active: bool) -> Color {
+        if active {
+            self.active_container_color
+        } else {
+            self.container_color
+        }
+    }
+}
+
+impl Default for SearchBarColors {
+    fn default() -> Self {
+        Self {
+            container_color: SearchBarDefaults::container_color(),
+            active_container_color: SearchBarDefaults::active_container_color(),
+            divider_color: SearchBarDefaults::divider_color(),
+            content_color: SearchBarDefaults::content_color(),
+            placeholder_color: SearchBarDefaults::placeholder_color(),
+            scrim_color: SearchBarDefaults::scrim_color(),
+        }
+    }
+}
+
+/// Color slots for [`AppBarWithSearch`]. Scrolled/not-scrolled pairs.
+#[derive(Clone, Copy, Debug)]
+pub struct AppBarWithSearchColors {
+    pub search_bar_colors: SearchBarColors,
+    pub scrolled_search_bar_container_color: Color,
+    pub app_bar_container_color: Color,
+    pub scrolled_app_bar_container_color: Color,
+    pub navigation_icon_content_color: Color,
+    pub action_icon_content_color: Color,
+}
+
+impl AppBarWithSearchColors {
+    pub fn search_bar_container(&self, scroll_fraction: f32) -> Color {
+        lerp_color(
+            self.search_bar_colors.container_color,
+            self.scrolled_search_bar_container_color,
+            scroll_fraction.clamp(0.0, 1.0),
+        )
+    }
+    pub fn app_bar_container(&self, scroll_fraction: f32) -> Color {
+        lerp_color(
+            self.app_bar_container_color,
+            self.scrolled_app_bar_container_color,
+            scroll_fraction.clamp(0.0, 1.0),
+        )
+    }
+}
+
+impl Default for AppBarWithSearchColors {
+    fn default() -> Self {
+        Self {
+            search_bar_colors: SearchBarColors::default(),
+            scrolled_search_bar_container_color: SearchBarDefaults::scrolled_container_color(),
+            app_bar_container_color: SearchBarDefaults::app_bar_container_color(),
+            scrolled_app_bar_container_color: SearchBarDefaults::scrolled_app_bar_container_color(),
+            navigation_icon_content_color: SearchBarDefaults::navigation_icon_content_color(),
+            action_icon_content_color: SearchBarDefaults::action_icon_content_color(),
+        }
+    }
+}
+
 /// Configuration for [`SearchBar`].
 #[derive(Clone, Debug)]
 pub struct SearchBarConfig {
     pub modifier: Modifier,
-    pub container_color: Color,
-    pub active_container_color: Color,
-    pub content_color: Color,
-    pub placeholder_color: Color,
+    pub colors: SearchBarColors,
     pub height: f32,
+    pub shape_radius: f32,
+    pub active_shape_radius: f32,
     pub expanded_width: f32,
     pub collapsed_width: f32,
+    pub tonal_elevation: f32,
+    pub shadow_elevation: f32,
+    pub window_insets: WindowInsets,
+    pub content_padding: PaddingValues,
+    pub min_width: f32,
+    pub max_width: f32,
 }
 
 impl Default for SearchBarConfig {
     fn default() -> Self {
         Self {
             modifier: Modifier::new(),
-            container_color: SearchBarDefaults::container_color(),
-            active_container_color: SearchBarDefaults::active_container_color(),
-            content_color: SearchBarDefaults::content_color(),
-            placeholder_color: SearchBarDefaults::placeholder_color(),
+            colors: SearchBarColors::default(),
             height: SearchBarDefaults::HEIGHT,
+            shape_radius: SearchBarDefaults::SHAPE_RADIUS,
+            active_shape_radius: SearchBarDefaults::ACTIVE_SHAPE_RADIUS,
             expanded_width: SearchBarDefaults::EXPANDED_WIDTH,
             collapsed_width: SearchBarDefaults::COLLAPSED_WIDTH,
+            tonal_elevation: SearchBarDefaults::TONAL_ELEVATION,
+            shadow_elevation: SearchBarDefaults::SHADOW_ELEVATION,
+            window_insets: WindowInsets::default(),
+            content_padding: SearchBarDefaults::CONTENT_PADDING,
+            min_width: SearchBarDefaults::MIN_WIDTH,
+            max_width: SearchBarDefaults::MAX_WIDTH,
+        }
+    }
+}
+
+/// Configuration for [`ExpandedFullScreenSearchBar`].
+#[derive(Clone, Debug)]
+pub struct ExpandedFullScreenSearchBarConfig {
+    pub modifier: Modifier,
+    pub colors: SearchBarColors,
+    pub collapsed_shape_radius: f32,
+    pub tonal_elevation: f32,
+    pub shadow_elevation: f32,
+    pub window_insets: WindowInsets,
+    pub scrim_color: Color,
+}
+
+impl Default for ExpandedFullScreenSearchBarConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            colors: SearchBarColors::default(),
+            collapsed_shape_radius: SearchBarDefaults::SHAPE_RADIUS,
+            tonal_elevation: SearchBarDefaults::TONAL_ELEVATION,
+            shadow_elevation: SearchBarDefaults::SHADOW_ELEVATION,
+            window_insets: WindowInsets::default(),
+            scrim_color: SearchBarDefaults::scrim_color(),
+        }
+    }
+}
+
+/// Configuration for [`ExpandedDockedSearchBar`].
+#[derive(Clone, Debug)]
+pub struct ExpandedDockedSearchBarConfig {
+    pub modifier: Modifier,
+    pub colors: SearchBarColors,
+    pub shape_radius: f32,
+    pub dropdown_shape_radius: f32,
+    pub dropdown_gap_size: f32,
+    pub dropdown_scrim_color: Color,
+    pub tonal_elevation: f32,
+    pub shadow_elevation: f32,
+}
+
+impl Default for ExpandedDockedSearchBarConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            colors: SearchBarColors::default(),
+            shape_radius: SearchBarDefaults::DOCKED_SHAPE_RADIUS,
+            dropdown_shape_radius: SearchBarDefaults::DROPDOWN_SHAPE_RADIUS,
+            dropdown_gap_size: SearchBarDefaults::DROPDOWN_GAP_SIZE,
+            dropdown_scrim_color: SearchBarDefaults::dropdown_scrim_color(),
+            tonal_elevation: SearchBarDefaults::TONAL_ELEVATION,
+            shadow_elevation: SearchBarDefaults::SHADOW_ELEVATION,
+        }
+    }
+}
+
+/// Configuration for [`AppBarWithSearch`].
+#[derive(Clone, Debug)]
+pub struct AppBarWithSearchConfig {
+    pub modifier: Modifier,
+    pub colors: AppBarWithSearchColors,
+    pub height: f32,
+    pub shape_radius: f32,
+    pub tonal_elevation: f32,
+    pub shadow_elevation: f32,
+    pub content_padding: PaddingValues,
+    pub window_insets: WindowInsets,
+    pub scroll_fraction: f32,
+    pub scroll_offset: f32,
+}
+
+impl Default for AppBarWithSearchConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            colors: AppBarWithSearchColors::default(),
+            height: SearchBarDefaults::HEIGHT,
+            shape_radius: SearchBarDefaults::SHAPE_RADIUS,
+            tonal_elevation: SearchBarDefaults::TONAL_ELEVATION,
+            shadow_elevation: SearchBarDefaults::SHADOW_ELEVATION,
+            content_padding: SearchBarDefaults::CONTENT_PADDING,
+            window_insets: WindowInsets::default(),
+            scroll_fraction: 0.0,
+            scroll_offset: 0.0,
+        }
+    }
+}
+
+/// Scroll behavior for [`AppBarWithSearch`] — collapses/expands on scroll.
+pub struct SearchBarScrollBehavior {
+    pub collapsed_offset: Signal<f32>,
+    pub height: f32,
+    pub collapsed_height: f32,
+    _pending: Rc<Cell<f32>>,
+}
+
+impl SearchBarScrollBehavior {
+    pub fn new(height: f32, collapsed_height: f32) -> Self {
+        Self {
+            collapsed_offset: signal(0.0),
+            height,
+            collapsed_height,
+            _pending: Rc::new(Cell::new(0.0)),
+        }
+    }
+
+    pub fn offset(&self) -> f32 {
+        self.collapsed_offset.get()
+    }
+
+    pub fn nested_scroll_connection(&self) -> NestedScrollConnection {
+        let offset = self.collapsed_offset.clone();
+        let max_offset = self.height - self.collapsed_height;
+        NestedScrollConnection {
+            on_pre_scroll: Some(Rc::new(move |delta| {
+                let cur = offset.get();
+                let new = (cur - delta.y).clamp(-max_offset, 0.0);
+                offset.set(new);
+                request_frame();
+                Vec2 { x: delta.x, y: delta.y - (cur - new) }
+            })),
+            on_post_scroll: None,
         }
     }
 }

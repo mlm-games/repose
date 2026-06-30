@@ -938,6 +938,24 @@ impl SearchBarDefaults {
     pub const EXPANDED_WIDTH: f32 = 360.0;
     pub const COLLAPSED_WIDTH: f32 = 240.0;
     pub const DOCKED_HEIGHT: f32 = 400.0;
+    pub const TONAL_ELEVATION: f32 = 0.0;
+    pub const SHADOW_ELEVATION: f32 = 0.0;
+    pub const SHAPE_RADIUS: f32 = 28.0; // full round
+    pub const ACTIVE_SHAPE_RADIUS: f32 = 28.0;
+    pub const DOCKED_SHAPE_RADIUS: f32 = 28.0;
+    pub const DROPDOWN_SHAPE_RADIUS: f32 = 12.0;
+    pub const DROPDOWN_GAP_SIZE: f32 = 2.0;
+    pub const MIN_WIDTH: f32 = 360.0;
+    pub const MAX_WIDTH: f32 = 720.0;
+    pub const VERTICAL_PADDING: f32 = 8.0;
+
+    pub const CONTENT_PADDING: PaddingValues = PaddingValues {
+        left: 16.0,
+        right: 16.0,
+        top: 0.0,
+        bottom: 0.0,
+    };
+
     pub fn container_color() -> Color {
         theme().surface_container
     }
@@ -949,6 +967,30 @@ impl SearchBarDefaults {
     }
     pub fn placeholder_color() -> Color {
         theme().on_surface_variant
+    }
+    pub fn divider_color() -> Color {
+        theme().outline_variant
+    }
+    pub fn scrim_color() -> Color {
+        theme().scrim.with_alpha(85)
+    }
+    pub fn scrolled_container_color() -> Color {
+        theme().surface_container_highest
+    }
+    pub fn app_bar_container_color() -> Color {
+        theme().surface
+    }
+    pub fn scrolled_app_bar_container_color() -> Color {
+        theme().surface_container
+    }
+    pub fn navigation_icon_content_color() -> Color {
+        theme().on_surface
+    }
+    pub fn action_icon_content_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn dropdown_scrim_color() -> Color {
+        Color::TRANSPARENT
     }
 }
 
