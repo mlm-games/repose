@@ -1516,23 +1516,30 @@ impl SearchBarState {
 pub fn SearchBarInputField(
     placeholder: String,
     query: String,
-    on_query_change: Option<Rc<dyn Fn(String)>>,
-    active: bool,
+    on_query_change: Rc<dyn Fn(String)>,
+    expanded: bool,
     text_color: Color,
     placeholder_color: Color,
     state: Option<Rc<SearchBarState>>,
     on_search: Option<Rc<dyn Fn(String)>>,
+    enabled: bool,
+    leading_icon: Option<View>,
+    trailing_icon: Option<View>,
 ) -> View {
     let source = MutableInteractionSource::new();
     let focused = source.source().collect_is_focused();
 
-    let mut input_m = Modifier::new().flex_grow(1.0).padding(4.0)
+    let mut input_m = Modifier::new()
+        .flex_grow(1.0)
+        .padding(4.0)
+        .required_width_in(SearchBarDefaults::MIN_WIDTH, SearchBarDefaults::MAX_WIDTH)
+        .required_height_in(SearchBarDefaults::HEIGHT, SearchBarDefaults::HEIGHT)
         .interaction_source(&source)
         .semantics(Semantics {
             role: Role::TextField,
             label: Some("Search".into()),
-            focused: active || focused,
-            enabled: true,
+            focused: expanded || focused,
+            enabled,
             selectable_group: false,
         })
         .on_key_event({
@@ -1564,29 +1571,45 @@ pub fn SearchBarInputField(
     let on_s = on_search.clone();
 
     // Always render UiTextField (focusable even when collapsed, matching CK).
-    let read_only = !active;
+    let read_only = !expanded;
     let display_color = if query.is_empty() { placeholder_color } else { text_color };
 
-    UiTextField(
-        placeholder,
-        query.clone(),
-        input_m,
-        repose_ui::BasicTextFieldConfig {
-            on_change: if active {
-                Some(Rc::new(move |text| {
-                    if let Some(ref cb) = on_qc { cb(text); }
-                }))
-            } else {
-                None
+    // Build the row: [leading_icon] + text_field + [trailing_icon]
+    let mut row_children: Vec<View> = Vec::new();
+    if let Some(icon) = leading_icon {
+        row_children.push(icon);
+    }
+    row_children.push(
+        UiTextField(
+            placeholder,
+            query.clone(),
+            input_m,
+            repose_ui::BasicTextFieldConfig {
+                on_change: if expanded {
+                    Some(Rc::new(move |text| on_qc(text)))
+                } else {
+                    None
+                },
+                on_submit: on_s.clone(),
+                ime_action: Some(ImeAction::Search),
+                enabled,
+                read_only,
+                ..Default::default()
             },
-            on_submit: on_s.clone(),
-            ime_action: Some(ImeAction::Search),
-            read_only,
-            ..Default::default()
-        },
-    )
-    .color(display_color)
-    .size(theme().typography.body_large)
+        )
+        .color(display_color)
+        .size(theme().typography.body_large)
+    );
+    if let Some(icon) = trailing_icon {
+        row_children.push(icon);
+    }
+
+    if row_children.len() == 1 {
+        row_children.into_iter().next().unwrap()
+    } else {
+        Row(Modifier::new().fill_max_width().align_items(AlignItems::Center))
+            .child(row_children)
+    }
 }
 
 /// Apply tonal elevation as a translucent primary overlay when the container
@@ -1974,10 +1997,9 @@ pub fn ExpandedFullScreenSearchBar(
                         .alpha(alpha))
                     .child(inp);
 
-                    let body_content = with_content_color(config.colors.content_color, || content.clone());
                     let body = Box(Modifier::new()
                         .fill_max_width().flex_grow(1.0).alpha(c_alpha).background(th.surface))
-                    .child(body_content);
+                    .child(content);
 
                     let insets = config.window_insets;
                     let full = Column(Modifier::new().fill_max_size()
@@ -2066,7 +2088,6 @@ pub fn ExpandedDockedSearchBar(
                         }))
                     .child(inp);
 
-                    let wrapped_content = with_content_color(config.colors.content_color, || content.clone());
                     let dropdown = Box(Modifier::new()
                         .fill_max_width()
                         .max_height(get_window_container_height() * 2.0 / 3.0)
@@ -2080,7 +2101,7 @@ pub fn ExpandedDockedSearchBar(
                     .child(
                         Column(Modifier::new().fill_max_width()).child((
                             Box(Modifier::new().fill_max_width().height(1.0).background(config.colors.divider_color)),
-                            wrapped_content,
+                            content,
                         )),
                     );
 
