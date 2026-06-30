@@ -157,9 +157,9 @@ pub fn NavigationBar(
                         .semantics(Semantics::new(Role::Tab).with_label(&item.label));
 
                     if is_enabled {
-                        item_m = item_m.clickable().on_pointer_down({
+                        item_m = item_m.clickable().on_click({
                             let cb = cb.clone();
-                            move |_| cb()
+                            move || cb()
                         });
                     }
 
@@ -412,7 +412,7 @@ pub fn FilterChip(
         m = m.border(config.border_width, border, shape);
     }
     if is_enabled {
-        m = m.clickable().on_pointer_down(move |_| on_click());
+        m = m.clickable().on_click(move || on_click());
     }
 
     Box(m).child(
@@ -500,7 +500,7 @@ pub fn ElevatedFilterChip(
         .then(config.modifier);
 
     if is_enabled {
-        m = m.clickable().on_pointer_down(move |_| on_click());
+        m = m.clickable().on_click(move || on_click());
     }
 
     Box(m).child(
@@ -572,7 +572,7 @@ pub fn SuggestionChip(
         m = m.border(config.border_width, border, shape);
     }
     if is_enabled {
-        m = m.clickable().on_pointer_down(move |_| on_click());
+        m = m.clickable().on_click(move || on_click());
     }
 
     Box(m).child(
@@ -626,7 +626,7 @@ pub fn ElevatedSuggestionChip(
         .then(config.modifier);
 
     if is_enabled {
-        m = m.clickable().on_pointer_down(move |_| on_click());
+        m = m.clickable().on_click(move || on_click());
     }
 
     Box(m).child(
@@ -717,7 +717,7 @@ pub fn InputChip(
         m = m.border(config.border_width, border, shape);
     }
     if is_enabled {
-        m = m.clickable().on_pointer_down(move |_| on_click());
+        m = m.clickable().on_click(move || on_click());
     }
 
     Box(m).child(
@@ -1093,7 +1093,7 @@ pub fn NavigationDrawerItem(
         .clip_rounded(th.shapes.large);
 
     if enabled {
-        m = m.clickable().on_pointer_down(move |_| on_click());
+        m = m.clickable().on_click(move || on_click());
     }
 
     Box(m).child(with_content_color(fg, || {
@@ -1321,7 +1321,7 @@ fn render_dropdown_menu_content(
                             disabled: Color::TRANSPARENT,
                         })
                         .clickable()
-                        .on_pointer_down(move |_| {
+                        .on_click(move || {
                             on_click();
                             state.dismiss();
                         });
@@ -1503,9 +1503,9 @@ pub fn SearchBar(
             bottom: 0.0,
         })
         .clickable()
-        .on_pointer_down({
+        .on_click({
             let s = state.clone();
-            move |_| s.activate()
+            move || s.activate()
         })
         .background(bar_bg)
         .clip_rounded(th.shapes.large))
@@ -1616,9 +1616,9 @@ pub fn DockedSearchBar(
             bottom: 0.0,
         })
         .clickable()
-        .on_pointer_down({
+        .on_click({
             let s = state.clone();
-            move |_| {
+            move || {
                 if !s.is_active() {
                     s.activate()
                 }
@@ -1638,9 +1638,9 @@ pub fn DockedSearchBar(
                 Box(Modifier::new()
                     .size(24.0, 24.0)
                     .clickable()
-                    .on_pointer_down({
+                    .on_click({
                         let s = state.clone();
-                        move |_| {
+                        move || {
                             s.set_query(String::new());
                             s.collapse();
                         }
@@ -2317,9 +2317,9 @@ pub fn DatePicker(
                                     .align_items(AlignItems::Center)
                                     .justify_content(JustifyContent::Center)
                                     .clickable()
-                                    .on_pointer_down(move |_| {
-                                        s.day.set(day_num as u32);
-                                    }))
+                    .on_click(move || {
+                        s.day.set(day_num as u32);
+                    }))
                                 .child({
                                     let mut t = Text(day_num.to_string())
                                         .size(th.typography.body_medium)
@@ -2432,9 +2432,9 @@ pub fn TimePicker(
         Row(Modifier::new().align_items(AlignItems::Center)).child((
             Box(Modifier::new()
                 .clickable()
-                .on_pointer_down({
+                .on_click({
                     let s = state.clone();
-                    move |_| s.hour.set((s.hour.get() % 12) + 1)
+                    move || s.hour.set((s.hour.get() % 12) + 1)
                 })
                 .padding(8.0))
             .child(Text(hour_str).size(48.0).color(th.on_surface).single_line()),
@@ -2444,9 +2444,9 @@ pub fn TimePicker(
                 .single_line(),
             Box(Modifier::new()
                 .clickable()
-                .on_pointer_down({
+                .on_click({
                     let s = state.clone();
-                    move |_| s.minute.set((s.minute.get() + 1) % 60)
+                    move || s.minute.set((s.minute.get() + 1) % 60)
                 })
                 .padding(8.0))
             .child(Text(min_str).size(48.0).color(th.on_surface).single_line()),
@@ -2468,9 +2468,9 @@ pub fn TimePicker(
                 })
                 .clip_rounded(8.0)
                 .clickable()
-                .on_pointer_down({
+                .on_click({
                     let s = state.clone();
-                    move |_| {
+                    move || {
                         if !s.is_am.get() {
                             s.is_am.set(true);
                             let h = s.hour.get();
@@ -2501,9 +2501,9 @@ pub fn TimePicker(
                 })
                 .clip_rounded(8.0)
                 .clickable()
-                .on_pointer_down({
+                .on_click({
                     let s = state.clone();
-                    move |_| {
+                    move || {
                         if s.is_am.get() {
                             s.is_am.set(false);
                             let h = s.hour.get();
@@ -2523,9 +2523,9 @@ pub fn TimePicker(
         Box(Modifier::new().fill_max_width().height(16.0)),
         Row(Modifier::new().fill_max_width()).child((
             Spacer(),
-            Box(Modifier::new().padding(8.0).clickable().on_pointer_down({
+            Box(Modifier::new().padding(8.0).clickable().on_click({
                 let on_dismiss = on_dismiss.clone();
-                move |_| on_dismiss()
+                move || on_dismiss()
             }))
             .child(
                 Text("Cancel")
@@ -2534,10 +2534,10 @@ pub fn TimePicker(
                     .single_line(),
             ),
             Box(Modifier::new().width(8.0).height(1.0)),
-            Box(Modifier::new().padding(8.0).clickable().on_pointer_down({
+            Box(Modifier::new().padding(8.0).clickable().on_click({
                 let on_confirm = on_confirm.clone();
                 let state = state.clone();
-                move |_| {
+                move || {
                     let (h, m) = state.selected_time();
                     on_confirm(h, m);
                 }
@@ -2675,9 +2675,9 @@ pub fn NavigationRail(
             .semantics(Semantics::new(Role::Tab).with_label(&item.label));
 
         if is_enabled {
-            item_m = item_m.clickable().on_pointer_down({
+            item_m = item_m.clickable().on_click({
                 let cb = cb.clone();
-                move |_| cb()
+                move || cb()
             });
         }
 

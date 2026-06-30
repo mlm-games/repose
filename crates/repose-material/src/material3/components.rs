@@ -395,7 +395,7 @@ fn icon_button_render(
         m = m.border(w, c, sz * 0.5);
     }
     if is_enabled {
-        m = m.clickable().on_pointer_down(move |_| on_click());
+        m = m.clickable().on_click(move || on_click());
     }
 
     Box(m).child(icon)
@@ -688,7 +688,7 @@ fn button_impl(
     }));
 
     if enabled {
-        m = m.clickable().on_pointer_down(move |_| on_click());
+        m = m.clickable().on_click(move || on_click());
     }
     m = m.then(outer_modifier);
     let effective = if enabled {
@@ -978,10 +978,8 @@ fn toggle_button_impl(
         m = m.border(w, c, r);
     }
     if enabled {
-        m = m.clickable().on_pointer_down({
-            let cb = on_checked_change;
-            move |_| cb(!checked)
-        });
+        let cb = on_checked_change;
+        m = m.clickable().on_click(move || cb(!checked));
     } else {
         m = m.alpha(0.38);
     }
@@ -1213,7 +1211,7 @@ fn fab_impl(
         .then(config.modifier);
 
     if is_enabled {
-        m = m.clickable().on_pointer_down(move |_| on_click());
+        m = m.clickable().on_click(move || on_click());
     }
 
     Box(m).child(icon)
@@ -1296,7 +1294,7 @@ pub fn ExtendedFAB(
         .align_items(AlignItems::Center);
 
     if is_enabled {
-        m = m.clickable().on_pointer_down(move |_| on_click());
+        m = m.clickable().on_click(move || on_click());
     }
     m = m.then(config.modifier);
     Row(m).child((
@@ -1722,7 +1720,7 @@ pub fn ListItem(
         modifier = modifier.clickable();
         if let Some(cb) = on_click {
             let cb = cb.clone();
-            modifier = modifier.on_pointer_down(move |_| {
+            modifier = modifier.on_click(move || {
                 if is_enabled {
                     cb();
                 }
@@ -2046,7 +2044,7 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                         .semantics(Semantics::new(Role::Tab).with_label(&tab.label));
 
                     if is_enabled {
-                        tab_m = tab_m.clickable().on_pointer_down(move |_| cb());
+                        tab_m = tab_m.clickable().on_click(move || cb());
                     }
 
                     Column(tab_m).child((
@@ -2190,7 +2188,7 @@ pub fn SegmentedButton(
                     });
 
                 let content_modifier = if is_enabled {
-                    content_modifier.clickable().on_pointer_down(move |_| cb())
+                    content_modifier.clickable().on_click(move || cb())
                 } else {
                     content_modifier
                 };
@@ -3288,7 +3286,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         config.checkmark_color
     };
 
-    let cb = move |_| {
+    let cb = move || {
         if config.enabled {
             on_change(!checked)
         }
@@ -3304,7 +3302,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         .clickable()
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
-        .on_pointer_down(cb)
+        .on_click(cb)
         .then(config.modifier))
     .child(
         Box(Modifier::new()
@@ -3417,7 +3415,7 @@ pub fn TriStateCheckbox(
         .clickable()
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
-        .on_pointer_down(move |_| {
+        .on_click(move || {
             if is_enabled {
                 on_change(match state {
                     TriState::Checked => TriState::Unchecked,
@@ -3527,7 +3525,7 @@ pub fn RadioButton(
         config.selected_color
     };
 
-    let cb = move |_| {
+    let cb = move || {
         if config.enabled {
             on_select()
         }
@@ -3543,7 +3541,7 @@ pub fn RadioButton(
         .clickable()
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
-        .on_pointer_down(cb)
+        .on_click(cb)
         .then(config.modifier))
     .child(
         Box(Modifier::new()
@@ -3744,14 +3742,11 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         })
         .on_pointer_down({
             let p = pressed.clone();
+            move |_| p.set(true)
+        })
+        .on_click({
             let cb = on_change;
-            let en = is_enabled;
-            move |_| {
-                p.set(true);
-                if en {
-                    cb(!checked);
-                }
-            }
+            move || cb(!checked)
         })
         .on_pointer_up({
             let p = pressed.clone();
@@ -4840,7 +4835,7 @@ pub fn AssistChip(
     }
 
     if is_enabled {
-        m = m.clickable().on_pointer_down(move |_| on_click());
+        m = m.clickable().on_click(move || on_click());
     }
 
     Box(m).child(
@@ -4908,7 +4903,7 @@ pub fn ElevatedAssistChip(
         .then(config.modifier);
 
     if is_enabled {
-        m = m.clickable().on_pointer_down(move |_| on_click());
+        m = m.clickable().on_click(move || on_click());
     }
 
     Box(m).child(

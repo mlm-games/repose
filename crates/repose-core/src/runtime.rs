@@ -381,6 +381,7 @@ impl HitRegion {
             id,
             rect,
             z_index: m.z_index,
+            on_click: m.on_click.clone(),
             on_pointer_down: m.on_pointer_down.clone(),
             on_pointer_move: m.on_pointer_move.clone(),
             on_pointer_up: m.on_pointer_up.clone(),

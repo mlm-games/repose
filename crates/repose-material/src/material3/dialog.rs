@@ -118,9 +118,9 @@ pub fn Dialog(
                     let scrim = Box(Modifier::new()
                         .fill_max_size()
                         .background(th.scrim.with_alpha((85.0 * alpha) as u8))
-                        .on_pointer_down({
+                        .on_click({
                             let s = state.clone();
-                            move |_| s.dismiss()
+                            move || s.dismiss()
                         }));
 
                     ZStack(Modifier::new().fill_max_size().absolute()).child((

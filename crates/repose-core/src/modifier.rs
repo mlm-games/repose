@@ -66,7 +66,7 @@ macro_rules! impl_option_fields {
                     on_scroll,
                     on_pointer_down, on_pointer_move, on_pointer_up,
                     on_pointer_enter, on_pointer_leave,
-                    on_double_click, on_long_click,
+                    on_click, on_double_click, on_long_click,
                     semantics, alpha, transform,
                     grid, grid_col_span, grid_row_span,
                     position_type,
@@ -441,6 +441,9 @@ pub struct Modifier {
     pub on_pointer_enter: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_leave: Option<Rc<dyn Fn(PointerEvent)>>,
     /// Called when the element is double-clicked/tapped.
+    /// Called when the element is clicked (pointer down then up within bounds).
+    pub on_click: Option<Rc<dyn Fn()>>,
+    /// Called when the element is double-clicked/tapped.
     pub on_double_click: Option<Rc<dyn Fn()>>,
     /// Called when the element is long-pressed.
     pub on_long_click: Option<Rc<dyn Fn()>>,
@@ -597,6 +600,7 @@ impl std::fmt::Debug for Modifier {
             on_pointer_cancel,
             on_pointer_enter,
             on_pointer_leave,
+            on_click,
             on_double_click,
             on_long_click,
             painter,
@@ -1029,6 +1033,10 @@ impl Modifier {
     }
     pub fn on_pointer_leave(mut self, f: impl Fn(PointerEvent) + 'static) -> Self {
         self.on_pointer_leave = Some(Rc::new(f));
+        self
+    }
+    pub fn on_click(mut self, f: impl Fn() + 'static) -> Self {
+        self.on_click = Some(Rc::new(f));
         self
     }
     pub fn on_double_click(mut self, f: impl Fn() + 'static) -> Self {
