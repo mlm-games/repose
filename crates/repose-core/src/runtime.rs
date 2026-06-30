@@ -109,6 +109,14 @@ impl FocusManager {
         }
     }
 
+    /// Clears focus entirely on the next frame.
+    /// Corresponds to Compose's `FocusManager.clearFocus()`.
+    /// The `force` parameter is accepted for API compatibility; in repose
+    /// focus is always cleared immediately (no keep-focus mechanism).
+    pub fn clear_focus(&self, _force: bool) {
+        FOCUS_REQUEST.with(|r| r.set(Some(CLEAR_FOCUS_MARKER)));
+    }
+
     /// Spatial focus navigation: find the closest focusable element in a given
     /// direction using bounding rect geometry.
     pub fn move_focus_spatial(

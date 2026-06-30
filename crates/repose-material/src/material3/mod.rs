@@ -1504,6 +1504,7 @@ impl SearchBarState {
 /// Build a search bar input field with proper M3 SearchBar styling.
 /// Equivalent to Compose Material3's `SearchBarDefaults.InputField`.
 /// When `state` is provided, focus gain triggers expand and Escape triggers collapse.
+/// Always renders a `UiTextField` (focusable even in collapsed state, matching CK).
 pub fn SearchBarInputField(
     placeholder: String,
     query: String,
@@ -1512,12 +1513,17 @@ pub fn SearchBarInputField(
     text_color: Color,
     placeholder_color: Color,
     state: Option<Rc<SearchBarState>>,
+    on_search: Option<Rc<dyn Fn(String)>>,
 ) -> View {
-    let input_m = Modifier::new().flex_grow(1.0).padding(4.0)
+    let source = MutableInteractionSource::new();
+    let focused = source.collect_is_focused();
+
+    let mut input_m = Modifier::new().flex_grow(1.0).padding(4.0)
+        .interaction_source(&source)
         .semantics(Semantics {
             role: Role::TextField,
             label: Some("Search".into()),
-            focused: active,
+            focused: active || focused,
             enabled: true,
             selectable_group: false,
         })
@@ -1539,44 +1545,39 @@ pub fn SearchBarInputField(
                 }
             }
         });
-    let input_m = if let Some(ref s) = state {
+    if let Some(ref s) = state {
         let s2 = s.clone();
-        input_m.on_focus_changed(move |focused| {
+        input_m = input_m.on_focus_changed(move |focused| {
             if focused { s2.activate(); }
-        })
-    } else {
-        input_m
-    };
-
-    if active {
-        UiTextField(
-            placeholder,
-            query,
-            input_m,
-            repose_ui::BasicTextFieldConfig {
-                on_change: Some(Rc::new(move |text| {
-                    if let Some(ref cb) = on_query_change {
-                        cb(text);
-                    }
-                })),
-                ..Default::default()
-            },
-        )
-        .color(text_color)
-        .size(theme().typography.body_large)
-    } else {
-        let q_empty = query.is_empty();
-        Box(input_m).child(
-            Text(if q_empty { placeholder } else { query })
-                .color(if q_empty {
-                    placeholder_color
-                } else {
-                    text_color
-                })
-                .size(theme().typography.body_large)
-                .single_line(),
-        )
+        });
     }
+
+    let on_qc = on_query_change.clone();
+    let on_s = on_search.clone();
+    let display_text = if query.is_empty() { placeholder } else { query };
+    let display_color = if query.is_empty() { placeholder_color } else { text_color };
+
+    // Always render UiTextField (focusable even when collapsed, matching CK)
+    UiTextField(
+        if active { placeholder.clone() } else { display_text },
+        query,
+        input_m,
+        BasicTextFieldConfig {
+            on_change: if active {
+                Some(Rc::new(move |text| {
+                    if let Some(ref cb) = on_qc { cb(text); }
+                }))
+            } else {
+                None
+            },
+            on_submit: on_s.clone(),
+            ime_action: Some(ImeAction::Search),
+            read_only: !active,
+            ..Default::default()
+        },
+    )
+    .color(display_color)
+    .size(theme().typography.body_large)
 }
 
 /// Apply tonal elevation as a translucent primary overlay when the container
