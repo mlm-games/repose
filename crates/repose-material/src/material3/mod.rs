@@ -17,6 +17,7 @@ use web_time::Duration;
 use crate::ripple::{ripple, RippleConfig};
 use crate::{Icon, Symbol};
 use repose_core::animation::{AnimationSpec, Easing, RepeatableSpec};
+use repose_core::text::ImeAction;
 use repose_core::*;
 use repose_ui::LazyRowState;
 use repose_ui::lazy::LazyRow;
@@ -1402,7 +1403,7 @@ impl SearchBarState {
             query: signal(String::new()),
             expanded: signal(false),
             active: signal(false),
-            expands_to_full_screen: signal(true),
+            expands_to_full_screen: signal(false),
             anim: Rc::new(RefCell::new(AnimatedValue::new(
                 0.0,
                 AnimationSpec::spring_gentle(),
@@ -1456,7 +1457,14 @@ impl SearchBarState {
     }
 
     pub fn deactivate(&self) {
+        if self.expanded.get() {
+            self.expanded.set(false);
+            self.content_anim.borrow_mut().set_target(0.0);
+            self.anim.borrow_mut().set_target(0.0);
+        }
         self.active.set(false);
+        FocusManager::new(vec![], None).clear_focus(false);
+        request_frame();
     }
 
     /// Container animation progress: 0.0 = collapsed, 1.0 = expanded.
@@ -1516,7 +1524,7 @@ pub fn SearchBarInputField(
     on_search: Option<Rc<dyn Fn(String)>>,
 ) -> View {
     let source = MutableInteractionSource::new();
-    let focused = source.collect_is_focused();
+    let focused = source.source().collect_is_focused();
 
     let mut input_m = Modifier::new().flex_grow(1.0).padding(4.0)
         .interaction_source(&source)
@@ -1554,15 +1562,16 @@ pub fn SearchBarInputField(
 
     let on_qc = on_query_change.clone();
     let on_s = on_search.clone();
-    let display_text = if query.is_empty() { placeholder } else { query };
+
+    // Always render UiTextField (focusable even when collapsed, matching CK).
+    let read_only = !active;
     let display_color = if query.is_empty() { placeholder_color } else { text_color };
 
-    // Always render UiTextField (focusable even when collapsed, matching CK)
     UiTextField(
-        if active { placeholder.clone() } else { display_text },
-        query,
+        placeholder,
+        query.clone(),
         input_m,
-        BasicTextFieldConfig {
+        repose_ui::BasicTextFieldConfig {
             on_change: if active {
                 Some(Rc::new(move |text| {
                     if let Some(ref cb) = on_qc { cb(text); }
@@ -1572,7 +1581,7 @@ pub fn SearchBarInputField(
             },
             on_submit: on_s.clone(),
             ime_action: Some(ImeAction::Search),
-            read_only: !active,
+            read_only,
             ..Default::default()
         },
     )
@@ -1819,6 +1828,7 @@ pub fn DockedSearchBar(
     };
 
     let mut bar_m = modifier
+        .z_index(1.0)
         .min_width(SearchBarDefaults::MIN_WIDTH)
         .height(config.height)
         .state_elevation(StateElevation {
@@ -1927,8 +1937,6 @@ pub fn ExpandedFullScreenSearchBar(
     *current_content.borrow_mut() = content;
 
     let progress = state.progress();
-
-    // Use content_progress for content fade (CK parity: fades ahead of container)
     let _content_alpha = state.content_progress();
 
     let expanded = state.is_expanded();
@@ -1936,12 +1944,14 @@ pub fn ExpandedFullScreenSearchBar(
 
     if visible {
         if overlay_id.get() == 0 {
+            let input_fr = FocusRequester::new();
             let builder: Rc<dyn Fn() -> View> = Rc::new({
                 let state = state.clone();
                 let modifier = modifier.clone();
                 let input_field = input_field.clone();
                 let current_content = current_content.clone();
                 let config = config.clone();
+                let input_fr = input_fr.clone();
                 move || {
                     let progress = state.progress();
                     let content_alpha = state.content_progress();
@@ -1949,7 +1959,11 @@ pub fn ExpandedFullScreenSearchBar(
                     let c_alpha = content_alpha.clamp(0.0, 1.0);
                     let th = theme();
                     let content = current_content.borrow().clone();
-                    let inp = input_field.clone();
+
+                    // Wrap input with focus requester and request focus (CK parity: auto-focus on expand)
+                    let inp = Box(Modifier::new().focus_requester(input_fr.clone()))
+                        .child(input_field.clone());
+                    input_fr.request_focus();
 
                     let header = Box(modifier
                         .clone()
@@ -1960,9 +1974,10 @@ pub fn ExpandedFullScreenSearchBar(
                         .alpha(alpha))
                     .child(inp);
 
+                    let body_content = with_content_color(config.colors.content_color, || content.clone());
                     let body = Box(Modifier::new()
                         .fill_max_width().flex_grow(1.0).alpha(c_alpha).background(th.surface))
-                    .child(content);
+                    .child(body_content);
 
                     let insets = config.window_insets;
                     let full = Column(Modifier::new().fill_max_size()
@@ -2017,12 +2032,14 @@ pub fn ExpandedDockedSearchBar(
 
     if visible {
         if overlay_id.get() == 0 {
+            let input_fr = FocusRequester::new();
             let builder: Rc<dyn Fn() -> View> = Rc::new({
                 let state = state.clone();
                 let modifier = modifier.clone();
                 let input_field = input_field.clone();
                 let current_content = current_content.clone();
                 let config = config.clone();
+                let input_fr = input_fr.clone();
                 move || {
                     let progress = state.progress();
                     let content_alpha = state.content_progress();
@@ -2030,13 +2047,17 @@ pub fn ExpandedDockedSearchBar(
                     let c_alpha = content_alpha.clamp(0.0, 1.0);
                     let th = theme();
                     let content = current_content.borrow().clone();
-                    let inp = input_field.clone();
-                    let (cx, cy, cw, _ch) = state.collapsed_layout_rect.get();
+                    let (_cx, _cy, _cw, _ch) = state.collapsed_layout_rect.get();
+
+                    let inp = Box(Modifier::new().focus_requester(input_fr.clone()))
+                        .child(input_field.clone());
+                    input_fr.request_focus();
 
                     let header = Box(modifier
                         .clone()
                         .fill_max_width()
                         .height(SearchBarDefaults::HEIGHT)
+                        .alpha(alpha)
                         .background(config.colors.container_color)
                         .clip_rounded(config.shape_radius)
                         .state_elevation(StateElevation {
@@ -2045,6 +2066,7 @@ pub fn ExpandedDockedSearchBar(
                         }))
                     .child(inp);
 
+                    let wrapped_content = with_content_color(config.colors.content_color, || content.clone());
                     let dropdown = Box(Modifier::new()
                         .fill_max_width()
                         .max_height(get_window_container_height() * 2.0 / 3.0)
@@ -2058,12 +2080,12 @@ pub fn ExpandedDockedSearchBar(
                     .child(
                         Column(Modifier::new().fill_max_width()).child((
                             Box(Modifier::new().fill_max_width().height(1.0).background(config.colors.divider_color)),
-                            content,
+                            wrapped_content,
                         )),
                     );
 
                     let col = Column(Modifier::new().fill_max_width()
-                        .padding_values(PaddingValues { left: cx.max(16.0), right: 16.0, top: cy + _ch + config.dropdown_gap_size, bottom: 0.0 }))
+                        .padding_values(PaddingValues { left: _cx.max(16.0), right: 16.0, top: _cy + _ch + config.dropdown_gap_size, bottom: 0.0 }))
                     .child((header, dropdown));
 
                     let scrim = Box(Modifier::new()
@@ -2099,11 +2121,15 @@ pub fn AppBarWithSearch(
     actions: Option<Vec<View>>,
     config: AppBarWithSearchConfig,
 ) -> View {
-    let th = theme();
     let bg = config.colors.search_bar_container(config.scroll_fraction);
     let app_bar_bg = config.colors.app_bar_container(config.scroll_fraction);
 
     let insets = config.window_insets;
+
+    // CK parity: when app bar container is transparent, disable tonal/shadow elevations
+    let is_container_transparent = app_bar_bg.3 == 0;
+    let tonal_elevation = if is_container_transparent { 0.0 } else { config.tonal_elevation };
+    let shadow_elevation = if is_container_transparent { 0.0 } else { config.shadow_elevation };
 
     // Hide the collapsed bar when full-screen expanded (CK parity via expandsToFullScreen)
     let hide_collapsed = state.expands_to_full_screen.get() && state.is_expanded();
@@ -2113,7 +2139,8 @@ pub fn AppBarWithSearch(
         .fill_max_width()
         .height(config.height + insets.top)
         .translate(0.0, config.scroll_offset)
-        .background(app_bar_bg);
+        .background(app_bar_bg)
+        .semantics(Semantics::new(Role::Container).with_selectable_group());
 
     let row = Row(Modifier::new()
         .fill_max_size()
@@ -2151,8 +2178,8 @@ pub fn AppBarWithSearch(
                     placeholder_color: sb_colors.placeholder_color,
                     scrim_color: sb_colors.scrim_color,
                 },
-                tonal_elevation: config.tonal_elevation,
-                shadow_elevation: config.shadow_elevation,
+                tonal_elevation,
+                shadow_elevation,
                 ..Default::default()
             },
         );
@@ -2166,7 +2193,7 @@ pub fn AppBarWithSearch(
         children
     });
 
-    Box(bar_m.shadow(config.shadow_elevation, 0.0)).child(row)
+    Box(bar_m.shadow(shadow_elevation, 0.0)).child(row)
 }
 
 /// State for `ModalBottomSheet` - manages visibility and drag offset.
