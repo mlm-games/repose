@@ -1,4 +1,6 @@
 use crate::Vec2;
+use std::cell::Cell;
+use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct PointerId(pub u64);
@@ -15,6 +17,20 @@ pub enum PointerButton {
     Primary,   // Left mouse, touch
     Secondary, // Right mouse
     Tertiary,  // Middle mouse
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PointerEventPass {
+    /// Top-down pass: ancestor → descendant. Allows ancestors to preview or
+    /// intercept events before descendants see them.
+    Initial,
+    /// Bottom-up pass: descendant → ancestor. The primary pass where gesture
+    /// handlers react to and consume events. A child that consumes its event
+    /// prevents the parent from reacting (Compose's requireUnconsumed).
+    Main,
+    /// Top-down pass: ancestor → descendant. Allows descendants to learn
+    /// about events consumed by ancestors during the Main pass.
+    Final,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -35,6 +51,42 @@ pub struct PointerEvent {
     pub position: Vec2,
     pub pressure: f32,
     pub modifiers: Modifiers,
+    /// Shared consumed state — every clone of this event points to the same
+    /// Cell. Calling `consume()` on any clone marks it consumed for all clones.
+    pub consumed: Rc<Cell<bool>>,
+}
+
+impl PointerEvent {
+    pub fn new(
+        id: PointerId,
+        kind: PointerKind,
+        event: PointerEventKind,
+        position: Vec2,
+        pressure: f32,
+        modifiers: Modifiers,
+    ) -> Self {
+        Self {
+            id,
+            kind,
+            event,
+            position,
+            pressure,
+            modifiers,
+            consumed: Rc::new(Cell::new(false)),
+        }
+    }
+
+    /// Mark this event as consumed. Once consumed, subsequent handlers in the
+    /// same pass should skip processing it (equivalent to Compose's
+    /// `PointerInputChange.consume()`).
+    pub fn consume(&self) {
+        self.consumed.set(true);
+    }
+
+    /// Returns `true` if `consume()` was called on this event or any clone of it.
+    pub fn is_consumed(&self) -> bool {
+        self.consumed.get()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]

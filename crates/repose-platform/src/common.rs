@@ -109,47 +109,47 @@ pub(crate) fn tf_key_of(frame: &Frame, visual_id: u64) -> u64 {
 }
 
 pub(crate) fn pe_mouse(event: PointerEventKind, pos: Vec2, mods: Modifiers) -> PointerEvent {
-    PointerEvent {
-        id: PointerId(0),
-        kind: PointerKind::Mouse,
+    PointerEvent::new(
+        PointerId(0),
+        PointerKind::Mouse,
         event,
-        position: pos,
-        pressure: 1.0,
-        modifiers: mods,
-    }
+        pos,
+        1.0,
+        mods,
+    )
 }
 
 pub(crate) fn pe_touch(event: PointerEventKind, pos: Vec2, mods: Modifiers) -> PointerEvent {
-    PointerEvent {
-        id: PointerId(0),
-        kind: PointerKind::Touch,
+    PointerEvent::new(
+        PointerId(0),
+        PointerKind::Touch,
         event,
-        position: pos,
-        pressure: 1.0,
-        modifiers: mods,
-    }
+        pos,
+        1.0,
+        mods,
+    )
 }
 
 pub(crate) fn pe_down_primary(kind: PointerKind, pos: Vec2, mods: Modifiers) -> PointerEvent {
-    PointerEvent {
-        id: PointerId(0),
+    PointerEvent::new(
+        PointerId(0),
         kind,
-        event: PointerEventKind::Down(PointerButton::Primary),
-        position: pos,
-        pressure: 1.0,
-        modifiers: mods,
-    }
+        PointerEventKind::Down(PointerButton::Primary),
+        pos,
+        1.0,
+        mods,
+    )
 }
 
 pub(crate) fn pe_up_primary(kind: PointerKind, pos: Vec2, mods: Modifiers) -> PointerEvent {
-    PointerEvent {
-        id: PointerId(0),
+    PointerEvent::new(
+        PointerId(0),
         kind,
-        event: PointerEventKind::Up(PointerButton::Primary),
-        position: pos,
-        pressure: 1.0,
-        modifiers: mods,
-    }
+        PointerEventKind::Up(PointerButton::Primary),
+        pos,
+        1.0,
+        mods,
+    )
 }
 
 pub(crate) fn map_key(key: winit::keyboard::PhysicalKey) -> repose_core::input::Key {

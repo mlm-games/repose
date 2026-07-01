@@ -1648,6 +1648,7 @@ impl LayoutEngine {
             true,
             &mut deferred,
             false, // Allow deferral in first pass
+            0,    // depth
         );
 
         // Paint deferred nodes sorted by render_z_index (ascending = higher on top)
@@ -1683,6 +1684,7 @@ impl LayoutEngine {
                 true,
                 &mut Vec::new(), // No further deferral in second pass
                 true,            // Skip defer check
+                0,               // depth
             );
             let _ = view_id;
         }
@@ -1817,6 +1819,7 @@ impl LayoutEngine {
             false,
             &mut Vec::new(),
             false,
+            0, // depth
         );
     }
 
@@ -1837,6 +1840,8 @@ impl LayoutEngine {
         allow_cache: bool,
         deferred: &mut Vec<(NodeId, (f32, f32), f32, Option<u64>, f32)>,
         skip_defer: bool,
+        /// Tree depth: 0 = root; incremented per child level.
+        depth: u32,
     ) {
         let (subtree_hash, modifier, kind, children) = {
             let n = self.tree.get(node_id).unwrap();
@@ -1962,6 +1967,7 @@ impl LayoutEngine {
                 false,
                 &mut Vec::new(), // Don't defer within repaint boundary
                 true,            // Skip defer check in repaint boundary
+                depth,           // same depth — this is the same node
             );
 
             let entry = PaintCacheEntry {
@@ -2225,6 +2231,7 @@ impl LayoutEngine {
             let mut hit = HitRegion {
                 id: view_id,
                 rect,
+                depth,
                 z_index: modifier.z_index,
                 focusable,
                 focus_group_id: if modifier.focus_group {
@@ -2732,6 +2739,7 @@ impl LayoutEngine {
                     hits.push(HitRegion {
                         id: view_id,
                         rect,
+                        depth,
                         on_scroll,
                         focusable: true,
                         z_index: modifier.z_index,
@@ -2767,6 +2775,7 @@ impl LayoutEngine {
                     hits.push(HitRegion {
                         id: view_id,
                         rect,
+                        depth,
                         on_click: Some(cb),
                         focusable: true,
                         z_index: modifier.z_index,
@@ -2844,6 +2853,7 @@ impl LayoutEngine {
                                 w: chevron_w,
                                 h: rect.h,
                             },
+                            depth,
                             on_click: Some(cb),
                             focusable: false,
                             z_index: modifier.z_index,
@@ -2862,6 +2872,7 @@ impl LayoutEngine {
                             w: (rect.w - indent_px - chevron_w).max(0.0),
                             h: rect.h,
                         },
+                        depth,
                         on_click: Some(cb),
                         focusable: true,
                         z_index: modifier.z_index,
@@ -2978,6 +2989,7 @@ impl LayoutEngine {
                 hits.push(HitRegion {
                     id: view_id,
                     rect,
+                    depth,
                     on_scroll: on_scroll.clone(),
                     focusable: false,
                     z_index: modifier.z_index,
@@ -3035,6 +3047,7 @@ impl LayoutEngine {
                         allow_cache,
                         deferred,
                         skip_defer,
+                        depth + 1,
                     );
                 }
 
@@ -3071,6 +3084,7 @@ impl LayoutEngine {
                 hits.push(HitRegion {
                     id: view_id,
                     rect,
+                    depth,
                     on_scroll: on_scroll.clone(),
                     focusable: false,
                     z_index: modifier.z_index,
@@ -3134,6 +3148,7 @@ impl LayoutEngine {
                         allow_cache,
                         deferred,
                         skip_defer,
+                        depth + 1,
                     );
                 }
                 let mut i = hits_start;
@@ -3197,6 +3212,7 @@ impl LayoutEngine {
                         allow_cache,
                         deferred,
                         skip_defer,
+                        depth + 1,
                     );
                 }
             }
@@ -3219,6 +3235,7 @@ impl LayoutEngine {
                         allow_cache,
                         deferred,
                         skip_defer,
+                        depth + 1,
                     );
                 }
                 // Remaining children visible only when expanded
@@ -3240,6 +3257,7 @@ impl LayoutEngine {
                             allow_cache,
                             deferred,
                             skip_defer,
+                            depth + 1,
                         );
                     }
                 }
@@ -3262,6 +3280,7 @@ impl LayoutEngine {
                         allow_cache,
                         deferred,
                         skip_defer,
+                        depth + 1,
                     );
                 }
             }

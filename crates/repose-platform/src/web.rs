@@ -989,16 +989,14 @@ impl ApplicationHandler<()> for App {
                             if let Some(i) = rc::top_hit_index(f, pos) {
                                 let hit = &f.hit_regions[i];
                                 if let Some(cb) = &hit.on_pointer_down {
-                                    cb(repose_core::input::PointerEvent {
-                                        id: repose_core::input::PointerId(0),
-                                        kind: repose_core::input::PointerKind::Mouse,
-                                        event: repose_core::input::PointerEventKind::Down(
-                                            repose_core::input::PointerButton::Tertiary,
-                                        ),
-                                        position: pos,
-                                        pressure: 1.0,
-                                        modifiers: self.modifiers,
-                                    });
+                                cb(PointerEvent::new(
+                                    PointerId(0),
+                                    PointerKind::Mouse,
+                                    PointerEventKind::Down(PointerButton::Tertiary),
+                                    pos,
+                                    1.0,
+                                    self.modifiers,
+                                ));
                                 }
                                 // Paste from clipboard as a best-effort for middle-click
                                 if self.is_textfield(hit.id) {
@@ -1015,16 +1013,14 @@ impl ApplicationHandler<()> for App {
                             if let Some(i) = rc::top_hit_index(f, pos)
                                 && let Some(cb) = &f.hit_regions[i].on_pointer_up
                             {
-                                cb(repose_core::input::PointerEvent {
-                                    id: repose_core::input::PointerId(0),
-                                    kind: repose_core::input::PointerKind::Mouse,
-                                    event: repose_core::input::PointerEventKind::Up(
-                                        repose_core::input::PointerButton::Tertiary,
-                                    ),
-                                    position: pos,
-                                    pressure: 1.0,
-                                    modifiers: self.modifiers,
-                                });
+                                cb(PointerEvent::new(
+                                    PointerId(0),
+                                    PointerKind::Mouse,
+                                    PointerEventKind::Up(PointerButton::Tertiary),
+                                    pos,
+                                    1.0,
+                                    self.modifiers,
+                                ));
                             }
                         }
                     }
@@ -1418,19 +1414,14 @@ impl ApplicationHandler<()> for App {
                                                 if let Some(cb) = &hit.on_click {
                                                     cb();
                                                 } else if let Some(cb) = &hit.on_pointer_down {
-                                                    let pe = repose_core::input::PointerEvent {
-                                                        id: repose_core::input::PointerId(0),
-                                                        kind: repose_core::input::PointerKind::Mouse,
-                                                        event: repose_core::input::PointerEventKind::Down(
-                                                            repose_core::input::PointerButton::Primary,
-                                                        ),
-                                                        position: repose_core::Vec2 {
-                                                            x: 0.0,
-                                                            y: 0.0,
-                                                        },
-                                                        pressure: 1.0,
-                                                        modifiers: self.modifiers,
-                                                    };
+                                                    let pe = PointerEvent::new(
+                                                        PointerId(0),
+                                                        PointerKind::Mouse,
+                                                        PointerEventKind::Down(PointerButton::Primary),
+                                                        Vec2 { x: 0.0, y: 0.0 },
+                                                        1.0,
+                                                        self.modifiers,
+                                                    );
                                                     cb(pe);
                                                 }
                                             }

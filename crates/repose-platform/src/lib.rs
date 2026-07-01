@@ -601,14 +601,14 @@ pub fn run_desktop_app(
                                     x: self.mouse_pos_px.0,
                                     y: self.mouse_pos_px.1,
                                 };
-                                let pe = repose_core::input::PointerEvent {
-                                    id: repose_core::input::PointerId(0),
-                                    kind: repose_core::input::PointerKind::Mouse,
-                                    event: repose_core::input::PointerEventKind::Cancel,
-                                    position: pos,
-                                    pressure: 1.0,
-                                    modifiers: self.modifiers,
-                                };
+                                let pe = PointerEvent::new(
+                                    PointerId(0),
+                                    PointerKind::Mouse,
+                                    PointerEventKind::Cancel,
+                                    pos,
+                                    1.0,
+                                    self.modifiers,
+                                );
                                 cb(pe);
                             }
                         }
@@ -807,27 +807,27 @@ pub fn run_desktop_app(
                                 && let Some(prev) = f.hit_regions.iter().find(|h| h.id == prev_id)
                                 && let Some(cb) = &prev.on_pointer_leave
                             {
-                                let pe = repose_core::input::PointerEvent {
-                                    id: repose_core::input::PointerId(0),
-                                    kind: repose_core::input::PointerKind::Mouse,
-                                    event: repose_core::input::PointerEventKind::Leave,
-                                    position: pos,
-                                    pressure: 1.0,
-                                    modifiers: self.modifiers,
-                                };
+                                let pe = PointerEvent::new(
+                                    PointerId(0),
+                                    PointerKind::Mouse,
+                                    PointerEventKind::Leave,
+                                    pos,
+                                    1.0,
+                                    self.modifiers,
+                                );
                                 cb(pe);
                             }
                             if let Some(h) = top
                                 && let Some(cb) = &h.on_pointer_enter
                             {
-                                let pe = repose_core::input::PointerEvent {
-                                    id: repose_core::input::PointerId(0),
-                                    kind: repose_core::input::PointerKind::Mouse,
-                                    event: repose_core::input::PointerEventKind::Enter,
-                                    position: pos,
-                                    pressure: 1.0,
-                                    modifiers: self.modifiers,
-                                };
+                                let pe = PointerEvent::new(
+                                    PointerId(0),
+                                    PointerKind::Mouse,
+                                    PointerEventKind::Enter,
+                                    pos,
+                                    1.0,
+                                    self.modifiers,
+                                );
                                 cb(pe);
                             }
                             self.hover_id = new_hover;
@@ -835,14 +835,14 @@ pub fn run_desktop_app(
                         }
 
                         // Build PointerEvent
-                        let pe = repose_core::input::PointerEvent {
-                            id: repose_core::input::PointerId(0),
-                            kind: repose_core::input::PointerKind::Mouse,
-                            event: repose_core::input::PointerEventKind::Move,
-                            position: pos,
-                            pressure: 1.0,
-                            modifiers: self.modifiers,
-                        };
+                        let pe = PointerEvent::new(
+                            PointerId(0),
+                            PointerKind::Mouse,
+                            PointerEventKind::Move,
+                            pos,
+                            1.0,
+                            self.modifiers,
+                        );
 
                         // Move delivery (captured first)
                         if let Some(cid) = self.capture_id {
@@ -991,16 +991,14 @@ pub fn run_desktop_app(
 
                             // PointerDown callback (legacy)
                             if let Some(cb) = &hit.on_pointer_down {
-                                let pe = repose_core::input::PointerEvent {
-                                    id: repose_core::input::PointerId(0),
-                                    kind: repose_core::input::PointerKind::Mouse,
-                                    event: repose_core::input::PointerEventKind::Down(
-                                        repose_core::input::PointerButton::Primary,
-                                    ),
-                                    position: pos,
-                                    pressure: 1.0,
-                                    modifiers: self.modifiers,
-                                };
+                                let pe = PointerEvent::new(
+                                    PointerId(0),
+                                    PointerKind::Mouse,
+                                    PointerEventKind::Down(PointerButton::Primary),
+                                    pos,
+                                    1.0,
+                                    self.modifiers,
+                                );
                                 cb(pe);
                             }
 
@@ -1038,16 +1036,14 @@ pub fn run_desktop_app(
                     if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos)) {
                         // Dispatch Tertiary pointer event
                         if let Some(cb) = &hit.on_pointer_down {
-                            cb(repose_core::input::PointerEvent {
-                                id: repose_core::input::PointerId(0),
-                                kind: repose_core::input::PointerKind::Mouse,
-                                event: repose_core::input::PointerEventKind::Down(
-                                    repose_core::input::PointerButton::Tertiary,
-                                ),
-                                position: pos,
-                                pressure: 1.0,
-                                modifiers: self.modifiers,
-                            });
+                            cb(PointerEvent::new(
+                                PointerId(0),
+                                PointerKind::Mouse,
+                                PointerEventKind::Down(PointerButton::Tertiary),
+                                pos,
+                                1.0,
+                                self.modifiers,
+                            ));
                         }
                         // Paste primary selection into textfield
                         if self.is_textfield(hit.id) {
@@ -1105,16 +1101,14 @@ pub fn run_desktop_app(
                             x: self.mouse_pos_px.0,
                             y: self.mouse_pos_px.1,
                         };
-                        let pe = repose_core::input::PointerEvent {
-                            id: repose_core::input::PointerId(0),
-                            kind: repose_core::input::PointerKind::Mouse,
-                            event: repose_core::input::PointerEventKind::Up(
-                                repose_core::input::PointerButton::Primary,
-                            ),
-                            position: pos,
-                            pressure: 1.0,
-                            modifiers: self.modifiers,
-                        };
+                        let pe = PointerEvent::new(
+                            PointerId(0),
+                            PointerKind::Mouse,
+                            PointerEventKind::Up(PointerButton::Primary),
+                            pos,
+                            1.0,
+                            self.modifiers,
+                        );
                         cb(pe);
                     }
 
@@ -1167,16 +1161,14 @@ pub fn run_desktop_app(
                         if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos))
                         {
                             if let Some(cb) = &hit.on_pointer_up {
-                                cb(repose_core::input::PointerEvent {
-                                    id: repose_core::input::PointerId(0),
-                                    kind: repose_core::input::PointerKind::Mouse,
-                                    event: repose_core::input::PointerEventKind::Up(
-                                        repose_core::input::PointerButton::Tertiary,
-                                    ),
-                                    position: pos,
-                                    pressure: 1.0,
-                                    modifiers: self.modifiers,
-                                });
+                                cb(PointerEvent::new(
+                                    PointerId(0),
+                                    PointerKind::Mouse,
+                                    PointerEventKind::Up(PointerButton::Tertiary),
+                                    pos,
+                                    1.0,
+                                    self.modifiers,
+                                ));
                             }
                         }
                     }
@@ -1589,16 +1581,14 @@ pub fn run_desktop_app(
                                         if let Some(cb) = &hit.on_click {
                                             cb();
                                         } else if let Some(cb) = &hit.on_pointer_down {
-                                            let pe = repose_core::input::PointerEvent {
-                                                id: repose_core::input::PointerId(0),
-                                                kind: repose_core::input::PointerKind::Mouse,
-                                                event: repose_core::input::PointerEventKind::Down(
-                                                    repose_core::input::PointerButton::Primary,
-                                                ),
-                                                position: repose_core::Vec2 { x: 0.0, y: 0.0 },
-                                                pressure: 1.0,
-                                                modifiers: self.modifiers,
-                                            };
+                                            let pe = PointerEvent::new(
+                                                PointerId(0),
+                                                PointerKind::Mouse,
+                                                PointerEventKind::Down(PointerButton::Primary),
+                                                Vec2 { x: 0.0, y: 0.0 },
+                                                1.0,
+                                                self.modifiers,
+                                            );
                                             cb(pe);
                                         }
                                         if let Some(node) =

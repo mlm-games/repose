@@ -1044,19 +1044,14 @@ pub fn run_android_app_with_options(
                                                 if let Some(cb) = &hit.on_click {
                                                     cb();
                                                 } else if let Some(cb) = &hit.on_pointer_down {
-                                                    let pe = repose_core::input::PointerEvent {
-                                                        id: repose_core::input::PointerId(0),
-                                                        kind: repose_core::input::PointerKind::Mouse,
-                                                        event: repose_core::input::PointerEventKind::Down(
-                                                            repose_core::input::PointerButton::Primary,
-                                                        ),
-                                                        position: repose_core::Vec2 {
-                                                            x: 0.0,
-                                                            y: 0.0,
-                                                        },
-                                                        pressure: 1.0,
-                                                        modifiers: self.modifiers,
-                                                    };
+                                                    let pe = PointerEvent::new(
+                                                        PointerId(0),
+                                                        PointerKind::Mouse,
+                                                        PointerEventKind::Down(PointerButton::Primary),
+                                                        Vec2 { x: 0.0, y: 0.0 },
+                                                        1.0,
+                                                        self.modifiers,
+                                                    );
                                                     cb(pe);
                                                 }
                                             }

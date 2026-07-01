@@ -417,6 +417,9 @@ pub struct Frame {
 pub struct HitRegion {
     pub id: u64,
     pub rect: Rect,
+    /// Tree depth: 0 = root, higher = deeper child. Used for three-pass
+    /// pointer dispatch to determine ancestor/descendant ordering.
+    pub depth: u32,
     pub on_click: Option<Rc<dyn Fn()>>,
     pub on_scroll: Option<Rc<dyn Fn(crate::Vec2) -> crate::Vec2>>,
     pub focusable: bool,
