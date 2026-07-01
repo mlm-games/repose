@@ -957,6 +957,7 @@ pub struct ToggleButtonConfig {
     pub border: Option<(f32, Color, f32)>,
     pub shape_radius: f32,
     pub height: f32,
+    pub content_padding: Option<PaddingValues>,
     pub interaction_source: Option<MutableInteractionSource>,
 }
 
@@ -974,6 +975,7 @@ impl Default for ToggleButtonConfig {
             border: None,
             shape_radius: ToggleButtonDefaults::SHAPE_RADIUS,
             height: ToggleButtonDefaults::HEIGHT,
+            content_padding: None,
             interaction_source: None,
         }
     }
@@ -1057,6 +1059,8 @@ pub fn ToggleButton(
     let se = config
         .state_elevation
         .unwrap_or_else(ToggleButtonDefaults::state_elevation_default);
+    let pad_l = config.content_padding.map(|p| p.left).unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING);
+    let pad_r = config.content_padding.map(|p| p.right).unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING);
     toggle_button_impl(
         checked,
         on_checked_change,
@@ -1068,8 +1072,8 @@ pub fn ToggleButton(
         config.state_colors,
         se,
         config.border,
-        ToggleButtonDefaults::HORIZONTAL_PADDING,
-        ToggleButtonDefaults::HORIZONTAL_PADDING,
+        pad_l,
+        pad_r,
         config.height,
         config.shape_radius,
         config.enabled,
@@ -1107,8 +1111,8 @@ pub fn TonalToggleButton(
         config.state_colors,
         se,
         config.border,
-        ToggleButtonDefaults::HORIZONTAL_PADDING,
-        ToggleButtonDefaults::HORIZONTAL_PADDING,
+        config.content_padding.map(|p| p.left).unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
+        config.content_padding.map(|p| p.right).unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
         config.height,
         config.shape_radius,
         config.enabled,
@@ -1155,8 +1159,8 @@ pub fn OutlinedToggleButton(
         config.state_colors,
         se,
         border,
-        ToggleButtonDefaults::HORIZONTAL_PADDING,
-        ToggleButtonDefaults::HORIZONTAL_PADDING,
+        config.content_padding.map(|p| p.left).unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
+        config.content_padding.map(|p| p.right).unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
         config.height,
         config.shape_radius,
         config.enabled,
@@ -1194,8 +1198,8 @@ pub fn ElevatedToggleButton(
         config.state_colors,
         se,
         config.border,
-        ToggleButtonDefaults::HORIZONTAL_PADDING,
-        ToggleButtonDefaults::HORIZONTAL_PADDING,
+        config.content_padding.map(|p| p.left).unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
+        config.content_padding.map(|p| p.right).unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
         config.height,
         config.shape_radius,
         config.enabled,
@@ -5545,6 +5549,9 @@ pub struct TooltipConfig {
     pub has_action: bool,
     pub enable_user_input: bool,
     pub focusable: bool,
+    pub max_width: f32,
+    pub tonal_elevation: f32,
+    pub shadow_elevation: f32,
 }
 
 impl Default for TooltipConfig {
@@ -5559,6 +5566,9 @@ impl Default for TooltipConfig {
             has_action: false,
             enable_user_input: true,
             focusable: false,
+            max_width: TooltipDefaults::MAX_WIDTH,
+            tonal_elevation: 0.0,
+            shadow_elevation: 0.0,
         }
     }
 }

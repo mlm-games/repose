@@ -1024,6 +1024,7 @@ impl TooltipDefaults {
     pub const OFFSET_Y: f32 = -28.0;
     pub const HORIZONTAL_PADDING: f32 = 8.0;
     pub const VERTICAL_PADDING: f32 = 4.0;
+    pub const MAX_WIDTH: f32 = 200.0;
     pub fn container_color() -> Color {
         theme().inverse_surface
     }

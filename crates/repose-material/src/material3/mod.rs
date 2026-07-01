@@ -754,6 +754,19 @@ pub fn InputChip(
     )
 }
 
+/// Position of the floating action button within a Scaffold.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FabPosition {
+    End,
+    Center,
+}
+
+impl Default for FabPosition {
+    fn default() -> Self {
+        Self::End
+    }
+}
+
 #[derive(Clone)]
 pub struct ScaffoldConfig {
     pub modifier: Modifier,
@@ -763,6 +776,7 @@ pub struct ScaffoldConfig {
     pub snackbar_host: Option<View>,
     pub container_color: Color,
     pub content_color: Color,
+    pub fab_position: FabPosition,
 }
 
 impl Default for ScaffoldConfig {
@@ -775,6 +789,7 @@ impl Default for ScaffoldConfig {
             snackbar_host: None,
             container_color: ScaffoldDefaults::container_color(),
             content_color: ScaffoldDefaults::content_color(),
+            fab_position: FabPosition::End,
         }
     }
 }
@@ -840,13 +855,29 @@ pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig)
             Box(Modifier::new())
         },
         if let Some(fab) = config.floating_action_button {
-            Box(Modifier::new().absolute().offset(
-                None,
-                None,
-                Some(16.0 + insets.bottom + insets.ime_bottom),
-                Some(16.0),
-            ))
-            .child(fab)
+            let mut fab_m = Modifier::new().absolute();
+            match config.fab_position {
+                FabPosition::End => {
+                    fab_m = fab_m.offset(
+                        None,
+                        None,
+                        Some(16.0 + insets.bottom + insets.ime_bottom),
+                        Some(16.0),
+                    );
+                }
+                FabPosition::Center => {
+                    fab_m = fab_m
+                        .fill_max_width()
+                        .align_self(AlignSelf::Center)
+                        .offset(
+                            None,
+                            None,
+                            Some(16.0 + insets.bottom + insets.ime_bottom),
+                            None,
+                        );
+                }
+            }
+            Box(fab_m).child(fab)
         } else {
             Box(Modifier::new())
         },
