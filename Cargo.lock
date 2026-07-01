@@ -2505,6 +2505,7 @@ dependencies = [
  "log",
  "parking_lot",
  "repose-macros",
+ "rustc-hash 2.1.2",
  "slotmap",
  "smallvec",
  "taffy",

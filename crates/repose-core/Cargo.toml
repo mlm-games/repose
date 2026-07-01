@@ -20,3 +20,4 @@ thiserror = { workspace = true }
 taffy.workspace = true
 web-time.workspace = true
 repose-macros.workspace = true
+rustc-hash.workspace = true

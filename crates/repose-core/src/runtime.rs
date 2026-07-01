@@ -1,8 +1,9 @@
 use std::any::Any;
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::panic::Location;
 use std::rc::Rc;
+
+use rustc_hash::FxHashMap;
 
 use crate::scope::Scope;
 use crate::{Rect, Scene, View, semantics::Role};
@@ -293,10 +294,10 @@ pub struct Composer {
     /// when the composition tree changes between frames.
     pub slot_callers: Vec<&'static Location<'static>>,
     pub cursor: usize,
-    pub keyed_slots: HashMap<String, Box<dyn Any>>,
+    pub keyed_slots: FxHashMap<String, Box<dyn Any>>,
     /// Per-scope cached state for the `scope!` macro.
     /// Keyed by the scope key string.
-    pub scope_caches: HashMap<String, crate::scope_cache::ScopeCache>,
+    pub scope_caches: FxHashMap<String, crate::scope_cache::ScopeCache>,
 }
 
 pub struct ComposeGuard {
@@ -542,14 +543,14 @@ pub struct Scheduler {
     next_id: u64,
     /// Per-scope unique IDs, assigned lazily when a scope first executes.
     /// Keyed by the scope key string from `scope!`.
-    scope_key_to_id: HashMap<String, u32>,
+    scope_key_to_id: FxHashMap<String, u32>,
     next_scope_id: u32,
     /// When set, `id()` allocates from this scope's local counter instead of the global counter.
     /// The returned ID is `(scope_id << 32) | local_id`, which is stable even when
     /// prior sibling scopes change their view count.
     current_scope: Option<String>,
     /// Per-scope local ID counters. Reset to 0 when a scope re-executes.
-    scope_local_counters: HashMap<String, u32>,
+    scope_local_counters: FxHashMap<String, u32>,
     pub focused: Option<u64>,
     pub size: (u32, u32),
 }
@@ -564,10 +565,10 @@ impl Scheduler {
     pub fn new() -> Self {
         Self {
             next_id: 1,
-            scope_key_to_id: HashMap::new(),
+            scope_key_to_id: FxHashMap::default(),
             next_scope_id: 1,
             current_scope: None,
-            scope_local_counters: HashMap::new(),
+            scope_local_counters: FxHashMap::default(),
             focused: None,
             size: (1280, 800),
         }
