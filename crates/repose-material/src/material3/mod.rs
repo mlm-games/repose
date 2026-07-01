@@ -1572,6 +1572,7 @@ pub struct SearchBarInputFieldConfig {
     pub placeholder_color: Color,
     pub leading_icon: Option<View>,
     pub trailing_icon: Option<View>,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 impl Default for SearchBarInputFieldConfig {
@@ -1585,6 +1586,7 @@ impl Default for SearchBarInputFieldConfig {
             placeholder_color: th.on_surface_variant,
             leading_icon: None,
             trailing_icon: None,
+            interaction_source: None,
         }
     }
 }
@@ -1600,7 +1602,11 @@ pub fn SearchBarInputField(
     expanded: bool,
     config: SearchBarInputFieldConfig,
 ) -> View {
-    let source = MutableInteractionSource::new();
+    let source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| Rc::new(MutableInteractionSource::new()));
     let focused = source.source().collect_is_focused();
     let state = config.state;
     let enabled = config.enabled;
@@ -1610,7 +1616,7 @@ pub fn SearchBarInputField(
         .padding(4.0)
         .required_width_in(SearchBarDefaults::MIN_WIDTH, SearchBarDefaults::MAX_WIDTH)
         .required_height_in(SearchBarDefaults::HEIGHT, SearchBarDefaults::HEIGHT)
-        .interaction_source(&source)
+        .interaction_source(&*source)
         .semantics(Semantics {
             role: Role::TextField,
             label: Some("Search".into()),

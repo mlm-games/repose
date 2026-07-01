@@ -375,6 +375,7 @@ pub struct IconButtonConfig {
     pub enabled: bool,
     pub colors: IconButtonColors,
     pub container_size: Option<f32>,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 impl Default for IconButtonConfig {
@@ -389,6 +390,7 @@ impl Default for IconButtonConfig {
                 disabled_content_color: IconButtonDefaults::disabled_content_color(),
             },
             container_size: None,
+            interaction_source: None,
         }
     }
 }
@@ -418,6 +420,12 @@ fn icon_button_render(
     if let Some((w, c)) = bdr {
         m = m.border(w, c, sz * 0.5);
     }
+    let source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
+    m = m.interaction_source(&*source);
     if is_enabled {
         m = m.clickable().on_click(move || on_click());
     }
@@ -587,6 +595,7 @@ pub struct ButtonConfig {
     pub height: f32,
     pub colors: Option<ButtonColors>,
     pub elevation: Option<ButtonElevation>,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 impl Default for ButtonConfig {
@@ -604,6 +613,7 @@ impl Default for ButtonConfig {
             height: ButtonDefaults::HEIGHT,
             colors: None,
             elevation: None,
+            interaction_source: None,
         }
     }
 }
@@ -670,6 +680,7 @@ fn button_impl(
     height: f32,
     shape_radius: f32,
     enabled: bool,
+    interaction_source: Option<MutableInteractionSource>,
 ) -> View {
     let mut m = Modifier::new().height(height).min_width(48.0);
     if let Some(bg) = container_color {
@@ -703,7 +714,9 @@ fn button_impl(
         .justify_content(JustifyContent::Center);
 
     // Interaction source + ripple indication (matching Compose's clickable + indication wiring)
-    let source = remember(MutableInteractionSource::new);
+    let source: Rc<MutableInteractionSource> = interaction_source
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
     m = m.interaction_source(&*source);
     m = m.indication(ripple(RippleConfig {
         color: Some(content_color),
@@ -761,6 +774,7 @@ pub fn Button(
         config.height,
         config.shape_radius,
         config.enabled,
+        config.interaction_source.clone(),
     )
 }
 
@@ -802,6 +816,7 @@ pub fn FilledTonalButton(
         config.height,
         config.shape_radius,
         config.enabled,
+        config.interaction_source.clone(),
     )
 }
 
@@ -843,6 +858,7 @@ pub fn OutlinedButton(
         config.height,
         config.shape_radius,
         config.enabled,
+        config.interaction_source.clone(),
     )
 }
 
@@ -881,6 +897,7 @@ pub fn TextButton(
         config.height,
         config.shape_radius,
         config.enabled,
+        config.interaction_source.clone(),
     )
 }
 
@@ -919,6 +936,7 @@ pub fn ElevatedButton(
         config.height,
         config.shape_radius,
         config.enabled,
+        config.interaction_source.clone(),
     )
 }
 
@@ -936,6 +954,7 @@ pub struct ToggleButtonConfig {
     pub border: Option<(f32, Color, f32)>,
     pub shape_radius: f32,
     pub height: f32,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 impl Default for ToggleButtonConfig {
@@ -952,6 +971,7 @@ impl Default for ToggleButtonConfig {
             border: None,
             shape_radius: ToggleButtonDefaults::SHAPE_RADIUS,
             height: ToggleButtonDefaults::HEIGHT,
+            interaction_source: None,
         }
     }
 }
@@ -972,6 +992,7 @@ fn toggle_button_impl(
     height: f32,
     shape_radius: f32,
     enabled: bool,
+    interaction_source: Option<MutableInteractionSource>,
 ) -> View {
     let th = theme();
     let bg = if checked {
@@ -998,6 +1019,10 @@ fn toggle_button_impl(
         .justify_content(JustifyContent::Center)
         .state_colors(state_colors)
         .state_elevation(state_elevation);
+    let tg_source: Rc<MutableInteractionSource> = interaction_source
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
+    m = m.interaction_source(&*tg_source);
     if let Some((w, c, r)) = border {
         m = m.border(w, c, r);
     }
@@ -1045,6 +1070,7 @@ pub fn ToggleButton(
         config.height,
         config.shape_radius,
         config.enabled,
+        config.interaction_source.clone(),
     )
 }
 
@@ -1083,6 +1109,7 @@ pub fn TonalToggleButton(
         config.height,
         config.shape_radius,
         config.enabled,
+        config.interaction_source.clone(),
     )
 }
 
@@ -1130,6 +1157,7 @@ pub fn OutlinedToggleButton(
         config.height,
         config.shape_radius,
         config.enabled,
+        config.interaction_source.clone(),
     )
 }
 
@@ -1168,6 +1196,7 @@ pub fn ElevatedToggleButton(
         config.height,
         config.shape_radius,
         config.enabled,
+        config.interaction_source.clone(),
     )
 }
 
@@ -1181,6 +1210,7 @@ pub struct FABConfig {
     pub state_elevation: StateElevation,
     pub shape_radius: f32,
     pub size: f32,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 impl Default for FABConfig {
@@ -1193,6 +1223,7 @@ impl Default for FABConfig {
             state_elevation: FABDefaults::state_elevation(),
             shape_radius: FABDefaults::SHAPE_RADIUS,
             size: FABDefaults::SIZE,
+            interaction_source: None,
         }
     }
 }
@@ -1234,6 +1265,11 @@ fn fab_impl(
         .justify_content(JustifyContent::Center)
         .then(config.modifier);
 
+    let source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
+    m = m.interaction_source(&*source);
     if is_enabled {
         m = m.clickable().on_click(move || on_click());
     }
@@ -3225,6 +3261,7 @@ pub struct CheckboxConfig {
     pub disabled_unchecked_border_color: Color,
     pub disabled_indeterminate_border_color: Color,
     pub state_colors: StateColors,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 impl Default for CheckboxConfig {
@@ -3245,6 +3282,7 @@ impl Default for CheckboxConfig {
             disabled_unchecked_border_color: CheckboxDefaults::disabled_unchecked_border_color(),
             disabled_indeterminate_border_color: CheckboxDefaults::disabled_checked_box_color(),
             state_colors: CheckboxDefaults::state_colors_default(),
+            interaction_source: None,
         }
     }
 }
@@ -3322,6 +3360,11 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         }
     };
 
+    let cb_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
     Box(Modifier::new()
         .width(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .height(CheckboxDefaults::TOUCH_TARGET_SIZE)
@@ -3329,6 +3372,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         .clip_rounded(20.0)
         .background(Color::TRANSPARENT)
         .state_colors(config.state_colors)
+        .interaction_source(&*cb_source)
         .clickable()
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
@@ -3493,6 +3537,7 @@ pub struct RadioButtonConfig {
     pub disabled_selected_color: Color,
     pub disabled_unselected_color: Color,
     pub state_colors: StateColors,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 impl Default for RadioButtonConfig {
@@ -3505,6 +3550,7 @@ impl Default for RadioButtonConfig {
             disabled_selected_color: RadioButtonDefaults::disabled_selected_color(),
             disabled_unselected_color: RadioButtonDefaults::disabled_unselected_color(),
             state_colors: RadioButtonDefaults::state_colors_default(),
+            interaction_source: None,
         }
     }
 }
@@ -3561,6 +3607,11 @@ pub fn RadioButton(
         }
     };
 
+    let rb_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
     Box(Modifier::new()
         .width(RadioButtonDefaults::TOUCH_TARGET_SIZE)
         .height(RadioButtonDefaults::TOUCH_TARGET_SIZE)
@@ -3568,6 +3619,7 @@ pub fn RadioButton(
         .clip_rounded(20.0)
         .background(Color::TRANSPARENT)
         .state_colors(config.state_colors)
+        .interaction_source(&*rb_source)
         .clickable()
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
@@ -3619,6 +3671,7 @@ pub struct SwitchConfig {
     pub disabled_unchecked_icon_color: Color,
     pub state_colors: StateColors,
     pub thumb_content: Option<View>,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 impl Default for SwitchConfig {
@@ -3644,6 +3697,7 @@ impl Default for SwitchConfig {
             disabled_unchecked_icon_color: SwitchDefaults::disabled_unchecked_icon_color(),
             state_colors: SwitchDefaults::state_colors_default(),
             thumb_content: None,
+            interaction_source: None,
         }
     }
 }
@@ -3753,12 +3807,18 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         color_spec,
     );
 
+    let sw_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
     Box(Modifier::new()
         .size(track_w, track_h)
         .padding(0.0)
         .clip_rounded(track_h * 0.5)
         .background(track_bg)
         .border(track_border, border_color, track_h * 0.5)
+        .interaction_source(&*sw_source)
         .clickable()
         .on_pointer_enter({
             let h = hovered.clone();
@@ -3827,6 +3887,7 @@ pub struct SliderConfig {
     pub disabled_inactive_tick_color: Color,
     pub state_colors: StateColors,
     pub on_value_change_finished: Option<Rc<dyn Fn()>>,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 impl std::fmt::Debug for SliderConfig {
@@ -3857,10 +3918,8 @@ impl std::fmt::Debug for SliderConfig {
                 &self.disabled_inactive_tick_color,
             )
             .field("state_colors", &self.state_colors)
-            .field(
-                "on_value_change_finished",
-                &self.on_value_change_finished.as_ref().map(|_| ".."),
-            )
+            .field("on_value_change_finished", &self.on_value_change_finished.as_ref().map(|_| ".."))
+            .field("interaction_source", &self.interaction_source.as_ref().map(|_| ".."))
             .finish()
     }
 }
@@ -3882,6 +3941,7 @@ impl Default for SliderConfig {
             disabled_inactive_tick_color: SliderDefaults::disabled_inactive_tick_color(),
             state_colors: SliderDefaults::state_colors_default(),
             on_value_change_finished: None,
+            interaction_source: None,
         }
     }
 }
@@ -3935,9 +3995,15 @@ pub fn Slider(
         Vec::new()
     };
 
+    let sl_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
     Box(Modifier::new()
         .min_width(200.0)
         .height(44.0)
+        .interaction_source(&*sl_source)
         .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
             let mul_c = |c: Color| {
                 Color(
