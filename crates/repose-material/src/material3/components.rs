@@ -4504,11 +4504,10 @@ pub fn Card(config: CardConfig, content: impl FnOnce() -> View) -> View {
 }
 
 /// M3 Elevated Card - card with elevation.
-pub fn ElevatedCard(modifier: Modifier, content: View) -> View {
+pub fn ElevatedCard(config: CardConfig, content: impl FnOnce() -> View) -> View {
     let th = theme();
     Card(
         CardConfig {
-            modifier,
             container_color: CardDefaults::elevated_container_color(),
             state_elevation: Some(StateElevation {
                 default: th.elevation.level1,
@@ -4516,22 +4515,21 @@ pub fn ElevatedCard(modifier: Modifier, content: View) -> View {
                 pressed: th.elevation.level3,
                 disabled: 0.0,
             }),
-            ..Default::default()
+            ..config
         },
-        || Column(Modifier::new().fill_max_size()).child(content),
+        content,
     )
 }
 
 /// M3 Outlined Card - card with border outline.
-pub fn OutlinedCard(modifier: Modifier, content: View) -> View {
+pub fn OutlinedCard(config: CardConfig, content: impl FnOnce() -> View) -> View {
     Card(
         CardConfig {
-            modifier,
             container_color: CardDefaults::outlined_container_color(),
             border: Some((1.0, CardDefaults::outlined_border_color())),
-            ..Default::default()
+            ..config
         },
-        || Column(Modifier::new().fill_max_size()).child(content),
+        content,
     )
 }
 

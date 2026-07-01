@@ -1,10 +1,12 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use repose_core::{prelude::*, signal};
 use repose_material::material3::{
     Button, ButtonConfig, OutlinedTextField, OutlinedTextFieldConfig,
 };
 use repose_material::{Icon, material_symbols};
 use repose_ui::*;
-use std::rc::Rc;
 
 use crate::ui::{Caption, Hint, Page, Section, sp};
 
@@ -143,14 +145,24 @@ pub fn screen() -> View {
         )),
         Section("Password TextField", {
             let pw = remember_with_key("pw_value", || signal(String::new()));
+            let tf_state = remember_with_key("pw_tf_state", || {
+                RefCell::new(TextFieldState::new())
+            });
+            if tf_state.borrow().text != pw.get() {
+                tf_state.borrow_mut().text = pw.get();
+            }
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
-                BasicTextFieldEx::new("Password", pw.get(), Modifier::new().fill_max_width())
-                    .password()
-                    .on_change({
-                        let p = pw.clone();
-                        move |v| p.set(v)
-                    })
-                    .build(),
+                BasicSecureTextField(
+                    tf_state.clone(),
+                    Modifier::new().fill_max_width(),
+                    TextFieldConfig {
+                        on_change: Some(Rc::new({
+                            let p = pw.clone();
+                            move |v| p.set(v)
+                        })),
+                        ..Default::default()
+                    },
+                ),
                 Row(Modifier::new()).child((
                     Hint("(masked value: "),
                     Text(pw.get()).size(14.0).color(theme().primary),
@@ -161,32 +173,39 @@ pub fn screen() -> View {
         Section(
             "TextArea (multi-line)",
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
-                BasicTextField(
-                    multi_text.get(),
-                    {
-                        let t = multi_text.clone();
-                        let last_change = last_change_multi.clone();
-                        move |s: String| {
-                            t.set(s.clone());
-                            last_change.set(s);
-                        }
-                    },
-                    Modifier::new()
-                        .height(180.0)
-                        .fill_max_width()
-                        .background(theme().surface)
-                        .border(1.0, theme().outline, 10.0)
-                        .clip_rounded(10.0),
-                    "Write notes…",
-                    BasicTextFieldConfig {
-                        single_line: false,
-                        on_submit: Some(Rc::new({
-                            let last_submit = last_submit_multi.clone();
-                            move |s| last_submit.set(s)
-                        })),
-                        ..Default::default()
-                    },
-                ),
+                {
+                    let tf_state = remember_with_key("multi_tf_state", || {
+                        RefCell::new(TextFieldState::new())
+                    });
+                    if tf_state.borrow().text != multi_text.get() {
+                        tf_state.borrow_mut().text = multi_text.get();
+                    }
+                    BasicTextField(
+                        tf_state.clone(),
+                        Modifier::new()
+                            .height(180.0)
+                            .fill_max_width()
+                            .background(theme().surface)
+                            .border(1.0, theme().outline, 10.0)
+                            .clip_rounded(10.0),
+                        "Write notes…",
+                        TextFieldConfig {
+                            on_change: Some(Rc::new({
+                                let t = multi_text.clone();
+                                let last_change = last_change_multi.clone();
+                                move |s: String| {
+                                    t.set(s.clone());
+                                    last_change.set(s);
+                                }
+                            })),
+                            on_submit: Some(Rc::new({
+                                let last_submit = last_submit_multi.clone();
+                                move |s| last_submit.set(s)
+                            })),
+                            ..Default::default()
+                        },
+                    )
+                },
                 Hint("Multi-line: Enter inserts newline. Cmd/Ctrl+Enter submits (if wired)."),
                 field_status(last_change_multi.get(), last_submit_multi.get()),
             )),

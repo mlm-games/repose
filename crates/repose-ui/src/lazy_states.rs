@@ -51,7 +51,10 @@ impl LazyColumnState {
     pub fn set_offset(&self, off: f32, content_height: f32) {
         let vh = self.viewport_height.get();
         let max_off = (content_height - vh).max(0.0);
-        self.scroll_offset.set(off.clamp(0.0, max_off));
+        let clamped = off.clamp(0.0, max_off);
+        if (self.scroll_offset.get() - clamped).abs() > 0.5 {
+            self.scroll_offset.set(clamped);
+        }
     }
 
     pub fn scroll_immediate(&self, delta_px: f32, content_height_px: f32) -> f32 {
@@ -120,7 +123,10 @@ impl LazyGridState {
     pub fn set_offset(&self, off: f32, content_height: f32) {
         let vh = self.viewport_height.get();
         let max_off = (content_height - vh).max(0.0);
-        self.scroll_offset.set(off.clamp(0.0, max_off));
+        let clamped = off.clamp(0.0, max_off);
+        if (self.scroll_offset.get() - clamped).abs() > 0.5 {
+            self.scroll_offset.set(clamped);
+        }
     }
 
     pub fn scroll_immediate(&self, delta_px: f32, content_height_px: f32) -> f32 {
@@ -150,7 +156,10 @@ impl LazyGridState {
     pub fn set_offset_x(&self, off: f32, content_width: f32) {
         let vw = self.viewport_width.get();
         let max_off = (content_width - vw).max(0.0);
-        self.scroll_offset.set(off.clamp(0.0, max_off));
+        let clamped = off.clamp(0.0, max_off);
+        if (self.scroll_offset.get() - clamped).abs() > 0.5 {
+            self.scroll_offset.set(clamped);
+        }
     }
 
     pub fn scroll_immediate_x(&self, delta_px: f32, content_width_px: f32) -> f32 {
@@ -210,7 +219,10 @@ impl LazyRowState {
     pub fn set_offset(&self, off: f32, content_width: f32) {
         let vw = self.viewport_width.get();
         let max_off = (content_width - vw).max(0.0);
-        self.scroll_offset.set(off.clamp(0.0, max_off));
+        let clamped = off.clamp(0.0, max_off);
+        if (self.scroll_offset.get() - clamped).abs() > 0.5 {
+            self.scroll_offset.set(clamped);
+        }
     }
 
     pub fn scroll_immediate(&self, delta_px: f32, content_width_px: f32) -> f32 {
@@ -270,7 +282,10 @@ impl LazyVerticalStaggeredGridState {
     pub fn set_offset(&self, off: f32, content_height: f32) {
         let vh = self.viewport_height.get();
         let max_off = (content_height - vh).max(0.0);
-        self.scroll_offset.set(off.clamp(0.0, max_off));
+        let clamped = off.clamp(0.0, max_off);
+        if (self.scroll_offset.get() - clamped).abs() > 0.5 {
+            self.scroll_offset.set(clamped);
+        }
     }
 
     pub fn scroll_immediate(&self, delta_px: f32, content_height_px: f32) -> f32 {

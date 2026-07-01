@@ -229,13 +229,17 @@ where
         s.exiting = still_exiting;
         s.prev_keys = curr_keys;
     } else {
+        let state_id = Rc::as_ptr(&state) as usize;
         for i in first_with_buffer..last_with_buffer {
             if let Some(item) = items.get(i) {
                 let h_dp = item_height.get(item).max(1.0);
-                combined_children.push(
+                let key = get_key(item);
+                combined_children.push(scope_item_static(
                     crate::Box(Modifier::new().fill_max_width().height(h_dp))
                         .child(item_builder(item.clone(), i)),
-                );
+                    key,
+                    state_id,
+                ));
             }
         }
         total_slots = items.len();

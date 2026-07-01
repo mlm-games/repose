@@ -23,8 +23,8 @@ use repose_ui::LazyRowState;
 use repose_ui::lazy::LazyRow;
 use repose_ui::scroll::NestedScrollConnection;
 use repose_ui::{
-    BasicTextField as UiTextField, Box, Column, Row, Spacer, Stack, Text, TextStyle, ViewExt,
-    ZStack,
+    BasicSecureTextField, BasicTextField, Box, Column, Row, Spacer, Stack, Text, TextFieldConfig,
+    TextFieldState, TextStyle, ViewExt, ZStack,
     anim::{animate_color, animate_f32, animate_f32_from},
     overlay::OverlayHandle,
     overlay::SnackbarAction,
@@ -753,17 +753,34 @@ pub fn InputChip(
     )
 }
 
+#[derive(Clone)]
+pub struct ScaffoldConfig {
+    pub modifier: Modifier,
+    pub top_bar: Option<View>,
+    pub bottom_bar: Option<View>,
+    pub floating_action_button: Option<View>,
+}
+
+impl Default for ScaffoldConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            top_bar: None,
+            bottom_bar: None,
+            floating_action_button: None,
+        }
+    }
+}
+
 pub fn Scaffold(
-    top_bar: Option<View>,
-    bottom_bar: Option<View>,
-    floating_action_button: Option<View>,
     content: impl Fn(PaddingValues) -> View,
+    config: ScaffoldConfig,
 ) -> View {
     let insets = window_insets();
 
     let content_padding = PaddingValues {
-        top: if top_bar.is_some() { 64.0 } else { insets.top },
-        bottom: if bottom_bar.is_some() {
+        top: if config.top_bar.is_some() { 64.0 } else { insets.top },
+        bottom: if config.bottom_bar.is_some() {
             80.0 + insets.bottom + insets.ime_bottom
         } else {
             insets.bottom + insets.ime_bottom
@@ -772,16 +789,16 @@ pub fn Scaffold(
         right: insets.right,
     };
 
-    Stack(Modifier::new().fill_max_size()).child((
+    Stack(config.modifier.fill_max_size()).child((
         Box(Modifier::new()
             .fill_max_size()
             .padding_values(PaddingValues {
-                top: if top_bar.is_some() {
+                top: if config.top_bar.is_some() {
                     64.0 + insets.top
                 } else {
                     0.0
                 },
-                bottom: if bottom_bar.is_some() {
+                bottom: if config.bottom_bar.is_some() {
                     80.0 + insets.bottom + insets.ime_bottom
                 } else {
                     insets.bottom + insets.ime_bottom
@@ -789,7 +806,7 @@ pub fn Scaffold(
                 ..Default::default()
             }))
         .child(content(content_padding)),
-        if let Some(bar) = top_bar {
+        if let Some(bar) = config.top_bar {
             Box(Modifier::new()
                 .absolute()
                 .offset(Some(0.0), Some(insets.top), Some(0.0), None))
@@ -797,7 +814,7 @@ pub fn Scaffold(
         } else {
             Box(Modifier::new())
         },
-        if let Some(bar) = bottom_bar {
+        if let Some(bar) = config.bottom_bar {
             Box(Modifier::new().absolute().offset(
                 Some(0.0),
                 None,
@@ -808,7 +825,7 @@ pub fn Scaffold(
         } else {
             Box(Modifier::new())
         },
-        if let Some(fab) = floating_action_button {
+        if let Some(fab) = config.floating_action_button {
             Box(Modifier::new().absolute().offset(
                 None,
                 None,
@@ -1047,13 +1064,32 @@ pub fn PermanentNavigationDrawer(
 }
 
 /// A destination entry inside a NavigationDrawer.
+#[derive(Clone)]
+pub struct NavigationDrawerItemConfig {
+    pub modifier: Modifier,
+    pub icon: Option<View>,
+    pub badge: Option<View>,
+    pub enabled: bool,
+    pub shape_radius: f32,
+}
+
+impl Default for NavigationDrawerItemConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            icon: None,
+            badge: None,
+            enabled: true,
+            shape_radius: repose_core::locals::theme().shapes.large,
+        }
+    }
+}
+
 pub fn NavigationDrawerItem(
     label: View,
     selected: bool,
     on_click: impl Fn() + 'static,
-    icon: Option<View>,
-    badge: Option<View>,
-    enabled: bool,
+    config: NavigationDrawerItemConfig,
 ) -> View {
     let th = theme();
     let id = remember(|| FILTERCHIP_COUNTER.fetch_add(1, Ordering::Relaxed));
@@ -1093,9 +1129,10 @@ pub fn NavigationDrawerItem(
             pressed: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
-        .clip_rounded(th.shapes.large);
+        .clip_rounded(config.shape_radius)
+        .then(config.modifier);
 
-    if enabled {
+    if config.enabled {
         m = m.clickable().on_click(move || on_click());
     }
 
@@ -1109,10 +1146,10 @@ pub fn NavigationDrawerItem(
                 bottom: 0.0,
             }))
         .child((
-            icon.unwrap_or(Box(Modifier::new().width(24.0).height(24.0))),
+            config.icon.unwrap_or(Box(Modifier::new().width(24.0).height(24.0))),
             Box(Modifier::new().width(12.0).height(1.0)),
             Box(Modifier::new().flex_grow(1.0)).child(label),
-            badge.unwrap_or(Box(Modifier::new())),
+            config.badge.unwrap_or(Box(Modifier::new())),
         ))
     }))
 }
@@ -1576,13 +1613,15 @@ pub fn SearchBarInputField(
     let on_qc = on_query_change.clone();
     let on_s = on_search.clone();
 
-    // Always render UiTextField (focusable even when collapsed, matching CK).
+    // Always render the text field (focusable even when collapsed, matching CK).
     let read_only = !expanded;
-    let display_color = if query.is_empty() {
-        placeholder_color
-    } else {
-        text_color
-    };
+
+    let tf_state = remember_with_key("SearchBarInputField_tf_state", || {
+        RefCell::new(TextFieldState::new())
+    });
+    if tf_state.borrow().text != query {
+        tf_state.borrow_mut().text = query.clone();
+    }
 
     // Build the row: [leading_icon] + text_field + [trailing_icon]
     let mut row_children: Vec<View> = Vec::new();
@@ -1591,21 +1630,23 @@ pub fn SearchBarInputField(
     }
     let on_qc2 = on_qc.clone();
     row_children.push(
-        UiTextField(
-            query.clone(),
-            move |text| on_qc2(text),
+        BasicTextField(
+            tf_state.clone(),
             input_m,
             placeholder,
-            repose_ui::BasicTextFieldConfig {
+            TextFieldConfig {
+                on_change: Some(Rc::new(move |text| on_qc2(text))),
                 on_submit: on_s.clone(),
-                ime_action: Some(ImeAction::Search),
                 enabled,
                 read_only,
+                line_limits: TextFieldLineLimits::SingleLine,
+                keyboard_options: KeyboardOptions {
+                    ime_action: ImeAction::Search,
+                    ..KeyboardOptions::DEFAULT
+                },
                 ..Default::default()
             },
-        )
-        .color(display_color)
-        .size(theme().typography.body_large),
+        ),
     );
     if let Some(icon) = trailing_icon {
         row_children.push(icon);

@@ -100,7 +100,13 @@ pub fn SectionWith(title: &str, subtitle: Option<&str>, body: View) -> View {
     }
     Column(Modifier::new().padding(sp::SM).gap(sp::SM)).child((
         Column(Modifier::new().padding(sp::SM).gap(2.0)).with_children(header),
-        ElevatedCard(Modifier::new().fill_max_width().padding(sp::LG), body),
+        ElevatedCard(
+            CardConfig {
+                modifier: Modifier::new().fill_max_width().padding(sp::LG),
+                ..Default::default()
+            },
+            || Column(Modifier::new().fill_max_size()).child(body),
+        ),
     ))
 }
 
