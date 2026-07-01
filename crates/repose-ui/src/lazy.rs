@@ -70,6 +70,16 @@ where
         items.reverse();
     }
 
+    {
+        let mut seen = std::collections::HashSet::new();
+        for item in &items {
+            let key = get_key(item);
+            if !seen.insert(key) {
+                panic!("Duplicate key {key} detected in LazyColumn. Keys must be unique.");
+            }
+        }
+    }
+
     let heights_dp: Vec<f32> = items
         .iter()
         .map(|it| item_height.get(it).max(1.0))
@@ -86,7 +96,8 @@ where
     };
     let padding_top_px = dp_to_px(content_padding.top);
     let padding_bottom_px = dp_to_px(content_padding.bottom);
-    let content_height_px = *cumulative_px.last().unwrap_or(&0.0) + padding_top_px + padding_bottom_px;
+    let content_height_px =
+        *cumulative_px.last().unwrap_or(&0.0) + padding_top_px + padding_bottom_px;
 
     let scroll_offset_px = state.scroll_offset.get();
     let viewport_height_px = state.viewport_height.get();
@@ -125,9 +136,7 @@ where
     let top_padding_dp = px_to_dp(padding_top_px).max(0.0);
     if top_padding_dp > 0.0 {
         combined_children.push(crate::Box(
-            Modifier::new()
-                .fill_max_width()
-                .height(top_padding_dp),
+            Modifier::new().fill_max_width().height(top_padding_dp),
         ));
     }
 
@@ -224,8 +233,8 @@ where
                     .copied()
                     .unwrap_or(*old_idx as f32 * 1.0);
                 let exit_bottom_px = exit_top_px + dp_to_px(*exit_h_dp);
-                let in_view = exit_bottom_px > padded_visible_start
-                    && exit_top_px < padded_visible_end;
+                let in_view =
+                    exit_bottom_px > padded_visible_start && exit_top_px < padded_visible_end;
                 if in_view {
                     let exit_view = item_builder(old_item.clone(), *old_idx);
                     combined_children.push(scope_item(
@@ -291,7 +300,8 @@ where
             .get(first_with_buffer + rendered_items)
             .copied()
             .unwrap_or(content_height_px - padding_top_px - padding_bottom_px);
-        let remaining_px = (content_height_px - padding_top_px - padding_bottom_px - end_px).max(0.0);
+        let remaining_px =
+            (content_height_px - padding_top_px - padding_bottom_px - end_px).max(0.0);
         if remaining_px > 0.0 {
             combined_children.push(crate::Box(
                 Modifier::new()
@@ -304,9 +314,7 @@ where
     let bottom_padding_dp = px_to_dp(padding_bottom_px).max(0.0);
     if bottom_padding_dp > 0.0 {
         combined_children.push(crate::Box(
-            Modifier::new()
-                .fill_max_width()
-                .height(bottom_padding_dp),
+            Modifier::new().fill_max_width().height(bottom_padding_dp),
         ));
     }
 
@@ -476,17 +484,26 @@ where
     let buffer_rows = 2usize;
     let first_row = ((padded_offset / item_h_px).floor().max(0.0)) as usize;
     let first_row = first_row.saturating_sub(buffer_rows);
-    let last_row = (((padded_offset + viewport_height_px) / item_h_px).ceil() as usize + buffer_rows)
+    let last_row = (((padded_offset + viewport_height_px) / item_h_px).ceil() as usize
+        + buffer_rows)
         .min(total_rows);
 
     let first_item = if reverse_layout {
-        let row_idx = if first_row < row_indices.len() { row_indices[first_row] } else { 0 };
+        let row_idx = if first_row < row_indices.len() {
+            row_indices[first_row]
+        } else {
+            0
+        };
         row_idx * columns
     } else {
         first_row * columns
     };
     let last_item = if reverse_layout {
-        let row_idx = if last_row > 0 && last_row <= row_indices.len() { row_indices[last_row - 1] } else { 0 };
+        let row_idx = if last_row > 0 && last_row <= row_indices.len() {
+            row_indices[last_row - 1]
+        } else {
+            0
+        };
         ((row_idx + 1) * columns).min(total_items)
     } else {
         (last_row * columns).min(total_items)
@@ -497,9 +514,7 @@ where
     let top_padding_dp = px_to_dp(padding_top_px).max(0.0);
     if top_padding_dp > 0.0 {
         children.push(crate::Box(
-            Modifier::new()
-                .fill_max_width()
-                .height(top_padding_dp),
+            Modifier::new().fill_max_width().height(top_padding_dp),
         ));
     }
 
@@ -534,9 +549,7 @@ where
     let bottom_padding_dp = px_to_dp(content_padding.bottom).max(0.0);
     if bottom_padding_dp > 0.0 {
         children.push(crate::Box(
-            Modifier::new()
-                .fill_max_width()
-                .height(bottom_padding_dp),
+            Modifier::new().fill_max_width().height(bottom_padding_dp),
         ));
     }
 
@@ -684,13 +697,21 @@ where
         .min(total_cols);
 
     let first_item = if reverse_layout {
-        let col_idx = if first_col < col_indices.len() { col_indices[first_col] } else { 0 };
+        let col_idx = if first_col < col_indices.len() {
+            col_indices[first_col]
+        } else {
+            0
+        };
         col_idx * rows
     } else {
         first_col * rows
     };
     let last_item = if reverse_layout {
-        let col_idx = if last_col > 0 && last_col <= col_indices.len() { col_indices[last_col - 1] } else { 0 };
+        let col_idx = if last_col > 0 && last_col <= col_indices.len() {
+            col_indices[last_col - 1]
+        } else {
+            0
+        };
         ((col_idx + 1) * rows).min(total_items)
     } else {
         (last_col * rows).min(total_items)
@@ -701,9 +722,7 @@ where
     let left_padding_dp = px_to_dp(padding_left_px).max(0.0);
     if left_padding_dp > 0.0 {
         children.push(crate::Box(
-            Modifier::new()
-                .fill_max_height()
-                .width(left_padding_dp),
+            Modifier::new().fill_max_height().width(left_padding_dp),
         ));
     }
 
@@ -759,9 +778,7 @@ where
     let right_padding_dp = px_to_dp(content_padding.right).max(0.0);
     if right_padding_dp > 0.0 {
         children.push(crate::Box(
-            Modifier::new()
-                .fill_max_height()
-                .width(right_padding_dp),
+            Modifier::new().fill_max_height().width(right_padding_dp),
         ));
     }
 
@@ -915,9 +932,7 @@ where
     let left_padding_dp = px_to_dp(padding_left_px).max(0.0);
     if left_padding_dp > 0.0 {
         children.push(crate::Box(
-            Modifier::new()
-                .fill_max_height()
-                .width(left_padding_dp),
+            Modifier::new().fill_max_height().width(left_padding_dp),
         ));
     }
 
@@ -952,9 +967,7 @@ where
     let right_padding_dp = px_to_dp(padding_right_px).max(0.0);
     if right_padding_dp > 0.0 {
         children.push(crate::Box(
-            Modifier::new()
-                .fill_max_height()
-                .width(right_padding_dp),
+            Modifier::new().fill_max_height().width(right_padding_dp),
         ));
     }
 
@@ -1023,7 +1036,8 @@ where
         None
     };
 
-    let content = crate::Row(Modifier::new().flex_shrink(0.0).fill_max_height()).with_children(children);
+    let content =
+        crate::Row(Modifier::new().flex_shrink(0.0).fill_max_height()).with_children(children);
 
     View::new(
         0,
@@ -1175,9 +1189,7 @@ where
     if top_padding_dp > 0.0 {
         for col in 0..columns {
             col_children[col].push(crate::Box(
-                Modifier::new()
-                    .fill_max_width()
-                    .height(top_padding_dp),
+                Modifier::new().fill_max_width().height(top_padding_dp),
             ));
         }
     }
@@ -1230,9 +1242,7 @@ where
     if bottom_padding_dp > 0.0 {
         for col in 0..columns {
             col_children[col].push(crate::Box(
-                Modifier::new()
-                    .fill_max_width()
-                    .height(bottom_padding_dp),
+                Modifier::new().fill_max_width().height(bottom_padding_dp),
             ));
         }
     }
