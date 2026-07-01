@@ -1392,11 +1392,6 @@ pub(crate) fn paint_text_field(
     };
     let text_off_y = (inner.h - line_h) / 2.0;
 
-    scene.nodes.push(SceneNode::PushClip {
-        rect: inner,
-        radius: [0.0; 4],
-    });
-
     if is_focused {
         let radius = clip_rounded.unwrap_or([4.0; 4]).map(dp_to_px);
         scene.nodes.push(SceneNode::Border {
@@ -1406,6 +1401,11 @@ pub(crate) fn paint_text_field(
             radius,
         });
     }
+
+    scene.nodes.push(SceneNode::PushClip {
+        rect: inner,
+        radius: [0.0; 4],
+    });
 
     let th = locals::theme();
     let show_selection = text_input.enabled;
