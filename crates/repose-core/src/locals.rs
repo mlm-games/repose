@@ -631,10 +631,7 @@ pub fn local_indication() -> Option<Rc<dyn IndicationNodeFactory>> {
         }
         None::<Rc<dyn IndicationNodeFactory>>
     });
-    result.or_else(|| {
-        // Fall back to a default debug indication
-        Some(Rc::new(crate::indication::DebugIndication::default()) as Rc<dyn IndicationNodeFactory>)
-    })
+    result
 }
 
 /// System window insets (status bar, navigation bar, IME keyboard, etc.)

@@ -8,8 +8,8 @@ use repose_material::material3::{
     DropdownMenuItem, MenuState, ModalBottomSheet, NavRailItem, NavigationRail,
     NavigationRailConfig, SegmentConfig, SegmentedButton, SegmentedButtonConfig, SheetState,
     SplitButtonConfig, SplitButtonLayout, SplitButtonLeadingButton, SplitButtonTonalLeadingButton,
-    SplitButtonTonalTrailingToggleButton, SplitButtonTrailingToggleButton, TextButton,
-    TimePickerDialogConfig, TimePickerState,
+    SplitButtonTonalTrailingToggleButton, SplitButtonTrailingButton,
+    SplitButtonTrailingToggleButton, TextButton, TimePickerDialogConfig, TimePickerState,
 };
 use repose_material::{Icon, material_symbols};
 
@@ -18,6 +18,7 @@ material_symbols! {
     settings       : '\u{E8B8}',
     shopping_cart  : '\u{E8CC}',
     star           : '\u{F09A}',
+    expand_more    : '\u{E5CF}',
 }
 use repose_ui::{
     anim::{animate_f32, animate_keyframes},
@@ -419,6 +420,51 @@ pub fn screen(overlay: OverlayHandle) -> View {
                                 move |chk| {
                                     Icon(Symbols::settings).size(if chk { 22.0 } else { 18.0 })
                                 },
+                            ),
+                            SplitButtonConfig::default(),
+                        )
+                    },
+                )),
+                Column(Modifier::new().gap(sp::SM)).child((
+                    Text("SplitButton with DropdownMenu")
+                        .size(14.0)
+                        .color(th.on_surface_variant),
+                    {
+                        let split_menu = remember(MenuState::new);
+                        let split_menu_items: Vec<DropdownMenuEntry> = vec![
+                            DropdownMenuEntry::Item(DropdownMenuItem::new("Save as PDF", {
+                                let m = split_menu.clone();
+                                move || m.dismiss()
+                            })),
+                            DropdownMenuEntry::Item(DropdownMenuItem::new("Save as DOCX", {
+                                let m = split_menu.clone();
+                                move || m.dismiss()
+                            })),
+                            DropdownMenuEntry::Divider,
+                            DropdownMenuEntry::Item(DropdownMenuItem::new("Export as CSV", {
+                                let m = split_menu.clone();
+                                move || m.dismiss()
+                            })),
+                        ];
+                        SplitButtonLayout(
+                            SplitButtonLeadingButton(
+                                Modifier::new(),
+                                || {},
+                                ButtonConfig::default(),
+                                || Text("Save"),
+                            ),
+                            DropdownMenu(
+                                split_menu.clone(),
+                                overlay.clone(),
+                                Modifier::new(),
+                                SplitButtonTrailingButton(
+                                    Modifier::new(),
+                                    move || split_menu.open(),
+                                    ButtonConfig::default(),
+                                    || Icon(Symbols::expand_more).size(18.0),
+                                ),
+                                split_menu_items.clone(),
+                                DropdownMenuConfig::default(),
                             ),
                             SplitButtonConfig::default(),
                         )

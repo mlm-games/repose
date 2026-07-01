@@ -17,6 +17,7 @@ pub trait IndicationDrawNode {
 }
 
 /// A debug indication that draws colored overlays for hover/press/focus.
+#[deprecated]
 #[derive(Clone, Debug)]
 pub struct DebugIndication {
     pub press_color: crate::Color,
@@ -28,8 +29,8 @@ impl Default for DebugIndication {
     fn default() -> Self {
         Self {
             press_color: crate::Color(0, 0, 255, 40),
-            hover_color: crate::Color(0, 0, 255, 20),
-            focus_color: crate::Color(0, 0, 255, 10),
+            hover_color: crate::Color::TRANSPARENT,
+            focus_color: crate::Color::TRANSPARENT,
         }
     }
 }
