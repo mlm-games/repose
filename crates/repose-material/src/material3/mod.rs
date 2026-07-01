@@ -877,8 +877,8 @@ impl TooltipState {
 pub fn TooltipBox(
     text: impl Into<String>,
     state: Rc<TooltipState>,
-    modifier: Modifier,
     content: View,
+    config: TooltipConfig,
 ) -> View {
     let text: Rc<str> = Rc::from(text.into());
     let th = theme();
@@ -893,27 +893,27 @@ pub fn TooltipBox(
     let tooltip_visible = state.is_visible() || alpha > 0.01;
     let scale = 0.92 + 0.08 * alpha;
 
-    Stack(modifier).child((
+    Stack(config.modifier).child((
         Box(Modifier::new().fill_max_size()).child(content),
         if tooltip_visible {
             Box(Modifier::new()
-                .background(th.inverse_surface)
+                .background(config.container_color)
                 .clip_rounded(th.shapes.extra_small)
                 .padding_values(PaddingValues {
-                    left: 8.0,
-                    right: 8.0,
-                    top: 4.0,
-                    bottom: 4.0,
+                    left: config.horizontal_padding,
+                    right: config.horizontal_padding,
+                    top: config.vertical_padding,
+                    bottom: config.vertical_padding,
                 })
                 .absolute()
-                .offset(None, Some(-28.0), None, None)
+                .offset(None, Some(config.offset_y), None, None)
                 .align_self(AlignSelf::Center)
                 .render_z_index(10000.0)
                 .alpha(alpha)
                 .scale(scale))
             .child(
                 Text((*text).to_string())
-                    .color(th.inverse_on_surface)
+                    .color(config.content_color)
                     .size(th.typography.label_medium)
                     .single_line(),
             )
@@ -3554,19 +3554,37 @@ pub fn SwipeToDismiss(
 ///
 /// Uses a `LazyRow` internally. The first and last items are partially visible
 /// (peek) to indicate there is more scrollable content.
+/// Configuration for [`Carousel`].
+#[derive(Clone, Debug)]
+pub struct CarouselConfig {
+    pub modifier: Modifier,
+}
+
+impl Default for CarouselConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+        }
+    }
+}
+
+/// M3 Carousel - a horizontally scrolling container with peek edges.
+///
+/// Uses a `LazyRow` internally. The first and last items are partially visible
+/// (peek) to indicate there is more scrollable content.
 pub fn Carousel<T, F>(
     items: Vec<T>,
     item_width: f32,
     peek_amount: f32,
-    modifier: Modifier,
     state: Rc<LazyRowState>,
     item_builder: F,
+    config: CarouselConfig,
 ) -> View
 where
     T: Clone + 'static,
     F: Fn(T, usize) -> View + 'static,
 {
-    let padded_modifier = modifier.clone().padding_values(PaddingValues {
+    let padded_modifier = config.modifier.padding_values(PaddingValues {
         left: peek_amount,
         right: peek_amount,
         top: 0.0,

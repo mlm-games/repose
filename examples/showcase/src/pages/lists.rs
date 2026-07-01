@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use repose_core::{prelude::*, signal};
 use repose_material::material3::{
-    Carousel, SwipeToDismiss, SwipeToDismissConfig, SwipeToDismissState,
+    Carousel, CarouselConfig, SwipeToDismiss, SwipeToDismissConfig, SwipeToDismissState,
 };
 use repose_material::{Icon, material_symbols};
 use repose_ui::{
@@ -177,7 +177,6 @@ pub fn screen() -> View {
                 carousel_items.get(),
                 160.0,
                 24.0,
-                Modifier::new().fill_max_width().height(180.0),
                 carousel_scroll,
                 move |it, _| {
                     let th = theme();
@@ -192,6 +191,7 @@ pub fn screen() -> View {
                         12.0,
                     )
                 },
+                CarouselConfig { modifier: Modifier::new().fill_max_width().height(180.0) },
             )
         }),
         Section("SwipeToDismiss", {
