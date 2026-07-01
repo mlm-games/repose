@@ -1546,6 +1546,32 @@ impl SearchBarState {
     }
 }
 
+#[derive(Clone)]
+pub struct SearchBarInputFieldConfig {
+    pub state: Option<Rc<SearchBarState>>,
+    pub on_search: Option<Rc<dyn Fn(String)>>,
+    pub enabled: bool,
+    pub text_color: Color,
+    pub placeholder_color: Color,
+    pub leading_icon: Option<View>,
+    pub trailing_icon: Option<View>,
+}
+
+impl Default for SearchBarInputFieldConfig {
+    fn default() -> Self {
+        let th = theme();
+        Self {
+            state: None,
+            on_search: None,
+            enabled: true,
+            text_color: th.on_surface,
+            placeholder_color: th.on_surface_variant,
+            leading_icon: None,
+            trailing_icon: None,
+        }
+    }
+}
+
 /// Build a search bar input field with proper M3 SearchBar styling.
 /// Equivalent to Compose Material3's `SearchBarDefaults.InputField`.
 /// When `state` is provided, focus gain triggers expand and Escape triggers collapse.
@@ -1555,16 +1581,12 @@ pub fn SearchBarInputField(
     query: String,
     on_query_change: Rc<dyn Fn(String)>,
     expanded: bool,
-    text_color: Color,
-    placeholder_color: Color,
-    state: Option<Rc<SearchBarState>>,
-    on_search: Option<Rc<dyn Fn(String)>>,
-    enabled: bool,
-    leading_icon: Option<View>,
-    trailing_icon: Option<View>,
+    config: SearchBarInputFieldConfig,
 ) -> View {
     let source = MutableInteractionSource::new();
     let focused = source.source().collect_is_focused();
+    let state = config.state;
+    let enabled = config.enabled;
 
     let mut input_m = Modifier::new()
         .flex_grow(1.0)
@@ -1611,10 +1633,16 @@ pub fn SearchBarInputField(
     }
 
     let on_qc = on_query_change.clone();
-    let on_s = on_search.clone();
+    let on_s = config.on_search.clone();
 
     // Always render the text field (focusable even when collapsed, matching CK).
     let read_only = !expanded;
+
+    let display_color = if query.is_empty() {
+        config.placeholder_color
+    } else {
+        config.text_color
+    };
 
     let tf_state = remember_with_key("SearchBarInputField_tf_state", || {
         RefCell::new(TextFieldState::new())
@@ -1625,7 +1653,7 @@ pub fn SearchBarInputField(
 
     // Build the row: [leading_icon] + text_field + [trailing_icon]
     let mut row_children: Vec<View> = Vec::new();
-    if let Some(icon) = leading_icon {
+    if let Some(icon) = config.leading_icon {
         row_children.push(icon);
     }
     let on_qc2 = on_qc.clone();
@@ -1646,9 +1674,11 @@ pub fn SearchBarInputField(
                 },
                 ..Default::default()
             },
-        ),
+        )
+        .color(display_color)
+        .size(repose_core::locals::theme().typography.body_large),
     );
-    if let Some(icon) = trailing_icon {
+    if let Some(icon) = config.trailing_icon {
         row_children.push(icon);
     }
 
