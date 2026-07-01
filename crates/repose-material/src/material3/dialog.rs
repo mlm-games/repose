@@ -237,6 +237,9 @@ pub struct AlertDialogConfig {
     pub min_width: f32,
     pub max_width: f32,
     pub horizontal_padding: f32,
+    pub shape_radius: Option<f32>,
+    pub container_color: Color,
+    pub tonal_elevation: f32,
 }
 
 impl Default for AlertDialogConfig {
@@ -247,6 +250,9 @@ impl Default for AlertDialogConfig {
             min_width: AlertDialogDefaults::MIN_WIDTH,
             max_width: AlertDialogDefaults::MAX_WIDTH,
             horizontal_padding: AlertDialogDefaults::HORIZONTAL_PADDING,
+            shape_radius: None,
+            container_color: theme().surface_container_high,
+            tonal_elevation: 0.0,
         }
     }
 }
@@ -264,6 +270,11 @@ pub fn AlertDialog(
     dismiss_button: Option<View>,
     config: AlertDialogConfig,
 ) -> View {
+    let content = Box(Modifier::new()
+        .background(config.container_color)
+        .clip_rounded(config.shape_radius.unwrap_or_else(|| theme().shapes.extra_large))
+    ).child(super::alert_dialog_body(title, text, confirm_button, dismiss_button));
+
     Dialog(
         state,
         overlay,
@@ -272,8 +283,26 @@ pub fn AlertDialog(
             .max_width(config.max_width)
             .then(config.modifier),
         DialogProperties::default(),
-        super::alert_dialog_body(title, text, confirm_button, dismiss_button),
+        content,
     )
+}
+
+/// Configuration for [`DatePickerDialog`].
+#[derive(Clone)]
+pub struct DatePickerDialogConfig {
+    pub modifier: Modifier,
+    pub shape_radius: Option<f32>,
+    pub colors: super::DatePickerColors,
+}
+
+impl Default for DatePickerDialogConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            shape_radius: None,
+            colors: super::DatePickerColors::default(),
+        }
+    }
 }
 
 /// M3 Date Picker Dialog - wraps [`DatePicker`] inside a modal [`Dialog`]
@@ -287,19 +316,48 @@ pub fn DatePickerDialog(
     picker_state: Rc<DatePickerState>,
     on_confirm: Rc<dyn Fn(i32, u32, u32)>,
     on_dismiss: Rc<dyn Fn()>,
+    config: DatePickerDialogConfig,
 ) -> View {
+    let content = Box(Modifier::new()
+        .background(config.colors.container_color)
+        .clip_rounded(config.shape_radius.unwrap_or_else(|| theme().shapes.extra_large))
+    ).child(Column(Modifier::new()).child((DatePicker(
+        picker_state.clone(),
+        on_confirm,
+        on_dismiss,
+        DatePickerConfig {
+            colors: config.colors,
+            ..DatePickerConfig::default()
+        },
+    ),)));
+
     Dialog(
         state,
         overlay,
-        Modifier::new(),
+        config.modifier,
         DialogProperties::default(),
-        Column(Modifier::new()).child((DatePicker(
-            picker_state.clone(),
-            on_confirm,
-            on_dismiss,
-            DatePickerConfig::default(),
-        ),)),
+        content,
     )
+}
+
+/// Configuration for [`TimePickerDialog`].
+#[derive(Clone)]
+pub struct TimePickerDialogConfig {
+    pub modifier: Modifier,
+    pub shape_radius: Option<f32>,
+    pub container_color: Color,
+    pub colors: super::TimePickerColors,
+}
+
+impl Default for TimePickerDialogConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            shape_radius: None,
+            container_color: theme().surface_container_high,
+            colors: super::TimePickerColors::default(),
+        }
+    }
 }
 
 /// M3 Time Picker Dialog - wraps [`TimePicker`] inside a modal [`Dialog`]
@@ -313,17 +371,26 @@ pub fn TimePickerDialog(
     picker_state: Rc<TimePickerState>,
     on_confirm: Rc<dyn Fn(u32, u32)>,
     on_dismiss: Rc<dyn Fn()>,
+    config: TimePickerDialogConfig,
 ) -> View {
+    let content = Box(Modifier::new()
+        .background(config.container_color)
+        .clip_rounded(config.shape_radius.unwrap_or_else(|| theme().shapes.extra_large))
+    ).child(Column(Modifier::new()).child((TimePicker(
+        picker_state.clone(),
+        on_confirm,
+        on_dismiss,
+        TimePickerConfig {
+            colors: config.colors,
+            ..TimePickerConfig::default()
+        },
+    ),)));
+
     Dialog(
         state,
         overlay,
-        Modifier::new(),
+        config.modifier,
         DialogProperties::default(),
-        Column(Modifier::new()).child((TimePicker(
-            picker_state.clone(),
-            on_confirm,
-            on_dismiss,
-            TimePickerConfig::default(),
-        ),)),
+        content,
     )
 }

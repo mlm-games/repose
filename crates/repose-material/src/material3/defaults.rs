@@ -1200,6 +1200,9 @@ impl TimePickerDefaults {
     pub fn period_selector_selected_container_color() -> Color {
         theme().tertiary_container
     }
+    pub fn period_selector_unselected_container_color() -> Color {
+        Color::TRANSPARENT
+    }
     pub fn period_selector_selected_content_color() -> Color {
         theme().on_tertiary_container
     }

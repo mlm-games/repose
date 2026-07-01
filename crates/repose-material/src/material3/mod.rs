@@ -2758,7 +2758,7 @@ pub fn PullToRefresh(
     } else {
         0.3
     };
-    Column(modifier).child((
+    Column(modifier.align_items(config.content_alignment)).child((
         if distance_fraction > 0.01 {
             Box(Modifier::new()
                 .fill_max_width()
@@ -2890,16 +2890,56 @@ const MONTH_NAMES: [&str; 12] = [
 
 const DOW_HEADERS: [&str; 7] = ["M", "T", "W", "T", "F", "S", "S"];
 
+/// Colors for [`DatePicker`].
+#[derive(Clone)]
+pub struct DatePickerColors {
+    pub container_color: Color,
+    pub header_color: Color,
+    pub weekday_color: Color,
+    pub day_color: Color,
+    pub selected_day_color: Color,
+    pub selected_day_container_color: Color,
+    pub today_content_color: Color,
+    pub today_border_color: Color,
+    pub navigation_color: Color,
+    pub year_selected_container_color: Color,
+    pub year_selected_content_color: Color,
+    pub year_unselected_content_color: Color,
+}
+
+impl Default for DatePickerColors {
+    fn default() -> Self {
+        Self {
+            container_color: DatePickerDefaults::container_color(),
+            header_color: DatePickerDefaults::header_color(),
+            weekday_color: DatePickerDefaults::weekday_color(),
+            day_color: DatePickerDefaults::day_color(),
+            selected_day_color: DatePickerDefaults::selected_day_color(),
+            selected_day_container_color: DatePickerDefaults::selected_day_container_color(),
+            today_content_color: DatePickerDefaults::today_content_color(),
+            today_border_color: DatePickerDefaults::today_border_color(),
+            navigation_color: DatePickerDefaults::header_color(),
+            year_selected_container_color: DatePickerDefaults::year_selected_container_color(),
+            year_selected_content_color: DatePickerDefaults::year_selected_content_color(),
+            year_unselected_content_color: DatePickerDefaults::year_unselected_content_color(),
+        }
+    }
+}
+
 /// Configuration for [`DatePicker`].
 #[derive(Clone)]
 pub struct DatePickerConfig {
     pub modifier: Modifier,
+    pub colors: DatePickerColors,
+    pub show_mode_toggle: bool,
 }
 
 impl Default for DatePickerConfig {
     fn default() -> Self {
         Self {
             modifier: Modifier::new(),
+            colors: DatePickerColors::default(),
+            show_mode_toggle: true,
         }
     }
 }
@@ -2982,7 +3022,7 @@ pub fn DatePicker(
             .align_items(AlignItems::Center))
         .child((
             IconButton(
-                Box(Modifier::new()).child(Text("◀").color(th.on_surface).size(16.0)),
+                Box(Modifier::new()).child(Text("◀").color(config.colors.navigation_color).size(16.0)),
                 prev_month,
                 IconButtonConfig::default(),
             ),
@@ -2990,11 +3030,11 @@ pub fn DatePicker(
             Column(Modifier::new().align_items(AlignItems::Center)).child((
                 Text(MONTH_NAMES[(month - 1) as usize].to_string())
                     .size(th.typography.title_medium)
-                    .color(th.on_surface),
+                    .color(config.colors.header_color),
                 Row(Modifier::new().gap(8.0).align_items(AlignItems::Center)).child((
                     IconButton(
                         Box(Modifier::new())
-                            .child(Text("‹").color(th.on_surface_variant).size(14.0)),
+                            .child(Text("‹").color(config.colors.navigation_color).size(14.0)),
                         prev_year,
                         IconButtonConfig::default(),
                     ),
@@ -3003,7 +3043,7 @@ pub fn DatePicker(
                         .color(th.on_surface_variant),
                     IconButton(
                         Box(Modifier::new())
-                            .child(Text("›").color(th.on_surface_variant).size(14.0)),
+                            .child(Text("›").color(config.colors.navigation_color).size(14.0)),
                         next_year,
                         IconButtonConfig::default(),
                     ),
@@ -3011,7 +3051,7 @@ pub fn DatePicker(
             )),
             Spacer(),
             IconButton(
-                Box(Modifier::new()).child(Text("▶").color(th.on_surface).size(16.0)),
+                Box(Modifier::new()).child(Text("▶").color(config.colors.navigation_color).size(16.0)),
                 next_month,
                 IconButtonConfig::default(),
             ),
@@ -3032,7 +3072,7 @@ pub fn DatePicker(
                     .child(
                         Text(d.to_string())
                             .size(th.typography.label_small)
-                            .color(th.on_surface_variant),
+                            .color(config.colors.weekday_color),
                     )
                 })
                 .collect();
@@ -3059,7 +3099,7 @@ pub fn DatePicker(
                                     .width(40.0)
                                     .height(40.0)
                                     .background(if is_selected {
-                                        th.primary
+                                        config.colors.selected_day_container_color
                                     } else {
                                         Color::TRANSPARENT
                                     })
@@ -3074,13 +3114,13 @@ pub fn DatePicker(
                                     let mut t = Text(day_num.to_string())
                                         .size(th.typography.body_medium)
                                         .color(if is_selected {
-                                            th.on_primary
+                                            config.colors.selected_day_color
                                         } else {
-                                            th.on_surface
+                                            config.colors.day_color
                                         });
                                     if is_today && !is_selected {
                                         t = t.modifier(
-                                            Modifier::new().border(1.0, th.primary, 10.0),
+                                            Modifier::new().border(1.0, config.colors.today_border_color, 10.0),
                                         );
                                     }
                                     t
@@ -3157,16 +3197,67 @@ impl TimePickerState {
     }
 }
 
+/// Layout types for [`TimePicker`].
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum TimePickerLayoutType {
+    Horizontal,
+    Vertical,
+}
+
+/// Colors for [`TimePicker`].
+#[derive(Clone)]
+pub struct TimePickerColors {
+    pub clock_dial_color: Color,
+    pub clock_dial_selected_content_color: Color,
+    pub clock_dial_unselected_content_color: Color,
+    pub selector_color: Color,
+    pub container_color: Color,
+    pub period_selector_border_color: Color,
+    pub period_selector_selected_container_color: Color,
+    pub period_selector_unselected_container_color: Color,
+    pub period_selector_selected_content_color: Color,
+    pub period_selector_unselected_content_color: Color,
+    pub time_selector_selected_container_color: Color,
+    pub time_selector_unselected_container_color: Color,
+    pub time_selector_selected_content_color: Color,
+    pub time_selector_unselected_content_color: Color,
+}
+
+impl Default for TimePickerColors {
+    fn default() -> Self {
+        Self {
+            clock_dial_color: TimePickerDefaults::clock_dial_color(),
+            clock_dial_selected_content_color: TimePickerDefaults::clock_dial_selected_content_color(),
+            clock_dial_unselected_content_color: TimePickerDefaults::clock_dial_unselected_content_color(),
+            selector_color: TimePickerDefaults::selector_color(),
+            container_color: TimePickerDefaults::container_color(),
+            period_selector_border_color: TimePickerDefaults::period_selector_border_color(),
+            period_selector_selected_container_color: TimePickerDefaults::period_selector_selected_container_color(),
+            period_selector_unselected_container_color: TimePickerDefaults::period_selector_unselected_container_color(),
+            period_selector_selected_content_color: TimePickerDefaults::period_selector_selected_content_color(),
+            period_selector_unselected_content_color: TimePickerDefaults::period_selector_unselected_content_color(),
+            time_selector_selected_container_color: TimePickerDefaults::time_selector_selected_container_color(),
+            time_selector_unselected_container_color: TimePickerDefaults::time_selector_unselected_container_color(),
+            time_selector_selected_content_color: TimePickerDefaults::time_selector_selected_content_color(),
+            time_selector_unselected_content_color: TimePickerDefaults::time_selector_unselected_content_color(),
+        }
+    }
+}
+
 /// Configuration for [`TimePicker`].
 #[derive(Clone)]
 pub struct TimePickerConfig {
     pub modifier: Modifier,
+    pub colors: TimePickerColors,
+    pub layout_type: TimePickerLayoutType,
 }
 
 impl Default for TimePickerConfig {
     fn default() -> Self {
         Self {
             modifier: Modifier::new(),
+            colors: TimePickerColors::default(),
+            layout_type: TimePickerLayoutType::Vertical,
         }
     }
 }
@@ -3203,10 +3294,10 @@ pub fn TimePicker(
                     move || s.hour.set((s.hour.get() % 12) + 1)
                 })
                 .padding(8.0))
-            .child(Text(hour_str).size(48.0).color(th.on_surface).single_line()),
+            .child(Text(hour_str).size(48.0).color(config.colors.clock_dial_unselected_content_color).single_line()),
             Text(":")
                 .size(48.0)
-                .color(th.on_surface_variant)
+                .color(config.colors.clock_dial_unselected_content_color)
                 .single_line(),
             Box(Modifier::new()
                 .clickable()
@@ -3215,7 +3306,7 @@ pub fn TimePicker(
                     move || s.minute.set((s.minute.get() + 1) % 60)
                 })
                 .padding(8.0))
-            .child(Text(min_str).size(48.0).color(th.on_surface).single_line()),
+            .child(Text(min_str).size(48.0).color(config.colors.clock_dial_unselected_content_color).single_line()),
         )),
         Box(Modifier::new().fill_max_width().height(16.0)),
         // AM/PM toggle
@@ -3228,7 +3319,7 @@ pub fn TimePicker(
                     bottom: 4.0,
                 })
                 .background(if is_am {
-                    th.primary
+                    config.colors.period_selector_selected_container_color
                 } else {
                     Color::TRANSPARENT
                 })
@@ -3248,9 +3339,9 @@ pub fn TimePicker(
                     }
                 }))
             .child(Text("AM").size(th.typography.label_large).color(if is_am {
-                th.on_primary
+                config.colors.period_selector_selected_content_color
             } else {
-                th.on_surface
+                config.colors.period_selector_unselected_content_color
             })),
             Box(Modifier::new().width(8.0).height(1.0)),
             Box(Modifier::new()
@@ -3261,7 +3352,7 @@ pub fn TimePicker(
                     bottom: 4.0,
                 })
                 .background(if !is_am {
-                    th.primary
+                    config.colors.period_selector_selected_container_color
                 } else {
                     Color::TRANSPARENT
                 })
@@ -3281,9 +3372,9 @@ pub fn TimePicker(
                     }
                 }))
             .child(Text("PM").size(th.typography.label_large).color(if !is_am {
-                th.on_primary
+                config.colors.period_selector_selected_content_color
             } else {
-                th.on_surface
+                config.colors.period_selector_unselected_content_color
             })),
         )),
         Box(Modifier::new().fill_max_width().height(16.0)),
@@ -3295,7 +3386,7 @@ pub fn TimePicker(
             }))
             .child(
                 Text("Cancel")
-                    .color(th.primary)
+                    .color(config.colors.selector_color)
                     .size(th.typography.label_large)
                     .single_line(),
             ),
@@ -3310,7 +3401,7 @@ pub fn TimePicker(
             }))
             .child(
                 Text("OK")
-                    .color(th.primary)
+                    .color(config.colors.selector_color)
                     .size(th.typography.label_large)
                     .single_line(),
             ),
@@ -3646,15 +3737,20 @@ pub fn SwipeToDismiss(
 
     let display_offset = offset.max(-config.dismissed_offset).min(0.0);
 
+    let content_modifier = {
+        let mut m = Modifier::new().fill_max_width().translate(display_offset, 0.0);
+        if config.gestures_enabled {
+            m = m
+                .on_pointer_down(on_down)
+                .on_pointer_move(on_move)
+                .on_pointer_up(on_up);
+        }
+        m
+    };
+
     Stack(modifier.fill_max_width()).child((
         Box(Modifier::new().fill_max_size().absolute()).child(background),
-        Box(Modifier::new()
-            .fill_max_width()
-            .translate(display_offset, 0.0)
-            .on_pointer_down(on_down)
-            .on_pointer_move(on_move)
-            .on_pointer_up(on_up))
-        .child(content),
+        Box(content_modifier).child(content),
     ))
 }
 

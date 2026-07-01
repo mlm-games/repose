@@ -5633,6 +5633,9 @@ pub struct SwipeToDismissConfig {
     pub dismiss_threshold: f32,
     pub dismissed_offset: f32,
     pub animation_spec: AnimationSpec,
+    pub gestures_enabled: bool,
+    pub enable_dismiss_from_start_to_end: bool,
+    pub enable_dismiss_from_end_to_start: bool,
 }
 
 impl Default for SwipeToDismissConfig {
@@ -5642,6 +5645,9 @@ impl Default for SwipeToDismissConfig {
             dismiss_threshold: SwipeToDismissDefaults::DISMISS_THRESHOLD,
             dismissed_offset: SwipeToDismissDefaults::DISMISSED_OFFSET,
             animation_spec: AnimationSpec::spring_gentle(),
+            gestures_enabled: true,
+            enable_dismiss_from_start_to_end: true,
+            enable_dismiss_from_end_to_start: true,
         }
     }
 }
@@ -5652,6 +5658,7 @@ pub struct PullToRefreshConfig {
     pub modifier: Modifier,
     pub indicator_color: Color,
     pub threshold: f32,
+    pub content_alignment: AlignItems,
 }
 
 impl Default for PullToRefreshConfig {
@@ -5660,6 +5667,7 @@ impl Default for PullToRefreshConfig {
             modifier: Modifier::new(),
             indicator_color: PullToRefreshDefaults::indicator_color(),
             threshold: PullToRefreshDefaults::THRESHOLD,
+            content_alignment: AlignItems::FlexStart,
         }
     }
 }
