@@ -277,7 +277,12 @@ where
 
     let set_viewport = {
         let st = state.clone();
-        Rc::new(move |h_px: f32| st.viewport_height.set(h_px.max(0.0)))
+        Rc::new(move |h_px: f32| {
+            let h = h_px.max(0.0);
+            if (st.viewport_height.get() - h).abs() > 0.5 {
+                st.viewport_height.set(h);
+            }
+        })
     };
 
     let get_scroll = {
@@ -613,7 +618,12 @@ where
 
     let set_viewport_w = {
         let st = state.clone();
-        Rc::new(move |w: f32| st.viewport_width.set(w.max(0.0)))
+        Rc::new(move |w_px: f32| {
+            let w = w_px.max(0.0);
+            if (st.viewport_width.get() - w).abs() > 0.5 {
+                st.viewport_width.set(w);
+            }
+        })
     };
 
     let set_content_w = {
@@ -753,7 +763,12 @@ where
 
     let set_viewport_w = {
         let st = state.clone();
-        Rc::new(move |w: f32| st.viewport_width.set(w.max(0.0)))
+        Rc::new(move |w_px: f32| {
+            let w = w_px.max(0.0);
+            if (st.viewport_width.get() - w).abs() > 0.5 {
+                st.viewport_width.set(w);
+            }
+        })
     };
 
     let set_content_w = {
@@ -984,7 +999,12 @@ where
 
     let set_viewport = {
         let st = state.clone();
-        Rc::new(move |h: f32| st.viewport_height.set(h.max(0.0)))
+        Rc::new(move |h_px: f32| {
+            let h = h_px.max(0.0);
+            if (st.viewport_height.get() - h).abs() > 0.5 {
+                st.viewport_height.set(h);
+            }
+        })
     };
 
     let get_scroll = {
@@ -995,7 +1015,7 @@ where
     let set_scroll = {
         let st = state.clone();
         Rc::new(move |off: f32| {
-            let ch = st.content_height.get().max(st.viewport_height.get());
+            let ch = st.content_height.get().max(0.0);
             st.set_offset(off, ch);
         })
     };
