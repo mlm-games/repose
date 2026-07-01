@@ -46,11 +46,9 @@ struct AnimState<T> {
 pub fn LazyColumn<T, F, K, H>(
     items: Vec<T>,
     item_height: H,
-    state: Rc<LazyColumnState>,
-    modifier: Modifier,
     get_key: K,
-    animate_spec: Option<AnimationSpec>,
     item_builder: F,
+    config: LazyColumnConfig,
 ) -> View
 where
     T: Clone + 'static,
@@ -58,6 +56,20 @@ where
     K: Fn(&T) -> u64 + 'static,
     H: ItemHeight<T>,
 {
+    let LazyColumnConfig {
+        modifier,
+        state,
+        animate_spec,
+        content_padding,
+        reverse_layout,
+        user_scroll_enabled,
+    } = config;
+
+    let mut items = items;
+    if reverse_layout {
+        items.reverse();
+    }
+
     let heights_dp: Vec<f32> = items
         .iter()
         .map(|it| item_height.get(it).max(1.0))
@@ -72,25 +84,36 @@ where
         }
         cum
     };
-    let content_height_px = *cumulative_px.last().unwrap_or(&0.0);
+    let padding_top_px = dp_to_px(content_padding.top);
+    let padding_bottom_px = dp_to_px(content_padding.bottom);
+    let content_height_px = *cumulative_px.last().unwrap_or(&0.0) + padding_top_px + padding_bottom_px;
 
     let scroll_offset_px = state.scroll_offset.get();
     let viewport_height_px = state.viewport_height.get();
 
-    let first_visible = match cumulative_px.binary_search_by(|p| {
-        p.partial_cmp(&scroll_offset_px)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    }) {
-        Ok(i) => i,
-        Err(i) => i.saturating_sub(1),
+    let padded_visible_start = scroll_offset_px - padding_top_px;
+    let first_visible = if padded_visible_start <= 0.0 {
+        0
+    } else {
+        match cumulative_px.binary_search_by(|p| {
+            p.partial_cmp(&padded_visible_start)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }) {
+            Ok(i) => i,
+            Err(i) => i.saturating_sub(1),
+        }
     };
-    let viewport_end_px = scroll_offset_px + viewport_height_px;
-    let last_visible = match cumulative_px.binary_search_by(|p| {
-        p.partial_cmp(&viewport_end_px)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    }) {
-        Ok(i) => (i + 1).min(items.len()),
-        Err(i) => i.min(items.len()),
+    let padded_visible_end = (scroll_offset_px + viewport_height_px) - padding_top_px;
+    let last_visible = if padded_visible_end <= 0.0 {
+        0
+    } else {
+        match cumulative_px.binary_search_by(|p| {
+            p.partial_cmp(&padded_visible_end)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }) {
+            Ok(i) => (i + 1).min(items.len()),
+            Err(i) => i.min(items.len()),
+        }
     };
 
     let buffer = 2usize;
@@ -98,6 +121,15 @@ where
     let last_with_buffer = (last_visible + buffer).min(items.len());
 
     let mut combined_children: Vec<View> = Vec::new();
+
+    let top_padding_dp = px_to_dp(padding_top_px).max(0.0);
+    if top_padding_dp > 0.0 {
+        combined_children.push(crate::Box(
+            Modifier::new()
+                .fill_max_width()
+                .height(top_padding_dp),
+        ));
+    }
 
     if first_with_buffer > 0 {
         let top_spacer_px = cumulative_px[first_with_buffer];
@@ -192,8 +224,8 @@ where
                     .copied()
                     .unwrap_or(*old_idx as f32 * 1.0);
                 let exit_bottom_px = exit_top_px + dp_to_px(*exit_h_dp);
-                let in_view = exit_bottom_px > scroll_offset_px
-                    && exit_top_px < scroll_offset_px + viewport_height_px;
+                let in_view = exit_bottom_px > padded_visible_start
+                    && exit_top_px < padded_visible_end;
                 if in_view {
                     let exit_view = item_builder(old_item.clone(), *old_idx);
                     combined_children.push(scope_item(
@@ -251,14 +283,15 @@ where
         total_slots = items.len();
     }
 
-    let has_top = first_with_buffer > 0;
-    let rendered_items = combined_children.len() - if has_top { 1 } else { 0 };
+    let rendered_items = combined_children.len()
+        - (if first_with_buffer > 0 { 1 } else { 0 })
+        - (if top_padding_dp > 0.0 { 1 } else { 0 });
     if first_with_buffer + rendered_items < total_slots {
         let end_px = cumulative_px
             .get(first_with_buffer + rendered_items)
             .copied()
-            .unwrap_or(content_height_px);
-        let remaining_px = (content_height_px - end_px).max(0.0);
+            .unwrap_or(content_height_px - padding_top_px - padding_bottom_px);
+        let remaining_px = (content_height_px - padding_top_px - padding_bottom_px - end_px).max(0.0);
         if remaining_px > 0.0 {
             combined_children.push(crate::Box(
                 Modifier::new()
@@ -266,6 +299,15 @@ where
                     .height(px_to_dp(remaining_px).max(0.0)),
             ));
         }
+    }
+
+    let bottom_padding_dp = px_to_dp(padding_bottom_px).max(0.0);
+    if bottom_padding_dp > 0.0 {
+        combined_children.push(crate::Box(
+            Modifier::new()
+                .fill_max_width()
+                .height(bottom_padding_dp),
+        ));
     }
 
     let content = crate::View::new(0, ViewKind::Column).with_children(combined_children);
@@ -328,16 +370,27 @@ where
         })
     };
 
+    let on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>> = if user_scroll_enabled {
+        Some(on_scroll)
+    } else {
+        None
+    };
+    let tick_scroll: Option<Rc<dyn Fn()>> = if user_scroll_enabled {
+        Some(tick_scroll)
+    } else {
+        None
+    };
+
     repose_core::View::new(
         0,
         repose_core::ViewKind::ScrollV {
-            on_scroll: Some(on_scroll),
+            on_scroll,
             set_viewport_height: Some(set_viewport),
             set_content_height: Some(Rc::new(move |h| measured_h_px(h))),
             get_scroll_offset: Some(get_scroll),
             set_scroll_offset: Some(set_scroll),
             show_scrollbar: true,
-            tick_scroll: Some(tick_scroll),
+            tick_scroll,
         },
     )
     .modifier(modifier)
@@ -386,34 +439,69 @@ pub fn LazyVerticalGrid<T, F>(
     columns: usize,
     items: Vec<T>,
     item_height_dp: f32,
-    state: Rc<LazyGridState>,
-    modifier: Modifier,
     item_builder: F,
+    config: LazyGridConfig,
 ) -> View
 where
     T: Clone + 'static,
     F: Fn(T, usize) -> View + 'static,
 {
+    let LazyGridConfig {
+        modifier,
+        state,
+        content_padding,
+        reverse_layout,
+        user_scroll_enabled,
+    } = config;
+
     let columns = columns.max(1);
     let item_h_px = dp_to_px(item_height_dp).max(1.0);
     let total_items = items.len();
-    let total_rows = total_items.div_ceil(columns);
-    let content_height_px = total_rows as f32 * item_h_px;
 
+    let mut row_indices: Vec<usize> = (0..total_items.div_ceil(columns)).collect();
+    if reverse_layout {
+        row_indices.reverse();
+    }
+
+    let total_rows = row_indices.len();
+    let content_height_px = total_rows as f32 * item_h_px
+        + dp_to_px(content_padding.top)
+        + dp_to_px(content_padding.bottom);
+
+    let padding_top_px = dp_to_px(content_padding.top);
     let scroll_offset_px = state.scroll_offset.get();
     let viewport_height_px = state.viewport_height.get();
 
+    let padded_offset = scroll_offset_px - padding_top_px;
     let buffer_rows = 2usize;
-    let first_row = ((scroll_offset_px / item_h_px).floor().max(0.0)) as usize;
+    let first_row = ((padded_offset / item_h_px).floor().max(0.0)) as usize;
     let first_row = first_row.saturating_sub(buffer_rows);
-    let last_row = (((scroll_offset_px + viewport_height_px) / item_h_px).ceil() as usize
-        + buffer_rows)
+    let last_row = (((padded_offset + viewport_height_px) / item_h_px).ceil() as usize + buffer_rows)
         .min(total_rows);
 
-    let first_item = first_row * columns;
-    let last_item = (last_row * columns).min(total_items);
+    let first_item = if reverse_layout {
+        let row_idx = if first_row < row_indices.len() { row_indices[first_row] } else { 0 };
+        row_idx * columns
+    } else {
+        first_row * columns
+    };
+    let last_item = if reverse_layout {
+        let row_idx = if last_row > 0 && last_row <= row_indices.len() { row_indices[last_row - 1] } else { 0 };
+        ((row_idx + 1) * columns).min(total_items)
+    } else {
+        (last_row * columns).min(total_items)
+    };
 
     let mut children: Vec<View> = Vec::new();
+
+    let top_padding_dp = px_to_dp(padding_top_px).max(0.0);
+    if top_padding_dp > 0.0 {
+        children.push(crate::Box(
+            Modifier::new()
+                .fill_max_width()
+                .height(top_padding_dp),
+        ));
+    }
 
     if first_row > 0 {
         children.push(crate::Box(
@@ -440,6 +528,15 @@ where
             Modifier::new()
                 .fill_max_width()
                 .height((total_rows - last_row) as f32 * item_height_dp),
+        ));
+    }
+
+    let bottom_padding_dp = px_to_dp(content_padding.bottom).max(0.0);
+    if bottom_padding_dp > 0.0 {
+        children.push(crate::Box(
+            Modifier::new()
+                .fill_max_width()
+                .height(bottom_padding_dp),
         ));
     }
 
@@ -494,18 +591,29 @@ where
         })
     };
 
+    let on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>> = if user_scroll_enabled {
+        Some(on_scroll)
+    } else {
+        None
+    };
+    let tick_scroll: Option<Rc<dyn Fn()>> = if user_scroll_enabled {
+        Some(tick_scroll)
+    } else {
+        None
+    };
+
     let content = crate::Column(Modifier::new().fill_max_width()).with_children(children);
 
     View::new(
         0,
         ViewKind::ScrollV {
-            on_scroll: Some(on_scroll),
+            on_scroll,
             set_viewport_height: Some(set_viewport),
             set_content_height: Some(Rc::new(move |h| measured_h(h))),
             get_scroll_offset: Some(get_scroll),
             set_scroll_offset: Some(set_scroll),
             show_scrollbar: true,
-            tick_scroll: Some(tick_scroll),
+            tick_scroll,
         },
     )
     .modifier(modifier)
@@ -534,34 +642,70 @@ pub fn LazyHorizontalGrid<T, F>(
     rows: usize,
     items: Vec<T>,
     item_width_dp: f32,
-    state: Rc<LazyGridState>,
-    modifier: Modifier,
     item_builder: F,
+    config: LazyGridConfig,
 ) -> View
 where
     T: Clone + 'static,
     F: Fn(T, usize) -> View + 'static,
 {
+    let LazyGridConfig {
+        modifier,
+        state,
+        content_padding,
+        reverse_layout,
+        user_scroll_enabled,
+    } = config;
+
     let rows = rows.max(1);
     let item_w_px = dp_to_px(item_width_dp).max(1.0);
     let total_items = items.len();
-    let total_cols = total_items.div_ceil(rows);
-    let content_width_px = total_cols as f32 * item_w_px;
 
+    let mut col_indices: Vec<usize> = (0..total_items.div_ceil(rows)).collect();
+    if reverse_layout {
+        col_indices.reverse();
+    }
+
+    let total_cols = col_indices.len();
+    let content_width_px = total_cols as f32 * item_w_px
+        + dp_to_px(content_padding.left)
+        + dp_to_px(content_padding.right);
+
+    let padding_left_px = dp_to_px(content_padding.left);
     let scroll_offset_px = state.scroll_offset.get();
     let viewport_width_px = state.viewport_width.get();
 
+    let padded_offset = scroll_offset_px - padding_left_px;
     let buffer_cols = 2usize;
-    let first_col = ((scroll_offset_px / item_w_px).floor().max(0.0)) as usize;
+    let first_col = ((padded_offset / item_w_px).floor().max(0.0)) as usize;
     let first_col = first_col.saturating_sub(buffer_cols);
-    let last_col = (((scroll_offset_px + viewport_width_px) / item_w_px).ceil() as usize
+    let last_col = (((padded_offset + viewport_width_px) / item_w_px).ceil() as usize
         + buffer_cols)
         .min(total_cols);
 
-    let first_item = first_col * rows;
-    let last_item = (last_col * rows).min(total_items);
+    let first_item = if reverse_layout {
+        let col_idx = if first_col < col_indices.len() { col_indices[first_col] } else { 0 };
+        col_idx * rows
+    } else {
+        first_col * rows
+    };
+    let last_item = if reverse_layout {
+        let col_idx = if last_col > 0 && last_col <= col_indices.len() { col_indices[last_col - 1] } else { 0 };
+        ((col_idx + 1) * rows).min(total_items)
+    } else {
+        (last_col * rows).min(total_items)
+    };
 
     let mut children: Vec<View> = Vec::new();
+
+    let left_padding_dp = px_to_dp(padding_left_px).max(0.0);
+    if left_padding_dp > 0.0 {
+        children.push(crate::Box(
+            Modifier::new()
+                .fill_max_height()
+                .width(left_padding_dp),
+        ));
+    }
 
     if first_col > 0 {
         children.push(crate::Box(
@@ -609,6 +753,15 @@ where
             Modifier::new()
                 .fill_max_height()
                 .width((total_cols - last_col) as f32 * item_width_dp),
+        ));
+    }
+
+    let right_padding_dp = px_to_dp(content_padding.right).max(0.0);
+    if right_padding_dp > 0.0 {
+        children.push(crate::Box(
+            Modifier::new()
+                .fill_max_height()
+                .width(right_padding_dp),
         ));
     }
 
@@ -666,13 +819,24 @@ where
         })
     };
 
+    let on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>> = if user_scroll_enabled {
+        Some(on_scroll)
+    } else {
+        None
+    };
+    let tick_scroll: Option<Rc<dyn Fn()>> = if user_scroll_enabled {
+        Some(tick_scroll)
+    } else {
+        None
+    };
+
     let content =
         crate::Row(Modifier::new().flex_shrink(0.0).fill_max_height()).with_children(children);
 
     View::new(
         0,
         ViewKind::ScrollXY {
-            on_scroll: Some(on_scroll),
+            on_scroll,
             set_viewport_width: Some(set_viewport_w),
             set_viewport_height: None,
             set_content_width: Some(set_content_w),
@@ -680,7 +844,7 @@ where
             get_scroll_offset_xy: Some(get_scroll),
             set_scroll_offset_xy: Some(set_scroll),
             show_scrollbar: true,
-            tick_scroll: Some(tick_scroll),
+            tick_scroll,
         },
     )
     .modifier(modifier)
@@ -707,27 +871,55 @@ where
 pub fn LazyRow<T, F>(
     items: Vec<T>,
     item_width_dp: f32,
-    state: Rc<LazyRowState>,
-    modifier: Modifier,
     item_builder: F,
+    config: LazyRowConfig,
 ) -> View
 where
     T: Clone + 'static,
     F: Fn(T, usize) -> View + 'static,
 {
+    let LazyRowConfig {
+        modifier,
+        state,
+        content_padding,
+        reverse_layout,
+        user_scroll_enabled,
+    } = config;
+
+    let mut items = items;
+    if reverse_layout {
+        items.reverse();
+    }
+
+    let padding_left_px = dp_to_px(content_padding.left);
+    let padding_right_px = dp_to_px(content_padding.right);
     let item_w_px = dp_to_px(item_width_dp).max(1.0);
-    let content_width_px = items.len() as f32 * item_w_px;
+    let content_width_px = items.len() as f32 * item_w_px + padding_left_px + padding_right_px;
 
     let scroll_offset_px = state.scroll_offset.get();
     let viewport_width_px = state.viewport_width.get();
 
-    let first_visible = (scroll_offset_px / item_w_px).floor().max(0.0) as usize;
-    let last_visible = ((scroll_offset_px + viewport_width_px) / item_w_px).ceil() as usize + 2;
+    let padded_offset = scroll_offset_px - padding_left_px;
+    let first_visible = if padded_offset <= 0.0 {
+        0
+    } else {
+        (padded_offset / item_w_px).floor().max(0.0) as usize
+    };
+    let last_visible = ((padded_offset + viewport_width_px) / item_w_px).ceil() as usize + 2;
 
     let buffer = 2usize;
     let first_with_buffer = first_visible.saturating_sub(buffer);
 
     let mut children = Vec::new();
+
+    let left_padding_dp = px_to_dp(padding_left_px).max(0.0);
+    if left_padding_dp > 0.0 {
+        children.push(crate::Box(
+            Modifier::new()
+                .fill_max_height()
+                .width(left_padding_dp),
+        ));
+    }
 
     if first_with_buffer > 0 {
         children.push(crate::Box(
@@ -754,6 +946,15 @@ where
             Modifier::new()
                 .fill_max_height()
                 .width(remaining as f32 * item_width_dp),
+        ));
+    }
+
+    let right_padding_dp = px_to_dp(padding_right_px).max(0.0);
+    if right_padding_dp > 0.0 {
+        children.push(crate::Box(
+            Modifier::new()
+                .fill_max_height()
+                .width(right_padding_dp),
         ));
     }
 
@@ -811,12 +1012,23 @@ where
         })
     };
 
-    let content = crate::Row(Modifier::new().flex_shrink(0.0)).with_children(children);
+    let on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>> = if user_scroll_enabled {
+        Some(on_scroll)
+    } else {
+        None
+    };
+    let tick_scroll: Option<Rc<dyn Fn()>> = if user_scroll_enabled {
+        Some(tick_scroll)
+    } else {
+        None
+    };
+
+    let content = crate::Row(Modifier::new().flex_shrink(0.0).fill_max_height()).with_children(children);
 
     View::new(
         0,
         ViewKind::ScrollXY {
-            on_scroll: Some(on_scroll),
+            on_scroll,
             set_viewport_width: Some(set_viewport_w),
             set_viewport_height: None,
             set_content_width: Some(set_content_w),
@@ -824,7 +1036,7 @@ where
             get_scroll_offset_xy: Some(get_scroll),
             set_scroll_offset_xy: Some(set_scroll),
             show_scrollbar: true,
-            tick_scroll: Some(tick_scroll),
+            tick_scroll,
         },
     )
     .modifier(modifier)
@@ -887,18 +1099,30 @@ pub fn LazyVerticalStaggeredGrid<T, F, K>(
     columns: usize,
     items: Vec<T>,
     item_height_dp: K,
-    state: Rc<LazyVerticalStaggeredGridState>,
-    modifier: Modifier,
     item_builder: F,
+    config: LazyVerticalStaggeredGridConfig,
 ) -> View
 where
     T: Clone + 'static,
     F: Fn(T, usize) -> View + 'static,
     K: Fn(&T) -> f32 + 'static,
 {
+    let LazyVerticalStaggeredGridConfig {
+        modifier,
+        state,
+        content_padding,
+        reverse_layout,
+        user_scroll_enabled,
+    } = config;
+
     let columns = columns.max(1);
     let gap_dp = modifier.row_gap.or(modifier.gap).unwrap_or(0.0);
     let gap_px = dp_to_px(gap_dp);
+
+    let mut items = items;
+    if reverse_layout {
+        items.reverse();
+    }
 
     let heights_px: Vec<f32> = items
         .iter()
@@ -909,8 +1133,11 @@ where
     let total_content_height_px = placements
         .iter()
         .map(|p| p.y_px + p.h_px)
-        .fold(0.0_f32, f32::max);
+        .fold(0.0_f32, f32::max)
+        + dp_to_px(content_padding.top)
+        + dp_to_px(content_padding.bottom);
 
+    let padding_top_px = dp_to_px(content_padding.top);
     let scroll_offset_px = state.scroll_offset.get();
     let viewport_height_px = state.viewport_height.get();
 
@@ -919,8 +1146,8 @@ where
     let mut last_visible = 0usize;
 
     for (i, p) in placements.iter().enumerate() {
-        let item_top = p.y_px;
-        let item_bot = p.y_px + p.h_px;
+        let item_top = p.y_px + padding_top_px;
+        let item_bot = p.y_px + p.h_px + padding_top_px;
         if item_bot > scroll_offset_px && item_top < scroll_offset_px + viewport_height_px {
             if i < first_visible {
                 first_visible = i;
@@ -943,13 +1170,25 @@ where
 
     let state_id = Rc::as_ptr(&state) as usize;
     let mut col_children: Vec<Vec<View>> = (0..columns).map(|_| Vec::new()).collect();
+
+    let top_padding_dp = px_to_dp(padding_top_px).max(0.0);
+    if top_padding_dp > 0.0 {
+        for col in 0..columns {
+            col_children[col].push(crate::Box(
+                Modifier::new()
+                    .fill_max_width()
+                    .height(top_padding_dp),
+            ));
+        }
+    }
+
     for col in 0..columns {
-        let mut prev_y = 0.0_f32;
+        let mut prev_y = padding_top_px;
         for (i, p) in placements.iter().enumerate() {
             if p.col != col || i < first_idx || i >= last_idx {
                 continue;
             }
-            let spacer_y = p.y_px - prev_y;
+            let spacer_y = (p.y_px + padding_top_px) - prev_y;
             if spacer_y > 0.0 {
                 col_children[col].push(crate::Box(
                     Modifier::new()
@@ -959,7 +1198,7 @@ where
             }
             if let Some(item) = items.get(i) {
                 let h_dp = item_height_dp(item).max(1.0);
-                let vis_top = p.y_px;
+                let vis_top = p.y_px + padding_top_px;
                 let vis_bot = vis_top + p.h_px;
                 let in_view =
                     vis_bot > scroll_offset_px && vis_top < scroll_offset_px + viewport_height_px;
@@ -975,7 +1214,7 @@ where
                         .push(crate::Box(Modifier::new().fill_max_width().height(h_dp)));
                 }
             }
-            prev_y = p.y_px + p.h_px;
+            prev_y = p.y_px + p.h_px + padding_top_px;
         }
         let remaining = total_content_height_px - prev_y;
         if remaining > 0.0 {
@@ -983,6 +1222,17 @@ where
                 Modifier::new()
                     .fill_max_width()
                     .height(px_to_dp(remaining).max(0.0)),
+            ));
+        }
+    }
+
+    let bottom_padding_dp = px_to_dp(content_padding.bottom).max(0.0);
+    if bottom_padding_dp > 0.0 {
+        for col in 0..columns {
+            col_children[col].push(crate::Box(
+                Modifier::new()
+                    .fill_max_width()
+                    .height(bottom_padding_dp),
             ));
         }
     }
@@ -1048,18 +1298,29 @@ where
         })
     };
 
+    let on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>> = if user_scroll_enabled {
+        Some(on_scroll)
+    } else {
+        None
+    };
+    let tick_scroll: Option<Rc<dyn Fn()>> = if user_scroll_enabled {
+        Some(tick_scroll)
+    } else {
+        None
+    };
+
     let content = crate::Row(Modifier::new().fill_max_width().gap(gap_dp)).with_children(col_views);
 
     View::new(
         0,
         ViewKind::ScrollV {
-            on_scroll: Some(on_scroll),
+            on_scroll,
             set_viewport_height: Some(set_viewport),
             set_content_height: Some(Rc::new(move |h| measured_h(h))),
             get_scroll_offset: Some(get_scroll),
             set_scroll_offset: Some(set_scroll),
             show_scrollbar: true,
-            tick_scroll: Some(tick_scroll),
+            tick_scroll,
         },
     )
     .modifier(modifier)
@@ -1088,30 +1349,27 @@ fn test_item_height_per_item_closure() {
 
 #[test]
 fn test_lazy_column_uniform_height_compiles() {
-    let state = Rc::new(LazyColumnState::new());
     let v = LazyColumn(
         vec![1, 2, 3],
         48.0_f32,
-        state,
-        Modifier::new().size(200.0, 400.0),
         |it: &i32| *it as u64,
-        None,
         builder,
+        LazyColumnConfig {
+            modifier: Modifier::new().size(200.0, 400.0),
+            ..Default::default()
+        },
     );
     let _ = v;
 }
 
 #[test]
 fn test_lazy_column_heterogeneous_heights_compiles() {
-    let state = Rc::new(LazyColumnState::new());
     let v = LazyColumn(
         vec![1, 2, 3, 4, 5],
         |it: &i32| 30.0 + (*it as f32) * 12.0,
-        state,
-        Modifier::new().size(200.0, 400.0),
         |it: &i32| *it as u64,
-        None,
         builder,
+        LazyColumnConfig::default(),
     );
     let _ = v;
 }

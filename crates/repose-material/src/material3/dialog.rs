@@ -9,8 +9,8 @@ use repose_ui::{Box, Column, Row, Spacer, Text, ViewExt, ZStack};
 use web_time::Duration;
 
 use super::{AlertDialogDefaults, Button, ButtonConfig, TextButton};
-use super::{DatePicker, DatePickerState};
-use super::{TimePicker, TimePickerState};
+use super::{DatePicker, DatePickerConfig, DatePickerState};
+use super::{TimePicker, TimePickerConfig, TimePickerState};
 
 static DIALOG_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -293,7 +293,9 @@ pub fn DatePickerDialog(
         overlay,
         Modifier::new(),
         DialogProperties::default(),
-        Column(Modifier::new()).child((DatePicker(picker_state.clone(), on_confirm, on_dismiss),)),
+        Column(Modifier::new()).child((
+            DatePicker(picker_state.clone(), on_confirm, on_dismiss, DatePickerConfig::default()),
+        )),
     )
 }
 
@@ -314,6 +316,8 @@ pub fn TimePickerDialog(
         overlay,
         Modifier::new(),
         DialogProperties::default(),
-        Column(Modifier::new()).child((TimePicker(picker_state.clone(), on_confirm, on_dismiss),)),
+        Column(Modifier::new()).child((
+            TimePicker(picker_state.clone(), on_confirm, on_dismiss, TimePickerConfig::default()),
+        )),
     )
 }

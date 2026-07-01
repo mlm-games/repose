@@ -1,7 +1,7 @@
 use repose_core::prelude::*;
 use repose_core::signal;
 use repose_material::material3::{Button, ButtonConfig, ElevatedButton, TextButton};
-use repose_ui::LazyColumnState;
+use repose_ui::lazy_states::{LazyColumnConfig, LazyColumnState};
 use repose_ui::anim::{animate_f32, animate_f32_from};
 use repose_ui::anim_ext::{
     AnimatedContent, AnimatedContentConfig, Crossfade, CrossfadeConfig, EnterTransition,
@@ -248,10 +248,7 @@ pub fn screen() -> View {
                 .child(LazyColumn(
                     items,
                     44.0,
-                    list_state.clone(),
-                    Modifier::new().fill_max_size(),
                     |item: &ListItem| item.id,
-                    Some(spec),
                     move |item: ListItem, _idx| {
                         let c = colors[item.color_idx as usize % colors.len()];
                         Row(Modifier::new()
@@ -273,6 +270,12 @@ pub fn screen() -> View {
                                 move || li.update(|v| v.retain(|x| x.id != target_id))
                             }, ButtonConfig::default(), || Text("✕")),
                         ))
+                    },
+                    LazyColumnConfig {
+                        state: list_state.clone(),
+                        modifier: Modifier::new().fill_max_size(),
+                        animate_spec: Some(spec),
+                        ..Default::default()
                     },
                 )),
             ))

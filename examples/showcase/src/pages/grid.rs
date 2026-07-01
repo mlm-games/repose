@@ -24,13 +24,6 @@ pub fn screen() -> View {
             4,
             items.get(),
             100.0,
-            vert_state,
-            Modifier::new()
-                .fill_max_width()
-                .max_width(800.0)
-                .fill_max_height()
-                .max_height(500.0)
-                .gap(8.0),
             {
                 let items = items.clone();
                 move |item, _| {
@@ -49,6 +42,16 @@ pub fn screen() -> View {
                     )
                 }
             },
+            LazyGridConfig {
+                state: vert_state,
+                modifier: Modifier::new()
+                    .fill_max_width()
+                    .max_width(800.0)
+                    .fill_max_height()
+                    .max_height(500.0)
+                    .gap(8.0),
+                ..Default::default()
+            },
         ),
         Text("LazyHorizontalGrid (3 rows, fixed width 120dp)")
             .size(16.0)
@@ -57,13 +60,6 @@ pub fn screen() -> View {
             3,
             items.get(),
             120.0,
-            horiz_state,
-            Modifier::new()
-                .fill_max_height()
-                .max_height(500.0)
-                .fill_max_width()
-                .max_width(800.0)
-                .gap(8.0),
             move |item, _| {
                 let th = theme();
                 let bg = if item.id % 2 == 0 {
@@ -78,6 +74,16 @@ pub fn screen() -> View {
                     th.on_primary_container,
                     60.0,
                 )
+            },
+            LazyGridConfig {
+                state: horiz_state,
+                modifier: Modifier::new()
+                    .fill_max_height()
+                    .max_height(500.0)
+                    .fill_max_width()
+                    .max_width(800.0)
+                    .gap(8.0),
+                ..Default::default()
             },
         ),
     ))

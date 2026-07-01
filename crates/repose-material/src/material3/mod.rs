@@ -21,6 +21,7 @@ use repose_core::text::ImeAction;
 use repose_core::*;
 use repose_ui::LazyRowState;
 use repose_ui::lazy::LazyRow;
+use repose_ui::lazy_states::LazyRowConfig;
 use repose_ui::scroll::NestedScrollConnection;
 use repose_ui::{
     BasicSecureTextField, BasicTextField, Box, Column, Row, Spacer, Stack, Text, TextFieldConfig,
@@ -2820,12 +2821,27 @@ const MONTH_NAMES: [&str; 12] = [
 
 const DOW_HEADERS: [&str; 7] = ["M", "T", "W", "T", "F", "S", "S"];
 
+/// Configuration for [`DatePicker`].
+#[derive(Clone)]
+pub struct DatePickerConfig {
+    pub modifier: Modifier,
+}
+
+impl Default for DatePickerConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+        }
+    }
+}
+
 /// M3 Date Picker dialog with month/year navigation, proper calendar grid,
 /// today indicator, and confirm/cancel actions.
 pub fn DatePicker(
     state: Rc<DatePickerState>,
     on_confirm: Rc<dyn Fn(i32, u32, u32)>,
     on_dismiss: Rc<dyn Fn()>,
+    config: DatePickerConfig,
 ) -> View {
     let th = theme();
     let (year, month, day) = state.selected_date();
@@ -2890,7 +2906,7 @@ pub fn DatePicker(
     let now = ReposeDate::now();
     let today = (now.year, now.month, now.day);
 
-    Column(Modifier::new().padding(16.0)).child((
+    Column(config.modifier.padding(16.0)).child((
         // Month header
         Row(Modifier::new()
             .fill_max_width()
@@ -3072,11 +3088,26 @@ impl TimePickerState {
     }
 }
 
+/// Configuration for [`TimePicker`].
+#[derive(Clone)]
+pub struct TimePickerConfig {
+    pub modifier: Modifier,
+}
+
+impl Default for TimePickerConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+        }
+    }
+}
+
 /// M3 Time Picker - a simple time picker with hour/minute fields and AM/PM toggle.
 pub fn TimePicker(
     state: Rc<TimePickerState>,
     on_confirm: Rc<dyn Fn(u32, u32)>,
     on_dismiss: Rc<dyn Fn()>,
+    config: TimePickerConfig,
 ) -> View {
     let th = theme();
     let hour = state.hour.get();
@@ -3087,7 +3118,8 @@ pub fn TimePicker(
     let min_str = format!("{:02}", minute);
 
     Column(
-        Modifier::new()
+        config
+            .modifier
             .width(256.0)
             .padding(24.0)
             .align_items(AlignItems::Center),
@@ -3591,5 +3623,14 @@ where
         bottom: 0.0,
     });
 
-    LazyRow(items, item_width, state, padded_modifier, item_builder)
+    LazyRow(
+        items,
+        item_width,
+        item_builder,
+        LazyRowConfig {
+            state,
+            modifier: padded_modifier,
+            ..Default::default()
+        },
+    )
 }

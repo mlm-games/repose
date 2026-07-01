@@ -7,6 +7,7 @@ use repose_material::material3::{
 use repose_material::{Icon, material_symbols};
 use repose_ui::{
     lazy::{LazyColumn, LazyRow},
+    lazy_states::{LazyColumnConfig, LazyColumnState, LazyRowConfig, LazyRowState},
     *,
 };
 
@@ -81,10 +82,7 @@ pub fn screen() -> View {
             LazyColumn(
                 items.get(),
                 48.0,
-                scroll,
-                Modifier::new().fill_max_width().max_height(400.0),
                 |it: &Item| it.id as u64,
-                None,
                 move |it, _| {
                     let th = theme();
                     let done_tint = th.primary.with_alpha(48);
@@ -104,6 +102,11 @@ pub fn screen() -> View {
                         Text(it.title).modifier(Modifier::new().padding(4.0)),
                     ))
                 },
+                LazyColumnConfig {
+                    state: scroll,
+                    modifier: Modifier::new().fill_max_width().max_height(400.0),
+                    ..Default::default()
+                },
             )
         }),
         Section("LazyColumn (Heterogeneous heights)", {
@@ -118,10 +121,7 @@ pub fn screen() -> View {
             LazyColumn(
                 hetero_items,
                 |it: &Item| 48.0 + (it.id % 5) as f32 * 16.0,
-                hetero_scroll,
-                Modifier::new().fill_max_width().max_height(400.0),
                 |it: &Item| it.id as u64,
-                None,
                 move |it, _| {
                     let th = theme();
                     let bg = if it.done {
@@ -139,14 +139,17 @@ pub fn screen() -> View {
                         .justify_content(JustifyContent::Center))
                     .child(Text(format!("{} (height = {}dp)", it.title, h as i32)))
                 },
+                LazyColumnConfig {
+                    state: hetero_scroll,
+                    modifier: Modifier::new().fill_max_width().max_height(400.0),
+                    ..Default::default()
+                },
             )
         }),
         Section("LazyRow (Horizontal)", {
             LazyRow(
                 row_items.get(),
                 120.0,
-                row_scroll,
-                Modifier::new().fill_max_width().height(160.0),
                 move |it, _| {
                     let th = theme();
                     let bg = if it.done {
@@ -169,6 +172,11 @@ pub fn screen() -> View {
                         it.title,
                         8.0,
                     )
+                },
+                LazyRowConfig {
+                    state: row_scroll,
+                    modifier: Modifier::new().fill_max_width().height(160.0),
+                    ..Default::default()
                 },
             )
         }),

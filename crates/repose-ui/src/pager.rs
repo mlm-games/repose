@@ -4,6 +4,26 @@ use std::rc::Rc;
 
 use crate::anim_ext::{AnimatedContent, AnimatedContentConfig, EnterTransition, ExitTransition};
 
+/// Configuration for [`HorizontalPager`] and [`VerticalPager`].
+#[derive(Clone)]
+pub struct PagerConfig {
+    pub modifier: Modifier,
+    pub page_spacing: f32,
+    pub user_scroll_enabled: bool,
+    pub content_padding: PaddingValues,
+}
+
+impl Default for PagerConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            page_spacing: 0.0,
+            user_scroll_enabled: true,
+            content_padding: PaddingValues::default(),
+        }
+    }
+}
+
 /// State for a horizontal pager with page snapping.
 pub struct PagerState {
     current_page: Signal<usize>,
@@ -55,11 +75,13 @@ impl PagerState {
 pub fn HorizontalPager(
     key: impl Into<String>,
     state: Rc<PagerState>,
-    modifier: Modifier,
     page_builder: impl Fn(usize) -> View + 'static,
+    config: PagerConfig,
 ) -> View {
     let key = key.into();
     let page = state.current_page.get();
+    let page_spacing = config.page_spacing;
+    let slide_offset = 800.0 + page_spacing;
 
     // Drag-to-swipe gesture handling
     let drag_start_x = Rc::new(remember_with_key(format!("pager_drag:{key}"), || {
@@ -104,29 +126,35 @@ pub fn HorizontalPager(
             enter: EnterTransition::Composite(vec![
                 EnterTransition::FadeIn,
                 EnterTransition::SlideIn {
-                    offset_x: 800.0,
+                    offset_x: slide_offset,
                     offset_y: 0.0,
                 },
             ]),
             exit: ExitTransition::Composite(vec![
                 ExitTransition::FadeOut,
                 ExitTransition::SlideOut {
-                    offset_x: -800.0,
+                    offset_x: -(slide_offset),
                     offset_y: 0.0,
                 },
             ]),
         },
     );
 
-    crate::ZStack(Modifier::new().fill_max_size().then(modifier)).with_children(vec![
-        crate::Box(Modifier::new().fill_max_size()).with_children(vec![content]),
+    let gesture = if config.user_scroll_enabled {
         crate::Box(
             Modifier::new()
                 .fill_max_size()
                 .hit_passthrough()
                 .on_pointer_down(on_down)
                 .on_pointer_up(on_up),
-        ),
+        )
+    } else {
+        crate::Box(Modifier::new().fill_max_size().hit_passthrough())
+    };
+
+    crate::ZStack(Modifier::new().fill_max_size().then(config.modifier)).with_children(vec![
+        crate::Box(Modifier::new().fill_max_size()).with_children(vec![content]),
+        gesture,
     ])
 }
 
@@ -137,11 +165,13 @@ pub fn HorizontalPager(
 pub fn VerticalPager(
     key: impl Into<String>,
     state: Rc<PagerState>,
-    modifier: Modifier,
     page_builder: impl Fn(usize) -> View + 'static,
+    config: PagerConfig,
 ) -> View {
     let key = key.into();
     let page = state.current_page.get();
+    let page_spacing = config.page_spacing;
+    let slide_offset = 600.0 + page_spacing;
 
     let drag_start_y = Rc::new(remember_with_key(format!("vpager_drag:{key}"), || {
         RefCell::new(None::<f32>)
@@ -186,27 +216,33 @@ pub fn VerticalPager(
                 EnterTransition::FadeIn,
                 EnterTransition::SlideIn {
                     offset_x: 0.0,
-                    offset_y: 600.0,
+                    offset_y: slide_offset,
                 },
             ]),
             exit: ExitTransition::Composite(vec![
                 ExitTransition::FadeOut,
                 ExitTransition::SlideOut {
                     offset_x: 0.0,
-                    offset_y: -600.0,
+                    offset_y: -(slide_offset),
                 },
             ]),
         },
     );
 
-    crate::ZStack(Modifier::new().fill_max_size().then(modifier)).with_children(vec![
-        crate::Box(Modifier::new().fill_max_size()).with_children(vec![content]),
+    let gesture = if config.user_scroll_enabled {
         crate::Box(
             Modifier::new()
                 .fill_max_size()
                 .hit_passthrough()
                 .on_pointer_down(on_down)
                 .on_pointer_up(on_up),
-        ),
+        )
+    } else {
+        crate::Box(Modifier::new().fill_max_size().hit_passthrough())
+    };
+
+    crate::ZStack(Modifier::new().fill_max_size().then(config.modifier)).with_children(vec![
+        crate::Box(Modifier::new().fill_max_size()).with_children(vec![content]),
+        gesture,
     ])
 }

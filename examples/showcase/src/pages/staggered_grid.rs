@@ -28,13 +28,6 @@ pub fn screen() -> View {
         3,
         items.get(),
         |item| item.height,
-        state,
-        Modifier::new()
-            .fill_max_width()
-            .max_width(800.0)
-            .fill_max_height()
-            .max_height(500.0)
-            .gap(8.0),
         move |item, _| {
             let th = theme();
             let bg = match item.id % 3 {
@@ -49,6 +42,16 @@ pub fn screen() -> View {
                 th.on_primary_container,
                 item.height,
             )
+        },
+        LazyVerticalStaggeredGridConfig {
+            state,
+            modifier: Modifier::new()
+                .fill_max_width()
+                .max_width(800.0)
+                .fill_max_height()
+                .max_height(500.0)
+                .gap(8.0),
+            ..Default::default()
         },
     )
 }

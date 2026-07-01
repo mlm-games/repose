@@ -1,7 +1,98 @@
 use repose_core::*;
 use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 use crate::scroll::{NestedScrollConnection, ScrollPhysics};
+
+/// Configuration for [`LazyColumn`].
+#[derive(Clone)]
+pub struct LazyColumnConfig {
+    pub modifier: Modifier,
+    pub state: Rc<LazyColumnState>,
+    pub animate_spec: Option<AnimationSpec>,
+    pub content_padding: PaddingValues,
+    pub reverse_layout: bool,
+    pub user_scroll_enabled: bool,
+}
+
+impl Default for LazyColumnConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            state: Rc::new(LazyColumnState::new()),
+            animate_spec: None,
+            content_padding: PaddingValues::default(),
+            reverse_layout: false,
+            user_scroll_enabled: true,
+        }
+    }
+}
+
+/// Configuration for [`LazyRow`].
+#[derive(Clone)]
+pub struct LazyRowConfig {
+    pub modifier: Modifier,
+    pub state: Rc<LazyRowState>,
+    pub content_padding: PaddingValues,
+    pub reverse_layout: bool,
+    pub user_scroll_enabled: bool,
+}
+
+impl Default for LazyRowConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            state: Rc::new(LazyRowState::new()),
+            content_padding: PaddingValues::default(),
+            reverse_layout: false,
+            user_scroll_enabled: true,
+        }
+    }
+}
+
+/// Configuration for [`LazyVerticalGrid`] and [`LazyHorizontalGrid`].
+#[derive(Clone)]
+pub struct LazyGridConfig {
+    pub modifier: Modifier,
+    pub state: Rc<LazyGridState>,
+    pub content_padding: PaddingValues,
+    pub reverse_layout: bool,
+    pub user_scroll_enabled: bool,
+}
+
+impl Default for LazyGridConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            state: Rc::new(LazyGridState::new()),
+            content_padding: PaddingValues::default(),
+            reverse_layout: false,
+            user_scroll_enabled: true,
+        }
+    }
+}
+
+/// Configuration for [`LazyVerticalStaggeredGrid`].
+#[derive(Clone)]
+pub struct LazyVerticalStaggeredGridConfig {
+    pub modifier: Modifier,
+    pub state: Rc<LazyVerticalStaggeredGridState>,
+    pub content_padding: PaddingValues,
+    pub reverse_layout: bool,
+    pub user_scroll_enabled: bool,
+}
+
+impl Default for LazyVerticalStaggeredGridConfig {
+    fn default() -> Self {
+        Self {
+            modifier: Modifier::new(),
+            state: Rc::new(LazyVerticalStaggeredGridState::new()),
+            content_padding: PaddingValues::default(),
+            reverse_layout: false,
+            user_scroll_enabled: true,
+        }
+    }
+}
 
 pub trait ItemHeight<T> {
     fn get(&self, item: &T) -> f32;

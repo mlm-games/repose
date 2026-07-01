@@ -386,6 +386,25 @@ impl ViewTree {
         for &child_id in &old_children {
             if let Some(node) = self.nodes.get(child_id) {
                 if let Some(key) = node.user_key {
+                    if let Some(&existing) = keyed_children.get(&key) {
+                        let existing_kind = self
+                            .nodes
+                            .get(existing)
+                            .map(|n| format!("{:?}", n.kind))
+                            .unwrap_or_default();
+                        let new_kind = self
+                            .nodes
+                            .get(child_id)
+                            .map(|n| format!("{:?}", n.kind))
+                            .unwrap_or_default();
+                        panic!(
+                            "reconcile_children: duplicate modifier.key={} in children of node {:?}.\n\
+                             Two sibling views share the same key. Each view passed to a layout \
+                             must have a unique modifier.key.\n\
+                             Existing child kind={}, duplicate child kind={}.\n",
+                            key, parent_id, existing_kind, new_kind,
+                        );
+                    }
                     keyed_children.insert(key, child_id);
                 } else {
                     unkeyed_children.push(child_id);

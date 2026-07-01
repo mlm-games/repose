@@ -1,7 +1,6 @@
 use repose_core::prelude::*;
 use repose_material::material3::{Button, ButtonConfig};
-use repose_ui::pager::PagerState;
-use repose_ui::pager::{HorizontalPager, VerticalPager};
+use repose_ui::pager::{HorizontalPager, PagerConfig, PagerState, VerticalPager};
 use repose_ui::*;
 use std::rc::Rc;
 
@@ -111,8 +110,8 @@ pub fn screen() -> View {
             HorizontalPager(
                 "h_demo",
                 h_state.clone(),
-                Modifier::new().fill_max_size().height(200.0).margin(sp::SM),
                 |p| page_face(p, "Swipe left/right"),
+                PagerConfig { modifier: Modifier::new().fill_max_size().height(200.0).margin(sp::SM), ..Default::default() },
             ),
         ),
         pager_section(
@@ -121,8 +120,8 @@ pub fn screen() -> View {
             VerticalPager(
                 "v_demo",
                 v_state.clone(),
-                Modifier::new().fill_max_size().height(300.0).margin(sp::SM),
                 |p| page_face(p, "Swipe up/down"),
+                PagerConfig { modifier: Modifier::new().fill_max_size().height(300.0).margin(sp::SM), ..Default::default() },
             ),
         ),
     ])
