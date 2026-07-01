@@ -1069,8 +1069,14 @@ pub fn ToggleButton(
     let se = config
         .state_elevation
         .unwrap_or_else(ToggleButtonDefaults::state_elevation_default);
-    let pad_l = config.content_padding.map(|p| p.left).unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING);
-    let pad_r = config.content_padding.map(|p| p.right).unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING);
+    let pad_l = config
+        .content_padding
+        .map(|p| p.left)
+        .unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING);
+    let pad_r = config
+        .content_padding
+        .map(|p| p.right)
+        .unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING);
     toggle_button_impl(
         checked,
         on_checked_change,
@@ -1121,8 +1127,14 @@ pub fn TonalToggleButton(
         config.state_colors,
         se,
         config.border,
-        config.content_padding.map(|p| p.left).unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
-        config.content_padding.map(|p| p.right).unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
+        config
+            .content_padding
+            .map(|p| p.left)
+            .unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
+        config
+            .content_padding
+            .map(|p| p.right)
+            .unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
         config.height,
         config.shape_radius,
         config.enabled,
@@ -1169,8 +1181,14 @@ pub fn OutlinedToggleButton(
         config.state_colors,
         se,
         border,
-        config.content_padding.map(|p| p.left).unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
-        config.content_padding.map(|p| p.right).unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
+        config
+            .content_padding
+            .map(|p| p.left)
+            .unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
+        config
+            .content_padding
+            .map(|p| p.right)
+            .unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
         config.height,
         config.shape_radius,
         config.enabled,
@@ -1208,8 +1226,14 @@ pub fn ElevatedToggleButton(
         config.state_colors,
         se,
         config.border,
-        config.content_padding.map(|p| p.left).unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
-        config.content_padding.map(|p| p.right).unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
+        config
+            .content_padding
+            .map(|p| p.left)
+            .unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
+        config
+            .content_padding
+            .map(|p| p.right)
+            .unwrap_or(ToggleButtonDefaults::HORIZONTAL_PADDING),
         config.height,
         config.shape_radius,
         config.enabled,
@@ -2419,10 +2443,8 @@ pub fn CircularProgressIndicator(
     let circle_dia_dp = indicator_size_dp - config.stroke_width;
     let gap_sweep_rad = 2.0 * adjusted_gap_dp / circle_dia_dp;
 
-    Box(Modifier::new()
-        .size(sz, sz)
-        .then(config.modifier)
-        .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
+    Box(Modifier::new().size(sz, sz).then(config.modifier).painter(
+        move |scene: &mut Scene, rect: Rect, alpha: f32| {
             let mul_c = |c: Color| {
                 Color(
                     c.0,
@@ -2505,7 +2527,8 @@ pub fn CircularProgressIndicator(
                     }
                 }
             }
-        }))
+        },
+    ))
     .semantics(Semantics {
         role: Role::ProgressBar,
         label: None,
@@ -2935,147 +2958,180 @@ pub fn OutlinedTextField(
         th.motion.color,
     );
 
-    // Resolve colors from config.colors if set, otherwise use legacy theme-based approach
-    let (border_color, label_color) = if let Some(ref tc) = config.colors {
-        let enf = config.enabled && is_focused;
+    let target_border_w = if config.is_error || should_float {
+        OutlinedTextFieldDefaults::FOCUSED_BORDER_THICKNESS
+    } else {
+        OutlinedTextFieldDefaults::UNFOCUSED_BORDER_THICKNESS
+    };
+    let border_w = animate_f32(
+        format!("otf_bw_{}", anim_key),
+        target_border_w,
+        th.motion.color,
+    );
+
+    let (border_color, label_color, container_bg) = if let Some(ref tc) = config.colors {
         (
-            tc.indicator_color(config.enabled, config.is_error, enf),
-            tc.label_color(config.enabled, config.is_error, enf),
+            tc.indicator_color(config.enabled, config.is_error, is_focused),
+            tc.label_color(config.enabled, config.is_error, is_focused),
+            tc.container_color(config.enabled, config.is_error, is_focused),
         )
     } else {
         (
             if config.is_error {
                 th.error
-            } else if float_t > 0.5 {
+            } else if is_focused {
                 th.primary
             } else {
                 th.outline
             },
             if config.is_error {
                 th.error
-            } else if float_t > 0.5 {
+            } else if is_focused {
                 th.primary
             } else {
                 th.on_surface_variant
             },
+            th.surface,
         )
     };
 
-    // Label font size: 16dp at rest (placeholder position) → 12dp when floating
+    // Label font size: 16dp (expanded, inside) → 12dp (minimized, at border)
     let label_size = 16.0 - 4.0 * float_t;
 
-    // Label Y offset: 16dp (same line as text) → -4dp (overlapping top border)
-    let label_y = 16.0 - 20.0 * float_t;
+    // Minimized label half-height matches bodySmall line height (~16dp) / 2
+    let min_label_half_h: f32 = if has_label { 8.0 } else { 0.0 };
 
-    // The TextField inside uses no placeholder when a label is present -
-    // the label itself serves as the visual placeholder.
+    // Label Y: expanded at text-line (~16dp) → minimized overlapping top border (-labelHeight/2)
+    let label_start_y = 16.0;
+    let label_end_y = -min_label_half_h;
+    let label_y = label_start_y - (label_start_y - label_end_y) * float_t;
+
+    // Label X: expanded at text-input start (~24dp) → minimized at border-start (~20dp)
+    let label_start_x = if has_label { 24.0 } else { 0.0 };
+    let label_end_x = if has_label { 20.0 } else { 0.0 };
+    let label_x = label_start_x - (label_start_x - label_end_x) * float_t;
+
+    // Placeholder shows when there's no label, or when label is floating (focused/has content)
     let tf_placeholder = if has_label {
-        String::new()
+        if should_float {
+            config.placeholder.unwrap_or_default()
+        } else {
+            String::new()
+        }
     } else {
         config.placeholder.unwrap_or_default()
     };
 
-    Box(modifier
-        .clip_rounded(th.shapes.small)
-        .border(1.0, border_color, th.shapes.small)
-        .background(th.surface))
-    .child(
-        Stack(Modifier::new().fill_max_size()).child((
-            // Input row - always at the same position, with room at the top
-            // for the floating label to overlap.
-            Row(Modifier::new()
-                .fill_max_size()
-                .padding_values(PaddingValues {
-                    left: 16.0,
-                    right: 16.0,
-                    top: 16.0,
-                    bottom: 8.0,
-                })
-                .align_items(AlignItems::Center))
-            .child((
-                config.leading_icon.unwrap_or(Box(Modifier::new())),
-                View::new(0, ViewKind::Box)
-                    .modifier(
-                        Modifier::new()
-                            .flex_grow(1.0)
-                            .padding_values(PaddingValues {
-                                left: 8.0,
-                                right: 8.0,
-                                top: 0.0,
-                                bottom: 0.0,
-                            })
-                            .text_input(TextInputConfig {
-                                hint: tf_placeholder,
-                                multiline: false,
-                                on_change: Some(Rc::new(on_value_change) as _),
-                                on_submit: config.on_submit.clone().map(|f| {
-                                    let f = f.clone();
-                                    Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
-                                }),
-                                focus_tracker: Some(focus_tracker.clone()),
-                                value: value.clone(),
-                                visual_transformation: None,
-                                keyboard_type: Default::default(),
-                                capitalization: Default::default(),
-                                ime_action: Default::default(),
-                                enabled: config.enabled,
-                                read_only: false,
-                                max_lines: None,
-                                min_lines: 1,
-                                cursor_color: config
-                                    .colors
-                                    .as_ref()
-                                    .map(|c| c.cursor_color(config.is_error)),
-                                on_text_layout: None,
-                                text_style: None,
-                                keyboard_actions: None,
-                                interaction_source: None,
-                                line_limits: None,
-                            }),
-                    )
-                    .semantics(Semantics {
-                        role: Role::TextField,
-                        label: None,
-                        focused: false,
-                        enabled: true,
-                        selectable_group: false,
-                    }),
-                config.trailing_icon.unwrap_or(Box(Modifier::new())),
-            )),
-            // Floating label - absolutely positioned, animates between text-line
-            // and top-border positions as the field gains content / focus.
-            // A surface-colored background box hides the border stroke behind the label.
-            if let Some(lbl) = label_str {
-                Box(Modifier::new()
-                    .min_width(200.0)
+    // Container padding matches reference: 8dp top/bottom with label, 16dp without
+    let (top_pad, bottom_pad) = if has_label { (8.0, 8.0) } else { (16.0, 16.0) };
+
+    // Outer Stack holds both the clipped content and the unclipped label.
+    // The label sits outside the clipped Box so it can extend above the border.
+    Stack(modifier
+        .min_height(OutlinedTextFieldDefaults::MIN_HEIGHT)
+        .min_width(OutlinedTextFieldDefaults::MIN_WIDTH))
+    .child((
+        // Clipped background, border, and input content
+        Box(Modifier::new()
+            .fill_max_size()
+            .clip_rounded(th.shapes.small)
+            .background(container_bg)
+            .border(border_w, border_color, th.shapes.small))
+        .child(
+            Stack(Modifier::new().fill_max_size()).child((
+                // Input row - positioned with proper padding for floating label overlap
+                Row(Modifier::new()
+                    .fill_max_size()
                     .padding_values(PaddingValues {
-                        left: 20.0,
-                        right: 20.0,
-                        top: 0.0,
-                        bottom: 0.0,
+                        left: 16.0,
+                        right: 16.0,
+                        top: top_pad,
+                        bottom: bottom_pad,
                     })
-                    .absolute()
-                    .offset(Some(0.0), Some(label_y), None, None))
+                    .align_items(AlignItems::Center))
+                .child((
+                    config.leading_icon.unwrap_or(Box(Modifier::new())),
+                    View::new(0, ViewKind::Box)
+                        .modifier(
+                            Modifier::new()
+                                .flex_grow(1.0)
+                                .padding_values(PaddingValues {
+                                    left: 8.0,
+                                    right: 8.0,
+                                    top: 0.0,
+                                    bottom: 0.0,
+                                })
+                                .text_input(TextInputConfig {
+                                    hint: tf_placeholder,
+                                    multiline: false,
+                                    on_change: Some(Rc::new(on_value_change) as _),
+                                    on_submit: config.on_submit.clone().map(|f| {
+                                        let f = f.clone();
+                                        Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
+                                    }),
+                                    focus_tracker: Some(focus_tracker.clone()),
+                                    value: value.clone(),
+                                    visual_transformation: None,
+                                    keyboard_type: Default::default(),
+                                    capitalization: Default::default(),
+                                    ime_action: Default::default(),
+                                    enabled: config.enabled,
+                                    read_only: false,
+                                    max_lines: None,
+                                    min_lines: 1,
+                                    cursor_color: config
+                                        .colors
+                                        .as_ref()
+                                        .map(|c| c.cursor_color(config.is_error)),
+                                    on_text_layout: None,
+                                    text_style: None,
+                                    keyboard_actions: None,
+                                    interaction_source: None,
+                                    line_limits: None,
+                                }),
+                        )
+                        .semantics(Semantics {
+                            role: Role::TextField,
+                            label: None,
+                            focused: false,
+                            enabled: true,
+                            selectable_group: false,
+                        }),
+                    config.trailing_icon.unwrap_or(Box(Modifier::new())),
+                )),
+            )),
+        ),
+        // Floating label — outside the clipped Box, extends above freely.
+        if let Some(lbl) = label_str {
+            Box(Modifier::new()
+                .min_width(200.0)
+                .padding_values(PaddingValues {
+                    left: label_x,
+                    right: 20.0,
+                    top: 0.0,
+                    bottom: 0.0,
+                })
+                .absolute()
+                .offset(Some(0.0), Some(label_y), None, None))
+            .child(
+                Box(Modifier::new()
+                    .background(container_bg)
+                    .padding_values(PaddingValues {
+                        left: 4.0,
+                        right: 4.0,
+                        top: 2.0,
+                        bottom: 2.0,
+                    }))
                 .child(
-                    Box(Modifier::new()
-                        .background(th.surface)
-                        .padding_values(PaddingValues {
-                            left: 4.0,
-                            right: 4.0,
-                            top: 2.0,
-                            bottom: 2.0,
-                        }))
-                    .child(
-                        Text(lbl.as_ref().to_string())
-                            .color(label_color)
-                            .size(label_size),
-                    ),
-                )
-            } else {
-                Box(Modifier::new())
-            },
-        )),
-    )
+                    Text(lbl.as_ref().to_string())
+                        .color(label_color)
+                        .size(label_size),
+                ),
+            )
+        } else {
+            Box(Modifier::new())
+        },
+    ))
 }
 
 /// Configuration for a filled M3 [`TextField`].
@@ -3140,7 +3196,6 @@ pub fn TextField(
         th.motion.color,
     );
 
-    // Resolve colors from config.colors if set, otherwise use legacy theme-based approach
     let (indicator_color, label_color, container_bg) = if let Some(ref tc) = config.colors {
         let enf = config.enabled && is_focused;
         let ind = tc.indicator_color(config.enabled, config.is_error, enf);
@@ -3974,8 +4029,14 @@ impl std::fmt::Debug for SliderConfig {
                 &self.disabled_inactive_tick_color,
             )
             .field("state_colors", &self.state_colors)
-            .field("on_value_change_finished", &self.on_value_change_finished.as_ref().map(|_| ".."))
-            .field("interaction_source", &self.interaction_source.as_ref().map(|_| ".."))
+            .field(
+                "on_value_change_finished",
+                &self.on_value_change_finished.as_ref().map(|_| ".."),
+            )
+            .field(
+                "interaction_source",
+                &self.interaction_source.as_ref().map(|_| ".."),
+            )
             .finish()
     }
 }

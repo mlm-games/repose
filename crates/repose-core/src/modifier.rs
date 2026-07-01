@@ -256,7 +256,7 @@ pub enum IntrinsicSize {
 
 static PRESS_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-/// A press identifier for linking Press ↔ Release/Cancel pairs.
+/// A press identifier for linking Press -> Release/Cancel pairs.
 pub type PressId = u64;
 
 /// An interaction event that can be emitted by a [`MutableInteractionSource`].
@@ -353,7 +353,8 @@ pub struct MutableInteractionSource {
 
 impl std::fmt::Debug for MutableInteractionSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MutableInteractionSource").finish_non_exhaustive()
+        f.debug_struct("MutableInteractionSource")
+            .finish_non_exhaustive()
     }
 }
 

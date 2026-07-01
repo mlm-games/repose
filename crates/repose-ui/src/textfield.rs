@@ -1369,9 +1369,9 @@ pub(crate) fn paint_text_field(
     let pad_x = dp_to_px(TF_PADDING_X_DP);
     let inner = repose_core::Rect {
         x: rect.x + pad_x,
-        y: rect.y + dp_to_px(8.0),
+        y: rect.y + dp_to_px(2.0),
         w: (rect.w - 2.0 * pad_x).max(0.0),
-        h: (rect.h - dp_to_px(16.0)).max(0.0),
+        h: (rect.h - dp_to_px(4.0)).max(0.0),
     };
 
     let ts = text_input
@@ -1390,7 +1390,7 @@ pub(crate) fn paint_text_field(
     } else {
         font_val * 1.3
     };
-    let text_off_y = (inner.h - line_h) / 2.0;
+    let text_off_y = ((inner.h - line_h) / 2.0).max(font_val * 0.75);
 
     scene.nodes.push(SceneNode::PushClip {
         rect: inner,
