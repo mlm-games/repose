@@ -3788,12 +3788,14 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
             .size(thumb_d, thumb_d)
             .background(thumb_bg)
             .clip_rounded(thumb_d * 0.5)
+            .hit_passthrough()
             .absolute()
             .offset(Some(thumb_left), Some(thumb_top), None, None)),
         Box(Modifier::new()
             .size(40.0, 40.0)
             .clip_rounded(20.0)
             .background(state_overlay)
+            .hit_passthrough()
             .absolute()
             .offset(
                 Some(thumb_left + thumb_d * 0.5 - 20.0),
