@@ -1240,27 +1240,156 @@ impl SwipeToDismissDefaults {
 }
 
 /// Default values for split button.
+///
+/// Token values sourced from `SplitButton{Small,XSmall,Medium,Large,XLarge}Tokens`.
 pub struct SplitButtonDefaults;
 
 impl SplitButtonDefaults {
-    pub const SPACING: f32 = 8.0;
+    /// Between-space from `SplitButtonSmallTokens.BetweenSpace` (2.0.dp).
+    pub const SPACING: f32 = 2.0;
     pub const LEADING_BUTTON_MIN_WIDTH: f32 = 48.0;
-    pub const SMALL_CONTAINER_HEIGHT: f32 = 48.0;
+
+    pub const XSMALL_CONTAINER_HEIGHT: f32 = 32.0;
+    pub const SMALL_CONTAINER_HEIGHT: f32 = 40.0; // SplitButtonSmallTokens.ContainerHeight
+    pub const MEDIUM_CONTAINER_HEIGHT: f32 = 56.0;
+    pub const LARGE_CONTAINER_HEIGHT: f32 = 64.0; // estimate — no LargeTokens in repo
+    pub const XLARGE_CONTAINER_HEIGHT: f32 = 72.0; // estimate
+
+    /// Outer corners are fully rounded (50% → effectively full radius).
+    pub const OUTER_CORNER_SIZE: f32 = f32::INFINITY; // ShapeDefaults.CornerFull equivalent
+    /// Small inner corner size from `SplitButtonSmallTokens.InnerCornerCornerSize`.
+    pub const SMALL_INNER_CORNER_SIZE: f32 = 4.0;
+    /// Extra-small inner corner size from `SplitButtonXSmallTokens.InnerCornerCornerSize`.
+    pub const XSMALL_INNER_CORNER_SIZE: f32 = 4.0;
+    /// Medium inner corner size from `SplitButtonMediumTokens.InnerCornerCornerSize`.
+    pub const MEDIUM_INNER_CORNER_SIZE: f32 = 4.0;
+    /// Large inner corner size (estimate).
+    pub const LARGE_INNER_CORNER_SIZE: f32 = 4.0;
+    /// Extra-large inner corner size (estimate).
+    pub const XLARGE_INNER_CORNER_SIZE: f32 = 4.0;
+
+    /// Pressed inner corner sizes (from tokens).
+    pub const XSMALL_INNER_CORNER_SIZE_PRESSED: f32 = 6.0;
+    pub const SMALL_INNER_CORNER_SIZE_PRESSED: f32 = 6.0;
+    pub const MEDIUM_INNER_CORNER_SIZE_PRESSED: f32 = 6.0;
+    pub const LARGE_INNER_CORNER_SIZE_PRESSED: f32 = 6.0;
+    pub const XLARGE_INNER_CORNER_SIZE_PRESSED: f32 = 6.0;
+
+    /// Leading icon size from `ButtonSmallTokens.IconSize`.
+    pub const LEADING_ICON_SIZE: f32 = 18.0;
+    /// Trailing icon size from `SplitButtonSmallTokens.TrailingIconSize`.
+    pub const TRAILING_ICON_SIZE: f32 = 22.0;
+    pub const XSMALL_TRAILING_ICON_SIZE: f32 = 22.0;
+    pub const MEDIUM_TRAILING_ICON_SIZE: f32 = 26.0;
+    pub const LARGE_TRAILING_ICON_SIZE: f32 = 26.0;
+    pub const XLARGE_TRAILING_ICON_SIZE: f32 = 26.0;
 
     /// Content padding for a small leading button.
+    /// `SplitButtonSmallTokens.LeadingButtonLeadingSpace` (16.0) /
+    /// `LeadingButtonTrailingSpace` (12.0).
     pub fn small_leading_content_padding() -> PaddingValues {
         PaddingValues {
-            left: 24.0,
-            right: 16.0,
+            left: 16.0,
+            right: 12.0,
             top: 0.0,
             bottom: 0.0,
         }
     }
 
     /// Content padding for a small trailing button.
+    /// `SplitButtonSmallTokens.TrailingButtonLeadingSpace` (13.0) /
+    /// `TrailingButtonTrailingSpace` (13.0).
     pub fn small_trailing_content_padding() -> PaddingValues {
         PaddingValues {
-            left: 16.0,
+            left: 13.0,
+            right: 13.0,
+            top: 0.0,
+            bottom: 0.0,
+        }
+    }
+
+    /// Content padding for an extra-small leading button.
+    /// `SplitButtonXSmallTokens.LeadingButtonLeadingSpace` (12.0) /
+    /// `LeadingButtonTrailingSpace` (10.0).
+    pub fn xsmall_leading_content_padding() -> PaddingValues {
+        PaddingValues {
+            left: 12.0,
+            right: 10.0,
+            top: 0.0,
+            bottom: 0.0,
+        }
+    }
+
+    /// Content padding for an extra-small trailing button.
+    /// `SplitButtonXSmallTokens.TrailingButtonLeadingSpace` (13.0) /
+    /// `TrailingButtonTrailingSpace` (13.0).
+    pub fn xsmall_trailing_content_padding() -> PaddingValues {
+        PaddingValues {
+            left: 13.0,
+            right: 13.0,
+            top: 0.0,
+            bottom: 0.0,
+        }
+    }
+
+    /// Content padding for a medium leading button.
+    /// `SplitButtonMediumTokens.LeadingButtonLeadingSpace` (24.0) /
+    /// `LeadingButtonTrailingSpace` (24.0).
+    pub fn medium_leading_content_padding() -> PaddingValues {
+        PaddingValues {
+            left: 24.0,
+            right: 24.0,
+            top: 0.0,
+            bottom: 0.0,
+        }
+    }
+
+    /// Content padding for a medium trailing button.
+    /// `SplitButtonMediumTokens.TrailingButtonLeadingSpace` (15.0) /
+    /// `TrailingButtonTrailingSpace` (15.0).
+    pub fn medium_trailing_content_padding() -> PaddingValues {
+        PaddingValues {
+            left: 15.0,
+            right: 15.0,
+            top: 0.0,
+            bottom: 0.0,
+        }
+    }
+
+    /// Content padding for a large leading button (estimate).
+    pub fn large_leading_content_padding() -> PaddingValues {
+        PaddingValues {
+            left: 32.0,
+            right: 32.0,
+            top: 0.0,
+            bottom: 0.0,
+        }
+    }
+
+    /// Content padding for a large trailing button (estimate).
+    pub fn large_trailing_content_padding() -> PaddingValues {
+        PaddingValues {
+            left: 24.0,
+            right: 24.0,
+            top: 0.0,
+            bottom: 0.0,
+        }
+    }
+
+    /// Content padding for an extra-large leading button (estimate).
+    pub fn xlarge_leading_content_padding() -> PaddingValues {
+        PaddingValues {
+            left: 32.0,
+            right: 32.0,
+            top: 0.0,
+            bottom: 0.0,
+        }
+    }
+
+    /// Content padding for an extra-large trailing button (estimate).
+    pub fn xlarge_trailing_content_padding() -> PaddingValues {
+        PaddingValues {
+            left: 24.0,
             right: 24.0,
             top: 0.0,
             bottom: 0.0,
@@ -1269,24 +1398,35 @@ impl SplitButtonDefaults {
 }
 
 /// Default values for button group.
+///
+/// Token values sourced from `ButtonGroupSmallTokens` and
+/// `ConnectedButtonGroupSmallTokens`.
 pub struct ButtonGroupDefaults;
 
 impl ButtonGroupDefaults {
-    pub const SHAPE_RADIUS: f32 = 20.0;
-    pub const GAP: f32 = 1.0;
+    /// The default percentage (15%) by which a pressed item expands.
+    pub const EXPANDED_RATIO: f32 = 0.15;
 
-    pub fn color() -> Color {
-        theme().surface_container_high
-    }
-    pub fn selected_color() -> Color {
-        theme().primary
-    }
-    pub fn text_color() -> Color {
-        theme().on_surface_variant
-    }
-    pub fn selected_text_color() -> Color {
-        theme().on_primary
-    }
+    /// Between-space from `ButtonGroupSmallTokens.BetweenSpace` (12.0.dp)
+    /// — used for unconnected (standard) button groups.
+    pub const STANDARD_GAP: f32 = 12.0;
+
+    /// Between-space from `ConnectedButtonGroupSmallTokens.BetweenSpace` (2.0.dp)
+    /// — used for connected button groups.
+    pub const CONNECTED_GAP: f32 = 2.0;
+
+    pub const CONTAINER_HEIGHT: f32 = 40.0;
+
+    // Connected button group shape helpers (shapes for leading/middle/trailing items)
+
+    /// Inner corner size for connected button group.
+    pub const CONNECTED_INNER_CORNER: f32 = 8.0; // ConnectedButtonGroupSmallTokens.InnerCornerCornerSize
+    /// Pressed inner corner size for connected button group.
+    pub const CONNECTED_PRESSED_INNER_CORNER: f32 = 4.0; // PressedInnerCornerCornerSize
+    /// Full corner size for checked state.
+    pub const CONNECTED_CHECKED_CORNER: f32 = f32::INFINITY;
+    /// Full corner size for outer edges.
+    pub const CONNECTED_OUTER_CORNER: f32 = f32::INFINITY;
 }
 
 /// Default values for carousel.

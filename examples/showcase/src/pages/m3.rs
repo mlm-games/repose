@@ -3,11 +3,13 @@ use std::rc::Rc;
 use repose_core::prelude::*;
 use repose_material::material3::dialog::{DatePickerDialog, DialogState, TimePickerDialog};
 use repose_material::material3::{
-    BottomSheet, BottomSheetConfig, Button, ButtonConfig, CircularProgressIndicator,
-    CircularProgressIndicatorConfig, DatePickerState, DropdownMenu, DropdownMenuConfig,
-    DropdownMenuEntry, DropdownMenuItem, LinearProgressIndicator, LinearProgressIndicatorConfig,
-    MenuState, ModalBottomSheet, NavRailItem, NavigationRail, NavigationRailConfig, Segment,
-    SegmentedButton, SegmentedButtonConfig, SheetState, TextButton, TimePickerState,
+    BottomSheet, BottomSheetConfig, Button, ButtonConfig, ButtonGroup, ButtonGroupScope,
+    DatePickerDialogConfig, DatePickerState, DropdownMenu, DropdownMenuConfig, DropdownMenuEntry,
+    DropdownMenuItem, MenuState, ModalBottomSheet, NavRailItem, NavigationRail,
+    NavigationRailConfig, SegmentConfig, SegmentedButton, SegmentedButtonConfig, SheetState,
+    SplitButtonConfig, SplitButtonLayout, SplitButtonLeadingButton, SplitButtonTonalLeadingButton,
+    SplitButtonTonalTrailingToggleButton, SplitButtonTrailingToggleButton, TextButton,
+    TimePickerDialogConfig, TimePickerState,
 };
 use repose_material::{Icon, material_symbols};
 
@@ -38,6 +40,7 @@ fn rail_item(
         on_click: Rc::new(sel),
         badge,
         enabled: true,
+        interaction_source: None,
     }
 }
 
@@ -230,6 +233,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                         let s = date_dialog_state.clone();
                         move || s.dismiss()
                     }),
+                    DatePickerDialogConfig::default(),
                 ),
                 TimePickerDialog(
                     time_dialog_state.clone(),
@@ -247,6 +251,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                         let s = time_dialog_state.clone();
                         move || s.dismiss()
                     }),
+                    TimePickerDialogConfig::default(),
                 ),
             )),
         ),
@@ -323,7 +328,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 SegmentedButton(
                     &[seg_sel.get()],
                     vec![
-                        Segment {
+                        SegmentConfig {
                             label: "Day".into(),
                             icon: None,
                             on_click: Rc::new({
@@ -331,8 +336,9 @@ pub fn screen(overlay: OverlayHandle) -> View {
                                 move || s.set(0)
                             }),
                             enabled: true,
+                            ..Default::default()
                         },
-                        Segment {
+                        SegmentConfig {
                             label: "Week".into(),
                             icon: None,
                             on_click: Rc::new({
@@ -340,8 +346,9 @@ pub fn screen(overlay: OverlayHandle) -> View {
                                 move || s.set(1)
                             }),
                             enabled: true,
+                            ..Default::default()
                         },
-                        Segment {
+                        SegmentConfig {
                             label: "Month".into(),
                             icon: None,
                             on_click: Rc::new({
@@ -349,6 +356,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                                 move || s.set(2)
                             }),
                             enabled: true,
+                            ..Default::default()
                         },
                     ],
                     SegmentedButtonConfig::default(),
@@ -356,28 +364,85 @@ pub fn screen(overlay: OverlayHandle) -> View {
             }),
         ),
         Section(
-            "Progress Indicators",
+            "SplitButtonLayout",
             Column(Modifier::new().padding(sp::MD).gap(sp::LG)).child((
                 Column(Modifier::new().gap(sp::SM)).child((
-                    Text("Circular (determinate, indeterminate)")
+                    Text("Filled SplitButton (with toggleable trailing)")
                         .size(14.0)
                         .color(th.on_surface_variant),
-                    Row(Modifier::new().gap(sp::MD).align_items(AlignItems::Center)).child((
-                        CircularProgressIndicator(
-                            Some(0.6),
-                            CircularProgressIndicatorConfig::default(),
-                        ),
-                        CircularProgressIndicator(None, CircularProgressIndicatorConfig::default()),
-                    )),
+                    {
+                        let checked = remember(|| signal(false));
+                        SplitButtonLayout(
+                            SplitButtonLeadingButton(
+                                Modifier::new(),
+                                || {},
+                                ButtonConfig::default(),
+                                || Text("Action"),
+                            ),
+                            SplitButtonTrailingToggleButton(
+                                checked.get(),
+                                {
+                                    let c = checked.clone();
+                                    move |v| c.set(v)
+                                },
+                                Modifier::new(),
+                                Default::default(),
+                                move |chk| {
+                                    Icon(Symbols::settings).size(if chk { 22.0 } else { 18.0 })
+                                },
+                            ),
+                            SplitButtonConfig::default(),
+                        )
+                    },
                 )),
                 Column(Modifier::new().gap(sp::SM)).child((
-                    Text("Linear (determinate, indeterminate)")
+                    Text("Tonal SplitButton")
                         .size(14.0)
                         .color(th.on_surface_variant),
-                    LinearProgressIndicator(Some(0.4), LinearProgressIndicatorConfig::default()),
-                    LinearProgressIndicator(None, LinearProgressIndicatorConfig::default()),
+                    {
+                        let checked = remember(|| signal(false));
+                        SplitButtonLayout(
+                            SplitButtonTonalLeadingButton(
+                                Modifier::new(),
+                                || {},
+                                ButtonConfig::default(),
+                                || Text("Filter"),
+                            ),
+                            SplitButtonTonalTrailingToggleButton(
+                                checked.get(),
+                                {
+                                    let c = checked.clone();
+                                    move |v| c.set(v)
+                                },
+                                Modifier::new(),
+                                Default::default(),
+                                move |chk| {
+                                    Icon(Symbols::settings).size(if chk { 22.0 } else { 18.0 })
+                                },
+                            ),
+                            SplitButtonConfig::default(),
+                        )
+                    },
                 )),
             )),
+        ),
+        Section(
+            "ButtonGroup",
+            Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child({
+                let sel = remember(|| signal(0usize));
+                ButtonGroup(
+                    Modifier::new().fill_max_width(),
+                    8.0,
+                    move |scope: &mut ButtonGroupScope| {
+                        let s = sel.clone();
+                        scope.clickable_item(move || s.set(0), "First".into(), None);
+                        let s = sel.clone();
+                        scope.clickable_item(move || s.set(1), "Second".into(), None);
+                        let s = sel.clone();
+                        scope.clickable_item(move || s.set(2), "Third".into(), None);
+                    },
+                )
+            }),
         ),
         Section(
             "Animation: Keyframes (animate_keyframes)",

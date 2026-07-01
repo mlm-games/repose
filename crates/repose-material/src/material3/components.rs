@@ -2159,13 +2159,26 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
     ))
 }
 
-/// A single segment definition for `SegmentedButton`.
-pub struct Segment {
+/// Configuration for a single segment in [`SegmentedButton`].
+#[derive(Clone)]
+pub struct SegmentConfig {
     pub label: String,
     pub icon: Option<View>,
     pub on_click: Rc<dyn Fn()>,
     pub enabled: bool,
     pub interaction_source: Option<MutableInteractionSource>,
+}
+
+impl Default for SegmentConfig {
+    fn default() -> Self {
+        Self {
+            label: String::new(),
+            icon: None,
+            on_click: Rc::new(|| {}),
+            enabled: true,
+            interaction_source: None,
+        }
+    }
 }
 
 /// Configuration for [`SegmentedButton`].
@@ -2206,7 +2219,7 @@ static SEGBUTTON_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// last has rounded right corners, middle segments are rectangular.
 pub fn SegmentedButton(
     selected: &[usize],
-    segments: Vec<Segment>,
+    segments: Vec<SegmentConfig>,
     config: SegmentedButtonConfig,
 ) -> View {
     let th = theme();
