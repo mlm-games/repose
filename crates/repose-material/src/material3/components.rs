@@ -2043,6 +2043,7 @@ pub struct Tab {
     pub icon: Option<View>,
     pub on_click: Rc<dyn Fn()>,
     pub enabled: bool,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 /// Configuration for [`TabRow`].
@@ -2111,10 +2112,16 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                         default_effects,
                     );
                     let cb = tab.on_click.clone();
+                    let tab_source: Rc<MutableInteractionSource> = tab
+                        .interaction_source
+                        .clone()
+                        .map(Rc::new)
+                        .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
                     let mut tab_m = Modifier::new()
                         .flex_grow(1.0)
                         .fill_max_height()
+                        .interaction_source(&*tab_source)
                         .align_items(AlignItems::Center)
                         .justify_content(JustifyContent::Center)
                         .state_colors(StateColors {
@@ -2172,6 +2179,7 @@ pub struct SegmentedButtonConfig {
     pub state_colors: StateColors,
     pub height: f32,
     pub shape_radius: f32,
+    pub content_padding: PaddingValues,
 }
 
 impl Default for SegmentedButtonConfig {
@@ -2185,6 +2193,7 @@ impl Default for SegmentedButtonConfig {
             state_colors: SegmentedButtonDefaults::state_colors_default(),
             height: SegmentedButtonDefaults::HEIGHT,
             shape_radius: SegmentedButtonDefaults::SHAPE_RADIUS,
+            content_padding: SegmentedButtonDefaults::CONTENT_PADDING,
         }
     }
 }
@@ -2269,12 +2278,7 @@ pub fn SegmentedButton(
                     .interaction_source(&*seg_source)
                     .align_items(AlignItems::Center)
                     .justify_content(JustifyContent::Center)
-                    .padding_values(PaddingValues {
-                        left: 12.0,
-                        right: 12.0,
-                        top: 0.0,
-                        bottom: 0.0,
-                    });
+                    .padding_values(config.content_padding);
 
                 let content_modifier = if is_enabled {
                     content_modifier.clickable().on_click(move || cb())

@@ -699,6 +699,12 @@ pub struct SegmentedButtonDefaults;
 impl SegmentedButtonDefaults {
     pub const HEIGHT: f32 = 40.0;
     pub const SHAPE_RADIUS: f32 = 20.0;
+    pub const CONTENT_PADDING: PaddingValues = PaddingValues {
+        left: 12.0,
+        right: 12.0,
+        top: 0.0,
+        bottom: 0.0,
+    };
     pub fn border_color() -> Color {
         theme().outline
     }
