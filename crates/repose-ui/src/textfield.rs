@@ -1690,9 +1690,9 @@ pub(crate) fn paint_text_field(
                 scene.nodes.push(SceneNode::Rect {
                     rect: repose_core::Rect {
                         x: draw_x,
-                        y: draw_y,
+                        y: draw_y + (lh - font_val) / 2.0,
                         w: dp_to_px(1.0),
-                        h: lh,
+                        h: font_val,
                     },
                     brush: Brush::Solid(cursor_color),
                     radius: [0.0; 4],
