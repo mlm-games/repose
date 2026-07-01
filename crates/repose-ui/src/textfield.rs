@@ -1702,12 +1702,17 @@ pub(crate) fn paint_text_field(
     } else {
         // No state yet (unfocused) - render hint or raw value
         if text_input.value.is_empty() {
+            let hint_y = if text_input.multiline {
+                inner.y
+            } else {
+                inner.y + text_off_y
+            };
             scene.nodes.push(SceneNode::Text {
                 rect: repose_core::Rect {
                     x: inner.x,
-                    y: inner.y + text_off_y,
+                    y: hint_y,
                     w: inner.w,
-                    h: line_h,
+                    h: if text_input.multiline { inner.h } else { line_h },
                 },
                 text: Arc::from(text_input.hint.clone()),
                 color: th.on_surface_variant,
