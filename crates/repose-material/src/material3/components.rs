@@ -376,6 +376,7 @@ pub struct IconButtonConfig {
     pub colors: IconButtonColors,
     pub container_size: Option<f32>,
     pub interaction_source: Option<MutableInteractionSource>,
+    pub shape_radius: Option<f32>,
 }
 
 impl Default for IconButtonConfig {
@@ -391,6 +392,7 @@ impl Default for IconButtonConfig {
             },
             container_size: None,
             interaction_source: None,
+            shape_radius: None,
         }
     }
 }
@@ -406,9 +408,10 @@ fn icon_button_render(
 ) -> View {
     let is_enabled = config.enabled;
     let content_color = config.colors.content(is_enabled);
+    let radius = config.shape_radius.unwrap_or(sz * 0.5);
     let mut m = Modifier::new()
         .size(sz, sz)
-        .clip_rounded(sz * 0.5)
+        .clip_rounded(radius)
         .state_colors(state_colors)
         .align_items(AlignItems::Center)
         .justify_content(JustifyContent::Center)
@@ -418,7 +421,7 @@ fn icon_button_render(
         m = m.background(bg_color);
     }
     if let Some((w, c)) = bdr {
-        m = m.border(w, c, sz * 0.5);
+        m = m.border(w, c, radius);
     }
     let source: Rc<MutableInteractionSource> = config
         .interaction_source
@@ -3972,6 +3975,10 @@ pub fn Slider(
     on_change: impl Fn(f32) + 'static,
     config: SliderConfig,
 ) -> View {
+    assert!(range.0 <= range.1, "Slider range start must be <= end");
+    if let Some(s) = step {
+        assert!(s > 0.0, "Slider step must be positive");
+    }
     let id = *remember(|| SLIDER_COUNTER.fetch_add(1, Ordering::Relaxed));
     let track_rect = remember_state_with_key(format!("ms_rect_{}", id), || Rect::default());
     let drag_active = remember_state_with_key(format!("ms_da_{}", id), || false);
@@ -4219,6 +4226,10 @@ pub fn RangeSlider(
     on_change: impl Fn(f32, f32) + 'static,
     config: SliderConfig,
 ) -> View {
+    assert!(range.0 <= range.1, "Slider range start must be <= end");
+    if let Some(s) = step {
+        assert!(s > 0.0, "Slider step must be positive");
+    }
     let id = *remember(|| SLIDER_COUNTER.fetch_add(1, Ordering::Relaxed));
     let track_rect = remember_state_with_key(format!("mrs_rect_{}", id), || Rect::default());
     let drag_active = remember_state_with_key(format!("mrs_da_{}", id), || false);
@@ -5214,6 +5225,7 @@ pub struct BottomSheetConfig {
     pub content_color: Color,
     pub scrim_color: Color,
     pub tonal_elevation: f32,
+    pub shadow_elevation: f32,
     pub drag_handle_color: Color,
     pub shape_radius: f32,
     pub max_width: f32,
@@ -5231,6 +5243,7 @@ impl Default for BottomSheetConfig {
             content_color: BottomSheetDefaults::content_color(),
             scrim_color: BottomSheetDefaults::scrim_color(),
             tonal_elevation: BottomSheetDefaults::TONAL_ELEVATION,
+            shadow_elevation: 0.0,
             drag_handle_color: BottomSheetDefaults::drag_handle_color(),
             shape_radius: BottomSheetDefaults::SHAPE_RADIUS,
             max_width: BottomSheetDefaults::MAX_WIDTH,
@@ -5495,6 +5508,7 @@ pub struct DropdownMenuConfig {
     pub shadow_elevation: Option<f32>,
     pub tonal_elevation: f32,
     pub border: Option<(f32, Color, f32)>,
+    pub shape_radius: Option<f32>,
     pub offset_x: f32,
     pub offset_y: f32,
 }
@@ -5512,6 +5526,7 @@ impl Default for DropdownMenuConfig {
             shadow_elevation: None,
             tonal_elevation: 0.0,
             border: None,
+            shape_radius: None,
             offset_x: 0.0,
             offset_y: 0.0,
         }

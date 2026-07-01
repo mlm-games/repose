@@ -1416,7 +1416,7 @@ fn render_dropdown_menu_content(
         .min_width(config.min_width)
         .padding(4.0)
         .background(config.container_color)
-        .clip_rounded(th.shapes.small))
+        .clip_rounded(config.shape_radius.unwrap_or(th.shapes.small)))
     .child(Column(Modifier::new()).with_children(children))
 }
 
