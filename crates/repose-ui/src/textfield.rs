@@ -993,8 +993,8 @@ pub struct TextFieldConfig {
     pub on_text_layout: Option<Rc<dyn Fn(&repose_core::TextLayoutResult)>>,
     /// Interaction source for tracking focus/press/hover state.
     pub interaction_source: Option<repose_core::MutableInteractionSource>,
-    /// Cursor brush (-> `cursorBrush`).
-    pub cursor_brush: repose_core::Brush,
+    /// Cursor brush (-> `cursorBrush`). `None` → theme default (`on_surface`).
+    pub cursor_brush: Option<repose_core::Brush>,
     /// Output transformation (-> `outputTransformation`). Transforms text for display only.
     pub output_transformation: Option<Rc<dyn repose_core::OutputTransformation>>,
     /// Decorator (-> `decorator`). Wraps the inner text field with custom decorations.
@@ -1028,7 +1028,7 @@ impl Default for TextFieldConfig {
             },
             on_text_layout: None,
             interaction_source: None,
-            cursor_brush: repose_core::Brush::Solid(Color::BLACK),
+            cursor_brush: None,
             output_transformation: None,
             decorator: None,
             codepoint_transformation: None,
@@ -1116,10 +1116,10 @@ pub fn BasicTextField(
         .decorator
         .map(|d| Rc::new(move |inner: repose_core::View| d.decorate(inner)) as Rc<dyn Fn(_) -> _>);
 
-    let cursor_color = match config.cursor_brush {
+    let cursor_color = config.cursor_brush.and_then(|b| match b {
         repose_core::Brush::Solid(c) => Some(c),
         _ => None,
-    };
+    });
 
     let value = state.borrow().text.clone();
     let key = state.as_ptr() as u64;
