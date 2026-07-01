@@ -1,4 +1,6 @@
 use std::cell::RefCell;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 use crate::{Box, ViewExt, ZStack};
 use repose_core::*;
@@ -88,7 +90,11 @@ where
         if let Some(ref ov) = *oc {
             let exit_alpha = animate_f32_from(format!("cf_exit:{key}:v{v}"), 1.0, 0.0, spec);
             if exit_alpha > 0.005 {
-                Some(Box(Modifier::new().fill_max_size().alpha(exit_alpha)).child(ov.clone()))
+                let mut exit_box =
+                    Box(Modifier::new().fill_max_size().alpha(exit_alpha)).child(ov.clone());
+                exit_box.modifier.key =
+                    Some(transition_child_key(&key, v, "cf_exit"));
+                Some(exit_box)
             } else {
                 *oc = None;
                 None
@@ -100,13 +106,13 @@ where
 
     // Enter: versioned key ensures fade-in starts at 0 on each transition.
     let enter_alpha = animate_f32_from(format!("cf_enter:{key}:v{v}"), 0.0, 1.0, spec);
+    let mut enter_box =
+        Box(Modifier::new().fill_max_size().alpha(enter_alpha)).child(new_view);
+    enter_box.modifier.key = Some(transition_child_key(&key, v, "cf_enter"));
 
     match old_view {
-        Some(ov) => ZStack(Modifier::new().fill_max_size()).child((
-            ov,
-            Box(Modifier::new().fill_max_size().alpha(enter_alpha)).child(new_view),
-        )),
-        None => Box(Modifier::new().fill_max_size().alpha(enter_alpha)).child(new_view),
+        Some(ov) => ZStack(Modifier::new().fill_max_size()).child((ov, enter_box)),
+        None => enter_box,
     }
 }
 
@@ -127,6 +133,15 @@ impl Default for AnimatedContentConfig {
             exit: ExitTransition::FadeOut,
         }
     }
+}
+
+/// Stable child key for tree reconciliation during animated transitions.
+fn transition_child_key(key: &str, version: u64, tag: &str) -> u64 {
+    let mut h = DefaultHasher::new();
+    key.hash(&mut h);
+    version.hash(&mut h);
+    tag.hash(&mut h);
+    h.finish()
 }
 
 /// Animates between different content based on the `target_state`, with
@@ -171,7 +186,8 @@ where
     let mut new_view = content(target_state.clone());
     new_view.scope_key = Some(format!("ac_{key}_v{v}"));
     new_view.modifier.repaint_boundary = true;
-    let new_view = apply_enter(&key, v, &enter, &spec, new_view);
+    let mut new_view = apply_enter(&key, v, &enter, &spec, new_view);
+    new_view.modifier.key = Some(transition_child_key(&key, v, "ac_enter"));
 
     let old_view = {
         let mut oc = old_content.borrow_mut();
@@ -181,7 +197,11 @@ where
                 *oc = None;
                 None
             } else {
-                Some(apply_exit(&key, v, &exit, &spec, ov.clone()))
+                let mut exit_view =
+                    apply_exit(&key, v, &exit, &spec, ov.clone());
+                exit_view.modifier.key =
+                    Some(transition_child_key(&key, v, "ac_exit"));
+                Some(exit_view)
             }
         } else {
             None
@@ -473,7 +493,9 @@ pub fn AnimatedVisibility(
                 *oc = None;
                 None
             } else {
-                Some(apply_exit(&key, v, &exit, &spec, old.clone()))
+                let mut exit_view = apply_exit(&key, v, &exit, &spec, old.clone());
+                exit_view.modifier.key = Some(transition_child_key(&key, v, "av_exit"));
+                Some(exit_view)
             }
         } else {
             None
@@ -484,11 +506,12 @@ pub fn AnimatedVisibility(
         let mut content = content;
         content.scope_key = Some(format!("av_{key}_content"));
         content.modifier.repaint_boundary = true;
-        let entering = if v > 0 {
+        let mut entering = if v > 0 {
             apply_enter(&key, v, &enter, &spec, content)
         } else {
             content
         };
+        entering.modifier.key = Some(transition_child_key(&key, v, "av_enter"));
         match exiting {
             Some(old) => ZStack(Modifier::new().fill_max_size()).child((old, entering)),
             None => entering,
