@@ -77,7 +77,8 @@ pub fn ensure_caret_visible(state: &mut TextFieldState, multiline: bool) {
         let (display, caret_display_off) = if let Some(vt) = &state.visual_transformation {
             let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
             let tfmd = vt.filter(&annotated);
-            let off = repose_core::original_offset_to_display(&state.text, tfmd.text.as_str(), caret_idx);
+            let off =
+                repose_core::original_offset_to_display(&state.text, tfmd.text.as_str(), caret_idx);
             (tfmd.text.text, off)
         } else {
             (state.text.clone(), caret_idx)
@@ -373,7 +374,7 @@ pub struct TextFieldState {
     /// Last time tick_scroll_animation was called (for dt computation).
     last_scroll_tick: Option<Instant>,
 
-    // --- Undo/Redo ---
+    // Undo/Redo
     /// Stack of undo operations (most recent at end).
     undo_stack: Vec<TextUndoOp>,
     /// Stack of redo operations (most recent at end).
@@ -395,7 +396,10 @@ impl std::fmt::Debug for TextFieldState {
             .field("inner_width", &self.inner_width)
             .field("inner_height", &self.inner_height)
             .field("preferred_x_px", &self.preferred_x_px)
-            .field("offset_map", &self.offset_map.as_ref().map(|_| "<offset_mapping>"))
+            .field(
+                "offset_map",
+                &self.offset_map.as_ref().map(|_| "<offset_mapping>"),
+            )
             .field(
                 "visual_transformation",
                 &self.visual_transformation.as_ref().map(|_| "<vt>"),
@@ -469,7 +473,7 @@ impl TextFieldState {
         }
     }
 
-    // --- Undo/Redo ---
+    // Undo/Redo
 
     /// Whether there is an action to undo.
     pub fn can_undo(&self) -> bool {
@@ -1127,7 +1131,7 @@ pub fn BasicTextFieldNew(
     read_only: bool,
     input_transformation: Option<Rc<dyn repose_core::InputTransformation>>,
     text_style: repose_core::TextStyle,
-    keyboard_options: KeyboardOptions,
+    keyboard_options: repose_core::KeyboardOptions,
     on_keyboard_action: Option<Rc<dyn repose_core::KeyboardActionHandler>>,
     line_limits: repose_core::TextFieldLineLimits,
     on_text_layout: Option<Rc<dyn Fn(&repose_core::TextLayoutResult)>>,
@@ -1150,35 +1154,46 @@ pub fn BasicTextFieldNew(
         repose_core::KeyboardActions {
             on_done: Some({
                 let h = handler.clone();
-                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| h.on_keyboard_action(&|| {}))
+                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| {
+                    h.on_keyboard_action(&|| {})
+                })
             }),
             on_go: Some({
                 let h = handler.clone();
-                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| h.on_keyboard_action(&|| {}))
+                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| {
+                    h.on_keyboard_action(&|| {})
+                })
             }),
             on_next: Some({
                 let h = handler.clone();
-                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| h.on_keyboard_action(&|| {}))
+                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| {
+                    h.on_keyboard_action(&|| {})
+                })
             }),
             on_previous: Some({
                 let h = handler.clone();
-                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| h.on_keyboard_action(&|| {}))
+                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| {
+                    h.on_keyboard_action(&|| {})
+                })
             }),
             on_search: Some({
                 let h = handler.clone();
-                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| h.on_keyboard_action(&|| {}))
+                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| {
+                    h.on_keyboard_action(&|| {})
+                })
             }),
             on_send: Some({
-                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| handler.on_keyboard_action(&|| {}))
+                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| {
+                    handler.on_keyboard_action(&|| {})
+                })
             }),
         }
     } else {
         repose_core::KeyboardActions::default()
     };
 
-    let decoration_box = decorator.map(|d| {
-        Rc::new(move |inner: repose_core::View| d.decorate(inner)) as Rc<dyn Fn(_) -> _>
-    });
+    let decoration_box = decorator
+        .map(|d| Rc::new(move |inner: repose_core::View| d.decorate(inner)) as Rc<dyn Fn(_) -> _>);
 
     let value = state.borrow().text.clone();
     let key = state.as_ptr() as u64;
@@ -1227,13 +1242,19 @@ pub fn BasicSecureTextField(
     read_only: bool,
     input_transformation: Option<Rc<dyn repose_core::InputTransformation>>,
     text_style: repose_core::TextStyle,
-    keyboard_options: KeyboardOptions,
+    keyboard_options: repose_core::KeyboardOptions,
     on_keyboard_action: Option<Rc<dyn repose_core::KeyboardActionHandler>>,
     on_text_layout: Option<Rc<dyn Fn(&repose_core::TextLayoutResult)>>,
     interaction_source: Option<repose_core::MutableInteractionSource>,
-    cursor_color: Option<Color>,
+    cursor_brush: repose_core::Brush,
     decorator: Option<Rc<dyn repose_core::TextFieldDecorator>>,
+    text_obfuscation_mode: repose_core::TextObfuscationMode,
+    text_obfuscation_character: char,
 ) -> repose_core::View {
+    let cursor_color = match cursor_brush {
+        repose_core::Brush::Solid(c) => Some(c),
+        _ => None,
+    };
     BasicTextFieldNew(
         state,
         modifier,
@@ -1625,7 +1646,7 @@ pub(crate) fn paint_text_field(
         let st = state_rc.borrow();
 
         if !text_input.multiline {
-            // --- Single-line ---
+            // Single-line
             let measure_for = if text_input.visual_transformation.is_some() && !st.text.is_empty() {
                 rendered_by_vt(&st.text)
             } else {
@@ -1741,8 +1762,16 @@ pub(crate) fn paint_text_field(
                 });
             }
         } else {
-            // --- Multi-line ---
-            let layout = layout_text_area(&st.text, font_val, inner.w.max(1.0), 400, 0);
+            // Multi-line
+            let render_text = if st.text.is_empty() {
+                st.text.clone()
+            } else if let Some(ref vt) = text_input.visual_transformation {
+                let annotated = repose_core::AnnotatedString::new(st.text.clone(), vec![]);
+                vt.filter(&annotated).text.text
+            } else {
+                st.text.clone()
+            };
+            let layout = layout_text_area(&render_text, font_val, inner.w.max(1.0), 400, 0);
             let lh = layout.line_h_px;
             let max_line_count = text_input.max_lines.unwrap_or(usize::MAX);
 
@@ -1770,12 +1799,11 @@ pub(crate) fn paint_text_field(
                     line_height: ts.line_height,
                 });
             } else {
-                let display_full = rendered_by_vt(&st.text);
                 for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
                     if i >= max_line_count {
                         break;
                     }
-                    let ln = display_full[s..e].to_string();
+                    let ln = render_text[s..e].to_string();
                     let draw_y = inner.y + (i as f32) * lh - st.scroll_offset_y;
                     if draw_y + lh < inner.y - 1.0 || draw_y > inner.y + inner.h + 1.0 {
                         continue;
@@ -1806,8 +1834,19 @@ pub(crate) fn paint_text_field(
 
             // Selection (multi-line)
             if show_selection && st.selection.start != st.selection.end {
-                let sel_a: usize = st.selection.start.min(st.selection.end);
-                let sel_b: usize = st.selection.start.max(st.selection.end);
+                let sel_a_orig: usize = st.selection.start.min(st.selection.end);
+                let sel_b_orig: usize = st.selection.start.max(st.selection.end);
+                let has_vt = text_input.visual_transformation.is_some();
+                let sel_a = if has_vt {
+                    original_offset_to_display(&st.text, &render_text, sel_a_orig)
+                } else {
+                    sel_a_orig
+                };
+                let sel_b = if has_vt {
+                    original_offset_to_display(&st.text, &render_text, sel_b_orig)
+                } else {
+                    sel_b_orig
+                };
                 let selection = th.focus.with_alpha_f32(85.0 / 255.0);
                 for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
                     if i >= max_line_count {
@@ -1818,7 +1857,7 @@ pub(crate) fn paint_text_field(
                     if os >= oe {
                         continue;
                     }
-                    let ln = &st.text[s..e];
+                    let ln = &render_text[s..e];
                     let m = measure_text(
                         ln,
                         font_val,
@@ -1858,8 +1897,15 @@ pub(crate) fn paint_text_field(
                 && st.selection.start == st.selection.end
                 && st.caret_visible()
             {
-                let caret = st.selection.end.min(st.text.len());
-                let (cx, cy, _li) = caret_xy_for_byte(&st.text, font_val, inner.w.max(1.0), caret);
+                let caret_orig = st.selection.end.min(st.text.len());
+                let has_vt = text_input.visual_transformation.is_some();
+                let caret = if has_vt {
+                    original_offset_to_display(&st.text, &render_text, caret_orig)
+                } else {
+                    caret_orig
+                };
+                let (cx, cy, _li) =
+                    caret_xy_for_byte(&render_text, font_val, inner.w.max(1.0), caret);
                 let draw_x = inner.x + cx;
                 let draw_y = inner.y + cy - st.scroll_offset_y;
                 scene.nodes.push(SceneNode::Rect {
@@ -1896,11 +1942,18 @@ pub(crate) fn paint_text_field(
                 line_height: 0.0,
             });
         } else if text_input.multiline {
-            let layout = layout_text_area(&text_input.value, font_val, inner.w.max(1.0), 400, 0);
+            let render_text = if text_input.value.is_empty() {
+                text_input.value.clone()
+            } else if let Some(ref vt) = text_input.visual_transformation {
+                let annotated = repose_core::AnnotatedString::new(text_input.value.clone(), vec![]);
+                vt.filter(&annotated).text.text
+            } else {
+                text_input.value.clone()
+            };
+            let layout = layout_text_area(&render_text, font_val, inner.w.max(1.0), 400, 0);
             let lh = layout.line_h_px;
-            let display_full = rendered_by_vt(&text_input.value);
             for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
-                let ln = display_full[s..e].to_string();
+                let ln = render_text[s..e].to_string();
                 let draw_y = inner.y + (i as f32) * lh;
                 if draw_y + lh < inner.y - 1.0 || draw_y > inner.y + inner.h + 1.0 {
                     continue;
@@ -1948,86 +2001,85 @@ pub(crate) fn paint_text_field(
 
     // Fire on_text_layout callback with computed layout info
     if let Some(ref cb) = text_input.on_text_layout {
-        let (line_count, content_w, content_h, first_baseline, last_baseline, did_overflow_w, did_overflow_h, lines) =
-            if let Some(state_rc) = state {
-                let st = state_rc.borrow();
-                let display = if st.text.is_empty() {
-                    text_input.hint.clone()
-                } else if let Some(ref vt) = text_input.visual_transformation {
-                    let annotated = repose_core::AnnotatedString::new(st.text.clone(), vec![]);
-                    vt.filter(&annotated).text.text
-                } else {
-                    st.text.clone()
-                };
-                if text_input.multiline {
-                    let l = layout_text_area(&display, font_val, inner.w.max(1.0), 400, 0);
-                    let lc = l.ranges.len();
-                    let cw = inner.w.max(0.0);
-                    let ch = (lc as f32 * l.line_h_px).max(0.0);
-                    let line_infos: Vec<_> = l
-                        .ranges
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &(s, e))| {
-                            let top = i as f32 * l.line_h_px;
-                            let bottom = top + l.line_h_px;
-                            let line_text = &display[s..e];
-                            let m = measure_text(line_text, font_val, None, 400, 0);
-                            let line_w = m.positions.last().copied().unwrap_or(0.0);
-                            TextLineInfo {
-                                start: s,
-                                end: e,
-                                top,
-                                baseline: top + l.line_h_px * 0.8,
-                                bottom,
-                                left: 0.0,
-                                right: line_w,
-                                width: line_w,
-                            }
-                        })
-                        .collect();
-                    let fb = line_infos.first().map(|l| l.baseline).unwrap_or(0.0);
-                    let lb = line_infos.last().map(|l| l.baseline).unwrap_or(0.0);
-                    (
-                        lc,
-                        cw,
-                        ch,
-                        fb,
-                        lb,
-                        cw > inner.w,
-                        ch > inner.h,
-                        line_infos,
-                    )
-                } else {
-                    let m = measure_text(&display, font_val, None, 400, 0);
-                    let w = m.positions.last().copied().unwrap_or(0.0);
-                    let top = 0.0;
-                    let bottom = line_h;
-                    let baseline = line_h * 0.8;
-                    let line_info = TextLineInfo {
-                        start: 0,
-                        end: display.len(),
-                        top,
-                        baseline,
-                        bottom,
-                        left: 0.0,
-                        right: w,
-                        width: w,
-                    };
-                    (
-                        1,
-                        w.max(0.0),
-                        line_h.max(0.0),
-                        baseline,
-                        baseline,
-                        w > inner.w,
-                        line_h > inner.h,
-                        vec![line_info],
-                    )
-                }
+        let (
+            line_count,
+            content_w,
+            content_h,
+            first_baseline,
+            last_baseline,
+            did_overflow_w,
+            did_overflow_h,
+            lines,
+        ) = if let Some(state_rc) = state {
+            let st = state_rc.borrow();
+            let display = if st.text.is_empty() {
+                text_input.hint.clone()
+            } else if let Some(ref vt) = text_input.visual_transformation {
+                let annotated = repose_core::AnnotatedString::new(st.text.clone(), vec![]);
+                vt.filter(&annotated).text.text
             } else {
-                (0, 0.0, 0.0, 0.0, 0.0, false, false, vec![])
+                st.text.clone()
             };
+            if text_input.multiline {
+                let l = layout_text_area(&display, font_val, inner.w.max(1.0), 400, 0);
+                let lc = l.ranges.len();
+                let cw = inner.w.max(0.0);
+                let ch = (lc as f32 * l.line_h_px).max(0.0);
+                let line_infos: Vec<_> = l
+                    .ranges
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &(s, e))| {
+                        let top = i as f32 * l.line_h_px;
+                        let bottom = top + l.line_h_px;
+                        let line_text = &display[s..e];
+                        let m = measure_text(line_text, font_val, None, 400, 0);
+                        let line_w = m.positions.last().copied().unwrap_or(0.0);
+                        TextLineInfo {
+                            start: s,
+                            end: e,
+                            top,
+                            baseline: top + l.line_h_px * 0.8,
+                            bottom,
+                            left: 0.0,
+                            right: line_w,
+                            width: line_w,
+                        }
+                    })
+                    .collect();
+                let fb = line_infos.first().map(|l| l.baseline).unwrap_or(0.0);
+                let lb = line_infos.last().map(|l| l.baseline).unwrap_or(0.0);
+                (lc, cw, ch, fb, lb, cw > inner.w, ch > inner.h, line_infos)
+            } else {
+                let m = measure_text(&display, font_val, None, 400, 0);
+                let w = m.positions.last().copied().unwrap_or(0.0);
+                let top = 0.0;
+                let bottom = line_h;
+                let baseline = line_h * 0.8;
+                let line_info = TextLineInfo {
+                    start: 0,
+                    end: display.len(),
+                    top,
+                    baseline,
+                    bottom,
+                    left: 0.0,
+                    right: w,
+                    width: w,
+                };
+                (
+                    1,
+                    w.max(0.0),
+                    line_h.max(0.0),
+                    baseline,
+                    baseline,
+                    w > inner.w,
+                    line_h > inner.h,
+                    vec![line_info],
+                )
+            }
+        } else {
+            (0, 0.0, 0.0, 0.0, 0.0, false, false, vec![])
+        };
         cb(&repose_core::TextLayoutResult {
             line_count,
             width_px: content_w,

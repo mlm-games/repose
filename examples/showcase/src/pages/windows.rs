@@ -18,8 +18,6 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
     let note_text = remember(|| signal("Detached note".to_string()));
     let log_lines = remember(|| signal(vec!["System ready".to_string()]));
 
-    // ---- Shared window bodies (built ONCE, reused by startup + buttons) ----
-
     // Note editor body: identical for every note window (shared signal).
     let note_body: Rc<dyn Fn() -> View> = {
         let note_text = note_text.clone();
@@ -73,7 +71,6 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
         }
     };
 
-    // ---- Startup windows ----
     {
         let mut st = windows.borrow_mut();
         if st.windows.is_empty() {
@@ -132,7 +129,6 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
         }
     }
 
-    // ---- Spawn buttons (reuse the shared bodies) ----
     let open_note = {
         let windows = windows.clone();
         let note_body = note_body.clone();

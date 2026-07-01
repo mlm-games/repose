@@ -112,14 +112,15 @@ impl TextFieldValue {
     }
 
     pub fn get_text_before_selection(&self, max_chars: usize) -> AnnotatedString {
-        let start = self.selection.start.saturating_sub(max_chars);
-        let text = self.annotated_string.text[start..self.selection.start].to_string();
+        let sel_min = self.selection.min();
+        let start = sel_min.saturating_sub(max_chars);
+        let text = self.annotated_string.text[start..sel_min].to_string();
         // Preserve spans that intersect the sub-range
         let spans: Vec<TextSpan> = self
             .annotated_string
             .spans
             .iter()
-            .filter(|s| s.start >= start && s.end <= self.selection.start)
+            .filter(|s| s.start >= start && s.end <= sel_min)
             .map(|s| TextSpan {
                 start: s.start - start,
                 end: s.end - start,
@@ -130,16 +131,17 @@ impl TextFieldValue {
     }
 
     pub fn get_text_after_selection(&self, max_chars: usize) -> AnnotatedString {
-        let end = (self.selection.end + max_chars).min(self.annotated_string.text.len());
-        let text = self.annotated_string.text[self.selection.end..end].to_string();
+        let sel_max = self.selection.max();
+        let end = (sel_max + max_chars).min(self.annotated_string.text.len());
+        let text = self.annotated_string.text[sel_max..end].to_string();
         let spans: Vec<TextSpan> = self
             .annotated_string
             .spans
             .iter()
-            .filter(|s| s.start >= self.selection.end && s.end <= end)
+            .filter(|s| s.start >= sel_max && s.end <= end)
             .map(|s| TextSpan {
-                start: s.start - self.selection.end,
-                end: s.end - self.selection.end,
+                start: s.start - sel_max,
+                end: s.end - sel_max,
                 style: s.style.clone(),
             })
             .collect();
@@ -204,6 +206,21 @@ pub struct TextLayoutResult {
     pub lines: Vec<TextLineInfo>,
 }
 
+/// Determines how text is obfuscated in a secure text field.
+/// Corresponds to Compose's `TextObfuscationMode`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum TextObfuscationMode {
+    /// Text is visible, no obfuscation.
+    Visible,
+    /// Reveal the last typed character briefly, then hide.
+    RevealLastTyped,
+    /// All characters are obfuscated.
+    Hidden,
+    /// Uses the platform's default obfuscation behavior.
+    #[default]
+    System,
+}
+
 /// Layout information for a single line of text.
 #[derive(Clone, Debug)]
 pub struct TextLineInfo {
@@ -231,6 +248,10 @@ impl TextLayoutResult {
     }
 
     pub fn get_line_end(&self, line_index: usize) -> Option<usize> {
+        self.lines.get(line_index).map(|l| l.end)
+    }
+
+    pub fn get_line_end_visible(&self, line_index: usize) -> Option<usize> {
         self.lines.get(line_index).map(|l| l.end)
     }
 
@@ -306,7 +327,7 @@ impl TextLayoutResult {
                     &self.lines[0]
                 }
             });
-        let line_idx = self.get_line_for_offset(offset);
+        let _line_idx = self.get_line_for_offset(offset);
         let char_in_line = offset - line.start;
         let pos_in_line = if char_in_line == 0 {
             line.left
@@ -371,7 +392,7 @@ impl TextLayoutResult {
     }
 
     /// Returns the text range of the word at the given offset.
-    pub fn get_word_boundary(&self, offset: usize) -> super::TextRange {
+    pub fn get_word_boundary(&self, _offset: usize) -> super::TextRange {
         // Simple word boundary: extend to spaces or line boundaries
         let text = ""; // We don't store the full text in layout result
         let start = if text.is_empty() { 0 } else { 0 };
@@ -431,7 +452,10 @@ pub struct TransformedText {
 
 impl TransformedText {
     pub fn new(text: AnnotatedString, offset_mapping: Box<dyn OffsetMapping>) -> Self {
-        TransformedText { text, offset_mapping }
+        TransformedText {
+            text,
+            offset_mapping,
+        }
     }
 }
 
@@ -470,7 +494,7 @@ impl VisualTransformation for IdentityVisualTransformation {
 /// Matches Compose's `PasswordVisualTransformation`.
 #[derive(Clone, Copy, Debug)]
 pub struct PasswordVisualTransformation {
-    /// The replacement character (default `•` U+2022, matching Compose).
+    /// The replacement character (default `•` U+2022, to match compose, was *).
     pub mask: char,
 }
 
@@ -772,9 +796,7 @@ impl KeyboardActions {
                 let f = f.clone();
                 Rc::new(move |scope| f(ImeAction::Search, scope))
             }),
-            on_send: Some({
-                Rc::new(move |scope| f(ImeAction::Send, scope))
-            }),
+            on_send: Some({ Rc::new(move |scope| f(ImeAction::Send, scope)) }),
         }
     }
 }
@@ -956,9 +978,7 @@ impl KeyboardOptions {
             } else {
                 self.keyboard_type
             },
-            capitalization: if self.capitalization
-                == KeyboardCapitalization::Unspecified
-            {
+            capitalization: if self.capitalization == KeyboardCapitalization::Unspecified {
                 other.capitalization
             } else {
                 self.capitalization
@@ -973,6 +993,13 @@ impl KeyboardOptions {
             platform_ime_options: self.platform_ime_options.or(other.platform_ime_options),
             hint_locales: self.hint_locales.or(other.hint_locales),
         }
+    }
+
+    /// Returns a new [KeyboardOptions] that merges this with [other].
+    /// [other]'s null or Unspecified values are replaced with this object's values.
+    /// Corresponds to Compose's `KeyboardOptions.merge()`.
+    pub fn merge(&self, other: Option<&KeyboardOptions>) -> KeyboardOptions {
+        other.map_or(*self, |o| o.fill_unspecified_values_with(Some(self)))
     }
 }
 
