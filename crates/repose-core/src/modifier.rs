@@ -186,7 +186,7 @@ pub struct TextInputConfig {
     pub value: String,
     pub visual_transformation: Option<Rc<dyn crate::text::VisualTransformation>>,
     pub keyboard_type: crate::text::KeyboardType,
-    pub keyboard_capitalization: crate::text::KeyboardCapitalization,
+    pub capitalization: crate::text::KeyboardCapitalization,
     pub ime_action: crate::text::ImeAction,
     /// When false, the text field is not editable, not focusable, and input is not selectable.
     pub enabled: bool,
@@ -232,7 +232,7 @@ impl std::fmt::Debug for TextInputConfig {
             s.field("visual_transformation", &"…");
         }
         s.field("keyboard_type", &self.keyboard_type);
-        s.field("keyboard_capitalization", &self.keyboard_capitalization);
+        s.field("capitalization", &self.capitalization);
         s.field("ime_action", &self.ime_action);
         s.field("enabled", &self.enabled);
         s.field("read_only", &self.read_only);
@@ -1111,6 +1111,7 @@ impl Modifier {
     }
     pub fn on_click(mut self, f: impl Fn() + 'static) -> Self {
         self.on_click = Some(Rc::new(f));
+        self.click = true;
         self
     }
     pub fn on_double_click(mut self, f: impl Fn() + 'static) -> Self {

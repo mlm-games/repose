@@ -1189,6 +1189,8 @@ pub fn run_desktop_app(
                 WindowEvent::KeyboardInput {
                     event: key_event, ..
                 } => {
+                    let mapped_key = rc::map_key(key_event.physical_key);
+
                     if key_event.state == ElementState::Pressed && !key_event.repeat {
                         match key_event.physical_key {
                             PhysicalKey::Code(KeyCode::BrowserBack)
@@ -1198,6 +1200,16 @@ pub fn run_desktop_app(
                                 if repose_core::dnd::handle_drag_action(
                                     &repose_core::shortcuts::DragAction::Cancel,
                                 ) {
+                                    return;
+                                }
+
+                                // Try dispatching Escape through the focus chain first
+                                // (allows dialog on_key_event to intercept Escape)
+                                if self.dispatch_focus_key_event(
+                                    &key_event,
+                                    &mapped_key,
+                                ) {
+                                    self.request_redraw();
                                     return;
                                 }
 
@@ -1211,7 +1223,6 @@ pub fn run_desktop_app(
                     }
 
                     // Dispatch key event through focus ancestor chain (Compose-compatible)
-                    let mapped_key = rc::map_key(key_event.physical_key);
                     let utf16 = match mapped_key {
                         repose_core::input::Key::Character(c) => c as u16,
                         _ => 0,
@@ -1832,6 +1843,77 @@ pub fn run_desktop_app(
     }
 
     impl App {
+        /// Dispatch a key event through the focus ancestor chain.
+        /// Returns true if the event was consumed by a handler.
+        fn dispatch_focus_key_event(
+            &self,
+            key_event: &winit::event::KeyEvent,
+            mapped_key: &repose_core::input::Key,
+        ) -> bool {
+            let Some(f) = &self.frame_cache else {
+                return false;
+            };
+            let Some(focused) = self.sched.focused else {
+                return false;
+            };
+            let utf16 = match mapped_key {
+                repose_core::input::Key::Character(c) => *c as u16,
+                _ => 0,
+            };
+            let mods = self.modifiers;
+            let repeat = key_event.repeat;
+            let ev_type = if key_event.state == ElementState::Pressed {
+                repose_core::input::KeyEventType::Down
+            } else {
+                repose_core::input::KeyEventType::Up
+            };
+            let hit_by_id: std::collections::HashMap<u64, &HitRegion> =
+                f.hit_regions.iter().map(|h| (h.id, h)).collect();
+            let sem_parent_of: std::collections::HashMap<u64, u64> = f
+                .semantics_nodes
+                .iter()
+                .filter_map(|n| n.parent.map(|p| (n.id, p)))
+                .collect();
+            let mut ancestors = Vec::new();
+            let mut cur = focused;
+            loop {
+                ancestors.push(cur);
+                if let Some(&p) = sem_parent_of.get(&cur) {
+                    cur = p;
+                } else {
+                    break;
+                }
+            }
+            let make_ke = || repose_core::input::KeyEvent {
+                key: mapped_key.clone(),
+                modifiers: mods,
+                is_repeat: repeat,
+                event_type: ev_type,
+                utf16_code_point: utf16,
+            };
+            // Top-down preview: root → focused
+            for &id in ancestors.iter().rev() {
+                if let Some(hit) = hit_by_id.get(&id) {
+                    if let Some(cb) = &hit.on_preview_key_event {
+                        if cb(make_ke()) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            // Bottom-up normal: focused → root
+            for &id in ancestors.iter() {
+                if let Some(hit) = hit_by_id.get(&id) {
+                    if let Some(cb) = &hit.on_key_event {
+                        if cb(make_ke()) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            false
+        }
+
         fn announce_focus_change(&mut self) {
             if let Some(f) = &self.frame_cache {
                 let focused_node = self

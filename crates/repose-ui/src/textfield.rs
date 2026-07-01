@@ -75,9 +75,10 @@ pub fn ensure_caret_visible(state: &mut TextFieldState, multiline: bool) {
     } else {
         let caret_idx = state.caret_index();
         let (display, caret_display_off) = if let Some(vt) = &state.visual_transformation {
-            let tfmd = vt.filter(&state.text);
-            let off = repose_core::original_offset_to_display(&state.text, &tfmd.text, caret_idx);
-            (tfmd.text, off)
+            let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
+            let tfmd = vt.filter(&annotated);
+            let off = repose_core::original_offset_to_display(&state.text, tfmd.text.as_str(), caret_idx);
+            (tfmd.text.text, off)
         } else {
             (state.text.clone(), caret_idx)
         };
@@ -257,7 +258,7 @@ pub const TF_FONT_DP: f32 = 16.0;
 pub struct KeyboardOptions {
     pub keyboard_type: repose_core::KeyboardType,
     pub autocorrect: bool,
-    pub keyboard_capitalization: repose_core::KeyboardCapitalization,
+    pub capitalization: repose_core::KeyboardCapitalization,
 }
 
 impl Default for KeyboardOptions {
@@ -265,7 +266,7 @@ impl Default for KeyboardOptions {
         Self {
             keyboard_type: repose_core::KeyboardType::default(),
             autocorrect: true,
-            keyboard_capitalization: repose_core::KeyboardCapitalization::default(),
+            capitalization: repose_core::KeyboardCapitalization::default(),
         }
     }
 }
@@ -998,7 +999,7 @@ pub struct BasicTextFieldConfig {
     /// Style for the text content (-> `textStyle`).
     pub text_style: repose_core::TextStyle,
     /// Keyboard capitalization mode (-> `KeyboardOptions.capitalization`).
-    pub keyboard_capitalization: repose_core::KeyboardCapitalization,
+    pub capitalization: repose_core::KeyboardCapitalization,
     /// Per-action IME callbacks (-> `keyboardActions`).
     pub keyboard_actions: repose_core::KeyboardActions,
     /// Line limits (-> `TextFieldLineLimits`). Overrides `single_line`/`max_lines`/`min_lines` when set.
@@ -1031,7 +1032,7 @@ impl Default for BasicTextFieldConfig {
             cursor_color: None,
             on_text_layout: None,
             text_style: Default::default(),
-            keyboard_capitalization: Default::default(),
+            capitalization: Default::default(),
             keyboard_actions: Default::default(),
             line_limits: None,
             decoration_box: None,
@@ -1075,7 +1076,7 @@ pub fn BasicTextField(
             .keyboard_options
             .map(|o| o.keyboard_type)
             .unwrap_or_default(),
-        config.keyboard_capitalization,
+        config.capitalization,
         config.ime_action.unwrap_or_default(),
         config.enabled,
         config.read_only,
@@ -1124,17 +1125,17 @@ pub fn BasicTextFieldNew(
     hint: impl Into<String>,
     enabled: bool,
     read_only: bool,
+    input_transformation: Option<Rc<dyn repose_core::InputTransformation>>,
     text_style: repose_core::TextStyle,
     keyboard_options: KeyboardOptions,
-    ime_action: repose_core::ImeAction,
+    on_keyboard_action: Option<Rc<dyn repose_core::KeyboardActionHandler>>,
     line_limits: repose_core::TextFieldLineLimits,
     on_text_layout: Option<Rc<dyn Fn(&repose_core::TextLayoutResult)>>,
     interaction_source: Option<repose_core::MutableInteractionSource>,
     cursor_color: Option<Color>,
-    on_keyboard_action: Option<Rc<dyn repose_core::KeyboardActionHandler>>,
-    input_transformation: Option<Rc<dyn repose_core::InputTransformation>>,
     output_transformation: Option<Rc<dyn repose_core::OutputTransformation>>,
     decorator: Option<Rc<dyn repose_core::TextFieldDecorator>>,
+    ime_action: repose_core::ImeAction,
 ) -> repose_core::View {
     let (single_line, max_lines, min_lines) = match line_limits {
         repose_core::TextFieldLineLimits::SingleLine => (true, 1, 1),
@@ -1149,26 +1150,26 @@ pub fn BasicTextFieldNew(
         repose_core::KeyboardActions {
             on_done: Some({
                 let h = handler.clone();
-                Rc::new(move || h.on_keyboard_action(&|| {}))
+                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| h.on_keyboard_action(&|| {}))
             }),
             on_go: Some({
                 let h = handler.clone();
-                Rc::new(move || h.on_keyboard_action(&|| {}))
+                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| h.on_keyboard_action(&|| {}))
             }),
             on_next: Some({
                 let h = handler.clone();
-                Rc::new(move || h.on_keyboard_action(&|| {}))
+                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| h.on_keyboard_action(&|| {}))
             }),
             on_previous: Some({
                 let h = handler.clone();
-                Rc::new(move || h.on_keyboard_action(&|| {}))
+                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| h.on_keyboard_action(&|| {}))
             }),
             on_search: Some({
                 let h = handler.clone();
-                Rc::new(move || h.on_keyboard_action(&|| {}))
+                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| h.on_keyboard_action(&|| {}))
             }),
             on_send: Some({
-                Rc::new(move || handler.on_keyboard_action(&|| {}))
+                Rc::new(move |_: &dyn repose_core::KeyboardActionScope| handler.on_keyboard_action(&|| {}))
             }),
         }
     } else {
@@ -1199,7 +1200,7 @@ pub fn BasicTextFieldNew(
         None,
         None,
         keyboard_options.keyboard_type,
-        keyboard_options.keyboard_capitalization,
+        keyboard_options.capitalization,
         ime_action,
         enabled,
         read_only,
@@ -1239,17 +1240,17 @@ pub fn BasicSecureTextField(
         "",
         enabled,
         read_only,
+        input_transformation,
         text_style,
         keyboard_options,
-        repose_core::ImeAction::Done,
+        on_keyboard_action,
         repose_core::TextFieldLineLimits::SingleLine,
         on_text_layout,
         interaction_source,
         cursor_color,
-        on_keyboard_action,
-        input_transformation,
         None,
         decorator,
+        repose_core::ImeAction::Done,
     )
 }
 
@@ -1350,8 +1351,8 @@ impl BasicTextFieldEx {
         self
     }
 
-    pub fn keyboard_capitalization(mut self, kc: repose_core::KeyboardCapitalization) -> Self {
-        self.config.keyboard_capitalization = kc;
+    pub fn capitalization(mut self, kc: repose_core::KeyboardCapitalization) -> Self {
+        self.config.capitalization = kc;
         self
     }
 
@@ -1613,7 +1614,8 @@ pub(crate) fn paint_text_field(
     let cursor_color = text_input.cursor_color.unwrap_or(th.on_surface);
     let rendered_by_vt = |original: &str| -> String {
         if let Some(ref vt) = text_input.visual_transformation {
-            vt.filter(original).text
+            let annotated = repose_core::AnnotatedString::new(original.to_string(), vec![]);
+            vt.filter(&annotated).text.text
         } else {
             original.to_string()
         }
@@ -1952,7 +1954,8 @@ pub(crate) fn paint_text_field(
                 let display = if st.text.is_empty() {
                     text_input.hint.clone()
                 } else if let Some(ref vt) = text_input.visual_transformation {
-                    vt.filter(&st.text).text
+                    let annotated = repose_core::AnnotatedString::new(st.text.clone(), vec![]);
+                    vt.filter(&annotated).text.text
                 } else {
                     st.text.clone()
                 };
@@ -2052,7 +2055,7 @@ fn text_field_view(
     on_submit: Option<Rc<dyn Fn(String)>>,
     visual_transformation: Option<Rc<dyn repose_core::VisualTransformation>>,
     keyboard_type: repose_core::KeyboardType,
-    keyboard_capitalization: repose_core::KeyboardCapitalization,
+    capitalization: repose_core::KeyboardCapitalization,
     ime_action: repose_core::ImeAction,
     enabled: bool,
     read_only: bool,
@@ -2078,7 +2081,7 @@ fn text_field_view(
         value,
         visual_transformation,
         keyboard_type,
-        keyboard_capitalization,
+        capitalization,
         ime_action,
         enabled,
         read_only,

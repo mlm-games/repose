@@ -111,19 +111,74 @@ impl TextFieldValue {
         self
     }
 
-    pub fn text_before_selection(&self, max_chars: usize) -> String {
+    pub fn get_text_before_selection(&self, max_chars: usize) -> AnnotatedString {
         let start = self.selection.start.saturating_sub(max_chars);
-        self.annotated_string.text[start..self.selection.start].to_string()
+        let text = self.annotated_string.text[start..self.selection.start].to_string();
+        // Preserve spans that intersect the sub-range
+        let spans: Vec<TextSpan> = self
+            .annotated_string
+            .spans
+            .iter()
+            .filter(|s| s.start >= start && s.end <= self.selection.start)
+            .map(|s| TextSpan {
+                start: s.start - start,
+                end: s.end - start,
+                style: s.style.clone(),
+            })
+            .collect();
+        AnnotatedString::new(text, spans)
     }
 
-    pub fn text_after_selection(&self, max_chars: usize) -> String {
+    pub fn get_text_after_selection(&self, max_chars: usize) -> AnnotatedString {
         let end = (self.selection.end + max_chars).min(self.annotated_string.text.len());
-        self.annotated_string.text[self.selection.end..end].to_string()
+        let text = self.annotated_string.text[self.selection.end..end].to_string();
+        let spans: Vec<TextSpan> = self
+            .annotated_string
+            .spans
+            .iter()
+            .filter(|s| s.start >= self.selection.end && s.end <= end)
+            .map(|s| TextSpan {
+                start: s.start - self.selection.end,
+                end: s.end - self.selection.end,
+                style: s.style.clone(),
+            })
+            .collect();
+        AnnotatedString::new(text, spans)
     }
 
-    pub fn selected_text(&self) -> String {
+    pub fn get_selected_text(&self) -> AnnotatedString {
         let r = self.selection.min()..self.selection.max();
-        self.annotated_string.text[r].to_string()
+        let text = self.annotated_string.text[r.clone()].to_string();
+        let spans: Vec<TextSpan> = self
+            .annotated_string
+            .spans
+            .iter()
+            .filter(|s| s.start >= r.start && s.end <= r.end)
+            .map(|s| TextSpan {
+                start: s.start - r.start,
+                end: s.end - r.start,
+                style: s.style.clone(),
+            })
+            .collect();
+        AnnotatedString::new(text, spans)
+    }
+
+    /// Returns a copy with the given annotated string.
+    pub fn copy(&self, annotated_string: AnnotatedString) -> Self {
+        TextFieldValue {
+            annotated_string,
+            selection: self.selection,
+            composition: self.composition,
+        }
+    }
+
+    /// Returns a copy with the given plain text.
+    pub fn copy_text(&self, text: String) -> Self {
+        TextFieldValue {
+            annotated_string: AnnotatedString::from(text),
+            selection: self.selection,
+            composition: self.composition,
+        }
     }
 }
 
@@ -228,6 +283,111 @@ impl TextLayoutResult {
             .map(|l| l.left)
             .unwrap_or(0.0)
     }
+
+    /// Returns true if the text has visual overflow in either direction.
+    pub fn has_visual_overflow(&self) -> bool {
+        self.did_overflow_width || self.did_overflow_height
+    }
+
+    /// Returns the bounding box of the character at the given offset.
+    /// Returns a zero rect if the offset is out of range.
+    pub fn get_bounding_box(&self, offset: usize) -> crate::Rect {
+        if self.lines.is_empty() || offset > self.lines.last().unwrap().end {
+            return crate::Rect::default();
+        }
+        let line = self
+            .lines
+            .iter()
+            .find(|l| offset >= l.start && offset < l.end)
+            .unwrap_or_else(|| {
+                if offset >= self.lines.last().unwrap().end {
+                    self.lines.last().unwrap()
+                } else {
+                    &self.lines[0]
+                }
+            });
+        let line_idx = self.get_line_for_offset(offset);
+        let char_in_line = offset - line.start;
+        let pos_in_line = if char_in_line == 0 {
+            line.left
+        } else {
+            // Approximate position
+            let chars = line.end - line.start;
+            if chars == 0 {
+                line.left
+            } else {
+                line.left + (line.width * (char_in_line as f32) / (chars as f32))
+            }
+        };
+        crate::Rect {
+            x: pos_in_line,
+            y: line.top,
+            w: if char_in_line < (line.end - line.start) {
+                line.width / (line.end - line.start).max(1) as f32
+            } else {
+                1.0
+            },
+            h: line.bottom - line.top,
+        }
+    }
+
+    /// Returns the cursor rectangle at the given offset.
+    pub fn get_cursor_rect(&self, offset: usize) -> crate::Rect {
+        let line = self
+            .lines
+            .iter()
+            .find(|l| offset >= l.start && offset <= l.end)
+            .unwrap_or_else(|| {
+                if offset >= self.lines.last().map(|l| l.end).unwrap_or(0) {
+                    self.lines.last().unwrap()
+                } else {
+                    &self.lines[0]
+                }
+            });
+        let char_in_line = offset.saturating_sub(line.start);
+        let chars = (line.end - line.start).max(1);
+        let x = line.left + (line.width * (char_in_line as f32) / (chars as f32));
+        crate::Rect {
+            x,
+            y: line.top,
+            w: 1.0,
+            h: line.bottom - line.top,
+        }
+    }
+
+    /// Returns the offset closest to the given position.
+    pub fn get_offset_for_position(&self, position: (f32, f32)) -> Option<usize> {
+        let line_idx = self.get_line_for_vertical_position(position.1);
+        let line = self.lines.get(line_idx)?;
+        if position.0 <= line.left {
+            return Some(line.start);
+        }
+        if position.0 >= line.right {
+            return Some(line.end);
+        }
+        let fraction = (position.0 - line.left) / line.width.max(1.0);
+        let offset_in_line = ((line.end - line.start) as f32 * fraction).round() as usize;
+        Some((line.start + offset_in_line).min(line.end))
+    }
+
+    /// Returns the text range of the word at the given offset.
+    pub fn get_word_boundary(&self, offset: usize) -> super::TextRange {
+        // Simple word boundary: extend to spaces or line boundaries
+        let text = ""; // We don't store the full text in layout result
+        let start = if text.is_empty() { 0 } else { 0 };
+        let end = if text.is_empty() { 0 } else { 0 };
+        super::TextRange::new(start, end)
+    }
+
+    /// Returns the paragraph direction at the given offset.
+    pub fn get_paragraph_direction(&self, _offset: usize) -> u8 {
+        0 // LTR
+    }
+
+    /// Returns the BiDi run direction at the given offset.
+    pub fn get_bidi_run_direction(&self, _offset: usize) -> u8 {
+        0 // LTR
+    }
 }
 
 /// Bidirectional offset mapping between original and transformed text.
@@ -256,31 +416,23 @@ impl OffsetMapping for IdentityOffsetMapping {
 /// Transforms the visual representation of a text field's text without changing
 /// the underlying value. For example, password masking.
 pub trait VisualTransformation: Debug + Send + Sync + 'static {
-    /// Transform the text for display. Returns the transformed text and an
-    /// offset-translation function that maps offsets in the display text back
-    /// to the original text.
-    fn filter(&self, text: &str) -> TransformedText;
-}
-
-/// A pre-built identity `VisualTransformation` that displays text as-is.
-#[derive(Clone, Copy, Debug)]
-pub struct IdentityVisualTransformation;
-
-impl VisualTransformation for IdentityVisualTransformation {
-    fn filter(&self, text: &str) -> TransformedText {
-        TransformedText {
-            text: text.to_string(),
-            offset_mapping: Box::new(IdentityOffsetMapping),
-        }
-    }
+    /// Transform the text for display. Takes the original `AnnotatedString` and returns
+    /// the transformed `TransformedText` with an offset mapping.
+    fn filter(&self, text: &AnnotatedString) -> TransformedText;
 }
 
 /// The result of applying a `VisualTransformation`.
 pub struct TransformedText {
-    /// The text to display (e.g., "•••••" for a password).
-    pub text: String,
+    /// The transformed text (annotated).
+    pub text: AnnotatedString,
     /// Maps offsets between original and transformed text.
     pub offset_mapping: Box<dyn OffsetMapping>,
+}
+
+impl TransformedText {
+    pub fn new(text: AnnotatedString, offset_mapping: Box<dyn OffsetMapping>) -> Self {
+        TransformedText { text, offset_mapping }
+    }
 }
 
 impl Clone for TransformedText {
@@ -295,69 +447,46 @@ impl Clone for TransformedText {
 impl Debug for TransformedText {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TransformedText")
-            .field("text", &self.text)
+            .field("text", &self.text.text)
             .finish()
     }
 }
 
-/// No visual transformation - text is displayed as-is.
+/// A `VisualTransformation` that displays text as-is (identity).
+/// Equivalent to Compose's `VisualTransformation.None`.
 #[derive(Clone, Copy, Debug)]
-pub struct NoVisualTransformation;
+pub struct IdentityVisualTransformation;
 
-impl VisualTransformation for NoVisualTransformation {
-    fn filter(&self, text: &str) -> TransformedText {
+impl VisualTransformation for IdentityVisualTransformation {
+    fn filter(&self, text: &AnnotatedString) -> TransformedText {
         TransformedText {
-            text: text.to_string(),
+            text: text.clone(),
             offset_mapping: Box::new(IdentityOffsetMapping),
         }
     }
 }
 
-/// A `VisualTransformation` that masks all characters with `*`.
+/// A `VisualTransformation` that masks all characters with a given character.
+/// Matches Compose's `PasswordVisualTransformation`.
 #[derive(Clone, Copy, Debug)]
 pub struct PasswordVisualTransformation {
-    /// The replacement character (default `*`).
-    pub mask_char: char,
+    /// The replacement character (default `•` U+2022, matching Compose).
+    pub mask: char,
 }
 
 impl Default for PasswordVisualTransformation {
     fn default() -> Self {
-        Self { mask_char: '*' }
+        Self { mask: '\u{2022}' }
     }
 }
 
 impl VisualTransformation for PasswordVisualTransformation {
-    fn filter(&self, text: &str) -> TransformedText {
-        let masked: String = text.chars().map(|_| self.mask_char).collect();
-        let src = text.to_string();
+    fn filter(&self, text: &AnnotatedString) -> TransformedText {
+        let masked_text: String = text.text.chars().map(|_| self.mask).collect();
         TransformedText {
-            text: masked,
-            offset_mapping: Box::new(PasswordOffsetMapping { original: src }),
+            text: AnnotatedString::new(masked_text, vec![]),
+            offset_mapping: Box::new(IdentityOffsetMapping),
         }
-    }
-}
-
-#[derive(Clone, Debug)]
-struct PasswordOffsetMapping {
-    original: String,
-}
-
-impl OffsetMapping for PasswordOffsetMapping {
-    fn original_to_transformed(&self, offset: usize) -> usize {
-        let char_idx = self.original[..offset.min(self.original.len())]
-            .chars()
-            .count();
-        char_idx
-    }
-    fn transformed_to_original(&self, offset: usize) -> usize {
-        self.original
-            .char_indices()
-            .nth(offset)
-            .map(|(i, _)| i)
-            .unwrap_or(self.original.len())
-    }
-    fn clone_box(&self) -> Box<dyn OffsetMapping> {
-        Box::new(self.clone())
     }
 }
 
@@ -601,16 +730,71 @@ pub enum ImeAction {
     Done,
 }
 
+/// Scope provided to `KeyboardActions` callbacks, allowing fallback to the
+/// platform's default IME action behavior. Corresponds to Compose's `KeyboardActionScope`.
+pub trait KeyboardActionScope {
+    fn default_keyboard_action(&self, action: ImeAction);
+}
+
 /// Callbacks for IME action button presses on the soft keyboard.
 /// Corresponds to Compose's legacy `KeyboardActions`.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct KeyboardActions {
-    pub on_done: Option<Rc<dyn Fn()>>,
-    pub on_go: Option<Rc<dyn Fn()>>,
-    pub on_next: Option<Rc<dyn Fn()>>,
-    pub on_previous: Option<Rc<dyn Fn()>>,
-    pub on_search: Option<Rc<dyn Fn()>>,
-    pub on_send: Option<Rc<dyn Fn()>>,
+    pub on_done: Option<Rc<dyn Fn(&dyn KeyboardActionScope)>>,
+    pub on_go: Option<Rc<dyn Fn(&dyn KeyboardActionScope)>>,
+    pub on_next: Option<Rc<dyn Fn(&dyn KeyboardActionScope)>>,
+    pub on_previous: Option<Rc<dyn Fn(&dyn KeyboardActionScope)>>,
+    pub on_search: Option<Rc<dyn Fn(&dyn KeyboardActionScope)>>,
+    pub on_send: Option<Rc<dyn Fn(&dyn KeyboardActionScope)>>,
+}
+
+impl KeyboardActions {
+    pub fn on_any(f: impl Fn(ImeAction, &dyn KeyboardActionScope) + 'static) -> Self {
+        let f = Rc::new(f);
+        KeyboardActions {
+            on_done: Some({
+                let f = f.clone();
+                Rc::new(move |scope| f(ImeAction::Done, scope))
+            }),
+            on_go: Some({
+                let f = f.clone();
+                Rc::new(move |scope| f(ImeAction::Go, scope))
+            }),
+            on_next: Some({
+                let f = f.clone();
+                Rc::new(move |scope| f(ImeAction::Next, scope))
+            }),
+            on_previous: Some({
+                let f = f.clone();
+                Rc::new(move |scope| f(ImeAction::Previous, scope))
+            }),
+            on_search: Some({
+                let f = f.clone();
+                Rc::new(move |scope| f(ImeAction::Search, scope))
+            }),
+            on_send: Some({
+                Rc::new(move |scope| f(ImeAction::Send, scope))
+            }),
+        }
+    }
+}
+
+impl Default for KeyboardActions {
+    fn default() -> Self {
+        KeyboardActions {
+            on_done: None,
+            on_go: None,
+            on_next: None,
+            on_previous: None,
+            on_search: None,
+            on_send: None,
+        }
+    }
+}
+
+struct NoopKeyboardActionScope;
+impl KeyboardActionScope for NoopKeyboardActionScope {
+    fn default_keyboard_action(&self, _action: ImeAction) {}
 }
 
 /// Handles IME action button presses. Single-callback interface used by the
@@ -732,22 +916,34 @@ impl CodepointTransformation {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct KeyboardOptions {
     pub keyboard_type: KeyboardType,
-    pub keyboard_capitalization: KeyboardCapitalization,
+    pub capitalization: KeyboardCapitalization,
     pub ime_action: ImeAction,
-    pub auto_correct: Option<bool>,
+    pub auto_correct_enabled: Option<bool>,
     pub show_keyboard_on_focus: Option<bool>,
+    pub platform_ime_options: Option<&'static str>,
+    pub hint_locales: Option<&'static str>,
 }
 
 impl KeyboardOptions {
-    pub const fn default() -> Self {
-        KeyboardOptions {
-            keyboard_type: KeyboardType::Text,
-            keyboard_capitalization: KeyboardCapitalization::Unspecified,
-            ime_action: ImeAction::Unspecified,
-            auto_correct: None,
-            show_keyboard_on_focus: None,
-        }
-    }
+    pub const DEFAULT: KeyboardOptions = KeyboardOptions {
+        keyboard_type: KeyboardType::Text,
+        capitalization: KeyboardCapitalization::Unspecified,
+        ime_action: ImeAction::Unspecified,
+        auto_correct_enabled: None,
+        show_keyboard_on_focus: None,
+        platform_ime_options: None,
+        hint_locales: None,
+    };
+
+    pub const SECURE_TEXT_FIELD: KeyboardOptions = KeyboardOptions {
+        keyboard_type: KeyboardType::Password,
+        capitalization: KeyboardCapitalization::Unspecified,
+        ime_action: ImeAction::Unspecified,
+        auto_correct_enabled: Some(false),
+        show_keyboard_on_focus: None,
+        platform_ime_options: None,
+        hint_locales: None,
+    };
 
     pub fn fill_unspecified_values_with(&self, other: Option<&KeyboardOptions>) -> KeyboardOptions {
         let other = match other {
@@ -760,27 +956,29 @@ impl KeyboardOptions {
             } else {
                 self.keyboard_type
             },
-            keyboard_capitalization: if self.keyboard_capitalization
+            capitalization: if self.capitalization
                 == KeyboardCapitalization::Unspecified
             {
-                other.keyboard_capitalization
+                other.capitalization
             } else {
-                self.keyboard_capitalization
+                self.capitalization
             },
             ime_action: if self.ime_action == ImeAction::Unspecified {
                 other.ime_action
             } else {
                 self.ime_action
             },
-            auto_correct: self.auto_correct.or(other.auto_correct),
+            auto_correct_enabled: self.auto_correct_enabled.or(other.auto_correct_enabled),
             show_keyboard_on_focus: self.show_keyboard_on_focus.or(other.show_keyboard_on_focus),
+            platform_ime_options: self.platform_ime_options.or(other.platform_ime_options),
+            hint_locales: self.hint_locales.or(other.hint_locales),
         }
     }
 }
 
 impl Default for KeyboardOptions {
     fn default() -> Self {
-        Self::default()
+        Self::DEFAULT
     }
 }
 

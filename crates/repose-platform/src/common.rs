@@ -58,8 +58,9 @@ pub(crate) fn update_modifiers(modifiers: &mut Modifiers, state: &winit::keyboar
 /// The returned offset is in the original text's byte space.
 pub(crate) fn index_for_x_bytes_vt(state: &TextFieldState, font_px: f32, x_px: f32) -> usize {
     if let Some(vt) = &state.visual_transformation {
-        let tfmd = vt.filter(&state.text);
-        let display_idx = index_for_x_bytes(&tfmd.text, font_px, x_px, 400, 0);
+        let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
+        let tfmd = vt.filter(&annotated);
+        let display_idx = index_for_x_bytes(tfmd.text.as_str(), font_px, x_px, 400, 0);
         tfmd.offset_mapping.transformed_to_original(display_idx)
     } else {
         index_for_x_bytes(&state.text, font_px, x_px, 400, 0)
@@ -75,8 +76,9 @@ pub(crate) fn index_for_xy_bytes_vt(
     y_px: f32,
 ) -> usize {
     if let Some(vt) = &state.visual_transformation {
-        let tfmd = vt.filter(&state.text);
-        let display_idx = index_for_xy_bytes(&tfmd.text, font_px, wrap_w, x_px, y_px);
+        let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
+        let tfmd = vt.filter(&annotated);
+        let display_idx = index_for_xy_bytes(tfmd.text.as_str(), font_px, wrap_w, x_px, y_px);
         tfmd.offset_mapping.transformed_to_original(display_idx)
     } else {
         index_for_xy_bytes(&state.text, font_px, wrap_w, x_px, y_px)
@@ -233,9 +235,10 @@ pub(crate) fn tf_ensure_caret_visible(state: &mut TextFieldState, is_multiline: 
     } else {
         let caret_idx = state.caret_index();
         let (display, caret_display_off) = if let Some(vt) = &state.visual_transformation {
-            let tfmd = vt.filter(&state.text);
-            let off = repose_core::original_offset_to_display(&state.text, &tfmd.text, caret_idx);
-            (tfmd.text, off)
+            let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
+            let tfmd = vt.filter(&annotated);
+            let off = repose_core::original_offset_to_display(&state.text, tfmd.text.as_str(), caret_idx);
+            (tfmd.text.text, off)
         } else {
             (state.text.clone(), caret_idx)
         };
@@ -288,9 +291,10 @@ pub(crate) fn tf_place_caret_at_pointer(
         state.ensure_caret_visible_xy(cx, cy, iw, ih, 2.0 * scale);
     } else {
         let (display, caret_display_off) = if let Some(vt) = &state.visual_transformation {
-            let tfmd = vt.filter(&state.text);
-            let off = repose_core::original_offset_to_display(&state.text, &tfmd.text, caret_idx);
-            (tfmd.text, off)
+            let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
+            let tfmd = vt.filter(&annotated);
+            let off = repose_core::original_offset_to_display(&state.text, tfmd.text.as_str(), caret_idx);
+            (tfmd.text.text, off)
         } else {
             (state.text.clone(), caret_idx)
         };

@@ -126,6 +126,11 @@ pub struct LayoutEngine {
 
     /// Previous absolute rects for `on_globally_positioned` / `on_size_changed` callbacks.
     prev_observed_rects: FxHashMap<u64, repose_core::Rect>,
+
+    /// Stack of active focus group IDs. When non-empty, newly created hit regions
+    /// get `focus_group_id` set to the top of this stack. A focus group is entered
+    /// when a node with `modifier.focus_group == true` is traversed.
+    focus_group_stack: Vec<u64>,
 }
 
 /// Statistics about layout performance.
@@ -246,6 +251,7 @@ impl LayoutEngine {
             prev_focused: None,
             focus_callbacks: FxHashMap::default(),
             prev_observed_rects: FxHashMap::default(),
+            focus_group_stack: Vec::new(),
         }
     }
 
@@ -370,7 +376,10 @@ impl LayoutEngine {
         repose_text::begin_frame();
         self.stats = LayoutStats::default();
 
-        // 0. Check global invalidation
+        // 0a. Reset per-frame state
+        self.focus_group_stack.clear();
+
+        // 0b. Check global invalidation
         let locals_stamp = Self::locals_stamp();
         let locals_changed = self.last_locals_stamp != Some(locals_stamp);
         if locals_changed {
@@ -2148,7 +2157,8 @@ impl LayoutEngine {
                 st.set_inner_height(inner_rect.h);
                 st.tick_scroll_animation();
                 if let Some(ref vt) = ti.visual_transformation.as_ref() {
-                    let tfmd = vt.filter("");
+                    let empty = repose_core::AnnotatedString::new(String::new(), vec![]);
+                    let tfmd = vt.filter(&empty);
                     st.offset_map = Some(tfmd.offset_mapping.clone_box());
                     st.visual_transformation = Some((*vt).clone());
                 } else {
@@ -2217,6 +2227,11 @@ impl LayoutEngine {
                 rect,
                 z_index: modifier.z_index,
                 focusable,
+                focus_group_id: if modifier.focus_group {
+                    Some(view_id)
+                } else {
+                    self.focus_group_stack.last().copied()
+                },
                 ..HitRegion::from_modifier(view_id, rect, &modifier)
             };
 
@@ -2305,6 +2320,11 @@ impl LayoutEngine {
             };
 
         let mut next_sem_parent = sem_parent;
+
+        // Push focus group scope for child traversal
+        if modifier.focus_group {
+            self.focus_group_stack.push(view_id);
+        }
 
         match &kind {
             ViewKind::Text {
@@ -2721,6 +2741,11 @@ impl LayoutEngine {
                         tf_multiline: multiline,
                         on_action: combined,
                         cursor: Some(crate::CursorIcon::Text),
+                        focus_group_id: if modifier.focus_group {
+                            Some(view_id)
+                        } else {
+                            self.focus_group_stack.last().copied()
+                        },
                         ..HitRegion::from_modifier(view_id, rect, &modifier)
                     });
                 }
@@ -2745,6 +2770,11 @@ impl LayoutEngine {
                         on_click: Some(cb),
                         focusable: true,
                         z_index: modifier.z_index,
+                        focus_group_id: if modifier.focus_group {
+                            Some(view_id)
+                        } else {
+                            self.focus_group_stack.last().copied()
+                        },
                         ..HitRegion::from_modifier(view_id, rect, &modifier)
                     });
                 }
@@ -3235,6 +3265,11 @@ impl LayoutEngine {
                     );
                 }
             }
+        }
+
+        // Pop focus group scope
+        if modifier.focus_group {
+            self.focus_group_stack.pop();
         }
 
         if let Some(id) = layer_id {

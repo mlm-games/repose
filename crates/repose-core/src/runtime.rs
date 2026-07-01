@@ -91,11 +91,17 @@ pub struct FocusManager {
     pub chain: Vec<u64>,
     /// The currently focused element (if any).
     pub focused: Option<u64>,
+    /// Hit regions for focus group lookups.
+    pub hit_regions: Vec<HitRegion>,
 }
 
 impl FocusManager {
     pub fn new(chain: Vec<u64>, focused: Option<u64>) -> Self {
-        Self { chain, focused }
+        Self {
+            chain,
+            focused,
+            hit_regions: Vec::new(),
+        }
     }
 
     /// Move focus in the given direction.
@@ -130,26 +136,70 @@ impl FocusManager {
     }
 
     /// Tab forward or backward in the focus chain.
+    /// When the current focus belongs to a focus group, navigation is restricted
+    /// to elements within that group.
     pub fn move_tab(&mut self, reverse: bool) -> Option<u64> {
         if self.chain.is_empty() {
             return None;
         }
-        let next = if let Some(cur) = self.focused {
-            if let Some(idx) = self.chain.iter().position(|&id| id == cur) {
-                if reverse {
-                    if idx == 0 {
-                        self.chain[self.chain.len() - 1]
+        let current_group = self.focused.and_then(|cur| {
+            self.hit_regions
+                .iter()
+                .find(|h| h.id == cur)
+                .and_then(|h| h.focus_group_id)
+        });
+        let next = if let Some(group_id) = current_group {
+            // Build sub-chain of elements in the same focus group
+            let sub_chain: Vec<u64> = self
+                .chain
+                .iter()
+                .copied()
+                .filter(|&id| {
+                    id == group_id
+                        || self
+                            .hit_regions
+                            .iter()
+                            .any(|h| h.id == id && h.focus_group_id == Some(group_id))
+                })
+                .collect();
+            if sub_chain.is_empty() {
+                return None;
+            }
+            if let Some(cur) = self.focused {
+                if let Some(idx) = sub_chain.iter().position(|&id| id == cur) {
+                    if reverse {
+                        if idx == 0 {
+                            sub_chain[sub_chain.len() - 1]
+                        } else {
+                            sub_chain[idx - 1]
+                        }
                     } else {
-                        self.chain[idx - 1]
+                        sub_chain[(idx + 1) % sub_chain.len()]
                     }
                 } else {
-                    self.chain[(idx + 1) % self.chain.len()]
+                    sub_chain[0]
+                }
+            } else {
+                sub_chain[0]
+            }
+        } else {
+            if let Some(cur) = self.focused {
+                if let Some(idx) = self.chain.iter().position(|&id| id == cur) {
+                    if reverse {
+                        if idx == 0 {
+                            self.chain[self.chain.len() - 1]
+                        } else {
+                            self.chain[idx - 1]
+                        }
+                    } else {
+                        self.chain[(idx + 1) % self.chain.len()]
+                    }
+                } else {
+                    self.chain[0]
                 }
             } else {
                 self.chain[0]
             }
-        } else {
-            self.chain[0]
         };
         self.focused = Some(next);
         Some(next)
@@ -184,6 +234,7 @@ pub fn spatial_focus_next(
             let mut fm = FocusManager {
                 chain: chain.to_vec(),
                 focused: current,
+                hit_regions: hit_regions.to_vec(),
             };
             return fm.move_tab(dir == FocusDirection::Previous);
         }
@@ -403,6 +454,12 @@ pub struct HitRegion {
 
     /// Cursor hint for desktop/web.
     pub cursor: Option<crate::CursorIcon>,
+
+    /// If `Some(group_id)`, this hit region belongs to a focus group with the
+    /// given id. Tab navigation will cycle within the group instead of moving
+    /// to elements outside it. Set automatically by the layout engine when the
+    /// element is a descendant of a node with `focus_group: true`.
+    pub focus_group_id: Option<u64>,
 }
 
 impl HitRegion {

@@ -51,16 +51,51 @@ impl DialogState {
     }
 }
 
+/// Configuration for dialog dismiss behavior.
+/// Mirrors Compose's `DialogProperties`.
+#[derive(Clone)]
+pub struct DialogProperties {
+    /// Called when the user attempts to dismiss the dialog
+    /// (scrim click, Escape/Back press). When set, this overrides `state.dismiss()`.
+    /// To make a dialog that never closes, pass `Some(Rc::new(|| {}))`.
+    pub on_dismiss_request: Option<Rc<dyn Fn()>>,
+    /// Whether clicking the scrim (outside the dialog surface) triggers dismissal.
+    /// Default: `true`.
+    pub dismiss_on_click_outside: bool,
+    /// Whether pressing Escape (or Back gesture) triggers dismissal.
+    /// Default: `true`.
+    pub dismiss_on_back_press: bool,
+}
+
+impl Default for DialogProperties {
+    fn default() -> Self {
+        Self {
+            on_dismiss_request: None,
+            dismiss_on_click_outside: true,
+            dismiss_on_back_press: true,
+        }
+    }
+}
+
 /// A modal dialog rendered in the overlay layer with scrim and spring animation.
 ///
 /// Unlike the inline `AlertDialog`, this version renders outside the layout tree
 /// so it is never clipped by parent containers, scroll areas, or stacks.
 ///
 /// Caller should create a `DialogState` and manage visibility via `show()`/`dismiss()`.
+///
+/// Focus behavior: dialog content is wrapped in a focus group, so Tab/Shift+Tab
+/// cycles within the dialog instead of moving to background elements.
+///
+/// Escape handling: when the dialog content is focused and `dismiss_on_back_press`
+/// is true, pressing Escape calls `on_dismiss_request` (or `state.dismiss()` if
+/// no `on_dismiss_request` is set). Set `dismiss_on_back_press = false` or pass
+/// `on_dismiss_request = Some(Rc::new(|| {}))` to prevent Escape from closing.
 pub fn Dialog(
     state: Rc<DialogState>,
     overlay: OverlayHandle,
     modifier: Modifier,
+    properties: DialogProperties,
     content: View,
 ) -> View {
     let overlay_id = remember_with_key(state.key("oid"), || signal(0u64));
@@ -68,6 +103,10 @@ pub fn Dialog(
     // RefCell holding the latest content so the overlay builder reads fresh state each frame
     let current_content = remember_state_with_key(state.key("c"), || Box(Modifier::new()));
     *current_content.borrow_mut() = content;
+
+    // Store properties so the overlay closure reads fresh values each frame
+    let props = remember_state_with_key(state.key("p"), || properties.clone());
+    *props.borrow_mut() = properties;
 
     // Animated scale/alpha for enter/exit
     let spec = AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn);
@@ -99,12 +138,15 @@ pub fn Dialog(
                 let anim = anim.clone();
                 let modifier = modifier.clone();
                 let current_content = current_content.clone();
+                let props = props.clone();
                 move || {
                     let progress = *anim.borrow().get();
                     let alpha = progress.min(1.0);
                     let th = theme();
                     let content = current_content.borrow().clone();
+                    let p = props.borrow().clone();
 
+                    // Dialog surface with focus group for tab isolation
                     let dialog = Box(Modifier::new()
                         .min_width(280.0)
                         .max_width(560.0)
@@ -112,15 +154,53 @@ pub fn Dialog(
                         .justify_content(JustifyContent::Center)
                         .background(th.surface_container_high)
                         .clip_rounded(th.shapes.extra_large)
-                        .alpha(alpha))
+                        .alpha(alpha)
+                        .focus_group()
+                        .on_key_event({
+                            let s = state.clone();
+                            let p = props.clone();
+                            move |ke| {
+                                use repose_core::input::{Key, KeyEventType};
+                                if ke.key == Key::Escape && ke.event_type == KeyEventType::Down {
+                                    let (dismiss, cb) = {
+                                        let p = p.borrow();
+                                        (p.dismiss_on_back_press, p.on_dismiss_request.clone())
+                                    };
+                                    if dismiss {
+                                        if let Some(cb) = cb {
+                                            cb();
+                                        } else {
+                                            s.dismiss();
+                                        }
+                                        return true;
+                                    }
+                                }
+                                false
+                            }
+                        }))
                     .child(content);
 
+                    // Scrim that dismisses on click (if enabled)
                     let scrim = Box(Modifier::new()
                         .fill_max_size()
                         .background(th.scrim.with_alpha((85.0 * alpha) as u8))
+                        .focusable(false)
                         .on_click({
                             let s = state.clone();
-                            move || s.dismiss()
+                            let p = props.clone();
+                            move || {
+                                let (dismiss, cb) = {
+                                    let p = p.borrow();
+                                    (p.dismiss_on_click_outside, p.on_dismiss_request.clone())
+                                };
+                                if dismiss {
+                                    if let Some(cb) = cb {
+                                        cb();
+                                    } else {
+                                        s.dismiss();
+                                    }
+                                }
+                            }
                         }));
 
                     ZStack(Modifier::new().fill_max_size().absolute()).child((
@@ -191,6 +271,7 @@ pub fn AlertDialog(
             .min_width(config.min_width)
             .max_width(config.max_width)
             .then(config.modifier),
+        DialogProperties::default(),
         super::alert_dialog_body(title, text, confirm_button, dismiss_button),
     )
 }
@@ -211,6 +292,7 @@ pub fn DatePickerDialog(
         state,
         overlay,
         Modifier::new(),
+        DialogProperties::default(),
         Column(Modifier::new()).child((DatePicker(picker_state.clone(), on_confirm, on_dismiss),)),
     )
 }
@@ -231,6 +313,7 @@ pub fn TimePickerDialog(
         state,
         overlay,
         Modifier::new(),
+        DialogProperties::default(),
         Column(Modifier::new()).child((TimePicker(picker_state.clone(), on_confirm, on_dismiss),)),
     )
 }

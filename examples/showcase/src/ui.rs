@@ -3,7 +3,7 @@
 use std::rc::Rc;
 
 use repose_core::prelude::*;
-use repose_material::material3::dialog::{Dialog, DialogState};
+use repose_material::material3::dialog::{Dialog, DialogProperties, DialogState};
 use repose_material::material3::{
     Card, CardConfig, ElevatedCard, IconButton, IconButtonConfig, Slider, SliderConfig, Switch,
     SwitchConfig,
@@ -169,6 +169,9 @@ pub fn TopBar(overlay: OverlayHandle, vm: SettingsVm) -> View {
             settings_state.clone(),
             overlay,
             Modifier::new(),
+            DialogProperties {
+                ..Default::default()
+            },
             Column(Modifier::new().padding(sp::XL).min_width(320.0).gap(sp::MD)).child((
                 Text("Settings").size(20.0).color(th.on_surface),
                 LabeledSwitch("Dark Mode", vm.dark, {
