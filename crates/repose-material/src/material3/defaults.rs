@@ -883,6 +883,9 @@ impl ScaffoldDefaults {
     pub fn container_color() -> Color {
         theme().background
     }
+    pub fn content_color() -> Color {
+        theme().on_background
+    }
     pub const TOP_BAR_HEIGHT: f32 = 64.0;
     pub const BOTTOM_BAR_HEIGHT: f32 = 80.0;
     pub const FAB_MARGIN: f32 = 16.0;

@@ -3618,6 +3618,7 @@ pub struct SwitchConfig {
     pub disabled_unchecked_border_color: Color,
     pub disabled_unchecked_icon_color: Color,
     pub state_colors: StateColors,
+    pub thumb_content: Option<View>,
 }
 
 impl Default for SwitchConfig {
@@ -3642,6 +3643,7 @@ impl Default for SwitchConfig {
             disabled_unchecked_border_color: SwitchDefaults::disabled_unchecked_border_color(),
             disabled_unchecked_icon_color: SwitchDefaults::disabled_unchecked_icon_color(),
             state_colors: SwitchDefaults::state_colors_default(),
+            thumb_content: None,
         }
     }
 }
@@ -3807,8 +3809,9 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
 }
 
 /// Configuration for [`Slider`] and [`RangeSlider`].
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SliderConfig {
+    // Debug impl is manual because on_value_change_finished contains a closure
     pub modifier: Modifier,
     /// When false, renders disabled colors and does not respond to input.
     pub enabled: bool,
@@ -3823,6 +3826,28 @@ pub struct SliderConfig {
     pub disabled_active_tick_color: Color,
     pub disabled_inactive_tick_color: Color,
     pub state_colors: StateColors,
+    pub on_value_change_finished: Option<Rc<dyn Fn()>>,
+}
+
+impl std::fmt::Debug for SliderConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SliderConfig")
+            .field("modifier", &self.modifier)
+            .field("enabled", &self.enabled)
+            .field("active_track_color", &self.active_track_color)
+            .field("inactive_track_color", &self.inactive_track_color)
+            .field("thumb_color", &self.thumb_color)
+            .field("active_tick_color", &self.active_tick_color)
+            .field("inactive_tick_color", &self.inactive_tick_color)
+            .field("disabled_thumb_color", &self.disabled_thumb_color)
+            .field("disabled_active_track_color", &self.disabled_active_track_color)
+            .field("disabled_inactive_track_color", &self.disabled_inactive_track_color)
+            .field("disabled_active_tick_color", &self.disabled_active_tick_color)
+            .field("disabled_inactive_tick_color", &self.disabled_inactive_tick_color)
+            .field("state_colors", &self.state_colors)
+            .field("on_value_change_finished", &self.on_value_change_finished.as_ref().map(|_| ".."))
+            .finish()
+    }
 }
 
 impl Default for SliderConfig {
@@ -3841,6 +3866,7 @@ impl Default for SliderConfig {
             disabled_active_tick_color: SliderDefaults::disabled_active_tick_color(),
             disabled_inactive_tick_color: SliderDefaults::disabled_inactive_tick_color(),
             state_colors: SliderDefaults::state_colors_default(),
+            on_value_change_finished: None,
         }
     }
 }
@@ -4062,8 +4088,14 @@ pub fn Slider(
                 (oc)(value_from_x(pe.position.x, r, min, max, step));
             }
         })
-        .on_pointer_up(move |_pe: PointerEvent| {
-            *drag_active.borrow_mut() = false;
+        .on_pointer_up({
+            let on_finished = config.on_value_change_finished.clone();
+            move |_pe: PointerEvent| {
+                *drag_active.borrow_mut() = false;
+                if let Some(ref cb) = on_finished {
+                    (cb)();
+                }
+            }
         })
         .on_scroll({
             let oc = oc.clone();
@@ -5107,6 +5139,7 @@ pub struct BottomSheetConfig {
     pub drag_handle_width: f32,
     pub drag_handle_height: f32,
     pub peek_height: f32,
+    pub gestures_enabled: bool,
 }
 
 impl Default for BottomSheetConfig {
@@ -5123,6 +5156,7 @@ impl Default for BottomSheetConfig {
             drag_handle_width: BottomSheetDefaults::DRAG_HANDLE_WIDTH,
             drag_handle_height: BottomSheetDefaults::DRAG_HANDLE_HEIGHT,
             peek_height: BottomSheetDefaults::PEEK_HEIGHT,
+            gestures_enabled: true,
         }
     }
 }
@@ -5377,6 +5411,11 @@ pub struct DropdownMenuConfig {
     pub divider_color: Color,
     pub min_width: f32,
     pub item_height: f32,
+    pub shadow_elevation: Option<f32>,
+    pub tonal_elevation: f32,
+    pub border: Option<(f32, Color, f32)>,
+    pub offset_x: f32,
+    pub offset_y: f32,
 }
 
 impl Default for DropdownMenuConfig {
@@ -5389,6 +5428,11 @@ impl Default for DropdownMenuConfig {
             divider_color: DropdownMenuDefaults::divider_color(),
             min_width: DropdownMenuDefaults::MIN_WIDTH,
             item_height: DropdownMenuDefaults::ITEM_HEIGHT,
+            shadow_elevation: None,
+            tonal_elevation: 0.0,
+            border: None,
+            offset_x: 0.0,
+            offset_y: 0.0,
         }
     }
 }
@@ -5402,6 +5446,9 @@ pub struct TooltipConfig {
     pub offset_y: f32,
     pub horizontal_padding: f32,
     pub vertical_padding: f32,
+    pub has_action: bool,
+    pub enable_user_input: bool,
+    pub focusable: bool,
 }
 
 impl Default for TooltipConfig {
@@ -5413,6 +5460,9 @@ impl Default for TooltipConfig {
             offset_y: TooltipDefaults::OFFSET_Y,
             horizontal_padding: TooltipDefaults::HORIZONTAL_PADDING,
             vertical_padding: TooltipDefaults::VERTICAL_PADDING,
+            has_action: false,
+            enable_user_input: true,
+            focusable: false,
         }
     }
 }

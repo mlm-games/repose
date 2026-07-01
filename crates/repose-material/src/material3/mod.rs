@@ -760,6 +760,9 @@ pub struct ScaffoldConfig {
     pub top_bar: Option<View>,
     pub bottom_bar: Option<View>,
     pub floating_action_button: Option<View>,
+    pub snackbar_host: Option<View>,
+    pub container_color: Color,
+    pub content_color: Color,
 }
 
 impl Default for ScaffoldConfig {
@@ -769,6 +772,9 @@ impl Default for ScaffoldConfig {
             top_bar: None,
             bottom_bar: None,
             floating_action_button: None,
+            snackbar_host: None,
+            container_color: ScaffoldDefaults::container_color(),
+            content_color: ScaffoldDefaults::content_color(),
         }
     }
 }
@@ -790,7 +796,7 @@ pub fn Scaffold(
         right: insets.right,
     };
 
-    Stack(config.modifier.fill_max_size()).child((
+    Stack(config.modifier.fill_max_size().background(config.container_color)).child((
         Box(Modifier::new()
             .fill_max_size()
             .padding_values(PaddingValues {
@@ -837,6 +843,7 @@ pub fn Scaffold(
         } else {
             Box(Modifier::new())
         },
+        config.snackbar_host.unwrap_or_else(|| Box(Modifier::new())),
     ))
 }
 
