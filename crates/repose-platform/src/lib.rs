@@ -1197,10 +1197,7 @@ pub fn run_desktop_app(
 
                                 // Try dispatching Escape through the focus chain first
                                 // (allows dialog on_key_event to intercept Escape)
-                                if self.dispatch_focus_key_event(
-                                    &key_event,
-                                    &mapped_key,
-                                ) {
+                                if self.dispatch_focus_key_event(&key_event, &mapped_key) {
                                     self.request_redraw();
                                     return;
                                 }

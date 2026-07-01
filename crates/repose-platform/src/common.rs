@@ -109,25 +109,11 @@ pub(crate) fn tf_key_of(frame: &Frame, visual_id: u64) -> u64 {
 }
 
 pub(crate) fn pe_mouse(event: PointerEventKind, pos: Vec2, mods: Modifiers) -> PointerEvent {
-    PointerEvent::new(
-        PointerId(0),
-        PointerKind::Mouse,
-        event,
-        pos,
-        1.0,
-        mods,
-    )
+    PointerEvent::new(PointerId(0), PointerKind::Mouse, event, pos, 1.0, mods)
 }
 
 pub(crate) fn pe_touch(event: PointerEventKind, pos: Vec2, mods: Modifiers) -> PointerEvent {
-    PointerEvent::new(
-        PointerId(0),
-        PointerKind::Touch,
-        event,
-        pos,
-        1.0,
-        mods,
-    )
+    PointerEvent::new(PointerId(0), PointerKind::Touch, event, pos, 1.0, mods)
 }
 
 pub(crate) fn pe_down_primary(kind: PointerKind, pos: Vec2, mods: Modifiers) -> PointerEvent {
@@ -237,7 +223,8 @@ pub(crate) fn tf_ensure_caret_visible(state: &mut TextFieldState, is_multiline: 
         let (display, caret_display_off) = if let Some(vt) = &state.visual_transformation {
             let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
             let tfmd = vt.filter(&annotated);
-            let off = repose_core::original_offset_to_display(&state.text, tfmd.text.as_str(), caret_idx);
+            let off =
+                repose_core::original_offset_to_display(&state.text, tfmd.text.as_str(), caret_idx);
             (tfmd.text.text, off)
         } else {
             (state.text.clone(), caret_idx)
@@ -293,7 +280,8 @@ pub(crate) fn tf_place_caret_at_pointer(
         let (display, caret_display_off) = if let Some(vt) = &state.visual_transformation {
             let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
             let tfmd = vt.filter(&annotated);
-            let off = repose_core::original_offset_to_display(&state.text, tfmd.text.as_str(), caret_idx);
+            let off =
+                repose_core::original_offset_to_display(&state.text, tfmd.text.as_str(), caret_idx);
             (tfmd.text.text, off)
         } else {
             (state.text.clone(), caret_idx)

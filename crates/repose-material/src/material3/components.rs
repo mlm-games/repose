@@ -3840,12 +3840,27 @@ impl std::fmt::Debug for SliderConfig {
             .field("active_tick_color", &self.active_tick_color)
             .field("inactive_tick_color", &self.inactive_tick_color)
             .field("disabled_thumb_color", &self.disabled_thumb_color)
-            .field("disabled_active_track_color", &self.disabled_active_track_color)
-            .field("disabled_inactive_track_color", &self.disabled_inactive_track_color)
-            .field("disabled_active_tick_color", &self.disabled_active_tick_color)
-            .field("disabled_inactive_tick_color", &self.disabled_inactive_tick_color)
+            .field(
+                "disabled_active_track_color",
+                &self.disabled_active_track_color,
+            )
+            .field(
+                "disabled_inactive_track_color",
+                &self.disabled_inactive_track_color,
+            )
+            .field(
+                "disabled_active_tick_color",
+                &self.disabled_active_tick_color,
+            )
+            .field(
+                "disabled_inactive_tick_color",
+                &self.disabled_inactive_tick_color,
+            )
             .field("state_colors", &self.state_colors)
-            .field("on_value_change_finished", &self.on_value_change_finished.as_ref().map(|_| ".."))
+            .field(
+                "on_value_change_finished",
+                &self.on_value_change_finished.as_ref().map(|_| ".."),
+            )
             .finish()
     }
 }

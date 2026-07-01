@@ -293,9 +293,12 @@ pub fn DatePickerDialog(
         overlay,
         Modifier::new(),
         DialogProperties::default(),
-        Column(Modifier::new()).child((
-            DatePicker(picker_state.clone(), on_confirm, on_dismiss, DatePickerConfig::default()),
-        )),
+        Column(Modifier::new()).child((DatePicker(
+            picker_state.clone(),
+            on_confirm,
+            on_dismiss,
+            DatePickerConfig::default(),
+        ),)),
     )
 }
 
@@ -316,8 +319,11 @@ pub fn TimePickerDialog(
         overlay,
         Modifier::new(),
         DialogProperties::default(),
-        Column(Modifier::new()).child((
-            TimePicker(picker_state.clone(), on_confirm, on_dismiss, TimePickerConfig::default()),
-        )),
+        Column(Modifier::new()).child((TimePicker(
+            picker_state.clone(),
+            on_confirm,
+            on_dismiss,
+            TimePickerConfig::default(),
+        ),)),
     )
 }

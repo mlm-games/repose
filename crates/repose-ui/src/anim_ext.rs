@@ -92,8 +92,7 @@ where
             if exit_alpha > 0.005 {
                 let mut exit_box =
                     Box(Modifier::new().fill_max_size().alpha(exit_alpha)).child(ov.clone());
-                exit_box.modifier.key =
-                    Some(transition_child_key(&key, v, "cf_exit"));
+                exit_box.modifier.key = Some(transition_child_key(&key, v, "cf_exit"));
                 Some(exit_box)
             } else {
                 *oc = None;
@@ -106,8 +105,7 @@ where
 
     // Enter: versioned key ensures fade-in starts at 0 on each transition.
     let enter_alpha = animate_f32_from(format!("cf_enter:{key}:v{v}"), 0.0, 1.0, spec);
-    let mut enter_box =
-        Box(Modifier::new().fill_max_size().alpha(enter_alpha)).child(new_view);
+    let mut enter_box = Box(Modifier::new().fill_max_size().alpha(enter_alpha)).child(new_view);
     enter_box.modifier.key = Some(transition_child_key(&key, v, "cf_enter"));
 
     match old_view {
@@ -150,11 +148,7 @@ fn transition_child_key(key: &str, version: u64, tag: &str) -> u64 {
 /// When the target state changes, the old content animates out using the
 /// `exit` transition while the new content animates in using the `enter`
 /// transition. During the transition both are stacked on top of each other.
-pub fn AnimatedContent<T, F>(
-    target_state: T,
-    content: F,
-    config: AnimatedContentConfig,
-) -> View
+pub fn AnimatedContent<T, F>(target_state: T, content: F, config: AnimatedContentConfig) -> View
 where
     T: PartialEq + Clone + 'static,
     F: Fn(T) -> View + 'static,
@@ -197,10 +191,8 @@ where
                 *oc = None;
                 None
             } else {
-                let mut exit_view =
-                    apply_exit(&key, v, &exit, &spec, ov.clone());
-                exit_view.modifier.key =
-                    Some(transition_child_key(&key, v, "ac_exit"));
+                let mut exit_view = apply_exit(&key, v, &exit, &spec, ov.clone());
+                exit_view.modifier.key = Some(transition_child_key(&key, v, "ac_exit"));
                 Some(exit_view)
             }
         } else {
@@ -456,11 +448,7 @@ impl Default for AnimatedVisibilityConfig {
 /// When `visible` becomes `true`, the content enters using the specified `enter`
 /// transition. When it becomes `false`, the content exits using the specified `exit`
 /// transition.
-pub fn AnimatedVisibility(
-    visible: bool,
-    content: View,
-    config: AnimatedVisibilityConfig,
-) -> View {
+pub fn AnimatedVisibility(visible: bool, content: View, config: AnimatedVisibilityConfig) -> View {
     let key = config.key;
     let spec = config.spec;
     let enter = config.enter;

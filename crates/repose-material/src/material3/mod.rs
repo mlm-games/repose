@@ -779,14 +779,15 @@ impl Default for ScaffoldConfig {
     }
 }
 
-pub fn Scaffold(
-    content: impl Fn(PaddingValues) -> View,
-    config: ScaffoldConfig,
-) -> View {
+pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig) -> View {
     let insets = window_insets();
 
     let content_padding = PaddingValues {
-        top: if config.top_bar.is_some() { 64.0 } else { insets.top },
+        top: if config.top_bar.is_some() {
+            64.0
+        } else {
+            insets.top
+        },
         bottom: if config.bottom_bar.is_some() {
             80.0 + insets.bottom + insets.ime_bottom
         } else {
@@ -796,7 +797,13 @@ pub fn Scaffold(
         right: insets.right,
     };
 
-    Stack(config.modifier.fill_max_size().background(config.container_color)).child((
+    Stack(
+        config
+            .modifier
+            .fill_max_size()
+            .background(config.container_color),
+    )
+    .child((
         Box(Modifier::new()
             .fill_max_size()
             .padding_values(PaddingValues {
@@ -1154,7 +1161,9 @@ pub fn NavigationDrawerItem(
                 bottom: 0.0,
             }))
         .child((
-            config.icon.unwrap_or(Box(Modifier::new().width(24.0).height(24.0))),
+            config
+                .icon
+                .unwrap_or(Box(Modifier::new().width(24.0).height(24.0))),
             Box(Modifier::new().width(12.0).height(1.0)),
             Box(Modifier::new().flex_grow(1.0)).child(label),
             config.badge.unwrap_or(Box(Modifier::new())),

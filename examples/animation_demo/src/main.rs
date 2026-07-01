@@ -1,8 +1,8 @@
 use repose_core::*;
 use repose_material::material3::{Button, ButtonConfig};
 use repose_platform::{RenderContext, run_desktop_app};
-use repose_ui::*;
 use repose_ui::TextStyle;
+use repose_ui::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 

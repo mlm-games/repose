@@ -1047,7 +1047,9 @@ pub fn run_android_app_with_options(
                                                     let pe = PointerEvent::new(
                                                         PointerId(0),
                                                         PointerKind::Mouse,
-                                                        PointerEventKind::Down(PointerButton::Primary),
+                                                        PointerEventKind::Down(
+                                                            PointerButton::Primary,
+                                                        ),
                                                         Vec2 { x: 0.0, y: 0.0 },
                                                         1.0,
                                                         self.modifiers,

@@ -199,7 +199,9 @@ pub fn screen() -> View {
                         12.0,
                     )
                 },
-                CarouselConfig { modifier: Modifier::new().fill_max_width().height(180.0) },
+                CarouselConfig {
+                    modifier: Modifier::new().fill_max_width().height(180.0),
+                },
             )
         }),
         Section("SwipeToDismiss", {

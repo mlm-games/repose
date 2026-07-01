@@ -1132,13 +1132,17 @@ pub fn BasicTextField(
         }
     };
 
-    let merged_on_change: Option<Rc<dyn Fn(String)>> = if let Some(ref cfg_on_change) = config.on_change {
-        let a = Rc::new(state_on_change) as Rc<dyn Fn(String)>;
-        let b = cfg_on_change.clone();
-        Some(Rc::new(move |v: String| { a(v.clone()); b(v); }) as Rc<dyn Fn(String)>)
-    } else {
-        Some(Rc::new(state_on_change) as Rc<dyn Fn(String)>)
-    };
+    let merged_on_change: Option<Rc<dyn Fn(String)>> =
+        if let Some(ref cfg_on_change) = config.on_change {
+            let a = Rc::new(state_on_change) as Rc<dyn Fn(String)>;
+            let b = cfg_on_change.clone();
+            Some(Rc::new(move |v: String| {
+                a(v.clone());
+                b(v);
+            }) as Rc<dyn Fn(String)>)
+        } else {
+            Some(Rc::new(state_on_change) as Rc<dyn Fn(String)>)
+        };
 
     text_field_view(
         modifier,
@@ -1183,9 +1187,8 @@ pub fn BasicSecureTextField(
         keyboard_options: repose_core::KeyboardOptions::SECURE_TEXT_FIELD,
         visual_transformation: match config.text_obfuscation_mode {
             repose_core::TextObfuscationMode::Visible => None,
-            _ => Some(Rc::new(
-                repose_core::PasswordVisualTransformation { mask },
-            ) as Rc<dyn repose_core::VisualTransformation>),
+            _ => Some(Rc::new(repose_core::PasswordVisualTransformation { mask })
+                as Rc<dyn repose_core::VisualTransformation>),
         },
         ..config
     };

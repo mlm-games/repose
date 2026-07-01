@@ -24,9 +24,8 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
     let note_body: Rc<dyn Fn() -> View> = {
         let note_text = note_text.clone();
         Rc::new(move || {
-            let tf_state = remember_with_key("note_body_tf_state", || {
-                RefCell::new(TextFieldState::new())
-            });
+            let tf_state =
+                remember_with_key("note_body_tf_state", || RefCell::new(TextFieldState::new()));
             let hint = note_text.get();
             if tf_state.borrow().text != note_text.get() {
                 tf_state.borrow_mut().text = note_text.get();

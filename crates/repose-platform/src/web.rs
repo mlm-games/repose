@@ -989,14 +989,14 @@ impl ApplicationHandler<()> for App {
                             if let Some(i) = rc::top_hit_index(f, pos) {
                                 let hit = &f.hit_regions[i];
                                 if let Some(cb) = &hit.on_pointer_down {
-                                cb(PointerEvent::new(
-                                    PointerId(0),
-                                    PointerKind::Mouse,
-                                    PointerEventKind::Down(PointerButton::Tertiary),
-                                    pos,
-                                    1.0,
-                                    self.modifiers,
-                                ));
+                                    cb(PointerEvent::new(
+                                        PointerId(0),
+                                        PointerKind::Mouse,
+                                        PointerEventKind::Down(PointerButton::Tertiary),
+                                        pos,
+                                        1.0,
+                                        self.modifiers,
+                                    ));
                                 }
                                 // Paste from clipboard as a best-effort for middle-click
                                 if self.is_textfield(hit.id) {
@@ -1417,7 +1417,9 @@ impl ApplicationHandler<()> for App {
                                                     let pe = PointerEvent::new(
                                                         PointerId(0),
                                                         PointerKind::Mouse,
-                                                        PointerEventKind::Down(PointerButton::Primary),
+                                                        PointerEventKind::Down(
+                                                            PointerButton::Primary,
+                                                        ),
                                                         Vec2 { x: 0.0, y: 0.0 },
                                                         1.0,
                                                         self.modifiers,

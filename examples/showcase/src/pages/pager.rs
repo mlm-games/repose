@@ -111,7 +111,10 @@ pub fn screen() -> View {
                 "h_demo",
                 h_state.clone(),
                 |p| page_face(p, "Swipe left/right"),
-                PagerConfig { modifier: Modifier::new().fill_max_size().height(200.0).margin(sp::SM), ..Default::default() },
+                PagerConfig {
+                    modifier: Modifier::new().fill_max_size().height(200.0).margin(sp::SM),
+                    ..Default::default()
+                },
             ),
         ),
         pager_section(
@@ -121,7 +124,10 @@ pub fn screen() -> View {
                 "v_demo",
                 v_state.clone(),
                 |p| page_face(p, "Swipe up/down"),
-                PagerConfig { modifier: Modifier::new().fill_max_size().height(300.0).margin(sp::SM), ..Default::default() },
+                PagerConfig {
+                    modifier: Modifier::new().fill_max_size().height(300.0).margin(sp::SM),
+                    ..Default::default()
+                },
             ),
         ),
     ])
