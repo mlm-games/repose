@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::panic::Location;
 use std::rc::Rc;
 
 use crate::scope::Scope;
@@ -288,6 +289,9 @@ pub fn spatial_focus_next(
 #[derive(Default)]
 pub struct Composer {
     pub slots: Vec<Box<dyn Any>>,
+    /// Caller identity for each slot, used to detect stale slots
+    /// when the composition tree changes between frames.
+    pub slot_callers: Vec<&'static Location<'static>>,
     pub cursor: usize,
     pub keyed_slots: HashMap<String, Box<dyn Any>>,
     /// Per-scope cached state for the `scope!` macro.
@@ -329,8 +333,13 @@ impl Drop for ComposeGuard {
     }
 }
 
-/// Slot-based remember (sequential composition only)
+/// Slot-based remember (sequential composition only).
+/// This prevents state aliasing when the composition tree structure changes between frames
+#[track_caller]
 pub fn remember<T: 'static>(init: impl FnOnce() -> T) -> Rc<T> {
+    // Capture BEFORE any closure — Location::caller() returns the correct
+    // track_caller location only at the function's top level, not inside closures.
+    let caller = Location::caller();
     COMPOSER.with(|c| {
         let mut c = c.borrow_mut();
         let cursor = c.cursor;
@@ -339,6 +348,19 @@ pub fn remember<T: 'static>(init: impl FnOnce() -> T) -> Rc<T> {
         if cursor >= c.slots.len() {
             let rc: Rc<T> = Rc::new(init());
             c.slots.push(Box::new(rc.clone()));
+            c.slot_callers.push(caller);
+            return rc;
+        }
+
+        let stored_caller = c.slot_callers.get(cursor).copied();
+        if stored_caller != Some(caller) {
+            let rc: Rc<T> = Rc::new(init());
+            c.slots[cursor] = Box::new(rc.clone());
+            if cursor < c.slot_callers.len() {
+                c.slot_callers[cursor] = caller;
+            } else {
+                c.slot_callers.push(caller);
+            }
             return rc;
         }
 
@@ -351,11 +373,6 @@ pub fn remember<T: 'static>(init: impl FnOnce() -> T) -> Rc<T> {
                 cursor,
                 std::any::type_name::<T>(),
             );
-            // debug_assert!(
-            //     false,
-            //     "remember slot {} type changed. This is likely a composition order bug.",
-            //     cursor,
-            // );
             let rc: Rc<T> = Rc::new(init());
             c.slots[cursor] = Box::new(rc.clone());
             rc
@@ -393,6 +410,7 @@ pub fn remember_with_key<T: 'static>(key: impl Into<String>, init: impl FnOnce()
     })
 }
 
+#[track_caller]
 pub fn remember_state<T: 'static>(init: impl FnOnce() -> T) -> Rc<RefCell<T>> {
     remember(|| RefCell::new(init()))
 }
@@ -650,6 +668,7 @@ pub fn clear_composer() {
     COMPOSER.with(|c| {
         let mut c = c.borrow_mut();
         c.slots.clear();
+        c.slot_callers.clear();
         c.keyed_slots.clear();
         c.scope_caches.clear();
         c.cursor = 0;

@@ -3027,9 +3027,11 @@ pub fn OutlinedTextField(
 
     // Outer Stack holds both the clipped content and the unclipped label.
     // The label sits outside the clipped Box so it can extend above the border.
-    Stack(modifier
-        .min_height(OutlinedTextFieldDefaults::MIN_HEIGHT)
-        .min_width(OutlinedTextFieldDefaults::MIN_WIDTH))
+    Stack(
+        modifier
+            .min_height(OutlinedTextFieldDefaults::MIN_HEIGHT)
+            .min_width(OutlinedTextFieldDefaults::MIN_WIDTH),
+    )
     .child((
         // Clipped background, border, and input content
         Box(Modifier::new()
