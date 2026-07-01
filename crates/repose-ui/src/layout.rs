@@ -1840,7 +1840,7 @@ impl LayoutEngine {
         allow_cache: bool,
         deferred: &mut Vec<(NodeId, (f32, f32), f32, Option<u64>, f32)>,
         skip_defer: bool,
-        /// Tree depth: 0 = root; incremented per child level.
+        // Tree depth: 0 = root; incremented per child level.
         depth: u32,
     ) {
         let (subtree_hash, modifier, kind, children) = {
@@ -2853,7 +2853,7 @@ impl LayoutEngine {
                                 w: chevron_w,
                                 h: rect.h,
                             },
-                            depth,
+                            depth: *depth as u32,
                             on_click: Some(cb),
                             focusable: false,
                             z_index: modifier.z_index,
@@ -2872,7 +2872,7 @@ impl LayoutEngine {
                             w: (rect.w - indent_px - chevron_w).max(0.0),
                             h: rect.h,
                         },
-                        depth,
+                        depth: *depth as u32,
                         on_click: Some(cb),
                         focusable: true,
                         z_index: modifier.z_index,
