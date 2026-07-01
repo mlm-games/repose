@@ -1,5 +1,5 @@
 use repose_core::*;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use crate::scroll::{NestedScrollConnection, ScrollPhysics};
 
@@ -21,7 +21,7 @@ impl<T, F: Fn(&T) -> f32> ItemHeight<T> for F {
 
 pub struct LazyColumnState {
     pub(crate) scroll_offset: Signal<f32>,
-    pub(crate) viewport_height: Signal<f32>,
+    pub(crate) viewport_height: Cell<f32>,
     pub(crate) content_height: Signal<f32>,
     pub(crate) physics: RefCell<ScrollPhysics>,
     pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
@@ -37,11 +37,15 @@ impl LazyColumnState {
     pub fn new() -> Self {
         Self {
             scroll_offset: signal(0.0),
-            viewport_height: signal(600.0),
+            viewport_height: Cell::new(0.0),
             content_height: signal(0.0),
             physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
             parent_connection: RefCell::new(None),
         }
+    }
+
+    pub fn set_vp_height(&self, h_px: f32) {
+        self.viewport_height.set(h_px.max(0.0));
     }
 
     pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
@@ -89,9 +93,9 @@ impl LazyColumnState {
 
 pub struct LazyGridState {
     pub(crate) scroll_offset: Signal<f32>,
-    pub(crate) viewport_height: Signal<f32>,
+    pub(crate) viewport_height: Cell<f32>,
     pub(crate) content_height: Signal<f32>,
-    pub(crate) viewport_width: Signal<f32>,
+    pub(crate) viewport_width: Cell<f32>,
     pub(crate) content_width: Signal<f32>,
     pub(crate) physics: RefCell<ScrollPhysics>,
     pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
@@ -107,9 +111,9 @@ impl LazyGridState {
     pub fn new() -> Self {
         Self {
             scroll_offset: signal(0.0),
-            viewport_height: signal(600.0),
+            viewport_height: Cell::new(0.0),
             content_height: signal(0.0),
-            viewport_width: signal(600.0),
+            viewport_width: Cell::new(0.0),
             content_width: signal(0.0),
             physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
             parent_connection: RefCell::new(None),
@@ -189,7 +193,7 @@ impl LazyGridState {
 
 pub struct LazyRowState {
     pub(crate) scroll_offset: Signal<f32>,
-    pub(crate) viewport_width: Signal<f32>,
+    pub(crate) viewport_width: Cell<f32>,
     pub(crate) content_width: Signal<f32>,
     pub(crate) physics: RefCell<ScrollPhysics>,
     pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
@@ -205,7 +209,7 @@ impl LazyRowState {
     pub fn new() -> Self {
         Self {
             scroll_offset: signal(0.0),
-            viewport_width: signal(600.0),
+            viewport_width: Cell::new(0.0),
             content_width: signal(0.0),
             physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
             parent_connection: RefCell::new(None),
@@ -252,7 +256,7 @@ impl LazyRowState {
 
 pub struct LazyVerticalStaggeredGridState {
     pub(crate) scroll_offset: Signal<f32>,
-    pub(crate) viewport_height: Signal<f32>,
+    pub(crate) viewport_height: Cell<f32>,
     pub(crate) content_height: Signal<f32>,
     pub(crate) physics: RefCell<ScrollPhysics>,
     pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
@@ -268,7 +272,7 @@ impl LazyVerticalStaggeredGridState {
     pub fn new() -> Self {
         Self {
             scroll_offset: signal(0.0),
-            viewport_height: signal(600.0),
+            viewport_height: Cell::new(0.0),
             content_height: signal(0.0),
             physics: RefCell::new(ScrollPhysics::new(0.90, 5.0, 10.0)),
             parent_connection: RefCell::new(None),

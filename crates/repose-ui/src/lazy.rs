@@ -7,14 +7,20 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+fn scope_key(state_id: usize, key: u64) -> String {
+    format!("lazy_{:x}_{}", state_id, key)
+}
+
 fn scope_item(mut view: View, key: u64, state_id: usize) -> View {
-    view.scope_key = Some(format!("lazy_{:x}_{}", state_id, key));
+    view.scope_key = Some(scope_key(state_id, key));
+    view.modifier.key = Some(key);
     view.modifier.repaint_boundary = true;
     view
 }
 
 fn scope_item_static(mut view: View, key: u64, state_id: usize) -> View {
-    view.scope_key = Some(format!("lazy_{:x}_{}", state_id, key));
+    view.scope_key = Some(scope_key(state_id, key));
+    view.modifier.key = Some(key);
     view
 }
 
