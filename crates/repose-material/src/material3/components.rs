@@ -296,24 +296,28 @@ pub fn CenterAlignedTopAppBar(
 #[derive(Clone, Debug)]
 pub struct SurfaceConfig {
     pub modifier: Modifier,
+    pub enabled: bool,
     pub color: Color,
     pub content_color: Color,
     pub shape_radius: f32,
     pub tonal_elevation: f32,
     pub shadow_elevation: f32,
     pub border: Option<(f32, Color)>,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 impl Default for SurfaceConfig {
     fn default() -> Self {
         Self {
             modifier: Modifier::new(),
+            enabled: true,
             color: SurfaceDefaults::color(),
             content_color: SurfaceDefaults::content_color(),
             shape_radius: SurfaceDefaults::SHAPE_RADIUS,
             tonal_elevation: SurfaceDefaults::TONAL_ELEVATION,
             shadow_elevation: SurfaceDefaults::SHADOW_ELEVATION,
             border: None,
+            interaction_source: None,
         }
     }
 }
@@ -321,9 +325,15 @@ impl Default for SurfaceConfig {
 /// M3 Surface - a basic container with shape, color, elevation, and border.
 /// Sets the ContentColor local for children based on the surface color.
 pub fn Surface(config: SurfaceConfig, content: impl FnOnce() -> View) -> View {
+    let sf_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
     let mut m = Modifier::new()
         .background(config.color)
         .clip_rounded(config.shape_radius)
+        .interaction_source(&*sf_source)
         .then(config.modifier);
     if config.tonal_elevation > 0.0 {
         m = m.state_elevation(StateElevation {
@@ -1656,6 +1666,7 @@ pub struct ListItemConfig {
     pub one_line_height: f32,
     pub two_line_height: f32,
     pub three_line_height: f32,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 impl Default for ListItemConfig {
@@ -1675,6 +1686,7 @@ impl Default for ListItemConfig {
             one_line_height: ListItemDefaults::ONE_LINE_HEIGHT,
             two_line_height: ListItemDefaults::TWO_LINE_HEIGHT,
             three_line_height: ListItemDefaults::THREE_LINE_HEIGHT,
+            interaction_source: None,
         }
     }
 }
@@ -1752,6 +1764,12 @@ pub fn ListItem(
         AlignItems::Center
     };
 
+    let li_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
+
     let mut modifier = Modifier::new()
         .min_width(200.0)
         .min_height(min_h)
@@ -1769,6 +1787,7 @@ pub fn ListItem(
             bottom: top_bottom_padding,
         })
         .align_items(vert_align)
+        .interaction_source(&*li_source)
         .then(config.modifier);
 
     if config.tonal_elevation > 0.0 {
@@ -2139,6 +2158,7 @@ pub struct Segment {
     pub icon: Option<View>,
     pub on_click: Rc<dyn Fn()>,
     pub enabled: bool,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 /// Configuration for [`SegmentedButton`].
@@ -2233,6 +2253,11 @@ pub fn SegmentedButton(
                 let cb = seg.on_click.clone();
                 let radii = segment_radii(i);
                 let is_enabled = seg.enabled;
+                let seg_source: Rc<MutableInteractionSource> = seg
+                    .interaction_source
+                    .clone()
+                    .map(Rc::new)
+                    .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
                 let state_colors = config.state_colors;
                 let content_modifier = Modifier::new()
@@ -2241,6 +2266,7 @@ pub fn SegmentedButton(
                     .clip_rounded_radii(radii)
                     .background(bg)
                     .state_colors(state_colors)
+                    .interaction_source(&*seg_source)
                     .align_items(AlignItems::Center)
                     .justify_content(JustifyContent::Center)
                     .padding_values(PaddingValues {
@@ -2281,6 +2307,7 @@ pub fn SegmentedButton(
 /// Configuration for [`CircularProgressIndicator`].
 #[derive(Clone, Debug)]
 pub struct CircularProgressIndicatorConfig {
+    pub modifier: Modifier,
     pub color: Color,
     pub track_color: Color,
     pub stroke_width: f32,
@@ -2291,6 +2318,7 @@ pub struct CircularProgressIndicatorConfig {
 impl Default for CircularProgressIndicatorConfig {
     fn default() -> Self {
         Self {
+            modifier: Modifier::new(),
             color: ProgressIndicatorDefaults::circular_color(),
             track_color: ProgressIndicatorDefaults::circular_track_color(),
             stroke_width: ProgressIndicatorDefaults::CIRCULAR_STROKE_WIDTH,
@@ -2376,6 +2404,7 @@ pub fn CircularProgressIndicator(
 
     Box(Modifier::new()
         .size(sz, sz)
+        .then(config.modifier)
         .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
             let mul_c = |c: Color| {
                 Color(
@@ -2472,6 +2501,7 @@ pub fn CircularProgressIndicator(
 /// Configuration for [`LinearProgressIndicator`].
 #[derive(Clone, Debug)]
 pub struct LinearProgressIndicatorConfig {
+    pub modifier: Modifier,
     pub color: Color,
     pub track_color: Color,
     /// Stroke cap style for the indicator ends. Default: `StrokeCap::Round`
@@ -2485,6 +2515,7 @@ pub struct LinearProgressIndicatorConfig {
 impl Default for LinearProgressIndicatorConfig {
     fn default() -> Self {
         Self {
+            modifier: Modifier::new(),
             color: ProgressIndicatorDefaults::linear_color(),
             track_color: ProgressIndicatorDefaults::linear_track_color(),
             stroke_cap: StrokeCap::Round,
@@ -2502,6 +2533,7 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
     Box(Modifier::new()
         .fill_max_width()
         .height(ProgressIndicatorDefaults::LINEAR_INDICATOR_HEIGHT)
+        .then(config.modifier)
         .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
             let mul_c = |c: Color| {
                 Color(
@@ -4582,6 +4614,7 @@ pub struct CardConfig {
     pub tonal_elevation: f32,
     pub state_elevation: Option<StateElevation>,
     pub border: Option<(f32, Color)>,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 impl Default for CardConfig {
@@ -4597,6 +4630,7 @@ impl Default for CardConfig {
             tonal_elevation: CardDefaults::ELEVATION,
             state_elevation: None,
             border: None,
+            interaction_source: None,
         }
     }
 }
@@ -4613,9 +4647,15 @@ pub fn Card(config: CardConfig, content: impl FnOnce() -> View) -> View {
     } else {
         config.content_color
     };
+    let source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
     let mut m = Modifier::new()
         .background(bg)
         .clip_rounded(config.shape_radius)
+        .interaction_source(&*source)
         .then(config.modifier);
     if let Some((w, c)) = config.border {
         m = m.border(w, c, config.shape_radius);
@@ -4705,6 +4745,7 @@ fn clickable_card_impl(
             border: config.border,
             state_elevation: config.state_elevation,
             tonal_elevation: config.tonal_elevation,
+            interaction_source: config.interaction_source.clone(),
         },
         || Column(Modifier::new().fill_max_size()).child(content()),
     )
@@ -4914,6 +4955,7 @@ pub struct ChipConfig {
     pub disabled_selected_border_color: Color,
     pub shape_radius: f32,
     pub horizontal_padding: f32,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 impl Default for ChipConfig {
@@ -4945,6 +4987,7 @@ impl Default for ChipConfig {
             disabled_selected_border_color: ChipDefaults::disabled_selected_border_color(),
             shape_radius: ChipDefaults::SHAPE_RADIUS,
             horizontal_padding: ChipDefaults::HORIZONTAL_PADDING,
+            interaction_source: None,
         }
     }
 }
@@ -4970,6 +5013,11 @@ pub fn AssistChip(
         config.disabled_border_color
     };
     let shape = config.shape_radius;
+    let ch_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
     let mut m = Modifier::new()
         .state_colors(StateColors {
@@ -4986,6 +5034,7 @@ pub fn AssistChip(
         })
         .background(bg)
         .clip_rounded(shape)
+        .interaction_source(&*ch_source)
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {

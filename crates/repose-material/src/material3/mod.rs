@@ -155,9 +155,15 @@ pub fn NavigationBar(
                         .indicator_color
                         .with_alpha_f32(bg_alpha * config.indicator_opacity);
                     let cb = item.on_click.clone();
+                    let nb_source: Rc<MutableInteractionSource> = item
+                        .interaction_source
+                        .clone()
+                        .map(Rc::new)
+                        .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
                     let mut item_m = Modifier::new()
                         .flex_grow(1.0)
+                        .interaction_source(&*nb_source)
                         .semantics(Semantics::new(Role::Tab).with_label(&item.label));
 
                     if is_enabled {
@@ -221,6 +227,7 @@ pub struct NavItem {
     pub label: String,
     pub on_click: Rc<dyn Fn()>,
     pub enabled: bool,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 pub fn Snackbar(
@@ -1117,6 +1124,7 @@ pub struct NavigationDrawerItemConfig {
     pub badge: Option<View>,
     pub enabled: bool,
     pub shape_radius: f32,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 impl Default for NavigationDrawerItemConfig {
@@ -1127,6 +1135,7 @@ impl Default for NavigationDrawerItemConfig {
             badge: None,
             enabled: true,
             shape_radius: repose_core::locals::theme().shapes.large,
+            interaction_source: None,
         }
     }
 }
@@ -1159,6 +1168,12 @@ pub fn NavigationDrawerItem(
         spec,
     );
 
+    let nd_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
+
     let mut m = Modifier::new()
         .fill_max_width()
         .padding_values(PaddingValues {
@@ -1176,6 +1191,7 @@ pub fn NavigationDrawerItem(
             disabled: Color::TRANSPARENT,
         })
         .clip_rounded(config.shape_radius)
+        .interaction_source(&*nd_source)
         .then(config.modifier);
 
     if config.enabled {
@@ -3309,6 +3325,7 @@ pub struct NavRailItem {
     pub on_click: Rc<dyn Fn()>,
     pub badge: Option<View>,
     pub enabled: bool,
+    pub interaction_source: Option<MutableInteractionSource>,
 }
 
 static NAVRAIL_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -3403,6 +3420,11 @@ pub fn NavigationRail(
         );
 
         let cb = item.on_click.clone();
+        let nr_source: Rc<MutableInteractionSource> = item
+            .interaction_source
+            .clone()
+            .map(Rc::new)
+            .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
         let mut item_m = Modifier::new()
             .fill_max_width()
@@ -3422,6 +3444,7 @@ pub fn NavigationRail(
                 disabled: Color::TRANSPARENT,
             })
             .clip_rounded(config.item_radius)
+            .interaction_source(&*nr_source)
             .semantics(Semantics::new(Role::Tab).with_label(&item.label));
 
         if is_enabled {
