@@ -3,7 +3,10 @@ use repose_core::signal;
 use repose_material::material3::{Button, ButtonConfig, ElevatedButton, TextButton};
 use repose_ui::LazyColumnState;
 use repose_ui::anim::{animate_f32, animate_f32_from};
-use repose_ui::anim_ext::{AnimatedContent, Crossfade, EnterTransition, ExitTransition};
+use repose_ui::anim_ext::{
+    AnimatedContent, AnimatedContentConfig, Crossfade, CrossfadeConfig, EnterTransition,
+    ExitTransition,
+};
 use repose_ui::lazy::LazyColumn;
 use repose_ui::scroll::{ScrollArea, remember_scroll_state};
 use repose_ui::*;
@@ -114,12 +117,13 @@ pub fn screen() -> View {
                     move || c.update(|x| *x = match x { CrossfadeState::A => CrossfadeState::B, CrossfadeState::B => CrossfadeState::A })
                 }, ButtonConfig::default(), || Text("Toggle")),
                 Box(Modifier::new().size(200.0, 80.0)).child(
-                    Crossfade("cross_demo", cross.get(),
-                        AnimationSpec::tween(Duration::from_millis(400), Easing::EaseInOut),
-                        |s| match s {
-                            CrossfadeState::A => state_face("State A", theme().primary, theme().on_primary),
-                            CrossfadeState::B => state_face("State B", theme().tertiary, theme().on_tertiary),
-                        }),
+                    Crossfade(cross.get(), CrossfadeConfig {
+                        key: "cross_demo".into(),
+                        spec: AnimationSpec::tween(Duration::from_millis(400), Easing::EaseInOut),
+                    }, |s| match s {
+                        CrossfadeState::A => state_face("State A", theme().primary, theme().on_primary),
+                        CrossfadeState::B => state_face("State B", theme().tertiary, theme().on_tertiary),
+                    }),
                 ),
             ))
         }),
@@ -182,14 +186,16 @@ pub fn screen() -> View {
                     }}, ButtonConfig::default(), || Text("Next")),
                 )),
                 Box(Modifier::new().size(300.0, 100.0)).child(
-                    AnimatedContent("content_demo", content_state.get(),
-                        AnimationSpec::tween(Duration::from_millis(350), Easing::EaseInOut),
-                        enter, exit,
-                        |s| match s {
-                            ContentState::First => state_face("First", theme().primary, theme().on_primary),
-                            ContentState::Second => state_face("Second", theme().tertiary, theme().on_tertiary),
-                            ContentState::Third => state_face("Third", theme().error_container, theme().on_error_container),
-                        }),
+                    AnimatedContent(content_state.get(), |s| match s {
+                        ContentState::First => state_face("First", theme().primary, theme().on_primary),
+                        ContentState::Second => state_face("Second", theme().tertiary, theme().on_tertiary),
+                        ContentState::Third => state_face("Third", theme().error_container, theme().on_error_container),
+                    }, AnimatedContentConfig {
+                        key: "content_demo".into(),
+                        spec: AnimationSpec::tween(Duration::from_millis(350), Easing::EaseInOut),
+                        enter,
+                        exit,
+                    }),
                 ),
             ))
         }),

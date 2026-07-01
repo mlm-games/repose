@@ -34,16 +34,32 @@ pub enum ExitTransition {
     Composite(Vec<ExitTransition>),
 }
 
+#[derive(Clone)]
+pub struct CrossfadeConfig {
+    pub key: String,
+    pub spec: AnimationSpec,
+}
+
+impl Default for CrossfadeConfig {
+    fn default() -> Self {
+        Self {
+            key: "crossfade".into(),
+            spec: AnimationSpec::default(),
+        }
+    }
+}
+
 /// Crossfades between two pieces of content when `target` changes.
 ///
 /// When the target state changes, the old content fades out while the new
 /// content fades in, with no other transforms applied.
-pub fn Crossfade<T, F>(key: impl Into<String>, target: T, spec: AnimationSpec, content: F) -> View
+pub fn Crossfade<T, F>(target: T, config: CrossfadeConfig, content: F) -> View
 where
     T: PartialEq + Clone + 'static,
     F: Fn(T) -> View + 'static,
 {
-    let key = key.into();
+    let key = config.key;
+    let spec = config.spec;
 
     let prev = remember_with_key(format!("cf_prev:{key}"), || RefCell::new(target.clone()));
     let old_content =
@@ -94,30 +110,44 @@ where
     }
 }
 
+#[derive(Clone)]
+pub struct AnimatedContentConfig {
+    pub key: String,
+    pub spec: AnimationSpec,
+    pub enter: EnterTransition,
+    pub exit: ExitTransition,
+}
+
+impl Default for AnimatedContentConfig {
+    fn default() -> Self {
+        Self {
+            key: "anim_content".into(),
+            spec: AnimationSpec::default(),
+            enter: EnterTransition::FadeIn,
+            exit: ExitTransition::FadeOut,
+        }
+    }
+}
+
 /// Animates between different content based on the `target_state`, with
 /// configurable enter and exit transitions.
 ///
 /// When the target state changes, the old content animates out using the
 /// `exit` transition while the new content animates in using the `enter`
 /// transition. During the transition both are stacked on top of each other.
-///
-/// # Defaults
-///
-/// If no `enter`/`exit` is given, defaults to `FadeIn` / `FadeOut` with
-/// the provided `spec` (or `AnimationSpec::default()`).
 pub fn AnimatedContent<T, F>(
-    key: impl Into<String>,
     target_state: T,
-    spec: AnimationSpec,
-    enter: EnterTransition,
-    exit: ExitTransition,
     content: F,
+    config: AnimatedContentConfig,
 ) -> View
 where
     T: PartialEq + Clone + 'static,
     F: Fn(T) -> View + 'static,
 {
-    let key = key.into();
+    let key = config.key;
+    let spec = config.spec;
+    let enter = config.enter;
+    let exit = config.exit;
 
     let prev = remember_with_key(format!("ac_prev:{key}"), || {
         RefCell::new(target_state.clone())
@@ -382,25 +412,39 @@ fn exit_animation_done(key: &str, version: u64, exit: &ExitTransition) -> bool {
     }
 }
 
+#[derive(Clone)]
+pub struct AnimatedVisibilityConfig {
+    pub key: String,
+    pub spec: AnimationSpec,
+    pub enter: EnterTransition,
+    pub exit: ExitTransition,
+}
+
+impl Default for AnimatedVisibilityConfig {
+    fn default() -> Self {
+        Self {
+            key: "anim_vis".into(),
+            spec: AnimationSpec::default(),
+            enter: EnterTransition::FadeIn,
+            exit: ExitTransition::FadeOut,
+        }
+    }
+}
+
 /// Shows or hides content with animated enter/exit transitions.
 ///
 /// When `visible` becomes `true`, the content enters using the specified `enter`
 /// transition. When it becomes `false`, the content exits using the specified `exit`
 /// transition.
-///
-/// # Default transitions
-///
-/// If called with only `(key, visible, content)`, defaults to `FadeIn` / `FadeOut`
-/// with `AnimationSpec::default()`.
 pub fn AnimatedVisibility(
-    key: impl Into<String>,
     visible: bool,
-    enter: EnterTransition,
-    exit: ExitTransition,
-    spec: AnimationSpec,
     content: View,
+    config: AnimatedVisibilityConfig,
 ) -> View {
-    let key = key.into();
+    let key = config.key;
+    let spec = config.spec;
+    let enter = config.enter;
+    let exit = config.exit;
 
     let old_content = remember_with_key(format!("av_old:{key}"), || RefCell::new(None::<View>));
     let version = remember_with_key(format!("av_ver:{key}"), || RefCell::new(0u64));

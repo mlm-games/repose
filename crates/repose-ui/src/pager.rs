@@ -2,7 +2,7 @@ use repose_core::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::anim_ext::{AnimatedContent, EnterTransition, ExitTransition};
+use crate::anim_ext::{AnimatedContent, AnimatedContentConfig, EnterTransition, ExitTransition};
 
 /// State for a horizontal pager with page snapping.
 pub struct PagerState {
@@ -96,24 +96,26 @@ pub fn HorizontalPager(
     };
 
     let content = AnimatedContent(
-        format!("page_content:{key}"),
         page,
-        AnimationSpec::spring_gentle(),
-        EnterTransition::Composite(vec![
-            EnterTransition::FadeIn,
-            EnterTransition::SlideIn {
-                offset_x: 800.0,
-                offset_y: 0.0,
-            },
-        ]),
-        ExitTransition::Composite(vec![
-            ExitTransition::FadeOut,
-            ExitTransition::SlideOut {
-                offset_x: -800.0,
-                offset_y: 0.0,
-            },
-        ]),
         page_builder,
+        AnimatedContentConfig {
+            key: format!("page_content:{key}"),
+            spec: AnimationSpec::spring_gentle(),
+            enter: EnterTransition::Composite(vec![
+                EnterTransition::FadeIn,
+                EnterTransition::SlideIn {
+                    offset_x: 800.0,
+                    offset_y: 0.0,
+                },
+            ]),
+            exit: ExitTransition::Composite(vec![
+                ExitTransition::FadeOut,
+                ExitTransition::SlideOut {
+                    offset_x: -800.0,
+                    offset_y: 0.0,
+                },
+            ]),
+        },
     );
 
     crate::ZStack(Modifier::new().fill_max_size().then(modifier)).with_children(vec![
@@ -175,24 +177,26 @@ pub fn VerticalPager(
     };
 
     let content = AnimatedContent(
-        format!("vpage_content:{key}"),
         page,
-        AnimationSpec::spring_gentle(),
-        EnterTransition::Composite(vec![
-            EnterTransition::FadeIn,
-            EnterTransition::SlideIn {
-                offset_x: 0.0,
-                offset_y: 600.0,
-            },
-        ]),
-        ExitTransition::Composite(vec![
-            ExitTransition::FadeOut,
-            ExitTransition::SlideOut {
-                offset_x: 0.0,
-                offset_y: -600.0,
-            },
-        ]),
         page_builder,
+        AnimatedContentConfig {
+            key: format!("vpage_content:{key}"),
+            spec: AnimationSpec::spring_gentle(),
+            enter: EnterTransition::Composite(vec![
+                EnterTransition::FadeIn,
+                EnterTransition::SlideIn {
+                    offset_x: 0.0,
+                    offset_y: 600.0,
+                },
+            ]),
+            exit: ExitTransition::Composite(vec![
+                ExitTransition::FadeOut,
+                ExitTransition::SlideOut {
+                    offset_x: 0.0,
+                    offset_y: -600.0,
+                },
+            ]),
+        },
     );
 
     crate::ZStack(Modifier::new().fill_max_size().then(modifier)).with_children(vec![
