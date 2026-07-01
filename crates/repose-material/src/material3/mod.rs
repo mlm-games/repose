@@ -9,6 +9,9 @@ pub use components::*;
 pub mod dialog;
 pub use dialog::*;
 
+pub mod advbuttons;
+pub use advbuttons::*;
+
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};

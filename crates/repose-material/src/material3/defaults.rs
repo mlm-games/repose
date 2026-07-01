@@ -1239,6 +1239,56 @@ impl SwipeToDismissDefaults {
     pub const MAX_WIDTH: f32 = 400.0;
 }
 
+/// Default values for split button.
+pub struct SplitButtonDefaults;
+
+impl SplitButtonDefaults {
+    pub const SPACING: f32 = 8.0;
+    pub const LEADING_BUTTON_MIN_WIDTH: f32 = 48.0;
+    pub const SMALL_CONTAINER_HEIGHT: f32 = 48.0;
+
+    /// Content padding for a small leading button.
+    pub fn small_leading_content_padding() -> PaddingValues {
+        PaddingValues {
+            left: 24.0,
+            right: 16.0,
+            top: 0.0,
+            bottom: 0.0,
+        }
+    }
+
+    /// Content padding for a small trailing button.
+    pub fn small_trailing_content_padding() -> PaddingValues {
+        PaddingValues {
+            left: 16.0,
+            right: 24.0,
+            top: 0.0,
+            bottom: 0.0,
+        }
+    }
+}
+
+/// Default values for button group.
+pub struct ButtonGroupDefaults;
+
+impl ButtonGroupDefaults {
+    pub const SHAPE_RADIUS: f32 = 20.0;
+    pub const GAP: f32 = 1.0;
+
+    pub fn color() -> Color {
+        theme().surface_container_high
+    }
+    pub fn selected_color() -> Color {
+        theme().primary
+    }
+    pub fn text_color() -> Color {
+        theme().on_surface_variant
+    }
+    pub fn selected_text_color() -> Color {
+        theme().on_primary
+    }
+}
+
 /// Default values for carousel.
 pub struct CarouselDefaults;
 
