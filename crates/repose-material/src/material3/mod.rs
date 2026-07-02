@@ -876,15 +876,12 @@ pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig)
                     );
                 }
                 FabPosition::Center => {
-                    fab_m = fab_m
-                        .fill_max_width()
-                        .align_self(AlignSelf::Center)
-                        .offset(
-                            None,
-                            None,
-                            Some(16.0 + insets.bottom + insets.ime_bottom),
-                            None,
-                        );
+                    fab_m = fab_m.fill_max_width().align_self(AlignSelf::Center).offset(
+                        None,
+                        None,
+                        Some(16.0 + insets.bottom + insets.ime_bottom),
+                        None,
+                    );
                 }
             }
             Box(fab_m).child(fab)
@@ -3025,7 +3022,8 @@ pub fn DatePicker(
             .align_items(AlignItems::Center))
         .child((
             IconButton(
-                Box(Modifier::new()).child(Text("◀").color(config.colors.navigation_color).size(16.0)),
+                Box(Modifier::new())
+                    .child(Text("◀").color(config.colors.navigation_color).size(16.0)),
                 prev_month,
                 IconButtonConfig::default(),
             ),
@@ -3054,7 +3052,8 @@ pub fn DatePicker(
             )),
             Spacer(),
             IconButton(
-                Box(Modifier::new()).child(Text("▶").color(config.colors.navigation_color).size(16.0)),
+                Box(Modifier::new())
+                    .child(Text("▶").color(config.colors.navigation_color).size(16.0)),
                 next_month,
                 IconButtonConfig::default(),
             ),
@@ -3122,9 +3121,11 @@ pub fn DatePicker(
                                             config.colors.day_color
                                         });
                                     if is_today && !is_selected {
-                                        t = t.modifier(
-                                            Modifier::new().border(1.0, config.colors.today_border_color, 10.0),
-                                        );
+                                        t = t.modifier(Modifier::new().border(
+                                            1.0,
+                                            config.colors.today_border_color,
+                                            10.0,
+                                        ));
                                     }
                                     t
                                 }),
@@ -3230,19 +3231,29 @@ impl Default for TimePickerColors {
     fn default() -> Self {
         Self {
             clock_dial_color: TimePickerDefaults::clock_dial_color(),
-            clock_dial_selected_content_color: TimePickerDefaults::clock_dial_selected_content_color(),
-            clock_dial_unselected_content_color: TimePickerDefaults::clock_dial_unselected_content_color(),
+            clock_dial_selected_content_color:
+                TimePickerDefaults::clock_dial_selected_content_color(),
+            clock_dial_unselected_content_color:
+                TimePickerDefaults::clock_dial_unselected_content_color(),
             selector_color: TimePickerDefaults::selector_color(),
             container_color: TimePickerDefaults::container_color(),
             period_selector_border_color: TimePickerDefaults::period_selector_border_color(),
-            period_selector_selected_container_color: TimePickerDefaults::period_selector_selected_container_color(),
-            period_selector_unselected_container_color: TimePickerDefaults::period_selector_unselected_container_color(),
-            period_selector_selected_content_color: TimePickerDefaults::period_selector_selected_content_color(),
-            period_selector_unselected_content_color: TimePickerDefaults::period_selector_unselected_content_color(),
-            time_selector_selected_container_color: TimePickerDefaults::time_selector_selected_container_color(),
-            time_selector_unselected_container_color: TimePickerDefaults::time_selector_unselected_container_color(),
-            time_selector_selected_content_color: TimePickerDefaults::time_selector_selected_content_color(),
-            time_selector_unselected_content_color: TimePickerDefaults::time_selector_unselected_content_color(),
+            period_selector_selected_container_color:
+                TimePickerDefaults::period_selector_selected_container_color(),
+            period_selector_unselected_container_color:
+                TimePickerDefaults::period_selector_unselected_container_color(),
+            period_selector_selected_content_color:
+                TimePickerDefaults::period_selector_selected_content_color(),
+            period_selector_unselected_content_color:
+                TimePickerDefaults::period_selector_unselected_content_color(),
+            time_selector_selected_container_color:
+                TimePickerDefaults::time_selector_selected_container_color(),
+            time_selector_unselected_container_color:
+                TimePickerDefaults::time_selector_unselected_container_color(),
+            time_selector_selected_content_color:
+                TimePickerDefaults::time_selector_selected_content_color(),
+            time_selector_unselected_content_color:
+                TimePickerDefaults::time_selector_unselected_content_color(),
         }
     }
 }
@@ -3297,7 +3308,12 @@ pub fn TimePicker(
                     move || s.hour.set((s.hour.get() % 12) + 1)
                 })
                 .padding(8.0))
-            .child(Text(hour_str).size(48.0).color(config.colors.clock_dial_unselected_content_color).single_line()),
+            .child(
+                Text(hour_str)
+                    .size(48.0)
+                    .color(config.colors.clock_dial_unselected_content_color)
+                    .single_line(),
+            ),
             Text(":")
                 .size(48.0)
                 .color(config.colors.clock_dial_unselected_content_color)
@@ -3309,7 +3325,12 @@ pub fn TimePicker(
                     move || s.minute.set((s.minute.get() + 1) % 60)
                 })
                 .padding(8.0))
-            .child(Text(min_str).size(48.0).color(config.colors.clock_dial_unselected_content_color).single_line()),
+            .child(
+                Text(min_str)
+                    .size(48.0)
+                    .color(config.colors.clock_dial_unselected_content_color)
+                    .single_line(),
+            ),
         )),
         Box(Modifier::new().fill_max_width().height(16.0)),
         // AM/PM toggle
@@ -3741,7 +3762,9 @@ pub fn SwipeToDismiss(
     let display_offset = offset.max(-config.dismissed_offset).min(0.0);
 
     let content_modifier = {
-        let mut m = Modifier::new().fill_max_width().translate(display_offset, 0.0);
+        let mut m = Modifier::new()
+            .fill_max_width()
+            .translate(display_offset, 0.0);
         if config.gestures_enabled {
             m = m
                 .on_pointer_down(on_down)

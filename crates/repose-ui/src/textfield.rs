@@ -1712,7 +1712,11 @@ pub(crate) fn paint_text_field(
                     x: inner.x,
                     y: hint_y,
                     w: inner.w,
-                    h: if text_input.multiline { inner.h } else { line_h },
+                    h: if text_input.multiline {
+                        inner.h
+                    } else {
+                        line_h
+                    },
                 },
                 text: Arc::from(text_input.hint.clone()),
                 color: th.on_surface_variant,

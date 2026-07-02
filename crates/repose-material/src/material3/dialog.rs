@@ -272,8 +272,17 @@ pub fn AlertDialog(
 ) -> View {
     let content = Box(Modifier::new()
         .background(config.container_color)
-        .clip_rounded(config.shape_radius.unwrap_or_else(|| theme().shapes.extra_large))
-    ).child(super::alert_dialog_body(title, text, confirm_button, dismiss_button));
+        .clip_rounded(
+            config
+                .shape_radius
+                .unwrap_or_else(|| theme().shapes.extra_large),
+        ))
+    .child(super::alert_dialog_body(
+        title,
+        text,
+        confirm_button,
+        dismiss_button,
+    ));
 
     Dialog(
         state,
@@ -320,8 +329,12 @@ pub fn DatePickerDialog(
 ) -> View {
     let content = Box(Modifier::new()
         .background(config.colors.container_color)
-        .clip_rounded(config.shape_radius.unwrap_or_else(|| theme().shapes.extra_large))
-    ).child(Column(Modifier::new()).child((DatePicker(
+        .clip_rounded(
+            config
+                .shape_radius
+                .unwrap_or_else(|| theme().shapes.extra_large),
+        ))
+    .child(Column(Modifier::new()).child((DatePicker(
         picker_state.clone(),
         on_confirm,
         on_dismiss,
@@ -375,8 +388,12 @@ pub fn TimePickerDialog(
 ) -> View {
     let content = Box(Modifier::new()
         .background(config.container_color)
-        .clip_rounded(config.shape_radius.unwrap_or_else(|| theme().shapes.extra_large))
-    ).child(Column(Modifier::new()).child((TimePicker(
+        .clip_rounded(
+            config
+                .shape_radius
+                .unwrap_or_else(|| theme().shapes.extra_large),
+        ))
+    .child(Column(Modifier::new()).child((TimePicker(
         picker_state.clone(),
         on_confirm,
         on_dismiss,
