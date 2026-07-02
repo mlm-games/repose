@@ -280,6 +280,7 @@ impl IndicationDrawNode for RippleDrawNode {
             scene.nodes.push(SceneNode::PushClip {
                 rect,
                 radius: [0.0; 4],
+                op: repose_core::ClipOp::Intersect,
             });
             scene.nodes.push(SceneNode::Ellipse {
                 rect: Rect {

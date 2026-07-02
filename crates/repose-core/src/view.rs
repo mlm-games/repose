@@ -1,6 +1,6 @@
 use crate::{
-    Brush, Color, FontStyle, FontWeight, Modifier, Rect, TextAlign, TextDecoration, TextSpan,
-    Transform,
+    Brush, ClipOp, Color, FontStyle, FontWeight, Modifier, Rect, TextAlign, TextDecoration,
+    TextSpan, Transform,
 };
 use std::{fmt::Formatter, rc::Rc, sync::Arc};
 
@@ -287,6 +287,7 @@ pub enum SceneNode {
     PushClip {
         rect: Rect,
         radius: [f32; 4],
+        op: ClipOp,
     },
     PopClip,
     PushTransform {

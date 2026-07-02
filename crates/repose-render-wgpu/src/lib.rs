@@ -217,6 +217,7 @@ struct Pipelines {
     blur_content: wgpu::RenderPipeline,
     clip_a2c: wgpu::RenderPipeline,
     clip_bin: wgpu::RenderPipeline,
+    clip_dec: wgpu::RenderPipeline,
     slug: Option<wgpu::RenderPipeline>,
 }
 
@@ -231,6 +232,7 @@ impl Pipelines {
         clip_pipeline_layout: &wgpu::PipelineLayout,
         stencil_for_content: &wgpu::DepthStencilState,
         stencil_for_clip_inc: &wgpu::DepthStencilState,
+        stencil_for_clip_dec: &wgpu::DepthStencilState,
         clip_color_target: &wgpu::ColorTargetState,
         clip_vertex_layout: &wgpu::VertexBufferLayout,
     ) -> Self {
@@ -813,6 +815,31 @@ impl Pipelines {
             multiview_mask: None,
             cache: None,
         });
+        let clip_dec = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("clip pipeline (dec)"),
+            layout: Some(clip_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &clip_shader_bin,
+                entry_point: Some("vs_main"),
+                buffers: &[clip_vertex_layout.clone()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &clip_shader_bin,
+                entry_point: Some("fs_main"),
+                targets: &[Some(clip_color_target.clone())],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(stencil_for_clip_dec.clone()),
+            multisample: wgpu::MultisampleState {
+                count: sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview_mask: None,
+            cache: None,
+        });
 
         let slug = Some(slug::create_pipeline(
             device,
@@ -835,6 +862,7 @@ impl Pipelines {
             blur_content,
             clip_a2c,
             clip_bin,
+            clip_dec,
             slug,
         }
     }
@@ -857,6 +885,7 @@ enum Cmd {
         off: u64,
         cnt: u32,
         scissor: (u32, u32, u32, u32),
+        difference: bool,
     },
     ClipPop {
         scissor: (u32, u32, u32, u32),
@@ -1257,6 +1286,29 @@ impl WgpuBackend {
             bias: wgpu::DepthBiasState::default(),
         };
 
+        let stencil_for_clip_dec = wgpu::DepthStencilState {
+            format: ds_format,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Always),
+            stencil: wgpu::StencilState {
+                front: wgpu::StencilFaceState {
+                    compare: wgpu::CompareFunction::Equal,
+                    fail_op: wgpu::StencilOperation::Keep,
+                    depth_fail_op: wgpu::StencilOperation::Keep,
+                    pass_op: wgpu::StencilOperation::DecrementClamp,
+                },
+                back: wgpu::StencilFaceState {
+                    compare: wgpu::CompareFunction::Equal,
+                    fail_op: wgpu::StencilOperation::Keep,
+                    depth_fail_op: wgpu::StencilOperation::Keep,
+                    pass_op: wgpu::StencilOperation::DecrementClamp,
+                },
+                read_mask: 0xFF,
+                write_mask: 0xFF,
+            },
+            bias: wgpu::DepthBiasState::default(),
+        };
+
         let _multisample_state = wgpu::MultisampleState {
             count: msaa_samples,
             mask: !0,
@@ -1383,6 +1435,7 @@ impl WgpuBackend {
             &clip_pipeline_layout,
             &stencil_for_content,
             &stencil_for_clip_inc,
+            &stencil_for_clip_dec,
             &clip_color_target,
             &clip_vertex_layout,
         );
@@ -1396,6 +1449,7 @@ impl WgpuBackend {
             &clip_pipeline_layout,
             &stencil_for_content,
             &stencil_for_clip_inc,
+            &stencil_for_clip_dec,
             &clip_color_target,
             &clip_vertex_layout,
         );
@@ -3109,15 +3163,21 @@ impl RenderBackend for WgpuBackend {
                         }
                     }
                 }
-                SceneNode::PushClip { rect, radius } => {
+                SceneNode::PushClip { rect, radius, op } => {
                     flush_batch!(); // flush content before entering clip
+
+                    let is_diff = matches!(op, repose_core::ClipOp::Difference);
 
                     let t_identity = Transform::identity();
                     let current_transform = transform_stack.last().unwrap_or(&t_identity);
                     let transformed = current_transform.apply_to_rect(*rect);
 
                     let top = scissor_stack.last().copied().unwrap_or(root_clip_rect);
-                    let next_scissor = intersect(top, transformed);
+                    let next_scissor = if is_diff {
+                        top
+                    } else {
+                        intersect(top, transformed)
+                    };
                     scissor_stack.push(next_scissor);
                     let scissor = to_scissor(
                         &next_scissor,
@@ -3151,6 +3211,7 @@ impl RenderBackend for WgpuBackend {
                         off,
                         cnt: 1,
                         scissor,
+                        difference: is_diff,
                     });
                 }
                 SceneNode::PopClip => {
@@ -3499,11 +3560,14 @@ impl RenderBackend for WgpuBackend {
                         off,
                         cnt: n,
                         scissor,
+                        difference,
                     } => {
                         rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                         rpass.set_stencil_reference(clip_depth);
 
-                        if self.msaa_samples > 1 && !is_layer {
+                        if difference {
+                            rpass.set_pipeline(&pipes.clip_dec);
+                        } else if self.msaa_samples > 1 && !is_layer {
                             rpass.set_pipeline(&pipes.clip_a2c);
                         } else {
                             rpass.set_pipeline(&pipes.clip_bin);
@@ -3513,8 +3577,10 @@ impl RenderBackend for WgpuBackend {
                         rpass.set_vertex_buffer(0, self.clip_ring.buf.slice(off..off + bytes));
                         rpass.draw(0..6, 0..n);
 
-                        clip_depth = (clip_depth + 1).min(255);
-                        rpass.set_stencil_reference(clip_depth);
+                        if !difference {
+                            clip_depth = (clip_depth + 1).min(255);
+                            rpass.set_stencil_reference(clip_depth);
+                        }
                     }
 
                     Cmd::ClipPop { scissor } => {

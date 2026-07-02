@@ -1392,19 +1392,11 @@ pub(crate) fn paint_text_field(
     };
     let text_off_y = (inner.h - line_h) / 2.0;
 
-    if is_focused {
-        let radius = clip_rounded.unwrap_or([4.0; 4]).map(dp_to_px);
-        scene.nodes.push(SceneNode::Border {
-            rect,
-            color: locals::theme().focus,
-            width: dp_to_px(2.0),
-            radius,
-        });
-    }
-
+    let inner_radius = clip_rounded.unwrap_or([0.0; 4]).map(dp_to_px);
     scene.nodes.push(SceneNode::PushClip {
         rect: inner,
-        radius: [0.0; 4],
+        radius: inner_radius,
+        op: repose_core::ClipOp::Intersect,
     });
 
     let th = locals::theme();

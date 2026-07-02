@@ -2051,6 +2051,19 @@ impl LayoutEngine {
             scene.nodes.push(SceneNode::PushClip {
                 rect,
                 radius: round_clip_px,
+                op: ClipOp::Intersect,
+            });
+        }
+        if let Some(cr) = modifier.clip_rect {
+            scene.nodes.push(SceneNode::PushClip {
+                rect: repose_core::Rect {
+                    x: rect.x + dp_to_px(cr.left),
+                    y: rect.y + dp_to_px(cr.top),
+                    w: (dp_to_px(cr.right) - dp_to_px(cr.left)).max(0.0),
+                    h: (dp_to_px(cr.bottom) - dp_to_px(cr.top)).max(0.0),
+                },
+                radius: [0.0; 4],
+                op: cr.op,
             });
         }
 
@@ -2369,6 +2382,7 @@ impl LayoutEngine {
                     scene.nodes.push(SceneNode::PushClip {
                         rect: content_rect,
                         radius: [0.0; 4],
+                        op: crate::ClipOp::Intersect,
                     });
                 }
 
@@ -3000,6 +3014,7 @@ impl LayoutEngine {
                 scene.nodes.push(SceneNode::PushClip {
                     rect: vp,
                     radius: [0.0; 4],
+                    op: crate::ClipOp::Intersect,
                 });
 
                 let hits_start = hits.len();
@@ -3114,6 +3129,7 @@ impl LayoutEngine {
                 scene.nodes.push(SceneNode::PushClip {
                     rect: vp,
                     radius: [0.0; 4],
+                    op: crate::ClipOp::Intersect,
                 });
                 let hits_start = hits.len();
                 let scrolled_offset = (child_offset_px.0 - ox, child_offset_px.1 - oy);
@@ -3285,6 +3301,9 @@ impl LayoutEngine {
             }
         }
 
+        if modifier.clip_rect.is_some() {
+            scene.nodes.push(SceneNode::PopClip);
+        }
         if push_round_clip {
             scene.nodes.push(SceneNode::PopClip);
         }

@@ -62,7 +62,7 @@ macro_rules! impl_option_fields {
                     flex_grow, flex_shrink, flex_basis, flex_wrap, flex_dir,
                     gap, row_gap, column_gap,
                     align_self, justify_content, align_items_container, align_content,
-                    clip_rounded, render_z_index,
+                    clip_rounded, clip_rect, render_z_index,
                     on_scroll,
                     on_pointer_down, on_pointer_move, on_pointer_up,
                     on_pointer_enter, on_pointer_leave,
@@ -96,6 +96,31 @@ macro_rules! impl_option_fields {
             }
         }
     };
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClipOp {
+    /// Keep content inside the clip rect (default).
+    Intersect,
+    /// Remove content inside the clip rect (cutout).
+    Difference,
+}
+
+impl Default for ClipOp {
+    fn default() -> Self {
+        Self::Intersect
+    }
+}
+
+/// Rectangular clip with a clipping operation.
+/// The rect is relative to the element bounds, in dp.
+#[derive(Clone, Copy, Debug)]
+pub struct ClipRect {
+    pub left: f32,
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
+    pub op: ClipOp,
 }
 
 #[derive(Clone, Debug)]
@@ -466,6 +491,9 @@ pub struct Modifier {
     pub align_items_container: Option<AlignItems>,
     pub align_content: Option<AlignContent>,
     pub clip_rounded: Option<[f32; 4]>,
+    /// Rectangular clip with a clipping operation (Intersect or Difference).
+    /// The rect is relative to the element bounds, in dp.
+    pub clip_rect: Option<ClipRect>,
     /// Z-index for hit-testing order (higher = receives events first).
     pub z_index: f32,
     /// Z-index for render order (higher = painted on top). If None, uses tree order.
@@ -639,6 +667,7 @@ impl std::fmt::Debug for Modifier {
             align_items_container,
             align_content,
             clip_rounded,
+            clip_rect,
             render_z_index,
             semantics,
             alpha,
@@ -982,6 +1011,12 @@ impl Modifier {
     }
     pub fn clip_rounded_radii(mut self, radii: [f32; 4]) -> Self {
         self.clip_rounded = Some(radii);
+        self
+    }
+    /// Clip a rectangular region from this element using the given operation.
+    /// `left`, `top`, `right`, `bottom` are relative to the element bounds, in dp.
+    pub fn clip_rect(mut self, left: f32, top: f32, right: f32, bottom: f32, op: ClipOp) -> Self {
+        self.clip_rect = Some(ClipRect { left, top, right, bottom, op });
         self
     }
     pub fn z_index(mut self, z: f32) -> Self {

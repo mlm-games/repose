@@ -9,6 +9,7 @@ use repose_core::animation::{AnimationSpec, CubicBezier, Easing, KeyframesSpec, 
 use repose_core::*;
 use repose_ui::anim::{animate_color, animate_f32};
 use repose_ui::scroll::NestedScrollConnection;
+use repose_ui::textfield::measure_text;
 use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt};
 
 use super::*;
@@ -3032,83 +3033,109 @@ pub fn OutlinedTextField(
 
     // Outer Stack holds both the clipped content and the unclipped label.
     // The label sits outside the clipped Box so it can extend above the border.
-    Stack(
+    let label_cutout = label_str.as_ref().map(|lbl| {
+        let font_px = dp_to_px(label_size) * repose_core::locals::text_scale().0;
+        let m = measure_text(lbl, font_px, None, 400, 0);
+        let text_width_px = m.positions.last().copied().unwrap_or(0.0);
+        let text_width_dp = px_to_dp(text_width_px);
+        let pad = 1.0;
+        let line_h = 16.0;
+        (
+            label_x - pad,
+            label_y - pad,
+            label_x + text_width_dp + pad,
+            label_y + line_h + pad,
+        )
+    });
+
+    ZStack(
         modifier
             .min_height(OutlinedTextFieldDefaults::MIN_HEIGHT)
             .min_width(OutlinedTextFieldDefaults::MIN_WIDTH),
     )
     .child((
-        // Clipped background, border, and input content
+        // Background layer — no border, full surface color (no notch)
         Box(Modifier::new()
             .fill_max_size()
             .clip_rounded(th.shapes.small)
-            .background(container_bg)
-            .border(border_w, border_color, th.shapes.small))
-        .child(
-            Stack(Modifier::new().fill_max_size()).child((
-                // Input row - positioned with proper padding for floating label overlap
-                Row(Modifier::new()
-                    .fill_max_size()
-                    .padding_values(PaddingValues {
-                        left: 16.0,
-                        right: 16.0,
-                        top: top_pad,
-                        bottom: bottom_pad,
-                    })
-                    .align_items(AlignItems::Center))
-                .child((
-                    config.leading_icon.unwrap_or(Box(Modifier::new())),
-                    View::new(0, ViewKind::Box)
-                        .modifier(
-                            Modifier::new()
-                                .flex_grow(1.0)
-                                .padding_values(PaddingValues {
-                                    left: 8.0,
-                                    right: 8.0,
-                                    top: 0.0,
-                                    bottom: 0.0,
-                                })
-                                .text_input(TextInputConfig {
-                                    hint: tf_placeholder,
-                                    multiline: false,
-                                    on_change: Some(Rc::new(on_value_change) as _),
-                                    on_submit: config.on_submit.clone().map(|f| {
-                                        let f = f.clone();
-                                        Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
-                                    }),
-                                    focus_tracker: Some(focus_tracker.clone()),
-                                    value: value.clone(),
-                                    visual_transformation: None,
-                                    keyboard_type: Default::default(),
-                                    capitalization: Default::default(),
-                                    ime_action: Default::default(),
-                                    enabled: config.enabled,
-                                    read_only: false,
-                                    max_lines: None,
-                                    min_lines: 1,
-                                    cursor_color: config
-                                        .colors
-                                        .as_ref()
-                                        .map(|c| c.cursor_color(config.is_error)),
-                                    on_text_layout: None,
-                                    text_style: None,
-                                    keyboard_actions: None,
-                                    interaction_source: None,
-                                    line_limits: None,
-                                }),
-                        )
-                        .semantics(Semantics {
-                            role: Role::TextField,
-                            label: None,
-                            focused: false,
-                            enabled: true,
-                            selectable_group: false,
+            .background(container_bg)),
+        // Border layer — drawn on top of background, with notch for the label
+        if has_label {
+            let mut bm = Modifier::new()
+                .fill_max_size()
+                .clip_rounded(th.shapes.small)
+                .border(border_w, border_color, th.shapes.small);
+            if let Some((l, t, r, b)) = label_cutout {
+                bm = bm.clip_rect(l, t, r, b, ClipOp::Difference);
+            }
+            Box(bm)
+        } else {
+            Box(Modifier::new()
+                .fill_max_size()
+                .clip_rounded(th.shapes.small)
+                .border(border_w, border_color, th.shapes.small))
+        },
+        // Content layer — text input with proper padding
+        Row(Modifier::new()
+            .fill_max_size()
+            .padding_values(PaddingValues {
+                left: 16.0,
+                right: 16.0,
+                top: top_pad,
+                bottom: bottom_pad,
+            })
+            .align_items(AlignItems::Center))
+        .child((
+            config.leading_icon.unwrap_or(Box(Modifier::new())),
+            View::new(0, ViewKind::Box)
+                .modifier(
+                    Modifier::new()
+                        .flex_grow(1.0)
+                        .padding_values(PaddingValues {
+                            left: 8.0,
+                            right: 8.0,
+                            top: 0.0,
+                            bottom: 0.0,
+                        })
+                        .text_input(TextInputConfig {
+                            hint: tf_placeholder,
+                            multiline: false,
+                            on_change: Some(Rc::new(on_value_change) as _),
+                            on_submit: config.on_submit.clone().map(|f| {
+                                let f = f.clone();
+                                Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
+                            }),
+                            focus_tracker: Some(focus_tracker.clone()),
+                            value: value.clone(),
+                            visual_transformation: None,
+                            keyboard_type: Default::default(),
+                            capitalization: Default::default(),
+                            ime_action: Default::default(),
+                            enabled: config.enabled,
+                            read_only: false,
+                            max_lines: None,
+                            min_lines: 1,
+                            cursor_color: config
+                                .colors
+                                .as_ref()
+                                .map(|c| c.cursor_color(config.is_error)),
+                            on_text_layout: None,
+                            text_style: None,
+                            keyboard_actions: None,
+                            interaction_source: None,
+                            line_limits: None,
                         }),
-                    config.trailing_icon.unwrap_or(Box(Modifier::new())),
-                )),
-            )),
-        ),
-        // Floating label — outside the clipped Box, extends above freely.
+                )
+                .semantics(Semantics {
+                    role: Role::TextField,
+                    label: None,
+                    focused: false,
+                    enabled: true,
+                    selectable_group: false,
+                }),
+            config.trailing_icon.unwrap_or(Box(Modifier::new())),
+        )),
+        // Floating label — plain text, no background chip (matches M3 reference)
         if let Some(lbl) = label_str {
             Box(Modifier::new()
                 .min_width(200.0)
@@ -3121,19 +3148,9 @@ pub fn OutlinedTextField(
                 .absolute()
                 .offset(Some(0.0), Some(label_y), None, None))
             .child(
-                Box(Modifier::new()
-                    .background(container_bg)
-                    .padding_values(PaddingValues {
-                        left: 4.0,
-                        right: 4.0,
-                        top: 2.0,
-                        bottom: 2.0,
-                    }))
-                .child(
-                    Text(lbl.as_ref().to_string())
-                        .color(label_color)
-                        .size(label_size),
-                ),
+                Text(lbl.as_ref().to_string())
+                    .color(label_color)
+                    .size(label_size),
             )
         } else {
             Box(Modifier::new())
@@ -3348,7 +3365,7 @@ pub fn TextField(
                     .background(indicator_color)),
             )),
         ),
-        // Floating label
+        // Floating label — plain text, no background chip (matches M3 reference)
         if let Some(lbl) = label_str {
             Box(Modifier::new()
                 .min_width(200.0)
@@ -3361,19 +3378,9 @@ pub fn TextField(
                 .absolute()
                 .offset(Some(0.0), Some(label_y), None, None))
             .child(
-                Box(Modifier::new()
-                    .background(container_bg)
-                    .padding_values(PaddingValues {
-                        left: 4.0,
-                        right: 4.0,
-                        top: 2.0,
-                        bottom: 2.0,
-                    }))
-                .child(
-                    Text(lbl.as_ref().to_string())
-                        .color(label_color)
-                        .size(label_size),
-                ),
+                Text(lbl.as_ref().to_string())
+                    .color(label_color)
+                    .size(label_size),
             )
         } else {
             Box(Modifier::new())
