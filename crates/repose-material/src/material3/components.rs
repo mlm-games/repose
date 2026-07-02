@@ -2815,6 +2815,11 @@ impl TextFieldColors {
 pub struct TextFieldDefaults;
 
 impl TextFieldDefaults {
+    /// Default minimum height for a filled TextField (56dp matches M3 spec).
+    pub const MIN_HEIGHT: f32 = 56.0;
+    /// Default minimum width for a filled TextField (280dp matches M3 spec).
+    pub const MIN_WIDTH: f32 = 280.0;
+
     pub fn colors() -> TextFieldColors {
         let th = theme();
         TextFieldColors {
@@ -3230,10 +3235,23 @@ pub fn TextField(
     };
 
     let label_size = 16.0 - 4.0 * float_t;
-    let label_y = 16.0 - 20.0 * float_t;
+
+    let min_label_half_h: f32 = if has_label { 8.0 } else { 0.0 };
+
+    let label_start_y = 16.0;
+    let label_end_y = -min_label_half_h;
+    let label_y = label_start_y - (label_start_y - label_end_y) * float_t;
+
+    let label_start_x = if has_label { 24.0 } else { 0.0 };
+    let label_end_x = if has_label { 20.0 } else { 0.0 };
+    let label_x = label_start_x - (label_start_x - label_end_x) * float_t;
 
     let tf_placeholder = if has_label {
-        String::new()
+        if should_float {
+            config.placeholder.unwrap_or_default()
+        } else {
+            String::new()
+        }
     } else {
         config.placeholder.unwrap_or_default()
     };
@@ -3246,111 +3264,121 @@ pub fn TextField(
         th.motion.color,
     );
 
-    Box(modifier
-        .clip_rounded(th.shapes.extra_small)
-        .background(container_bg))
-    .child(
-        Stack(Modifier::new().fill_max_size()).child((
-            // Bottom indicator line — full width, clipped by container shape
-            Box(Modifier::new()
-                .fill_max_size()
-                .align_items(AlignItems::FlexEnd))
-            .child(Box(Modifier::new()
-                .fill_max_width()
-                .height(indicator_w)
-                .background(indicator_color))),
-            // Input row
-            Row(Modifier::new()
-                .fill_max_size()
-                .padding_values(PaddingValues {
-                    left: 16.0,
-                    right: 16.0,
-                    top: 16.0,
-                    bottom: 10.0,
-                })
-                .align_items(AlignItems::Center))
-            .child((
-                config.leading_icon.unwrap_or(Box(Modifier::new())),
-                View::new(0, ViewKind::Box)
-                    .modifier(
-                        Modifier::new()
-                            .flex_grow(1.0)
-                            .padding_values(PaddingValues {
-                                left: 8.0,
-                                right: 8.0,
-                                top: 0.0,
-                                bottom: 0.0,
-                            })
-                            .text_input(TextInputConfig {
-                                hint: tf_placeholder,
-                                multiline: !config.single_line,
-                                on_change: Some(Rc::new(on_value_change) as _),
-                                on_submit: config.on_submit.clone().map(|f| {
-                                    let f = f.clone();
-                                    Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
-                                }),
-                                focus_tracker: Some(focus_tracker.clone()),
-                                value: value.clone(),
-                                visual_transformation: None,
-                                keyboard_type: Default::default(),
-                                capitalization: Default::default(),
-                                ime_action: Default::default(),
-                                enabled: config.enabled,
-                                read_only: false,
-                                max_lines: None,
-                                min_lines: 1,
-                                cursor_color: config
-                                    .colors
-                                    .as_ref()
-                                    .map(|c| c.cursor_color(config.is_error)),
-                                on_text_layout: None,
-                                text_style: None,
-                                keyboard_actions: None,
-                                interaction_source: None,
-                                line_limits: None,
-                            }),
-                    )
-                    .semantics(Semantics {
-                        role: Role::TextField,
-                        label: None,
-                        focused: false,
-                        enabled: true,
-                        selectable_group: false,
-                    }),
-                config.trailing_icon.unwrap_or(Box(Modifier::new())),
-            )),
-            // Floating label
-            if let Some(lbl) = label_str {
-                Box(Modifier::new()
-                    .min_width(200.0)
-                    .padding_values(PaddingValues {
-                        left: 20.0,
-                        right: 20.0,
-                        top: 0.0,
-                        bottom: 0.0,
-                    })
-                    .absolute()
-                    .offset(Some(0.0), Some(label_y), None, None))
-                .child(
-                    Box(Modifier::new()
-                        .background(th.surface_container_highest)
-                        .padding_values(PaddingValues {
-                            left: 4.0,
-                            right: 4.0,
-                            top: 2.0,
-                            bottom: 2.0,
-                        }))
-                    .child(
-                        Text(lbl.as_ref().to_string())
-                            .color(label_color)
-                            .size(label_size),
-                    ),
-                )
-            } else {
-                Box(Modifier::new())
-            },
-        )),
+    let (top_pad, bottom_pad) = if has_label { (8.0, 8.0) } else { (16.0, 16.0) };
+
+    Stack(
+        modifier
+            .min_height(TextFieldDefaults::MIN_HEIGHT)
+            .min_width(TextFieldDefaults::MIN_WIDTH),
     )
+    .child((
+        // Clipped background and input content
+        Box(Modifier::new()
+            .fill_max_size()
+            .clip_rounded(th.shapes.extra_small)
+            .background(container_bg))
+        .child(
+            Stack(Modifier::new().fill_max_size()).child((
+                // Input row — same Center alignment as working OutlinedTextField
+                Row(Modifier::new()
+                    .fill_max_size()
+                    .padding_values(PaddingValues {
+                        left: 16.0,
+                        right: 16.0,
+                        top: top_pad,
+                        bottom: bottom_pad,
+                    })
+                    .align_items(AlignItems::Center))
+                .child((
+                    config.leading_icon.unwrap_or(Box(Modifier::new())),
+                    View::new(0, ViewKind::Box)
+                        .modifier(
+                            Modifier::new()
+                                .flex_grow(1.0)
+                                .padding_values(PaddingValues {
+                                    left: 8.0,
+                                    right: 8.0,
+                                    top: 0.0,
+                                    bottom: 0.0,
+                                })
+                                .text_input(TextInputConfig {
+                                    hint: tf_placeholder,
+                                    multiline: !config.single_line,
+                                    on_change: Some(Rc::new(on_value_change) as _),
+                                    on_submit: config.on_submit.clone().map(|f| {
+                                        let f = f.clone();
+                                        Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
+                                    }),
+                                    focus_tracker: Some(focus_tracker.clone()),
+                                    value: value.clone(),
+                                    visual_transformation: None,
+                                    keyboard_type: Default::default(),
+                                    capitalization: Default::default(),
+                                    ime_action: Default::default(),
+                                    enabled: config.enabled,
+                                    read_only: false,
+                                    max_lines: None,
+                                    min_lines: 1,
+                                    cursor_color: config
+                                        .colors
+                                        .as_ref()
+                                        .map(|c| c.cursor_color(config.is_error)),
+                                    on_text_layout: None,
+                                    text_style: None,
+                                    keyboard_actions: None,
+                                    interaction_source: None,
+                                    line_limits: None,
+                                }),
+                        )
+                        .semantics(Semantics {
+                            role: Role::TextField,
+                            label: None,
+                            focused: false,
+                            enabled: true,
+                            selectable_group: false,
+                        }),
+                    config.trailing_icon.unwrap_or(Box(Modifier::new())),
+                )),
+                // Bottom indicator line — absolutely positioned at bottom
+                Box(Modifier::new()
+                    .fill_max_width()
+                    .height(indicator_w)
+                    .absolute()
+                    .offset(None, None, None, Some(0.0))
+                    .background(indicator_color)),
+            )),
+        ),
+        // Floating label
+        if let Some(lbl) = label_str {
+            Box(Modifier::new()
+                .min_width(200.0)
+                .padding_values(PaddingValues {
+                    left: label_x,
+                    right: 20.0,
+                    top: 0.0,
+                    bottom: 0.0,
+                })
+                .absolute()
+                .offset(Some(0.0), Some(label_y), None, None))
+            .child(
+                Box(Modifier::new()
+                    .background(container_bg)
+                    .padding_values(PaddingValues {
+                        left: 4.0,
+                        right: 4.0,
+                        top: 2.0,
+                        bottom: 2.0,
+                    }))
+                .child(
+                    Text(lbl.as_ref().to_string())
+                        .color(label_color)
+                        .size(label_size),
+                ),
+            )
+        } else {
+            Box(Modifier::new())
+        },
+    ))
 }
 
 /// Configuration for [`Checkbox`].
