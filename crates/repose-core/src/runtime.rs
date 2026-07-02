@@ -509,6 +509,7 @@ impl HitRegion {
             on_drag_enter: m.on_drag_enter.clone(),
             on_drag_over: m.on_drag_over.clone(),
             on_drag_leave: m.on_drag_leave.clone(),
+            on_scroll: m.on_scroll.clone(),
             on_drop: m.on_drop.clone(),
             ..Default::default()
         }

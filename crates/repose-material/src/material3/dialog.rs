@@ -156,6 +156,8 @@ pub fn Dialog(
                         .clip_rounded(th.shapes.extra_large)
                         .alpha(alpha)
                         .focus_group()
+                        .clickable()
+                        .focusable(false)
                         .on_key_event({
                             let s = state.clone();
                             let p = props.clone();
@@ -185,6 +187,7 @@ pub fn Dialog(
                         .fill_max_size()
                         .background(th.scrim.with_alpha((85.0 * alpha) as u8))
                         .focusable(false)
+                        .on_scroll(|_| Vec2::default())
                         .on_click({
                             let s = state.clone();
                             let p = props.clone();
