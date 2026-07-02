@@ -2183,6 +2183,7 @@ impl LayoutEngine {
                 state.as_ref(),
                 is_focused,
                 modifier.clip_rounded,
+                alpha_accum,
             );
         }
         if let Some(p) = &modifier.painter {
@@ -3336,7 +3337,7 @@ fn clip_hits_to_viewport(hits: &mut Vec<HitRegion>, start: usize, vp: repose_cor
     }
 }
 
-fn mul_alpha_color(c: Color, a: f32) -> Color {
+pub(crate) fn mul_alpha_color(c: Color, a: f32) -> Color {
     Color(c.0, c.1, c.2, ((c.3 as f32) * a).clamp(0.0, 255.0) as u8)
 }
 fn mul_alpha_brush(b: Brush, a: f32) -> Brush {

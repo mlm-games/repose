@@ -47,6 +47,8 @@ use unicode_segmentation::UnicodeSegmentation;
 use web_time::Duration;
 use web_time::Instant;
 
+use crate::layout::mul_alpha_color;
+
 thread_local! {
     static TEXTFIELD_STATES: RefCell<HashMap<u64, Rc<RefCell<TextFieldState>>>> = RefCell::new(HashMap::new());
 }
@@ -1365,6 +1367,7 @@ pub(crate) fn paint_text_field(
     state: Option<&Rc<RefCell<TextFieldState>>>,
     is_focused: bool,
     clip_rounded: Option<[f32; 4]>,
+    alpha_accum: f32,
 ) {
     let ts = text_input
         .text_style
@@ -1481,7 +1484,7 @@ pub(crate) fn paint_text_field(
                     h: line_h,
                 },
                 text: Arc::from(render_txt),
-                color: txt_col,
+                color: mul_alpha_color(txt_col, alpha_accum),
                 size: font_val,
                 font_family: ts.font_family,
                 text_align: ts.text_align,
@@ -1548,7 +1551,7 @@ pub(crate) fn paint_text_field(
                         h: rect.h,
                     },
                     text: Arc::from(text_input.hint.clone()),
-                    color: ts.color.unwrap_or(th.on_surface_variant),
+                    color: mul_alpha_color(ts.color.unwrap_or(th.on_surface_variant), alpha_accum),
                     size: font_val,
                     font_family: ts.font_family,
                     text_align: ts.text_align,
@@ -1579,7 +1582,7 @@ pub(crate) fn paint_text_field(
                             h: lh,
                         },
                         text: Arc::<str>::from(ln),
-                        color: ts.color.unwrap_or(th.on_surface),
+                        color: mul_alpha_color(ts.color.unwrap_or(th.on_surface), alpha_accum),
                         size: font_val,
                         font_family: ts.font_family,
                         text_align: ts.text_align,
@@ -1703,7 +1706,7 @@ pub(crate) fn paint_text_field(
                     },
                 },
                 text: Arc::from(text_input.hint.clone()),
-                color: th.on_surface_variant,
+                color: mul_alpha_color(th.on_surface_variant, alpha_accum),
                 size: font_val,
                 font_family: None,
                 text_align: TextAlign::Unspecified,
@@ -1738,7 +1741,7 @@ pub(crate) fn paint_text_field(
                         h: lh,
                     },
                     text: Arc::<str>::from(ln),
-                    color: th.on_surface,
+                    color: mul_alpha_color(th.on_surface, alpha_accum),
                     size: font_val,
                     font_family: None,
                     text_align: TextAlign::Unspecified,
@@ -1758,7 +1761,7 @@ pub(crate) fn paint_text_field(
                     h: line_h,
                 },
                 text: Arc::from(rendered_by_vt(&text_input.value)),
-                color: th.on_surface,
+                color: mul_alpha_color(th.on_surface, alpha_accum),
                 size: font_val,
                 font_family: None,
                 text_align: TextAlign::Unspecified,
