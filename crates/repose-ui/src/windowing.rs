@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use repose_core::{
     AlignItems, Color, CursorIcon, JustifyContent, Modifier, PaddingValues, PointerButton,
-    PointerEvent, PointerEventKind, Rect, Size, StateColors, Vec2, View, ViewKind, request_frame,
+    PointerEvent, PointerEventKind, Rect, Size, StateColors, Vec2, View, request_frame,
 };
 
 use crate::{Box, Column, Row, Spacer, Stack, Text, TextStyle, ViewExt, ZStack};
@@ -778,8 +778,7 @@ fn apply_z_offset(mut view: View, z: f32) -> View {
 }
 
 fn inject_focus_handlers(mut view: View, focus: Rc<dyn Fn()>) -> View {
-    let needs_focus = kind_handles_hit(&view.kind)
-        || modifier_handles_hit(&view.modifier)
+    let needs_focus = modifier_handles_hit(&view.modifier)
         || view.modifier.text_input.is_some()
         || modifier_has_hit(&view.modifier);
     if needs_focus {
@@ -801,10 +800,6 @@ fn inject_focus_handlers(mut view: View, focus: Rc<dyn Fn()>) -> View {
         .map(|child| inject_focus_handlers(child, focus.clone()))
         .collect();
     view
-}
-
-fn kind_handles_hit(kind: &ViewKind) -> bool {
-    matches!(kind, ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. })
 }
 
 fn modifier_handles_hit(modifier: &Modifier) -> bool {

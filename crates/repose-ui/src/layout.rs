@@ -829,11 +829,7 @@ impl LayoutEngine {
         let ctx = self.context_from_node(node);
         let children = node.children.clone();
         let is_zstack = matches!(node.kind, ViewKind::ZStack);
-        let is_scroll = node.modifier.scroll.is_some()
-            || matches!(
-                node.kind,
-                ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }
-            );
+        let is_scroll = node.modifier.scroll.is_some();
         drop(node);
 
         // Recurse into children but stop at nested scope boundaries
@@ -964,11 +960,7 @@ impl LayoutEngine {
                 self.context_from_node(node),
                 node.children.clone(),
                 matches!(node.kind, ViewKind::ZStack),
-                node.modifier.scroll.is_some()
-                    || matches!(
-                        node.kind,
-                        ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }
-                    ),
+                node.modifier.scroll.is_some(),
             )
         };
 
@@ -1017,11 +1009,7 @@ impl LayoutEngine {
                 self.context_from_node(node),
                 node.children.clone(),
                 matches!(node.kind, ViewKind::ZStack),
-                node.modifier.scroll.is_some()
-                    || matches!(
-                        node.kind,
-                        ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }
-                    ),
+                node.modifier.scroll.is_some(),
             )
         };
 
@@ -1127,16 +1115,6 @@ impl LayoutEngine {
             ViewKind::Column | ViewKind::OverlayHost => {
                 s.flex_direction = FlexDirection::Column;
             }
-            ViewKind::ScrollV { .. } => {
-                s.flex_direction = FlexDirection::Column;
-            }
-            ViewKind::ScrollXY { set_viewport_height, .. } => {
-                if set_viewport_height.is_none() {
-                    s.flex_direction = FlexDirection::Row;
-                } else {
-                    s.flex_direction = FlexDirection::Column;
-                }
-            }
             ViewKind::Stack | ViewKind::ZStack => s.display = Display::Grid,
             _ => {}
         }
@@ -1152,9 +1130,6 @@ impl LayoutEngine {
         s.align_items = Some(AlignItems::Stretch);
         // Needed for 2D scroll.
         let is_2d_scroll = matches!(
-            kind,
-            ViewKind::ScrollXY { set_viewport_height: Some(_), .. }
-        ) || matches!(
             m.scroll.as_ref().map(|s| s.axis()),
             Some(ScrollAxis::Both)
         );
@@ -1244,9 +1219,7 @@ impl LayoutEngine {
             }
         }
 
-        if m.scroll.is_some()
-            || matches!(kind, ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. })
-        {
+        if m.scroll.is_some() {
             s.overflow = taffy::geometry::Point {
                 x: Overflow::Hidden,
                 y: Overflow::Hidden,
@@ -1319,9 +1292,7 @@ impl LayoutEngine {
             if !height_set {
                 s.size.height = percent(frac);
             }
-            if (m.scroll.is_some()
-                || matches!(kind, ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }))
-                && s.min_size.height.is_auto()
+            if m.scroll.is_some() && s.min_size.height.is_auto()
             {
                 s.min_size.height = length(0.0);
             }
@@ -1457,7 +1428,6 @@ impl LayoutEngine {
                 line_height: *line_height,
             },
             ViewKind::Expander { .. } => NodeContext::Container,
-            ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. } => NodeContext::ScrollContainer,
             ViewKind::OverlayHost => NodeContext::Container,
             ViewKind::SubcomposeLayout { .. } => NodeContext::Container,
             _ => NodeContext::Container,
@@ -1616,16 +1586,11 @@ impl LayoutEngine {
         let mut stack = vec![root_id];
         while let Some(id) = stack.pop() {
             let Some(n) = self.tree.get(id) else { continue };
-            let scroll_tick = match &n.kind {
-                ViewKind::ScrollV { tick_scroll, .. } | ViewKind::ScrollXY { tick_scroll, .. } => {
-                    tick_scroll.clone()
-                }
-                _ => n.modifier.scroll.as_ref().and_then(|s| match s {
-                    ScrollBinding::Vertical(b) => b.tick.clone(),
-                    ScrollBinding::Horizontal(b) => b.tick.clone(),
-                    ScrollBinding::Both(b) => b.tick.clone(),
-                }),
-            };
+            let scroll_tick = n.modifier.scroll.as_ref().and_then(|s| match s {
+                ScrollBinding::Vertical(b) => b.tick.clone(),
+                ScrollBinding::Horizontal(b) => b.tick.clone(),
+                ScrollBinding::Both(b) => b.tick.clone(),
+            });
             if let Some(tick) = scroll_tick {
                 tick();
             }
@@ -1755,50 +1720,30 @@ impl LayoutEngine {
         stack.push(root);
         while let Some(id) = stack.pop() {
             let Some(n) = self.tree.get(id) else { continue };
-            match &n.kind {
-                ViewKind::ScrollV {
-                    get_scroll_offset, ..
-                } => {
-                    if let Some(get) = get_scroll_offset {
-                        let q = (get() * 8.0) as i32;
-                        q.hash(&mut h);
-                    }
-                }
-                ViewKind::ScrollXY {
-                    get_scroll_offset_xy,
-                    ..
-                } => {
-                    if let Some(get) = get_scroll_offset_xy {
-                        let (x, y) = get();
-                        ((x * 8.0) as i32).hash(&mut h);
-                        ((y * 8.0) as i32).hash(&mut h);
-                    }
-                }
-                _ => {
-                    if let Some(s) = &n.modifier.scroll {
-                        match s {
-                            ScrollBinding::Vertical(b) => {
-                                if let Some(get) = &b.get_offset_main {
-                                    let q = (get() * 8.0) as i32;
-                                    q.hash(&mut h);
-                                }
-                            }
-                            ScrollBinding::Horizontal(b) => {
-                                if let Some(get) = &b.get_offset_main {
-                                    let q = (get() * 8.0) as i32;
-                                    q.hash(&mut h);
-                                }
-                            }
-                            ScrollBinding::Both(b) => {
-                                if let Some(get) = &b.get_offset_xy {
-                                    let (x, y) = get();
-                                    ((x * 8.0) as i32).hash(&mut h);
-                                    ((y * 8.0) as i32).hash(&mut h);
-                                }
-                            }
+            if let Some(s) = &n.modifier.scroll {
+                match s {
+                    ScrollBinding::Vertical(b) => {
+                        if let Some(get) = &b.get_offset_main {
+                            let q = (get() * 8.0) as i32;
+                            q.hash(&mut h);
                         }
                     }
-                    if n.modifier.text_input.is_some() {
+                    ScrollBinding::Horizontal(b) => {
+                        if let Some(get) = &b.get_offset_main {
+                            let q = (get() * 8.0) as i32;
+                            q.hash(&mut h);
+                        }
+                    }
+                    ScrollBinding::Both(b) => {
+                        if let Some(get) = &b.get_offset_xy {
+                            let (x, y) = get();
+                            ((x * 8.0) as i32).hash(&mut h);
+                            ((y * 8.0) as i32).hash(&mut h);
+                        }
+                    }
+                }
+            }
+            if n.modifier.text_input.is_some() {
                         let vid = *self.view_ids.get(&id).unwrap_or(&0);
                     let tf_key = vid;
                     if let Some(st_rc) = textfield_states.get(&tf_key) {
@@ -1820,9 +1765,7 @@ impl LayoutEngine {
                         st.caret_visible().hash(&mut h);
                     }
                 }
-                }
-            }
-            for &ch in n.children.iter() {
+                for &ch in n.children.iter() {
                 stack.push(ch);
             }
         }
@@ -2273,9 +2216,7 @@ impl LayoutEngine {
             || modifier.scroll.is_some()
             || matches!(
                 kind,
-                ViewKind::ScrollV { .. }
-                    | ViewKind::ScrollXY { .. }
-                    | ViewKind::Expander { .. }
+                ViewKind::Expander { .. }
                     | ViewKind::TreeRow { .. }
             );
 

@@ -448,7 +448,7 @@ fn flex_dir_for(kind: &ViewKind, modifier: &Modifier) -> Option<FlexDirection> {
                 Some(FlexDirection::Row)
             }
         }
-        ViewKind::Column | ViewKind::ScrollV { .. } => Some(FlexDirection::Column),
+        ViewKind::Column => Some(FlexDirection::Column),
         _ => None,
     }
 }

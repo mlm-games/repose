@@ -95,9 +95,6 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             hash_color(tint, hasher);
             std::mem::discriminant(fit).hash(hasher);
         }
-        ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. } => {
-            // Scroll state is external, not part of content hash
-        }
         ViewKind::OverlayHost
         | ViewKind::Box
         | ViewKind::Row
