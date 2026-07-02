@@ -27,8 +27,8 @@ use repose_ui::lazy::LazyRow;
 use repose_ui::lazy_states::LazyRowConfig;
 use repose_ui::scroll::NestedScrollConnection;
 use repose_ui::{
-    BasicSecureTextField, BasicTextField, Box, Column, Row, Spacer, Stack, Text, TextFieldConfig,
-    TextFieldState, TextStyle, ViewExt, ZStack,
+    BasicSecureTextField, BasicTextField, Box, Column, Row, Spacer, Stack, Text, TextFieldState,
+    TextStyle, ViewExt, ZStack,
     anim::{animate_color, animate_f32, animate_f32_from},
     overlay::OverlayHandle,
     overlay::SnackbarAction,
@@ -1735,7 +1735,7 @@ pub fn SearchBarInputField(
             tf_state.clone(),
             input_m,
             placeholder,
-            TextFieldConfig {
+            repose_ui::TextFieldConfig {
                 on_change: Some(Rc::new(move |text| on_qc2(text))),
                 on_submit: on_s.clone(),
                 enabled,
