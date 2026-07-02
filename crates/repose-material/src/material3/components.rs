@@ -5,10 +5,10 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use web_time::Duration;
 
+use repose_core::NestedScrollConnection;
 use repose_core::animation::{AnimationSpec, CubicBezier, Easing, KeyframesSpec, RepeatableSpec};
 use repose_core::*;
 use repose_ui::anim::{animate_color, animate_f32};
-use repose_core::NestedScrollConnection;
 use repose_ui::textfield::measure_text;
 use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt};
 
@@ -3083,36 +3083,34 @@ pub fn OutlinedTextField(
             config.leading_icon.unwrap_or(Box(Modifier::new())),
             View::new(0, ViewKind::Box)
                 .modifier(
-                    Modifier::new()
-                        .flex_grow(1.0)
-                        .text_input(TextInputConfig {
-                            hint: tf_placeholder,
-                            multiline: false,
-                            on_change: Some(Rc::new(on_value_change) as _),
-                            on_submit: config.on_submit.clone().map(|f| {
-                                let f = f.clone();
-                                Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
-                            }),
-                            focus_tracker: Some(focus_tracker.clone()),
-                            value: value.clone(),
-                            visual_transformation: None,
-                            keyboard_type: Default::default(),
-                            capitalization: Default::default(),
-                            ime_action: Default::default(),
-                            enabled: config.enabled,
-                            read_only: false,
-                            max_lines: None,
-                            min_lines: 1,
-                            cursor_color: config
-                                .colors
-                                .as_ref()
-                                .map(|c| c.cursor_color(config.is_error)),
-                            on_text_layout: None,
-                            text_style: None,
-                            keyboard_actions: None,
-                            interaction_source: None,
-                            line_limits: None,
+                    Modifier::new().flex_grow(1.0).text_input(TextInputConfig {
+                        hint: tf_placeholder,
+                        multiline: false,
+                        on_change: Some(Rc::new(on_value_change) as _),
+                        on_submit: config.on_submit.clone().map(|f| {
+                            let f = f.clone();
+                            Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
                         }),
+                        focus_tracker: Some(focus_tracker.clone()),
+                        value: value.clone(),
+                        visual_transformation: None,
+                        keyboard_type: Default::default(),
+                        capitalization: Default::default(),
+                        ime_action: Default::default(),
+                        enabled: config.enabled,
+                        read_only: false,
+                        max_lines: None,
+                        min_lines: 1,
+                        cursor_color: config
+                            .colors
+                            .as_ref()
+                            .map(|c| c.cursor_color(config.is_error)),
+                        on_text_layout: None,
+                        text_style: None,
+                        keyboard_actions: None,
+                        interaction_source: None,
+                        line_limits: None,
+                    }),
                 )
                 .semantics(Semantics {
                     role: Role::TextField,
@@ -3284,7 +3282,7 @@ pub fn TextField(
             .background(container_bg))
         .child(
             Stack(Modifier::new().fill_max_size()).child((
-                // Input row — same Center alignment as working OutlinedTextField
+                // Input row
                 Row(Modifier::new()
                     .fill_max_size()
                     .padding_values(PaddingValues {
@@ -3298,36 +3296,34 @@ pub fn TextField(
                     config.leading_icon.unwrap_or(Box(Modifier::new())),
                     View::new(0, ViewKind::Box)
                         .modifier(
-                            Modifier::new()
-                                .flex_grow(1.0)
-                                .text_input(TextInputConfig {
-                                    hint: tf_placeholder,
-                                    multiline: !config.single_line,
-                                    on_change: Some(Rc::new(on_value_change) as _),
-                                    on_submit: config.on_submit.clone().map(|f| {
-                                        let f = f.clone();
-                                        Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
-                                    }),
-                                    focus_tracker: Some(focus_tracker.clone()),
-                                    value: value.clone(),
-                                    visual_transformation: None,
-                                    keyboard_type: Default::default(),
-                                    capitalization: Default::default(),
-                                    ime_action: Default::default(),
-                                    enabled: config.enabled,
-                                    read_only: false,
-                                    max_lines: None,
-                                    min_lines: 1,
-                                    cursor_color: config
-                                        .colors
-                                        .as_ref()
-                                        .map(|c| c.cursor_color(config.is_error)),
-                                    on_text_layout: None,
-                                    text_style: None,
-                                    keyboard_actions: None,
-                                    interaction_source: None,
-                                    line_limits: None,
+                            Modifier::new().flex_grow(1.0).text_input(TextInputConfig {
+                                hint: tf_placeholder,
+                                multiline: !config.single_line,
+                                on_change: Some(Rc::new(on_value_change) as _),
+                                on_submit: config.on_submit.clone().map(|f| {
+                                    let f = f.clone();
+                                    Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
                                 }),
+                                focus_tracker: Some(focus_tracker.clone()),
+                                value: value.clone(),
+                                visual_transformation: None,
+                                keyboard_type: Default::default(),
+                                capitalization: Default::default(),
+                                ime_action: Default::default(),
+                                enabled: config.enabled,
+                                read_only: false,
+                                max_lines: None,
+                                min_lines: 1,
+                                cursor_color: config
+                                    .colors
+                                    .as_ref()
+                                    .map(|c| c.cursor_color(config.is_error)),
+                                on_text_layout: None,
+                                text_style: None,
+                                keyboard_actions: None,
+                                interaction_source: None,
+                                line_limits: None,
+                            }),
                         )
                         .semantics(Semantics {
                             role: Role::TextField,
@@ -3338,7 +3334,7 @@ pub fn TextField(
                         }),
                     config.trailing_icon.unwrap_or(Box(Modifier::new())),
                 )),
-                // Bottom indicator line — absolutely positioned at bottom
+                // Bottom indicator line
                 Box(Modifier::new()
                     .fill_max_width()
                     .height(indicator_w)
@@ -3347,7 +3343,7 @@ pub fn TextField(
                     .background(indicator_color)),
             )),
         ),
-        // Floating label — plain text, no background chip (matches M3 reference)
+        // Floating label
         if let Some(lbl) = label_str {
             Box(Modifier::new()
                 .min_width(200.0)
@@ -5635,7 +5631,10 @@ impl SearchBarScrollBehavior {
             let consumed = cur - new;
             offset.set(new);
             request_frame();
-            Vec2 { x: 0.0, y: consumed }
+            Vec2 {
+                x: 0.0,
+                y: consumed,
+            }
         })
     }
 }
