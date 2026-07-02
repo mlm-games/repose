@@ -3283,89 +3283,85 @@ pub fn TextField(
 
     let (top_pad, bottom_pad) = if has_label { (8.0, 8.0) } else { (16.0, 16.0) };
 
-    Stack(
+    ZStack(
         modifier
             .min_height(TextFieldDefaults::MIN_HEIGHT)
             .min_width(TextFieldDefaults::MIN_WIDTH),
     )
     .child((
-        // Clipped background and input content
+        // Filled background container
         Box(Modifier::new()
             .fill_max_size()
             .clip_rounded(th.shapes.extra_small)
-            .background(container_bg))
-        .child(
-            Stack(Modifier::new().fill_max_size()).child((
-                // Input row — same Center alignment as working OutlinedTextField
-                Row(Modifier::new()
-                    .fill_max_size()
-                    .padding_values(PaddingValues {
-                        left: 16.0,
-                        right: 16.0,
-                        top: top_pad,
-                        bottom: bottom_pad,
-                    })
-                    .align_items(AlignItems::Center))
-                .child((
-                    config.leading_icon.unwrap_or(Box(Modifier::new())),
-                    View::new(0, ViewKind::Box)
-                        .modifier(
-                            Modifier::new()
-                                .flex_grow(1.0)
-                                .padding_values(PaddingValues {
-                                    left: 8.0,
-                                    right: 8.0,
-                                    top: 0.0,
-                                    bottom: 0.0,
-                                })
-                                .text_input(TextInputConfig {
-                                    hint: tf_placeholder,
-                                    multiline: !config.single_line,
-                                    on_change: Some(Rc::new(on_value_change) as _),
-                                    on_submit: config.on_submit.clone().map(|f| {
-                                        let f = f.clone();
-                                        Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
-                                    }),
-                                    focus_tracker: Some(focus_tracker.clone()),
-                                    value: value.clone(),
-                                    visual_transformation: None,
-                                    keyboard_type: Default::default(),
-                                    capitalization: Default::default(),
-                                    ime_action: Default::default(),
-                                    enabled: config.enabled,
-                                    read_only: false,
-                                    max_lines: None,
-                                    min_lines: 1,
-                                    cursor_color: config
-                                        .colors
-                                        .as_ref()
-                                        .map(|c| c.cursor_color(config.is_error)),
-                                    on_text_layout: None,
-                                    text_style: None,
-                                    keyboard_actions: None,
-                                    interaction_source: None,
-                                    line_limits: None,
-                                }),
-                        )
-                        .semantics(Semantics {
-                            role: Role::TextField,
-                            label: None,
-                            focused: false,
-                            enabled: true,
-                            selectable_group: false,
+            .background(container_bg)),
+        // Content row
+        Row(Modifier::new()
+            .fill_max_size()
+            .padding_values(PaddingValues {
+                left: 16.0,
+                right: 16.0,
+                top: top_pad,
+                bottom: bottom_pad,
+            })
+            .align_items(AlignItems::Center))
+        .child((
+            config.leading_icon.unwrap_or(Box(Modifier::new())),
+            View::new(0, ViewKind::Box)
+                .modifier(
+                    Modifier::new()
+                        .flex_grow(1.0)
+                        .padding_values(PaddingValues {
+                            left: 8.0,
+                            right: 8.0,
+                            top: 0.0,
+                            bottom: 0.0,
+                        })
+                        .text_input(TextInputConfig {
+                            hint: tf_placeholder,
+                            multiline: !config.single_line,
+                            on_change: Some(Rc::new(on_value_change) as _),
+                            on_submit: config.on_submit.clone().map(|f| {
+                                let f = f.clone();
+                                Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
+                            }),
+                            focus_tracker: Some(focus_tracker.clone()),
+                            value: value.clone(),
+                            visual_transformation: None,
+                            keyboard_type: Default::default(),
+                            capitalization: Default::default(),
+                            ime_action: Default::default(),
+                            enabled: config.enabled,
+                            read_only: false,
+                            max_lines: None,
+                            min_lines: 1,
+                            cursor_color: config
+                                .colors
+                                .as_ref()
+                                .map(|c| c.cursor_color(config.is_error)),
+                            on_text_layout: None,
+                            text_style: None,
+                            keyboard_actions: None,
+                            interaction_source: None,
+                            line_limits: None,
                         }),
-                    config.trailing_icon.unwrap_or(Box(Modifier::new())),
-                )),
-                // Bottom indicator line — absolutely positioned at bottom
-                Box(Modifier::new()
-                    .fill_max_width()
-                    .height(indicator_w)
-                    .absolute()
-                    .offset(None, None, None, Some(0.0))
-                    .background(indicator_color)),
-            )),
-        ),
-        // Floating label — plain text, no background chip (matches M3 reference)
+                )
+                .semantics(Semantics {
+                    role: Role::TextField,
+                    label: None,
+                    focused: false,
+                    enabled: true,
+                    selectable_group: false,
+                }),
+            config.trailing_icon.unwrap_or(Box(Modifier::new())),
+        )),
+        // Bottom indicator line
+        Box(Modifier::new()
+            .fill_max_width()
+            .height(indicator_w)
+            .absolute()
+            .offset(None, None, None, Some(0.0))
+            .background(indicator_color)),
+        // Floating label
         if let Some(lbl) = label_str {
             Box(Modifier::new()
                 .min_width(200.0)
