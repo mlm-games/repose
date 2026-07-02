@@ -886,6 +886,7 @@ enum Cmd {
         cnt: u32,
         scissor: (u32, u32, u32, u32),
         difference: bool,
+        rounded: bool,
     },
     ClipPop {
         scissor: (u32, u32, u32, u32),
@@ -3207,11 +3208,14 @@ impl RenderBackend for WgpuBackend {
                     self.clip_ring.grow_to_fit(&self.device, bytes.len() as u64);
                     let (off, _) = self.clip_ring.alloc_write(&self.queue, bytes);
 
+                    let rounded = radius.iter().any(|&r| r > 0.5);
+
                     current_pass.cmds.push(Cmd::ClipPush {
                         off,
                         cnt: 1,
                         scissor,
                         difference: is_diff,
+                        rounded,
                     });
                 }
                 SceneNode::PopClip => {
@@ -3561,13 +3565,14 @@ impl RenderBackend for WgpuBackend {
                         cnt: n,
                         scissor,
                         difference,
+                        rounded,
                     } => {
                         rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                         rpass.set_stencil_reference(clip_depth);
 
                         if difference {
                             rpass.set_pipeline(&pipes.clip_dec);
-                        } else if self.msaa_samples > 1 && !is_layer {
+                        } else if self.msaa_samples > 1 && !is_layer && rounded {
                             rpass.set_pipeline(&pipes.clip_a2c);
                         } else {
                             rpass.set_pipeline(&pipes.clip_bin);
