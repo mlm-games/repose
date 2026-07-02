@@ -3198,6 +3198,16 @@ impl LayoutEngine {
                 scene.nodes.push(SceneNode::PopTransform);
                 scene.nodes.push(SceneNode::EndLayer { layer_id: id });
             }
+            // Pop clips and transforms pushed before the scroll branch
+            if modifier.clip_rect.is_some() {
+                scene.nodes.push(SceneNode::PopClip);
+            }
+            if push_round_clip {
+                scene.nodes.push(SceneNode::PopClip);
+            }
+            if modifier.transform.is_some() {
+                scene.nodes.push(SceneNode::PopTransform);
+            }
             // Wire up FocusRequester if present on the modifier
             set_focus_requester(&modifier, view_id);
             if let Some(cb) = &modifier.on_focus_changed {
