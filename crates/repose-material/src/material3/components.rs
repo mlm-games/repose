@@ -3091,12 +3091,6 @@ pub fn OutlinedTextField(
                 .modifier(
                     Modifier::new()
                         .flex_grow(1.0)
-                        .padding_values(PaddingValues {
-                            left: 8.0,
-                            right: 8.0,
-                            top: 0.0,
-                            bottom: 0.0,
-                        })
                         .text_input(TextInputConfig {
                             hint: tf_placeholder,
                             multiline: false,
@@ -3312,12 +3306,6 @@ pub fn TextField(
                         .modifier(
                             Modifier::new()
                                 .flex_grow(1.0)
-                                .padding_values(PaddingValues {
-                                    left: 8.0,
-                                    right: 8.0,
-                                    top: 0.0,
-                                    bottom: 0.0,
-                                })
                                 .text_input(TextInputConfig {
                                     hint: tf_placeholder,
                                     multiline: !config.single_line,
