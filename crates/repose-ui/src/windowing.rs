@@ -779,6 +779,7 @@ fn apply_z_offset(mut view: View, z: f32) -> View {
 
 fn inject_focus_handlers(mut view: View, focus: Rc<dyn Fn()>) -> View {
     let needs_focus = kind_handles_hit(&view.kind)
+        || modifier_handles_hit(&view.modifier)
         || view.modifier.text_input.is_some()
         || modifier_has_hit(&view.modifier);
     if needs_focus {
@@ -804,6 +805,10 @@ fn inject_focus_handlers(mut view: View, focus: Rc<dyn Fn()>) -> View {
 
 fn kind_handles_hit(kind: &ViewKind) -> bool {
     matches!(kind, ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. })
+}
+
+fn modifier_handles_hit(modifier: &Modifier) -> bool {
+    modifier.scroll.is_some()
 }
 
 fn modifier_has_hit(modifier: &Modifier) -> bool {

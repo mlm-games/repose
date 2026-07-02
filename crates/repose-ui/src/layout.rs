@@ -829,10 +829,11 @@ impl LayoutEngine {
         let ctx = self.context_from_node(node);
         let children = node.children.clone();
         let is_zstack = matches!(node.kind, ViewKind::ZStack);
-        let is_scroll = matches!(
-            node.kind,
-            ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }
-        );
+        let is_scroll = node.modifier.scroll.is_some()
+            || matches!(
+                node.kind,
+                ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }
+            );
         drop(node);
 
         // Recurse into children but stop at nested scope boundaries
@@ -963,10 +964,11 @@ impl LayoutEngine {
                 self.context_from_node(node),
                 node.children.clone(),
                 matches!(node.kind, ViewKind::ZStack),
-                matches!(
-                    node.kind,
-                    ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }
-                ),
+                node.modifier.scroll.is_some()
+                    || matches!(
+                        node.kind,
+                        ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }
+                    ),
             )
         };
 
@@ -1015,10 +1017,11 @@ impl LayoutEngine {
                 self.context_from_node(node),
                 node.children.clone(),
                 matches!(node.kind, ViewKind::ZStack),
-                matches!(
-                    node.kind,
-                    ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }
-                ),
+                node.modifier.scroll.is_some()
+                    || matches!(
+                        node.kind,
+                        ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }
+                    ),
             )
         };
 
@@ -1121,16 +1124,13 @@ impl LayoutEngine {
                     FlexDirection::Row
                 };
             }
-            ViewKind::Column | ViewKind::ScrollV { .. } | ViewKind::OverlayHost => {
+            ViewKind::Column | ViewKind::OverlayHost => {
                 s.flex_direction = FlexDirection::Column;
             }
-            ViewKind::ScrollXY {
-                set_viewport_height,
-                ..
-            } => {
-                // Horizontal-only: Row so width is content-based (scrollable axis).
-                // 2D: Column keeps vertical axis scrollable, horizontal relies on
-                // descendant-extent computation in the paint walk.
+            ViewKind::ScrollV { .. } => {
+                s.flex_direction = FlexDirection::Column;
+            }
+            ViewKind::ScrollXY { set_viewport_height, .. } => {
                 if set_viewport_height.is_none() {
                     s.flex_direction = FlexDirection::Row;
                 } else {
@@ -1140,16 +1140,25 @@ impl LayoutEngine {
             ViewKind::Stack | ViewKind::ZStack => s.display = Display::Grid,
             _ => {}
         }
+        // Modifier scroll overrides kind-based direction.
+        if let Some(ref scroll) = m.scroll {
+            match scroll.axis() {
+                ScrollAxis::Vertical => s.flex_direction = FlexDirection::Column,
+                ScrollAxis::Horizontal => s.flex_direction = FlexDirection::Row,
+                ScrollAxis::Both => s.flex_direction = FlexDirection::Column,
+            }
+        }
 
         s.align_items = Some(AlignItems::Stretch);
         // Needed for 2D scroll.
-        if matches!(
+        let is_2d_scroll = matches!(
             kind,
-            ViewKind::ScrollXY {
-                set_viewport_height: Some(_),
-                ..
-            }
-        ) {
+            ViewKind::ScrollXY { set_viewport_height: Some(_), .. }
+        ) || matches!(
+            m.scroll.as_ref().map(|s| s.axis()),
+            Some(ScrollAxis::Both)
+        );
+        if is_2d_scroll {
             s.align_items = Some(AlignItems::FlexStart);
         }
         s.justify_content = Some(JustifyContent::FlexStart);
@@ -1235,7 +1244,9 @@ impl LayoutEngine {
             }
         }
 
-        if matches!(kind, ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }) {
+        if m.scroll.is_some()
+            || matches!(kind, ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. })
+        {
             s.overflow = taffy::geometry::Point {
                 x: Overflow::Hidden,
                 y: Overflow::Hidden,
@@ -1308,7 +1319,8 @@ impl LayoutEngine {
             if !height_set {
                 s.size.height = percent(frac);
             }
-            if matches!(kind, ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. })
+            if (m.scroll.is_some()
+                || matches!(kind, ViewKind::ScrollV { .. } | ViewKind::ScrollXY { .. }))
                 && s.min_size.height.is_auto()
             {
                 s.min_size.height = length(0.0);
@@ -1399,6 +1411,9 @@ impl LayoutEngine {
     }
 
     fn context_from_node(&self, node: &TreeNode) -> NodeContext {
+        if node.modifier.scroll.is_some() {
+            return NodeContext::ScrollContainer;
+        }
         if let Some(ref ti) = node.modifier.text_input {
             return NodeContext::TextInput {
                 multiline: ti.multiline,
@@ -1601,13 +1616,18 @@ impl LayoutEngine {
         let mut stack = vec![root_id];
         while let Some(id) = stack.pop() {
             let Some(n) = self.tree.get(id) else { continue };
-            match &n.kind {
+            let scroll_tick = match &n.kind {
                 ViewKind::ScrollV { tick_scroll, .. } | ViewKind::ScrollXY { tick_scroll, .. } => {
-                    if let Some(tick) = tick_scroll {
-                        tick();
-                    }
+                    tick_scroll.clone()
                 }
-                _ => {}
+                _ => n.modifier.scroll.as_ref().and_then(|s| match s {
+                    ScrollBinding::Vertical(b) => b.tick.clone(),
+                    ScrollBinding::Horizontal(b) => b.tick.clone(),
+                    ScrollBinding::Both(b) => b.tick.clone(),
+                }),
+            };
+            if let Some(tick) = scroll_tick {
+                tick();
             }
             for &ch in n.children.iter() {
                 stack.push(ch);
@@ -1754,8 +1774,32 @@ impl LayoutEngine {
                         ((y * 8.0) as i32).hash(&mut h);
                     }
                 }
-                _ if n.modifier.text_input.is_some() => {
-                    let vid = *self.view_ids.get(&id).unwrap_or(&0);
+                _ => {
+                    if let Some(s) = &n.modifier.scroll {
+                        match s {
+                            ScrollBinding::Vertical(b) => {
+                                if let Some(get) = &b.get_offset_main {
+                                    let q = (get() * 8.0) as i32;
+                                    q.hash(&mut h);
+                                }
+                            }
+                            ScrollBinding::Horizontal(b) => {
+                                if let Some(get) = &b.get_offset_main {
+                                    let q = (get() * 8.0) as i32;
+                                    q.hash(&mut h);
+                                }
+                            }
+                            ScrollBinding::Both(b) => {
+                                if let Some(get) = &b.get_offset_xy {
+                                    let (x, y) = get();
+                                    ((x * 8.0) as i32).hash(&mut h);
+                                    ((y * 8.0) as i32).hash(&mut h);
+                                }
+                            }
+                        }
+                    }
+                    if n.modifier.text_input.is_some() {
+                        let vid = *self.view_ids.get(&id).unwrap_or(&0);
                     let tf_key = vid;
                     if let Some(st_rc) = textfield_states.get(&tf_key) {
                         let st = st_rc.borrow();
@@ -1776,7 +1820,7 @@ impl LayoutEngine {
                         st.caret_visible().hash(&mut h);
                     }
                 }
-                _ => {}
+                }
             }
             for &ch in n.children.iter() {
                 stack.push(ch);
@@ -2226,6 +2270,7 @@ impl LayoutEngine {
             || modifier.on_drop.is_some();
 
         let kind_handles_hit = modifier.text_input.is_some()
+            || modifier.scroll.is_some()
             || matches!(
                 kind,
                 ViewKind::ScrollV { .. }
@@ -2979,295 +3024,272 @@ impl LayoutEngine {
         } else {
             None
         };
-        match &kind {
-            ViewKind::ScrollV {
-                on_scroll,
-                set_viewport_height,
-                set_content_height,
-                get_scroll_offset,
-                set_scroll_offset,
-                show_scrollbar,
-                set_nested_scroll_parent,
-                ..
-            } => {
-                if let Some(set_parent) = set_nested_scroll_parent {
-                    if let Some(conn) = self.find_ancestor_nested_scroll(node_id) {
-                        set_parent(conn);
+        // Handle modifier-based scroll containers.
+        // This runs before the match on kind, so modifier scroll takes priority.
+        if let Some(scroll) = &modifier.scroll {
+            match scroll {
+                ScrollBinding::Vertical(b) => {
+                    if let Some(set_parent) = &b.set_nested_scroll_parent {
+                        if let Some(conn) = self.find_ancestor_nested_scroll(node_id) {
+                            set_parent(conn);
+                        }
                     }
-                }
-                hits.push(HitRegion {
-                    id: view_id,
-                    rect,
-                    on_scroll: on_scroll.clone(),
-                    focusable: false,
-                    z_index: modifier.z_index,
-                    ..HitRegion::from_modifier(view_id, rect, &modifier)
-                });
-                let vp = content_rect;
-                if let Some(s) = set_viewport_height {
-                    s(vp.h.max(0.0));
-                }
-                let mut ch = 0.0f32;
-                for &c in &children {
-                    let l = self.layout_for_node(c);
-                    ch = ch.max(l.location.y + l.size.height);
-                }
-                if let Some(s) = set_content_height {
-                    s(ch);
-                }
-                let off = get_scroll_offset.as_ref().map(|f| f()).unwrap_or(0.0);
+                    hits.push(HitRegion {
+                        id: view_id,
+                        rect,
+                        on_scroll: b.on_scroll.clone(),
+                        focusable: false,
+                        z_index: modifier.z_index,
+                        ..HitRegion::from_modifier(view_id, rect, &modifier)
+                    });
+                    let vp = content_rect;
+                    if let Some(s) = &b.set_viewport_main {
+                        s(vp.h.max(0.0));
+                    }
+                    let mut ch = 0.0f32;
+                    for &c in &children {
+                        let l = self.layout_for_node(c);
+                        ch = ch.max(l.location.y + l.size.height);
+                    }
+                    if let Some(s) = &b.set_content_main {
+                        s(ch);
+                    }
+                    let off = b.get_offset_main.as_ref().map(|f| f()).unwrap_or(0.0);
 
-                scene.nodes.push(SceneNode::PushClip {
-                    rect: vp,
-                    radius: [0.0; 4],
-                    op: crate::ClipOp::Intersect,
-                });
+                    scene.nodes.push(SceneNode::PushClip {
+                        rect: vp,
+                        radius: [0.0; 4],
+                        op: crate::ClipOp::Intersect,
+                    });
 
-                let hits_start = hits.len();
-                let scrolled_offset = (child_offset_px.0, child_offset_px.1 - off);
+                    let hits_start = hits.len();
+                    let scrolled_offset = (child_offset_px.0, child_offset_px.1 - off);
 
-                // Optional (recommended): cull children outside the viewport to help LazyColumn
-                for &child_id in &children {
-                    let l = self.layout_for_node(child_id);
-                    let child_rect = repose_core::Rect {
-                        x: scrolled_offset.0 + l.location.x,
-                        y: scrolled_offset.1 + l.location.y,
-                        w: l.size.width,
-                        h: l.size.height,
-                    };
-                    if intersect_rect(child_rect, vp).is_none() {
-                        self.stats.paint_culled += 1;
-                        continue;
+                    for &child_id in &children {
+                        let l = self.layout_for_node(child_id);
+                        let child_rect = repose_core::Rect {
+                            x: scrolled_offset.0 + l.location.x,
+                            y: scrolled_offset.1 + l.location.y,
+                            w: l.size.width,
+                            h: l.size.height,
+                        };
+                        if intersect_rect(child_rect, vp).is_none() {
+                            self.stats.paint_culled += 1;
+                            continue;
+                        }
+                        self.walk_paint(
+                            child_id, scene, hits, sems, textfield_states, interactions, focused,
+                            scrolled_offset, alpha_accum, next_sem_parent,
+                            child_interaction_source, font_px, allow_cache, deferred, skip_defer,
+                        );
                     }
 
-                    self.walk_paint(
-                        child_id,
-                        scene,
-                        hits,
-                        sems,
-                        textfield_states,
-                        interactions,
-                        focused,
-                        scrolled_offset,
-                        alpha_accum,
-                        next_sem_parent,
-                        child_interaction_source,
-                        font_px,
-                        allow_cache,
-                        deferred,
-                        skip_defer,
-                    );
-                }
+                    clip_hits_to_viewport(hits, hits_start, vp);
 
-                clip_hits_to_viewport(hits, hits_start, vp);
-
-                if *show_scrollbar {
-                    push_scrollbar(
-                        scene,
-                        hits,
-                        interactions,
-                        view_id,
-                        vp,
-                        ch,
-                        off,
-                        modifier.z_index,
-                        ScrollAxis::V,
-                        set_scroll_offset.clone(),
-                    );
-                }
-
-                scene.nodes.push(SceneNode::PopClip);
-            }
-            ViewKind::ScrollXY {
-                on_scroll,
-                set_viewport_width,
-                set_viewport_height,
-                set_content_width,
-                set_content_height,
-                get_scroll_offset_xy,
-                set_scroll_offset_xy,
-                show_scrollbar,
-                set_nested_scroll_parent,
-                ..
-            } => {
-                if let Some(set_parent) = set_nested_scroll_parent {
-                    if let Some(conn) = self.find_ancestor_nested_scroll(node_id) {
-                        set_parent(conn);
+                    if b.show_scrollbar {
+                        push_scrollbar(
+                            scene, hits, interactions, view_id, vp, ch, off, modifier.z_index,
+                            ScrollbarAxis::V, b.set_offset_main.clone(),
+                        );
                     }
+
+                    scene.nodes.push(SceneNode::PopClip);
                 }
-                hits.push(HitRegion {
-                    id: view_id,
-                    rect,
-                    on_scroll: on_scroll.clone(),
-                    focusable: false,
-                    z_index: modifier.z_index,
-                    ..HitRegion::from_modifier(view_id, rect, &modifier)
-                });
-                let vp = content_rect;
-                if let Some(s) = set_viewport_width {
-                    s(vp.w.max(0.0));
+                ScrollBinding::Horizontal(b) => {
+                    if let Some(set_parent) = &b.set_nested_scroll_parent {
+                        if let Some(conn) = self.find_ancestor_nested_scroll(node_id) {
+                            set_parent(conn);
+                        }
+                    }
+                    hits.push(HitRegion {
+                        id: view_id,
+                        rect,
+                        on_scroll: b.on_scroll.clone(),
+                        focusable: false,
+                        z_index: modifier.z_index,
+                        ..HitRegion::from_modifier(view_id, rect, &modifier)
+                    });
+                    let vp = content_rect;
+                    if let Some(s) = &b.set_viewport_main {
+                        s(vp.w.max(0.0));
+                    }
+                    let mut cw = 0.0f32;
+                    for &c in &children {
+                        let l = self.layout_for_node(c);
+                        cw = cw.max(l.location.x + l.size.width);
+                    }
+                    if let Some(s) = &b.set_content_main {
+                        s(cw);
+                    }
+                    let off = b.get_offset_main.as_ref().map(|f| f()).unwrap_or(0.0);
+
+                    scene.nodes.push(SceneNode::PushClip {
+                        rect: vp,
+                        radius: [0.0; 4],
+                        op: crate::ClipOp::Intersect,
+                    });
+
+                    let hits_start = hits.len();
+                    let scrolled_offset = (child_offset_px.0 - off, child_offset_px.1);
+
+                    for &child_id in &children {
+                        let l = self.layout_for_node(child_id);
+                        let child_rect = repose_core::Rect {
+                            x: scrolled_offset.0 + l.location.x,
+                            y: scrolled_offset.1 + l.location.y,
+                            w: l.size.width,
+                            h: l.size.height,
+                        };
+                        if intersect_rect(child_rect, vp).is_none() {
+                            self.stats.paint_culled += 1;
+                            continue;
+                        }
+                        self.walk_paint(
+                            child_id, scene, hits, sems, textfield_states, interactions, focused,
+                            scrolled_offset, alpha_accum, next_sem_parent,
+                            child_interaction_source, font_px, allow_cache, deferred, skip_defer,
+                        );
+                    }
+
+                    clip_hits_to_viewport(hits, hits_start, vp);
+
+                    if b.show_scrollbar {
+                        push_scrollbar(
+                            scene, hits, interactions, view_id, vp, cw, off, modifier.z_index,
+                            ScrollbarAxis::H, b.set_offset_main.clone(),
+                        );
+                    }
+
+                    scene.nodes.push(SceneNode::PopClip);
                 }
-                if let Some(s) = set_viewport_height {
-                    s(vp.h.max(0.0));
-                }
-                let mut cw = 0.0f32;
-                let mut ch = 0.0f32;
-                for &c in &children {
-                    let mut stack: Vec<(NodeId, f32, f32)> = vec![(c, 0.0f32, 0.0f32)];
-                    while let Some((cid, ox, oy)) = stack.pop() {
-                        let l = self.layout_for_node(cid);
-                        let ax = ox + l.location.x;
-                        let ay = oy + l.location.y;
-                        cw = cw.max(ax + l.size.width);
-                        ch = ch.max(ay + l.size.height);
-                        if let Some(node) = self.tree.get(cid) {
-                            for &k in &node.children {
-                                stack.push((k, ax, ay));
+                ScrollBinding::Both(b) => {
+                    if let Some(set_parent) = &b.set_nested_scroll_parent {
+                        if let Some(conn) = self.find_ancestor_nested_scroll(node_id) {
+                            set_parent(conn);
+                        }
+                    }
+                    hits.push(HitRegion {
+                        id: view_id,
+                        rect,
+                        on_scroll: b.on_scroll.clone(),
+                        focusable: false,
+                        z_index: modifier.z_index,
+                        ..HitRegion::from_modifier(view_id, rect, &modifier)
+                    });
+                    let vp = content_rect;
+                    if let Some(s) = &b.set_viewport_width {
+                        s(vp.w.max(0.0));
+                    }
+                    if let Some(s) = &b.set_viewport_height {
+                        s(vp.h.max(0.0));
+                    }
+                    let mut cw = 0.0f32;
+                    let mut ch = 0.0f32;
+                    for &c in &children {
+                        let mut stack: Vec<(NodeId, f32, f32)> = vec![(c, 0.0f32, 0.0f32)];
+                        while let Some((cid, ox, oy)) = stack.pop() {
+                            let l = self.layout_for_node(cid);
+                            let ax = ox + l.location.x;
+                            let ay = oy + l.location.y;
+                            cw = cw.max(ax + l.size.width);
+                            ch = ch.max(ay + l.size.height);
+                            if let Some(node) = self.tree.get(cid) {
+                                for &k in &node.children {
+                                    stack.push((k, ax, ay));
+                                }
                             }
                         }
                     }
-                }
-                if let Some(s) = set_content_width {
-                    s(cw);
-                }
-                if let Some(s) = set_content_height {
-                    s(ch);
-                }
-                let (ox, oy) = get_scroll_offset_xy
-                    .as_ref()
-                    .map(|f| f())
-                    .unwrap_or((0.0, 0.0));
-
-                scene.nodes.push(SceneNode::PushClip {
-                    rect: vp,
-                    radius: [0.0; 4],
-                    op: crate::ClipOp::Intersect,
-                });
-                let hits_start = hits.len();
-                let scrolled_offset = (child_offset_px.0 - ox, child_offset_px.1 - oy);
-                for &child_id in &children {
-                    self.walk_paint(
-                        child_id,
-                        scene,
-                        hits,
-                        sems,
-                        textfield_states,
-                        interactions,
-                        focused,
-                        scrolled_offset,
-                        alpha_accum,
-                        next_sem_parent,
-                        child_interaction_source,
-                        font_px,
-                        allow_cache,
-                        deferred,
-                        skip_defer,
-                    );
-                }
-                let mut i = hits_start;
-                while i < hits.len() {
-                    if let Some(r) = intersect_rect(hits[i].rect, vp) {
-                        hits[i].rect = r;
-                        i += 1;
-                    } else {
-                        hits.remove(i);
+                    if let Some(s) = &b.set_content_width {
+                        s(cw);
                     }
+                    if let Some(s) = &b.set_content_height {
+                        s(ch);
+                    }
+                    let (ox, oy) = b.get_offset_xy.as_ref().map(|f| f()).unwrap_or((0.0, 0.0));
+
+                    scene.nodes.push(SceneNode::PushClip {
+                        rect: vp,
+                        radius: [0.0; 4],
+                        op: crate::ClipOp::Intersect,
+                    });
+                    let hits_start = hits.len();
+                    let scrolled_offset = (child_offset_px.0 - ox, child_offset_px.1 - oy);
+                    for &child_id in &children {
+                        self.walk_paint(
+                            child_id, scene, hits, sems, textfield_states, interactions, focused,
+                            scrolled_offset, alpha_accum, next_sem_parent,
+                            child_interaction_source, font_px, allow_cache, deferred, skip_defer,
+                        );
+                    }
+                    let mut i = hits_start;
+                    while i < hits.len() {
+                        if let Some(r) = intersect_rect(hits[i].rect, vp) {
+                            hits[i].rect = r;
+                            i += 1;
+                        } else {
+                            hits.remove(i);
+                        }
+                    }
+                    if b.show_scrollbar {
+                        let set_y = b.set_offset_xy.clone()
+                            .map(|s| Rc::new(move |y| s(ox, y)) as Rc<dyn Fn(f32)>);
+                        let set_x = b.set_offset_xy.clone()
+                            .map(|s| Rc::new(move |x| s(x, oy)) as Rc<dyn Fn(f32)>);
+                        push_scrollbar(
+                            scene, hits, interactions, view_id, vp, ch, oy, modifier.z_index,
+                            ScrollbarAxis::V, set_y,
+                        );
+                        push_scrollbar(
+                            scene, hits, interactions, view_id, vp, cw, ox, modifier.z_index,
+                            ScrollbarAxis::H, set_x,
+                        );
+                    }
+                    scene.nodes.push(SceneNode::PopClip);
                 }
-                if *show_scrollbar {
-                    let set_y = set_scroll_offset_xy
-                        .clone()
-                        .map(|s| Rc::new(move |y| s(ox, y)) as Rc<dyn Fn(f32)>);
-                    let set_x = set_scroll_offset_xy
-                        .clone()
-                        .map(|s| Rc::new(move |x| s(x, oy)) as Rc<dyn Fn(f32)>);
-                    push_scrollbar(
-                        scene,
-                        hits,
-                        interactions,
-                        view_id,
-                        vp,
-                        ch,
-                        oy,
-                        modifier.z_index,
-                        ScrollAxis::V,
-                        set_y,
-                    );
-                    push_scrollbar(
-                        scene,
-                        hits,
-                        interactions,
-                        view_id,
-                        vp,
-                        cw,
-                        ox,
-                        modifier.z_index,
-                        ScrollAxis::H,
-                        set_x,
-                    );
-                }
-                scene.nodes.push(SceneNode::PopClip);
             }
+            // Pop focus group scope
+            if modifier.focus_group {
+                self.focus_group_stack.pop();
+            }
+            // Pop layer if present
+            if let Some(id) = layer_id {
+                scene.nodes.push(SceneNode::PopTransform);
+                scene.nodes.push(SceneNode::EndLayer { layer_id: id });
+            }
+            // Wire up FocusRequester if present on the modifier
+            set_focus_requester(&modifier, view_id);
+            if let Some(cb) = &modifier.on_focus_changed {
+                self.focus_callbacks.insert(view_id, cb.clone());
+            }
+            return;
+        }
+        // Non-scroll children
+        // For non-scroll containers, the ViewKind determines the children walk pattern.
+        match &kind {
             ViewKind::OverlayHost => {
                 for &child_id in &children {
                     self.walk_paint(
-                        child_id,
-                        scene,
-                        hits,
-                        sems,
-                        textfield_states,
-                        interactions,
-                        focused,
-                        child_offset_px,
-                        alpha_accum,
-                        next_sem_parent,
-                        child_interaction_source,
-                        font_px,
-                        allow_cache,
-                        deferred,
-                        skip_defer,
+                        child_id, scene, hits, sems, textfield_states, interactions, focused,
+                        child_offset_px, alpha_accum, next_sem_parent,
+                        child_interaction_source, font_px, allow_cache, deferred, skip_defer,
                     );
                 }
             }
             ViewKind::Expander { expanded, .. } => {
-                // First child is always visible (the header)
                 if let Some(&first) = children.first() {
                     self.walk_paint(
-                        first,
-                        scene,
-                        hits,
-                        sems,
-                        textfield_states,
-                        interactions,
-                        focused,
-                        child_offset_px,
-                        alpha_accum,
-                        next_sem_parent,
-                        child_interaction_source,
-                        font_px,
-                        allow_cache,
-                        deferred,
-                        skip_defer,
+                        first, scene, hits, sems, textfield_states, interactions, focused,
+                        child_offset_px, alpha_accum, next_sem_parent,
+                        child_interaction_source, font_px, allow_cache, deferred, skip_defer,
                     );
                 }
-                // Remaining children visible only when expanded
                 if *expanded {
                     for &child_id in children.iter().skip(1) {
                         self.walk_paint(
-                            child_id,
-                            scene,
-                            hits,
-                            sems,
-                            textfield_states,
-                            interactions,
-                            focused,
-                            child_offset_px,
-                            alpha_accum,
-                            next_sem_parent,
-                            child_interaction_source,
-                            font_px,
-                            allow_cache,
-                            deferred,
-                            skip_defer,
+                            child_id, scene, hits, sems, textfield_states, interactions, focused,
+                            child_offset_px, alpha_accum, next_sem_parent,
+                            child_interaction_source, font_px, allow_cache, deferred, skip_defer,
                         );
                     }
                 }
@@ -3275,21 +3297,9 @@ impl LayoutEngine {
             _ => {
                 for &child_id in &children {
                     self.walk_paint(
-                        child_id,
-                        scene,
-                        hits,
-                        sems,
-                        textfield_states,
-                        interactions,
-                        focused,
-                        child_offset_px,
-                        alpha_accum,
-                        next_sem_parent,
-                        child_interaction_source,
-                        font_px,
-                        allow_cache,
-                        deferred,
-                        skip_defer,
+                        child_id, scene, hits, sems, textfield_states, interactions, focused,
+                        child_offset_px, alpha_accum, next_sem_parent,
+                        child_interaction_source, font_px, allow_cache, deferred, skip_defer,
                     );
                 }
             }
@@ -3417,7 +3427,7 @@ fn max_radii(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
 }
 
 #[derive(Clone, Copy)]
-enum ScrollAxis {
+enum ScrollbarAxis {
     V,
     H,
 }
@@ -3431,12 +3441,12 @@ fn push_scrollbar(
     content_len: f32,
     offset: f32,
     z: f32,
-    axis: ScrollAxis,
+    axis: ScrollbarAxis,
     set_offset: Option<Rc<dyn Fn(f32)>>,
 ) {
     let vp_len = match axis {
-        ScrollAxis::V => vp.h,
-        ScrollAxis::H => vp.w,
+        ScrollbarAxis::V => vp.h,
+        ScrollbarAxis::H => vp.w,
     };
     if content_len <= vp_len + 0.5 {
         return;
@@ -3446,13 +3456,13 @@ fn push_scrollbar(
     let main_inset = dp_to_px(2.0);
 
     let (track_x, track_y, track_main, track_cross) = match axis {
-        ScrollAxis::V => (
+        ScrollbarAxis::V => (
             vp.x + vp.w - thick,
             vp.y + main_inset,
             (vp.h - 2.0 * main_inset).max(0.0),
             thick,
         ),
-        ScrollAxis::H => (
+        ScrollbarAxis::H => (
             vp.x + main_inset,
             vp.y + vp.h - thick,
             (vp.w - 2.0 * main_inset).max(0.0),
@@ -3469,7 +3479,7 @@ fn push_scrollbar(
     let thumb_offset = tpos * (track_main - thumb_len);
 
     let (track_rect, thumb_rect) = match axis {
-        ScrollAxis::V => (
+        ScrollbarAxis::V => (
             repose_core::Rect {
                 x: track_x,
                 y: track_y,
@@ -3483,7 +3493,7 @@ fn push_scrollbar(
                 h: thumb_len,
             },
         ),
-        ScrollAxis::H => (
+        ScrollbarAxis::H => (
             repose_core::Rect {
                 x: track_x,
                 y: track_y,
@@ -3512,12 +3522,12 @@ fn push_scrollbar(
 
     if let Some(s) = set_offset {
         let tid = match axis {
-            ScrollAxis::V => vid ^ 0x8000_0001,
-            ScrollAxis::H => vid ^ 0x8000_0002,
+            ScrollbarAxis::V => vid ^ 0x8000_0001,
+            ScrollbarAxis::H => vid ^ 0x8000_0002,
         };
         let track_start = match axis {
-            ScrollAxis::V => track_y,
-            ScrollAxis::H => track_x,
+            ScrollbarAxis::V => track_y,
+            ScrollbarAxis::H => track_x,
         };
         let max_scroll = (content_len - vp_len).max(1.0);
 
@@ -3528,8 +3538,8 @@ fn push_scrollbar(
         });
 
         let extract = match axis {
-            ScrollAxis::V => (|pe: &PointerEvent| pe.position.y) as fn(&PointerEvent) -> f32,
-            ScrollAxis::H => (|pe: &PointerEvent| pe.position.x) as fn(&PointerEvent) -> f32,
+            ScrollbarAxis::V => (|pe: &PointerEvent| pe.position.y) as fn(&PointerEvent) -> f32,
+            ScrollbarAxis::H => (|pe: &PointerEvent| pe.position.x) as fn(&PointerEvent) -> f32,
         };
 
         let on_pd = {

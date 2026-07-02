@@ -1,7 +1,6 @@
 use crate::ViewExt;
 use crate::anim::animate_f32_from;
 use crate::lazy_states::*;
-use crate::scroll::{run_post_scroll, run_pre_scroll};
 use repose_core::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -395,18 +394,18 @@ where
     };
     repose_core::View::new(
         0,
-        repose_core::ViewKind::ScrollV {
-            on_scroll,
-            set_viewport_height: Some(set_viewport),
-            set_content_height: Some(Rc::new(move |h| measured_h_px(h))),
-            get_scroll_offset: Some(get_scroll),
-            set_scroll_offset: Some(set_scroll),
-            show_scrollbar: true,
-            tick_scroll,
-            set_nested_scroll_parent: Some(set_nested_scroll_parent),
-        },
+        repose_core::ViewKind::Box,
     )
-    .modifier(modifier)
+    .modifier(modifier.vertical_scroll(ScrollAxisBinding {
+        on_scroll,
+        set_viewport_main: Some(set_viewport),
+        set_content_main: Some(Rc::new(move |h| measured_h_px(h))),
+        get_offset_main: Some(get_scroll),
+        set_offset_main: Some(set_scroll),
+        show_scrollbar: true,
+        tick: tick_scroll,
+        set_nested_scroll_parent: Some(set_nested_scroll_parent),
+    }))
     .with_children(vec![content])
 }
 
@@ -628,18 +627,18 @@ where
     };
     View::new(
         0,
-        ViewKind::ScrollV {
-            on_scroll,
-            set_viewport_height: Some(set_viewport),
-            set_content_height: Some(Rc::new(move |h| measured_h(h))),
-            get_scroll_offset: Some(get_scroll),
-            set_scroll_offset: Some(set_scroll),
-            show_scrollbar: true,
-            tick_scroll,
-            set_nested_scroll_parent: Some(set_nested_scroll_parent),
-        },
+        ViewKind::Box,
     )
-    .modifier(modifier)
+    .modifier(modifier.vertical_scroll(ScrollAxisBinding {
+        on_scroll,
+        set_viewport_main: Some(set_viewport),
+        set_content_main: Some(Rc::new(move |h| measured_h(h))),
+        get_offset_main: Some(get_scroll),
+        set_offset_main: Some(set_scroll),
+        show_scrollbar: true,
+        tick: tick_scroll,
+        set_nested_scroll_parent: Some(set_nested_scroll_parent),
+    }))
     .with_children(vec![content])
 }
 
@@ -866,20 +865,20 @@ where
     };
     View::new(
         0,
-        ViewKind::ScrollXY {
-            on_scroll,
-            set_viewport_width: Some(set_viewport_w),
-            set_viewport_height: None,
-            set_content_width: Some(set_content_w),
-            set_content_height: None,
-            get_scroll_offset_xy: Some(get_scroll),
-            set_scroll_offset_xy: Some(set_scroll),
-            show_scrollbar: true,
-            tick_scroll,
-            set_nested_scroll_parent: Some(set_nested_scroll_parent),
-        },
+        ViewKind::Box,
     )
-    .modifier(modifier)
+    .modifier(modifier.scrollable(ScrollBothBinding {
+        on_scroll,
+        set_viewport_width: Some(set_viewport_w),
+        set_viewport_height: None,
+        set_content_width: Some(set_content_w),
+        set_content_height: None,
+        get_offset_xy: Some(get_scroll),
+        set_offset_xy: Some(set_scroll),
+        show_scrollbar: true,
+        tick: tick_scroll,
+        set_nested_scroll_parent: Some(set_nested_scroll_parent),
+    }))
     .with_children(vec![content])
 }
 
@@ -1060,20 +1059,20 @@ where
     };
     View::new(
         0,
-        ViewKind::ScrollXY {
-            on_scroll,
-            set_viewport_width: Some(set_viewport_w),
-            set_viewport_height: None,
-            set_content_width: Some(set_content_w),
-            set_content_height: None,
-            get_scroll_offset_xy: Some(get_scroll),
-            set_scroll_offset_xy: Some(set_scroll),
-            show_scrollbar: true,
-            tick_scroll,
-            set_nested_scroll_parent: Some(set_nested_scroll_parent),
-        },
+        ViewKind::Box,
     )
-    .modifier(modifier)
+    .modifier(modifier.scrollable(ScrollBothBinding {
+        on_scroll,
+        set_viewport_width: Some(set_viewport_w),
+        set_viewport_height: None,
+        set_content_width: Some(set_content_w),
+        set_content_height: None,
+        get_offset_xy: Some(get_scroll),
+        set_offset_xy: Some(set_scroll),
+        show_scrollbar: true,
+        tick: tick_scroll,
+        set_nested_scroll_parent: Some(set_nested_scroll_parent),
+    }))
     .with_children(vec![content])
 }
 
@@ -1347,18 +1346,18 @@ where
     };
     View::new(
         0,
-        ViewKind::ScrollV {
-            on_scroll,
-            set_viewport_height: Some(set_viewport),
-            set_content_height: Some(Rc::new(move |h| measured_h(h))),
-            get_scroll_offset: Some(get_scroll),
-            set_scroll_offset: Some(set_scroll),
-            show_scrollbar: true,
-            tick_scroll,
-            set_nested_scroll_parent: Some(set_nested_scroll_parent),
-        },
+        ViewKind::Box,
     )
-    .modifier(modifier)
+    .modifier(modifier.vertical_scroll(ScrollAxisBinding {
+        on_scroll,
+        set_viewport_main: Some(set_viewport),
+        set_content_main: Some(Rc::new(move |h| measured_h(h))),
+        get_offset_main: Some(get_scroll),
+        set_offset_main: Some(set_scroll),
+        show_scrollbar: true,
+        tick: tick_scroll,
+        set_nested_scroll_parent: Some(set_nested_scroll_parent),
+    }))
     .with_children(vec![content])
 }
 

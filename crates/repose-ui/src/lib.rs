@@ -197,22 +197,13 @@ pub fn OverlayHost(modifier: Modifier) -> View {
     View::new(0, ViewKind::OverlayHost).modifier(modifier)
 }
 
-#[deprecated = "Use ScollArea instead"]
+#[deprecated = "Use Modifier::vertical_scroll instead"]
 pub fn Scroll(modifier: Modifier) -> View {
-    View::new(
-        0,
-        ViewKind::ScrollV {
-            on_scroll: None,
-            set_viewport_height: None,
-            set_content_height: None,
-            get_scroll_offset: None,
-            set_scroll_offset: None,
+    View::new(0, ViewKind::Box)
+        .modifier(modifier.vertical_scroll(ScrollAxisBinding {
             show_scrollbar: true,
-            tick_scroll: None,
-            set_nested_scroll_parent: None,
-        },
-    )
-    .modifier(modifier)
+            ..Default::default()
+        }))
 }
 
 pub fn Text(text: impl Into<String>) -> View {
@@ -441,7 +432,14 @@ impl ImageExt for View {
     }
 }
 
-fn flex_dir_for(kind: &ViewKind) -> Option<FlexDirection> {
+fn flex_dir_for(kind: &ViewKind, modifier: &Modifier) -> Option<FlexDirection> {
+    if let Some(ref scroll) = modifier.scroll {
+        return Some(match scroll.axis() {
+            ScrollAxis::Vertical => FlexDirection::Column,
+            ScrollAxis::Horizontal => FlexDirection::Row,
+            ScrollAxis::Both => FlexDirection::Column,
+        });
+    }
     match kind {
         ViewKind::Row => {
             if repose_core::locals::text_direction() == repose_core::locals::TextDirection::Rtl {

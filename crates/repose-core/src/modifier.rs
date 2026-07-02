@@ -65,6 +65,7 @@ macro_rules! impl_option_fields {
                     clip_rounded, clip_rect, render_z_index,
                     on_scroll,
                     nested_scroll_connection,
+                    scroll,
                     on_pointer_down, on_pointer_move, on_pointer_up,
                     on_pointer_enter, on_pointer_leave,
                     on_click, on_double_click, on_long_click,
@@ -517,6 +518,12 @@ pub struct Modifier {
     /// the group before moving outside it.
     pub focus_group: bool,
     pub on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>>,
+    /// Scroll modifier binding. When set, the layout engine treats this view as
+    /// a scroll container, applying clipping and offset to children.
+    ///
+    /// Use `Modifier::vertical_scroll()`, `Modifier::horizontal_scroll()`, or
+    /// `Modifier::scrollable()` to set this.
+    pub scroll: Option<crate::scroll::ScrollBinding>,
     /// Nested scroll connection for coordinated scrolling between this element
     /// and its scrollable descendants.
     ///
@@ -709,6 +716,7 @@ impl std::fmt::Debug for Modifier {
         }
         opt_cb!(
             on_scroll,
+            scroll,
             nested_scroll_connection,
             on_pointer_down,
             on_pointer_move,
@@ -1142,6 +1150,23 @@ impl Modifier {
     }
     pub fn on_scroll(mut self, f: impl Fn(Vec2) -> Vec2 + 'static) -> Self {
         self.on_scroll = Some(Rc::new(f));
+        self
+    }
+    /// Attach a vertical scroll binding to this modifier.
+    /// The binding provides callbacks for scroll handling, viewport tracking, etc.
+    /// Use `ScrollState::to_binding()` to create one from a scroll state.
+    pub fn vertical_scroll(mut self, binding: crate::scroll::ScrollAxisBinding) -> Self {
+        self.scroll = Some(crate::scroll::ScrollBinding::Vertical(binding));
+        self
+    }
+    /// Attach a horizontal scroll binding to this modifier.
+    pub fn horizontal_scroll(mut self, binding: crate::scroll::ScrollAxisBinding) -> Self {
+        self.scroll = Some(crate::scroll::ScrollBinding::Horizontal(binding));
+        self
+    }
+    /// Attach a 2D scroll binding to this modifier.
+    pub fn scrollable(mut self, binding: crate::scroll::ScrollBothBinding) -> Self {
+        self.scroll = Some(crate::scroll::ScrollBinding::Both(binding));
         self
     }
     /// Attach a nested scroll connection that descendant scrollable containers

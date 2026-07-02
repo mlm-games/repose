@@ -21,6 +21,10 @@ pub use crate::locals::{
 };
 pub use crate::modifier::Modifier;
 pub use crate::nested_scroll::{NestedScrollConnection, NestedScrollSource};
+pub use crate::scroll::{
+    HorizontalScrollState, ScrollAxis, ScrollAxisBinding, ScrollBothBinding, ScrollBinding,
+    ScrollPhysics, ScrollState, ScrollStateXY, run_post_scroll, run_pre_scroll,
+};
 pub use crate::render_api::{GlyphRasterConfig, RenderBackend};
 pub use crate::runtime::{
     ComposeGuard, FocusDirection, FocusManager, FocusRequester, Frame, Scheduler, remember,

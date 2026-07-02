@@ -115,6 +115,7 @@ pub mod input;
 pub mod locals;
 pub mod modifier;
 pub mod nested_scroll;
+pub mod scroll;
 pub mod prelude;
 pub mod reactive;
 pub mod render_api;
