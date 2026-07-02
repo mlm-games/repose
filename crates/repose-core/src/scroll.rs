@@ -199,7 +199,7 @@ pub struct ScrollState {
     physics: RefCell<ScrollPhysics>,
     overscroll: Signal<f32>,
     overscroll_enabled: bool,
-    pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
+    pub(crate) parent_connection: Rc<RefCell<Option<NestedScrollConnection>>>,
     show_scrollbar: Cell<bool>,
     prev_tick: Cell<Instant>,
 }
@@ -219,7 +219,7 @@ impl ScrollState {
             physics: RefCell::new(ScrollPhysics::new(0.90, 15.0, 50.0)),
             overscroll: signal(0.0),
             overscroll_enabled: true,
-            parent_connection: RefCell::new(None),
+            parent_connection: Rc::new(RefCell::new(None)),
             show_scrollbar: Cell::new(true),
             prev_tick: Cell::new(Instant::now()),
         }
@@ -386,44 +386,45 @@ impl ScrollState {
 
     /// Build a `ScrollBinding::Vertical` from this state for use with `Modifier::vertical_scroll`.
     pub fn to_binding(&self) -> ScrollBinding {
-        let this = self.clone();
+        let this = Rc::new(self.clone());
+        let pc = Rc::clone(&this.parent_connection);
         let c_on_scroll = {
-            let state = this.parent_connection.clone();
-            let this = this.clone();
+            let state = Rc::clone(&pc);
+            let this = Rc::clone(&this);
             Rc::new(move |d: Vec2| -> Vec2 {
-                let d = run_pre_scroll(&state, d);
+                let d = run_pre_scroll(&*state, d);
                 let leftover_y = this.scroll_immediate(d.y);
                 let result = Vec2 {
                     x: d.x,
                     y: leftover_y,
                 };
-                run_post_scroll(&state, result)
+                run_post_scroll(&*state, result)
             })
         } as Rc<dyn Fn(Vec2) -> Vec2>;
         let c_set_viewport = {
-            let this = this.clone();
+            let this = Rc::clone(&this);
             Rc::new(move |h: f32| this.set_viewport_height(h))
         };
         let c_set_content = {
-            let this = this.clone();
+            let this = Rc::clone(&this);
             Rc::new(move |h: f32| this.set_content_height(h))
         };
         let c_get = {
-            let this = this.clone();
+            let this = Rc::clone(&this);
             Rc::new(move || this.get() + this.overscroll_offset())
         };
         let c_set = {
-            let this = this.clone();
+            let this = Rc::clone(&this);
             Rc::new(move |off: f32| this.set_offset(off))
         };
         let c_tick = {
-            let this = this.clone();
+            let this = Rc::clone(&this);
             Rc::new(move || {
                 this.tick();
             })
         };
         let c_set_nested = {
-            let state = this.parent_connection.clone();
+            let state = Rc::clone(&pc);
             Rc::new(move |conn| {
                 *state.borrow_mut() = Some(conn);
             })
@@ -450,7 +451,7 @@ pub struct HorizontalScrollState {
     physics: RefCell<ScrollPhysics>,
     overscroll: Signal<f32>,
     overscroll_enabled: bool,
-    pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
+    pub(crate) parent_connection: Rc<RefCell<Option<NestedScrollConnection>>>,
     show_scrollbar: Cell<bool>,
     prev_tick: Cell<Instant>,
 }
@@ -470,7 +471,7 @@ impl HorizontalScrollState {
             physics: RefCell::new(ScrollPhysics::new(0.90, 15.0, 50.0)),
             overscroll: signal(0.0),
             overscroll_enabled: true,
-            parent_connection: RefCell::new(None),
+            parent_connection: Rc::new(RefCell::new(None)),
             show_scrollbar: Cell::new(true),
             prev_tick: Cell::new(Instant::now()),
         }
@@ -613,44 +614,45 @@ impl HorizontalScrollState {
     }
 
     pub fn to_binding(&self) -> ScrollBinding {
-        let this = self.clone();
+        let this = Rc::new(self.clone());
+        let pc = Rc::clone(&this.parent_connection);
         let c_on_scroll = {
-            let state = this.parent_connection.clone();
-            let this = this.clone();
+            let state = Rc::clone(&pc);
+            let this = Rc::clone(&this);
             Rc::new(move |d: Vec2| -> Vec2 {
-                let d = run_pre_scroll(&state, d);
+                let d = run_pre_scroll(&*state, d);
                 let leftover_x = this.scroll_immediate(d.x);
                 let result = Vec2 {
                     x: leftover_x,
                     y: d.y,
                 };
-                run_post_scroll(&state, result)
+                run_post_scroll(&*state, result)
             })
         } as Rc<dyn Fn(Vec2) -> Vec2>;
         let c_set_vp = {
-            let this = this.clone();
+            let this = Rc::clone(&this);
             Rc::new(move |w: f32| this.set_viewport_width(w))
         };
         let c_set_ct = {
-            let this = this.clone();
+            let this = Rc::clone(&this);
             Rc::new(move |w: f32| this.set_content_width(w))
         };
         let c_get = {
-            let this = this.clone();
+            let this = Rc::clone(&this);
             Rc::new(move || this.get() + this.overscroll_offset())
         };
         let c_set = {
-            let this = this.clone();
+            let this = Rc::clone(&this);
             Rc::new(move |off: f32| this.set_offset(off))
         };
         let c_tick = {
-            let this = this.clone();
+            let this = Rc::clone(&this);
             Rc::new(move || {
                 this.tick();
             })
         };
         let c_set_nested = {
-            let state = this.parent_connection.clone();
+            let state = Rc::clone(&pc);
             Rc::new(move |conn| {
                 *state.borrow_mut() = Some(conn);
             })
@@ -682,7 +684,7 @@ pub struct ScrollStateXY {
     os_x: Signal<f32>,
     os_y: Signal<f32>,
     overscroll_enabled: bool,
-    pub(crate) parent_connection: RefCell<Option<NestedScrollConnection>>,
+    pub(crate) parent_connection: Rc<RefCell<Option<NestedScrollConnection>>>,
     show_scrollbar: Cell<bool>,
     prev_tick: Cell<Instant>,
 }
@@ -707,7 +709,7 @@ impl ScrollStateXY {
             os_x: signal(0.0),
             os_y: signal(0.0),
             overscroll_enabled: true,
-            parent_connection: RefCell::new(None),
+            parent_connection: Rc::new(RefCell::new(None)),
             show_scrollbar: Cell::new(true),
             prev_tick: Cell::new(Instant::now()),
         }
@@ -775,13 +777,14 @@ impl ScrollStateXY {
         result * sign
     }
     fn os_scroll_axis(
+        off: &Signal<f32>,
         os: &Signal<f32>,
         overscroll_enabled: bool,
-        before: f32,
         max_off: f32,
         dx: f32,
         physics: &mut ScrollPhysics,
     ) -> f32 {
+        let before = off.get();
         let os_val = os.get();
         if overscroll_enabled && os_val.abs() > 0.5 {
             if os_val.signum() * dx < 0.0 {
@@ -791,6 +794,7 @@ impl ScrollStateXY {
                 if remainder.abs() > 0.5 {
                     let new_off = (before + remainder).clamp(0.0, max_off);
                     let consumed = new_off - before;
+                    off.set(new_off);
                     let leftover = remainder - consumed;
                     physics.record_input(consumed);
                     return leftover;
@@ -807,6 +811,7 @@ impl ScrollStateXY {
 
         let can_os = overscroll_enabled && max_off > 5.0;
         let new_off = (before + dx).clamp(0.0, max_off);
+        off.set(new_off);
         let consumed = new_off - before;
         let leftover = dx - consumed;
 
@@ -824,15 +829,13 @@ impl ScrollStateXY {
         leftover
     }
     pub fn scroll_immediate(&self, d: Vec2) -> Vec2 {
-        let bx = self.off_x.get();
-        let by = self.off_y.get();
         let max_x = (self.c_w.get() - self.vp_w.get()).max(0.0);
         let max_y = (self.c_h.get() - self.vp_h.get()).max(0.0);
 
         let mut px = self.physics_x.borrow_mut();
         let mut py = self.physics_y.borrow_mut();
-        let lx = Self::os_scroll_axis(&self.os_x, self.overscroll_enabled, bx, max_x, d.x, &mut px);
-        let ly = Self::os_scroll_axis(&self.os_y, self.overscroll_enabled, by, max_y, d.y, &mut py);
+        let lx = Self::os_scroll_axis(&self.off_x, &self.os_x, self.overscroll_enabled, max_x, d.x, &mut px);
+        let ly = Self::os_scroll_axis(&self.off_y, &self.os_y, self.overscroll_enabled, max_y, d.y, &mut py);
         drop((px, py));
 
         Vec2 { x: lx, y: ly }
@@ -934,34 +937,35 @@ impl ScrollStateXY {
     }
 
     pub fn to_binding(&self) -> ScrollBinding {
-        let this = self.clone();
+        let this = Rc::new(self.clone());
+        let pc = Rc::clone(&this.parent_connection);
         let c_on_scroll = {
-            let state = this.parent_connection.clone();
-            let this = this.clone();
+            let state = Rc::clone(&pc);
+            let this = Rc::clone(&this);
             Rc::new(move |d: Vec2| -> Vec2 {
-                let d = run_pre_scroll(&state, d);
+                let d = run_pre_scroll(&*state, d);
                 let result = this.scroll_immediate(d);
-                run_post_scroll(&state, result)
+                run_post_scroll(&*state, result)
             })
         } as Rc<dyn Fn(Vec2) -> Vec2>;
         let c_set_vw = {
-            let this = this.clone();
+            let this = Rc::clone(&this);
             Rc::new(move |w: f32| this.set_viewport(w, this.vp_h.get()))
         };
         let c_set_vh = {
-            let this = this.clone();
+            let this = Rc::clone(&this);
             Rc::new(move |h: f32| this.set_viewport(this.vp_w.get(), h))
         };
         let c_set_cw = {
-            let this = this.clone();
+            let this = Rc::clone(&this);
             Rc::new(move |w: f32| this.set_content(w, this.c_h.get()))
         };
         let c_set_ch = {
-            let this = this.clone();
+            let this = Rc::clone(&this);
             Rc::new(move |h: f32| this.set_content(this.c_w.get(), h))
         };
         let c_get_xy = {
-            let this = this.clone();
+            let this = Rc::clone(&this);
             Rc::new(move || {
                 let (ox, oy) = this.get();
                 let (osx, osy) = this.overscroll_offset();
@@ -969,17 +973,17 @@ impl ScrollStateXY {
             })
         };
         let c_set_xy = {
-            let this = this.clone();
+            let this = Rc::clone(&this);
             Rc::new(move |x: f32, y: f32| this.set_offset_xy(x, y))
         };
         let c_tick = {
-            let this = this.clone();
+            let this = Rc::clone(&this);
             Rc::new(move || {
                 this.tick();
             })
         };
         let c_set_nested = {
-            let state = this.parent_connection.clone();
+            let state = Rc::clone(&pc);
             Rc::new(move |conn| {
                 *state.borrow_mut() = Some(conn);
             })
