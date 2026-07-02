@@ -8,73 +8,35 @@
 //! so behavior is frame-rate independent.
 
 use repose_core::*;
+use repose_core::nested_scroll::NestedScrollSource;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use web_time::Instant;
 
 const OVERSHOOT_DECAY_PER_60HZ: f32 = 0.78;
 
-/// A connection between a nested scrollable and its nearest ancestor scrollable.
-/// Allows coordinated scrolling: the parent can pre-consume deltas before the
-/// child processes them, and post-consume leftovers after the child is done.
-///
-/// This enables patterns like collapsing toolbars (parent pre-consumes upward
-/// scroll) and pull-to-refresh (parent post-consumes overscroll from child).
-pub struct NestedScrollConnection {
-    /// Called with the original delta before the child processes it.
-    /// Return the delta remaining for the child after parent pre-consumption.
-    pub on_pre_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>>,
-    /// Called with the leftover delta after the child has processed it.
-    /// Return the final leftover (after parent post-consumption).
-    pub on_post_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>>,
-}
-
-impl Default for NestedScrollConnection {
-    fn default() -> Self {
-        Self::new()
+pub(crate) fn run_pre_scroll(
+    conn: &RefCell<Option<NestedScrollConnection>>,
+    d: Vec2,
+) -> Vec2 {
+    if let Some(ref parent) = *conn.borrow() {
+        let consumed = parent.dispatch_pre_scroll(d, NestedScrollSource::UserInput);
+        d - consumed
+    } else {
+        d
     }
-}
-
-impl NestedScrollConnection {
-    pub fn new() -> Self {
-        Self {
-            on_pre_scroll: None,
-            on_post_scroll: None,
-        }
-    }
-    /// Pre-consume scroll before the child processes it.
-    /// `f` receives the original delta, returns what remains for the child.
-    pub fn pre_scroll(mut self, f: impl Fn(Vec2) -> Vec2 + 'static) -> Self {
-        self.on_pre_scroll = Some(Rc::new(f));
-        self
-    }
-    /// Post-consume leftover scroll after the child has processed it.
-    /// `f` receives the leftover from the child, returns the final leftover.
-    pub fn post_scroll(mut self, f: impl Fn(Vec2) -> Vec2 + 'static) -> Self {
-        self.on_post_scroll = Some(Rc::new(f));
-        self
-    }
-}
-
-pub(crate) fn run_pre_scroll(conn: &RefCell<Option<NestedScrollConnection>>, d: Vec2) -> Vec2 {
-    if let Some(ref parent) = *conn.borrow()
-        && let Some(ref pre) = parent.on_pre_scroll
-    {
-        return pre(d);
-    }
-    d
 }
 
 pub(crate) fn run_post_scroll(
     conn: &RefCell<Option<NestedScrollConnection>>,
     leftover: Vec2,
 ) -> Vec2 {
-    if let Some(ref parent) = *conn.borrow()
-        && let Some(ref post) = parent.on_post_scroll
-    {
-        return post(leftover);
+    if let Some(ref parent) = *conn.borrow() {
+        let added = parent.dispatch_post_scroll(Vec2::ZERO, leftover, NestedScrollSource::UserInput);
+        leftover - added
+    } else {
+        leftover
     }
-    leftover
 }
 
 /// Handles velocity estimation from input deltas, frame-rate-independent
@@ -884,6 +846,10 @@ pub fn ScrollArea(modifier: Modifier, state: Rc<ScrollState>, content: View) -> 
             st.tick();
         })
     };
+    let set_nested_scroll_parent = {
+        let st = state.clone();
+        Rc::new(move |conn| st.set_nested_scroll_parent(conn))
+    };
     View::new(
         0,
         ViewKind::ScrollV {
@@ -894,6 +860,7 @@ pub fn ScrollArea(modifier: Modifier, state: Rc<ScrollState>, content: View) -> 
             set_scroll_offset: Some(set_scroll),
             show_scrollbar: state.show_scrollbar.get(),
             tick_scroll: Some(tick_scroll),
+            set_nested_scroll_parent: Some(set_nested_scroll_parent),
         },
     )
     .modifier(modifier)
@@ -940,6 +907,10 @@ pub fn HorizontalScrollArea(
             st.tick();
         })
     };
+    let set_nested_scroll_parent = {
+        let st = state.clone();
+        Rc::new(move |conn| st.set_nested_scroll_parent(conn))
+    };
     View::new(
         0,
         ViewKind::ScrollXY {
@@ -952,6 +923,7 @@ pub fn HorizontalScrollArea(
             set_scroll_offset_xy: Some(set_xy),
             show_scrollbar: state.show_scrollbar.get(),
             tick_scroll: Some(tick_scroll),
+            set_nested_scroll_parent: Some(set_nested_scroll_parent),
         },
     )
     .modifier(modifier)
@@ -1002,6 +974,10 @@ pub fn ScrollAreaXY(modifier: Modifier, state: Rc<ScrollStateXY>, content: View)
         })
     };
 
+    let set_nested_scroll_parent = {
+        let st = state.clone();
+        Rc::new(move |conn| st.set_nested_scroll_parent(conn))
+    };
     View::new(
         0,
         ViewKind::ScrollXY {
@@ -1014,6 +990,7 @@ pub fn ScrollAreaXY(modifier: Modifier, state: Rc<ScrollStateXY>, content: View)
             set_scroll_offset_xy: Some(set_xy),
             show_scrollbar: state.show_scrollbar.get(),
             tick_scroll: Some(tick_scroll),
+            set_nested_scroll_parent: Some(set_nested_scroll_parent),
         },
     )
     .modifier(modifier)

@@ -1366,14 +1366,6 @@ pub(crate) fn paint_text_field(
     is_focused: bool,
     clip_rounded: Option<[f32; 4]>,
 ) {
-    let pad_x = dp_to_px(TF_PADDING_X_DP);
-    let inner = repose_core::Rect {
-        x: rect.x + pad_x,
-        y: rect.y + dp_to_px(8.0),
-        w: (rect.w - 2.0 * pad_x).max(0.0),
-        h: (rect.h - dp_to_px(16.0)).max(0.0),
-    };
-
     let ts = text_input
         .text_style
         .as_ref()
@@ -1390,12 +1382,12 @@ pub(crate) fn paint_text_field(
     } else {
         font_val * 1.3
     };
-    let text_off_y = (inner.h - line_h) / 2.0;
+    let text_off_y = (rect.h - line_h) / 2.0;
 
-    let inner_radius = clip_rounded.unwrap_or([0.0; 4]).map(dp_to_px);
+    let clip_radius = clip_rounded.unwrap_or([0.0; 4]).map(dp_to_px);
     scene.nodes.push(SceneNode::PushClip {
-        rect: inner,
-        radius: inner_radius,
+        rect,
+        radius: clip_radius,
         op: repose_core::ClipOp::Intersect,
     });
 
@@ -1460,8 +1452,8 @@ pub(crate) fn paint_text_field(
                 let vis_ex = ex.max(0.0);
                 scene.nodes.push(SceneNode::Rect {
                     rect: repose_core::Rect {
-                        x: inner.x + vis_x,
-                        y: inner.y + text_off_y,
+                        x: rect.x + vis_x,
+                        y: rect.y + text_off_y,
                         w: (vis_ex - vis_x).max(0.0),
                         h: line_h,
                     },
@@ -1483,9 +1475,9 @@ pub(crate) fn paint_text_field(
             };
             scene.nodes.push(SceneNode::Text {
                 rect: repose_core::Rect {
-                    x: inner.x - st.scroll_offset,
-                    y: inner.y + text_off_y,
-                    w: inner.w,
+                    x: rect.x - st.scroll_offset,
+                    y: rect.y + text_off_y,
+                    w: rect.w,
                     h: line_h,
                 },
                 text: Arc::from(render_txt),
@@ -1520,10 +1512,10 @@ pub(crate) fn paint_text_field(
                     .copied()
                     .unwrap_or(0.0)
                     - st.scroll_offset;
-                let cursor_y = inner.y + text_off_y + (line_h - font_val) / 2.0;
+                let cursor_y = rect.y + text_off_y + (line_h - font_val) / 2.0;
                 scene.nodes.push(SceneNode::Rect {
                     rect: repose_core::Rect {
-                        x: inner.x + cx.max(0.0),
+                        x: rect.x + cx.max(0.0),
                         y: cursor_y,
                         w: dp_to_px(1.0),
                         h: font_val,
@@ -1542,7 +1534,7 @@ pub(crate) fn paint_text_field(
             } else {
                 st.text.clone()
             };
-            let layout = layout_text_area(&render_text, font_val, inner.w.max(1.0), 400, 0);
+            let layout = layout_text_area(&render_text, font_val, rect.w.max(1.0), 400, 0);
             let lh = layout.line_h_px;
             let max_line_count = text_input.max_lines.unwrap_or(usize::MAX);
 
@@ -1550,10 +1542,10 @@ pub(crate) fn paint_text_field(
             if st.text.is_empty() {
                 scene.nodes.push(SceneNode::Text {
                     rect: repose_core::Rect {
-                        x: inner.x,
-                        y: inner.y,
-                        w: inner.w,
-                        h: inner.h,
+                        x: rect.x,
+                        y: rect.y,
+                        w: rect.w,
+                        h: rect.h,
                     },
                     text: Arc::from(text_input.hint.clone()),
                     color: ts.color.unwrap_or(th.on_surface_variant),
@@ -1575,15 +1567,15 @@ pub(crate) fn paint_text_field(
                         break;
                     }
                     let ln = render_text[s..e].to_string();
-                    let draw_y = inner.y + (i as f32) * lh - st.scroll_offset_y;
-                    if draw_y + lh < inner.y - 1.0 || draw_y > inner.y + inner.h + 1.0 {
+                    let draw_y = rect.y + (i as f32) * lh - st.scroll_offset_y;
+                    if draw_y + lh < rect.y - 1.0 || draw_y > rect.y + rect.h + 1.0 {
                         continue;
                     }
                     scene.nodes.push(SceneNode::Text {
                         rect: repose_core::Rect {
-                            x: inner.x,
+                            x: rect.x,
                             y: draw_y,
-                            w: inner.w,
+                            w: rect.w,
                             h: lh,
                         },
                         text: Arc::<str>::from(ln),
@@ -1648,10 +1640,10 @@ pub(crate) fn paint_text_field(
                         .get(byte_to_char_index(&m, le))
                         .copied()
                         .unwrap_or(sx);
-                    let draw_y = inner.y + (i as f32) * lh - st.scroll_offset_y;
+                    let draw_y = rect.y + (i as f32) * lh - st.scroll_offset_y;
                     scene.nodes.push(SceneNode::Rect {
                         rect: repose_core::Rect {
-                            x: inner.x + sx,
+                            x: rect.x + sx,
                             y: draw_y,
                             w: (ex - sx).max(0.0),
                             h: lh,
@@ -1676,9 +1668,9 @@ pub(crate) fn paint_text_field(
                     caret_orig
                 };
                 let (cx, cy, _li) =
-                    caret_xy_for_byte(&render_text, font_val, inner.w.max(1.0), caret);
-                let draw_x = inner.x + cx;
-                let draw_y = inner.y + cy - st.scroll_offset_y;
+                    caret_xy_for_byte(&render_text, font_val, rect.w.max(1.0), caret);
+                let draw_x = rect.x + cx;
+                let draw_y = rect.y + cy - st.scroll_offset_y;
                 scene.nodes.push(SceneNode::Rect {
                     rect: repose_core::Rect {
                         x: draw_x,
@@ -1695,17 +1687,17 @@ pub(crate) fn paint_text_field(
         // No state yet (unfocused) - render hint or raw value
         if text_input.value.is_empty() {
             let hint_y = if text_input.multiline {
-                inner.y
+                rect.y
             } else {
-                inner.y + text_off_y
+                rect.y + text_off_y
             };
             scene.nodes.push(SceneNode::Text {
                 rect: repose_core::Rect {
-                    x: inner.x,
+                    x: rect.x,
                     y: hint_y,
-                    w: inner.w,
+                    w: rect.w,
                     h: if text_input.multiline {
-                        inner.h
+                        rect.h
                     } else {
                         line_h
                     },
@@ -1730,19 +1722,19 @@ pub(crate) fn paint_text_field(
             } else {
                 text_input.value.clone()
             };
-            let layout = layout_text_area(&render_text, font_val, inner.w.max(1.0), 400, 0);
+            let layout = layout_text_area(&render_text, font_val, rect.w.max(1.0), 400, 0);
             let lh = layout.line_h_px;
             for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
                 let ln = render_text[s..e].to_string();
-                let draw_y = inner.y + (i as f32) * lh;
-                if draw_y + lh < inner.y - 1.0 || draw_y > inner.y + inner.h + 1.0 {
+                let draw_y = rect.y + (i as f32) * lh;
+                if draw_y + lh < rect.y - 1.0 || draw_y > rect.y + rect.h + 1.0 {
                     continue;
                 }
                 scene.nodes.push(SceneNode::Text {
                     rect: repose_core::Rect {
-                        x: inner.x,
+                        x: rect.x,
                         y: draw_y,
-                        w: inner.w,
+                        w: rect.w,
                         h: lh,
                     },
                     text: Arc::<str>::from(ln),
@@ -1760,9 +1752,9 @@ pub(crate) fn paint_text_field(
         } else {
             scene.nodes.push(SceneNode::Text {
                 rect: repose_core::Rect {
-                    x: inner.x,
-                    y: inner.y + text_off_y,
-                    w: inner.w,
+                    x: rect.x,
+                    y: rect.y + text_off_y,
+                    w: rect.w,
                     h: line_h,
                 },
                 text: Arc::from(rendered_by_vt(&text_input.value)),
@@ -1801,9 +1793,9 @@ pub(crate) fn paint_text_field(
                 st.text.clone()
             };
             if text_input.multiline {
-                let l = layout_text_area(&display, font_val, inner.w.max(1.0), 400, 0);
+                let l = layout_text_area(&display, font_val, rect.w.max(1.0), 400, 0);
                 let lc = l.ranges.len();
-                let cw = inner.w.max(0.0);
+                let cw = rect.w.max(0.0);
                 let ch = (lc as f32 * l.line_h_px).max(0.0);
                 let line_infos: Vec<_> = l
                     .ranges
@@ -1829,7 +1821,7 @@ pub(crate) fn paint_text_field(
                     .collect();
                 let fb = line_infos.first().map(|l| l.baseline).unwrap_or(0.0);
                 let lb = line_infos.last().map(|l| l.baseline).unwrap_or(0.0);
-                (lc, cw, ch, fb, lb, cw > inner.w, ch > inner.h, line_infos)
+                (lc, cw, ch, fb, lb, cw > rect.w, ch > rect.h, line_infos)
             } else {
                 let m = measure_text(&display, font_val, None, 400, 0);
                 let w = m.positions.last().copied().unwrap_or(0.0);
@@ -1852,8 +1844,8 @@ pub(crate) fn paint_text_field(
                     line_h.max(0.0),
                     baseline,
                     baseline,
-                    w > inner.w,
-                    line_h > inner.h,
+                    w > rect.w,
+                    line_h > rect.h,
                     vec![line_info],
                 )
             }

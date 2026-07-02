@@ -64,6 +64,7 @@ macro_rules! impl_option_fields {
                     align_self, justify_content, align_items_container, align_content,
                     clip_rounded, clip_rect, render_z_index,
                     on_scroll,
+                    nested_scroll_connection,
                     on_pointer_down, on_pointer_move, on_pointer_up,
                     on_pointer_enter, on_pointer_leave,
                     on_click, on_double_click, on_long_click,
@@ -516,6 +517,15 @@ pub struct Modifier {
     /// the group before moving outside it.
     pub focus_group: bool,
     pub on_scroll: Option<Rc<dyn Fn(Vec2) -> Vec2>>,
+    /// Nested scroll connection for coordinated scrolling between this element
+    /// and its scrollable descendants.
+    ///
+    /// When set on an ancestor of a scroll container (e.g. `ScrollArea`,
+    /// `LazyColumn`), the scroll container automatically discovers this
+    /// connection and dispatches pre/post scroll events to it during layout.
+    ///
+    /// Mirrors Compose's `Modifier.nestedScroll(NestedScrollConnection)`.
+    pub nested_scroll_connection: Option<crate::nested_scroll::NestedScrollConnection>,
     pub on_pointer_down: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_move: Option<Rc<dyn Fn(PointerEvent)>>,
     pub on_pointer_up: Option<Rc<dyn Fn(PointerEvent)>>,
@@ -699,6 +709,7 @@ impl std::fmt::Debug for Modifier {
         }
         opt_cb!(
             on_scroll,
+            nested_scroll_connection,
             on_pointer_down,
             on_pointer_move,
             on_pointer_up,
@@ -1131,6 +1142,16 @@ impl Modifier {
     }
     pub fn on_scroll(mut self, f: impl Fn(Vec2) -> Vec2 + 'static) -> Self {
         self.on_scroll = Some(Rc::new(f));
+        self
+    }
+    /// Attach a nested scroll connection that descendant scrollable containers
+    /// will discover during layout. Mirrors Compose's `Modifier.nestedScroll`.
+    ///
+    /// The connection receives pre/post scroll and pre/post fling callbacks
+    /// when a scrollable child dispatches events, enabling coordinated scrolling
+    /// patterns like collapsing toolbars and pull-to-refresh.
+    pub fn nested_scroll(mut self, conn: crate::nested_scroll::NestedScrollConnection) -> Self {
+        self.nested_scroll_connection = Some(conn);
         self
     }
     pub fn on_pointer_down(mut self, f: impl Fn(PointerEvent) + 'static) -> Self {

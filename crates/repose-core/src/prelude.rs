@@ -20,6 +20,7 @@ pub use crate::locals::{
     with_ui_scale, with_window_insets, with_window_size_class,
 };
 pub use crate::modifier::Modifier;
+pub use crate::nested_scroll::{NestedScrollConnection, NestedScrollSource};
 pub use crate::render_api::{GlyphRasterConfig, RenderBackend};
 pub use crate::runtime::{
     ComposeGuard, FocusDirection, FocusManager, FocusRequester, Frame, Scheduler, remember,

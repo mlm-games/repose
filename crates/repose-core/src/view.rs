@@ -2,6 +2,7 @@ use crate::{
     Brush, ClipOp, Color, FontStyle, FontWeight, Modifier, Rect, TextAlign, TextDecoration,
     TextSpan, Transform,
 };
+use crate::nested_scroll::NestedScrollConnection;
 use std::{fmt::Formatter, rc::Rc, sync::Arc};
 
 /// The constraints that will be passed to a subcomposed child. Values are in
@@ -95,6 +96,10 @@ pub enum ViewKind {
         set_scroll_offset: Option<Rc<dyn Fn(f32)>>,
         show_scrollbar: bool,
         tick_scroll: Option<Rc<dyn Fn()>>,
+        /// Set by the layout engine during traversal: wires the nearest
+        /// ancestor's `nested_scroll_connection` into the scroll state.
+        set_nested_scroll_parent:
+            Option<Rc<dyn Fn(NestedScrollConnection)>>,
     },
     ScrollXY {
         on_scroll: Option<ScrollCallback>,
@@ -106,6 +111,8 @@ pub enum ViewKind {
         set_scroll_offset_xy: Option<Rc<dyn Fn(f32, f32)>>,
         show_scrollbar: bool,
         tick_scroll: Option<Rc<dyn Fn()>>,
+        set_nested_scroll_parent:
+            Option<Rc<dyn Fn(NestedScrollConnection)>>,
     },
     Text {
         text: String,
@@ -168,8 +175,8 @@ impl std::fmt::Debug for ViewKind {
             Self::Stack => f.write_str("Stack"),
             Self::ZStack => f.write_str("ZStack"),
             Self::OverlayHost => f.write_str("OverlayHost"),
-            Self::ScrollV { .. } => f.write_str("ScrollV"),
-            Self::ScrollXY { .. } => f.write_str("ScrollXY"),
+            Self::ScrollV { set_nested_scroll_parent: _, .. } => f.write_str("ScrollV"),
+            Self::ScrollXY { set_nested_scroll_parent: _, .. } => f.write_str("ScrollXY"),
             Self::Image { .. } => f.write_str("Image"),
             Self::SubcomposeLayout { .. } => f.write_str("SubcomposeLayout"),
             Self::Text { text, .. } => write!(f, "Text({:?})", text),

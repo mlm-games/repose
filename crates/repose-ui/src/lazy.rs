@@ -389,6 +389,10 @@ where
         None
     };
 
+    let set_nested_scroll_parent = {
+        let st = state.clone();
+        Rc::new(move |conn| st.set_nested_scroll_parent(conn))
+    };
     repose_core::View::new(
         0,
         repose_core::ViewKind::ScrollV {
@@ -399,6 +403,7 @@ where
             set_scroll_offset: Some(set_scroll),
             show_scrollbar: true,
             tick_scroll,
+            set_nested_scroll_parent: Some(set_nested_scroll_parent),
         },
     )
     .modifier(modifier)
@@ -617,6 +622,10 @@ where
 
     let content = crate::Column(Modifier::new().fill_max_width()).with_children(children);
 
+    let set_nested_scroll_parent = {
+        let st = state.clone();
+        Rc::new(move |conn| st.set_nested_scroll_parent(conn))
+    };
     View::new(
         0,
         ViewKind::ScrollV {
@@ -627,6 +636,7 @@ where
             set_scroll_offset: Some(set_scroll),
             show_scrollbar: true,
             tick_scroll,
+            set_nested_scroll_parent: Some(set_nested_scroll_parent),
         },
     )
     .modifier(modifier)
@@ -850,6 +860,10 @@ where
     let content =
         crate::Row(Modifier::new().flex_shrink(0.0).fill_max_height()).with_children(children);
 
+    let set_nested_scroll_parent = {
+        let st = state.clone();
+        Rc::new(move |conn| st.set_nested_scroll_parent(conn))
+    };
     View::new(
         0,
         ViewKind::ScrollXY {
@@ -862,6 +876,7 @@ where
             set_scroll_offset_xy: Some(set_scroll),
             show_scrollbar: true,
             tick_scroll,
+            set_nested_scroll_parent: Some(set_nested_scroll_parent),
         },
     )
     .modifier(modifier)
@@ -1039,6 +1054,10 @@ where
     let content =
         crate::Row(Modifier::new().flex_shrink(0.0).fill_max_height()).with_children(children);
 
+    let set_nested_scroll_parent = {
+        let st = state.clone();
+        Rc::new(move |conn| st.set_nested_scroll_parent(conn))
+    };
     View::new(
         0,
         ViewKind::ScrollXY {
@@ -1051,6 +1070,7 @@ where
             set_scroll_offset_xy: Some(set_scroll),
             show_scrollbar: true,
             tick_scroll,
+            set_nested_scroll_parent: Some(set_nested_scroll_parent),
         },
     )
     .modifier(modifier)
@@ -1321,6 +1341,10 @@ where
 
     let content = crate::Row(Modifier::new().fill_max_width().gap(gap_dp)).with_children(col_views);
 
+    let set_nested_scroll_parent = {
+        let st = state.clone();
+        Rc::new(move |conn| st.set_nested_scroll_parent(conn))
+    };
     View::new(
         0,
         ViewKind::ScrollV {
@@ -1331,6 +1355,7 @@ where
             set_scroll_offset: Some(set_scroll),
             show_scrollbar: true,
             tick_scroll,
+            set_nested_scroll_parent: Some(set_nested_scroll_parent),
         },
     )
     .modifier(modifier)

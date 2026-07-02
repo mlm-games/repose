@@ -2,7 +2,8 @@ use std::rc::Rc;
 
 use repose_core::prelude::*;
 use repose_material::material3::{PullToRefresh, PullToRefreshConfig, PullToRefreshState};
-use repose_ui::scroll::{NestedScrollConnection, ScrollArea, remember_scroll_state};
+use repose_core::NestedScrollConnection;
+use repose_ui::scroll::{ScrollArea, remember_scroll_state};
 use repose_ui::*;
 
 use crate::ui::{Hint, Page, Section, sp};

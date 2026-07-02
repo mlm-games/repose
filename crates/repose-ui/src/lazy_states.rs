@@ -2,7 +2,7 @@ use repose_core::*;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use crate::scroll::{NestedScrollConnection, ScrollPhysics};
+use crate::scroll::ScrollPhysics;
 
 /// Configuration for [`LazyColumn`].
 #[derive(Clone)]

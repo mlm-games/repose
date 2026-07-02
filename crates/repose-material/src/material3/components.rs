@@ -8,7 +8,7 @@ use web_time::Duration;
 use repose_core::animation::{AnimationSpec, CubicBezier, Easing, KeyframesSpec, RepeatableSpec};
 use repose_core::*;
 use repose_ui::anim::{animate_color, animate_f32};
-use repose_ui::scroll::NestedScrollConnection;
+use repose_core::NestedScrollConnection;
 use repose_ui::textfield::measure_text;
 use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt};
 
@@ -110,37 +110,31 @@ impl TopAppBarScrollBehavior {
         let max_collapse = -(self.height - self.collapsed_height);
         let mode = self.mode;
 
-        NestedScrollConnection::new().pre_scroll(move |d: Vec2| -> Vec2 {
+        NestedScrollConnection::new().on_pre_scroll(move |d: Vec2, _source| -> Vec2 {
             if mode == TopAppBarScrollMode::Pinned {
-                return d;
+                return Vec2::ZERO;
             }
             let current = off.get();
             if d.y > 0.0 {
                 // Scrolling down → collapse bar
                 if current <= max_collapse {
-                    return d;
+                    return Vec2::ZERO;
                 }
                 let collapse_room = current - max_collapse;
                 let consume = d.y.min(collapse_room);
                 off.set(current - consume);
                 repose_core::request_frame();
-                Vec2 {
-                    x: d.x,
-                    y: d.y - consume,
-                }
+                Vec2 { x: 0.0, y: consume }
             } else {
                 // Scrolling up → expand bar
                 if current >= 0.0 {
-                    return d;
+                    return Vec2::ZERO;
                 }
                 let expansion_room = -current;
                 let consume = (-d.y).min(expansion_room);
                 off.set(current + consume);
                 repose_core::request_frame();
-                Vec2 {
-                    x: d.x,
-                    y: d.y + consume,
-                }
+                Vec2 { x: 0.0, y: consume }
             }
         })
     }
@@ -5635,19 +5629,14 @@ impl SearchBarScrollBehavior {
     pub fn nested_scroll_connection(&self) -> NestedScrollConnection {
         let offset = self.collapsed_offset.clone();
         let max_offset = self.height - self.collapsed_height;
-        NestedScrollConnection {
-            on_pre_scroll: Some(Rc::new(move |delta| {
-                let cur = offset.get();
-                let new = (cur - delta.y).clamp(-max_offset, 0.0);
-                offset.set(new);
-                request_frame();
-                Vec2 {
-                    x: delta.x,
-                    y: delta.y - (cur - new),
-                }
-            })),
-            on_post_scroll: None,
-        }
+        NestedScrollConnection::new().on_pre_scroll(move |delta: Vec2, _source| {
+            let cur = offset.get();
+            let new = (cur - delta.y).clamp(-max_offset, 0.0);
+            let consumed = cur - new;
+            offset.set(new);
+            request_frame();
+            Vec2 { x: 0.0, y: consumed }
+        })
     }
 }
 

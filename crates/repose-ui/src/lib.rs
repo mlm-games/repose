@@ -209,6 +209,7 @@ pub fn Scroll(modifier: Modifier) -> View {
             set_scroll_offset: None,
             show_scrollbar: true,
             tick_scroll: None,
+            set_nested_scroll_parent: None,
         },
     )
     .modifier(modifier)

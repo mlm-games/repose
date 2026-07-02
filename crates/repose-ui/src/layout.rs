@@ -17,7 +17,7 @@ use taffy::style::Overflow;
 
 use crate::Interactions;
 use crate::anim::{animate_color, animate_f32};
-use crate::textfield::{TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, measure_text};
+use crate::textfield::{TF_FONT_DP, TextFieldState, measure_text};
 
 fn push_focus_ring(scene: &mut Scene, rect: repose_core::Rect, radius_dp: f32) {
     scene.nodes.push(SceneNode::Border {
@@ -1785,6 +1785,24 @@ impl LayoutEngine {
         h.finish()
     }
 
+    /// Walk up the ancestor tree to find the nearest node whose modifier has
+    /// a `nested_scroll_connection`. Returns the connection if found.
+    fn find_ancestor_nested_scroll(&self, node_id: NodeId) -> Option<NestedScrollConnection> {
+        let mut current = node_id;
+        loop {
+            let node = self.tree.get(current)?;
+            if node.parent.is_none() {
+                return None;
+            }
+            let parent_id = node.parent?;
+            let parent = self.tree.get(parent_id)?;
+            if let Some(ref conn) = parent.modifier.nested_scroll_connection {
+                return Some(conn.clone());
+            }
+            current = parent_id;
+        }
+    }
+
     fn walk_paint_view(
         &mut self,
         view: &View,
@@ -2155,16 +2173,9 @@ impl LayoutEngine {
             let is_focused = focused == Some(view_id);
 
             if let Some(ref state_rc) = state {
-                let pad_x = dp_to_px(TF_PADDING_X_DP);
-                let inner_rect = repose_core::Rect {
-                    x: rect.x + pad_x,
-                    y: rect.y + dp_to_px(8.0),
-                    w: (rect.w - 2.0 * pad_x).max(0.0),
-                    h: (rect.h - dp_to_px(16.0)).max(0.0),
-                };
                 let mut st = state_rc.borrow_mut();
-                st.set_inner_width(inner_rect.w);
-                st.set_inner_height(inner_rect.h);
+                st.set_inner_width(rect.w);
+                st.set_inner_height(rect.h);
                 st.tick_scroll_animation();
                 if let Some(ref vt) = ti.visual_transformation.as_ref() {
                     let empty = repose_core::AnnotatedString::new(String::new(), vec![]);
@@ -2570,20 +2581,12 @@ impl LayoutEngine {
                     }
                 }
 
-                let pad_x = dp_to_px(TF_PADDING_X_DP);
-                let inner = repose_core::Rect {
-                    x: rect.x + pad_x,
-                    y: rect.y + dp_to_px(8.0),
-                    w: (rect.w - 2.0 * pad_x).max(0.0),
-                    h: (rect.h - dp_to_px(16.0)).max(0.0),
-                };
-
                 // Scroll wheel support for multiline text areas
                 let on_scroll = if multiline {
                     let key = tf_key;
-                    let h = inner.h;
+                    let h = rect.h;
                     let font_val = font_px(TF_FONT_DP);
-                    let wrap_w = inner.w.max(1.0);
+                    let wrap_w = rect.w.max(1.0);
                     let states = textfield_states.get(&key).cloned();
                     Some(Rc::new(move |d: Vec2| -> Vec2 {
                         let Some(st_rc) = states.as_ref() else {
@@ -2609,7 +2612,7 @@ impl LayoutEngine {
                 } else {
                     // Single-line horizontal scroll (mouse wheel or trackpad)
                     let key = tf_key;
-                    let inner_w = inner.w.max(1.0);
+                    let inner_w = rect.w.max(1.0);
                     let font_val = font_px(TF_FONT_DP);
                     let states = textfield_states.get(&key).cloned();
                     Some(Rc::new(move |d: Vec2| -> Vec2 {
@@ -2984,8 +2987,14 @@ impl LayoutEngine {
                 get_scroll_offset,
                 set_scroll_offset,
                 show_scrollbar,
+                set_nested_scroll_parent,
                 ..
             } => {
+                if let Some(set_parent) = set_nested_scroll_parent {
+                    if let Some(conn) = self.find_ancestor_nested_scroll(node_id) {
+                        set_parent(conn);
+                    }
+                }
                 hits.push(HitRegion {
                     id: view_id,
                     rect,
@@ -3078,8 +3087,14 @@ impl LayoutEngine {
                 get_scroll_offset_xy,
                 set_scroll_offset_xy,
                 show_scrollbar,
+                set_nested_scroll_parent,
                 ..
             } => {
+                if let Some(set_parent) = set_nested_scroll_parent {
+                    if let Some(conn) = self.find_ancestor_nested_scroll(node_id) {
+                        set_parent(conn);
+                    }
+                }
                 hits.push(HitRegion {
                     id: view_id,
                     rect,

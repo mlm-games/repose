@@ -25,7 +25,7 @@ use repose_core::*;
 use repose_ui::LazyRowState;
 use repose_ui::lazy::LazyRow;
 use repose_ui::lazy_states::LazyRowConfig;
-use repose_ui::scroll::NestedScrollConnection;
+use repose_core::NestedScrollConnection;
 use repose_ui::{
     BasicSecureTextField, BasicTextField, Box, Column, Row, Spacer, Stack, Text, TextFieldState,
     TextStyle, ViewExt, ZStack,

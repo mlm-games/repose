@@ -4,6 +4,40 @@ pub struct Vec2 {
     pub y: f32,
 }
 
+impl Vec2 {
+    pub const ZERO: Vec2 = Vec2 { x: 0.0, y: 0.0 };
+}
+
+impl std::ops::Add for Vec2 {
+    type Output = Vec2;
+    fn add(self, other: Vec2) -> Vec2 {
+        Vec2 {
+            x: self.x + other.x,
+            y: self.y + other.y,
+        }
+    }
+}
+
+impl std::ops::Sub for Vec2 {
+    type Output = Vec2;
+    fn sub(self, other: Vec2) -> Vec2 {
+        Vec2 {
+            x: self.x - other.x,
+            y: self.y - other.y,
+        }
+    }
+}
+
+impl std::ops::Neg for Vec2 {
+    type Output = Vec2;
+    fn neg(self) -> Vec2 {
+        Vec2 {
+            x: -self.x,
+            y: -self.y,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Size {
     pub width: f32,
