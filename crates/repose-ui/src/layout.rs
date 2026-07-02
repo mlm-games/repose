@@ -1904,8 +1904,8 @@ impl LayoutEngine {
         let implicit_pressed = interactions.pressed.contains(&effective_interaction);
         let (state_hovered, state_pressed) = if let Some(ref src) = modifier.interaction_source {
             (
-                src.collect_is_hovered() || implicit_hovered,
-                src.collect_is_pressed() || implicit_pressed,
+                src.collect_is_hovered(),
+                src.collect_is_pressed(),
             )
         } else {
             (implicit_hovered, implicit_pressed)
