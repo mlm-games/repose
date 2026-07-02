@@ -778,7 +778,7 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
     }
 
     pub fn set_target(&mut self, target: T) {
-        // Don't call self.update() here — self.spec may have been changed by the
+        // Don't call self.update() here -> self.spec may have been changed by the
         // caller before set_target (e.g. set_spec → set_target). The driver's
         // tick() already advanced all animations before composition, so
         // self.current is already up to date.

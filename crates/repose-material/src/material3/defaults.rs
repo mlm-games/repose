@@ -1252,7 +1252,7 @@ impl SplitButtonDefaults {
     pub const XSMALL_CONTAINER_HEIGHT: f32 = 32.0;
     pub const SMALL_CONTAINER_HEIGHT: f32 = 40.0; // SplitButtonSmallTokens.ContainerHeight
     pub const MEDIUM_CONTAINER_HEIGHT: f32 = 56.0;
-    pub const LARGE_CONTAINER_HEIGHT: f32 = 64.0; // estimate — no LargeTokens in repo
+    pub const LARGE_CONTAINER_HEIGHT: f32 = 64.0; // estimate -> no LargeTokens in repo
     pub const XLARGE_CONTAINER_HEIGHT: f32 = 72.0; // estimate
 
     /// Outer corners are fully rounded (50% → effectively full radius).
@@ -1408,11 +1408,11 @@ impl ButtonGroupDefaults {
     pub const EXPANDED_RATIO: f32 = 0.15;
 
     /// Between-space from `ButtonGroupSmallTokens.BetweenSpace` (12.0.dp)
-    /// — used for unconnected (standard) button groups.
+    /// -> used for unconnected (standard) button groups.
     pub const STANDARD_GAP: f32 = 12.0;
 
     /// Between-space from `ConnectedButtonGroupSmallTokens.BetweenSpace` (2.0.dp)
-    /// — used for connected button groups.
+    /// -> used for connected button groups.
     pub const CONNECTED_GAP: f32 = 2.0;
 
     pub const CONTAINER_HEIGHT: f32 = 40.0;

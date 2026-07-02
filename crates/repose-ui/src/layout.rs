@@ -310,7 +310,7 @@ impl LayoutEngine {
             }
         }
         scope_roots.sort_by(|a, b| {
-            // Deeper scopes (higher depth) first — their subtree marking
+            // Deeper scopes (higher depth) first -> their subtree marking
             // wins over shallower enclosing scopes.
             let depth_a = self.tree.get(a.0).map(|n| n.depth).unwrap_or(0);
             let depth_b = self.tree.get(b.0).map(|n| n.depth).unwrap_or(0);
@@ -897,7 +897,7 @@ impl LayoutEngine {
             self.view_ids.remove(&node_id);
         }
 
-        // Updates — only non-scope and scope-root-marker nodes
+        // Updates -> only non-scope and scope-root-marker nodes
         let dirty_nodes: Vec<NodeId> = self.tree.dirty_nodes().iter().copied().collect();
         for node_id in dirty_nodes {
             if self.node_to_scope.contains_key(&node_id)
@@ -1363,7 +1363,7 @@ impl LayoutEngine {
         // Default min size (only applies when incoming constraint is 0 / unconstrained)
         // This is handled during constraint resolution in compute_layout, but we note
         // the values here. The actual enforcement happens when the parent gives 0 min.
-        // For Taffy, we don't apply these unconditionally — they must be constraint-aware.
+        // For Taffy, we don't apply these unconditionally -> they must be constraint-aware.
         if m.default_min_width.is_some() || m.default_min_height.is_some() {
             // Store flags so the constraint-pass can check them.
             // Taffy style doesn't have a direct "default min" concept, so we defer
@@ -1903,10 +1903,7 @@ impl LayoutEngine {
         let implicit_hovered = interactions.hover == Some(effective_interaction);
         let implicit_pressed = interactions.pressed.contains(&effective_interaction);
         let (state_hovered, state_pressed) = if let Some(ref src) = modifier.interaction_source {
-            (
-                src.collect_is_hovered(),
-                src.collect_is_pressed(),
-            )
+            (src.collect_is_hovered(), src.collect_is_pressed())
         } else {
             (implicit_hovered, implicit_pressed)
         };

@@ -1539,7 +1539,7 @@ pub fn BadgedBox(badge: View, content: View, config: BadgedBoxConfig) -> View {
     ))
 }
 
-/// Colors for [`ListItem`] — matches Compose Material3 `ListItemColors` with
+/// Colors for [`ListItem`] -> matches Compose Material3 `ListItemColors` with
 /// 4 state groups (default, disabled, selected, dragged) × 6 slots each.
 #[derive(Clone, Debug)]
 pub struct ListItemColors {
@@ -1903,7 +1903,7 @@ pub fn ListItem(
     ))
 }
 
-/// M3 Selectable List Item — single-selection variant with `selected` state and
+/// M3 Selectable List Item -> single-selection variant with `selected` state and
 /// `Role::RadioButton` semantics.
 pub fn SelectableListItem(
     headline: impl Into<String>,
@@ -1931,7 +1931,7 @@ pub fn SelectableListItem(
     )
 }
 
-/// M3 Toggleable List Item — multi-selection variant with `checked` state and
+/// M3 Toggleable List Item -> multi-selection variant with `checked` state and
 /// `Role::Checkbox` semantics. Clicking toggles the checked state.
 pub fn ToggleableListItem(
     headline: impl Into<String>,
@@ -1975,7 +1975,7 @@ fn segmented_item_radii(index: usize, count: usize, r: f32) -> [f32; 4] {
     }
 }
 
-/// M3 Segmented List Item — clickable variant with segmented (per-index) corner radii.
+/// M3 Segmented List Item -> clickable variant with segmented (per-index) corner radii.
 pub fn SegmentedListItem(
     index: usize,
     count: usize,
@@ -2000,7 +2000,7 @@ pub fn SegmentedListItem(
     )
 }
 
-/// M3 Segmented List Item — single-selection variant.
+/// M3 Segmented List Item -> single-selection variant.
 pub fn SegmentedSelectableListItem(
     index: usize,
     count: usize,
@@ -2030,7 +2030,7 @@ pub fn SegmentedSelectableListItem(
     )
 }
 
-/// M3 Segmented List Item — multi-selection (toggleable) variant.
+/// M3 Segmented List Item -> multi-selection (toggleable) variant.
 pub fn SegmentedToggleableListItem(
     index: usize,
     count: usize,
@@ -2099,7 +2099,7 @@ impl Default for TabRowConfig {
 
 static TABROW_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// M3 Tab Row — a horizontal row of tabs with per-tab animated-height indicators.
+/// M3 Tab Row -> a horizontal row of tabs with per-tab animated-height indicators.
 /// Text colors animate with DefaultEffects (spring_crit 40.0).
 /// Indicator height animates with DefaultEffects (spring_crit 40.0).
 pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> View {
@@ -2383,9 +2383,9 @@ pub fn CircularProgressIndicator(
     let val = value.map(|v| v.clamp(0.0, 1.0));
 
     // Three concurrent animations matching Compose Material3 indeterminate spec:
-    //   1. Global rotation — 1080° linear over 6000ms
-    //   2. Additional rotation — 90° stepped jumps with EmphasizedDecelerate
-    //   3. Sweep — oscillates 0.1 → 0.87 → 0.1 over 6000ms
+    //   1. Global rotation -> 1080° linear over 6000ms
+    //   2. Additional rotation -> 90° stepped jumps with EmphasizedDecelerate
+    //   3. Sweep -> oscillates 0.1 → 0.87 → 0.1 over 6000ms
     let (global_rotation, additional_rotation, sweep_val) = if value.is_none() {
         let shared = remember_state_with_key("circ_ind_shared", || {
             let mut a = AnimatedValue::new(
@@ -2664,7 +2664,7 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
     })
 }
 
-/// Color slots for text fields — matches Compose Material3 `TextFieldColors`.
+/// Color slots for text fields -> matches Compose Material3 `TextFieldColors`.
 /// All 42 color fields (focused/unfocused/disabled/error variants of each slot).
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
@@ -3054,12 +3054,12 @@ pub fn OutlinedTextField(
             .min_width(OutlinedTextFieldDefaults::MIN_WIDTH),
     )
     .child((
-        // Background layer — no border, full surface color (no notch)
+        // Background layer -> no border, full surface color (no notch)
         Box(Modifier::new()
             .fill_max_size()
             .clip_rounded(th.shapes.small)
             .background(container_bg)),
-        // Border layer — drawn on top of background, with notch for the label
+        // Border layer -> drawn on top of background, with notch for the label
         if has_label {
             let mut bm = Modifier::new()
                 .fill_max_size()
@@ -3075,7 +3075,7 @@ pub fn OutlinedTextField(
                 .clip_rounded(th.shapes.small)
                 .border(border_w, border_color, th.shapes.small))
         },
-        // Content layer — text input with proper padding
+        // Content layer -> text input with proper padding
         Row(Modifier::new()
             .fill_max_size()
             .padding_values(PaddingValues {
@@ -3135,7 +3135,7 @@ pub fn OutlinedTextField(
                 }),
             config.trailing_icon.unwrap_or(Box(Modifier::new())),
         )),
-        // Floating label — plain text, no background chip (matches M3 reference)
+        // Floating label -> plain text, no background chip (matches M3 reference)
         if let Some(lbl) = label_str {
             Box(Modifier::new()
                 .min_width(200.0)
@@ -5618,7 +5618,7 @@ impl Default for AppBarWithSearchConfig {
     }
 }
 
-/// Scroll behavior for [`AppBarWithSearch`] — collapses/expands on scroll.
+/// Scroll behavior for [`AppBarWithSearch`] -> collapses/expands on scroll.
 pub struct SearchBarScrollBehavior {
     pub collapsed_offset: Signal<f32>,
     pub height: f32,

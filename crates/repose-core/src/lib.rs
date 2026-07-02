@@ -160,7 +160,7 @@ pub use repose_macros::View;
 /// 1. The explicit inputs are unchanged (by `Hash` comparison).
 /// 2. No signal read during body execution has been written since last run.
 ///
-/// When the cache is hit, the body is NOT executed — the previously-composed
+/// When the cache is hit, the body is NOT executed -> the previously-composed
 /// View is returned instead, with proper ID and composer cursor advancement
 /// to keep sibling scopes consistent.
 ///
@@ -184,7 +184,7 @@ pub use repose_macros::View;
 /// Any `Signal::get()` call inside the body automatically registers the scope
 /// as a dependency. When that signal is written, the scope is marked dirty and
 /// recomposed on the next frame. You don't need to put signal values in the
-/// input list — the reactive system handles dependencies implicitly.
+/// input list -> the reactive system handles dependencies implicitly.
 ///
 /// ```ignore
 /// let size = signal(100.0);
@@ -202,7 +202,7 @@ pub use repose_macros::View;
 /// scope!("s", s, [my_float.to_bits()], { ... })
 /// ```
 ///
-/// Or — better — read floats from a `Signal<f32>` inside the body (auto-tracked).
+/// Or -> better -> read floats from a `Signal<f32>` inside the body (auto-tracked).
 ///
 /// # Compatibility with `remember`
 ///
@@ -245,7 +245,7 @@ macro_rules! scope {
         }
     }};
 
-    // Without explicit inputs — skip Hash import
+    // Without explicit inputs -> skip Hash import
     ($key:expr, $s:expr, [], $body:block) => {{
         let _key: &str = $key;
         let _input_hash: u64 = 0;

@@ -145,7 +145,7 @@ pub struct GridConfig {
     pub column_gap: f32,
 }
 
-/// Edge treatment for `Modifier::blur` — controls how pixels at the edges
+/// Edge treatment for `Modifier::blur` -> controls how pixels at the edges
 /// of the blurred region are handled.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BlurredEdgeTreatment {
@@ -169,7 +169,7 @@ pub struct BlurStyle {
 }
 
 /// Constraints passed to the `Modifier::layout` callback.
-/// Mirrors Compose's `Constraints` — the element's size must fall within
+/// Mirrors Compose's `Constraints` -> the element's size must fall within
 /// `[min_width, max_width]` × `[min_height, max_height]`.
 /// A dimension with `INFINITY` max means unbounded in that direction.
 #[derive(Clone, Copy, Debug)]
@@ -537,7 +537,7 @@ pub struct Modifier {
     /// Called when a key event is received while this element is focused.
     /// Return `true` to consume the event. This is the normal handler.
     pub on_key_event: Option<Rc<dyn Fn(crate::input::KeyEvent) -> bool>>,
-    /// Called before `on_key_event` — if the preview handler returns `true`,
+    /// Called before `on_key_event` -> if the preview handler returns `true`,
     /// the event is consumed and `on_key_event` is NOT called.
     pub on_preview_key_event: Option<Rc<dyn Fn(crate::input::KeyEvent) -> bool>>,
     /// Apply a gaussian blur to this element's rendered content.
@@ -1016,7 +1016,13 @@ impl Modifier {
     /// Clip a rectangular region from this element using the given operation.
     /// `left`, `top`, `right`, `bottom` are relative to the element bounds, in dp.
     pub fn clip_rect(mut self, left: f32, top: f32, right: f32, bottom: f32, op: ClipOp) -> Self {
-        self.clip_rect = Some(ClipRect { left, top, right, bottom, op });
+        self.clip_rect = Some(ClipRect {
+            left,
+            top,
+            right,
+            bottom,
+            op,
+        });
         self
     }
     pub fn z_index(mut self, z: f32) -> Self {

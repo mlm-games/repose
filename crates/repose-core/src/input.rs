@@ -51,7 +51,7 @@ pub struct PointerEvent {
     pub position: Vec2,
     pub pressure: f32,
     pub modifiers: Modifiers,
-    /// Shared consumed state — every clone of this event points to the same
+    /// Shared consumed state -> every clone of this event points to the same
     /// Cell. Calling `consume()` on any clone marks it consumed for all clones.
     pub consumed: Rc<Cell<bool>>,
 }

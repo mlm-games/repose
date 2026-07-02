@@ -1474,7 +1474,7 @@ pub enum SearchBarValue {
     Expanded,
 }
 
-/// State for `SearchBar` — manages expanded/collapsed progress, query text,
+/// State for `SearchBar` -> manages expanded/collapsed progress, query text,
 /// active state, and collapsed layout coordinates for popup anchoring.
 pub struct SearchBarState {
     pub query: Signal<String>,
@@ -1485,7 +1485,7 @@ pub struct SearchBarState {
     pub expands_to_full_screen: Signal<bool>,
     /// Container animation (shape, size, position)
     anim: Rc<RefCell<AnimatedValue<f32>>>,
-    /// Content fade animation — fades FIRST on collapse before container shrinks
+    /// Content fade animation -> fades FIRST on collapse before container shrinks
     content_anim: Rc<RefCell<AnimatedValue<f32>>>,
     /// Tracked via `on_globally_positioned` on the collapsed bar.
     /// Used by expanded docked variants for popup placement.
@@ -1579,7 +1579,7 @@ impl SearchBarState {
         a.get().clamp(0.0, 1.0)
     }
 
-    /// Content fade progress — fades ahead of container on collapse.
+    /// Content fade progress -> fades ahead of container on collapse.
     pub fn content_progress(&self) -> f32 {
         let mut a = self.content_anim.borrow_mut();
         let still = a.update();
@@ -1787,10 +1787,10 @@ fn track_collapsed_layout(state: &Rc<SearchBarState>) -> Modifier {
 
 // ─── Collapsed SearchBar (state-based, no content) ─────────────────────────
 
-/// M3 Collapsed Search Bar — renders ONLY the collapsed bar surface wrapping
+/// M3 Collapsed Search Bar -> renders ONLY the collapsed bar surface wrapping
 /// the provided `input_field`. Does NOT manage expanded content.
 ///
-/// Equivalent to CK's `SearchBar(state, inputField)` overload — a passive
+/// Equivalent to CK's `SearchBar(state, inputField)` overload -> a passive
 /// Surface that does NOT handle clicks or ripple. The click/focus→expand
 /// behavior is managed by the `InputField` (via `SearchBarInputField`).
 ///
@@ -1871,7 +1871,7 @@ pub fn SearchBar(
 /// suggestions dropdown. Equivalent to CK's
 /// `SearchBar(inputField, expanded, onExpandedChange, ..., content)` overload.
 ///
-/// The bar itself is a passive surface (no click handling) — expansion is
+/// The bar itself is a passive surface (no click handling) -> expansion is
 /// driven by the `InputField`'s focus tracking inside `input_field`.
 pub fn SearchBarWithContent(
     input_field: View,
@@ -1961,10 +1961,10 @@ pub fn SearchBarWithContent(
     }
 }
 
-/// M3 Docked Search Bar — bounded-width variant with animated suggestions
+/// M3 Docked Search Bar -> bounded-width variant with animated suggestions
 /// dropdown (height + alpha).  Equivalent to CK's
 /// `DockedSearchBar(inputField, expanded, onExpandedChange, ..., content)`.
-/// The bar itself is a passive Surface — expansion is driven by `InputField`.
+/// The bar itself is a passive Surface -> expansion is driven by `InputField`.
 pub fn DockedSearchBar(
     input_field: View,
     expanded: bool,
@@ -2103,7 +2103,7 @@ fn get_window_container_height() -> f32 {
     WINDOW_CONTAINER_HEIGHT.lock().map(|v| *v).unwrap_or(800.0)
 }
 
-/// M3 Expanded Full‑Screen Search Bar — rendered in an overlay covering the
+/// M3 Expanded Full‑Screen Search Bar -> rendered in an overlay covering the
 /// entire window. Uses the state's own `progress()` for animation.
 /// Equivalent to CK's `ExpandedFullScreenSearchBar(state, inputField, ...)`.
 pub fn ExpandedFullScreenSearchBar(
@@ -2208,7 +2208,7 @@ pub fn ExpandedFullScreenSearchBar(
     Box(Modifier::new())
 }
 
-/// M3 Expanded Docked Search Bar — rendered as an overlay popup anchored below
+/// M3 Expanded Docked Search Bar -> rendered as an overlay popup anchored below
 /// the collapsed search bar using `collapsed_layout_rect`.
 /// Equivalent to CK's `ExpandedDockedSearchBar(state, inputField, ...)`.
 pub fn ExpandedDockedSearchBar(
@@ -2327,7 +2327,7 @@ pub fn ExpandedDockedSearchBar(
     Box(Modifier::new())
 }
 
-/// M3 App Bar With Search — integrates a search bar into a top app bar layout
+/// M3 App Bar With Search -> integrates a search bar into a top app bar layout
 /// with optional navigation icon, action buttons, scroll behavior, and window insets.
 /// Wraps the internal `SearchBar` collapsed component.
 pub fn AppBarWithSearch(

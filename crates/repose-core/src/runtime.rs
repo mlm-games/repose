@@ -338,7 +338,7 @@ impl Drop for ComposeGuard {
 /// This prevents state aliasing when the composition tree structure changes between frames
 #[track_caller]
 pub fn remember<T: 'static>(init: impl FnOnce() -> T) -> Rc<T> {
-    // Capture BEFORE any closure — Location::caller() returns the correct
+    // Capture BEFORE any closure -> Location::caller() returns the correct
     // track_caller location only at the function's top level, not inside closures.
     let caller = Location::caller();
     COMPOSER.with(|c| {
@@ -581,7 +581,7 @@ impl Scheduler {
     /// recompositions.
     pub fn enter_scope(&mut self, key: &str) {
         self.current_scope = Some(key.to_string());
-        // Reset local counter — the body will re-assign IDs fresh
+        // Reset local counter -> the body will re-assign IDs fresh
         self.scope_local_counters.insert(key.to_string(), 0);
         // Ensure a scope_id exists (lazy allocation)
         self.get_or_create_scope_id(key);

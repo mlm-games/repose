@@ -25,7 +25,7 @@ const FADE_IN_MS: u64 = 75;
 const RADIUS_MS: u64 = 225;
 const FADE_OUT_MS: u64 = 150;
 
-/// StateTokens.PressedStateLayerOpacity — fixed press opacity multiplier matching Compose.
+/// StateTokens.PressedStateLayerOpacity -> fixed press opacity multiplier matching Compose.
 const PRESS_ALPHA: f32 = 0.10;
 
 #[derive(Clone, Debug)]
@@ -155,7 +155,7 @@ impl IndicationDrawNode for RippleDrawNode {
         let k_last_pid = format!("{}:lpid", base);
         let last_pid = remember_state_with_key(&k_last_pid, || None::<PressId>);
 
-        // Pending release flag — set when release occurs before fade-in completes
+        // Pending release flag -> set when release occurs before fade-in completes
         let k_release_pending = format!("{}:rpend", base);
         let release_pending = remember_state_with_key(&k_release_pending, || false);
 

@@ -22,7 +22,7 @@ impl Default for SplitButtonConfig {
     }
 }
 
-/// M3 SplitButtonLayout — places leading and trailing buttons side by side.
+/// M3 SplitButtonLayout -> places leading and trailing buttons side by side.
 ///
 /// Pass styled buttons (via [`Button`], [`FilledTonalButton`], etc.) or use
 /// the factory helpers below for properly-shaped split button parts.
@@ -485,7 +485,7 @@ impl ButtonGroupScope {
     }
 }
 
-/// M3 ButtonGroup — a horizontal sequence of related action items.
+/// M3 ButtonGroup -> a horizontal sequence of related action items.
 ///
 /// Items are added via [`ButtonGroupScope::clickable_item`] and
 /// [`ButtonGroupScope::toggleable_item`].

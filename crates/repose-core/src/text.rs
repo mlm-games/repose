@@ -917,7 +917,7 @@ impl Clone for CodepointTransformation {
         // Cannot clone Box<dyn Fn>; this is for internal use only.
         // In practice, CodepointTransformation is passed as an Option and
         // constructed fresh each time. If clone is needed, wrap the Fn in Rc.
-        panic!("CodepointTransformation::clone() is not supported — use Rc instead");
+        panic!("CodepointTransformation::clone() is not supported -> use Rc instead");
     }
 }
 
