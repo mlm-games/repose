@@ -1115,7 +1115,8 @@ impl LayoutEngine {
             ViewKind::Column | ViewKind::OverlayHost => {
                 s.flex_direction = FlexDirection::Column;
             }
-            ViewKind::Stack | ViewKind::ZStack => s.display = Display::Grid,
+            ViewKind::Stack => s.flex_direction = FlexDirection::Column,
+            ViewKind::ZStack => s.display = Display::Grid,
             _ => {}
         }
         // Modifier scroll overrides kind-based direction.
