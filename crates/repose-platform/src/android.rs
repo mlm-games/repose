@@ -5,7 +5,7 @@ use crate::render::RenderContext;
 use crate::*;
 
 use repose_ui::TextFieldState;
-use repose_ui::textfield::{TF_FONT_DP, TF_PADDING_X_DP, index_for_x_bytes};
+use repose_ui::textfield::{TF_FONT_DP, index_for_x_bytes};
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -173,10 +173,6 @@ pub fn run_android_app_with_options(
 
         fn dp_px(&self, dp: f32) -> f32 {
             dp * self.scale()
-        }
-
-        fn padding_px(&self) -> f32 {
-            self.dp_px(TF_PADDING_X_DP)
         }
 
         fn touch_slop_px(&self) -> f32 {
@@ -587,9 +583,8 @@ pub fn run_android_app_with_options(
                                         let key = self.tf_key_of(hit.id);
                                         if let Some(state_rc) = self.textfield_states.get(&key) {
                                             let mut st = state_rc.borrow_mut();
-                                            let inner_x_px = hit.rect.x + self.padding_px();
                                             let content_x_px =
-                                                pos_px.0 - inner_x_px + st.scroll_offset;
+                                                pos_px.0 - hit.rect.x + st.scroll_offset;
                                             let font_px = dp_to_px(TF_FONT_DP)
                                                 * repose_core::locals::text_scale().0;
                                             let idx = rc::index_for_x_bytes_vt(
@@ -1127,7 +1122,7 @@ pub fn run_android_app_with_options(
                                         .unwrap_or(0.0);
                                     state.ensure_caret_visible(
                                         caret_x_px,
-                                        hit_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
+                                        hit_rect.w,
                                         dp_to_px(2.0),
                                     );
                                 }
@@ -1149,7 +1144,7 @@ pub fn run_android_app_with_options(
                                         .unwrap_or(0.0);
                                     state.ensure_caret_visible(
                                         caret_x_px,
-                                        hit_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
+                                        hit_rect.w,
                                         dp_to_px(2.0),
                                     );
                                 }
@@ -1176,7 +1171,7 @@ pub fn run_android_app_with_options(
                                             .unwrap_or(0.0);
                                         state.ensure_caret_visible(
                                             caret_x_px,
-                                            hit_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
+                                            hit_rect.w,
                                             dp_to_px(2.0),
                                         );
                                     }

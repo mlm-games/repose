@@ -25,7 +25,7 @@ use winit::window::{ImePurpose, Window};
 
 use repose_ui::TextFieldState;
 use repose_ui::textfield::{
-    TF_FONT_DP, TF_PADDING_X_DP, caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes,
+    TF_FONT_DP, caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes,
     move_caret_vertical,
 };
 
@@ -249,10 +249,6 @@ impl App {
 
     fn scale(&self, window: &Window) -> f32 {
         window.scale_factor() as f32
-    }
-
-    fn padding_px(&self, window: &Window) -> f32 {
-        TF_PADDING_X_DP * self.scale(window)
     }
 
     fn touch_slop_px(&self, window: &Window) -> f32 {
@@ -710,15 +706,12 @@ impl ApplicationHandler<()> for App {
                     let key = self.tf_key_of(cid);
                     if let Some(state_rc) = self.textfield_states.get(&key) {
                         let mut state = state_rc.borrow_mut();
-                        let pad = self.padding_px(&window);
 
                         if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
-                            let inner_x_px = hit.rect.x + pad;
-                            let inner_y_px = hit.rect.y + 8.0 * self.scale(&window);
                             let content_x_px =
-                                (self.mouse_pos_px.0 - inner_x_px + state.scroll_offset).max(0.0);
+                                (self.mouse_pos_px.0 - hit.rect.x + state.scroll_offset).max(0.0);
                             let content_y_px =
-                                (self.mouse_pos_px.1 - inner_y_px + state.scroll_offset_y).max(0.0);
+                                (self.mouse_pos_px.1 - hit.rect.y + state.scroll_offset_y).max(0.0);
                             let font_px =
                                 dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
 
@@ -726,7 +719,7 @@ impl ApplicationHandler<()> for App {
                                 rc::index_for_xy_bytes_vt(
                                     &state,
                                     font_px,
-                                    hit.rect.w - 2.0 * pad,
+                                    hit.rect.w,
                                     content_x_px,
                                     content_y_px,
                                 )
@@ -739,9 +732,8 @@ impl ApplicationHandler<()> for App {
                             // Ensure caret visible
                             if hit.tf_multiline {
                                 let caret_idx = state.caret_index();
-                                let wrap_w = hit.rect.w - 2.0 * pad;
                                 let (cx, cy, _) =
-                                    caret_xy_for_byte(&state.text, font_px, wrap_w, caret_idx);
+                                    caret_xy_for_byte(&state.text, font_px, hit.rect.w, caret_idx);
                                 let iw = state.inner_width;
                                 let ih = state.inner_height;
                                 state.ensure_caret_visible_xy(
@@ -1508,13 +1500,11 @@ impl ApplicationHandler<()> for App {
                                     {
                                         let font_px = dp_to_px(TF_FONT_DP)
                                             * repose_core::locals::text_scale().0;
-                                        let pad = self.padding_px(&window);
-                                        let wrap_w = hit.rect.w - 2.0 * pad;
                                         let cur = st.caret_index();
                                         let (new_pos, px) = move_caret_vertical(
                                             &st.text,
                                             font_px,
-                                            wrap_w,
+                                            hit.rect.w,
                                             cur,
                                             -1,
                                             st.preferred_x_px,
@@ -1529,7 +1519,7 @@ impl ApplicationHandler<()> for App {
                                         let (cx, cy, _) = caret_xy_for_byte(
                                             &st.text,
                                             font_px,
-                                            wrap_w,
+                                            hit.rect.w,
                                             st.caret_index(),
                                         );
                                         let iw = st.inner_width;
@@ -1551,13 +1541,11 @@ impl ApplicationHandler<()> for App {
                                     {
                                         let font_px = dp_to_px(TF_FONT_DP)
                                             * repose_core::locals::text_scale().0;
-                                        let pad = self.padding_px(&window);
-                                        let wrap_w = hit.rect.w - 2.0 * pad;
                                         let cur = st.caret_index();
                                         let (new_pos, px) = move_caret_vertical(
                                             &st.text,
                                             font_px,
-                                            wrap_w,
+                                            hit.rect.w,
                                             cur,
                                             1,
                                             st.preferred_x_px,
@@ -1572,7 +1560,7 @@ impl ApplicationHandler<()> for App {
                                         let (cx, cy, _) = caret_xy_for_byte(
                                             &st.text,
                                             font_px,
-                                            wrap_w,
+                                            hit.rect.w,
                                             st.caret_index(),
                                         );
                                         let iw = st.inner_width;

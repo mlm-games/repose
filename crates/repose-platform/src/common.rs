@@ -6,8 +6,7 @@ use repose_core::locals::dp_to_px;
 use repose_core::runtime::Frame;
 use repose_ui::TextFieldState;
 use repose_ui::textfield::{
-    TF_FONT_DP, TF_PADDING_X_DP, caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes,
-    measure_text,
+    TF_FONT_DP, caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes, measure_text,
 };
 
 pub(crate) fn tick_snackbar(last_redraw: web_time::Instant) {
@@ -248,9 +247,8 @@ pub(crate) fn tf_place_caret_at_pointer(
     scale: f32,
     shift: bool,
 ) {
-    let padding_px = TF_PADDING_X_DP * scale;
-    let inner_x_px = hit_rect.x + padding_px;
-    let inner_y_px = hit_rect.y + 8.0 * scale;
+    let inner_x_px = hit_rect.x;
+    let inner_y_px = hit_rect.y;
     let content_x_px = (pos_px.0 - inner_x_px + state.scroll_offset).max(0.0);
     let content_y_px = (pos_px.1 - inner_y_px + state.scroll_offset_y).max(0.0);
     let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
@@ -259,7 +257,7 @@ pub(crate) fn tf_place_caret_at_pointer(
         index_for_xy_bytes_vt(
             state,
             font_px,
-            hit_rect.w - 2.0 * padding_px,
+            hit_rect.w,
             content_x_px,
             content_y_px,
         )
@@ -270,9 +268,8 @@ pub(crate) fn tf_place_caret_at_pointer(
 
     // Ensure caret visible
     let caret_idx = state.caret_index();
-    let wrap_w = hit_rect.w - 2.0 * padding_px;
     if is_multiline {
-        let (cx, cy, _) = caret_xy_for_byte(&state.text, font_px, wrap_w, caret_idx);
+        let (cx, cy, _) = caret_xy_for_byte(&state.text, font_px, hit_rect.w, caret_idx);
         let iw = state.inner_width;
         let ih = state.inner_height;
         state.ensure_caret_visible_xy(cx, cy, iw, ih, 2.0 * scale);
@@ -288,7 +285,7 @@ pub(crate) fn tf_place_caret_at_pointer(
         };
         let m = measure_text(&display, font_px, None, 400, 0);
         let cx = m.positions.get(caret_display_off).copied().unwrap_or(0.0);
-        state.ensure_caret_visible(cx, wrap_w, 2.0 * scale);
+        state.ensure_caret_visible(cx, hit_rect.w, 2.0 * scale);
     }
 }
 

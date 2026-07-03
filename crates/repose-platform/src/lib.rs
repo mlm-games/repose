@@ -462,10 +462,6 @@ pub fn run_desktop_app(
             f.hit_regions.iter().find(|h| h.id == id)
         }
 
-        fn padding_px(&self) -> f32 {
-            dp_to_px(TF_PADDING_X_DP)
-        }
-
         fn dp_px(&self, dp: f32) -> f32 {
             dp_to_px(dp)
         }
@@ -740,26 +736,17 @@ pub fn run_desktop_app(
                         if let Some(state_rc) = self.textfield_states.get(&key) {
                             let mut st = state_rc.borrow_mut();
 
-                            let pad_x = dp_to_px(TF_PADDING_X_DP);
-                            let inner_x = hit.rect.x + pad_x;
-                            let inner_y = hit.rect.y + dp_to_px(8.0);
-                            let inner_w = (hit.rect.w - 2.0 * pad_x).max(1.0);
-                            let inner_h = (hit.rect.h - dp_to_px(16.0)).max(1.0);
-
-                            st.set_inner_width(inner_w);
-                            st.set_inner_height(inner_h);
-
                             let content_x =
-                                (self.mouse_pos_px.0 - inner_x + st.scroll_offset).max(0.0);
+                                (self.mouse_pos_px.0 - hit.rect.x + st.scroll_offset).max(0.0);
                             let content_y =
-                                (self.mouse_pos_px.1 - inner_y + st.scroll_offset_y).max(0.0);
+                                (self.mouse_pos_px.1 - hit.rect.y + st.scroll_offset_y).max(0.0);
 
                             let font_px =
                                 dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
 
                             let idx = if hit.tf_multiline {
                                 rc::index_for_xy_bytes_vt(
-                                    &st, font_px, inner_w, content_x, content_y,
+                                    &st, font_px, hit.rect.w, content_x, content_y,
                                 )
                             } else {
                                 rc::index_for_x_bytes_vt(&st, font_px, content_x)
@@ -770,12 +757,12 @@ pub fn run_desktop_app(
                             // Ensure caret visible
                             if hit.tf_multiline {
                                 let (cx, cy, _) =
-                                    caret_xy_for_byte(&st.text, font_px, inner_w, st.caret_index());
-                                st.ensure_caret_visible_xy(cx, cy, inner_w, inner_h, dp_to_px(2.0));
+                                    caret_xy_for_byte(&st.text, font_px, hit.rect.w, st.caret_index());
+                                st.ensure_caret_visible_xy(cx, cy, hit.rect.w, hit.rect.h, dp_to_px(2.0));
                             } else {
                                 let m = measure_text(&st.text, font_px, None, 400, 0);
                                 let cx = m.positions.get(st.caret_index()).copied().unwrap_or(0.0);
-                                st.ensure_caret_visible(cx, inner_w, dp_to_px(2.0));
+                                st.ensure_caret_visible(cx, hit.rect.w, dp_to_px(2.0));
                             }
 
                             self.request_redraw();
@@ -918,12 +905,10 @@ pub fn run_desktop_app(
                                 });
                                 if let Some(st_rc) = self.textfield_states.get(&key) {
                                     let mut st = st_rc.borrow_mut();
-                                    let pad = self.padding_px();
-                                    let inner_x = hit.rect.x + pad;
-                                    let inner_y = hit.rect.y + self.dp_px(8.0);
                                     let content_x =
-                                        (self.mouse_pos_px.0 - inner_x + st.scroll_offset).max(0.0);
-                                    let content_y = (self.mouse_pos_px.1 - inner_y
+                                        (self.mouse_pos_px.0 - hit.rect.x + st.scroll_offset)
+                                            .max(0.0);
+                                    let content_y = (self.mouse_pos_px.1 - hit.rect.y
                                         + st.scroll_offset_y)
                                         .max(0.0);
                                     let font_px = self.dp_px(TF_FONT_DP)
@@ -933,7 +918,7 @@ pub fn run_desktop_app(
                                         rc::index_for_xy_bytes_vt(
                                             &st,
                                             font_px,
-                                            hit.rect.w - 2.0 * pad,
+                                            hit.rect.w,
                                             content_x,
                                             content_y,
                                         )
@@ -947,10 +932,9 @@ pub fn run_desktop_app(
                                     let caret_idx = st.caret_index();
                                     let iw = st.inner_width;
                                     let ih = st.inner_height;
-                                    let wrap_w = hit.rect.w - 2.0 * pad;
                                     if hit.tf_multiline {
                                         let (cx, cy, _) = textfield::caret_xy_for_byte(
-                                            &st.text, font_px, wrap_w, caret_idx,
+                                            &st.text, font_px, hit.rect.w, caret_idx,
                                         );
                                         st.ensure_caret_visible_xy(cx, cy, iw, ih, self.dp_px(2.0));
                                     } else {
@@ -1428,14 +1412,12 @@ pub fn run_desktop_app(
                                                 f.hit_regions.iter().find(|h| h.id == focused_id)
                                         {
                                             let font_px = dp_to_px(TF_FONT_DP);
-                                            let pad = self.padding_px();
-                                            let wrap_w = hit.rect.w - 2.0 * pad;
                                             let cur = state.caret_index();
                                             let (new_pos, px) =
                                                 repose_ui::textfield::move_caret_vertical(
                                                     &state.text,
                                                     font_px,
-                                                    wrap_w,
+                                                    hit.rect.w,
                                                     cur,
                                                     -1,
                                                     state.preferred_x_px,
@@ -1450,7 +1432,7 @@ pub fn run_desktop_app(
                                             let (cx, cy, _) = caret_xy_for_byte(
                                                 &state.text,
                                                 font_px,
-                                                wrap_w,
+                                                hit.rect.w,
                                                 state.caret_index(),
                                             );
                                             let iw = state.inner_width;
@@ -1472,8 +1454,7 @@ pub fn run_desktop_app(
                                                 f.hit_regions.iter().find(|h| h.id == focused_id)
                                         {
                                             let font_px = dp_to_px(TF_FONT_DP);
-                                            let pad = self.padding_px();
-                                            let wrap_w = hit.rect.w - 2.0 * pad;
+                                            let wrap_w = hit.rect.w;
                                             let cur = state.caret_index();
                                             let (new_pos, px) =
                                                 repose_ui::textfield::move_caret_vertical(
