@@ -1884,23 +1884,21 @@ impl LayoutEngine {
             h: local_rect.h,
         };
 
-        let mut content_rect = if let Some(pv) = modifier.padding_values {
-            repose_core::Rect {
-                x: rect.x + dp_to_px(pv.left),
-                y: rect.y + dp_to_px(pv.top),
-                w: (rect.w - dp_to_px(pv.left) - dp_to_px(pv.right)).max(0.0),
-                h: (rect.h - dp_to_px(pv.top) - dp_to_px(pv.bottom)).max(0.0),
+        let mut content_rect = {
+            let pl = layout.padding.left;
+            let pr = layout.padding.right;
+            let pt = layout.padding.top;
+            let pb = layout.padding.bottom;
+            if pl > 0.0 || pr > 0.0 || pt > 0.0 || pb > 0.0 {
+                repose_core::Rect {
+                    x: rect.x + pl,
+                    y: rect.y + pt,
+                    w: (rect.w - pl - pr).max(0.0),
+                    h: (rect.h - pt - pb).max(0.0),
+                }
+            } else {
+                rect
             }
-        } else if let Some(p) = modifier.padding {
-            let p_px = dp_to_px(p);
-            repose_core::Rect {
-                x: rect.x + p_px,
-                y: rect.y + p_px,
-                w: (rect.w - 2.0 * p_px).max(0.0),
-                h: (rect.h - 2.0 * p_px).max(0.0),
-            }
-        } else {
-            rect
         };
 
         let base_px = (rect.x, rect.y);
