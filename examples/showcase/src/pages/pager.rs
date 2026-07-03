@@ -22,7 +22,7 @@ fn pager_colors() -> [Color; PAGES] {
 fn dots(current: usize) -> View {
     let colors = pager_colors();
     Row(Modifier::new()
-        .align_items(AlignItems::Center)
+        .align_items(AlignItems::CENTER)
         .padding(sp::SM))
     .child(
         (0..PAGES)
@@ -51,8 +51,8 @@ fn page_face(p: usize, hint: &'static str) -> View {
         Column(
             Modifier::new()
                 .fill_max_size()
-                .justify_content(JustifyContent::Center)
-                .align_items(AlignItems::Center),
+                .justify_content(JustifyContent::CENTER)
+                .align_items(AlignItems::CENTER),
         )
         .child((
             Text(format!("Page {}", p + 1)).size(48.0).color(color),
@@ -70,7 +70,7 @@ fn controls(state: Rc<PagerState>, current: usize) -> View {
     };
     let next = move || state.set_page((state.current_page() + 1).min(PAGES - 1));
     Row(Modifier::new()
-        .align_items(AlignItems::Center)
+        .align_items(AlignItems::CENTER)
         .padding(sp::SM))
     .child((
         Button(Modifier::new(), prev, ButtonConfig::default(), || {

@@ -292,7 +292,7 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
         "Multi-Window / Popout Panels",
         Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
             Hint("Floating windows are hosted in-app. Drag, resize, and focus them."),
-            Row(Modifier::new().align_items(AlignItems::Center).gap(10.0)).child(vec![
+            Row(Modifier::new().align_items(AlignItems::CENTER).gap(10.0)).child(vec![
                 Button(Modifier::new(), open_note, ButtonConfig::default(), || {
                     Text("New Note")
                 }),

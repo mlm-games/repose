@@ -182,7 +182,7 @@ pub fn FlowColumn(modifier: Modifier) -> View {
 
 /// Align self-center shorthand.
 pub fn Center(modifier: Modifier) -> View {
-    Box(modifier.align_self(AlignSelf::Center))
+    Box(modifier.align_self(AlignSelf::CENTER))
 }
 
 pub fn Stack(modifier: Modifier) -> View {

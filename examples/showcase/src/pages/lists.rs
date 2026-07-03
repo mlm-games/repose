@@ -42,8 +42,8 @@ fn cell_card(m: Modifier, icon: View, title: String, pad: f32) -> View {
         Column(
             Modifier::new()
                 .fill_max_size()
-                .justify_content(JustifyContent::Center)
-                .align_items(AlignItems::Center)
+                .justify_content(JustifyContent::CENTER)
+                .align_items(AlignItems::CENTER)
                 .padding(pad),
         )
         .child((
@@ -136,7 +136,7 @@ pub fn screen() -> View {
                         .background(bg)
                         .border(1.0, th.outline_variant, 0.0)
                         .padding(12.0)
-                        .justify_content(JustifyContent::Center))
+                        .justify_content(JustifyContent::CENTER))
                     .child(Text(format!("{} (height = {}dp)", it.title, h as i32)))
                 },
                 LazyColumnConfig {
@@ -226,8 +226,8 @@ pub fn screen() -> View {
                             .fill_max_height()
                             .background(th.error)
                             .padding(16.0)
-                            .justify_content(JustifyContent::End)
-                            .align_items(AlignItems::Center))
+                            .justify_content(JustifyContent::END)
+                            .align_items(AlignItems::CENTER))
                         .child(Text("Delete").color(th.on_error).size(16.0)),
                         // Foreground content (draggable)
                         Box(Modifier::new()
@@ -236,7 +236,7 @@ pub fn screen() -> View {
                             .border(1.0, th.outline_variant, 0.0)
                             .padding(16.0))
                         .child(
-                            Row(Modifier::new().align_items(AlignItems::Center)).child((
+                            Row(Modifier::new().align_items(AlignItems::CENTER)).child((
                                 Icon(Symbols::notifications).size(20.0),
                                 Box(Modifier::new().width(12.0).height(1.0)),
                                 Column(Modifier::new()).child((
@@ -259,7 +259,7 @@ pub fn screen() -> View {
                 Column(
                     Modifier::new()
                         .padding(24.0)
-                        .align_items(AlignItems::Center),
+                        .align_items(AlignItems::CENTER),
                 )
                 .child(
                     Text("All dismissed! 🎉")

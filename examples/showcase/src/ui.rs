@@ -78,8 +78,8 @@ pub fn DemoTile(
         Column(
             Modifier::new()
                 .fill_max_size()
-                .justify_content(JustifyContent::Center)
-                .align_items(AlignItems::Center),
+                .justify_content(JustifyContent::CENTER)
+                .align_items(AlignItems::CENTER),
         )
         .child((
             Text(title.into()).size(20.0).color(fg),
@@ -157,7 +157,7 @@ pub fn TopBar(overlay: OverlayHandle, vm: SettingsVm) -> View {
         .padding(sp::MD)
         .background(th.surface)
         .border(1.0, th.outline, 0.0)
-        .align_items(AlignItems::Center))
+        .align_items(AlignItems::CENTER))
     .child((
         Text("Repose Showcase").size(18.0).color(th.on_surface),
         Spacer(),
@@ -249,7 +249,7 @@ fn NavItem(route: Route, selected: bool, on_click: impl Fn() + 'static) -> View 
         .clickable()
         .on_pointer_down(move |_| on_click()))
     .child(
-        Row(Modifier::new().align_items(AlignItems::Center).gap(sp::SM)).child((
+        Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
             Box(Modifier::new()
                 .size(3.0, 16.0)
                 .background(indicator)
@@ -260,7 +260,7 @@ fn NavItem(route: Route, selected: bool, on_click: impl Fn() + 'static) -> View 
 }
 
 pub fn LabeledSwitch(label: &str, checked: bool, on_change: impl Fn(bool) + 'static) -> View {
-    Row(Modifier::new().align_items(AlignItems::Center).gap(sp::SM)).child((
+    Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
         Text(label).size(14.0).color(theme().on_surface_variant),
         Switch(checked, on_change, SwitchConfig::default()),
     ))
@@ -273,7 +273,7 @@ pub fn LabeledSlider(
     step: Option<f32>,
     on_change: impl Fn(f32) + 'static,
 ) -> View {
-    Column(Modifier::new().align_items(AlignItems::Stretch).gap(6.0)).child((
+    Column(Modifier::new().align_items(AlignItems::STRETCH).gap(6.0)).child((
         Text(format!("{label}: {value:.2}"))
             .size(14.0)
             .color(theme().on_surface_variant),
@@ -283,7 +283,7 @@ pub fn LabeledSlider(
 
 /// Control + trailing label row (kills the Row/HSpace/Text triplets in widgets.rs).
 pub fn Labeled(control: View, label: &str) -> View {
-    Row(Modifier::new().align_items(AlignItems::Center).gap(10.0)).child((control, Text(label)))
+    Row(Modifier::new().align_items(AlignItems::CENTER).gap(10.0)).child((control, Text(label)))
 }
 
 pub fn ShortcutHud(note: String, fired: bool) -> View {

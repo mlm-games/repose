@@ -142,12 +142,12 @@ pub fn screen() -> View {
             "Spatial Focus (arrow keys)",
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 Hint("Navigate the 3×3 grid with arrow keys"),
-                Column(Modifier::new().gap(6.0).align_items(AlignItems::Center)).child(
+                Column(Modifier::new().gap(6.0).align_items(AlignItems::CENTER)).child(
                     (0..3)
                         .map(|row| {
                             Row(Modifier::new()
                                 .gap(6.0)
-                                .justify_content(JustifyContent::Center))
+                                .justify_content(JustifyContent::CENTER))
                             .child(
                                 (0..3)
                                     .map(|col| focus_cell(row * 3 + col))

@@ -47,8 +47,8 @@ fn state_face(label: &'static str, bg: Color, fg: Color) -> View {
         .fill_max_size()
         .background(bg)
         .clip_rounded(12.0)
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center))
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER))
     .child(Text(label).color(fg).size(18.0))
 }
 
@@ -95,7 +95,7 @@ pub fn screen() -> View {
             };
             let t = animate_f32("demo_scale", if visible.get() { 1.0 } else { 0.75 }, spec);
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
-                Row(Modifier::new().align_items(AlignItems::Center).gap(sp::SM)).child((
+                Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
                     TextButton(Modifier::new(), { let m = mode.clone(); move || m.set(SpringMode::Gentle) }, ButtonConfig::default(), || Text("Gentle")),
                     TextButton(Modifier::new(), { let m = mode.clone(); move || m.set(SpringMode::Bouncy) }, ButtonConfig::default(), || Text("Bouncy")),
                     ElevatedButton(Modifier::new(), { let m = mode.clone(); move || m.set(SpringMode::Crit) }, ButtonConfig::default(), || Text("Crit")),
@@ -153,8 +153,8 @@ pub fn screen() -> View {
                     .size(120.0 * repeated_anim, 120.0 * repeated_anim)
                     .background(theme().tertiary)
                     .clip_rounded(16.0)
-                    .align_items(AlignItems::Center)
-                    .justify_content(JustifyContent::Center))
+                    .align_items(AlignItems::CENTER)
+                    .justify_content(JustifyContent::CENTER))
                 .child(Text("Pulse").color(theme().on_tertiary).size(16.0)),
             ))
         }),
@@ -172,7 +172,7 @@ pub fn screen() -> View {
             };
 
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
-                Row(Modifier::new().align_items(AlignItems::Center).gap(sp::SM)).child((
+                Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
                     TextButton(Modifier::new(), { let t = transition_kind.clone(); move || t.set(0) }, ButtonConfig::default(), || Text("Fade")),
                     TextButton(Modifier::new(), { let t = transition_kind.clone(); move || t.set(1) }, ButtonConfig::default(), || Text("Slide")),
                     TextButton(Modifier::new(), { let t = transition_kind.clone(); move || t.set(2) }, ButtonConfig::default(), || Text("Scale")),
@@ -210,7 +210,7 @@ pub fn screen() -> View {
             let colors = [theme().primary, theme().tertiary, theme().secondary, theme().error];
 
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
-                Row(Modifier::new().align_items(AlignItems::Center).gap(6.0)).child((
+                Row(Modifier::new().align_items(AlignItems::CENTER).gap(6.0)).child((
                     Button(Modifier::new(), {
                         let li = list_items.clone();
                         let nid = next_id.clone();
@@ -232,7 +232,7 @@ pub fn screen() -> View {
                     }, ButtonConfig::default(), || Text("Pop Last")),
                     Spacer(),
                 )),
-                Row(Modifier::new().align_items(AlignItems::Center).gap(6.0)).child((
+                Row(Modifier::new().align_items(AlignItems::CENTER).gap(6.0)).child((
                     TextButton(Modifier::new(), { let s = list_anim_spec.clone(); move || s.set(0) }, ButtonConfig::default(), || Text("Fast")),
                     TextButton(Modifier::new(), { let s = list_anim_spec.clone(); move || s.set(1) }, ButtonConfig::default(), || Text("Tween")),
                     TextButton(Modifier::new(), { let s = list_anim_spec.clone(); move || s.set(2) }, ButtonConfig::default(), || Text("Spring")),
@@ -255,7 +255,7 @@ pub fn screen() -> View {
                             .padding(sp::MD)
                             .fill_max_width()
                             .height(44.0)
-                            .align_items(AlignItems::Center)
+                            .align_items(AlignItems::CENTER)
                             .gap(10.0))
                         .child((
                             Box(Modifier::new().size(24.0, 24.0).background(c).clip_rounded(12.0).flex_shrink(0.0)),

@@ -1009,7 +1009,7 @@ impl Modifier {
         self
     }
     pub fn align_self_center(mut self) -> Self {
-        self.align_self = Some(AlignSelf::Center);
+        self.align_self = Some(AlignSelf::CENTER);
         self
     }
     pub fn justify_content(mut self, j: JustifyContent) -> Self {

@@ -398,8 +398,8 @@ pub fn WindowHost(
                             })
                             .height(20.0)
                             .clip_rounded(10.0)
-                            .justify_content(JustifyContent::Center)
-                            .align_items(AlignItems::Center)
+                            .justify_content(JustifyContent::CENTER)
+                            .align_items(AlignItems::CENTER)
                             .state_colors(StateColors {
                                 default: th.surface_variant,
                                 hovered: th.on_surface.with_alpha(16),
@@ -431,8 +431,8 @@ pub fn WindowHost(
                             .width(20.0)
                             .height(20.0)
                             .clip_rounded(10.0)
-                            .justify_content(JustifyContent::Center)
-                            .align_items(AlignItems::Center)
+                            .justify_content(JustifyContent::CENTER)
+                            .align_items(AlignItems::CENTER)
                             .state_colors(StateColors {
                                 default: th.error.with_alpha(20),
                                 hovered: th.error.with_alpha(40),
@@ -470,7 +470,7 @@ pub fn WindowHost(
                         top: 6.0,
                         bottom: 6.0,
                     })
-                    .align_items(AlignItems::Center)
+                    .align_items(AlignItems::CENTER)
                     .key(key_for(window_id, 10));
 
                 if window_draggable {
@@ -493,7 +493,7 @@ pub fn WindowHost(
                         .single_line()
                         .overflow_ellipsize(),
                     Spacer(),
-                    Row(Modifier::new().align_items(AlignItems::Center))
+                    Row(Modifier::new().align_items(AlignItems::CENTER))
                         .with_children(action_views),
                 ));
 

@@ -180,16 +180,16 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     m.flex_wrap.map(|v| std::mem::discriminant(&v)).hash(hasher);
     m.flex_dir.map(|v| std::mem::discriminant(&v)).hash(hasher);
     m.align_self
-        .map(|v| std::mem::discriminant(&v))
+        .map(|v| (v.keyword as u8, v.safety as u8))
         .hash(hasher);
     m.justify_content
-        .map(|v| std::mem::discriminant(&v))
+        .map(|v| (v.keyword as u8, v.safety as u8))
         .hash(hasher);
     m.align_items_container
-        .map(|v| std::mem::discriminant(&v))
+        .map(|v| (v.keyword as u8, v.safety as u8))
         .hash(hasher);
     m.align_content
-        .map(|v| std::mem::discriminant(&v))
+        .map(|v| (v.keyword as u8, v.safety as u8))
         .hash(hasher);
 
     // Clip

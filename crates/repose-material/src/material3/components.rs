@@ -219,10 +219,10 @@ fn top_app_bar_layout(
             top: config.content_padding.top + insets.top,
             bottom: config.content_padding.bottom + insets.bottom,
         })
-        .align_items(AlignItems::Center)
+        .align_items(AlignItems::CENTER)
         .then(config.modifier);
     if centered {
-        m = m.justify_content(JustifyContent::Center);
+        m = m.justify_content(JustifyContent::CENTER);
     }
     Row(m).child((
         navigation_icon.unwrap_or(Box(Modifier::new().width(16.0).fill_max_height())),
@@ -235,7 +235,7 @@ fn top_app_bar_layout(
             })
             .flex_grow(1.0))
         .child(
-            Column(Modifier::new().justify_content(JustifyContent::Center)).child((
+            Column(Modifier::new().justify_content(JustifyContent::CENTER)).child((
                 Box(Modifier::new()).child(with_content_color(
                     config.colors.title_content_color,
                     || title,
@@ -251,7 +251,7 @@ fn top_app_bar_layout(
             )),
         ),
         Row(Modifier::new()
-            .align_items(AlignItems::Center)
+            .align_items(AlignItems::CENTER)
             .clip_rounded(20.0))
         .child(
             actions
@@ -418,8 +418,8 @@ fn icon_button_render(
         .size(sz, sz)
         .clip_rounded(radius)
         .state_colors(state_colors)
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER)
         .then(config.modifier.clone());
 
     if let Some(bg_color) = bg {
@@ -718,8 +718,8 @@ fn button_impl(
             top: 0.0,
             bottom: 0.0,
         })
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center);
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER);
 
     // Interaction source + ripple indication (matching Compose's clickable + indication wiring)
     let source: Rc<MutableInteractionSource> = interaction_source
@@ -1025,8 +1025,8 @@ fn toggle_button_impl(
         })
         .background(bg)
         .clip_rounded(shape_radius)
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER)
         .state_colors(state_colors)
         .state_elevation(state_elevation);
     let tg_source: Rc<MutableInteractionSource> = interaction_source
@@ -1297,8 +1297,8 @@ fn fab_impl(
         })
         .state_elevation(config.state_elevation)
         .clip_rounded(shape_r)
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER)
         .then(config.modifier);
 
     let source: Rc<MutableInteractionSource> = config
@@ -1387,7 +1387,7 @@ pub fn ExtendedFAB(
             top: 0.0,
             bottom: 0.0,
         })
-        .align_items(AlignItems::Center);
+        .align_items(AlignItems::CENTER);
 
     if is_enabled {
         m = m.clickable().on_click(move || on_click());
@@ -1485,8 +1485,8 @@ pub fn Badge(content: Option<View>, config: BadgeConfig) -> View {
                 top: 0.0,
                 bottom: 0.0,
             })
-            .align_items(AlignItems::Center)
-            .justify_content(JustifyContent::Center)
+            .align_items(AlignItems::CENTER)
+            .justify_content(JustifyContent::CENTER)
             .then(config.modifier))
         .child(view),
     }
@@ -1778,9 +1778,9 @@ pub fn ListItem(
     };
 
     let vert_align = if min_h >= config.three_line_height {
-        AlignItems::Start
+        AlignItems::START
     } else {
-        AlignItems::Center
+        AlignItems::CENTER
     };
 
     let li_source: Rc<MutableInteractionSource> = config
@@ -1858,7 +1858,7 @@ pub fn ListItem(
         Column(
             Modifier::new()
                 .flex_grow(1.0)
-                .justify_content(JustifyContent::Center),
+                .justify_content(JustifyContent::CENTER),
         )
         .child((
             overline_text
@@ -2141,8 +2141,8 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                         .flex_grow(1.0)
                         .fill_max_height()
                         .interaction_source(&*tab_source)
-                        .align_items(AlignItems::Center)
-                        .justify_content(JustifyContent::Center)
+                        .align_items(AlignItems::CENTER)
+                        .justify_content(JustifyContent::CENTER)
                         .state_colors(StateColors {
                             default: Color::TRANSPARENT,
                             hovered: th.on_surface.with_alpha_f32(0.08),
@@ -2308,8 +2308,8 @@ pub fn SegmentedButton(
                     .background(bg)
                     .state_colors(state_colors)
                     .interaction_source(&*seg_source)
-                    .align_items(AlignItems::Center)
-                    .justify_content(JustifyContent::Center)
+                    .align_items(AlignItems::CENTER)
+                    .justify_content(JustifyContent::CENTER)
                     .padding_values(config.content_padding);
 
                 let content_modifier = if is_enabled {
@@ -3078,7 +3078,7 @@ pub fn OutlinedTextField(
                 top: top_pad,
                 bottom: bottom_pad,
             })
-            .align_items(AlignItems::Center))
+            .align_items(AlignItems::CENTER))
         .child((
             config.leading_icon.unwrap_or(Box(Modifier::new())),
             View::new(0, ViewKind::Box)
@@ -3291,7 +3291,7 @@ pub fn TextField(
                         top: top_pad,
                         bottom: bottom_pad,
                     })
-                    .align_items(AlignItems::Center))
+                    .align_items(AlignItems::CENTER))
                 .child((
                     config.leading_icon.unwrap_or(Box(Modifier::new())),
                     View::new(0, ViewKind::Box)
@@ -3500,8 +3500,8 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         .state_colors(config.state_colors)
         .interaction_source(&*cb_source)
         .clickable()
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER)
         .on_click(cb)
         .then(config.modifier))
     .child(
@@ -3510,8 +3510,8 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
             .background(fill)
             .border(bd_w, bd, CheckboxDefaults::CORNER_RADIUS)
             .clip_rounded(CheckboxDefaults::CORNER_RADIUS)
-            .align_items(AlignItems::Center)
-            .justify_content(JustifyContent::Center))
+            .align_items(AlignItems::CENTER)
+            .justify_content(JustifyContent::CENTER))
         .child(if check_alpha > 0.01 {
             Box(Modifier::new().alpha(check_alpha)).child(
                 Icon(Symbol::new("done", '\u{E876}'))
@@ -3613,8 +3613,8 @@ pub fn TriStateCheckbox(
         .clip_rounded(20.0)
         .background(Color::TRANSPARENT)
         .clickable()
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER)
         .on_click(move || {
             if is_enabled {
                 on_change(match state {
@@ -3631,8 +3631,8 @@ pub fn TriStateCheckbox(
             .background(fill)
             .border(bd_w, bd, CheckboxDefaults::CORNER_RADIUS)
             .clip_rounded(CheckboxDefaults::CORNER_RADIUS)
-            .align_items(AlignItems::Center)
-            .justify_content(JustifyContent::Center))
+            .align_items(AlignItems::CENTER)
+            .justify_content(JustifyContent::CENTER))
         .child(if symbol_alpha > 0.01 {
             Box(Modifier::new().alpha(symbol_alpha)).child(if is_indeterminate {
                 // Dash for indeterminate
@@ -3747,8 +3747,8 @@ pub fn RadioButton(
         .state_colors(config.state_colors)
         .interaction_source(&*rb_source)
         .clickable()
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER)
         .on_click(cb)
         .then(config.modifier))
     .child(
@@ -3756,8 +3756,8 @@ pub fn RadioButton(
             .size(d, d)
             .border(RadioButtonDefaults::STROKE_WIDTH, ring_col, d * 0.5)
             .clip_rounded(d * 0.5)
-            .align_items(AlignItems::Center)
-            .justify_content(JustifyContent::Center))
+            .align_items(AlignItems::CENTER)
+            .justify_content(JustifyContent::CENTER))
         .child(if dot_size > 0.5 {
             Box(Modifier::new()
                 .size(dot_size, dot_size)
@@ -5139,7 +5139,7 @@ pub fn AssistChip(
     }
 
     Box(m).child(
-        Row(Modifier::new().align_items(AlignItems::Center)).child((
+        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
             leading_icon
                 .map(|v| {
                     Box(Modifier::new().padding_values(PaddingValues {
@@ -5207,7 +5207,7 @@ pub fn ElevatedAssistChip(
     }
 
     Box(m).child(
-        Row(Modifier::new().align_items(AlignItems::Center)).child((
+        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
             leading_icon
                 .map(|v| {
                     Box(Modifier::new().padding_values(PaddingValues {
@@ -5754,7 +5754,7 @@ impl Default for PullToRefreshConfig {
             modifier: Modifier::new(),
             indicator_color: PullToRefreshDefaults::indicator_color(),
             threshold: PullToRefreshDefaults::THRESHOLD,
-            content_alignment: AlignItems::FlexStart,
+            content_alignment: AlignItems::FLEX_START,
         }
     }
 }

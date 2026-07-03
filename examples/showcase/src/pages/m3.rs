@@ -309,8 +309,8 @@ pub fn screen(overlay: OverlayHandle) -> View {
                                         .height(16.0)
                                         .background(th.error)
                                         .clip_rounded(8.0)
-                                        .align_items(AlignItems::Center)
-                                        .justify_content(JustifyContent::Center))
+                                        .align_items(AlignItems::CENTER)
+                                        .justify_content(JustifyContent::CENTER))
                                     .child(Text("3").color(th.on_error).size(10.0).single_line()),
                                 ),
                             ),

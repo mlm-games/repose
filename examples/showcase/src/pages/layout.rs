@@ -26,7 +26,7 @@ pub fn screen() -> View {
                     Text("Macro").size(18.0).color(theme().on_surface),
                     Box(Modifier::new().size(32.0, 32.0).background(theme().tertiary).clip_rounded(6.0)),
                 ))),
-                Hint("Equivalent: Row(Modifier::new().gap(8.0).align_items(AlignItems::Center)).child(("),
+                Hint("Equivalent: Row(Modifier::new().gap(8.0).align_items(AlignItems::CENTER)).child(("),
             ))
         }),
         Section(

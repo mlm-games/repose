@@ -19,13 +19,13 @@ use web_time::Duration;
 
 use crate::ripple::{RippleConfig, ripple};
 use crate::{Icon, Symbol};
+use repose_core::NestedScrollConnection;
 use repose_core::animation::{AnimationSpec, Easing, RepeatableSpec};
 use repose_core::text::ImeAction;
 use repose_core::*;
 use repose_ui::LazyRowState;
 use repose_ui::lazy::LazyRow;
 use repose_ui::lazy_states::LazyRowConfig;
-use repose_core::NestedScrollConnection;
 use repose_ui::{
     BasicSecureTextField, BasicTextField, Box, Column, Row, Spacer, Stack, Text, TextFieldState,
     TextStyle, ViewExt, ZStack,
@@ -120,7 +120,7 @@ pub fn NavigationBar(
     Box(bar_m).child(
         Row(Modifier::new()
             .fill_max_size()
-            .align_items(AlignItems::Center)
+            .align_items(AlignItems::CENTER)
             .column_gap(config.item_spacing)
             .semantics(Semantics::new(Role::Container).with_selectable_group()))
         .child(
@@ -180,15 +180,15 @@ pub fn NavigationBar(
                         Column(
                             Modifier::new()
                                 .fill_max_size()
-                                .align_items(AlignItems::Center)
-                                .justify_content(JustifyContent::Center),
+                                .align_items(AlignItems::CENTER)
+                                .justify_content(JustifyContent::CENTER),
                         )
                         .child((
                             // Indicator pill behind icon
                             Stack(
                                 Modifier::new()
-                                    .align_items(AlignItems::Center)
-                                    .justify_content(JustifyContent::Center),
+                                    .align_items(AlignItems::CENTER)
+                                    .justify_content(JustifyContent::CENTER),
                             )
                             .child((
                                 Box(Modifier::new()
@@ -287,7 +287,7 @@ pub fn Snackbar(
                         let label = a.label.clone();
                         Row(Modifier::new()
                             .fill_max_width()
-                            .justify_content(repose_core::JustifyContent::End))
+                            .justify_content(repose_core::JustifyContent::END))
                         .child(TextButton(
                             Modifier::new(),
                             move || (a.on_click)(),
@@ -313,7 +313,7 @@ pub fn Snackbar(
                     top: 0.0,
                     bottom: 0.0,
                 })
-                .align_items(repose_core::AlignItems::Center))
+                .align_items(repose_core::AlignItems::CENTER))
             .child((
                 Text(msg)
                     .modifier(Modifier::new().padding_values(PaddingValues {
@@ -351,7 +351,7 @@ pub fn Snackbar(
         .absolute()
         .offset_bottom(0.0)
         .fill_max_width()
-        .justify_content(repose_core::JustifyContent::Center)
+        .justify_content(repose_core::JustifyContent::CENTER)
         .then(modifier))
     .child(snackbar)
 }
@@ -430,7 +430,7 @@ pub fn FilterChip(
     }
 
     Box(m).child(
-        Row(Modifier::new().align_items(AlignItems::Center)).child((
+        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
             leading_icon
                 .map(|v| {
                     Box(Modifier::new().padding_values(PaddingValues {
@@ -518,7 +518,7 @@ pub fn ElevatedFilterChip(
     }
 
     Box(m).child(
-        Row(Modifier::new().align_items(AlignItems::Center)).child((
+        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
             leading_icon
                 .map(|v| {
                     Box(Modifier::new().padding_values(PaddingValues {
@@ -590,7 +590,7 @@ pub fn SuggestionChip(
     }
 
     Box(m).child(
-        Row(Modifier::new().align_items(AlignItems::Center)).child((
+        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
             icon.map(|v| {
                 Box(Modifier::new().padding_values(PaddingValues {
                     left: 0.0,
@@ -644,7 +644,7 @@ pub fn ElevatedSuggestionChip(
     }
 
     Box(m).child(
-        Row(Modifier::new().align_items(AlignItems::Center)).child((
+        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
             icon.map(|v| {
                 Box(Modifier::new().padding_values(PaddingValues {
                     left: 0.0,
@@ -735,7 +735,7 @@ pub fn InputChip(
     }
 
     Box(m).child(
-        Row(Modifier::new().align_items(AlignItems::Center)).child((
+        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
             avatar
                 .or(leading_icon)
                 .map(|v| {
@@ -876,7 +876,7 @@ pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig)
                     );
                 }
                 FabPosition::Center => {
-                    fab_m = fab_m.fill_max_width().align_self(AlignSelf::Center).offset(
+                    fab_m = fab_m.fill_max_width().align_self(AlignSelf::CENTER).offset(
                         None,
                         None,
                         Some(16.0 + insets.bottom + insets.ime_bottom),
@@ -960,7 +960,7 @@ pub fn TooltipBox(
                 })
                 .absolute()
                 .offset(None, Some(config.offset_y), None, None)
-                .align_self(AlignSelf::Center)
+                .align_self(AlignSelf::CENTER)
                 .render_z_index(10000.0)
                 .alpha(alpha)
                 .scale(scale))
@@ -1200,7 +1200,7 @@ pub fn NavigationDrawerItem(
 
     Box(m).child(with_content_color(fg, || {
         Row(Modifier::new()
-            .align_items(AlignItems::Center)
+            .align_items(AlignItems::CENTER)
             .padding_values(PaddingValues {
                 left: 16.0,
                 right: 24.0,
@@ -1414,7 +1414,7 @@ fn render_dropdown_menu_content(
                         top: 0.0,
                         bottom: 0.0,
                     })
-                    .align_items(AlignItems::Center);
+                    .align_items(AlignItems::CENTER);
 
                 if item.enabled {
                     modifier = modifier
@@ -1757,7 +1757,7 @@ pub fn SearchBarInputField(
     } else {
         Row(Modifier::new()
             .fill_max_width()
-            .align_items(AlignItems::Center))
+            .align_items(AlignItems::CENTER))
         .child(row_children)
     }
 }
@@ -1855,7 +1855,7 @@ pub fn SearchBar(
     Box(bar_m).child(
         Row(Modifier::new()
             .fill_max_size()
-            .align_items(AlignItems::Center))
+            .align_items(AlignItems::CENTER))
         .child((
             leading_icon.unwrap_or(Box(Modifier::new().size(24.0, 24.0))),
             Box(Modifier::new().width(8.0).fill_max_height()),
@@ -1935,7 +1935,7 @@ pub fn SearchBarWithContent(
     let bar = Box(bar_m).child(
         Row(Modifier::new()
             .fill_max_size()
-            .align_items(AlignItems::Center))
+            .align_items(AlignItems::CENTER))
         .child((
             leading_icon.unwrap_or(Box(Modifier::new().size(24.0, 24.0))),
             Box(Modifier::new().width(8.0).fill_max_height()),
@@ -2046,7 +2046,7 @@ pub fn DockedSearchBar(
     let bar = Box(bar_m).child(
         Row(Modifier::new()
             .fill_max_size()
-            .align_items(AlignItems::Center))
+            .align_items(AlignItems::CENTER))
         .child((
             leading_icon.unwrap_or(Box(Modifier::new().size(24.0, 24.0))),
             Box(Modifier::new().width(12.0).fill_max_height()),
@@ -2368,7 +2368,7 @@ pub fn AppBarWithSearch(
 
     let row = Row(Modifier::new()
         .fill_max_size()
-        .align_items(AlignItems::Center)
+        .align_items(AlignItems::CENTER)
         .padding_values(PaddingValues {
             left: config.content_padding.left + insets.left,
             right: config.content_padding.right + insets.right,
@@ -2575,7 +2575,7 @@ pub fn ModalBottomSheet(
                         Column(Modifier::new().fill_max_width()).child((
                             Row(Modifier::new()
                                 .fill_max_width()
-                                .justify_content(JustifyContent::Center))
+                                .justify_content(JustifyContent::CENTER))
                             .child(Box(Modifier::new()
                                 .margin_vertical(22.0)
                                 .width(config.drag_handle_width)
@@ -2588,8 +2588,8 @@ pub fn ModalBottomSheet(
 
                     let sheet = Box(Modifier::new()
                         .fill_max_size()
-                        .justify_content(JustifyContent::Center)
-                        .align_items(AlignItems::FlexEnd))
+                        .justify_content(JustifyContent::CENTER)
+                        .align_items(AlignItems::FLEX_END))
                     .child(sheet_body);
 
                     let scrim_alpha = if state.is_visible() {
@@ -2763,8 +2763,8 @@ pub fn PullToRefresh(
             Box(Modifier::new()
                 .fill_max_width()
                 .height(indicator_h)
-                .align_items(AlignItems::Center)
-                .justify_content(JustifyContent::Center))
+                .align_items(AlignItems::CENTER)
+                .justify_content(JustifyContent::CENTER))
             .child(
                 Box(Modifier::new()
                     .size(icon_size, icon_size)
@@ -3019,7 +3019,7 @@ pub fn DatePicker(
         // Month header
         Row(Modifier::new()
             .fill_max_width()
-            .align_items(AlignItems::Center))
+            .align_items(AlignItems::CENTER))
         .child((
             IconButton(
                 Box(Modifier::new())
@@ -3028,11 +3028,11 @@ pub fn DatePicker(
                 IconButtonConfig::default(),
             ),
             Spacer(),
-            Column(Modifier::new().align_items(AlignItems::Center)).child((
+            Column(Modifier::new().align_items(AlignItems::CENTER)).child((
                 Text(MONTH_NAMES[(month - 1) as usize].to_string())
                     .size(th.typography.title_medium)
                     .color(config.colors.header_color),
-                Row(Modifier::new().gap(8.0).align_items(AlignItems::Center)).child((
+                Row(Modifier::new().gap(8.0).align_items(AlignItems::CENTER)).child((
                     IconButton(
                         Box(Modifier::new())
                             .child(Text("‹").color(config.colors.navigation_color).size(14.0)),
@@ -3069,8 +3069,8 @@ pub fn DatePicker(
                     Box(Modifier::new()
                         .width(40.0)
                         .height(40.0)
-                        .align_items(AlignItems::Center)
-                        .justify_content(JustifyContent::Center))
+                        .align_items(AlignItems::CENTER)
+                        .justify_content(JustifyContent::CENTER))
                     .child(
                         Text(d.to_string())
                             .size(th.typography.label_small)
@@ -3106,8 +3106,8 @@ pub fn DatePicker(
                                         Color::TRANSPARENT
                                     })
                                     .clip_rounded(20.0)
-                                    .align_items(AlignItems::Center)
-                                    .justify_content(JustifyContent::Center)
+                                    .align_items(AlignItems::CENTER)
+                                    .justify_content(JustifyContent::CENTER)
                                     .clickable()
                                     .on_click(move || {
                                         s.day.set(day_num as u32);
@@ -3143,7 +3143,7 @@ pub fn DatePicker(
         // Cancel / Confirm
         Row(Modifier::new()
             .fill_max_width()
-            .justify_content(JustifyContent::End)
+            .justify_content(JustifyContent::END)
             .gap(8.0))
         .child((
             TextButton(
@@ -3296,11 +3296,11 @@ pub fn TimePicker(
             .modifier
             .width(256.0)
             .padding(24.0)
-            .align_items(AlignItems::Center),
+            .align_items(AlignItems::CENTER),
     )
     .child((
         // Time display
-        Row(Modifier::new().align_items(AlignItems::Center)).child((
+        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
             Box(Modifier::new()
                 .clickable()
                 .on_click({
@@ -3334,7 +3334,7 @@ pub fn TimePicker(
         )),
         Box(Modifier::new().fill_max_width().height(16.0)),
         // AM/PM toggle
-        Row(Modifier::new().align_items(AlignItems::Center)).child((
+        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
             Box(Modifier::new()
                 .padding_values(PaddingValues {
                     left: 12.0,
@@ -3476,7 +3476,7 @@ pub fn NavigationRail(
                     top: 12.0,
                     bottom: 12.0,
                 })
-                .align_self(AlignSelf::Center))
+                .align_self(AlignSelf::CENTER))
             .child(h),
         );
     }
@@ -3490,7 +3490,7 @@ pub fn NavigationRail(
                     top: 8.0,
                     bottom: 8.0,
                 })
-                .align_self(AlignSelf::Center))
+                .align_self(AlignSelf::CENTER))
             .child(f),
         );
     }
@@ -3549,8 +3549,8 @@ pub fn NavigationRail(
                 top: 4.0,
                 bottom: 4.0,
             })
-            .align_items(AlignItems::Center)
-            .justify_content(JustifyContent::Center)
+            .align_items(AlignItems::CENTER)
+            .justify_content(JustifyContent::CENTER)
             .background(bg)
             .state_colors(StateColors {
                 default: Color::TRANSPARENT,
@@ -3597,7 +3597,7 @@ pub fn NavigationRail(
             .width(config.width)
             .fill_max_height()
             .background(config.container_color)
-            .align_items(AlignItems::Center)
+            .align_items(AlignItems::CENTER)
             .semantics(Semantics::new(Role::Container).with_selectable_group())
             .then(config.modifier),
     )
@@ -3607,8 +3607,8 @@ pub fn NavigationRail(
             Column(
                 Modifier::new()
                     .fill_max_size()
-                    .justify_content(JustifyContent::SpaceBetween)
-                    .align_items(AlignItems::Center),
+                    .justify_content(JustifyContent::SPACE_BETWEEN)
+                    .align_items(AlignItems::CENTER),
             )
             .with_children(item_views),
         ),

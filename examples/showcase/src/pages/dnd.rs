@@ -70,7 +70,7 @@ pub fn screen() -> View {
         "Drag & Drop",
         Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
             Hint("Internal DnD works on all platforms; file drop depends on runner support."),
-            Row(Modifier::new().align_items(AlignItems::Center).gap(sp::MD)).child((
+            Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::MD)).child((
                 draggable(1, "Drag me (Item 1)"),
                 draggable(2, "Drag me (Item 2)"),
             )),

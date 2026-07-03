@@ -1127,16 +1127,16 @@ impl LayoutEngine {
             }
         }
 
-        s.align_items = Some(AlignItems::Stretch);
+        s.align_items = Some(AlignItems::STRETCH);
         // Needed for 2D scroll.
         let is_2d_scroll = matches!(
             m.scroll.as_ref().map(|s| s.axis()),
             Some(ScrollAxis::Both)
         );
         if is_2d_scroll {
-            s.align_items = Some(AlignItems::FlexStart);
+            s.align_items = Some(AlignItems::FLEX_START);
         }
-        s.justify_content = Some(JustifyContent::FlexStart);
+        s.justify_content = Some(JustifyContent::FLEX_START);
 
         if matches!(kind, ViewKind::Image { .. }) {
             s.flex_shrink = 0.0;

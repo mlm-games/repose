@@ -151,7 +151,7 @@ pub fn Dialog(
                         .min_width(280.0)
                         .max_width(560.0)
                         .then(modifier.clone())
-                        .justify_content(JustifyContent::Center)
+                        .justify_content(JustifyContent::CENTER)
                         .background(th.surface_container_high)
                         .clip_rounded(th.shapes.extra_large)
                         .alpha(alpha)
@@ -210,8 +210,8 @@ pub fn Dialog(
                         scrim,
                         Box(Modifier::new()
                             .fill_max_size()
-                            .justify_content(JustifyContent::Center)
-                            .align_items(AlignItems::Center)
+                            .justify_content(JustifyContent::CENTER)
+                            .align_items(AlignItems::CENTER)
                             .hit_passthrough())
                         .child(dialog),
                     ))

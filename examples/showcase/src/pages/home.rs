@@ -6,7 +6,7 @@ use crate::ui::{Hint, Section, sp};
 pub fn screen() -> View {
     let th = theme();
     let bullet = move |text: &'static str| {
-        Row(Modifier::new().align_items(AlignItems::Center).gap(sp::SM)).child((
+        Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
             Box(Modifier::new()
                 .size(6.0, 6.0)
                 .background(th.primary)

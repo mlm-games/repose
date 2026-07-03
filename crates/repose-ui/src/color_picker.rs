@@ -225,7 +225,7 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
         })
     };
 
-    let header = Row(Modifier::new().align_items(AlignItems::Center)).child((
+    let header = Row(Modifier::new().align_items(AlignItems::CENTER)).child((
         Box(Modifier::new()
             .width(swatch_size)
             .height(swatch_size)

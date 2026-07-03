@@ -34,7 +34,7 @@ pub fn SplitButtonLayout(
     Row(config
         .modifier
         .gap(config.spacing)
-        .align_items(AlignItems::Center))
+        .align_items(AlignItems::CENTER))
     .child((leading_button, trailing_button))
 }
 
@@ -80,8 +80,8 @@ fn split_button_impl(
             top: 0.0,
             bottom: 0.0,
         })
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center);
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER);
     if let Some(bg) = container_color {
         m = m.background(bg);
     }
@@ -238,8 +238,8 @@ pub fn SplitButtonTrailingToggleButton(
             bottom: 0.0,
         })
         .background(bg)
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER)
         .state_colors(config.state_colors)
         .state_elevation(se);
     let tg_source: Rc<MutableInteractionSource> = config
@@ -343,8 +343,8 @@ pub fn SplitButtonTonalTrailingToggleButton(
             bottom: 0.0,
         })
         .background(bg)
-        .align_items(AlignItems::Center)
-        .justify_content(JustifyContent::Center)
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER)
         .state_colors(config.state_colors)
         .state_elevation(se);
     let tg_source: Rc<MutableInteractionSource> = config
@@ -496,7 +496,7 @@ pub fn ButtonGroup(
 ) -> View {
     let mut scope = ButtonGroupScope::new();
     content(&mut scope);
-    Row(modifier.gap(gap).align_items(AlignItems::Center)).with_children(
+    Row(modifier.gap(gap).align_items(AlignItems::CENTER)).with_children(
         scope
             .items
             .into_iter()

@@ -767,7 +767,7 @@ where
                         crate::Box(Modifier::new().flex_grow(1.0).flex_basis(0.0)).child(item)
                     })
                     .collect();
-                crate::Column(col_mod.clone().align_items(AlignItems::Stretch).row_gap(rg))
+                crate::Column(col_mod.clone().align_items(AlignItems::STRETCH).row_gap(rg))
                     .with_children(items)
             })
             .collect();
