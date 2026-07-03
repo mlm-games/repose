@@ -55,11 +55,11 @@ getrandom = "0.3"
 bytemuck = { version = "1.25.0", features = ["derive"] }
 
 # Layout
-taffy = { version = "=0.11.0-experimental-cache-fix.3", default-features = true }
+taffy = { version = "0.11", default-features = true }
 
 # Platform + GPU
 winit = { version = "0.30", default-features = true }
-wgpu = "29"
+wgpu = "30"
 pollster = "0.4.0"
 
 # Text

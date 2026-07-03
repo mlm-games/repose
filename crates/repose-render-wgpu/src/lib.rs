@@ -262,11 +262,11 @@ impl Pipelines {
                     vertex: wgpu::VertexState {
                         module: &shader_module,
                         entry_point: Some("vs_main"),
-                        buffers: &[wgpu::VertexBufferLayout {
+                        buffers: &[Some(wgpu::VertexBufferLayout {
                             array_stride: std::mem::size_of::<$inst_type>() as u64,
                             step_mode: wgpu::VertexStepMode::Instance,
                             attributes: $attrs,
-                        }],
+                        })],
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
                     },
                     fragment: Some(wgpu::FragmentState {
@@ -506,7 +506,7 @@ impl Pipelines {
             vertex: wgpu::VertexState {
                 module: &text_mask_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[glyph_vertex.clone()],
+                buffers: &[Some(glyph_vertex.clone())],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -531,7 +531,7 @@ impl Pipelines {
             vertex: wgpu::VertexState {
                 module: &text_color_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[glyph_vertex],
+                buffers: &[Some(glyph_vertex)],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -571,7 +571,7 @@ impl Pipelines {
             vertex: wgpu::VertexState {
                 module: &blur_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
+                buffers: &[Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<BlurInstance>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -601,7 +601,7 @@ impl Pipelines {
                             format: wgpu::VertexFormat::Float32x2,
                         },
                     ],
-                }],
+                })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -634,7 +634,7 @@ impl Pipelines {
             vertex: wgpu::VertexState {
                 module: &blur_content_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
+                buffers: &[Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<BlurInstance>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -664,7 +664,7 @@ impl Pipelines {
                             format: wgpu::VertexFormat::Float32x2,
                         },
                     ],
-                }],
+                })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -702,7 +702,7 @@ impl Pipelines {
             vertex: wgpu::VertexState {
                 module: &image_nv12_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
+                buffers: &[Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<Nv12Instance>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &[
@@ -732,7 +732,7 @@ impl Pipelines {
                             format: wgpu::VertexFormat::Float32x2,
                         },
                     ],
-                }],
+                })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -771,7 +771,7 @@ impl Pipelines {
             vertex: wgpu::VertexState {
                 module: &clip_shader_a2c,
                 entry_point: Some("vs_main"),
-                buffers: &[clip_vertex_layout.clone()],
+                buffers: &[Some(clip_vertex_layout.clone())],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -796,7 +796,7 @@ impl Pipelines {
             vertex: wgpu::VertexState {
                 module: &clip_shader_bin,
                 entry_point: Some("vs_main"),
-                buffers: &[clip_vertex_layout.clone()],
+                buffers: &[Some(clip_vertex_layout.clone())],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -821,7 +821,7 @@ impl Pipelines {
             vertex: wgpu::VertexState {
                 module: &clip_shader_bin,
                 entry_point: Some("vs_main"),
-                buffers: &[clip_vertex_layout.clone()],
+                buffers: &[Some(clip_vertex_layout.clone())],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -1150,6 +1150,7 @@ impl WgpuBackend {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
+                apply_limit_buckets: false,
             })
             .await
             .map_err(|e| anyhow::anyhow!("No suitable adapter: {e:?}"))?;
@@ -1192,6 +1193,7 @@ impl WgpuBackend {
             height: size.height.max(1),
             present_mode,
             alpha_mode,
+            color_space: wgpu::SurfaceColorSpace::Auto,
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };
@@ -3741,8 +3743,8 @@ impl RenderBackend for WgpuBackend {
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
-        if let Err(e) = catch_unwind(AssertUnwindSafe(|| frame.present())) {
-            log::warn!("frame.present panicked: {:?}", e);
+        if let Err(e) = catch_unwind(AssertUnwindSafe(|| self.queue.present(frame))) {
+            log::warn!("queue.present panicked: {:?}", e);
         }
 
         // Frame end maintenance: Evict unused images
