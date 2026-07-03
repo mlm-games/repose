@@ -141,12 +141,16 @@ impl ViewTree {
         for ancestor_id in chain {
             if let Some(node) = self.nodes.get(ancestor_id) {
                 scope = intersect_scope_with_modifier(scope, &node.modifier);
-                // Apply cached Taffy-computed width for this ancestor if
+                // Apply cached Taffy-computed size for this ancestor if
                 // available.
                 if let Some(cache) = &node.layout_cache {
                     let w = cache.rect.w;
                     if w > 0.0 && w.is_finite() {
                         scope.max_width = scope.max_width.min(w);
+                    }
+                    let h = cache.rect.h;
+                    if h > 0.0 && h.is_finite() {
+                        scope.max_height = scope.max_height.min(h);
                     }
                 }
             }
