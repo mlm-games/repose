@@ -1295,7 +1295,7 @@ impl LayoutEngine {
             if !height_set {
                 s.size.height = percent(frac);
             }
-            if m.scroll.is_some() && s.min_size.height.is_auto()
+            if s.min_size.height.is_auto()
             {
                 s.min_size.height = length(0.0);
             }
