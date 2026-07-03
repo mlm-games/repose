@@ -2162,8 +2162,8 @@ impl LayoutEngine {
 
             if let Some(ref state_rc) = state {
                 let mut st = state_rc.borrow_mut();
-                st.set_inner_width(rect.w);
-                st.set_inner_height(rect.h);
+                st.set_inner_width(content_rect.w);
+                st.set_inner_height(content_rect.h);
                 st.tick_scroll_animation();
                 if let Some(ref vt) = ti.visual_transformation.as_ref() {
                     let empty = repose_core::AnnotatedString::new(String::new(), vec![]);
@@ -2179,7 +2179,7 @@ impl LayoutEngine {
 
             crate::textfield::paint_text_field(
                 scene,
-                rect,
+                content_rect,
                 ti,
                 state.as_ref(),
                 is_focused,

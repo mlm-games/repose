@@ -185,6 +185,7 @@ pub fn screen() -> View {
                         Modifier::new()
                             .height(180.0)
                             .fill_max_width()
+                            .padding(sp::SM)
                             .background(theme().surface)
                             .border(1.0, theme().outline, 10.0)
                             .clip_rounded(10.0),
