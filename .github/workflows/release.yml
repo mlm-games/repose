@@ -36,6 +36,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-workspaces
+        run: cargo install cargo-workspaces
+
       - name: Set version/tag metadata
         id: meta
         shell: bash
@@ -51,17 +56,16 @@ jobs:
             IFS='.' read -r MAJ MIN PAT <<<"$OLD_VERSION"
             VERSION="$MAJ.$MIN.$((PAT+1))"
 
-            sed -i "s/version = \"$OLD_VERSION\"/version = \"$VERSION\"/g" Cargo.toml
-
             git config --local user.email "github-actions[bot]@users.noreply.github.com"
             git config --local user.name "github-actions[bot]"
-            cargo update -w
-            git add Cargo.toml Cargo.lock
-            git commit -m "chore: bump to v$VERSION [skip ci]" || true
+
+            cargo workspaces version custom "$VERSION" -y --all --no-individual-tags \
+              -m "chore: bump to v%v [skip ci]" --no-git-push
+
             git push
+            git push origin "v$VERSION"
+
             TAG="v$VERSION"
-            git tag -a "$TAG" -m "Release $TAG"
-            git push origin "$TAG"
             COMMIT_SHA="$(git rev-parse HEAD)"
           fi
 
