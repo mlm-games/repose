@@ -818,8 +818,10 @@ where
     let set_content_w = {
         let st = state.clone();
         Rc::new(move |w: f32| {
-            st.content_width.set(w);
-            st.set_offset_x(st.scroll_offset.get(), w);
+            if (st.content_width.get() - w).abs() > 0.5 {
+                st.content_width.set(w);
+                st.set_offset_x(st.scroll_offset.get(), w);
+            }
         })
     };
 
@@ -1012,8 +1014,10 @@ where
     let set_content_w = {
         let st = state.clone();
         Rc::new(move |w: f32| {
-            st.content_width.set(w);
-            st.set_offset(st.scroll_offset.get(), w);
+            if (st.content_width.get() - w).abs() > 0.5 {
+                st.content_width.set(w);
+                st.set_offset(st.scroll_offset.get(), w);
+            }
         })
     };
 
