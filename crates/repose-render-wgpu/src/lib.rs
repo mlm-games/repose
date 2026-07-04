@@ -2922,24 +2922,30 @@ impl RenderBackend for WgpuBackend {
 
                     let baseline_shift_y: f32 = px * extra_style.baseline_shift.0;
 
-                    let (is_stroke, stroke_width, stroke_cap, stroke_join, stroke_miter, stroke_path_effect) =
-                        match &extra_style.draw_style {
-                            repose_core::DrawStyle::Stroke {
-                                width,
-                                cap,
-                                join,
-                                miter,
-                                path_effect,
-                            } => (true, *width, *cap, *join, *miter, path_effect.clone()),
-                            _ => (
-                                false,
-                                0.0,
-                                repose_core::StrokeCap::Butt,
-                                repose_core::StrokeJoin::Miter,
-                                4.0,
-                                None,
-                            ),
-                        };
+                    let (
+                        is_stroke,
+                        stroke_width,
+                        stroke_cap,
+                        stroke_join,
+                        stroke_miter,
+                        stroke_path_effect,
+                    ) = match &extra_style.draw_style {
+                        repose_core::DrawStyle::Stroke {
+                            width,
+                            cap,
+                            join,
+                            miter,
+                            path_effect,
+                        } => (true, *width, *cap, *join, *miter, path_effect.clone()),
+                        _ => (
+                            false,
+                            0.0,
+                            repose_core::StrokeCap::Butt,
+                            repose_core::StrokeJoin::Miter,
+                            4.0,
+                            None,
+                        ),
+                    };
 
                     for sg in shaped {
                         let gx = rect.x + sg.x + sg.bearing_x;
@@ -2949,29 +2955,41 @@ impl RenderBackend for WgpuBackend {
                         if self.slug_enabled {
                             let ck = repose_text::lookup_cache_key(sg.key);
                             if let Some(ref ck) = ck {
-                                if let Some((ck2, commands)) =
-                                    repose_text::lookup_and_extract_outline(sg.key)
-                                {
-                                    let font_size_px = f32::from_bits(ck2.font_size_bits);
+                                // Check if cached.
+                                let need_tessellate = self.slug_cache.get(ck).map_or(true, |g| {
                                     if is_stroke {
-                                        self.slug_cache.get_or_insert_stroke(
-                                            ck2,
-                                            font_size_px,
-                                            &commands,
-                                            stroke_width,
-                                            stroke_cap,
-                                            stroke_join,
-                                            stroke_miter,
-                                            &stroke_path_effect,
-                                        );
+                                        g.stroke_vertices.is_none()
                                     } else {
-                                        self.slug_cache
-                                            .get_or_insert(ck2, font_size_px, &commands);
+                                        g.fill_vertices.is_none()
                                     }
+                                });
+                                if need_tessellate {
+                                    if let Some((ck2, commands)) =
+                                        repose_text::lookup_and_extract_outline(sg.key)
+                                    {
+                                        let font_size_px = f32::from_bits(ck2.font_size_bits);
+                                        if is_stroke {
+                                            self.slug_cache.get_or_insert_stroke(
+                                                ck2,
+                                                font_size_px,
+                                                &commands,
+                                                stroke_width,
+                                                stroke_cap,
+                                                stroke_join,
+                                                stroke_miter,
+                                                &stroke_path_effect,
+                                            );
+                                        } else {
+                                            self.slug_cache.get_or_insert(
+                                                ck2,
+                                                font_size_px,
+                                                &commands,
+                                            );
+                                        }
+                                    }
+                                } else {
+                                    self.slug_cache.touch(ck);
                                 }
-                            }
-                            if let Some(ref ck) = ck {
-                                self.slug_cache.touch(ck);
                             }
                             if let Some(entry) = ck.as_ref().and_then(|ck| self.slug_cache.get(ck))
                             {

@@ -27,7 +27,8 @@ pub fn current_frame() -> u64 {
 const WRAP_CACHE_CAP: usize = 1024;
 const ELLIP_CACHE_CAP: usize = 2048;
 
-static METRICS_LRU: OnceCell<Mutex<Lru<(u64, u32, u64, u16, u8, i32), TextMetrics>>> = OnceCell::new();
+static METRICS_LRU: OnceCell<Mutex<Lru<(u64, u32, u64, u16, u8, i32), TextMetrics>>> =
+    OnceCell::new();
 fn metrics_cache() -> &'static Mutex<Lru<(u64, u32, u64, u16, u8, i32), TextMetrics>> {
     METRICS_LRU.get_or_init(|| Mutex::new(Lru::new(4096)))
 }
@@ -74,8 +75,9 @@ impl<K: std::hash::Hash + Eq + Clone, V> Lru<K, V> {
     }
 }
 
-static WRAP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32), (Vec<String>, bool)>>> =
-    OnceCell::new();
+static WRAP_LRU: OnceCell<
+    Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32), (Vec<String>, bool)>>,
+> = OnceCell::new();
 
 static WRAP_RANGES_LRU: OnceCell<
     Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32), (Vec<(usize, usize)>, bool)>>,
@@ -83,7 +85,8 @@ static WRAP_RANGES_LRU: OnceCell<
 
 static ELLIP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32, u16, u8, i32), String>>> = OnceCell::new();
 
-fn wrap_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32), (Vec<String>, bool)>> {
+fn wrap_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32), (Vec<String>, bool)>>
+{
     WRAP_LRU.get_or_init(|| Mutex::new(Lru::new(WRAP_CACHE_CAP)))
 }
 
@@ -254,7 +257,7 @@ pub fn shape_line(
             out.push(ShapedGlyph {
                 key,
                 x: g.x + g.x_offset + x_shift, // visual x + letter_spacing offset
-                y: run.line_y,                  // baseline y
+                y: run.line_y,                 // baseline y
                 w,
                 h,
                 bearing_x: left,
@@ -315,8 +318,8 @@ pub fn lookup_and_extract_outline(
         ref mut fs,
         ..
     } = *eng;
-    let cmds = cache.get_outline_commands_uncached(fs, ck)?;
-    Some((ck, cmds))
+    let cmds = cache.get_outline_commands(fs, ck)?;
+    Some((ck, cmds.to_vec().into_boxed_slice()))
 }
 
 // Text metrics for TextField: positions per grapheme boundary and byte offsets.
