@@ -8,9 +8,7 @@
 //! Velocities are expressed in px/sec and integrated with dt,
 //! so behavior is frame-rate independent.
 
-pub use repose_core::scroll::{
-    HorizontalScrollState, ScrollPhysics, ScrollState, ScrollStateXY,
-};
+pub use repose_core::scroll::{HorizontalScrollState, ScrollPhysics, ScrollState, ScrollStateXY};
 use repose_core::*;
 use std::rc::Rc;
 
@@ -41,9 +39,8 @@ pub fn ScrollArea(modifier: Modifier, state: Rc<ScrollState>, content: View) -> 
 pub fn HorizontalScrollArea(
     modifier: Modifier,
     state: Rc<HorizontalScrollState>,
-    mut content: View,
+    content: View,
 ) -> View {
-    content.modifier = content.modifier.flex_shrink(0.0);
     let binding = state.to_binding();
     View::new(0, ViewKind::Box)
         .modifier(modifier.horizontal_scroll(match binding {

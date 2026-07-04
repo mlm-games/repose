@@ -983,7 +983,7 @@ impl LayoutEngine {
                 .unwrap();
             let _ = self.taffy.set_node_context(t, Some(ctx));
             self.make_children_absolute(is_zstack, &child_taffy_ids);
-            self.make_scroll_child(is_scroll, &child_taffy_ids);
+            LayoutEngine::make_scroll_child_on(is_scroll, &child_taffy_ids, &mut self.taffy);
             t
         };
 
@@ -1041,7 +1041,7 @@ impl LayoutEngine {
         let _ = self.taffy.set_children(taffy_id, &child_taffy_ids);
 
         self.make_children_absolute(is_zstack, &child_taffy_ids);
-        self.make_scroll_child(is_scroll, &child_taffy_ids);
+        LayoutEngine::make_scroll_child_on(is_scroll, &child_taffy_ids, &mut self.taffy);
 
         self.stats.taffy_reused += 1;
     }
@@ -1063,6 +1063,8 @@ impl LayoutEngine {
         }
     }
 
+    /// HACK: This assymetrical code block is needed for having ScrollArea's children also scroll!
+    /// Else the inner pages of a nav. page don't scroll (like in showcase)
     fn make_scroll_child_on(
         is_scroll: bool,
         child_taffy_ids: &[taffy::NodeId],
@@ -1076,6 +1078,7 @@ impl LayoutEngine {
                 let mut new_cs = cs.clone();
                 new_cs.size.height = Dimension::auto();
                 new_cs.min_size.height = percent(1.0);
+                new_cs.min_size.width = percent(1.0);
                 new_cs.flex_shrink = 0.0;
                 let _ = taffy.set_style(child_tid, new_cs);
             }
@@ -1084,10 +1087,6 @@ impl LayoutEngine {
 
     fn make_children_absolute(&mut self, is_zstack: bool, child_taffy_ids: &[taffy::NodeId]) {
         Self::make_children_absolute_on(is_zstack, child_taffy_ids, &mut self.taffy);
-    }
-
-    fn make_scroll_child(&mut self, is_scroll: bool, child_taffy_ids: &[taffy::NodeId]) {
-        Self::make_scroll_child_on(is_scroll, child_taffy_ids, &mut self.taffy);
     }
 
     fn style_from_node(&self, node: &TreeNode, font_px: &dyn Fn(f32) -> f32) -> taffy::Style {
@@ -1130,10 +1129,7 @@ impl LayoutEngine {
 
         s.align_items = Some(AlignItems::STRETCH);
         // Needed for 2D scroll.
-        let is_2d_scroll = matches!(
-            m.scroll.as_ref().map(|s| s.axis()),
-            Some(ScrollAxis::Both)
-        );
+        let is_2d_scroll = matches!(m.scroll.as_ref().map(|s| s.axis()), Some(ScrollAxis::Both));
         if is_2d_scroll {
             s.align_items = Some(AlignItems::FLEX_START);
         }
@@ -1295,8 +1291,7 @@ impl LayoutEngine {
             if !height_set {
                 s.size.height = percent(frac);
             }
-            if s.min_size.height.is_auto()
-            {
+            if s.min_size.height.is_auto() {
                 s.min_size.height = length(0.0);
             }
         }
@@ -1747,28 +1742,28 @@ impl LayoutEngine {
                 }
             }
             if n.modifier.text_input.is_some() {
-                        let vid = *self.view_ids.get(&id).unwrap_or(&0);
-                    let tf_key = vid;
-                    if let Some(st_rc) = textfield_states.get(&tf_key) {
-                        let st = st_rc.borrow();
-                        let mut th = FxHasher::default();
-                        st.text.hash(&mut th);
-                        th.finish().hash(&mut h);
-                        st.selection.start.hash(&mut h);
-                        st.selection.end.hash(&mut h);
-                        if let Some(r) = &st.composition {
-                            r.start.hash(&mut h);
-                            r.end.hash(&mut h);
-                        } else {
-                            0usize.hash(&mut h);
-                            0usize.hash(&mut h);
-                        }
-                        ((st.scroll_offset * 8.0) as i32).hash(&mut h);
-                        ((st.scroll_offset_y * 8.0) as i32).hash(&mut h);
-                        st.caret_visible().hash(&mut h);
+                let vid = *self.view_ids.get(&id).unwrap_or(&0);
+                let tf_key = vid;
+                if let Some(st_rc) = textfield_states.get(&tf_key) {
+                    let st = st_rc.borrow();
+                    let mut th = FxHasher::default();
+                    st.text.hash(&mut th);
+                    th.finish().hash(&mut h);
+                    st.selection.start.hash(&mut h);
+                    st.selection.end.hash(&mut h);
+                    if let Some(r) = &st.composition {
+                        r.start.hash(&mut h);
+                        r.end.hash(&mut h);
+                    } else {
+                        0usize.hash(&mut h);
+                        0usize.hash(&mut h);
                     }
+                    ((st.scroll_offset * 8.0) as i32).hash(&mut h);
+                    ((st.scroll_offset_y * 8.0) as i32).hash(&mut h);
+                    st.caret_visible().hash(&mut h);
                 }
-                for &ch in n.children.iter() {
+            }
+            for &ch in n.children.iter() {
                 stack.push(ch);
             }
         }
@@ -2216,11 +2211,7 @@ impl LayoutEngine {
 
         let kind_handles_hit = modifier.text_input.is_some()
             || modifier.scroll.is_some()
-            || matches!(
-                kind,
-                ViewKind::Expander { .. }
-                    | ViewKind::TreeRow { .. }
-            );
+            || matches!(kind, ViewKind::Expander { .. } | ViewKind::TreeRow { .. });
 
         let needs_hit = !modifier.disabled
             && (has_pointer
@@ -3021,9 +3012,21 @@ impl LayoutEngine {
                             continue;
                         }
                         self.walk_paint(
-                            child_id, scene, hits, sems, textfield_states, interactions, focused,
-                            scrolled_offset, alpha_accum, next_sem_parent,
-                            child_interaction_source, font_px, allow_cache, deferred, skip_defer,
+                            child_id,
+                            scene,
+                            hits,
+                            sems,
+                            textfield_states,
+                            interactions,
+                            focused,
+                            scrolled_offset,
+                            alpha_accum,
+                            next_sem_parent,
+                            child_interaction_source,
+                            font_px,
+                            allow_cache,
+                            deferred,
+                            skip_defer,
                         );
                     }
 
@@ -3031,8 +3034,16 @@ impl LayoutEngine {
 
                     if b.show_scrollbar {
                         push_scrollbar(
-                            scene, hits, interactions, view_id, vp, ch, off, modifier.z_index,
-                            ScrollbarAxis::V, b.set_offset_main.clone(),
+                            scene,
+                            hits,
+                            interactions,
+                            view_id,
+                            vp,
+                            ch,
+                            off,
+                            modifier.z_index,
+                            ScrollbarAxis::V,
+                            b.set_offset_main.clone(),
                         );
                     }
 
@@ -3088,9 +3099,21 @@ impl LayoutEngine {
                             continue;
                         }
                         self.walk_paint(
-                            child_id, scene, hits, sems, textfield_states, interactions, focused,
-                            scrolled_offset, alpha_accum, next_sem_parent,
-                            child_interaction_source, font_px, allow_cache, deferred, skip_defer,
+                            child_id,
+                            scene,
+                            hits,
+                            sems,
+                            textfield_states,
+                            interactions,
+                            focused,
+                            scrolled_offset,
+                            alpha_accum,
+                            next_sem_parent,
+                            child_interaction_source,
+                            font_px,
+                            allow_cache,
+                            deferred,
+                            skip_defer,
                         );
                     }
 
@@ -3098,8 +3121,16 @@ impl LayoutEngine {
 
                     if b.show_scrollbar {
                         push_scrollbar(
-                            scene, hits, interactions, view_id, vp, cw, off, modifier.z_index,
-                            ScrollbarAxis::H, b.set_offset_main.clone(),
+                            scene,
+                            hits,
+                            interactions,
+                            view_id,
+                            vp,
+                            cw,
+                            off,
+                            modifier.z_index,
+                            ScrollbarAxis::H,
+                            b.set_offset_main.clone(),
                         );
                     }
 
@@ -3160,9 +3191,21 @@ impl LayoutEngine {
                     let scrolled_offset = (child_offset_px.0 - ox, child_offset_px.1 - oy);
                     for &child_id in &children {
                         self.walk_paint(
-                            child_id, scene, hits, sems, textfield_states, interactions, focused,
-                            scrolled_offset, alpha_accum, next_sem_parent,
-                            child_interaction_source, font_px, allow_cache, deferred, skip_defer,
+                            child_id,
+                            scene,
+                            hits,
+                            sems,
+                            textfield_states,
+                            interactions,
+                            focused,
+                            scrolled_offset,
+                            alpha_accum,
+                            next_sem_parent,
+                            child_interaction_source,
+                            font_px,
+                            allow_cache,
+                            deferred,
+                            skip_defer,
                         );
                     }
                     let mut i = hits_start;
@@ -3175,17 +3218,37 @@ impl LayoutEngine {
                         }
                     }
                     if b.show_scrollbar {
-                        let set_y = b.set_offset_xy.clone()
+                        let set_y = b
+                            .set_offset_xy
+                            .clone()
                             .map(|s| Rc::new(move |y| s(ox, y)) as Rc<dyn Fn(f32)>);
-                        let set_x = b.set_offset_xy.clone()
+                        let set_x = b
+                            .set_offset_xy
+                            .clone()
                             .map(|s| Rc::new(move |x| s(x, oy)) as Rc<dyn Fn(f32)>);
                         push_scrollbar(
-                            scene, hits, interactions, view_id, vp, ch, oy, modifier.z_index,
-                            ScrollbarAxis::V, set_y,
+                            scene,
+                            hits,
+                            interactions,
+                            view_id,
+                            vp,
+                            ch,
+                            oy,
+                            modifier.z_index,
+                            ScrollbarAxis::V,
+                            set_y,
                         );
                         push_scrollbar(
-                            scene, hits, interactions, view_id, vp, cw, ox, modifier.z_index,
-                            ScrollbarAxis::H, set_x,
+                            scene,
+                            hits,
+                            interactions,
+                            view_id,
+                            vp,
+                            cw,
+                            ox,
+                            modifier.z_index,
+                            ScrollbarAxis::H,
+                            set_x,
                         );
                     }
                     scene.nodes.push(SceneNode::PopClip);
@@ -3223,26 +3286,62 @@ impl LayoutEngine {
             ViewKind::OverlayHost => {
                 for &child_id in &children {
                     self.walk_paint(
-                        child_id, scene, hits, sems, textfield_states, interactions, focused,
-                        child_offset_px, alpha_accum, next_sem_parent,
-                        child_interaction_source, font_px, allow_cache, deferred, skip_defer,
+                        child_id,
+                        scene,
+                        hits,
+                        sems,
+                        textfield_states,
+                        interactions,
+                        focused,
+                        child_offset_px,
+                        alpha_accum,
+                        next_sem_parent,
+                        child_interaction_source,
+                        font_px,
+                        allow_cache,
+                        deferred,
+                        skip_defer,
                     );
                 }
             }
             ViewKind::Expander { expanded, .. } => {
                 if let Some(&first) = children.first() {
                     self.walk_paint(
-                        first, scene, hits, sems, textfield_states, interactions, focused,
-                        child_offset_px, alpha_accum, next_sem_parent,
-                        child_interaction_source, font_px, allow_cache, deferred, skip_defer,
+                        first,
+                        scene,
+                        hits,
+                        sems,
+                        textfield_states,
+                        interactions,
+                        focused,
+                        child_offset_px,
+                        alpha_accum,
+                        next_sem_parent,
+                        child_interaction_source,
+                        font_px,
+                        allow_cache,
+                        deferred,
+                        skip_defer,
                     );
                 }
                 if *expanded {
                     for &child_id in children.iter().skip(1) {
                         self.walk_paint(
-                            child_id, scene, hits, sems, textfield_states, interactions, focused,
-                            child_offset_px, alpha_accum, next_sem_parent,
-                            child_interaction_source, font_px, allow_cache, deferred, skip_defer,
+                            child_id,
+                            scene,
+                            hits,
+                            sems,
+                            textfield_states,
+                            interactions,
+                            focused,
+                            child_offset_px,
+                            alpha_accum,
+                            next_sem_parent,
+                            child_interaction_source,
+                            font_px,
+                            allow_cache,
+                            deferred,
+                            skip_defer,
                         );
                     }
                 }
@@ -3250,9 +3349,21 @@ impl LayoutEngine {
             _ => {
                 for &child_id in &children {
                     self.walk_paint(
-                        child_id, scene, hits, sems, textfield_states, interactions, focused,
-                        child_offset_px, alpha_accum, next_sem_parent,
-                        child_interaction_source, font_px, allow_cache, deferred, skip_defer,
+                        child_id,
+                        scene,
+                        hits,
+                        sems,
+                        textfield_states,
+                        interactions,
+                        focused,
+                        child_offset_px,
+                        alpha_accum,
+                        next_sem_parent,
+                        child_interaction_source,
+                        font_px,
+                        allow_cache,
+                        deferred,
+                        skip_defer,
                     );
                 }
             }
