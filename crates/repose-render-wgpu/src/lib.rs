@@ -2946,6 +2946,17 @@ impl RenderBackend for WgpuBackend {
                             None,
                         ),
                     };
+                    let stroke_tess_key = if is_stroke {
+                        Some(slug::StrokeTessKey::new(
+                            stroke_width,
+                            stroke_cap,
+                            stroke_join,
+                            stroke_miter,
+                            &stroke_path_effect,
+                        ))
+                    } else {
+                        None
+                    };
 
                     for sg in shaped {
                         let gx = rect.x + sg.x + sg.bearing_x;
@@ -2958,7 +2969,8 @@ impl RenderBackend for WgpuBackend {
                                 // Check if cached.
                                 let need_tessellate = self.slug_cache.get(ck).map_or(true, |g| {
                                     if is_stroke {
-                                        g.stroke_vertices.is_none()
+                                        let key = stroke_tess_key.as_ref().unwrap();
+                                        !g.stroke_variants.contains_key(key)
                                     } else {
                                         g.fill_vertices.is_none()
                                     }
@@ -3016,7 +3028,12 @@ impl RenderBackend for WgpuBackend {
                                 let th = current_target_size.1;
 
                                 let verts = if is_stroke {
-                                    entry.stroke_vertices.as_deref().unwrap_or(&[])
+                                    let key = stroke_tess_key.as_ref().unwrap();
+                                    entry
+                                        .stroke_variants
+                                        .get(key)
+                                        .map(|v| v.as_slice())
+                                        .unwrap_or(&[])
                                 } else {
                                     entry.fill_vertices.as_deref().unwrap_or(&[])
                                 };

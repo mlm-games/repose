@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::hash::{Hash, Hasher};
 
 use cosmic_text::{CacheKey, Command};
 use lyon_path::math::Point;
@@ -14,14 +15,70 @@ use crate::slug::path_effect::apply_path_effect;
 
 const EVICT_FRAMES: u64 = 120;
 
+/// Distinguishes stroke tessellation variants for the same glyph.
+/// Includes all stroke parameters that affect the tessellated output.
+#[derive(Clone, PartialEq, Eq)]
+pub struct StrokeTessKey {
+    width_bits: u32,
+    cap: u8,
+    join: u8,
+    miter_bits: u32,
+    /// Hash of the path effect (f32 values converted via to_bits).
+    path_effect_hash: u64,
+}
+
+impl StrokeTessKey {
+    pub fn new(
+        width: f32,
+        cap: repose_core::StrokeCap,
+        join: repose_core::StrokeJoin,
+        miter: f32,
+        path_effect: &Option<repose_core::PathEffect>,
+    ) -> Self {
+        Self {
+            width_bits: width.to_bits(),
+            cap: cap as u8,
+            join: join as u8,
+            miter_bits: miter.to_bits(),
+            path_effect_hash: hash_path_effect(path_effect),
+        }
+    }
+}
+
+impl Hash for StrokeTessKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.width_bits.hash(state);
+        self.cap.hash(state);
+        self.join.hash(state);
+        self.miter_bits.hash(state);
+        self.path_effect_hash.hash(state);
+    }
+}
+
+fn hash_path_effect(effect: &Option<repose_core::PathEffect>) -> u64 {
+    use repose_core::PathEffect;
+    match effect {
+        None => 0,
+        Some(PathEffect::Corner { radius }) => {
+            1u64.wrapping_mul(31).wrapping_add(radius.to_bits() as u64)
+        }
+        Some(PathEffect::Dash { intervals, phase }) => {
+            let mut h: u64 = 2;
+            for &v in intervals {
+                h = h.wrapping_mul(31).wrapping_add(v.to_bits() as u64);
+            }
+            h.wrapping_mul(31).wrapping_add(phase.to_bits() as u64)
+        }
+    }
+}
+
 /// Tessellated geometry for a single glyph, in em-space (font Y-up).
 pub struct CachedTessGlyph {
     /// Expanded fill vertices (each triangle has 3 separate entries) in em-space.
     /// Computed lazily on first fill request.
     pub fill_vertices: Option<Vec<[f32; 2]>>,
-    /// Expanded stroke vertices (each triangle has 3 separate entries) in em-space.
-    /// Computed lazily on first stroke request.
-    pub stroke_vertices: Option<Vec<[f32; 2]>>,
+    /// Expanded stroke vertices keyed by stroke parameters.
+    pub stroke_variants: HashMap<StrokeTessKey, Vec<[f32; 2]>>,
     pub last_used: u64,
 }
 
@@ -105,7 +162,7 @@ impl GlyphSlugCache {
                 }
                 Some(e.insert(CachedTessGlyph {
                     fill_vertices: Some(vertices),
-                    stroke_vertices: None,
+                    stroke_variants: HashMap::new(),
                     last_used: frame,
                 }))
             }
@@ -136,6 +193,8 @@ impl GlyphSlugCache {
         miter: f32,
         path_effect: &Option<repose_core::PathEffect>,
     ) -> Option<&CachedTessGlyph> {
+        let tess_key =
+            StrokeTessKey::new(width_em, cap, join, miter, path_effect);
         let lyon_cap = match cap {
             repose_core::StrokeCap::Butt => LineCap::Butt,
             repose_core::StrokeCap::Round => LineCap::Round,
@@ -159,7 +218,7 @@ impl GlyphSlugCache {
             Entry::Occupied(mut e) => {
                 let glyph = e.get_mut();
                 glyph.last_used = self.frame;
-                if glyph.stroke_vertices.is_none() {
+                if !glyph.stroke_variants.contains_key(&tess_key) {
                     let path = build_path(font_size)?;
                     let mut tess = StrokeTessellator::new();
                     let tolerance = (0.5 / font_size).max(0.001);
@@ -184,7 +243,7 @@ impl GlyphSlugCache {
                         let v = &buffers.vertices[i as usize];
                         vertices.push([v.x, v.y]);
                     }
-                    glyph.stroke_vertices = Some(vertices);
+                    glyph.stroke_variants.insert(tess_key, vertices);
                 }
                 Some(e.into_mut())
             }
@@ -213,9 +272,11 @@ impl GlyphSlugCache {
                     let v = &buffers.vertices[i as usize];
                     vertices.push([v.x, v.y]);
                 }
+                let mut variants = HashMap::new();
+                variants.insert(tess_key, vertices);
                 Some(e.insert(CachedTessGlyph {
                     fill_vertices: None,
-                    stroke_vertices: Some(vertices),
+                    stroke_variants: variants,
                     last_used: self.frame,
                 }))
             }
