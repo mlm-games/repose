@@ -21,6 +21,9 @@ pub fn animate_f32_from(
     let anim = remember_state_with_key(&anim_key, || AnimatedValue::new(initial, spec));
     let last = remember_state_with_key(format!("anim:f32_last:{key}"), || f32::NAN);
 
+    // Doesn't remove entries from pages that are still being composed with this.
+    animation_driver::touch(&anim_key);
+
     let mut a = anim.borrow_mut();
     let mut lt = last.borrow_mut();
     let should_set_target = lt.is_nan() || (*lt - target).abs() > 1e-6;
@@ -64,6 +67,8 @@ macro_rules! animate_from_impl {
             let anim = remember_state_with_key(&anim_key, || AnimatedValue::new(initial, spec));
             let last =
                 remember_state_with_key(format!("anim:{}_last:{}", $prefix, key), || None::<$type>);
+
+            repose_core::animation_driver::touch(&anim_key);
 
             let mut a = anim.borrow_mut();
             let mut lt = last.borrow_mut();

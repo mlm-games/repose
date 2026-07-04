@@ -1,6 +1,10 @@
 //! Global driver that advances all active animations before composition.
 //!
 //! Mirrors Compose's `BroadcastFrameClock.sendFrame()`
+//!
+//! Stale entries (from pages that were navigated away from) are swept
+//! at the beginning of each `tick()` call: only keys that were `touch`ed
+//! during the previous composition pass survive.
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -10,6 +14,13 @@ type TickFn = Rc<RefCell<dyn FnMut() -> bool>>;
 
 thread_local! {
     static REGISTRY: RefCell<Vec<(String, TickFn)>> = RefCell::new(Vec::new());
+    static TOUCHED: RefCell<Vec<String>> = RefCell::new(Vec::new());
+}
+
+/// Mark `key` as still active this frame. Called from `animate_f32_from` etc.
+/// Entries whose key was not touched before the next sweep are removed.
+pub fn touch(key: &str) {
+    TOUCHED.with(|t| t.borrow_mut().push(key.to_string()));
 }
 
 /// Register an animation tick callback keyed by `key`.
@@ -35,6 +46,14 @@ pub fn unregister(key: &str) {
 /// Advance all registered animations. Returns `true` if any is still running.
 /// If any animation is still running, calls `request_frame()`.
 pub fn tick() -> bool {
+    TOUCHED.with(|touched| {
+        let touched = std::mem::take(&mut *touched.borrow_mut());
+        REGISTRY.with(|reg| {
+            let mut list = reg.borrow_mut();
+            list.retain(|(k, _)| touched.iter().any(|tk| tk == k));
+        });
+    });
+
     let mut any_still = false;
     REGISTRY.with(|reg| {
         let mut list = reg.borrow_mut();
