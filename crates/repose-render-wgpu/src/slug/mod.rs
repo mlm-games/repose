@@ -1,5 +1,6 @@
 mod cache;
 mod outline;
+mod path_effect;
 mod pipeline;
 
 pub use cache::GlyphSlugCache;

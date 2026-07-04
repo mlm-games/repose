@@ -2484,7 +2484,7 @@ impl LayoutEngine {
                             let span_h = span.style.hyphens.unwrap_or(Hyphens::Unspecified);
                             let span_lb = span.style.line_break.unwrap_or(LineBreak::Unspecified);
                             let span_ti = span.style.text_indent;
-                            let span_ds = span.style.draw_style.unwrap_or(DrawStyle::Fill);
+                            let span_ds = span.style.draw_style.clone().unwrap_or(DrawStyle::Fill);
                             let span_url = span.url.clone();
                             segments.push(SegInfo {
                                 start: seg_start,
@@ -2614,7 +2614,7 @@ impl LayoutEngine {
                                     text_direction: info.text_direction,
                                     font_synthesis: info.font_synthesis,
                                     baseline_shift: info.baseline_shift,
-                                    draw_style: info.draw_style,
+                                    draw_style: info.draw_style.clone(),
                                 },
                                 url: info.url.clone(),
                             });

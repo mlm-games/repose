@@ -124,7 +124,7 @@ impl TextFieldValue {
             .map(|s| TextSpan {
                 start: s.start - start,
                 end: s.end - start,
-                style: s.style,
+                style: s.style.clone(),
                 url: s.url.clone(),
             })
             .collect();
@@ -143,7 +143,7 @@ impl TextFieldValue {
             .map(|s| TextSpan {
                 start: s.start - sel_max,
                 end: s.end - sel_max,
-                style: s.style,
+                style: s.style.clone(),
                 url: s.url.clone(),
             })
             .collect();
@@ -161,7 +161,7 @@ impl TextFieldValue {
             .map(|s| TextSpan {
                 start: s.start - r.start,
                 end: s.end - r.start,
-                style: s.style,
+                style: s.style.clone(),
                 url: s.url.clone(),
             })
             .collect();
@@ -637,12 +637,59 @@ impl Default for TextIndent {
     }
 }
 
+/// Path effect applied to a stroked path.
+/// Mirrors Compose's `PathEffect`.
+#[derive(Clone, Debug, PartialEq)]
+pub enum PathEffect {
+    /// Replace sharp corners with rounded arcs of the given radius.
+    Corner {
+        /// Corner radius in em-units.
+        radius: f32,
+    },
+    /// Draw the path as a dashed line.
+    Dash {
+        /// Interleaved on/off lengths in em-units.
+        intervals: Vec<f32>,
+        /// Starting phase offset in em-units.
+        phase: f32,
+    },
+}
+
 /// Draw style for text (fill or stroke).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DrawStyle {
-    #[default]
     Fill,
-    Stroke,
+    Stroke {
+        /// Stroke width in em-units (fraction of font size). 0.05 = 5% of em.
+        width: f32,
+        /// Line cap style for stroke endpoints.
+        cap: crate::StrokeCap,
+        /// Line join style for stroke segment joins.
+        join: crate::StrokeJoin,
+        /// Miter limit for miter joins.
+        miter: f32,
+        /// Optional path effect (dash, corner rounding, etc.).
+        path_effect: Option<PathEffect>,
+    },
+}
+
+impl DrawStyle {
+    /// Create a `Stroke` variant with default cap, join, miter, and no path effect.
+    pub const fn stroke(width: f32) -> Self {
+        Self::Stroke {
+            width,
+            cap: crate::StrokeCap::Butt,
+            join: crate::StrokeJoin::Miter,
+            miter: 4.0,
+            path_effect: None,
+        }
+    }
+}
+
+impl Default for DrawStyle {
+    fn default() -> Self {
+        Self::Fill
+    }
 }
 
 /// Style configuration for text displayed in a text field.
@@ -1023,7 +1070,7 @@ impl Default for KeyboardOptions {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SpanStyle {
     pub color: Option<Color>,
     pub font_size: Option<f32>,
@@ -1346,5 +1393,3 @@ pub fn build_annotated_string(b: impl FnOnce(&mut AnnotatedStringBuilder)) -> An
     b(&mut builder);
     builder.build()
 }
-
-

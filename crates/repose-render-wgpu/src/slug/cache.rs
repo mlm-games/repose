@@ -3,12 +3,14 @@ use std::collections::hash_map::Entry;
 
 use cosmic_text::{CacheKey, Command};
 use lyon_path::math::Point;
+use lyon_path::Path;
 use lyon_tessellation::{
-    FillOptions, FillTessellator, StrokeOptions, StrokeTessellator, VertexBuffers,
-    geometry_builder::simple_builder,
+    FillOptions, FillTessellator, LineCap, LineJoin, StrokeOptions, StrokeTessellator,
+    VertexBuffers, geometry_builder::simple_builder,
 };
 
 use crate::slug::outline::commands_to_path;
+use crate::slug::path_effect::apply_path_effect;
 
 const EVICT_FRAMES: u64 = 120;
 
@@ -122,18 +124,43 @@ impl GlyphSlugCache {
 
     /// Get or create stroke-tessellated geometry for a glyph.
     /// `commands` are raw swash outline commands at the given `font_size`.
+    /// `width_em` is the stroke width in em-units (fraction of font size).
     pub fn get_or_insert_stroke(
         &mut self,
         key: CacheKey,
         font_size: f32,
         commands: &[Command],
+        width_em: f32,
+        cap: repose_core::StrokeCap,
+        join: repose_core::StrokeJoin,
+        miter: f32,
+        path_effect: &Option<repose_core::PathEffect>,
     ) -> Option<&CachedTessGlyph> {
+        let lyon_cap = match cap {
+            repose_core::StrokeCap::Butt => LineCap::Butt,
+            repose_core::StrokeCap::Round => LineCap::Round,
+            repose_core::StrokeCap::Square => LineCap::Square,
+        };
+        let lyon_join = match join {
+            repose_core::StrokeJoin::Miter => LineJoin::Miter,
+            repose_core::StrokeJoin::Round => LineJoin::Round,
+            repose_core::StrokeJoin::Bevel => LineJoin::Bevel,
+        };
+        let build_path = |font_size| -> Option<Path> {
+            let path = commands_to_path(commands, font_size)?;
+            if let Some(effect) = path_effect {
+                let tolerance = (0.5 / font_size).max(0.001);
+                Some(apply_path_effect(&path, effect, tolerance))
+            } else {
+                Some(path)
+            }
+        };
         match self.map.entry(key) {
             Entry::Occupied(mut e) => {
                 let glyph = e.get_mut();
                 glyph.last_used = self.frame;
                 if glyph.stroke_vertices.is_none() {
-                    let path = commands_to_path(commands, font_size)?;
+                    let path = build_path(font_size)?;
                     let mut tess = StrokeTessellator::new();
                     let tolerance = (0.5 / font_size).max(0.001);
                     let mut buffers: VertexBuffers<Point, u16> = VertexBuffers::new();
@@ -141,7 +168,10 @@ impl GlyphSlugCache {
                         &path,
                         &StrokeOptions::default()
                             .with_tolerance(tolerance)
-                            .with_line_width(0.05),
+                            .with_line_width(width_em)
+                            .with_line_cap(lyon_cap)
+                            .with_line_join(lyon_join)
+                            .with_miter_limit(miter),
                         &mut simple_builder(&mut buffers),
                     )
                     .ok()?;
@@ -159,7 +189,7 @@ impl GlyphSlugCache {
                 Some(e.into_mut())
             }
             Entry::Vacant(e) => {
-                let path = commands_to_path(commands, font_size)?;
+                let path = build_path(font_size)?;
                 let mut tess = StrokeTessellator::new();
                 let tolerance = (0.5 / font_size).max(0.001);
                 let mut buffers: VertexBuffers<Point, u16> = VertexBuffers::new();
@@ -167,7 +197,10 @@ impl GlyphSlugCache {
                     &path,
                     &StrokeOptions::default()
                         .with_tolerance(tolerance)
-                        .with_line_width(0.05),
+                        .with_line_width(width_em)
+                        .with_line_cap(lyon_cap)
+                        .with_line_join(lyon_join)
+                        .with_miter_limit(miter),
                     &mut simple_builder(&mut buffers),
                 )
                 .ok()?;

@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use repose_core::{DrawStyle, prelude::*, signal};
+use repose_core::{DrawStyle, PathEffect, StrokeCap, StrokeJoin, prelude::*, signal};
 use repose_material::material3::{
     Button, ButtonConfig, OutlinedTextField, OutlinedTextFieldConfig,
 };
@@ -84,15 +84,21 @@ fn annotated_demos() -> Vec<(&'static str, View)> {
                 b.push_with_style(
                     "Stroked ",
                     SpanStyle::default()
-                        .draw_style(DrawStyle::Stroke)
+                        .draw_style(DrawStyle::stroke(0.05))
                         .color(Color::from_rgba(0xE6, 0x1C, 0x1C, 255)),
                 );
                 b.push("and ");
                 b.push_with_style(
                     "more stroke ",
                     SpanStyle::default()
-                        .draw_style(DrawStyle::Stroke)
-                        .color(Color::from_rgba(0x1C, 0x1C, 0xE6, 255))
+                        .draw_style(DrawStyle::Stroke {
+                            width: 0.1,
+                            cap: StrokeCap::Round,
+                            join: StrokeJoin::Round,
+                            miter: 4.0,
+                            path_effect: Some(PathEffect::Corner { radius: 0.02 }),
+                        })
+                        // .color(Color::from_rgba(0x1C, 0x1C, 0xE6, 255))
                         .font_size(22.0),
                 );
                 b.push("in a sentence.");

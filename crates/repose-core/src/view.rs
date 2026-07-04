@@ -229,7 +229,7 @@ pub struct Scene {
 }
 
 /// Rarely-tweaked text style properties bundled for ergonomic Default.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TextExtraStyle {
     pub text_direction: TextDirection,
     pub font_synthesis: FontSynthesis,
@@ -360,11 +360,22 @@ pub enum TextOverflow {
     Ellipsis,
 }
 
+/// Controls how line segments are joined in a stroked path.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum StrokeJoin {
+    #[default]
+    /// Sharp corner joins.
+    Miter,
+    /// Semi-circular joins.
+    Round,
+    /// Beveled (flat) joins.
+    Bevel,
+}
+
 /// Controls how the endpoints of a stroked arc are drawn.
-/// Mirrors [`StrokeCap`](https://developer.android.com/reference/kotlin/androidx/compose/ui/graphics/StrokeCap)
-/// in Compose.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum StrokeCap {
+    #[default]
     /// Flat ends at the exact arc endpoint. No extension.
     Butt,
     /// Semicircle with diameter equal to the stroke width, centered at the
