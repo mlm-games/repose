@@ -26,6 +26,7 @@ mod tests {
                 text_decoration: TextDecoration::default(),
                 letter_spacing: 0.0,
                 line_height: 0.0,
+                url: None,
             },
         )
     }

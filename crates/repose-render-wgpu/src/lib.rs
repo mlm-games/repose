@@ -2835,9 +2835,10 @@ impl RenderBackend for WgpuBackend {
                     text_align: _,
                     font_weight,
                     font_style,
-                    text_decoration: _,
+                    text_decoration,
                     letter_spacing: _,
                     line_height: _,
+                    url: _,
                 } => {
                     flush_batch!(); // flush any prior primitives
 
@@ -2849,6 +2850,7 @@ impl RenderBackend for WgpuBackend {
                         0
                     };
                     let shaped = repose_text::shape_line(text.as_ref(), px, *font_family, fw, fs);
+                    let baseline_y = shaped.first().map(|g| rect.y + g.y);
 
                     let cos_a = current_transform.rotate.cos();
                     let sin_a = current_transform.rotate.sin();
@@ -2997,6 +2999,67 @@ impl RenderBackend for WgpuBackend {
                             cnt: slug_verts_local.len() as u32,
                         });
                         slug_verts_local.clear();
+                    }
+
+                    // Text decoration: underline / strikethrough
+                    if (text_decoration.underline || text_decoration.strikethrough)
+                        && let Some(baseline_y) = baseline_y
+                    {
+                        flush_batch!();
+                        current_prim = Some("rect");
+                        let deco_color = text_decoration.color.unwrap_or(*color);
+                        let thickness = (px * 0.07).max(1.0);
+
+                        if text_decoration.underline {
+                            let dy = baseline_y + px * 0.1;
+                            let (ndc, sin_cos) = rect_to_instance_ndc(
+                                repose_core::Rect {
+                                    x: rect.x,
+                                    y: dy,
+                                    w: rect.w,
+                                    h: thickness,
+                                },
+                                current_transform,
+                                current_target_size.0,
+                                current_target_size.1,
+                            );
+                            batch.rects.push(RectInstance {
+                                xywh: ndc,
+                                radii: [0.0; 4],
+                                brush_type: 0,
+                                _pad: [0.0; 3],
+                                color0: deco_color.to_linear(),
+                                color1: [0.0; 4],
+                                grad_start: [0.0; 2],
+                                grad_end: [0.0; 2],
+                                sin_cos,
+                            });
+                        }
+                        if text_decoration.strikethrough {
+                            let sy = baseline_y - px * 0.3;
+                            let (ndc, sin_cos) = rect_to_instance_ndc(
+                                repose_core::Rect {
+                                    x: rect.x,
+                                    y: sy,
+                                    w: rect.w,
+                                    h: thickness,
+                                },
+                                current_transform,
+                                current_target_size.0,
+                                current_target_size.1,
+                            );
+                            batch.rects.push(RectInstance {
+                                xywh: ndc,
+                                radii: [0.0; 4],
+                                brush_type: 0,
+                                _pad: [0.0; 3],
+                                color0: deco_color.to_linear(),
+                                color1: [0.0; 4],
+                                grad_start: [0.0; 2],
+                                grad_end: [0.0; 2],
+                                sin_cos,
+                            });
+                        }
                     }
                 }
                 SceneNode::Image {

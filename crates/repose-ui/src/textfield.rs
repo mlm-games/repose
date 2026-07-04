@@ -1496,6 +1496,7 @@ pub(crate) fn paint_text_field(
                 text_decoration: ts.text_decoration.unwrap_or_default(),
                 letter_spacing: ts.letter_spacing,
                 line_height: ts.line_height,
+                url: None,
             });
 
             // Caret (only when enabled && !readOnly)
@@ -1563,6 +1564,7 @@ pub(crate) fn paint_text_field(
                     text_decoration: ts.text_decoration.unwrap_or_default(),
                     letter_spacing: ts.letter_spacing,
                     line_height: ts.line_height,
+                    url: None,
                 });
             } else {
                 for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
@@ -1594,6 +1596,7 @@ pub(crate) fn paint_text_field(
                         text_decoration: ts.text_decoration.unwrap_or_default(),
                         letter_spacing: ts.letter_spacing,
                         line_height: ts.line_height,
+                        url: None,
                     });
                 }
             }
@@ -1715,6 +1718,7 @@ pub(crate) fn paint_text_field(
                 text_decoration: ts.text_decoration.unwrap_or_default(),
                 letter_spacing: 0.0,
                 line_height: 0.0,
+                url: None,
             });
         } else if text_input.multiline {
             let render_text = if text_input.value.is_empty() {
@@ -1750,6 +1754,7 @@ pub(crate) fn paint_text_field(
                     text_decoration: ts.text_decoration.unwrap_or_default(),
                     letter_spacing: 0.0,
                     line_height: 0.0,
+                    url: None,
                 });
             }
         } else {
@@ -1770,6 +1775,7 @@ pub(crate) fn paint_text_field(
                 text_decoration: ts.text_decoration.unwrap_or_default(),
                 letter_spacing: 0.0,
                 line_height: 0.0,
+                url: None,
             });
         }
     }

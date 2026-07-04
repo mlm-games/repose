@@ -124,7 +124,8 @@ impl TextFieldValue {
             .map(|s| TextSpan {
                 start: s.start - start,
                 end: s.end - start,
-                style: s.style.clone(),
+                style: s.style,
+                url: s.url.clone(),
             })
             .collect();
         AnnotatedString::new(text, spans)
@@ -142,7 +143,8 @@ impl TextFieldValue {
             .map(|s| TextSpan {
                 start: s.start - sel_max,
                 end: s.end - sel_max,
-                style: s.style.clone(),
+                style: s.style,
+                url: s.url.clone(),
             })
             .collect();
         AnnotatedString::new(text, spans)
@@ -159,7 +161,8 @@ impl TextFieldValue {
             .map(|s| TextSpan {
                 start: s.start - r.start,
                 end: s.end - r.start,
-                style: s.style.clone(),
+                style: s.style,
+                url: s.url.clone(),
             })
             .collect();
         AnnotatedString::new(text, spans)
@@ -1064,6 +1067,26 @@ impl SpanStyle {
         self.font_size = Some(px);
         self
     }
+
+    pub fn text_decoration(mut self, d: TextDecoration) -> Self {
+        self.text_decoration = Some(d);
+        self
+    }
+
+    pub fn font_weight(mut self, w: u16) -> Self {
+        self.font_weight = Some(w);
+        self
+    }
+
+    pub fn font_style(mut self, s: u8) -> Self {
+        self.font_style = Some(s);
+        self
+    }
+
+    pub fn background(mut self, c: Color) -> Self {
+        self.background = Some(c);
+        self
+    }
 }
 
 impl Default for SpanStyle {
@@ -1080,6 +1103,8 @@ pub struct TextSpan {
     /// Byte offset end (exclusive) in the original text.
     pub end: usize,
     pub style: SpanStyle,
+    /// URL for clickable links.
+    pub url: Option<Arc<str>>,
 }
 
 /// Text with multiple styled spans.
@@ -1147,7 +1172,12 @@ impl AnnotatedStringBuilder {
         self.text.push_str(text);
         let end = self.text.len();
         if start < end {
-            self.spans.push(TextSpan { start, end, style });
+            self.spans.push(TextSpan {
+                start,
+                end,
+                style,
+                url: None,
+            });
         }
         self
     }
@@ -1157,10 +1187,33 @@ impl AnnotatedStringBuilder {
         self.push_with_style(text, SpanStyle::default().color(color))
     }
 
+    /// Append text with a clickable link URL (auto-applies underline + blue color).
+    pub fn push_link(&mut self, text: &str, url: impl Into<Arc<str>>) -> &mut Self {
+        let start = self.text.len();
+        self.text.push_str(text);
+        let end = self.text.len();
+        if start < end {
+            self.spans.push(TextSpan {
+                start,
+                end,
+                style: SpanStyle::default()
+                    .color(Color::from_rgba(0x15, 0x76, 0xFF, 255))
+                    .text_decoration(TextDecoration::UNDERLINE),
+                url: Some(url.into()),
+            });
+        }
+        self
+    }
+
     /// Apply a style to a range of already-appended text.
     pub fn add_style(&mut self, start: usize, end: usize, style: SpanStyle) -> &mut Self {
         if start < end && end <= self.text.len() {
-            self.spans.push(TextSpan { start, end, style });
+            self.spans.push(TextSpan {
+                start,
+                end,
+                style,
+                url: None,
+            });
         }
         self
     }
@@ -1248,6 +1301,19 @@ pub struct TextDecoration {
     pub color: Option<Color>,
 }
 
+impl TextDecoration {
+    pub const UNDERLINE: TextDecoration = TextDecoration {
+        underline: true,
+        strikethrough: false,
+        color: None,
+    };
+    pub const STRIKETHROUGH: TextDecoration = TextDecoration {
+        underline: false,
+        strikethrough: true,
+        color: None,
+    };
+}
+
 impl Default for TextDecoration {
     fn default() -> Self {
         Self {
@@ -1264,3 +1330,5 @@ pub fn build_annotated_string(b: impl FnOnce(&mut AnnotatedStringBuilder)) -> An
     b(&mut builder);
     builder.build()
 }
+
+

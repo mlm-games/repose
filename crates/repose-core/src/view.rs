@@ -101,6 +101,8 @@ pub enum ViewKind {
         text_decoration: TextDecoration,
         letter_spacing: f32,
         line_height: f32,
+        /// URL for clickable link text.
+        url: Option<Arc<str>>,
     },
 
     Image {
@@ -252,6 +254,8 @@ pub enum SceneNode {
         text_decoration: TextDecoration,
         letter_spacing: f32,
         line_height: f32,
+        /// URL for clickable link text.
+        url: Option<Arc<str>>,
     },
     Ellipse {
         rect: Rect,

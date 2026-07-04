@@ -19,6 +19,27 @@ use crate::Interactions;
 use crate::anim::{animate_color, animate_f32};
 use crate::textfield::{TF_FONT_DP, TextFieldState, measure_text};
 
+fn open_url(url: &str) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = url;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(url).spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("cmd")
+            .args(["/c", "start", url])
+            .spawn();
+    }
+}
+
 fn push_focus_ring(scene: &mut Scene, rect: repose_core::Rect, radius_dp: f32) {
     scene.nodes.push(SceneNode::Border {
         rect,
@@ -2340,6 +2361,7 @@ impl LayoutEngine {
                 text_decoration,
                 letter_spacing,
                 line_height,
+                url,
                 ..
             } => {
                 let tl = self.text_cache.get(&node_id);
@@ -2389,7 +2411,15 @@ impl LayoutEngine {
                             .unwrap_or(ln.len());
 
                         // Find spans that overlap this line's byte range
-                        let mut segments: Vec<(usize, usize, Color, f32)> = Vec::new();
+                        #[allow(clippy::type_complexity)]
+                        let mut segments: Vec<(
+                            usize,
+                            usize,
+                            Color,
+                            f32,
+                            TextDecoration,
+                            Option<Arc<str>>,
+                        )> = Vec::new();
                         let mut cursor = line_start;
 
                         // Sort overlapping spans by start position
@@ -2405,17 +2435,43 @@ impl LayoutEngine {
 
                             if seg_start > cursor {
                                 // Default-styled segment before this span
-                                segments.push((cursor, seg_start, *color, *font_size));
+                                segments.push((
+                                    cursor,
+                                    seg_start,
+                                    *color,
+                                    *font_size,
+                                    *text_decoration,
+                                    None,
+                                ));
                             }
 
                             let span_color = span.style.color.unwrap_or(*color);
                             let span_size = span.style.font_size.unwrap_or(*font_size);
-                            segments.push((seg_start, seg_end, span_color, span_size));
+                            let span_decoration = span
+                                .style
+                                .text_decoration
+                                .unwrap_or(*text_decoration);
+                            let span_url = span.url.clone();
+                            segments.push((
+                                seg_start,
+                                seg_end,
+                                span_color,
+                                span_size,
+                                span_decoration,
+                                span_url,
+                            ));
                             cursor = seg_end;
                         }
 
                         if cursor < line_end {
-                            segments.push((cursor, line_end, *color, *font_size));
+                            segments.push((
+                                cursor,
+                                line_end,
+                                *color,
+                                *font_size,
+                                *text_decoration,
+                                None,
+                            ));
                         }
 
                         // Measure and emit each segment
@@ -2428,7 +2484,15 @@ impl LayoutEngine {
                         } else {
                             0
                         };
-                        for (seg_start, seg_end, seg_color, seg_font_dp) in &segments {
+                        for (
+                            seg_start,
+                            seg_end,
+                            seg_color,
+                            seg_font_dp,
+                            seg_decoration,
+                            seg_url,
+                        ) in &segments
+                        {
                             let seg_text = &text[*seg_start..*seg_end];
                             if seg_text.is_empty() {
                                 continue;
@@ -2440,13 +2504,14 @@ impl LayoutEngine {
                                     .last()
                                     .copied()
                                     .unwrap_or(0.0);
+                            let seg_rect = repose_core::Rect {
+                                x: seg_x,
+                                y: content_rect.y + i as f32 * line_h_px,
+                                w: seg_w,
+                                h: line_h_px,
+                            };
                             scene.nodes.push(SceneNode::Text {
-                                rect: repose_core::Rect {
-                                    x: seg_x,
-                                    y: content_rect.y + i as f32 * line_h_px,
-                                    w: seg_w,
-                                    h: line_h_px,
-                                },
+                                rect: seg_rect,
                                 text: Arc::<str>::from(seg_text.to_string().into_boxed_str()),
                                 color: mul_alpha_color(*seg_color, alpha_accum),
                                 size: seg_px,
@@ -2454,10 +2519,26 @@ impl LayoutEngine {
                                 text_align: *text_align,
                                 font_weight: *font_weight,
                                 font_style: *font_style,
-                                text_decoration: *text_decoration,
+                                text_decoration: *seg_decoration,
                                 letter_spacing: *letter_spacing,
                                 line_height: *line_height,
+                                url: seg_url.clone(),
                             });
+                            // Create hit region for clickable links
+                            if let Some(url) = seg_url {
+                                let link_id =
+                                    view_id ^ ((*seg_start as u64) << 32) | (*seg_end as u64);
+                                let link_url = url.clone();
+                                hits.push(HitRegion {
+                                    id: link_id,
+                                    rect: seg_rect,
+                                    cursor: Some(CursorIcon::Pointer),
+                                    on_click: Some(Rc::new(move || {
+                                        open_url(&link_url);
+                                    })),
+                                    ..Default::default()
+                                });
+                            }
                             seg_x += seg_w;
                         }
                     }
@@ -2485,13 +2566,14 @@ impl LayoutEngine {
                                 _ => content_rect.x,
                             }
                         };
+                        let seg_rect = repose_core::Rect {
+                            x: align_x(line_w),
+                            y: content_rect.y + i as f32 * line_h_px,
+                            w: content_rect.w,
+                            h: line_h_px,
+                        };
                         scene.nodes.push(SceneNode::Text {
-                            rect: repose_core::Rect {
-                                x: align_x(line_w),
-                                y: content_rect.y + i as f32 * line_h_px,
-                                w: content_rect.w,
-                                h: line_h_px,
-                            },
+                            rect: seg_rect,
                             text: Arc::<str>::from(ln.clone()),
                             color: mul_alpha_color(*color, alpha_accum),
                             size: size_px,
@@ -2502,7 +2584,22 @@ impl LayoutEngine {
                             text_decoration: *text_decoration,
                             letter_spacing: *letter_spacing,
                             line_height: *line_height,
+                            url: url.clone(),
                         });
+                        // Create hit region for view-level URL
+                        if let Some(link_url) = url {
+                            let link_id = view_id ^ 0x8000_0000_0000_0000;
+                            let lu = link_url.clone();
+                            hits.push(HitRegion {
+                                id: link_id,
+                                rect: seg_rect,
+                                cursor: Some(CursorIcon::Pointer),
+                                on_click: Some(Rc::new(move || {
+                                    open_url(&lu);
+                                })),
+                                ..Default::default()
+                            });
+                        }
                     }
                 }
 
@@ -2825,6 +2922,7 @@ impl LayoutEngine {
                         text_decoration: TextDecoration::default(),
                         letter_spacing: 0.0,
                         line_height: 0.0,
+                        url: None,
                     });
 
                     // Toggle hit region (chevron area)

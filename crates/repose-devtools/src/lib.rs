@@ -147,6 +147,7 @@ impl Hud {
                 text_decoration: TextDecoration::default(),
                 letter_spacing: 0.0,
                 line_height: 0.0,
+                url: None,
             });
             text_y += 16.0;
 
@@ -168,6 +169,7 @@ impl Hud {
                 text_decoration: TextDecoration::default(),
                 letter_spacing: 0.0,
                 line_height: 0.0,
+                url: None,
             });
             text_y += 14.0;
 
@@ -189,6 +191,7 @@ impl Hud {
                 text_decoration: TextDecoration::default(),
                 letter_spacing: 0.0,
                 line_height: 0.0,
+                url: None,
             });
             text_y += 14.0;
 
@@ -210,6 +213,7 @@ impl Hud {
                 text_decoration: TextDecoration::default(),
                 letter_spacing: 0.0,
                 line_height: 0.0,
+                url: None,
             });
             text_y += 14.0;
 
@@ -231,6 +235,7 @@ impl Hud {
                 text_decoration: TextDecoration::default(),
                 letter_spacing: 0.0,
                 line_height: 0.0,
+                url: None,
             });
             text_y += 14.0;
 
@@ -252,6 +257,7 @@ impl Hud {
                 text_decoration: TextDecoration::default(),
                 letter_spacing: 0.0,
                 line_height: 0.0,
+                url: None,
             });
             text_y += 14.0;
 
@@ -273,6 +279,7 @@ impl Hud {
                 text_decoration: TextDecoration::default(),
                 letter_spacing: 0.0,
                 line_height: 0.0,
+                url: None,
             });
 
             if let Some(hover) = &self.hovered_semantics {
@@ -295,6 +302,7 @@ impl Hud {
                     text_decoration: TextDecoration::default(),
                     letter_spacing: 0.0,
                     line_height: 0.0,
+                    url: None,
                 });
                 if let Some(lbl) = &hover.label {
                     text_y += 14.0;
@@ -315,6 +323,7 @@ impl Hud {
                         text_decoration: TextDecoration::default(),
                         letter_spacing: 0.0,
                         line_height: 0.0,
+                        url: None,
                     });
                 }
             }

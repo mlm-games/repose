@@ -58,6 +58,7 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             text_decoration,
             letter_spacing,
             line_height,
+            url: _,
         } => {
             font_family.hash(hasher);
             text.hash(hasher);
@@ -382,6 +383,7 @@ mod tests {
                 text_decoration: TextDecoration::default(),
                 letter_spacing: 0.0,
                 line_height: 0.0,
+                url: None,
             },
         );
         let v2 = View::new(
@@ -401,6 +403,7 @@ mod tests {
                 text_decoration: TextDecoration::default(),
                 letter_spacing: 0.0,
                 line_height: 0.0,
+                url: None,
             },
         );
         let v3 = View::new(
@@ -420,6 +423,7 @@ mod tests {
                 text_decoration: TextDecoration::default(),
                 letter_spacing: 0.0,
                 line_height: 0.0,
+                url: None,
             },
         );
 
