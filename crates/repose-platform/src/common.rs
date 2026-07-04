@@ -6,7 +6,7 @@ use repose_core::locals::dp_to_px;
 use repose_core::runtime::Frame;
 use repose_ui::TextFieldState;
 use repose_ui::textfield::{
-    TF_FONT_DP, caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes, measure_text,
+    TF_FONT_DP, TextMeasureConfig, caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes, measure_text,
 };
 
 pub(crate) fn tick_snackbar(last_redraw: web_time::Instant) {
@@ -228,7 +228,7 @@ pub(crate) fn tf_ensure_caret_visible(state: &mut TextFieldState, is_multiline: 
         } else {
             (state.text.clone(), caret_idx)
         };
-        let m = measure_text(&display, font_px, None, 400, 0);
+        let m = measure_text(&display, font_px, TextMeasureConfig::default());
         let caret_x_px = m.positions.get(caret_display_off).copied().unwrap_or(0.0);
         state.ensure_caret_visible(caret_x_px, wrap_width, dp_to_px(2.0));
     }
@@ -283,7 +283,7 @@ pub(crate) fn tf_place_caret_at_pointer(
         } else {
             (state.text.clone(), caret_idx)
         };
-        let m = measure_text(&display, font_px, None, 400, 0);
+        let m = measure_text(&display, font_px, TextMeasureConfig::default());
         let cx = m.positions.get(caret_display_off).copied().unwrap_or(0.0);
         state.ensure_caret_visible(cx, hit_rect.w, 2.0 * scale);
     }

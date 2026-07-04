@@ -1,7 +1,7 @@
 use repose_core::Rect;
 use repose_core::locals::dp_to_px;
 use repose_ui::TextFieldState;
-use repose_ui::textfield::{TF_FONT_DP, TF_PADDING_X_DP, measure_text};
+use repose_ui::textfield::{TF_FONT_DP, TF_PADDING_X_DP, TextMeasureConfig, measure_text};
 use winit::event::Ime;
 
 pub(crate) fn handle_ime_event(
@@ -41,7 +41,7 @@ pub(crate) fn handle_ime_event(
 
 fn ensure_caret_visible_in_hit(state: &mut TextFieldState, hit_rect: Rect) {
     let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-    let m = measure_text(&state.text, font_px, None, 400, 0);
+    let m = measure_text(&state.text, font_px, TextMeasureConfig::default());
     let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
     state.ensure_caret_visible(
         caret_x_px,

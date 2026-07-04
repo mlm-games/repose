@@ -1113,7 +1113,7 @@ pub fn run_android_app_with_options(
                                     let m = repose_ui::textfield::measure_text(
                                         &state.text,
                                         font_px,
-                                        None,
+                                        repose_ui::textfield::TextMeasureConfig::default(),
                                     );
                                     let caret_x_px = m
                                         .positions
@@ -1135,7 +1135,7 @@ pub fn run_android_app_with_options(
                                     let m = repose_ui::textfield::measure_text(
                                         &state.text,
                                         font_px,
-                                        None,
+                                        repose_ui::textfield::TextMeasureConfig::default(),
                                     );
                                     let caret_x_px = m
                                         .positions
@@ -1163,6 +1163,8 @@ pub fn run_android_app_with_options(
                                             &state.text,
                                             font_px,
                                             None,
+                                            400,
+                                            0,
                                         );
                                         let caret_x_px = m
                                             .positions

@@ -85,7 +85,7 @@ pub fn ensure_caret_visible(state: &mut TextFieldState, multiline: bool) {
         } else {
             (state.text.clone(), caret_idx)
         };
-        let m = crate::textfield::measure_text(&display, font_px, None, 400, 0);
+        let m = crate::textfield::measure_text(&display, font_px, TextMeasureConfig::default());
         let caret_x = m.positions.get(caret_display_off).copied().unwrap_or(0.0);
         state.ensure_caret_visible(caret_x, wrap_width, repose_core::dp_to_px(2.0));
     }
@@ -283,17 +283,33 @@ pub struct TextMetrics {
     pub byte_offsets: Vec<usize>,
 }
 
+pub struct TextMeasureConfig {
+    pub font_family: Option<&'static str>,
+    pub font_weight: u16,
+    pub font_style: u8,
+}
+
+impl Default for TextMeasureConfig {
+    fn default() -> Self {
+        Self {
+            font_family: None,
+            font_weight: 400,
+            font_style: 0,
+        }
+    }
+}
+
 /// Measure caret positions for a single-line textfield using shaping.
 /// `font_px` must match the px size used for rendering the text.
 /// `font_family` optionally overrides the default font (e.g. for icons).
-pub fn measure_text(
-    text: &str,
-    font_px: f32,
-    font_family: Option<&'static str>,
-    font_weight: u16,
-    font_style: u8,
-) -> TextMetrics {
-    let m = repose_text::metrics_for_textfield(text, font_px, font_family, font_weight, font_style);
+pub fn measure_text(text: &str, font_px: f32, config: TextMeasureConfig) -> TextMetrics {
+    let m = repose_text::metrics_for_textfield(
+        text,
+        font_px,
+        config.font_family,
+        config.font_weight,
+        config.font_style,
+    );
     TextMetrics {
         positions: m.positions,
         byte_offsets: m.byte_offsets,
@@ -314,7 +330,15 @@ pub fn index_for_x_bytes(
     font_weight: u16,
     font_style: u8,
 ) -> usize {
-    let m = measure_text(text, font_px, None, font_weight, font_style);
+    let m = measure_text(
+        text,
+        font_px,
+        TextMeasureConfig {
+            font_weight,
+            font_style,
+            ..Default::default()
+        },
+    );
 
     let mut best_i = 0usize;
     let mut best_d = f32::INFINITY;
@@ -1271,7 +1295,7 @@ pub fn caret_xy_for_byte(
     let (li, local, _) = locate_byte_in_ranges(ranges, byte);
     let (s, e) = ranges.get(li).copied().unwrap_or((0, 0));
     let line = &text[s..e];
-    let m = measure_text(line, font_px, None, 400, 0);
+    let m = measure_text(line, font_px, TextMeasureConfig::default());
     let ci = byte_to_char_index(&m, local);
     let x = m.positions.get(ci).copied().unwrap_or(0.0);
     let y = (li as f32) * line_h;
@@ -1421,9 +1445,11 @@ pub(crate) fn paint_text_field(
             let m = measure_text(
                 &measure_for,
                 font_val,
-                ts.font_family,
-                ts.font_weight.unwrap_or(400),
-                ts.font_style.unwrap_or(0),
+                TextMeasureConfig {
+                    font_family: ts.font_family,
+                    font_weight: ts.font_weight.unwrap_or(400),
+                    font_style: ts.font_style.unwrap_or(0),
+                },
             );
 
             // Selection highlight
@@ -1630,9 +1656,11 @@ pub(crate) fn paint_text_field(
                     let m = measure_text(
                         ln,
                         font_val,
-                        ts.font_family,
-                        ts.font_weight.unwrap_or(400),
-                        ts.font_style.unwrap_or(0),
+                        TextMeasureConfig {
+                            font_family: ts.font_family,
+                            font_weight: ts.font_weight.unwrap_or(400),
+                            font_style: ts.font_style.unwrap_or(0),
+                        },
                     );
                     let ls = os - s;
                     let le = oe - s;
@@ -1702,11 +1730,7 @@ pub(crate) fn paint_text_field(
                     x: rect.x,
                     y: hint_y,
                     w: rect.w,
-                    h: if text_input.multiline {
-                        rect.h
-                    } else {
-                        line_h
-                    },
+                    h: if text_input.multiline { rect.h } else { line_h },
                 },
                 text: Arc::from(text_input.hint.clone()),
                 color: mul_alpha_color(th.on_surface_variant, alpha_accum),
@@ -1814,7 +1838,7 @@ pub(crate) fn paint_text_field(
                         let top = i as f32 * l.line_h_px;
                         let bottom = top + l.line_h_px;
                         let line_text = &display[s..e];
-                        let m = measure_text(line_text, font_val, None, 400, 0);
+                        let m = measure_text(line_text, font_val, TextMeasureConfig::default());
                         let line_w = m.positions.last().copied().unwrap_or(0.0);
                         TextLineInfo {
                             start: s,
@@ -1832,7 +1856,7 @@ pub(crate) fn paint_text_field(
                 let lb = line_infos.last().map(|l| l.baseline).unwrap_or(0.0);
                 (lc, cw, ch, fb, lb, cw > rect.w, ch > rect.h, line_infos)
             } else {
-                let m = measure_text(&display, font_val, None, 400, 0);
+                let m = measure_text(&display, font_val, TextMeasureConfig::default());
                 let w = m.positions.last().copied().unwrap_or(0.0);
                 let top = 0.0;
                 let bottom = line_h;
@@ -1947,7 +1971,7 @@ mod tests {
     fn test_index_for_x_bytes_grapheme() {
         let t = "A👍🏽B";
         let font_px = 16.0; // in tests, exact px isn't important-boundaries are.
-        let m = measure_text(t, font_px, None, 400, 0);
+        let m = measure_text(t, font_px, TextMeasureConfig::default());
         for i in 0..m.byte_offsets.len() - 1 {
             let b = m.byte_offsets[i];
             let _ = &t[..b];

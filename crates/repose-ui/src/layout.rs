@@ -17,7 +17,7 @@ use taffy::style::Overflow;
 
 use crate::Interactions;
 use crate::anim::{animate_color, animate_f32};
-use crate::textfield::{TF_FONT_DP, TextFieldState, measure_text};
+use crate::textfield::{TF_FONT_DP, TextFieldState, TextMeasureConfig, measure_text};
 
 fn open_url(url: &str) {
     let _ = webbrowser::open(url);
@@ -1477,7 +1477,7 @@ impl LayoutEngine {
                 } else {
                     0
                 };
-                let max_content_w = measure_text(text, size_px_val, *font_family, fw, fs)
+                let max_content_w = measure_text(text, size_px_val, TextMeasureConfig { font_family: *font_family, font_weight: fw, font_style: fs, ..Default::default() })
                     .positions
                     .last()
                     .copied()
@@ -1486,7 +1486,7 @@ impl LayoutEngine {
 
                 let mut min_content_w = 0.0f32;
                 for w in text.split_whitespace() {
-                    let ww = measure_text(w, size_px_val, *font_family, fw, fs)
+                    let ww = measure_text(w, size_px_val, TextMeasureConfig { font_family: *font_family, font_weight: fw, font_style: fs, ..Default::default() })
                         .positions
                         .last()
                         .copied()
@@ -1544,7 +1544,7 @@ impl LayoutEngine {
                 let line_widths: Vec<f32> = lines
                     .iter()
                     .map(|line| {
-                        measure_text(line, size_px_val, *font_family, fw, fs)
+                        measure_text(line, size_px_val, TextMeasureConfig { font_family: *font_family, font_weight: fw, font_style: fs, ..Default::default() })
                             .positions
                             .last()
                             .copied()
@@ -2489,7 +2489,7 @@ impl LayoutEngine {
                             }
                             let seg_px = seg_font_px(*seg_font_dp);
                             let seg_w =
-                                measure_text(seg_text, seg_px, *font_family, fw_val, fs_val)
+                                measure_text(seg_text, seg_px, TextMeasureConfig { font_family: *font_family, font_weight: fw_val, font_style: fs_val, ..Default::default() })
                                     .positions
                                     .last()
                                     .copied()
@@ -2540,7 +2540,7 @@ impl LayoutEngine {
                         0
                     };
                     for (i, ln) in lines.iter().enumerate() {
-                        let line_w = measure_text(ln, size_px, *font_family, fw_val, fs_val)
+                        let line_w = measure_text(ln, size_px, TextMeasureConfig { font_family: *font_family, font_weight: fw_val, font_style: fs_val, ..Default::default() })
                             .positions
                             .last()
                             .copied()
@@ -2687,7 +2687,7 @@ impl LayoutEngine {
                         };
                         let mut st = st_rc.borrow_mut();
                         st.set_inner_width(inner_w);
-                        let m = crate::textfield::measure_text(&st.text, font_val, None, 400, 0);
+                        let m = crate::textfield::measure_text(&st.text, font_val, TextMeasureConfig::default());
                         let content_w = m.positions.last().copied().unwrap_or(0.0);
                         let max_x = (content_w - st.inner_width).max(0.0);
 

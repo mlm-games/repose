@@ -9,7 +9,7 @@ use repose_core::NestedScrollConnection;
 use repose_core::animation::{AnimationSpec, CubicBezier, Easing, KeyframesSpec, RepeatableSpec};
 use repose_core::*;
 use repose_ui::anim::{animate_color, animate_f32};
-use repose_ui::textfield::measure_text;
+use repose_ui::textfield::{TextMeasureConfig, measure_text};
 use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt};
 
 use super::*;
@@ -3029,7 +3029,7 @@ pub fn OutlinedTextField(
     // The label sits outside the clipped Box so it can extend above the border.
     let label_cutout = label_str.as_ref().map(|lbl| {
         let font_px = dp_to_px(label_size) * repose_core::locals::text_scale().0;
-        let m = measure_text(lbl, font_px, None, 400, 0);
+        let m = measure_text(lbl, font_px, TextMeasureConfig::default());
         let text_width_px = m.positions.last().copied().unwrap_or(0.0);
         let text_width_dp = px_to_dp(text_width_px);
         let pad = 1.0;
