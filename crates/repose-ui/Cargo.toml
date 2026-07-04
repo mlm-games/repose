@@ -17,5 +17,6 @@ log.workspace = true
 web-time.workspace = true
 rustc-hash = { workspace = true }
 smallvec = { workspace = true }
+webbrowser = { workspace = true }
 
 [dev-dependencies]

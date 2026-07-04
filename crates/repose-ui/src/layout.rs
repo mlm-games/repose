@@ -20,24 +20,7 @@ use crate::anim::{animate_color, animate_f32};
 use crate::textfield::{TF_FONT_DP, TextFieldState, measure_text};
 
 fn open_url(url: &str) {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let _ = url;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("open").arg(url).spawn();
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let _ = std::process::Command::new("cmd")
-            .args(["/c", "start", url])
-            .spawn();
-    }
+    let _ = webbrowser::open(url);
 }
 
 fn push_focus_ring(scene: &mut Scene, rect: repose_core::Rect, radius_dp: f32) {

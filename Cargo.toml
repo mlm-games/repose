@@ -74,6 +74,7 @@ serde = { version = "1", features = ["derive"] }
 web-time = "1"
 rustc-hash = "2.1"
 rapidhash = "4.4"
+webbrowser = "1.2"
 
 repose-core = { path = "crates/repose-core", version = "^0" }
 repose-ui = { path = "crates/repose-ui", version = "^0" }
