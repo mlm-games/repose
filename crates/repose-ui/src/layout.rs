@@ -2411,6 +2411,8 @@ impl LayoutEngine {
                             font_style: u8,
                             letter_spacing: f32,
                             line_height: f32,
+                            background: Option<Color>,
+                            alpha: f32,
                             w: f32,
                             px: f32,
                         }
@@ -2445,6 +2447,8 @@ impl LayoutEngine {
                                     font_style: style_to_fs(font_style),
                                     letter_spacing: *letter_spacing,
                                     line_height: *line_height,
+                                    background: None,
+                                    alpha: 0.0,
                                     w: 0.0,
                                     px: 0.0,
                                 });
@@ -2458,6 +2462,8 @@ impl LayoutEngine {
                             let span_style = span.style.font_style.unwrap_or(style_to_fs(font_style));
                             let span_ls = span.style.letter_spacing.unwrap_or(*letter_spacing);
                             let span_lh = span.style.line_height.unwrap_or(*line_height);
+                            let span_bg = span.style.background;
+                            let span_alpha = span.style.alpha;
                             let span_url = span.url.clone();
                             segments.push(SegInfo {
                                 start: seg_start,
@@ -2471,6 +2477,8 @@ impl LayoutEngine {
                                 font_style: span_style,
                                 letter_spacing: span_ls,
                                 line_height: span_lh,
+                                background: span_bg,
+                                alpha: span_alpha,
                                 w: 0.0,
                                 px: 0.0,
                             });
@@ -2490,6 +2498,8 @@ impl LayoutEngine {
                                 font_style: style_to_fs(font_style),
                                 letter_spacing: *letter_spacing,
                                 line_height: *line_height,
+                                background: None,
+                                alpha: 0.0,
                                 w: 0.0,
                                 px: 0.0,
                             });
@@ -2535,10 +2545,28 @@ impl LayoutEngine {
                                 w: info.w,
                                 h: line_h_px,
                             };
+                            let seg_color = if info.alpha > 0.0 {
+                                mul_alpha_color(info.color, info.alpha)
+                            } else {
+                                info.color
+                            };
+                            if let Some(bg) = &info.background {
+                                let bg_rect = repose_core::Rect {
+                                    x: seg_x,
+                                    y: seg_rect.y,
+                                    w: info.w,
+                                    h: line_h_px,
+                                };
+                                scene.nodes.push(SceneNode::Rect {
+                                    rect: bg_rect,
+                                    brush: Brush::Solid(mul_alpha_color(*bg, alpha_accum)),
+                                    radius: [0.0; 4],
+                                });
+                            }
                             scene.nodes.push(SceneNode::Text {
                                 rect: seg_rect,
                                 text: Arc::<str>::from(seg_text.to_string().into_boxed_str()),
-                                color: mul_alpha_color(info.color, alpha_accum),
+                                color: mul_alpha_color(seg_color, alpha_accum),
                                 size: info.px,
                                 font_family: info.font_family,
                                 text_align: *text_align,
