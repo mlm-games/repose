@@ -458,15 +458,25 @@ pub fn run_android_app_with_options(
                                         let key = self.tf_key_of(hit.id);
                                         if let Some(state_rc) = self.textfield_states.get(&key) {
                                             let mut st = state_rc.borrow_mut();
-                                            let content_x_px =
-                                                pos_px.0 - hit.rect.x + st.scroll_offset;
+                                            let content_x = (pos_px.0 - hit.rect.x
+                                                + st.scroll_offset)
+                                                .max(0.0);
+                                            let content_y = (pos_px.1 - hit.rect.y
+                                                + st.scroll_offset_y)
+                                                .max(0.0);
                                             let font_px = dp_to_px(TF_FONT_DP)
                                                 * repose_core::locals::text_scale().0;
-                                            let idx = rc::index_for_x_bytes_vt(
-                                                &st,
-                                                font_px,
-                                                content_x_px.max(0.0),
-                                            );
+                                            let idx = if hit.tf_multiline {
+                                                rc::index_for_xy_bytes_vt(
+                                                    &st,
+                                                    font_px,
+                                                    hit.rect.w,
+                                                    content_x,
+                                                    content_y,
+                                                )
+                                            } else {
+                                                rc::index_for_x_bytes_vt(&st, font_px, content_x)
+                                            };
                                             st.begin_drag(idx, self.modifiers.shift);
                                             self.ensure_caret_visible_in_hit(&mut st, hit.rect);
                                         }
