@@ -442,7 +442,14 @@ pub fn handle_drag_action(action: &DragAction) -> bool {
                         });
                     }
                 }
-                return true; // consumed: touch is active, don't fall through
+                // Only consume if still waiting for long-press (within slop, timer not yet expired).
+                // If long-press was cancelled (moved past slop), let scroll handle the event.
+                let still_pending = DND_TOUCH_DOWN.with(|t| {
+                    t.borrow().as_ref().map(|td| td.long_press_pending).unwrap_or(false)
+                });
+                if still_pending {
+                    return true;
+                }
             }
 
             false
