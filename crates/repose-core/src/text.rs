@@ -1150,6 +1150,11 @@ impl SpanStyle {
         self.background = Some(c);
         self
     }
+
+    pub fn baseline_shift(mut self, s: BaselineShift) -> Self {
+        self.baseline_shift = Some(s);
+        self
+    }
 }
 
 impl Default for SpanStyle {

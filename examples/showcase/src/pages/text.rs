@@ -105,6 +105,28 @@ fn annotated_demos() -> Vec<(&'static str, View)> {
             });
             AnnotatedText(a).size(16.0)
         }),
+        ("Super/Subscript", {
+            let base = 18.0;
+            let sub_size = base * 0.83;
+            let a = build_annotated_string(|b| {
+                b.push("Normal text ");
+                b.push_with_style(
+                    "superscript",
+                    SpanStyle::default()
+                        .font_size(sub_size)
+                        .baseline_shift(BaselineShift(-0.333)),
+                );
+                b.push(" and ");
+                b.push_with_style(
+                    "subscript",
+                    SpanStyle::default()
+                        .font_size(sub_size)
+                        .baseline_shift(BaselineShift(0.2)),
+                );
+                b.push(" inline.");
+            });
+            AnnotatedText(a).size(base)
+        }),
         ("Annotated Text - Multi-line", {
             let a = build_annotated_string(|b| {
                 b.push("This is a ");

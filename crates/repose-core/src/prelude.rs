@@ -35,7 +35,8 @@ pub use crate::semantics::{Role, Semantics};
 pub use crate::shortcuts;
 pub use crate::signal::{Signal, signal};
 pub use crate::text::{
-    AnnotatedString, AnnotatedStringBuilder, SpanStyle, TextSpan, build_annotated_string,
+    AnnotatedString, AnnotatedStringBuilder, BaselineShift, SpanStyle, TextSpan,
+    build_annotated_string,
 };
 pub use crate::view::{
     BoxWithConstraintsScope, ImageFit, ImageHandle, Scene, SceneNode, SubcomposeScope,
