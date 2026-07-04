@@ -2850,7 +2850,14 @@ impl RenderBackend for WgpuBackend {
                     } else {
                         0
                     };
-                    let shaped = repose_text::shape_line(text.as_ref(), px, *font_family, fw, fs, *letter_spacing);
+                    let shaped = repose_text::shape_line(
+                        text.as_ref(),
+                        px,
+                        *font_family,
+                        fw,
+                        fs,
+                        *letter_spacing,
+                    );
                     let baseline_y = shaped.first().map(|g| rect.y + g.y);
 
                     let cos_a = current_transform.rotate.cos();
@@ -2913,11 +2920,9 @@ impl RenderBackend for WgpuBackend {
                             }
                         };
 
-                    let baseline_shift_y: f32 = match extra_style.baseline_shift {
-                        repose_core::BaselineShift::Superscript => -px * 0.15,
-                        repose_core::BaselineShift::Subscript => px * 0.7,
-                        _ => 0.0,
-                    };
+                    let baseline_shift_y: f32 = px * extra_style.baseline_shift.0;
+
+                    let is_stroke = extra_style.draw_style == repose_core::DrawStyle::Stroke;
 
                     for sg in shaped {
                         let gx = rect.x + sg.x + sg.bearing_x;
@@ -2927,12 +2932,16 @@ impl RenderBackend for WgpuBackend {
                         if self.slug_enabled {
                             let ck = repose_text::lookup_cache_key(sg.key);
                             if let Some(ref ck) = ck {
-                                if !self.slug_cache.contains(ck) {
-                                    if let Some((ck2, commands)) =
-                                        repose_text::lookup_and_extract_outline(sg.key)
-                                    {
-                                        let font_size_px = f32::from_bits(ck2.font_size_bits);
-                                        self.slug_cache.get_or_insert(ck2, font_size_px, &commands);
+                                if let Some((ck2, commands)) =
+                                    repose_text::lookup_and_extract_outline(sg.key)
+                                {
+                                    let font_size_px = f32::from_bits(ck2.font_size_bits);
+                                    if is_stroke {
+                                        self.slug_cache
+                                            .get_or_insert_stroke(ck2, font_size_px, &commands);
+                                    } else {
+                                        self.slug_cache
+                                            .get_or_insert(ck2, font_size_px, &commands);
                                     }
                                 }
                             }
@@ -2963,7 +2972,13 @@ impl RenderBackend for WgpuBackend {
                                 let tw = current_target_size.0;
                                 let th = current_target_size.1;
 
-                                for &v in &entry.vertices {
+                                let verts = if is_stroke {
+                                    entry.stroke_vertices.as_deref().unwrap_or(&[])
+                                } else {
+                                    entry.fill_vertices.as_deref().unwrap_or(&[])
+                                };
+
+                                for &v in verts {
                                     let (sx, sy) = tf(ox + v[0] * px, oy - v[1] * px);
                                     let ndc_x = sx / tw * 2.0 - 1.0;
                                     let ndc_y = -(sy / th) * 2.0 + 1.0;
@@ -2972,8 +2987,18 @@ impl RenderBackend for WgpuBackend {
                                         color: color.to_linear(),
                                     });
                                 }
+
+                                if is_stroke {
+                                    // Stroke glyphs cannot use atlas fallback...
+                                    continue;
+                                }
                                 continue;
                             }
+                        }
+
+                        // Don't use atlas fallback for strokes too
+                        if is_stroke {
+                            continue;
                         }
 
                         // Atlas fallback: color emoji + failed slug extraction

@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use repose_core::{prelude::*, signal};
+use repose_core::{DrawStyle, prelude::*, signal};
 use repose_material::material3::{
     Button, ButtonConfig, OutlinedTextField, OutlinedTextFieldConfig,
 };
@@ -77,6 +77,27 @@ fn annotated_demos() -> Vec<(&'static str, View)> {
                 b.push("back to normal.");
             });
             AnnotatedText(a).size(14.0)
+        }),
+        ("Annotated Text - Stroke (draw_style)", {
+            let a = build_annotated_string(|b| {
+                b.push("Normal text ");
+                b.push_with_style(
+                    "Stroked ",
+                    SpanStyle::default()
+                        .draw_style(DrawStyle::Stroke)
+                        .color(Color::from_rgba(0xE6, 0x1C, 0x1C, 255)),
+                );
+                b.push("and ");
+                b.push_with_style(
+                    "more stroke ",
+                    SpanStyle::default()
+                        .draw_style(DrawStyle::Stroke)
+                        .color(Color::from_rgba(0x1C, 0x1C, 0xE6, 255))
+                        .font_size(22.0),
+                );
+                b.push("in a sentence.");
+            });
+            AnnotatedText(a).size(16.0)
         }),
         ("Annotated Text - Multi-line", {
             let a = build_annotated_string(|b| {

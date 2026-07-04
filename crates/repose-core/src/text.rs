@@ -583,12 +583,23 @@ pub enum FontSynthesis {
 }
 
 /// Baseline shift for subscript/superscript.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum BaselineShift {
-    #[default]
-    Unspecified,
-    Superscript,
-    Subscript,
+/// Wraps a multiplier applied against font_size for glyph y-offset.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BaselineShift(pub f32);
+
+impl BaselineShift {
+    /// No baseline shift (zero offset).
+    pub const Unspecified: BaselineShift = BaselineShift(0.0);
+    /// Default superscript offset: shift up by 33.3% of font_size (CSS standard).
+    pub const Superscript: BaselineShift = BaselineShift(-0.333);
+    /// Default subscript offset: shift down by 20% of font_size (CSS standard).
+    pub const Subscript: BaselineShift = BaselineShift(0.2);
+}
+
+impl Default for BaselineShift {
+    fn default() -> Self {
+        BaselineShift::Unspecified
+    }
 }
 
 /// Hyphenation behavior.
@@ -1080,6 +1091,11 @@ impl SpanStyle {
 
     pub fn font_style(mut self, s: u8) -> Self {
         self.font_style = Some(s);
+        self
+    }
+
+    pub fn draw_style(mut self, s: DrawStyle) -> Self {
+        self.draw_style = Some(s);
         self
     }
 
