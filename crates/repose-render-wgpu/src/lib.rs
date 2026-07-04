@@ -2838,7 +2838,7 @@ impl RenderBackend for WgpuBackend {
                     text_decoration,
                     letter_spacing,
                     line_height: _,
-                    extra_style: _,
+                    extra_style,
                     url: _,
                 } => {
                     flush_batch!(); // flush any prior primitives
@@ -2913,9 +2913,15 @@ impl RenderBackend for WgpuBackend {
                             }
                         };
 
+                    let baseline_shift_y: f32 = match extra_style.baseline_shift {
+                        repose_core::BaselineShift::Superscript => -px * 0.15,
+                        repose_core::BaselineShift::Subscript => px * 0.7,
+                        _ => 0.0,
+                    };
+
                     for sg in shaped {
                         let gx = rect.x + sg.x + sg.bearing_x;
-                        let gy = rect.y + sg.y - sg.bearing_y;
+                        let gy = rect.y + sg.y - sg.bearing_y + baseline_shift_y;
 
                         // Vector glyph path: tessellated geometry with MSAA.
                         if self.slug_enabled {
@@ -2936,7 +2942,7 @@ impl RenderBackend for WgpuBackend {
                             if let Some(entry) = ck.as_ref().and_then(|ck| self.slug_cache.get(ck))
                             {
                                 let ox = rect.x + sg.x;
-                                let oy = rect.y + sg.y;
+                                let oy = rect.y + sg.y + baseline_shift_y;
                                 let scx = current_transform.scale_x;
                                 let scy = current_transform.scale_y;
                                 let ttx = current_transform.translate_x;

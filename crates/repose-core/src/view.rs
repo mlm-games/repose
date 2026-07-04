@@ -1,7 +1,6 @@
 use crate::{
-    BaselineShift, Brush, ClipOp, Color, DrawStyle, FontStyle, FontSynthesis, FontWeight, Hyphens,
-    LineBreak, Modifier, Rect, TextAlign, TextDecoration, TextDirection, TextIndent, TextSpan,
-    Transform,
+    BaselineShift, Brush, ClipOp, Color, DrawStyle, FontStyle, FontSynthesis, FontWeight, Modifier,
+    Rect, TextAlign, TextDecoration, TextDirection, TextSpan, Transform,
 };
 use std::{fmt::Formatter, rc::Rc, sync::Arc};
 
@@ -235,9 +234,6 @@ pub struct TextExtraStyle {
     pub text_direction: TextDirection,
     pub font_synthesis: FontSynthesis,
     pub baseline_shift: BaselineShift,
-    pub hyphens: Hyphens,
-    pub line_break: LineBreak,
-    pub text_indent: Option<TextIndent>,
     pub draw_style: DrawStyle,
 }
 
@@ -247,9 +243,6 @@ impl Default for TextExtraStyle {
             text_direction: TextDirection::Ltr,
             font_synthesis: FontSynthesis::Unspecified,
             baseline_shift: BaselineShift::Unspecified,
-            hyphens: Hyphens::Unspecified,
-            line_break: LineBreak::Unspecified,
-            text_indent: None,
             draw_style: DrawStyle::Fill,
         }
     }
