@@ -39,7 +39,7 @@ pub use crate::text::{
 };
 pub use crate::view::{
     BoxWithConstraintsScope, ImageFit, ImageHandle, Scene, SceneNode, SubcomposeScope,
-    TextOverflow, View, ViewId, ViewKind,
+    TextExtraStyle, TextOverflow, View, ViewId, ViewKind,
 };
 pub use taffy::{
     AlignContent, AlignItems, AlignSelf, FlexDirection, FlexWrap, JustifyContent, JustifyItems,

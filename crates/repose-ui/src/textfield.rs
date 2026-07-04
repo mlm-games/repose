@@ -1529,6 +1529,7 @@ pub(crate) fn paint_text_field(
                 text_decoration: ts.text_decoration.unwrap_or_default(),
                 letter_spacing: ts.letter_spacing,
                 line_height: ts.line_height,
+                extra_style: Default::default(),
                 url: None,
             });
 
@@ -1597,6 +1598,7 @@ pub(crate) fn paint_text_field(
                     text_decoration: ts.text_decoration.unwrap_or_default(),
                     letter_spacing: ts.letter_spacing,
                     line_height: ts.line_height,
+                    extra_style: Default::default(),
                     url: None,
                 });
             } else {
@@ -1629,6 +1631,7 @@ pub(crate) fn paint_text_field(
                         text_decoration: ts.text_decoration.unwrap_or_default(),
                         letter_spacing: ts.letter_spacing,
                         line_height: ts.line_height,
+                        extra_style: Default::default(),
                         url: None,
                     });
                 }
@@ -1750,6 +1753,7 @@ pub(crate) fn paint_text_field(
                 text_decoration: ts.text_decoration.unwrap_or_default(),
                 letter_spacing: 0.0,
                 line_height: 0.0,
+                extra_style: Default::default(),
                 url: None,
             });
         } else if text_input.multiline {
@@ -1786,6 +1790,7 @@ pub(crate) fn paint_text_field(
                     text_decoration: ts.text_decoration.unwrap_or_default(),
                     letter_spacing: 0.0,
                     line_height: 0.0,
+                    extra_style: Default::default(),
                     url: None,
                 });
             }
@@ -1807,6 +1812,7 @@ pub(crate) fn paint_text_field(
                 text_decoration: ts.text_decoration.unwrap_or_default(),
                 letter_spacing: 0.0,
                 line_height: 0.0,
+                extra_style: Default::default(),
                 url: None,
             });
         }

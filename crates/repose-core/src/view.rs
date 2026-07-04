@@ -1,6 +1,7 @@
 use crate::{
-    Brush, ClipOp, Color, FontStyle, FontWeight, Modifier, Rect, TextAlign, TextDecoration,
-    TextSpan, Transform,
+    BaselineShift, Brush, ClipOp, Color, DrawStyle, FontStyle, FontSynthesis, FontWeight, Hyphens,
+    LineBreak, Modifier, Rect, TextAlign, TextDecoration, TextDirection, TextIndent, TextSpan,
+    Transform,
 };
 use std::{fmt::Formatter, rc::Rc, sync::Arc};
 
@@ -228,6 +229,32 @@ pub struct Scene {
     pub nodes: Vec<SceneNode>,
 }
 
+/// Rarely-tweaked text style properties bundled for ergonomic Default.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextExtraStyle {
+    pub text_direction: TextDirection,
+    pub font_synthesis: FontSynthesis,
+    pub baseline_shift: BaselineShift,
+    pub hyphens: Hyphens,
+    pub line_break: LineBreak,
+    pub text_indent: Option<TextIndent>,
+    pub draw_style: DrawStyle,
+}
+
+impl Default for TextExtraStyle {
+    fn default() -> Self {
+        Self {
+            text_direction: TextDirection::Ltr,
+            font_synthesis: FontSynthesis::Unspecified,
+            baseline_shift: BaselineShift::Unspecified,
+            hyphens: Hyphens::Unspecified,
+            line_break: LineBreak::Unspecified,
+            text_indent: None,
+            draw_style: DrawStyle::Fill,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum SceneNode {
@@ -254,6 +281,8 @@ pub enum SceneNode {
         text_decoration: TextDecoration,
         letter_spacing: f32,
         line_height: f32,
+        /// Rarely-tweaked style properties, bundled for ergonomic Default.
+        extra_style: TextExtraStyle,
         /// URL for clickable link text.
         url: Option<Arc<str>>,
     },

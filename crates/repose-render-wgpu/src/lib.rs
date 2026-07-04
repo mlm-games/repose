@@ -2838,6 +2838,7 @@ impl RenderBackend for WgpuBackend {
                     text_decoration,
                     letter_spacing,
                     line_height: _,
+                    extra_style: _,
                     url: _,
                 } => {
                     flush_batch!(); // flush any prior primitives

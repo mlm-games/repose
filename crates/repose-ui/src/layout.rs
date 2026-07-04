@@ -2413,6 +2413,13 @@ impl LayoutEngine {
                             line_height: f32,
                             background: Option<Color>,
                             alpha: f32,
+                            text_direction: TextDirection,
+                            font_synthesis: FontSynthesis,
+                            baseline_shift: BaselineShift,
+                            hyphens: Hyphens,
+                            line_break: LineBreak,
+                            text_indent: Option<TextIndent>,
+                            draw_style: DrawStyle,
                             w: f32,
                             px: f32,
                         }
@@ -2449,6 +2456,13 @@ impl LayoutEngine {
                                     line_height: *line_height,
                                     background: None,
                                     alpha: 0.0,
+                                    text_direction: text_direction(),
+                                    font_synthesis: FontSynthesis::Unspecified,
+                                    baseline_shift: BaselineShift::Unspecified,
+                                    hyphens: Hyphens::Unspecified,
+                                    line_break: LineBreak::Unspecified,
+                                    text_indent: None,
+                                    draw_style: DrawStyle::Fill,
                                     w: 0.0,
                                     px: 0.0,
                                 });
@@ -2464,6 +2478,13 @@ impl LayoutEngine {
                             let span_lh = span.style.line_height.unwrap_or(*line_height);
                             let span_bg = span.style.background;
                             let span_alpha = span.style.alpha;
+                            let span_td = span.style.text_direction.unwrap_or(text_direction());
+                            let span_fs = span.style.font_synthesis.unwrap_or(FontSynthesis::Unspecified);
+                            let span_bs = span.style.baseline_shift.unwrap_or(BaselineShift::Unspecified);
+                            let span_h = span.style.hyphens.unwrap_or(Hyphens::Unspecified);
+                            let span_lb = span.style.line_break.unwrap_or(LineBreak::Unspecified);
+                            let span_ti = span.style.text_indent;
+                            let span_ds = span.style.draw_style.unwrap_or(DrawStyle::Fill);
                             let span_url = span.url.clone();
                             segments.push(SegInfo {
                                 start: seg_start,
@@ -2479,6 +2500,13 @@ impl LayoutEngine {
                                 line_height: span_lh,
                                 background: span_bg,
                                 alpha: span_alpha,
+                                text_direction: span_td,
+                                font_synthesis: span_fs,
+                                baseline_shift: span_bs,
+                                hyphens: span_h,
+                                line_break: span_lb,
+                                text_indent: span_ti,
+                                draw_style: span_ds,
                                 w: 0.0,
                                 px: 0.0,
                             });
@@ -2500,6 +2528,13 @@ impl LayoutEngine {
                                 line_height: *line_height,
                                 background: None,
                                 alpha: 0.0,
+                                text_direction: text_direction(),
+                                font_synthesis: FontSynthesis::Unspecified,
+                                baseline_shift: BaselineShift::Unspecified,
+                                hyphens: Hyphens::Unspecified,
+                                line_break: LineBreak::Unspecified,
+                                text_indent: None,
+                                draw_style: DrawStyle::Fill,
                                 w: 0.0,
                                 px: 0.0,
                             });
@@ -2575,6 +2610,15 @@ impl LayoutEngine {
                                 text_decoration: info.decoration,
                                 letter_spacing: info.letter_spacing,
                                 line_height: info.line_height,
+                                extra_style: TextExtraStyle {
+                                    text_direction: info.text_direction,
+                                    font_synthesis: info.font_synthesis,
+                                    baseline_shift: info.baseline_shift,
+                                    hyphens: info.hyphens,
+                                    line_break: info.line_break,
+                                    text_indent: info.text_indent,
+                                    draw_style: info.draw_style,
+                                },
                                 url: info.url.clone(),
                             });
                             // Create hit region for clickable links
@@ -2637,6 +2681,7 @@ impl LayoutEngine {
                             text_decoration: *text_decoration,
                             letter_spacing: *letter_spacing,
                             line_height: *line_height,
+                            extra_style: Default::default(),
                             url: url.clone(),
                         });
                         // Create hit region for view-level URL
@@ -2975,6 +3020,7 @@ impl LayoutEngine {
                         text_decoration: TextDecoration::default(),
                         letter_spacing: 0.0,
                         line_height: 0.0,
+                        extra_style: Default::default(),
                         url: None,
                     });
 

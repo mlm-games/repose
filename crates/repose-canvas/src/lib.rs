@@ -180,6 +180,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                         text_decoration: TextDecoration::default(),
                         letter_spacing: 0.0,
                         line_height: 0.0,
+                        extra_style: Default::default(),
                         url: None,
                     });
                 }
