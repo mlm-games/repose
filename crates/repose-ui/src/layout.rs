@@ -1509,7 +1509,7 @@ impl LayoutEngine {
                 };
 
                 let (lines, line_ranges): (Vec<String>, Vec<(usize, usize)>) = if *soft_wrap {
-                    let (ranges, _) = repose_text::wrap_line_ranges(
+                    let (ranges, truncated) = repose_text::wrap_line_ranges(
                         text,
                         size_px_val,
                         wrap_w_px,
@@ -1518,10 +1518,17 @@ impl LayoutEngine {
                         fw,
                         fs,
                     );
-                    let lns: Vec<String> = ranges
+                    let mut lns: Vec<String> = ranges
                         .iter()
                         .map(|&(s, e)| text[s..e].to_string())
                         .collect();
+                    if truncated && matches!(overflow, TextOverflow::Ellipsis) {
+                        if let Some(last) = lns.last_mut() {
+                            let with_tail = format!("{}…", last);
+                            *last =
+                                repose_text::ellipsize_line(&with_tail, size_px_val, wrap_w_px, fw, fs);
+                        }
+                    }
                     (lns, ranges)
                 } else if matches!(overflow, TextOverflow::Ellipsis)
                     && max_content_w > wrap_w_px + 0.5
