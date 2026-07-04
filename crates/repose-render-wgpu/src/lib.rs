@@ -2836,7 +2836,7 @@ impl RenderBackend for WgpuBackend {
                     font_weight,
                     font_style,
                     text_decoration,
-                    letter_spacing: _,
+                    letter_spacing,
                     line_height: _,
                     url: _,
                 } => {
@@ -2849,7 +2849,7 @@ impl RenderBackend for WgpuBackend {
                     } else {
                         0
                     };
-                    let shaped = repose_text::shape_line(text.as_ref(), px, *font_family, fw, fs);
+                    let shaped = repose_text::shape_line(text.as_ref(), px, *font_family, fw, fs, *letter_spacing);
                     let baseline_y = shaped.first().map(|g| rect.y + g.y);
 
                     let cos_a = current_transform.rotate.cos();

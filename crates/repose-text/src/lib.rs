@@ -27,8 +27,8 @@ pub fn current_frame() -> u64 {
 const WRAP_CACHE_CAP: usize = 1024;
 const ELLIP_CACHE_CAP: usize = 2048;
 
-static METRICS_LRU: OnceCell<Mutex<Lru<(u64, u32, u64, u16, u8), TextMetrics>>> = OnceCell::new();
-fn metrics_cache() -> &'static Mutex<Lru<(u64, u32, u64, u16, u8), TextMetrics>> {
+static METRICS_LRU: OnceCell<Mutex<Lru<(u64, u32, u64, u16, u8, i32), TextMetrics>>> = OnceCell::new();
+fn metrics_cache() -> &'static Mutex<Lru<(u64, u32, u64, u16, u8, i32), TextMetrics>> {
     METRICS_LRU.get_or_init(|| Mutex::new(Lru::new(4096)))
 }
 
@@ -74,25 +74,25 @@ impl<K: std::hash::Hash + Eq + Clone, V> Lru<K, V> {
     }
 }
 
-static WRAP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8), (Vec<String>, bool)>>> =
+static WRAP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32), (Vec<String>, bool)>>> =
     OnceCell::new();
 
 static WRAP_RANGES_LRU: OnceCell<
-    Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8), (Vec<(usize, usize)>, bool)>>,
+    Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32), (Vec<(usize, usize)>, bool)>>,
 > = OnceCell::new();
 
-static ELLIP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32, u16, u8), String>>> = OnceCell::new();
+static ELLIP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32, u16, u8, i32), String>>> = OnceCell::new();
 
-fn wrap_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8), (Vec<String>, bool)>> {
+fn wrap_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32), (Vec<String>, bool)>> {
     WRAP_LRU.get_or_init(|| Mutex::new(Lru::new(WRAP_CACHE_CAP)))
 }
 
 fn wrap_ranges_cache()
--> &'static Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8), (Vec<(usize, usize)>, bool)>> {
+-> &'static Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32), (Vec<(usize, usize)>, bool)>> {
     WRAP_RANGES_LRU.get_or_init(|| Mutex::new(Lru::new(WRAP_CACHE_CAP)))
 }
 
-fn ellip_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, u8), String>> {
+fn ellip_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, u8, i32), String>> {
     ELLIP_LRU.get_or_init(|| Mutex::new(Lru::new(ELLIP_CACHE_CAP)))
 }
 
@@ -198,6 +198,7 @@ pub fn shape_line(
     font_family: Option<&str>,
     font_weight: u16,
     font_style: u8,
+    letter_spacing: f32,
 ) -> Vec<ShapedGlyph> {
     let mut eng = engine().lock().unwrap();
 
@@ -229,6 +230,7 @@ pub fn shape_line(
     }
 
     let mut out = Vec::new();
+    let mut x_shift = 0.0;
     for run in buf.layout_runs() {
         for g in run.glyphs {
             // Compute physical glyph: gives cache_key and integer pixel position
@@ -251,14 +253,15 @@ pub fn shape_line(
 
             out.push(ShapedGlyph {
                 key,
-                x: g.x + g.x_offset, // visual x
-                y: run.line_y,       // baseline y
+                x: g.x + g.x_offset + x_shift, // visual x + letter_spacing offset
+                y: run.line_y,                  // baseline y
                 w,
                 h,
                 bearing_x: left,
                 bearing_y: top,
-                advance: g.w,
+                advance: g.w + letter_spacing,
             });
+            x_shift += letter_spacing;
         }
     }
     out
@@ -331,6 +334,7 @@ pub fn metrics_for_textfield(
     font_family: Option<&str>,
     font_weight: u16,
     font_style: u8,
+    letter_spacing: f32,
 ) -> TextMetrics {
     let family_hash = font_family.map(fast_hash).unwrap_or(0);
     let key = (
@@ -339,6 +343,7 @@ pub fn metrics_for_textfield(
         family_hash,
         font_weight,
         font_style,
+        (letter_spacing * 100.0) as i32,
     );
     if let Some(m) = metrics_cache().lock().unwrap().get(&key).cloned() {
         return m;
@@ -370,11 +375,14 @@ pub fn metrics_for_textfield(
     }
     let mut edges: Vec<(usize, f32)> = Vec::new();
     let mut last_x = 0.0f32;
+    let mut glyph_idx = 0usize;
     for run in buf.layout_runs() {
         for g in run.glyphs {
-            let right = g.x + g.w;
+            let shift = glyph_idx as f32 * letter_spacing;
+            let right = g.x + shift + g.w + letter_spacing;
             last_x = right.max(last_x);
             edges.push((g.end, right));
+            glyph_idx += 1;
         }
     }
     if edges.last().map(|e| e.0) != Some(text.len()) {
@@ -434,6 +442,7 @@ pub fn wrap_lines(
     soft_wrap: bool,
     font_weight: u16,
     font_style: u8,
+    letter_spacing: f32,
 ) -> (Vec<String>, bool) {
     if text.is_empty() || max_width <= 0.0 {
         return (vec![String::new()], false);
@@ -457,13 +466,14 @@ pub fn wrap_lines(
         soft_wrap,
         font_weight,
         font_style,
+        (letter_spacing * 100.0) as i32,
     );
     if let Some(h) = wrap_cache().lock().unwrap().get(&key).cloned() {
         return h;
     }
 
     // Shape once and reuse positions/byte mapping.
-    let m = metrics_for_textfield(text, px, None, font_weight, font_style);
+    let m = metrics_for_textfield(text, px, None, font_weight, font_style, letter_spacing);
     // Fast path: fits
     if let Some(&last) = m.positions.last()
         && last <= max_width + 0.5
@@ -575,6 +585,7 @@ pub fn wrap_line_ranges(
     soft_wrap: bool,
     font_weight: u16,
     font_style: u8,
+    letter_spacing: f32,
 ) -> (Vec<(usize, usize)>, bool) {
     if text.is_empty() || max_width <= 0.0 {
         return (vec![(0, 0)], false);
@@ -608,13 +619,14 @@ pub fn wrap_line_ranges(
         soft_wrap,
         font_weight,
         font_style,
+        (letter_spacing * 100.0) as i32,
     );
     if let Some(v) = wrap_ranges_cache().lock().unwrap().get(&key).cloned() {
         return v;
     }
 
     // Shape once for width queries (whole string)
-    let m = metrics_for_textfield(text, px, None, font_weight, font_style);
+    let m = metrics_for_textfield(text, px, None, font_weight, font_style, letter_spacing);
 
     // Helper: width of substring [start..end] in bytes using m
     let width_of = |start_b: usize, end_b: usize| -> f32 {
@@ -767,6 +779,7 @@ pub fn ellipsize_line(
     max_width: f32,
     font_weight: u16,
     font_style: u8,
+    letter_spacing: f32,
 ) -> String {
     if text.is_empty() || max_width <= 0.0 {
         return String::new();
@@ -777,18 +790,19 @@ pub fn ellipsize_line(
         (max_width * 100.0) as u32,
         font_weight,
         font_style,
+        (letter_spacing * 100.0) as i32,
     );
     if let Some(s) = ellip_cache().lock().unwrap().get(&key).cloned() {
         return s;
     }
-    let m = metrics_for_textfield(text, px, None, font_weight, font_style);
+    let m = metrics_for_textfield(text, px, None, font_weight, font_style, letter_spacing);
     if let Some(&last) = m.positions.last()
         && last <= max_width + 0.5
     {
         return text.to_string();
     }
     let _el = "…";
-    let e_w = ellipsis_width(px);
+    let e_w = ellipsis_width(px, letter_spacing);
     if e_w >= max_width {
         return String::new();
     }
@@ -817,14 +831,14 @@ pub fn ellipsize_line(
     s
 }
 
-fn ellipsis_width(px: f32) -> f32 {
-    static ELLIP_W_LRU: OnceCell<Mutex<Lru<u32, f32>>> = OnceCell::new();
+fn ellipsis_width(px: f32, letter_spacing: f32) -> f32 {
+    static ELLIP_W_LRU: OnceCell<Mutex<Lru<(u32, i32), f32>>> = OnceCell::new();
     let cache = ELLIP_W_LRU.get_or_init(|| Mutex::new(Lru::new(64)));
-    let key = (px * 100.0) as u32;
+    let key = ((px * 100.0) as u32, (letter_spacing * 100.0) as i32);
     if let Some(w) = cache.lock().unwrap().get(&key).copied() {
         return w;
     }
-    let w = if let Some(g) = crate::shape_line("…", px, None, 400, 0).last() {
+    let w = if let Some(g) = crate::shape_line("…", px, None, 400, 0, letter_spacing).last() {
         g.x + g.advance
     } else {
         0.0

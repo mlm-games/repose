@@ -1466,7 +1466,7 @@ impl LayoutEngine {
             }) => {
                 let size_px_val = font_px(*font_dp);
                 let lh = if *line_height > 0.0 {
-                    size_px_val * *line_height
+                    font_px(*line_height)
                 } else {
                     size_px_val * 1.3
                 };
@@ -1477,7 +1477,7 @@ impl LayoutEngine {
                 } else {
                     0
                 };
-                let max_content_w = measure_text(text, size_px_val, TextMeasureConfig { font_family: *font_family, font_weight: fw, font_style: fs, ..Default::default() })
+                let max_content_w = measure_text(text, size_px_val, TextMeasureConfig { font_family: *font_family, font_weight: fw, font_style: fs, letter_spacing: *letter_spacing, ..Default::default() })
                     .positions
                     .last()
                     .copied()
@@ -1486,7 +1486,7 @@ impl LayoutEngine {
 
                 let mut min_content_w = 0.0f32;
                 for w in text.split_whitespace() {
-                    let ww = measure_text(w, size_px_val, TextMeasureConfig { font_family: *font_family, font_weight: fw, font_style: fs, ..Default::default() })
+                    let ww = measure_text(w, size_px_val, TextMeasureConfig { font_family: *font_family, font_weight: fw, font_style: fs, letter_spacing: *letter_spacing, ..Default::default() })
                         .positions
                         .last()
                         .copied()
@@ -1517,6 +1517,7 @@ impl LayoutEngine {
                         true,
                         fw,
                         fs,
+                        *letter_spacing,
                     );
                     let mut lns: Vec<String> = ranges
                         .iter()
@@ -1526,14 +1527,12 @@ impl LayoutEngine {
                         if let Some(last) = lns.last_mut() {
                             let with_tail = format!("{}…", last);
                             *last =
-                                repose_text::ellipsize_line(&with_tail, size_px_val, wrap_w_px, fw, fs);
+                                repose_text::ellipsize_line(&with_tail, size_px_val, wrap_w_px, fw, fs, *letter_spacing);
                         }
                     }
                     (lns, ranges)
-                } else if matches!(overflow, TextOverflow::Ellipsis)
-                    && max_content_w > wrap_w_px + 0.5
-                {
-                    let elided = repose_text::ellipsize_line(text, size_px_val, wrap_w_px, fw, fs);
+                } else if matches!(overflow, TextOverflow::Ellipsis) {
+                    let elided = repose_text::ellipsize_line(text, size_px_val, wrap_w_px, fw, fs, *letter_spacing);
                     let elided_len = elided.len();
                     (vec![elided], vec![(0, elided_len)])
                 } else {
@@ -1544,7 +1543,7 @@ impl LayoutEngine {
                 let line_widths: Vec<f32> = lines
                     .iter()
                     .map(|line| {
-                        measure_text(line, size_px_val, TextMeasureConfig { font_family: *font_family, font_weight: fw, font_style: fs, ..Default::default() })
+                        measure_text(line, size_px_val, TextMeasureConfig { font_family: *font_family, font_weight: fw, font_style: fs, letter_spacing: *letter_spacing, ..Default::default() })
                             .positions
                             .last()
                             .copied()
@@ -2365,7 +2364,7 @@ impl LayoutEngine {
                 } else {
                     let px = font_px(*font_size);
                     let lh = if *line_height > 0.0 {
-                        px * *line_height
+                        font_px(*line_height)
                     } else {
                         px * 1.3
                     };
@@ -2400,19 +2399,28 @@ impl LayoutEngine {
                             .and_then(|r| r.get(i).map(|&(_, e)| e))
                             .unwrap_or(ln.len());
 
-                        // Find spans that overlap this line's byte range
-                        #[allow(clippy::type_complexity)]
-                        let mut segments: Vec<(
-                            usize,
-                            usize,
-                            Color,
-                            f32,
-                            TextDecoration,
-                            Option<Arc<str>>,
-                        )> = Vec::new();
+                        struct SegInfo {
+                            start: usize,
+                            end: usize,
+                            color: Color,
+                            font_dp: f32,
+                            decoration: TextDecoration,
+                            url: Option<Arc<str>>,
+                            font_weight: u16,
+                            font_family: Option<&'static str>,
+                            font_style: u8,
+                            letter_spacing: f32,
+                            line_height: f32,
+                            w: f32,
+                            px: f32,
+                        }
+                        fn style_to_fs(style: &FontStyle) -> u8 {
+                            if matches!(style, FontStyle::Italic) { 1 } else { 0 }
+                        }
+                        // Build segments from spans
+                        let mut segments: Vec<SegInfo> = Vec::new();
                         let mut cursor = line_start;
 
-                        // Sort overlapping spans by start position
                         let mut relevant: Vec<&TextSpan> = annos
                             .iter()
                             .filter(|s| s.start < line_end && s.end > line_start)
@@ -2425,99 +2433,126 @@ impl LayoutEngine {
 
                             if seg_start > cursor {
                                 // Default-styled segment before this span
-                                segments.push((
-                                    cursor,
-                                    seg_start,
-                                    *color,
-                                    *font_size,
-                                    *text_decoration,
-                                    None,
-                                ));
+                                segments.push(SegInfo {
+                                    start: cursor,
+                                    end: seg_start,
+                                    color: *color,
+                                    font_dp: *font_size,
+                                    decoration: *text_decoration,
+                                    url: None,
+                                    font_weight: font_weight.0,
+                                    font_family: *font_family,
+                                    font_style: style_to_fs(font_style),
+                                    letter_spacing: *letter_spacing,
+                                    line_height: *line_height,
+                                    w: 0.0,
+                                    px: 0.0,
+                                });
                             }
 
                             let span_color = span.style.color.unwrap_or(*color);
                             let span_size = span.style.font_size.unwrap_or(*font_size);
-                            let span_decoration = span
-                                .style
-                                .text_decoration
-                                .unwrap_or(*text_decoration);
+                            let span_decoration = span.style.text_decoration.unwrap_or(*text_decoration);
+                            let span_weight = span.style.font_weight.unwrap_or(font_weight.0);
+                            let span_family = span.style.font_family.or(*font_family);
+                            let span_style = span.style.font_style.unwrap_or(style_to_fs(font_style));
+                            let span_ls = span.style.letter_spacing.unwrap_or(*letter_spacing);
+                            let span_lh = span.style.line_height.unwrap_or(*line_height);
                             let span_url = span.url.clone();
-                            segments.push((
-                                seg_start,
-                                seg_end,
-                                span_color,
-                                span_size,
-                                span_decoration,
-                                span_url,
-                            ));
+                            segments.push(SegInfo {
+                                start: seg_start,
+                                end: seg_end,
+                                color: span_color,
+                                font_dp: span_size,
+                                decoration: span_decoration,
+                                url: span_url,
+                                font_weight: span_weight,
+                                font_family: span_family,
+                                font_style: span_style,
+                                letter_spacing: span_ls,
+                                line_height: span_lh,
+                                w: 0.0,
+                                px: 0.0,
+                            });
                             cursor = seg_end;
                         }
 
                         if cursor < line_end {
-                            segments.push((
-                                cursor,
-                                line_end,
-                                *color,
-                                *font_size,
-                                *text_decoration,
-                                None,
-                            ));
+                            segments.push(SegInfo {
+                                start: cursor,
+                                end: line_end,
+                                color: *color,
+                                font_dp: *font_size,
+                                decoration: *text_decoration,
+                                url: None,
+                                font_weight: font_weight.0,
+                                font_family: *font_family,
+                                font_style: style_to_fs(font_style),
+                                letter_spacing: *letter_spacing,
+                                line_height: *line_height,
+                                w: 0.0,
+                                px: 0.0,
+                            });
                         }
 
                         // Measure and emit each segment
                         let seg_font_px =
                             |dp: f32| dp_to_px(dp) * repose_core::locals::text_scale().0;
-                        let mut seg_x = content_rect.x;
-                        let fw_val = font_weight.0;
-                        let fs_val = if matches!(font_style, FontStyle::Italic) {
-                            1
-                        } else {
-                            0
-                        };
-                        for (
-                            seg_start,
-                            seg_end,
-                            seg_color,
-                            seg_font_dp,
-                            seg_decoration,
-                            seg_url,
-                        ) in &segments
-                        {
-                            let seg_text = &text[*seg_start..*seg_end];
+                        let mut total_w = 0.0f32;
+                        let mut seg_measurements: Vec<&mut SegInfo> = segments.iter_mut().collect();
+                        for info in &mut seg_measurements {
+                            let seg_text = &text[info.start..info.end];
                             if seg_text.is_empty() {
                                 continue;
                             }
-                            let seg_px = seg_font_px(*seg_font_dp);
-                            let seg_w =
-                                measure_text(seg_text, seg_px, TextMeasureConfig { font_family: *font_family, font_weight: fw_val, font_style: fs_val, ..Default::default() })
+                            info.px = seg_font_px(info.font_dp);
+                            info.w =
+                                measure_text(seg_text, info.px, TextMeasureConfig { font_family: info.font_family, font_weight: info.font_weight, font_style: info.font_style, letter_spacing: info.letter_spacing, ..Default::default() })
                                     .positions
                                     .last()
                                     .copied()
                                     .unwrap_or(0.0);
+                            total_w += info.w;
+                        }
+                        let align_x_offset: f32 = match text_align {
+                            TextAlign::End | TextAlign::Right => {
+                                (content_rect.w - total_w).max(0.0)
+                            }
+                            TextAlign::Center => {
+                                (content_rect.w - total_w).max(0.0) * 0.5
+                            }
+                            _ => 0.0,
+                        };
+                        let mut seg_x = content_rect.x + align_x_offset;
+                        for info in &segments {
+                            let seg_text = &text[info.start..info.end];
+                            if seg_text.is_empty() {
+                                continue;
+                            }
                             let seg_rect = repose_core::Rect {
                                 x: seg_x,
                                 y: content_rect.y + i as f32 * line_h_px,
-                                w: seg_w,
+                                w: info.w,
                                 h: line_h_px,
                             };
                             scene.nodes.push(SceneNode::Text {
                                 rect: seg_rect,
                                 text: Arc::<str>::from(seg_text.to_string().into_boxed_str()),
-                                color: mul_alpha_color(*seg_color, alpha_accum),
-                                size: seg_px,
-                                font_family: *font_family,
+                                color: mul_alpha_color(info.color, alpha_accum),
+                                size: info.px,
+                                font_family: info.font_family,
                                 text_align: *text_align,
-                                font_weight: *font_weight,
-                                font_style: *font_style,
-                                text_decoration: *seg_decoration,
-                                letter_spacing: *letter_spacing,
-                                line_height: *line_height,
-                                url: seg_url.clone(),
+                                font_weight: FontWeight(info.font_weight),
+                                font_style: if info.font_style == 1 { FontStyle::Italic } else { FontStyle::Normal },
+                                text_decoration: info.decoration,
+                                letter_spacing: info.letter_spacing,
+                                line_height: info.line_height,
+                                url: info.url.clone(),
                             });
                             // Create hit region for clickable links
-                            if let Some(url) = seg_url {
+                            if let Some(url) = &info.url {
                                 let link_id =
-                                    view_id ^ ((*seg_start as u64) << 32) | (*seg_end as u64);
+                                    view_id ^ ((info.start as u64) << 32) | (info.end as u64);
                                 let link_url = url.clone();
                                 hits.push(HitRegion {
                                     id: link_id,
@@ -2529,7 +2564,7 @@ impl LayoutEngine {
                                     ..Default::default()
                                 });
                             }
-                            seg_x += seg_w;
+                            seg_x += info.w;
                         }
                     }
                 } else {
@@ -2540,7 +2575,7 @@ impl LayoutEngine {
                         0
                     };
                     for (i, ln) in lines.iter().enumerate() {
-                        let line_w = measure_text(ln, size_px, TextMeasureConfig { font_family: *font_family, font_weight: fw_val, font_style: fs_val, ..Default::default() })
+                        let line_w = measure_text(ln, size_px, TextMeasureConfig { font_family: *font_family, font_weight: fw_val, font_style: fs_val, letter_spacing: *letter_spacing, ..Default::default() })
                             .positions
                             .last()
                             .copied()
@@ -2661,7 +2696,7 @@ impl LayoutEngine {
                         let mut st = st_rc.borrow_mut();
                         st.set_inner_height(h);
                         let layout =
-                            crate::textfield::layout_text_area(&st.text, font_val, wrap_w, 400, 0);
+                            crate::textfield::layout_text_area(&st.text, font_val, wrap_w, 400, 0, 0.0);
                         let content_h = layout.ranges.len().max(1) as f32 * layout.line_h_px;
                         let max_y = (content_h - st.inner_height).max(0.0);
 
