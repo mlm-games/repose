@@ -108,8 +108,6 @@ pub fn run_android_app_with_options(
 
         touch_long_press_pending: bool,
 
-        drag: Option<rc::DragSession>,
-
         last_redraw: web_time::Instant,
     }
 
@@ -153,8 +151,6 @@ pub fn run_android_app_with_options(
 
                 touch_long_press_pending: false,
 
-                drag: None,
-
                 last_redraw: web_time::Instant::now(),
             }
         }
@@ -173,10 +169,6 @@ pub fn run_android_app_with_options(
 
         fn dp_px(&self, dp: f32) -> f32 {
             dp * self.scale()
-        }
-
-        fn touch_slop_px(&self) -> f32 {
-            rc::touch_slop_px(self.scale())
         }
 
         fn tf_key_of(&self, visual_id: u64) -> u64 {
@@ -332,129 +324,12 @@ pub fn run_android_app_with_options(
 
             false
         }
-        const LONG_PRESS_MS: u128 = 400;
-
-        fn dnd_slop_px(&self) -> f32 {
-            rc::touch_slop_px(self.scale())
-        }
-
-        fn dnd_update_over(&mut self, pos: Vec2) {
-            rc::dnd_update_over_in_frame(&self.frame_cache, &mut self.drag, self.modifiers, pos);
-        }
-
-        fn dnd_try_begin_touch(&mut self, pos: Vec2) -> bool {
-            if self.drag.is_some() {
-                return true;
-            }
-            let Some(cid) = self.capture_id else {
-                return false;
-            };
-            let Some((_t0, (sx, sy))) = self.touch_start else {
-                return false;
-            };
-
-            // Distance check is caller's responsibility (long-press vs drag)
-
-            let Some(f) = &self.frame_cache else {
-                return false;
-            };
-            let Some(i) = rc::hit_index_by_id(f, cid) else {
-                return false;
-            };
-            let Some(cb) = &f.hit_regions[i].on_drag_start else {
-                return false;
-            };
-
-            let payload = cb(repose_core::dnd::DragStart {
-                source_id: cid,
-                position: pos,
-                modifiers: self.modifiers,
-            });
-            let Some(payload) = payload else {
-                return false;
-            };
-
-            self.drag = Some(rc::DragSession {
-                source_id: cid,
-                payload,
-                start_px: (sx, sy),
-                over_id: None,
-            });
-
-            // Prevent click-on-release behavior
-            self.touch_scrolled = true;
-            true
-        }
-
         fn overlay_drag_indicator(&self, scene: &mut Scene) {
-            if self.drag.is_none() {
-                return;
-            }
-
-            let pos = Vec2 {
-                x: self.last_pos_px.0,
-                y: self.last_pos_px.1,
-            };
-
-            // Highlight best drop target under cursor
-            if let Some(f) = &self.frame_cache
-                && let Some(tid) = rc::dnd_target_id_at(f, pos)
-                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid)
-            {
-                scene.nodes.push(SceneNode::Border {
-                    rect: hit.rect,
-                    color: Color::from_hex("#44AAFF"),
-                    width: dp_to_px(2.0),
-                    radius: dp_to_px(8.0),
-                });
-            }
-
-            let badge = Rect {
-                x: pos.x + dp_to_px(12.0),
-                y: pos.y + dp_to_px(12.0),
-                w: dp_to_px(110.0),
-                h: dp_to_px(24.0),
-            };
-
-            scene.nodes.push(SceneNode::Rect {
-                rect: badge,
-                brush: Brush::Solid(Color::from_hex("#44AAFF77")),
-                radius: dp_to_px(8.0),
-            });
-            scene.nodes.push(SceneNode::Text {
-                rect: Rect {
-                    x: badge.x + dp_to_px(8.0),
-                    y: badge.y + dp_to_px(6.0),
-                    w: 0.0,
-                    h: dp_to_px(14.0),
-                },
-                text: std::sync::Arc::<str>::from(" "),
-                color: Color::WHITE,
-                size: dp_to_px(12.0),
-                font_family: None,
-                text_align: TextAlign::Unspecified,
-                font_weight: FontWeight::NORMAL,
-                font_style: FontStyle::Normal,
-                text_decoration: TextDecoration::default(),
-                letter_spacing: 0.0,
-                line_height: 0.0,
-            });
-        }
-
-        fn dnd_finish(&mut self, pos: Vec2, accept_if_possible: bool) {
-            let Some(f) = &self.frame_cache else {
-                self.drag = None;
-                self.capture_id = None;
-                self.request_redraw();
-                return;
-            };
-            let Some(session) = self.drag.take() else {
-                return;
-            };
-
-            rc::dnd_finish(f, session, self.modifiers, pos, accept_if_possible);
-            self.capture_id = None;
-            self.request_redraw();
+            repose_core::dnd::overlay_drag_indicator(
+                scene,
+                self.last_pos_px,
+                false,
+            );
         }
     }
 
@@ -603,6 +478,16 @@ pub fn run_android_app_with_options(
                                         }
                                     }
 
+                                    // DnD press
+                                    repose_core::dnd::handle_drag_action(
+                                        &repose_core::shortcuts::DragAction::Press {
+                                            position: pos,
+                                            capture_id: hit.id,
+                                            kind: repose_core::input::PointerKind::Touch,
+                                            modifiers: self.modifiers,
+                                        },
+                                    );
+
                                     // pointer down callback
                                     if let Some(cb) = &hit.on_pointer_down {
                                         cb(rc::pe_down_primary(
@@ -626,36 +511,15 @@ pub fn run_android_app_with_options(
                         }
 
                         winit::event::TouchPhase::Moved => {
-                            if self.drag.is_some() {
-                                self.dnd_update_over(pos);
+                            if repose_core::dnd::handle_drag_action(
+                                &repose_core::shortcuts::DragAction::Move {
+                                    position: pos,
+                                    modifiers: self.modifiers,
+                                },
+                            ) {
                                 self.dirty = true;
                                 self.request_redraw();
                                 return;
-                            }
-
-                            // Long-press DnD initiation (Compose style: touch DnD starts on long press)
-                            if self.touch_long_press_pending {
-                                if let Some((t0, p0)) = self.touch_start {
-                                    let elapsed_ms =
-                                        (web_time::Instant::now() - t0).as_millis() as u128;
-                                    let dx = pos.x - p0.0;
-                                    let dy = pos.y - p0.1;
-                                    let dist = (dx * dx + dy * dy).sqrt();
-                                    if elapsed_ms >= LONG_PRESS_MS && dist <= self.dnd_slop_px() {
-                                        if self.dnd_try_begin_touch(pos) {
-                                            self.dnd_update_over(pos);
-                                            self.touch_long_press_pending = false;
-                                            self.dirty = true;
-                                            self.request_redraw();
-                                            return;
-                                        }
-                                        // Widget has no on_drag_start - cancel long press
-                                        self.touch_long_press_pending = false;
-                                    }
-                                    if dist > self.dnd_slop_px() {
-                                        self.touch_long_press_pending = false;
-                                    }
-                                }
                             }
                             // Pinch gesture detection
                             if self.active_touches.len() == 2 {
@@ -703,9 +567,9 @@ pub fn run_android_app_with_options(
 
                                     if consumed
                                         && (self.touch_scroll_accum_x_px.abs()
-                                            > self.touch_slop_px()
+                                            > 6.0 * self.scale()
                                             || self.touch_scroll_accum_y_px.abs()
-                                                > self.touch_slop_px())
+                                                > 6.0 * self.scale())
                                     {
                                         self.touch_scrolled = true;
                                     }
@@ -731,8 +595,12 @@ pub fn run_android_app_with_options(
 
                         winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
                             self.touch_long_press_pending = false;
-                            if self.drag.is_some() {
-                                self.dnd_finish(pos, true);
+                            if repose_core::dnd::handle_drag_action(
+                                &repose_core::shortcuts::DragAction::Release {
+                                    position: pos,
+                                    modifiers: self.modifiers,
+                                },
+                            ) {
                                 self.capture_id = None;
                                 self.scroll_capture_id = None;
                                 self.prev_touch_px = None;
@@ -909,9 +777,12 @@ pub fn run_android_app_with_options(
                         match key_event.physical_key {
                             PhysicalKey::Code(KeyCode::Escape)
                             | PhysicalKey::Code(KeyCode::BrowserBack) => {
-                                // If you use repose_navigation::back on Android too, call it here.
-                                // use repose_navigation::back;
-                                // if !back::handle() { el.exit(); }
+                                if repose_core::dnd::handle_drag_action(
+                                    &repose_core::shortcuts::DragAction::Cancel,
+                                ) {
+                                    self.request_redraw();
+                                    return;
+                                }
                                 return;
                             }
                             _ => {}
@@ -1162,9 +1033,7 @@ pub fn run_android_app_with_options(
                                         let m = repose_ui::textfield::measure_text(
                                             &state.text,
                                             font_px,
-                                            None,
-                                            400,
-                                            0,
+                                            repose_ui::textfield::TextMeasureConfig::default(),
                                         );
                                         let caret_x_px = m
                                             .positions
@@ -1198,10 +1067,7 @@ pub fn run_android_app_with_options(
 
                     self.process_render_commands();
 
-                    let (Some(backend), Some(win)) = (self.backend.as_mut(), self.window.as_ref())
-                    else {
-                        return;
-                    };
+                    let Some(win) = self.window.as_ref() else { return; };
 
                     let scale = win.scale_factor() as f32;
                     let size_px_u32 = self.sched.size;
@@ -1212,7 +1078,7 @@ pub fn run_android_app_with_options(
 
                     let mut composed_root = move |s: &mut Scheduler| (root_fn)(s, &rc);
 
-                    let frame = compose_frame(
+                    let mut frame = compose_frame(
                         &mut self.sched,
                         &mut composed_root,
                         scale,
@@ -1228,8 +1094,11 @@ pub fn run_android_app_with_options(
                         win.set_ime_allowed(false);
                     }
 
+                    repose_core::dnd::set_dnd_frame(Some(frame.clone()));
+                    repose_core::dnd::set_dnd_scale(scale);
                     self.overlay_drag_indicator(&mut frame.scene);
 
+                    let Some(backend) = self.backend.as_mut() else { return; };
                     backend.frame(&frame.scene, GlyphRasterConfig { px: 18.0 * scale });
 
                     if let Some(fid) = self.sched.focused {
