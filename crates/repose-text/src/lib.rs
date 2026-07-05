@@ -146,22 +146,57 @@ impl Engine {
 
 static ENGINE: OnceCell<Mutex<Engine>> = OnceCell::new();
 
+static FONT_DATA: OnceCell<Mutex<Vec<Vec<u8>>>> = OnceCell::new();
+
 /// Global font-awl provider for parley-based font access.
 ///
 /// Manages system fonts (desktop), bundled fallbacks, and platform-specific
 /// font loading (Local Font Access on WASM, NDK on Android).
 pub static FONT_PROVIDER: OnceCell<Mutex<font_awl::Provider>> = OnceCell::new();
 
+/// Syncs font init fallback (desktop, Android, or WASM without pre-init).
+fn init_font_data_sync() -> Vec<Vec<u8>> {
+    let mut provider = font_awl::Provider::new();
+    provider.load_bundled_fonts();
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Err(e) = provider.load_system_fonts_best_effort() {
+        log::warn!("font-awl: failed to load system fonts: {e}");
+    }
+    let font_data = provider.drain_font_data();
+    let _ = FONT_PROVIDER.set(Mutex::new(provider));
+    font_data
+}
+
+/// Pre-initializes font data via the async WASM Local Font Access API.
+#[cfg(target_arch = "wasm32")]
+pub async fn init_fonts_wasm() {
+    let mut provider = font_awl::Provider::new();
+    provider.load_bundled_fonts();
+    if let Err(e) = provider.load_web_fonts().await {
+        log::warn!("font-awl: failed to load web fonts: {e}");
+    }
+    let font_data = provider.drain_font_data();
+    let _ = FONT_PROVIDER.set(Mutex::new(provider));
+
+    if FONT_DATA.set(Mutex::new(font_data.clone())).is_err() {
+        if let Some(eng) = ENGINE.get() {
+            let mut eng = eng.lock().unwrap();
+            for data in font_data {
+                eng.fs.db_mut().load_font_data(data);
+            }
+        }
+    }
+}
+
 fn engine() -> &'static Mutex<Engine> {
     ENGINE.get_or_init(|| {
-        let mut provider = font_awl::Provider::new();
-        provider.load_bundled_fonts();
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Err(e) = provider.load_system_fonts_best_effort() {
-            log::warn!("font-awl: failed to load system fonts: {e}");
-        }
-        let font_data = provider.drain_font_data();
-        let _ = FONT_PROVIDER.set(Mutex::new(provider));
+        let font_data = {
+            let mut guard = FONT_DATA
+                .get_or_init(|| Mutex::new(init_font_data_sync()))
+                .lock()
+                .unwrap();
+            std::mem::take(&mut *guard)
+        };
 
         #[allow(unused_mut)]
         let mut fs = FontSystem::new();
