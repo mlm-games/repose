@@ -530,7 +530,7 @@ impl ApplicationHandler<()> for App {
         let mut attrs = Window::default_attributes()
             .with_title("Repose (Web)")
             .with_inner_size(PhysicalSize::new(1280u32, 800u32))
-            .with_prevent_default(true)
+            .with_prevent_default(false)
             .with_focusable(true);
 
         if let Some(id) = self.options.canvas_id.clone() {
