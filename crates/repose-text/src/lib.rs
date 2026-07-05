@@ -2,6 +2,7 @@ use cosmic_text::{
     Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, Style as CosmicStyle,
     SwashCache, SwashContent, Weight as CosmicWeight,
 };
+use font_awl::FontProvider;
 use once_cell::sync::OnceCell;
 use rapidhash::{HashMapExt, RapidHashMap, fast::RapidHasher};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -145,32 +146,37 @@ impl Engine {
 
 static ENGINE: OnceCell<Mutex<Engine>> = OnceCell::new();
 
+/// Global font-awl provider for parley-based font access.
+///
+/// Manages system fonts (desktop), bundled fallbacks, and platform-specific
+/// font loading (Local Font Access on WASM, NDK on Android).
+pub static FONT_PROVIDER: OnceCell<Mutex<font_awl::Provider>> = OnceCell::new();
+
 fn engine() -> &'static Mutex<Engine> {
     ENGINE.get_or_init(|| {
+        let mut provider = font_awl::Provider::new();
+        provider.load_bundled_fonts();
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Err(e) = provider.load_system_fonts_best_effort() {
+            log::warn!("font-awl: failed to load system fonts: {e}");
+        }
+        let font_data = provider.drain_font_data();
+        let _ = FONT_PROVIDER.set(Mutex::new(provider));
+
         #[allow(unused_mut)]
         let mut fs = FontSystem::new();
-
         let cache = SwashCache::new();
 
-        // #[cfg(any(target_os = "android", target_arch = "wasm32"))]
-        // // Until cosmic-text has android/web font loading support, would save around 15mb?
         {
-            static FALLBACK_TTF: &[u8] = include_bytes!("assets/OpenSans-Regular.ttf"); // GFonts, OFL licensed
-            static FALLBACK_EMOJI_TTF: &[u8] = include_bytes!("assets/NotoColorEmoji-Regular.ttf"); // GFonts, OFL licensed
-            static FALLBACK_SYMBOLS_TTF: &[u8] =
-                include_bytes!("assets/NotoSansSymbols2-Regular.ttf"); // GFonts, OFL licensed
+            let db = fs.db_mut();
+            for data in font_data {
+                db.load_font_data(data);
+            }
+            db.set_sans_serif_family("Open Sans".to_string());
+
             static MATERIAL_SYMBOLS_TTF: &[u8] =
                 include_bytes!("assets/MaterialSymbolsOutlined.ttf"); // Google Fonts, Apache 2.0 licensed
-            {
-                // Register fallback font data into font DB
-                let db = fs.db_mut();
-                db.load_font_data(FALLBACK_TTF.to_vec());
-                db.set_sans_serif_family("Open Sans".to_string());
-
-                db.load_font_data(FALLBACK_SYMBOLS_TTF.to_vec());
-                db.load_font_data(FALLBACK_EMOJI_TTF.to_vec());
-                db.load_font_data(MATERIAL_SYMBOLS_TTF.to_vec());
-            }
+            db.load_font_data(MATERIAL_SYMBOLS_TTF.to_vec());
         }
         Mutex::new(Engine {
             fs,

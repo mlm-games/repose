@@ -68,6 +68,7 @@ fontdb = "0.23.0"
 cosmic-text = { version = "0.19", default-features = true, features = [
   "swash",
 ] }
+font-awl = { path = "../font-awl" }
 
 android_logger = "0.15"
 serde = { version = "1", features = ["derive"] }
