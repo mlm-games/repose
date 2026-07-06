@@ -2168,13 +2168,13 @@ impl WgpuBackend {
         })
     }
 
-    fn upload_glyph_mask(&mut self, key: repose_text::GlyphKey, px: u32) -> Option<GlyphInfo> {
-        let keyp = (key, px);
+    fn upload_glyph_mask(&mut self, key: repose_text::GlyphKey, px: f32) -> Option<GlyphInfo> {
+        let keyp = (key, px.to_bits());
         if let Some(info) = self.atlas_mask.map.get(&keyp) {
             return Some(*info);
         }
 
-        let gb = repose_text::rasterize(key, px as f32)?;
+        let gb = repose_text::rasterize(key, px)?;
         if gb.w == 0 || gb.h == 0 || gb.data.is_empty() {
             return None;
         }
@@ -2232,12 +2232,12 @@ impl WgpuBackend {
         Some(info)
     }
 
-    fn upload_glyph_color(&mut self, key: repose_text::GlyphKey, px: u32) -> Option<GlyphInfo> {
-        let keyp = (key, px);
+    fn upload_glyph_color(&mut self, key: repose_text::GlyphKey, px: f32) -> Option<GlyphInfo> {
+        let keyp = (key, px.to_bits());
         if let Some(info) = self.atlas_color.map.get(&keyp) {
             return Some(*info);
         }
-        let gb = repose_text::rasterize(key, px as f32)?;
+        let gb = repose_text::rasterize(key, px)?;
         if !matches!(gb.content, repose_text::SwashContent::Color) {
             return None;
         }
@@ -2332,8 +2332,8 @@ impl WgpuBackend {
         self.atlas_mask.row_h = 0;
         let keys: Vec<(repose_text::GlyphKey, u32)> = self.atlas_mask.map.keys().copied().collect();
         self.atlas_mask.map.clear();
-        for (k, px) in keys {
-            let _ = self.upload_glyph_mask(k, px);
+        for (k, px_bits) in keys {
+            let _ = self.upload_glyph_mask(k, f32::from_bits(px_bits));
         }
     }
 
@@ -2380,8 +2380,8 @@ impl WgpuBackend {
         let keys: Vec<(repose_text::GlyphKey, u32)> =
             self.atlas_color.map.keys().copied().collect();
         self.atlas_color.map.clear();
-        for (k, px) in keys {
-            let _ = self.upload_glyph_color(k, px);
+        for (k, px_bits) in keys {
+            let _ = self.upload_glyph_color(k, f32::from_bits(px_bits));
         }
     }
 }
@@ -3062,7 +3062,7 @@ impl RenderBackend for WgpuBackend {
                         }
 
                         // Atlas fallback: color emoji + failed slug extraction
-                        if let Some(info) = self.upload_glyph_color(sg.key, px as u32) {
+                        if let Some(info) = self.upload_glyph_color(sg.key, sg.px) {
                             let (ndc, sin_cos) = make_glyph_instance(gx, gy, info.w, info.h);
                             batch.colors.push(GlyphInstance {
                                 xywh: ndc,
@@ -3070,7 +3070,7 @@ impl RenderBackend for WgpuBackend {
                                 color: color.to_linear(),
                                 sin_cos,
                             });
-                        } else if let Some(info) = self.upload_glyph_mask(sg.key, px as u32) {
+                        } else if let Some(info) = self.upload_glyph_mask(sg.key, sg.px) {
                             let (ndc, sin_cos) = make_glyph_instance(gx, gy, info.w, info.h);
                             batch.masks.push(GlyphInstance {
                                 xywh: ndc,
