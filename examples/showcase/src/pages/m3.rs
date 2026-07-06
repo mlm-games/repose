@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::rc::Rc;
 
 use repose_core::prelude::*;
@@ -530,58 +529,59 @@ pub fn screen(overlay: OverlayHandle) -> View {
                     Button(
                         Modifier::new(),
                         {
-                            let fn2 = font_name.clone();
-                            let ff2 = font_family.clone();
-                            move || {
-                                #[cfg(not(target_arch = "wasm32"))]
-                                {
+                                let fn2 = font_name.clone();
+                                let ff2 = font_family.clone();
+                                move || {
+                                let fn2 = fn2.clone();
+                                let ff2 = ff2.clone();
+                                let future = async move {
                                     use rlobkit_dialogs::picker::OpenFileOptions;
                                     use rlobkit_dialogs::{RlobKit, RlobKitMode, RlobKitType};
-                                    let result: Option<PathBuf> = pollster::block_on(
-                                        RlobKit::open_file_picker(OpenFileOptions {
-                                            file_type: RlobKitType::Custom {
-                                                extensions: vec![
-                                                    "ttf".to_string(),
-                                                    "otf".to_string(),
-                                                ],
-                                                mime_types: vec!["font/ttf".to_string(), "font/otf".to_string()],
-                                            },
-                                            mode: RlobKitMode::Single,
-                                            title: Some("Select a font file".to_string()),
-                                            initial_directory: None,
-                                        }),
-                                    )
-                                    .ok()
-                                    .flatten()
-                                    .and_then(|mut files| files.pop())
-                                    .and_then(|f| f.path().map(|p| p.to_path_buf()));
-                                    if let Some(path) = result {
-                                        match std::fs::read(&path) {
-                                            Ok(bytes) => {
-                                                let family = repose_text::font_family_name(&bytes)
-                                                    .unwrap_or_else(|| {
-                                                        path.file_stem()
-                                                            .and_then(|s| s.to_str())
-                                                            .unwrap_or("unknown")
-                                                            .to_string()
-                                                    });
-                                                repose_text::register_font_data(&bytes);
-                                                let family: &'static str =
-                                                    Box::leak(family.into_boxed_str());
-                                                ff2.set(Some(family));
-                                                fn2.set(format!("Loaded: {family}"));
-                                                log::info!("loaded font: {family}");
-                                            }
-                                            Err(e) => {
-                                                fn2.set(format!("Error: {e}"));
+                                    match RlobKit::open_file_picker(OpenFileOptions {
+                                        file_type: RlobKitType::Custom {
+                                            extensions: vec![
+                                                "ttf".to_string(),
+                                                "otf".to_string(),
+                                            ],
+                                            mime_types: vec![
+                                                "font/ttf".to_string(),
+                                                "font/otf".to_string(),
+                                            ],
+                                        },
+                                        mode: RlobKitMode::Single,
+                                        title: Some("Select a font file".to_string()),
+                                        initial_directory: None,
+                                    })
+                                    .await
+                                    {
+                                        Ok(Some(mut files)) => {
+                                            if let Some(file) = files.pop() {
+                                                match file.read_bytes() {
+                                                    Ok(bytes) => {
+                                                        let family = repose_text::font_family_name(
+                                                            &bytes,
+                                                        )
+                                                        .unwrap_or_else(|| file.name().to_string());
+                                                        repose_text::register_font_data(&bytes);
+                                                        let family: &'static str =
+                                                            Box::leak(family.into_boxed_str());
+                                                        ff2.set(Some(family));
+                                                        fn2.set(format!("Loaded: {family}"));
+                                                    }
+                                                    Err(e) => {
+                                                        fn2.set(format!("Error: {e}"));
+                                                    }
+                                                }
                                             }
                                         }
+                                        Ok(None) => {}
+                                        Err(e) => fn2.set(format!("Error: {e}")),
                                     }
-                                }
+                                };
+                                #[cfg(not(target_arch = "wasm32"))]
+                                pollster::block_on(future);
                                 #[cfg(target_arch = "wasm32")]
-                                {
-                                    let _ = fn2;
-                                }
+                                wasm_bindgen_futures::spawn_local(future);
                             }
                         },
                         ButtonConfig::default(),
