@@ -19,7 +19,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.22.0"
+version = "0.22.1"
 edition = "2024"
 license = "LGPL-2.1-or-later"
 repository = "https://github.com/mlm-games/repose"
