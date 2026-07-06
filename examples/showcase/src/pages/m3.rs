@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use repose_core::prelude::*;
@@ -519,6 +520,89 @@ pub fn screen(overlay: OverlayHandle) -> View {
                     .background(th.tertiary)
                     .clip_rounded(4.0)),
             )),
+        ),
+        Section(
+            "Font Loading",
+            Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child({
+                let font_name = remember(|| signal(String::new()));
+                let font_family = remember(|| signal(None::<&'static str>));
+                (
+                    Button(
+                        Modifier::new(),
+                        {
+                            let fn2 = font_name.clone();
+                            let ff2 = font_family.clone();
+                            move || {
+                                #[cfg(not(target_arch = "wasm32"))]
+                                {
+                                    use rlobkit_dialogs::picker::OpenFileOptions;
+                                    use rlobkit_dialogs::{RlobKit, RlobKitMode, RlobKitType};
+                                    let result: Option<PathBuf> = pollster::block_on(
+                                        RlobKit::open_file_picker(OpenFileOptions {
+                                            file_type: RlobKitType::Custom {
+                                                extensions: vec![
+                                                    "ttf".to_string(),
+                                                    "otf".to_string(),
+                                                ],
+                                                mime_types: vec!["font/ttf".to_string(), "font/otf".to_string()],
+                                            },
+                                            mode: RlobKitMode::Single,
+                                            title: Some("Select a font file".to_string()),
+                                            initial_directory: None,
+                                        }),
+                                    )
+                                    .ok()
+                                    .flatten()
+                                    .and_then(|mut files| files.pop())
+                                    .and_then(|f| f.path().map(|p| p.to_path_buf()));
+                                    if let Some(path) = result {
+                                        match std::fs::read(&path) {
+                                            Ok(bytes) => {
+                                                let family = repose_text::font_family_name(&bytes)
+                                                    .unwrap_or_else(|| {
+                                                        path.file_stem()
+                                                            .and_then(|s| s.to_str())
+                                                            .unwrap_or("unknown")
+                                                            .to_string()
+                                                    });
+                                                repose_text::register_font_data(&bytes);
+                                                let family: &'static str =
+                                                    Box::leak(family.into_boxed_str());
+                                                ff2.set(Some(family));
+                                                fn2.set(format!("Loaded: {family}"));
+                                                log::info!("loaded font: {family}");
+                                            }
+                                            Err(e) => {
+                                                fn2.set(format!("Error: {e}"));
+                                            }
+                                        }
+                                    }
+                                }
+                                #[cfg(target_arch = "wasm32")]
+                                {
+                                    let _ = fn2;
+                                }
+                            }
+                        },
+                        ButtonConfig::default(),
+                        || Text("Pick Font File"),
+                    ),
+                    Text(font_name.get())
+                        .color(th.on_surface)
+                        .size(th.typography.body_medium),
+                    {
+                        let ff = font_family.get();
+                        if let Some(family) = ff {
+                            Text("The quick brown fox jumps over the lazy dog 1234567890")
+                                .font_family(family)
+                                .color(th.primary)
+                                .size(th.typography.body_large)
+                        } else {
+                            Box(Modifier::new())
+                        }
+                    },
+                )
+            }),
         ),
     ])
 }

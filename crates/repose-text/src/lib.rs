@@ -173,11 +173,13 @@ impl Engine {
             .iter()
             .find(|r| r.data == *fd)
         {
+            log::debug!("[font] reuse id={} len={}", existing.id, fd.data.as_ref().len());
             return existing.id;
         }
         let id = self.next_font_id;
         self.next_font_id += 1;
         let bytes = fd.data.as_ref().to_vec();
+        log::debug!("[font] register id={} len={}", id, bytes.len());
         self.font_registry.push(FontRecord {
             id,
             data: fd.clone(),
@@ -205,6 +207,7 @@ impl Engine {
         use swash::scale::{Render, Source, StrikeWith};
         let cache_key = (font_id, glyph_id, px.to_bits());
         if let Some(cached) = self.glyph_cache.get(&cache_key) {
+            log::debug!("[raster_placement] HIT fid={} gid={} px={} => {}x{} {}x{}", font_id, glyph_id, px, cached.0, cached.1, cached.2, cached.3);
             return Some((cached.0 as f32, cached.1 as f32, cached.2 as f32, cached.3 as f32));
         }
         let data_bytes = self
@@ -226,6 +229,7 @@ impl Engine {
             Source::ColorOutline(0),
         ])
         .render(&mut scaler, glyph_id)?;
+        log::debug!("[raster_placement] MISS fid={} gid={} px={} => {}x{} {}x{}", font_id, glyph_id, px, image.placement.width, image.placement.height, image.placement.left, image.placement.top);
         self.glyph_cache.insert(
             cache_key,
             (
@@ -304,7 +308,7 @@ fn engine() -> &'static Mutex<Engine> {
     ENGINE.get_or_init(|| Mutex::new(init_engine_sync()))
 }
 
-pub fn register_font_data(bytes: &'static [u8]) {
+pub fn register_font_data(bytes: &[u8]) {
     let mut eng = engine().lock().unwrap();
     let blob: parley::fontique::Blob<u8> = bytes.to_vec().into();
     eng.font_cx.collection.register_fonts(blob.clone(), None);
@@ -312,6 +316,32 @@ pub fn register_font_data(bytes: &'static [u8]) {
         let mut p = provider_lock.lock().unwrap();
         p.collection_mut().register_fonts(blob, None);
     }
+}
+
+/// Load a font from a file path and register it into the global font system.
+///
+/// Returns an error if the file cannot be read.
+pub fn load_font_file(path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+    let bytes = std::fs::read(path)?;
+    register_font_data(&bytes);
+    Ok(())
+}
+
+/// Extract the family name from raw font bytes.
+///
+/// Tries the typographic family name first, falling back to the standard family name.
+/// Returns `None` if the font data is invalid or contains no names.
+pub fn font_family_name(bytes: &[u8]) -> Option<String> {
+    use skrifa::string::StringId;
+    let font = skrifa::FontRef::new(bytes).ok()?;
+    font.localized_strings(StringId::TYPOGRAPHIC_FAMILY_NAME)
+        .english_or_first()
+        .map(|s| s.to_string())
+        .or_else(|| {
+            font.localized_strings(StringId::FAMILY_NAME)
+                .english_or_first()
+                .map(|s| s.to_string())
+        })
 }
 
 fn key_from_pair(font_id: u64, glyph_id: u16) -> GlyphKey {
@@ -368,6 +398,7 @@ fn shape_line_inner(
             let PositionedLayoutItem::GlyphRun(glyph_run) = item else { continue };
             let font_data = glyph_run.run().font();
             let fid = eng.ensure_font(font_data);
+            log::debug!("[shape] run: fid={} font_data_len={}", fid, font_data.data.as_ref().len());
             for g in glyph_run.positioned_glyphs() {
                 let gid = g.id as u16;
                 let key = key_from_pair(fid, gid);
@@ -376,6 +407,11 @@ fn shape_line_inner(
                 let (w, h, left, top) = eng
                     .raster_placement(fid, gid, px)
                     .unwrap_or((0.0, 0.0, 0.0, 0.0));
+
+                log::debug!(
+                    "[shape] glyph: gid={} px={} x={:.1} y={:.1} advance={:.1} bitmap={}x{} {}x{}",
+                    gid, px, g.x, g.y, g.advance, w, h, left, top,
+                );
 
                 out.push(ShapedGlyph {
                     key,
@@ -412,6 +448,7 @@ pub fn rasterize(key: GlyphKey, px: f32) -> Option<GlyphBitmap> {
     let &(fid, gid) = eng.key_map.get(&key)?;
     let cache_key = (fid, gid, px.to_bits());
     if let Some(cached) = eng.glyph_cache.get(&cache_key) {
+        log::debug!("[rasterize] HIT fid={} gid={} px={} => {}x{}", fid, gid, px, cached.0, cached.1);
         return Some(GlyphBitmap {
             key,
             w: cached.0,
@@ -439,6 +476,7 @@ pub fn rasterize(key: GlyphKey, px: f32) -> Option<GlyphBitmap> {
         Source::ColorOutline(0),
     ])
     .render(&mut scaler, gid)?;
+    log::debug!("[rasterize] MISS fid={} gid={} px={} => {}x{}", fid, gid, px, image.placement.width, image.placement.height);
     let bitmap = GlyphBitmap {
         key,
         w: image.placement.width,

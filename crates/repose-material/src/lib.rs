@@ -7,7 +7,7 @@ use repose_core::View;
 use repose_ui::{Text, TextStyle};
 
 /// Register a font blob into the global FontSystem.
-pub fn install_material_symbols_font(bytes: &'static [u8]) {
+pub fn install_material_symbols_font(bytes: &[u8]) {
     repose_text::register_font_data(bytes);
 }
 
