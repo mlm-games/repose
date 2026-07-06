@@ -63,12 +63,10 @@ wgpu = "30"
 pollster = "0.4.0"
 
 # Text
-ab_glyph = "0.2.32"
-fontdb = "0.23.0"
-cosmic-text = { version = "0.19", default-features = true, features = [
-  "swash",
-] }
-font-awl = { path = "../font-awl" }
+font-awl = { path = "../font-awl", features = ["parley"] }
+parley = "0.11"
+skrifa = "0.43"
+swash = "0.2"
 
 android_logger = "0.15"
 serde = { version = "1", features = ["derive"] }

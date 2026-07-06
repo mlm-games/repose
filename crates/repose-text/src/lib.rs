@@ -1,10 +1,9 @@
-use cosmic_text::{
-    Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, Style as CosmicStyle,
-    SwashCache, SwashContent, Weight as CosmicWeight,
-};
 use font_awl::FontProvider;
 use once_cell::sync::OnceCell;
 use rapidhash::{HashMapExt, RapidHashMap, fast::RapidHasher};
+use skrifa::outline::OutlinePen;
+use skrifa::MetadataProvider;
+
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
     collections::{HashMap, VecDeque},
@@ -13,10 +12,8 @@ use std::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 
-/// Frame counter for cache invalidation strategies.
 static FRAME_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// Call this at the start of each frame to enable frame-aware caching.
 pub fn begin_frame() {
     FRAME_COUNTER.fetch_add(1, Ordering::Relaxed);
 }
@@ -25,6 +22,7 @@ pub fn current_frame() -> u64 {
     FRAME_COUNTER.load(Ordering::Relaxed)
 }
 
+const GLYPH_CACHE_CAP: usize = 4096;
 const WRAP_CACHE_CAP: usize = 1024;
 const ELLIP_CACHE_CAP: usize = 2048;
 
@@ -49,7 +47,6 @@ impl<K: std::hash::Hash + Eq + Clone, V> Lru<K, V> {
     }
     fn get(&mut self, k: &K) -> Option<&V> {
         if self.map.contains_key(k) {
-            // move to back
             if let Some(pos) = self.order.iter().position(|x| x == k) {
                 let key = self.order.remove(pos).unwrap();
                 self.order.push_back(key);
@@ -101,7 +98,6 @@ fn ellip_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, u8, i32), String>> {
 }
 
 fn fast_hash(s: &str) -> u64 {
-    use std::hash::{Hash, Hasher};
     let mut h = RapidHasher::default();
     s.len().hash(&mut h);
     s.hash(&mut h);
@@ -111,8 +107,28 @@ fn fast_hash(s: &str) -> u64 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct GlyphKey(pub u64);
 
+/// Cache key for the renderer's glyph slug cache — uniquely identifies a
+/// specific glyph in a specific font face.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct CacheKey {
+    pub font_id: u64,
+    pub glyph_id: u16,
+    pub font_size_bits: u32,
+}
+
+/// Vector path command for glyph outlines.
+#[derive(Clone, Debug)]
+pub enum Command {
+    MoveTo(f32, f32),
+    LineTo(f32, f32),
+    QuadTo(f32, f32, f32, f32),
+    CurveTo(f32, f32, f32, f32, f32, f32),
+    Close,
+}
+
 pub struct ShapedGlyph {
     pub key: GlyphKey,
+    pub px: f32,
     pub x: f32,
     pub y: f32,
     pub w: f32,
@@ -122,52 +138,148 @@ pub struct ShapedGlyph {
     pub advance: f32,
 }
 
+pub use swash::scale::image::Content as SwashContent;
+
 pub struct GlyphBitmap {
     pub key: GlyphKey,
     pub w: u32,
     pub h: u32,
     pub content: SwashContent,
-    pub data: Vec<u8>, // Mask: A8; Color/Subpixel: RGBA8
+    pub data: Vec<u8>,
+}
+
+struct FontRecord {
+    id: u64,
+    data: parley::FontData,
+    data_bytes: Vec<u8>,
 }
 
 struct Engine {
-    fs: FontSystem,
-    cache: SwashCache,
-    // Map our compact atlas key -> full cosmic_text CacheKey
-    key_map: HashMap<GlyphKey, CacheKey>,
+    font_cx: parley::FontContext,
+    layout_cx: parley::LayoutContext<()>,
+    swash_cx: swash::scale::ScaleContext,
+    key_map: HashMap<GlyphKey, (u64, u16)>,
+    font_registry: Vec<FontRecord>,
+    next_font_id: u64,
+    /// Cache of rendered glyphs keyed by (font_id, glyph_id, font_size_bits).
+    /// Contains (width, height, left, top, content, data).
+    glyph_cache: HashMap<(u64, u16, u32), (u32, u32, i32, i32, swash::scale::image::Content, Vec<u8>)>,
 }
 
 impl Engine {
-    fn get_image(&mut self, key: CacheKey) -> Option<cosmic_text::SwashImage> {
-        // inside this method we may freely borrow both fields
-        self.cache.get_image(&mut self.fs, key).clone()
+    fn ensure_font(&mut self, fd: &parley::FontData) -> u64 {
+        if let Some(existing) = self
+            .font_registry
+            .iter()
+            .find(|r| r.data == *fd)
+        {
+            return existing.id;
+        }
+        let id = self.next_font_id;
+        self.next_font_id += 1;
+        let bytes = fd.data.as_ref().to_vec();
+        self.font_registry.push(FontRecord {
+            id,
+            data: fd.clone(),
+            data_bytes: bytes,
+        });
+        id
+    }
+
+    fn trim_glyph_cache(&mut self) {
+        if self.glyph_cache.len() > GLYPH_CACHE_CAP {
+            let to_remove = self.glyph_cache.len() - GLYPH_CACHE_CAP;
+            let keys: Vec<_> = self.glyph_cache.keys().take(to_remove).copied().collect();
+            for k in keys {
+                self.glyph_cache.remove(&k);
+            }
+        }
+    }
+
+    fn raster_placement(
+        &mut self,
+        font_id: u64,
+        glyph_id: u16,
+        px: f32,
+    ) -> Option<(f32, f32, f32, f32)> {
+        use swash::scale::{Render, Source, StrikeWith};
+        let cache_key = (font_id, glyph_id, px.to_bits());
+        if let Some(cached) = self.glyph_cache.get(&cache_key) {
+            return Some((cached.0 as f32, cached.1 as f32, cached.2 as f32, cached.3 as f32));
+        }
+        let data_bytes = self
+            .font_registry
+            .iter()
+            .find(|r| r.id == font_id)?
+            .data_bytes
+            .clone();
+        let font = swash::FontRef::from_index(&data_bytes, 0)?;
+        let mut scaler = self
+            .swash_cx
+            .builder(font)
+            .size(px)
+            .hint(true)
+            .build();
+        let image = Render::new(&[
+            Source::Outline,
+            Source::ColorBitmap(StrikeWith::BestFit),
+            Source::ColorOutline(0),
+        ])
+        .render(&mut scaler, glyph_id)?;
+        self.glyph_cache.insert(
+            cache_key,
+            (
+                image.placement.width,
+                image.placement.height,
+                image.placement.left,
+                image.placement.top,
+                image.content,
+                image.data,
+            ),
+        );
+        self.trim_glyph_cache();
+        Some((
+            image.placement.width as f32,
+            image.placement.height as f32,
+            image.placement.left as f32,
+            image.placement.top as f32,
+        ))
     }
 }
 
 static ENGINE: OnceCell<Mutex<Engine>> = OnceCell::new();
 
-static FONT_DATA: OnceCell<Mutex<Vec<Vec<u8>>>> = OnceCell::new();
-
-/// Global font-awl provider for parley-based font access.
-///
-/// Manages system fonts (desktop), bundled fallbacks, and platform-specific
-/// font loading (Local Font Access on WASM, NDK on Android).
 pub static FONT_PROVIDER: OnceCell<Mutex<font_awl::Provider>> = OnceCell::new();
 
-/// Syncs font init fallback (desktop, Android, or WASM without pre-init).
-fn init_font_data_sync() -> Vec<Vec<u8>> {
+fn init_engine_sync() -> Engine {
     let mut provider = font_awl::Provider::new();
     provider.load_bundled_fonts();
     #[cfg(not(target_arch = "wasm32"))]
     if let Err(e) = provider.load_system_fonts_best_effort() {
         log::warn!("font-awl: failed to load system fonts: {e}");
     }
-    let font_data = provider.drain_font_data();
+
+    let mut font_cx = provider.new_parley_context();
+    let layout_cx = parley::LayoutContext::new();
+
+    static MATERIAL_SYMBOLS_TTF: &[u8] =
+        include_bytes!("assets/MaterialSymbolsOutlined.ttf");
+    let blob: parley::fontique::Blob<u8> = MATERIAL_SYMBOLS_TTF.to_vec().into();
+    font_cx.collection.register_fonts(blob, None);
+
     let _ = FONT_PROVIDER.set(Mutex::new(provider));
-    font_data
+
+    Engine {
+        font_cx,
+        layout_cx,
+        swash_cx: swash::scale::ScaleContext::new(),
+        key_map: HashMap::new(),
+        font_registry: Vec::new(),
+        next_font_id: 1,
+        glyph_cache: HashMap::new(),
+    }
 }
 
-/// Pre-initializes font data via the async WASM Local Font Access API.
 #[cfg(target_arch = "wasm32")]
 pub async fn init_fonts_wasm() {
     let mut provider = font_awl::Provider::new();
@@ -175,67 +287,113 @@ pub async fn init_fonts_wasm() {
     if let Err(e) = provider.load_web_fonts().await {
         log::warn!("font-awl: failed to load web fonts: {e}");
     }
-    let font_data = provider.drain_font_data();
     let _ = FONT_PROVIDER.set(Mutex::new(provider));
 
-    if FONT_DATA.set(Mutex::new(font_data.clone())).is_err() {
-        if let Some(eng) = ENGINE.get() {
-            let mut eng = eng.lock().unwrap();
-            for data in font_data {
-                eng.fs.db_mut().load_font_data(data);
-            }
+    if let Some(eng) = ENGINE.get() {
+        let mut eng = eng.lock().unwrap();
+        // Register web fonts into the existing engine's collection
+        // by re-building font_cx from the updated provider
+        if let Some(provider_lock) = FONT_PROVIDER.get() {
+            let p = provider_lock.lock().unwrap();
+            eng.font_cx = p.new_parley_context();
         }
     }
 }
 
 fn engine() -> &'static Mutex<Engine> {
-    ENGINE.get_or_init(|| {
-        let font_data = {
-            let mut guard = FONT_DATA
-                .get_or_init(|| Mutex::new(init_font_data_sync()))
-                .lock()
-                .unwrap();
-            std::mem::take(&mut *guard)
-        };
-
-        #[allow(unused_mut)]
-        let mut fs = FontSystem::new();
-        let cache = SwashCache::new();
-
-        {
-            let db = fs.db_mut();
-            for data in font_data {
-                db.load_font_data(data);
-            }
-            db.set_sans_serif_family("Open Sans".to_string());
-
-            static MATERIAL_SYMBOLS_TTF: &[u8] =
-                include_bytes!("assets/MaterialSymbolsOutlined.ttf"); // Google Fonts, Apache 2.0 licensed
-            db.load_font_data(MATERIAL_SYMBOLS_TTF.to_vec());
-        }
-        Mutex::new(Engine {
-            fs,
-            cache,
-            key_map: HashMap::new(),
-        })
-    })
+    ENGINE.get_or_init(|| Mutex::new(init_engine_sync()))
 }
 
-/// Register a font blob into the global FontSystem.
 pub fn register_font_data(bytes: &'static [u8]) {
     let mut eng = engine().lock().unwrap();
-    eng.fs.db_mut().load_font_data(bytes.to_vec());
+    let blob: parley::fontique::Blob<u8> = bytes.to_vec().into();
+    eng.font_cx.collection.register_fonts(blob.clone(), None);
+    if let Some(provider_lock) = FONT_PROVIDER.get() {
+        let mut p = provider_lock.lock().unwrap();
+        p.collection_mut().register_fonts(blob, None);
+    }
 }
 
-// Utility: stable u64 key from a CacheKey using its Hash impl
-fn key_from_cachekey(k: &CacheKey) -> GlyphKey {
+fn key_from_pair(font_id: u64, glyph_id: u16) -> GlyphKey {
     let mut h = RapidHasher::default();
-    k.hash(&mut h);
+    font_id.hash(&mut h);
+    glyph_id.hash(&mut h);
     GlyphKey(h.finish())
 }
 
-// Shape a single-line string (no wrapping). Returns positioned glyphs relative to baseline y=0.
-// `font_family` optionally overrides the default font (e.g. "Material Symbols Outlined").
+fn shape_line_inner(
+    eng: &mut Engine,
+    text: &str,
+    px: f32,
+    font_family: Option<&str>,
+    font_weight: u16,
+    font_style: u8,
+    letter_spacing: f32,
+) -> Vec<ShapedGlyph> {
+    use parley::style::StyleProperty;
+    use parley::FontWeight;
+    use parley::layout::PositionedLayoutItem;
+
+    let Engine {
+        ref mut font_cx,
+        ref mut layout_cx,
+        ..
+    } = *eng;
+    let mut builder = layout_cx.ranged_builder(font_cx, text, 1.0, true);
+    builder.push_default(StyleProperty::FontSize(px));
+    builder.push_default(StyleProperty::FontWeight(FontWeight::new(font_weight as f32)));
+    builder.push_default(StyleProperty::FontStyle(match font_style {
+        1 => parley::FontStyle::Italic,
+        _ => parley::FontStyle::Normal,
+    }));
+    builder.push_default(StyleProperty::LetterSpacing(letter_spacing));
+
+    if let Some(family) = font_family {
+        builder.push(
+            &[parley::style::FontFamilyName::named(family)] as &[_],
+            0..text.len(),
+        );
+    }
+
+    let mut layout = builder.build(text);
+    layout.break_all_lines(None);
+    layout.align(
+        parley::Alignment::Start,
+        parley::AlignmentOptions::default(),
+    );
+
+    let mut out: Vec<ShapedGlyph> = Vec::new();
+    for line in layout.lines() {
+        for item in line.items() {
+            let PositionedLayoutItem::GlyphRun(glyph_run) = item else { continue };
+            let font_data = glyph_run.run().font();
+            let fid = eng.ensure_font(font_data);
+            for g in glyph_run.positioned_glyphs() {
+                let gid = g.id as u16;
+                let key = key_from_pair(fid, gid);
+                eng.key_map.insert(key, (fid, gid));
+
+                let (w, h, left, top) = eng
+                    .raster_placement(fid, gid, px)
+                    .unwrap_or((0.0, 0.0, 0.0, 0.0));
+
+                out.push(ShapedGlyph {
+                    key,
+                    px,
+                    x: g.x,
+                    y: g.y,
+                    w,
+                    h,
+                    bearing_x: left,
+                    bearing_y: top,
+                    advance: g.advance + letter_spacing,
+                });
+            }
+        }
+    }
+    out
+}
+
 pub fn shape_line(
     text: &str,
     px: f32,
@@ -245,133 +403,138 @@ pub fn shape_line(
     letter_spacing: f32,
 ) -> Vec<ShapedGlyph> {
     let mut eng = engine().lock().unwrap();
-
-    // Construct a temporary buffer each call; FontSystem and caches are retained globally
-    let mut buf = Buffer::new(&mut eng.fs, Metrics::new(px, px * 1.3));
-    {
-        // Borrow with FS for ergonomic setters (no FS arg)
-        let mut b = buf.borrow_with(&mut eng.fs);
-        b.set_size(None, None);
-        let attrs = match font_family {
-            Some(family) => Attrs::new()
-                .family(Family::Name(family))
-                .weight(CosmicWeight(font_weight))
-                .style(if font_style == 1 {
-                    CosmicStyle::Italic
-                } else {
-                    CosmicStyle::Normal
-                }),
-            None => Attrs::new()
-                .weight(CosmicWeight(font_weight))
-                .style(if font_style == 1 {
-                    CosmicStyle::Italic
-                } else {
-                    CosmicStyle::Normal
-                }),
-        };
-        b.set_text(text, &attrs, Shaping::Advanced, None);
-        b.shape_until_scroll(true);
-    }
-
-    let mut out = Vec::new();
-    let mut x_shift = 0.0;
-    for run in buf.layout_runs() {
-        for g in run.glyphs {
-            // Compute physical glyph: gives cache_key and integer pixel position
-            let phys = g.physical((0.0, run.line_y), 1.0);
-            let key = key_from_cachekey(&phys.cache_key);
-            eng.key_map.insert(key, phys.cache_key);
-
-            // Query raster cache to get placement for metrics
-            let img_opt = eng.get_image(phys.cache_key);
-            let (w, h, left, top) = if let Some(img) = img_opt.as_ref() {
-                (
-                    img.placement.width as f32,
-                    img.placement.height as f32,
-                    img.placement.left as f32,
-                    img.placement.top as f32,
-                )
-            } else {
-                (0.0, 0.0, 0.0, 0.0)
-            };
-
-            out.push(ShapedGlyph {
-                key,
-                x: g.x + g.x_offset + x_shift, // visual x + letter_spacing offset
-                y: run.line_y,                 // baseline y
-                w,
-                h,
-                bearing_x: left,
-                bearing_y: top,
-                advance: g.w + letter_spacing,
-            });
-            x_shift += letter_spacing;
-        }
-    }
-    out
+    shape_line_inner(&mut eng, text, px, font_family, font_weight, font_style, letter_spacing)
 }
 
-// Rasterize a glyph mask (A8) or color/subpixel (RGBA8) for a given shaped key.
-// Returns owned pixels to avoid borrowing from the cache.
-pub fn rasterize(key: GlyphKey, _px: f32) -> Option<GlyphBitmap> {
+pub fn rasterize(key: GlyphKey, px: f32) -> Option<GlyphBitmap> {
+    use swash::scale::{Render, Source, StrikeWith};
     let mut eng = engine().lock().unwrap();
-    let &ck = eng.key_map.get(&key)?;
-
-    let img = eng.get_image(ck).as_ref()?.clone();
-    Some(GlyphBitmap {
+    let &(fid, gid) = eng.key_map.get(&key)?;
+    let cache_key = (fid, gid, px.to_bits());
+    if let Some(cached) = eng.glyph_cache.get(&cache_key) {
+        return Some(GlyphBitmap {
+            key,
+            w: cached.0,
+            h: cached.1,
+            content: cached.4,
+            data: cached.5.clone(),
+        });
+    }
+    let data_bytes = eng
+        .font_registry
+        .iter()
+        .find(|r| r.id == fid)?
+        .data_bytes
+        .clone();
+    let font = swash::FontRef::from_index(&data_bytes, 0)?;
+    let mut scaler = eng
+        .swash_cx
+        .builder(font)
+        .size(px)
+        .hint(true)
+        .build();
+    let image = Render::new(&[
+        Source::Outline,
+        Source::ColorBitmap(StrikeWith::BestFit),
+        Source::ColorOutline(0),
+    ])
+    .render(&mut scaler, gid)?;
+    let bitmap = GlyphBitmap {
         key,
-        w: img.placement.width,
-        h: img.placement.height,
-        content: img.content,
-        data: img.data, // already a Vec<u8>
+        w: image.placement.width,
+        h: image.placement.height,
+        content: image.content,
+        data: image.data,
+    };
+    eng.glyph_cache.insert(
+        cache_key,
+        (
+            bitmap.w,
+            bitmap.h,
+            image.placement.left,
+            image.placement.top,
+            bitmap.content,
+            bitmap.data.clone(),
+        ),
+    );
+    eng.trim_glyph_cache();
+    Some(bitmap)
+}
+
+pub fn lookup_cache_key(key: GlyphKey, px: f32) -> Option<CacheKey> {
+    let eng = engine().lock().unwrap();
+    let &(fid, gid) = eng.key_map.get(&key)?;
+    Some(CacheKey {
+        font_id: fid,
+        glyph_id: gid,
+        font_size_bits: px.to_bits(),
     })
 }
 
-/// Look up the full CacheKey for a compact GlyphKey.
-pub fn lookup_cache_key(key: GlyphKey) -> Option<cosmic_text::CacheKey> {
+fn extract_outlines_for(
+    data_bytes: &[u8],
+    glyph_id: u16,
+) -> Option<Box<[Command]>> {
+    let font = skrifa::FontRef::new(data_bytes).ok()?;
+    let mut pen = OutlinePenCollector(Vec::new());
+    font.outline_glyphs()
+        .get(skrifa::GlyphId::new(glyph_id as u32))?
+        .draw(skrifa::instance::Size::new(1.0), &mut pen)
+        .ok()?;
+    Some(pen.0.into_boxed_slice())
+}
+
+pub fn extract_outline_commands(cache_key: CacheKey) -> Option<Box<[Command]>> {
     let eng = engine().lock().unwrap();
-    eng.key_map.get(&key).copied()
+    let record = eng
+        .font_registry
+        .iter()
+        .find(|r| r.id == cache_key.font_id)?;
+    extract_outlines_for(&record.data_bytes, cache_key.glyph_id)
 }
 
-/// Extract vector outline commands for a glyph (uncached - caller should cache).
-/// Returns quadratic + cubic bezier commands in font-unit scaled coordinates.
-pub fn extract_outline_commands(
-    cache_key: cosmic_text::CacheKey,
-) -> Option<Box<[cosmic_text::Command]>> {
-    let mut eng = engine().lock().unwrap();
-    let Engine {
-        ref mut cache,
-        ref mut fs,
-        ..
-    } = *eng;
-    cache.get_outline_commands_uncached(fs, cache_key)
-}
-
-/// Look up the CacheKey for a GlyphKey and extract outline commands in one engine lock.
-/// Returns `None` if the GlyphKey isn't in the key map or extraction fails.
 pub fn lookup_and_extract_outline(
     key: GlyphKey,
-) -> Option<(cosmic_text::CacheKey, Box<[cosmic_text::Command]>)> {
-    let mut eng = engine().lock().unwrap();
-    let ck = eng.key_map.get(&key).copied()?;
-    let Engine {
-        ref mut cache,
-        ref mut fs,
-        ..
-    } = *eng;
-    let cmds = cache.get_outline_commands(fs, ck)?;
-    Some((ck, cmds.to_vec().into_boxed_slice()))
+    px: f32,
+) -> Option<(CacheKey, Box<[Command]>)> {
+    let eng = engine().lock().unwrap();
+    let &(fid, gid) = eng.key_map.get(&key)?;
+    let record = eng.font_registry.iter().find(|r| r.id == fid)?;
+    let ck = CacheKey {
+        font_id: fid,
+        glyph_id: gid,
+        font_size_bits: px.to_bits(),
+    };
+    let cmds = extract_outlines_for(&record.data_bytes, gid)?;
+    Some((ck, cmds))
 }
 
-// Text metrics for TextField: positions per grapheme boundary and byte offsets.
+struct OutlinePenCollector(Vec<Command>);
+
+impl OutlinePen for OutlinePenCollector {
+    fn move_to(&mut self, x: f32, y: f32) {
+        self.0.push(Command::MoveTo(x, y));
+    }
+    fn line_to(&mut self, x: f32, y: f32) {
+        self.0.push(Command::LineTo(x, y));
+    }
+    fn quad_to(&mut self, cx0: f32, cy0: f32, x: f32, y: f32) {
+        self.0.push(Command::QuadTo(cx0, cy0, x, y));
+    }
+    fn curve_to(&mut self, cx0: f32, cy0: f32, cx1: f32, cy1: f32, x: f32, y: f32) {
+        self.0.push(Command::CurveTo(cx0, cy0, cx1, cy1, x, y));
+    }
+    fn close(&mut self) {
+        self.0.push(Command::Close);
+    }
+}
+
 #[derive(Clone)]
 pub struct TextMetrics {
-    pub positions: Vec<f32>,      // cumulative advance per boundary (len == n+1)
-    pub byte_offsets: Vec<usize>, // byte index per boundary (len == n+1)
+    pub positions: Vec<f32>,
+    pub byte_offsets: Vec<usize>,
 }
 
-/// Computes caret mapping using shaping (no wrapping).
-/// `font_family` optionally overrides the default font (e.g. "Material Symbols Outlined").
 pub fn metrics_for_textfield(
     text: &str,
     px: f32,
@@ -393,53 +556,73 @@ pub fn metrics_for_textfield(
         return m;
     }
     let mut eng = engine().lock().unwrap();
-    let mut buf = Buffer::new(&mut eng.fs, Metrics::new(px, px * 1.3));
-    {
-        let mut b = buf.borrow_with(&mut eng.fs);
-        b.set_size(None, None);
-        let attrs = match font_family {
-            Some(family) => Attrs::new()
-                .family(Family::Name(family))
-                .weight(CosmicWeight(font_weight))
-                .style(if font_style == 1 {
-                    CosmicStyle::Italic
-                } else {
-                    CosmicStyle::Normal
-                }),
-            None => Attrs::new()
-                .weight(CosmicWeight(font_weight))
-                .style(if font_style == 1 {
-                    CosmicStyle::Italic
-                } else {
-                    CosmicStyle::Normal
-                }),
-        };
-        b.set_text(text, &attrs, Shaping::Advanced, None);
-        b.shape_until_scroll(true);
+
+    use parley::style::StyleProperty;
+    use parley::FontWeight;
+
+    let Engine {
+        ref mut font_cx,
+        ref mut layout_cx,
+        ..
+    } = *eng;
+    let mut builder = layout_cx.ranged_builder(font_cx, text, 1.0, true);
+    builder.push_default(StyleProperty::FontSize(px));
+    builder.push_default(StyleProperty::FontWeight(FontWeight::new(font_weight as f32)));
+    builder.push_default(StyleProperty::FontStyle(match font_style {
+        1 => parley::FontStyle::Italic,
+        _ => parley::FontStyle::Normal,
+    }));
+    builder.push_default(StyleProperty::LetterSpacing(letter_spacing));
+    if let Some(family) = font_family {
+        builder.push(
+            &[parley::style::FontFamilyName::named(family)] as &[_],
+            0..text.len(),
+        );
     }
+
+    let mut layout = builder.build(text);
+    layout.break_all_lines(None);
+    layout.align(
+        parley::Alignment::Start,
+        parley::AlignmentOptions::default(),
+    );
+
     let mut edges: Vec<(usize, f32)> = Vec::new();
     let mut last_x = 0.0f32;
     let mut glyph_idx = 0usize;
-    for run in buf.layout_runs() {
-        for g in run.glyphs {
-            let shift = glyph_idx as f32 * letter_spacing;
-            let right = g.x + shift + g.w + letter_spacing;
-            last_x = right.max(last_x);
-            edges.push((g.end, right));
-            glyph_idx += 1;
+    for line in layout.lines() {
+        for item in line.items() {
+            let parley::layout::PositionedLayoutItem::GlyphRun(glyph_run) = item else { continue };
+            let run_offset = glyph_run.offset();
+            let run = glyph_run.run();
+            let mut cluster_offset = run_offset;
+            for cluster in run.clusters() {
+                let range = cluster.text_range();
+                for g in cluster.glyphs() {
+                    let shift = glyph_idx as f32 * letter_spacing;
+                    let x_pos = cluster_offset + g.x;
+                    let right = x_pos + shift + g.advance + letter_spacing;
+                    last_x = right.max(last_x);
+                    edges.push((range.end, right));
+                    glyph_idx += 1;
+                    cluster_offset += g.advance;
+                }
+            }
         }
     }
     if edges.last().map(|e| e.0) != Some(text.len()) {
         edges.push((text.len(), last_x));
     }
+
     let mut positions = Vec::with_capacity(text.graphemes(true).count() + 1);
     let mut byte_offsets = Vec::with_capacity(positions.capacity());
     positions.push(0.0);
     byte_offsets.push(0);
     let mut last_byte = 0usize;
     for (b, _) in text.grapheme_indices(true) {
-        positions
-            .push(positions.last().copied().unwrap_or(0.0) + width_between(&edges, last_byte, b));
+        positions.push(
+            positions.last().copied().unwrap_or(0.0) + width_between(&edges, last_byte, b),
+        );
         byte_offsets.push(b);
         last_byte = b;
     }
@@ -475,9 +658,6 @@ fn lookup_right(edges: &[(usize, f32)], b: usize) -> f32 {
     }
 }
 
-/// Greedy wrap into lines that fit max_width. Prefers breaking at whitespace,
-/// falls back to grapheme boundaries. If max_lines is Some and we truncate,
-/// caller can choose to ellipsize the last visible line.
 pub fn wrap_lines(
     text: &str,
     px: f32,
@@ -516,16 +696,13 @@ pub fn wrap_lines(
         return h;
     }
 
-    // Shape once and reuse positions/byte mapping.
     let m = metrics_for_textfield(text, px, None, font_weight, font_style, letter_spacing);
-    // Fast path: fits
     if let Some(&last) = m.positions.last()
         && last <= max_width + 0.5
     {
         return (vec![text.to_string()], false);
     }
 
-    // Helper: width of substring [start..end] in bytes
     let width_of = |start_b: usize, end_b: usize| -> f32 {
         let i0 = match m.byte_offsets.binary_search(&start_b) {
             Ok(i) | Err(i) => i,
@@ -540,10 +717,9 @@ pub fn wrap_lines(
     let mut out: Vec<String> = Vec::new();
     let mut truncated = false;
 
-    let mut line_start = 0usize; // byte index
+    let mut line_start = 0usize;
     let mut best_break = line_start;
 
-    // Iterate word boundaries (keep whitespace tokens so they factor widths)
     for tok in text.split_word_bounds() {
         let tok_start = best_break;
         let tok_end = tok_start + tok.len();
@@ -554,13 +730,10 @@ pub fn wrap_lines(
             continue;
         }
 
-        // Need to break the line before tok_end.
         if best_break > line_start {
-            // Break at last good boundary
             out.push(text[line_start..best_break].trim_end().to_string());
             line_start = best_break;
         } else {
-            // Token itself too wide: force break inside token at grapheme boundaries
             let mut cut = tok_start;
             for g in tok.grapheme_indices(true) {
                 let next = tok_start + g.0 + g.1.len();
@@ -571,7 +744,6 @@ pub fn wrap_lines(
                 }
             }
             if cut == line_start {
-                // nothing fits; fall back to single grapheme
                 if let Some((ofs, grapheme)) = tok.grapheme_indices(true).next() {
                     cut = tok_start + ofs + grapheme.len();
                 }
@@ -580,31 +752,23 @@ pub fn wrap_lines(
             line_start = cut;
         }
 
-        // Check max_lines
         if let Some(ml) = max_lines
             && out.len() >= ml
         {
             truncated = true;
-            // Stop; caller may ellipsize the last line
             line_start = line_start.min(text.len());
             break;
         }
 
-        // Reset best_break for new line
         best_break = line_start;
 
-        // Re-consider current token if not fully consumed
         if line_start < tok_end {
-            // recompute width with the remaining token portion
             if width_of(line_start, tok_end) <= max_width + 0.5 {
                 best_break = tok_end;
-            } else {
-                // will be handled in next iterations (or forced again)
             }
         }
     }
 
-    // Push tail if allowed
     if line_start < text.len() && max_lines.is_none_or(|ml| out.len() < ml) {
         out.push(text[line_start..].trim_end().to_string());
     }
@@ -615,12 +779,6 @@ pub fn wrap_lines(
     res
 }
 
-/// Like `wrap_lines`, but returns byte ranges into the original `text`
-/// for each visual line. This is required for multi-line editing so
-/// caret/selection mapping stays correct.
-///
-/// Ranges are half-open `[start, end)`, and never include the '\n' char
-/// (hard line breaks end a range at the '\n' byte index).
 pub fn wrap_line_ranges(
     text: &str,
     px: f32,
@@ -635,7 +793,6 @@ pub fn wrap_line_ranges(
         return (vec![(0, 0)], false);
     }
     if !soft_wrap {
-        // Hard lines only (split on '\n' but no width wrapping)
         let mut out = Vec::new();
         let mut start = 0usize;
         for (i, ch) in text.char_indices() {
@@ -669,10 +826,8 @@ pub fn wrap_line_ranges(
         return v;
     }
 
-    // Shape once for width queries (whole string)
     let m = metrics_for_textfield(text, px, None, font_weight, font_style, letter_spacing);
 
-    // Helper: width of substring [start..end] in bytes using m
     let width_of = |start_b: usize, end_b: usize| -> f32 {
         let i0 = match m.byte_offsets.binary_search(&start_b) {
             Ok(i) | Err(i) => i,
@@ -687,7 +842,6 @@ pub fn wrap_line_ranges(
     let mut out: Vec<(usize, usize)> = Vec::new();
     let mut truncated = false;
 
-    // Process hard lines split by '\n' while preserving original indices.
     let mut line0_start = 0usize;
     for (i, ch) in text.char_indices() {
         if ch == '\n' {
@@ -752,7 +906,6 @@ fn wrap_one_hard_line_ranges(
         return (out, false);
     }
 
-    // Fast path: whole line fits
     if width_of(start, end) <= max_width + 0.5 {
         out.push((start, end));
         return (out, false);
@@ -773,12 +926,10 @@ fn wrap_one_hard_line_ranges(
             continue;
         }
 
-        // Need break before tok_abs_end.
         if best_break > line_start {
             out.push((line_start, best_break));
             line_start = best_break;
         } else {
-            // Token too wide: force break at grapheme boundaries
             let mut cut = tok_abs_start;
             for (ofs, g) in tok.grapheme_indices(true) {
                 let next = tok_abs_start + ofs + g.len();
@@ -797,7 +948,6 @@ fn wrap_one_hard_line_ranges(
             line_start = cut;
         }
 
-        // Max lines check
         if let Some(ml) = max_lines
             && out.len() >= ml
         {
@@ -808,7 +958,6 @@ fn wrap_one_hard_line_ranges(
         best_break = line_start;
     }
 
-    // Tail
     if !t && line_start < end && max_lines.is_none_or(|ml| out.len() < ml) {
         out.push((line_start, end));
     }
@@ -816,7 +965,6 @@ fn wrap_one_hard_line_ranges(
     (out, t)
 }
 
-/// Return a string truncated to fit max_width at the given px size, appending '…' if truncated.
 pub fn ellipsize_line(
     text: &str,
     px: f32,
@@ -850,7 +998,6 @@ pub fn ellipsize_line(
     if e_w >= max_width {
         return String::new();
     }
-    // Find last grapheme index whose width + ellipsis fits
     let mut cut_i = 0usize;
     for i in 0..m.positions.len() {
         if m.positions[i] + e_w <= max_width {
@@ -882,11 +1029,12 @@ fn ellipsis_width(px: f32, letter_spacing: f32) -> f32 {
     if let Some(w) = cache.lock().unwrap().get(&key).copied() {
         return w;
     }
-    let w = if let Some(g) = crate::shape_line("…", px, None, 400, 0, letter_spacing).last() {
-        g.x + g.advance
-    } else {
-        0.0
-    };
+    let w =
+        if let Some(g) = crate::shape_line("…", px, None, 400, 0, letter_spacing).last() {
+            g.x + g.advance
+        } else {
+            0.0
+        };
     cache.lock().unwrap().put(key, w);
     w
 }

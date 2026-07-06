@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::hash::{Hash, Hasher};
 
-use cosmic_text::{CacheKey, Command};
+use repose_text::{CacheKey, Command};
 use lyon_path::math::Point;
 use lyon_path::Path;
 use lyon_tessellation::{

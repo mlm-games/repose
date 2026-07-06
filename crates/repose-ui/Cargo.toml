@@ -10,8 +10,6 @@ repose-core.workspace = true
 repose-text.workspace = true
 repose-tree.workspace = true
 taffy = { workspace = true }
-fontdb = { workspace = true }
-ab_glyph = { workspace = true }
 unicode-segmentation = { workspace = true }
 log.workspace = true
 web-time.workspace = true

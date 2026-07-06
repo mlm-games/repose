@@ -1114,10 +1114,10 @@ struct ClipInstance {
     sin_cos: [f32; 2],
 }
 
-fn swash_to_a8_coverage(content: cosmic_text::SwashContent, data: &[u8]) -> Option<Vec<u8>> {
+fn swash_to_a8_coverage(content: repose_text::SwashContent, data: &[u8]) -> Option<Vec<u8>> {
     match content {
-        cosmic_text::SwashContent::Mask => Some(data.to_vec()),
-        cosmic_text::SwashContent::SubpixelMask => {
+        repose_text::SwashContent::Mask => Some(data.to_vec()),
+        repose_text::SwashContent::SubpixelMask => {
             let mut out = Vec::with_capacity(data.len() / 4);
             for px in data.chunks_exact(4) {
                 let r = px[0];
@@ -1127,7 +1127,7 @@ fn swash_to_a8_coverage(content: cosmic_text::SwashContent, data: &[u8]) -> Opti
             }
             Some(out)
         }
-        cosmic_text::SwashContent::Color => None,
+        repose_text::SwashContent::Color => None,
     }
 }
 
@@ -2238,7 +2238,7 @@ impl WgpuBackend {
             return Some(*info);
         }
         let gb = repose_text::rasterize(key, px as f32)?;
-        if !matches!(gb.content, cosmic_text::SwashContent::Color) {
+        if !matches!(gb.content, repose_text::SwashContent::Color) {
             return None;
         }
         let w = gb.w.max(1);
@@ -2964,7 +2964,7 @@ impl RenderBackend for WgpuBackend {
 
                         // Vector glyph path: tessellated geometry with MSAA.
                         if self.slug_enabled {
-                            let ck = repose_text::lookup_cache_key(sg.key);
+                            let ck = repose_text::lookup_cache_key(sg.key, sg.px);
                             if let Some(ref ck) = ck {
                                 // Check if cached.
                                 let need_tessellate = self.slug_cache.get(ck).map_or(true, |g| {
@@ -2977,7 +2977,7 @@ impl RenderBackend for WgpuBackend {
                                 });
                                 if need_tessellate {
                                     if let Some((ck2, commands)) =
-                                        repose_text::lookup_and_extract_outline(sg.key)
+                                        repose_text::lookup_and_extract_outline(sg.key, sg.px)
                                     {
                                         let font_size_px = f32::from_bits(ck2.font_size_bits);
                                         if is_stroke {
