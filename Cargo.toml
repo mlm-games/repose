@@ -25,6 +25,9 @@ license = "LGPL-2.1-or-later"
 repository = "https://github.com/mlm-games/repose"
 rust-version = "1.93"
 
+# [patch.crates-io]
+# font-awl = { path = "../font-awl" }
+
 [workspace.dependencies]
 anyhow = "1"
 thiserror = "2"
@@ -55,7 +58,7 @@ getrandom = "0.3"
 bytemuck = { version = "1.25.0", features = ["derive"] }
 
 # Layout
-taffy = { version = "0.11", default-features = true }
+taffy = { version = "0.12", default-features = true }
 
 # Platform + GPU
 winit = { version = "0.30", default-features = true }
@@ -65,14 +68,14 @@ pollster = "0.4.0"
 # Text
 font-awl = { version = "0.1", features = ["parley"] }
 parley = "0.11"
-skrifa = "0.43"
+skrifa = "0.44"
 swash = "0.2"
 
 android_logger = "0.15"
 serde = { version = "1", features = ["derive"] }
 web-time = "1"
 rustc-hash = "2.1"
-rapidhash = "4.4"
+rapidhash = "4.5"
 webbrowser = "1.2"
 
 repose-core = { path = "crates/repose-core", version = "^0" }
