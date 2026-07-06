@@ -2055,14 +2055,19 @@ impl LayoutEngine {
         if let Some(tf) = modifier.transform {
             scene.nodes.push(SceneNode::PushTransform { transform: tf });
         }
-        if push_round_clip {
+        let overflow_clip = modifier
+            .overflow
+            .map_or(true, |o| o == repose_core::Overflow::Clip);
+        if push_round_clip && overflow_clip {
             scene.nodes.push(SceneNode::PushClip {
                 rect,
                 radius: round_clip_px,
                 op: ClipOp::Intersect,
             });
         }
-        if let Some(cr) = modifier.clip_rect {
+        if let Some(cr) = modifier.clip_rect
+            && overflow_clip
+        {
             scene.nodes.push(SceneNode::PushClip {
                 rect: repose_core::Rect {
                     x: rect.x + dp_to_px(cr.left),
@@ -3458,10 +3463,10 @@ impl LayoutEngine {
                 scene.nodes.push(SceneNode::EndLayer { layer_id: id });
             }
             // Pop clips and transforms pushed before the scroll branch
-            if modifier.clip_rect.is_some() {
+            if modifier.clip_rect.is_some() && overflow_clip {
                 scene.nodes.push(SceneNode::PopClip);
             }
-            if push_round_clip {
+            if push_round_clip && overflow_clip {
                 scene.nodes.push(SceneNode::PopClip);
             }
             if modifier.transform.is_some() {
@@ -3581,10 +3586,10 @@ impl LayoutEngine {
             }
         }
 
-        if modifier.clip_rect.is_some() {
+        if modifier.clip_rect.is_some() && overflow_clip {
             scene.nodes.push(SceneNode::PopClip);
         }
-        if push_round_clip {
+        if push_round_clip && overflow_clip {
             scene.nodes.push(SceneNode::PopClip);
         }
         if modifier.transform.is_some() {

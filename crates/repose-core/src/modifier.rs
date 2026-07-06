@@ -62,7 +62,7 @@ macro_rules! impl_option_fields {
                     flex_grow, flex_shrink, flex_basis, flex_wrap, flex_dir,
                     gap, row_gap, column_gap,
                     align_self, justify_content, align_items_container, align_content,
-                    clip_rounded, clip_rect, render_z_index,
+                    clip_rounded, clip_rect, overflow, render_z_index,
                     on_scroll,
                     nested_scroll_connection,
                     scroll,
@@ -111,6 +111,23 @@ pub enum ClipOp {
 impl Default for ClipOp {
     fn default() -> Self {
         Self::Intersect
+    }
+}
+
+/// Controls whether child content is clipped to the parent bounds.
+///
+/// Analogous to CSS `overflow`:
+/// - `Clip` (default): content extending beyond the parent is hidden.
+/// - `Visible`: content is allowed to overflow the parent bounds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Overflow {
+    Clip,
+    Visible,
+}
+
+impl Default for Overflow {
+    fn default() -> Self {
+        Self::Clip
     }
 }
 
@@ -496,6 +513,11 @@ pub struct Modifier {
     /// Rectangular clip with a clipping operation (Intersect or Difference).
     /// The rect is relative to the element bounds, in dp.
     pub clip_rect: Option<ClipRect>,
+    /// Controls whether child content is clipped to the parent bounds.
+    ///
+    /// Defaults to `Clip`. When set to `Visible`, children can overflow
+    /// the parent's rounded rect or clip rect boundary.
+    pub overflow: Option<Overflow>,
     /// Z-index for hit-testing order (higher = receives events first).
     pub z_index: f32,
     /// Z-index for render order (higher = painted on top). If None, uses tree order.
@@ -1042,6 +1064,10 @@ impl Modifier {
             bottom,
             op,
         });
+        self
+    }
+    pub fn overflow(mut self, overflow: Overflow) -> Self {
+        self.overflow = Some(overflow);
         self
     }
     pub fn z_index(mut self, z: f32) -> Self {
