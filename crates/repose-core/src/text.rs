@@ -702,7 +702,7 @@ pub struct TextStyle {
     pub color: Option<Color>,
     /// Font weight. None = NORMAL.
     pub font_weight: Option<u16>,
-    /// Font family. None = use default.
+    /// Font family. None = use default (sans-serif).
     pub font_family: Option<&'static str>,
     /// Font style. None = Normal.
     pub font_style: Option<u8>,
@@ -746,7 +746,7 @@ impl Default for TextStyle {
             font_size: 0.0,
             color: None,
             font_weight: None,
-            font_family: None,
+            font_family: Some("sans-serif"),
             font_style: None,
             text_align: crate::TextAlign::Unspecified,
             letter_spacing: 0.0,

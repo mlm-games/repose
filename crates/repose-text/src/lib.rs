@@ -378,29 +378,30 @@ fn shape_line_inner(
     }));
     builder.push_default(StyleProperty::LetterSpacing(letter_spacing));
 
-    use parley::style::{FontFamilyName, GenericFamily};
-    let family = font_family.unwrap_or("sans-serif");
-    let names: &[FontFamilyName] = match family {
-        "monospace" => &[
-            FontFamilyName::named("JetBrains Mono"),
-            GenericFamily::Monospace.into(),
-        ],
-        "sans-serif" => &[
-            FontFamilyName::named("Open Sans"),
-            GenericFamily::SansSerif.into(),
-        ],
-        "emoji" => &[
-            FontFamilyName::named("Noto Color Emoji"),
-            GenericFamily::Emoji.into(),
-        ],
-        "serif" => &[GenericFamily::Serif.into()],
-        "cursive" => &[GenericFamily::Cursive.into()],
-        "fantasy" => &[GenericFamily::Fantasy.into()],
-        "system-ui" => &[GenericFamily::SystemUi.into()],
-        "math" => &[GenericFamily::Math.into()],
-        _ => &[FontFamilyName::named(family)],
-    };
-    builder.push(names, 0..text.len());
+    if let Some(family) = font_family {
+        use parley::style::{FontFamilyName, GenericFamily};
+        let names: &[FontFamilyName] = match family {
+            "monospace" => &[
+                FontFamilyName::named("JetBrains Mono"),
+                GenericFamily::Monospace.into(),
+            ],
+            "sans-serif" => &[
+                FontFamilyName::named("Open Sans"),
+                GenericFamily::SansSerif.into(),
+            ],
+            "emoji" => &[
+                FontFamilyName::named("Noto Color Emoji"),
+                GenericFamily::Emoji.into(),
+            ],
+            "serif" => &[GenericFamily::Serif.into()],
+            "cursive" => &[GenericFamily::Cursive.into()],
+            "fantasy" => &[GenericFamily::Fantasy.into()],
+            "system-ui" => &[GenericFamily::SystemUi.into()],
+            "math" => &[GenericFamily::Math.into()],
+            _ => &[FontFamilyName::named(family)],
+        };
+        builder.push(names, 0..text.len());
+    }
 
     let mut layout = builder.build(text);
     layout.break_all_lines(None);
@@ -628,29 +629,30 @@ pub fn metrics_for_textfield(
         _ => parley::FontStyle::Normal,
     }));
     builder.push_default(StyleProperty::LetterSpacing(letter_spacing));
-    use parley::style::{FontFamilyName, GenericFamily};
-    let family = font_family.unwrap_or("sans-serif");
-    let names: &[FontFamilyName] = match family {
-        "monospace" => &[
-            FontFamilyName::named("JetBrains Mono"),
-            GenericFamily::Monospace.into(),
-        ],
-        "sans-serif" => &[
-            FontFamilyName::named("Open Sans"),
-            GenericFamily::SansSerif.into(),
-        ],
-        "emoji" => &[
-            FontFamilyName::named("Noto Color Emoji"),
-            GenericFamily::Emoji.into(),
-        ],
-        "serif" => &[GenericFamily::Serif.into()],
-        "cursive" => &[GenericFamily::Cursive.into()],
-        "fantasy" => &[GenericFamily::Fantasy.into()],
-        "system-ui" => &[GenericFamily::SystemUi.into()],
-        "math" => &[GenericFamily::Math.into()],
-        _ => &[FontFamilyName::named(family)],
-    };
-    builder.push(names, 0..text.len());
+    if let Some(family) = font_family {
+        use parley::style::{FontFamilyName, GenericFamily};
+        let names: &[FontFamilyName] = match family {
+            "monospace" => &[
+                FontFamilyName::named("JetBrains Mono"),
+                GenericFamily::Monospace.into(),
+            ],
+            "sans-serif" => &[
+                FontFamilyName::named("Open Sans"),
+                GenericFamily::SansSerif.into(),
+            ],
+            "emoji" => &[
+                FontFamilyName::named("Noto Color Emoji"),
+                GenericFamily::Emoji.into(),
+            ],
+            "serif" => &[GenericFamily::Serif.into()],
+            "cursive" => &[GenericFamily::Cursive.into()],
+            "fantasy" => &[GenericFamily::Fantasy.into()],
+            "system-ui" => &[GenericFamily::SystemUi.into()],
+            "math" => &[GenericFamily::Math.into()],
+            _ => &[FontFamilyName::named(family)],
+        };
+        builder.push(names, 0..text.len());
+    }
 
     let mut layout = builder.build(text);
     layout.break_all_lines(None);
