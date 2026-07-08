@@ -66,8 +66,8 @@ wgpu = "30"
 pollster = "0.4.0"
 
 # Text
-font-awl = { version = "0.1", features = ["parley"] }
-parley = "0.11"
+font-awl = "0.2"
+parley = { version = "0.11", default-features = false, features = ["std"] }
 skrifa = "0.44"
 swash = "0.2"
 

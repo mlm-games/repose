@@ -13,7 +13,7 @@ cjk = ["font-awl/cjk"]
 monospace = ["font-awl/monospace"]
 
 [dependencies]
-font-awl = { workspace = true, features = ["parley"] }
+font-awl = { workspace = true }
 log = { workspace = true }
 once_cell = "1"
 parley = { workspace = true }
