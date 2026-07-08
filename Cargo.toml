@@ -1,22 +1,6 @@
 [workspace]
-members = [
-  "crates/repose-core",
-  "crates/repose-tree",
-  "crates/repose-ui",
-  "crates/repose-render-wgpu",
-  "crates/repose-platform",
-  "crates/repose-devtools",
-  "crates/repose-macros",
-  "crates/repose-text",
-  "crates/repose-canvas",
-  "crates/repose-material",
-  "crates/repose-navigation",
-  "examples/showcase",
-  "examples/animation_demo",
-  "examples/android_counter",
-  "crates/repose-docking",
-]
-resolver = "2"
+members = ["crates/*", "examples/*"]
+resolver = "3"
 
 [workspace.package]
 version = "0.22.5"
@@ -38,10 +22,11 @@ smallvec = "1.15"
 slotmap = "1.1"
 bitflags = "2.13"
 unicode-segmentation = "1.13"
-clipawl = { version = "0.3.2" }
+clipawl = "0.3.2"
 
-# Common
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [
@@ -52,41 +37,38 @@ web-sys = { version = "0.3", features = [
   "HtmlCanvasElement",
   "CssStyleDeclaration",
 ] }
+
 console_error_panic_hook = "0.1"
 console_log = "1"
 getrandom = "0.3"
 bytemuck = { version = "1.25.0", features = ["derive"] }
 
-# Layout
 taffy = { version = "0.12", default-features = true }
 
-# Platform + GPU
 winit = { version = "0.30", default-features = true }
 wgpu = "30"
-pollster = "0.4.0"
+pollster = "0.4"
 
-# Text
 font-awl = "0.2"
 parley = { version = "0.11", default-features = false, features = ["std"] }
 skrifa = "0.44"
 swash = "0.2"
 
 android_logger = "0.15"
-serde = { version = "1", features = ["derive"] }
 web-time = "1"
 rustc-hash = "2.1"
 rapidhash = "4.5"
 webbrowser = "1.2"
 
-repose-core = { path = "crates/repose-core", version = "^0" }
-repose-ui = { path = "crates/repose-ui", version = "^0" }
-repose-material = { path = "crates/repose-material", version = "^0" }
-repose-canvas = { path = "crates/repose-canvas", version = "^0" }
-repose-navigation = { path = "crates/repose-navigation", version = "^0" }
-repose-devtools = { path = "crates/repose-devtools", version = "^0" }
-repose-text = { path = "crates/repose-text", version = "^0" }
-repose-render-wgpu = { path = "crates/repose-render-wgpu", version = "^0" }
-repose-platform = { path = "crates/repose-platform", version = "^0" }
-repose-tree = { path = "crates/repose-tree", version = "^0" }
-repose-docking = { path = "crates/repose-docking", version = "^0" }
-repose-macros = { path = "crates/repose-macros", version = "^0" }
+repose-core = { path = "crates/repose-core", version = "0.22.5" }
+repose-ui = { path = "crates/repose-ui", version = "0.22.5" }
+repose-material = { path = "crates/repose-material", version = "0.22.5" }
+repose-canvas = { path = "crates/repose-canvas", version = "0.22.5" }
+repose-navigation = { path = "crates/repose-navigation", version = "0.22.5" }
+repose-devtools = { path = "crates/repose-devtools", version = "0.22.5" }
+repose-text = { path = "crates/repose-text", version = "0.22.5" }
+repose-render-wgpu = { path = "crates/repose-render-wgpu", version = "0.22.5" }
+repose-platform = { path = "crates/repose-platform", version = "0.22.5" }
+repose-tree = { path = "crates/repose-tree", version = "0.22.5" }
+repose-docking = { path = "crates/repose-docking", version = "0.22.5" }
+repose-macros = { path = "crates/repose-macros", version = "0.22.5" }
