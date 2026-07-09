@@ -17,6 +17,49 @@ use serde::{Deserialize, Serialize};
 use crate::pages::{self, PageCtx};
 use crate::ui::{self, SettingsVm};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RouteGroup {
+    Overview,
+    Material,
+    Foundation,
+    Collections,
+    Interaction,
+    Platform,
+}
+
+impl RouteGroup {
+    pub const ALL: [RouteGroup; 6] = [
+        RouteGroup::Overview,
+        RouteGroup::Material,
+        RouteGroup::Foundation,
+        RouteGroup::Collections,
+        RouteGroup::Interaction,
+        RouteGroup::Platform,
+    ];
+
+    pub fn title(self) -> &'static str {
+        match self {
+            RouteGroup::Overview => "Overview",
+            RouteGroup::Material => "Material 3",
+            RouteGroup::Foundation => "Foundation",
+            RouteGroup::Collections => "Collections",
+            RouteGroup::Interaction => "Interaction",
+            RouteGroup::Platform => "Platform",
+        }
+    }
+
+    pub fn subtitle(self) -> &'static str {
+        match self {
+            RouteGroup::Overview => "Start here",
+            RouteGroup::Material => "M3 controls",
+            RouteGroup::Foundation => "Layout, text",
+            RouteGroup::Collections => "Lazy lists",
+            RouteGroup::Interaction => "Motion, input",
+            RouteGroup::Platform => "Desktop surfaces",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Route {
     Home,
@@ -40,26 +83,35 @@ pub enum Route {
 }
 
 impl Route {
-    /// Single source of truth for the nav rail (display order).
+    /// Single source of truth for display order.
     pub const ALL: [Route; 18] = [
         Route::Home,
-        Route::Layout,
+        Route::M3,
         Route::Widgets,
+        Route::Adaptive,
+        Route::Layout,
         Route::Text,
-        Route::Scroll,
-        Route::ScrollFeatures,
         Route::Canvas,
         Route::Lists,
         Route::Grid,
         Route::StaggeredGrid,
         Route::Pager,
+        Route::Scroll,
+        Route::ScrollFeatures,
         Route::Animation,
         Route::Dnd,
         Route::Docking,
-        Route::Errors,
         Route::Windows,
+        Route::Errors,
+    ];
+
+    pub const FEATURED: [Route; 6] = [
         Route::M3,
+        Route::Widgets,
         Route::Adaptive,
+        Route::Animation,
+        Route::Docking,
+        Route::Windows,
     ];
 
     pub fn title(self) -> &'static str {
@@ -85,7 +137,69 @@ impl Route {
         }
     }
 
-    /// Stable identity derived from the pages
+    pub fn description(self) -> &'static str {
+        match self {
+            Route::Home => "Overview.",
+            Route::Layout => "Rows, columns, grids, shadows.",
+            Route::Widgets => "Switches, sliders, chips, focus.",
+            Route::Text => "Fields, spans, selection, symbols.",
+            Route::Scroll => "Vertical and horizontal scroll.",
+            Route::ScrollFeatures => "Overscroll, pull-to-refresh.",
+            Route::Canvas => "Drawing primitives and scenes.",
+            Route::Animation => "Springs, tweens, crossfades.",
+            Route::Lists => "Lazy columns, carousel, swipe.",
+            Route::Grid => "Virtualized vertical grids.",
+            Route::StaggeredGrid => "Pinterest-style lazy grid.",
+            Route::Pager => "Horizontal and vertical paging.",
+            Route::Dnd => "Internal drag/drop and files.",
+            Route::Docking => "Dockable tabs and split panels.",
+            Route::Errors => "Error boundaries and recovery.",
+            Route::Windows => "Floating windows and palettes.",
+            Route::M3 => "Menus, sheets, rails, pickers.",
+            Route::Adaptive => "Responsive list/detail panes.",
+        }
+    }
+
+    pub fn group(self) -> RouteGroup {
+        match self {
+            Route::Home => RouteGroup::Overview,
+            Route::M3 | Route::Widgets => RouteGroup::Material,
+            Route::Adaptive | Route::Layout | Route::Text | Route::Canvas => RouteGroup::Foundation,
+            Route::Lists
+            | Route::Grid
+            | Route::StaggeredGrid
+            | Route::Pager
+            | Route::Scroll
+            | Route::ScrollFeatures => RouteGroup::Collections,
+            Route::Animation | Route::Dnd => RouteGroup::Interaction,
+            Route::Docking | Route::Windows | Route::Errors => RouteGroup::Platform,
+        }
+    }
+
+    pub fn badge(self) -> &'static str {
+        match self {
+            Route::Home => "R",
+            Route::Layout => "Ly",
+            Route::Widgets => "Ui",
+            Route::Text => "Aa",
+            Route::Scroll => "Sc",
+            Route::ScrollFeatures => "Fx",
+            Route::Canvas => "Cv",
+            Route::Animation => "Mo",
+            Route::Lists => "Ls",
+            Route::Grid => "Gr",
+            Route::StaggeredGrid => "Sg",
+            Route::Pager => "Pg",
+            Route::Dnd => "Dn",
+            Route::Docking => "Dk",
+            Route::Errors => "Er",
+            Route::Windows => "Wn",
+            Route::M3 => "M3",
+            Route::Adaptive => "Ad",
+        }
+    }
+
+    /// Stable identity derived from the pages.
     pub fn id(self) -> u64 {
         self as u64 + 1
     }
@@ -191,6 +305,7 @@ pub fn app(_s: &mut Scheduler) -> View {
     let ctx = PageCtx {
         overlay: (*overlay).clone(),
         global_windows: global_windows.clone(),
+        nav: navigator.clone(),
     };
     let render = renderer(move |scope| pages::render(&ctx, *scope.key()));
 

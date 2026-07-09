@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_core::prelude::*;
+use repose_navigation::Navigator;
 use repose_ui::overlay::OverlayHandle;
 use repose_ui::windowing::WindowManagerState;
 
@@ -31,11 +32,12 @@ pub mod windows;
 pub struct PageCtx {
     pub overlay: OverlayHandle,
     pub global_windows: Rc<RefCell<WindowManagerState>>,
+    pub nav: Navigator<Route>,
 }
 
 pub fn render(ctx: &PageCtx, route: Route) -> View {
     match route {
-        Route::Home => home::screen(),
+        Route::Home => home::screen(ctx.nav.clone()),
         Route::Layout => layout::screen(),
         Route::Widgets => widgets::screen(),
         Route::Text => text::screen(),
