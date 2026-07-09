@@ -1,8 +1,13 @@
+use std::rc::Rc;
+
 use repose_core::{prelude::*, signal};
 use repose_material::material3::{
-    AssistChip, ButtonConfig, CardConfig, Checkbox, CheckboxConfig, ChipConfig, FilterChip,
-    LinearProgressIndicator, RadioButton, RadioButtonConfig, RangeSlider, Slider, SliderConfig,
-    Switch, SwitchConfig, TextButton,
+    AssistChip, Badge, BadgeConfig, BadgedBox, BadgedBoxConfig, ButtonConfig, Checkbox,
+    CheckboxConfig, ChipConfig, CircularProgressIndicator, DividerConfig, FilterChip,
+    HorizontalDivider, LinearProgressIndicator, LinearProgressIndicatorConfig, RadioButton,
+    RadioButtonConfig, RangeSlider, SearchBar, SearchBarConfig, SearchBarInputField,
+    SearchBarInputFieldConfig, SearchBarState, Slider, SliderConfig, Switch, SwitchConfig, Tab,
+    TabRow, TabRowConfig, TextButton, TooltipBox, TooltipConfig, TooltipState, VerticalDivider,
 };
 use repose_material::{Icon, material_symbols};
 use repose_ui::*;
@@ -14,6 +19,10 @@ material_symbols! {
     close    : '\u{E5CD}',
     favorite : '\u{E87D}',
     search   : '\u{E8B6}',
+    home     : '\u{E88A}',
+    settings : '\u{E8B8}',
+    info     : '\u{E88E}',
+    star     : '\u{F09A}',
 }
 
 fn focus_cell(idx: i32) -> View {
@@ -36,6 +45,12 @@ pub fn screen() -> View {
     let r_b = remember(|| signal(0.8f32));
     let prog = remember(|| signal(0.4f32));
     let filter_selected = remember(|| signal(false));
+    let tab_index = remember(|| signal(0usize));
+    let search_state = remember(SearchBarState::new);
+    let tooltip_state = remember(|| TooltipState::new());
+    let tooltip_state_inner: Rc<TooltipState> = tooltip_state.as_ref().clone();
+
+    let th = theme();
 
     Page(vec![
         Section(
@@ -115,7 +130,27 @@ pub fn screen() -> View {
                     },
                     SliderConfig::default(),
                 ),
-                LinearProgressIndicator(Some(prog.get()), Default::default()),
+                Row(Modifier::new().fill_max_width().gap(sp::MD)).child((
+                    Column(Modifier::new().gap(sp::SM).flex_grow(1.0)).child((
+                        Text(format!("Linear: {:.0}%", prog.get() * 100.0))
+                            .size(13.0)
+                            .color(th.on_surface_variant),
+                        LinearProgressIndicator(
+                            Some(prog.get()),
+                            LinearProgressIndicatorConfig::default(),
+                        ),
+                    )),
+                    Column(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
+                        Text("Circular").size(13.0).color(th.on_surface_variant),
+                        CircularProgressIndicator(Some(prog.get()), Default::default()),
+                    )),
+                    Column(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
+                        Text("Indeterminate")
+                            .size(13.0)
+                            .color(th.on_surface_variant),
+                        CircularProgressIndicator(None, Default::default()),
+                    )),
+                )),
                 Row(Modifier::new().gap(sp::MD)).child((
                     TextButton(
                         Modifier::new(),
@@ -136,6 +171,146 @@ pub fn screen() -> View {
                         || Text("Increase"),
                     ),
                 )),
+            )),
+        ),
+        Section(
+            "Search Bar",
+            Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
+                SearchBar(
+                    search_state.clone(),
+                    SearchBarInputField(
+                        "Search...".to_string(),
+                        search_state.query(),
+                        Rc::new({
+                            let s = search_state.clone();
+                            move |q| s.set_query(q)
+                        }),
+                        search_state.is_expanded(),
+                        SearchBarInputFieldConfig {
+                            on_search: Some(Rc::new({
+                                let s = search_state.clone();
+                                move |query| {
+                                    log::info!("Search submitted: {query}");
+                                    s.deactivate();
+                                }
+                            })),
+                            ..Default::default()
+                        },
+                    ),
+                    Modifier::new(),
+                    Some(Icon(Symbols::search).size(20.0)),
+                    None,
+                    SearchBarConfig::default(),
+                ),
+                Text(format!("Query: \"{}\"", search_state.query()))
+                    .size(13.0)
+                    .color(th.on_surface_variant),
+            )),
+        ),
+        Section(
+            "Tab Row",
+            Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
+                TabRow(
+                    tab_index.get(),
+                    vec![
+                        Tab {
+                            label: "Tab A".into(),
+                            icon: Some(Icon(Symbols::home).size(18.0)),
+                            on_click: Rc::new({
+                                let t = tab_index.clone();
+                                move || t.set(0)
+                            }),
+                            enabled: true,
+                            interaction_source: None,
+                        },
+                        Tab {
+                            label: "Tab B".into(),
+                            icon: None,
+                            on_click: Rc::new({
+                                let t = tab_index.clone();
+                                move || t.set(1)
+                            }),
+                            enabled: true,
+                            interaction_source: None,
+                        },
+                        Tab {
+                            label: "Tab C".into(),
+                            icon: Some(Icon(Symbols::settings).size(18.0)),
+                            on_click: Rc::new({
+                                let t = tab_index.clone();
+                                move || t.set(2)
+                            }),
+                            enabled: true,
+                            interaction_source: None,
+                        },
+                    ],
+                    TabRowConfig::default(),
+                ),
+                Text(format!("Selected tab: {}", tab_index.get()))
+                    .size(14.0)
+                    .color(th.on_surface),
+            )),
+        ),
+        Section(
+            "Badge / BadgedBox",
+            Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
+                Row(Modifier::new().gap(sp::XL).align_items(AlignItems::CENTER)).child((
+                    BadgedBox(
+                        Badge(None, BadgeConfig::default()),
+                        Icon(Symbols::info).size(24.0).color(th.on_surface),
+                        BadgedBoxConfig::default(),
+                    ),
+                    BadgedBox(
+                        Badge(
+                            Some(Text("3").size(10.0).color(th.surface)),
+                            BadgeConfig::default(),
+                        ),
+                        Icon(Symbols::settings).size(24.0).color(th.on_surface),
+                        BadgedBoxConfig::default(),
+                    ),
+                    BadgedBox(
+                        Badge(
+                            Some(Text("99+").size(9.0).color(th.surface)),
+                            BadgeConfig::default(),
+                        ),
+                        Icon(Symbols::favorite).size(24.0).color(th.error),
+                        BadgedBoxConfig::default(),
+                    ),
+                )),
+                Hint("Badges appear at the top-right of the wrapped content."),
+            )),
+        ),
+        Section(
+            "Tooltip",
+            Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
+                TooltipBox(
+                    "This is a tooltip with the M3 rich style.",
+                    tooltip_state_inner.clone(),
+                    Box(Modifier::new()
+                        .padding(sp::MD)
+                        .background(th.surface_container)
+                        .border(1.0, th.outline_variant, 8.0)
+                        .clip_rounded(8.0)
+                        .clickable()
+                        .on_pointer_down({
+                            let t = tooltip_state_inner.clone();
+                            move |_| {
+                                if t.is_visible() {
+                                    t.dismiss()
+                                } else {
+                                    t.show()
+                                }
+                            }
+                        }))
+                    .child(
+                        Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
+                            Icon(Symbols::info).size(18.0).color(th.primary),
+                            Text("Hover me").size(14.0).color(th.on_surface),
+                        )),
+                    ),
+                    TooltipConfig::default(),
+                ),
+                Hint("Tooltips appear above the element on hover."),
             )),
         ),
         Section(
@@ -231,6 +406,21 @@ pub fn screen() -> View {
                             ChipConfig::default(),
                         ),
                     )),
+                )),
+            )),
+        ),
+        Section(
+            "Dividers",
+            Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
+                HorizontalDivider(DividerConfig::default()),
+                Row(Modifier::new()
+                    .height(40.0)
+                    .gap(sp::MD)
+                    .align_items(AlignItems::CENTER))
+                .child((
+                    Text("Left").size(14.0).color(th.on_surface),
+                    VerticalDivider(DividerConfig::default()),
+                    Text("Right").size(14.0).color(th.on_surface),
                 )),
             )),
         ),
