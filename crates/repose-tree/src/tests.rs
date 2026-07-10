@@ -27,6 +27,7 @@ mod tests {
                 letter_spacing: 0.0,
                 line_height: 0.0,
                 url: None,
+                font_variation_settings: None,
             },
         )
     }

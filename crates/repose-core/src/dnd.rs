@@ -575,5 +575,6 @@ pub fn overlay_drag_indicator(
         line_height: 0.0,
         extra_style: Default::default(),
         url: None,
+        font_variation_settings: None,
     });
 }

@@ -3615,12 +3615,26 @@ pub fn NavigationRail(
     ))
 }
 
-/// State for `SwipeToDismiss` - tracks swipe offset with spring animation.
+/// Direction for the dismiss action.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DismissDirection {
+    StartToEnd,
+    EndToStart,
+    Both,
+}
+
+/// Resolved state for swipe-to-dismiss.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DismissValue {
+    Default,
+    DismissedToStart,
+    DismissedToEnd,
+}
+
+/// State for `SwipeToDismiss` - backed by a generic `SwipeableState<DismissValue>`.
 pub struct SwipeToDismissState {
-    anim: Rc<RefCell<AnimatedValue<f32>>>,
-    /// Set when `dismiss()` starts the spring; checked when the spring settles
-    /// to fire `on_dismiss` exactly once per dismiss gesture.
-    dismiss_handled: Rc<RefCell<bool>>,
+    swipeable: repose_core::SwipeableState<DismissValue>,
+    dismissed_offset: f32,
 }
 
 impl Default for SwipeToDismissState {
@@ -3631,83 +3645,91 @@ impl Default for SwipeToDismissState {
 
 impl SwipeToDismissState {
     pub fn new() -> Self {
+        Self::with_config(SwipeToDismissConfig::default())
+    }
+
+    pub fn with_config(config: SwipeToDismissConfig) -> Self {
+        let one_third = 1.0 / 3.0;
+        let positional_threshold = (config.dismiss_threshold * one_third) / config.dismissed_offset;
+        let mut anchors = vec![(0.0, DismissValue::Default)];
+        if config.enable_dismiss_from_end_to_start {
+            anchors.push((-config.dismissed_offset, DismissValue::DismissedToStart));
+        }
+        if config.enable_dismiss_from_start_to_end {
+            anchors.push((config.dismissed_offset, DismissValue::DismissedToEnd));
+        }
+        // Sort by offset for correct clamp/nearest/next-anchor logic.
+        anchors.sort_by(|(a, _), (b, _)| a.partial_cmp(b).unwrap());
+        let swipeable = repose_core::SwipeableState::new(
+            anchors,
+            repose_core::SwipeableConfig {
+                animation_spec: config.animation_spec.clone(),
+                positional_threshold,
+                ..Default::default()
+            },
+        );
+        // Start at the default position (not anchors[0], which may be negative).
+        swipeable.snap_to(0.0);
         Self {
-            anim: Rc::new(RefCell::new(AnimatedValue::new(
-                0.0,
-                AnimationSpec::spring_gentle(),
-            ))),
-            dismiss_handled: Rc::new(RefCell::new(true)),
+            swipeable,
+            dismissed_offset: config.dismissed_offset,
         }
     }
 
-    /// Read and tick the animated offset.  Call every frame that needs the value.
-    /// Requests a re-draw while the spring is still running.
+    /// Current animated offset in pixels.
     pub fn offset(&self) -> f32 {
-        let mut anim = self.anim.borrow_mut();
-        if anim.update() {
-            request_frame();
-        }
-        *anim.get()
+        self.swipeable.offset()
     }
 
     /// Snap instantly to an offset (used during active drag).
     pub fn set_offset_instant(&self, off: f32) {
-        self.anim.borrow_mut().snap_to(off);
-        request_frame();
+        self.swipeable.snap_to(off);
     }
 
     /// Whether the current position is past the dismiss threshold.
     pub fn is_dismissed(&self) -> bool {
-        *self.anim.borrow().get() < -150.0
+        self.swipeable.current_value() != DismissValue::Default
     }
 
     /// Animate to the dismissed position.
     pub fn dismiss(&self) {
-        *self.dismiss_handled.borrow_mut() = false;
-        self.anim.borrow_mut().set_target(-300.0);
-        request_frame();
+        self.swipeable.animate_to(&DismissValue::DismissedToStart);
     }
 
     /// Animate to the dismissed position with custom offset.
     pub fn dismiss_to(&self, offset: f32) {
-        *self.dismiss_handled.borrow_mut() = false;
-        self.anim.borrow_mut().set_target(-offset);
-        request_frame();
+        let value = if offset < 0.0 {
+            DismissValue::DismissedToStart
+        } else {
+            DismissValue::DismissedToEnd
+        };
+        self.swipeable.animate_to(&value);
     }
 
     /// Animate back to origin.
     pub fn reset(&self) {
-        *self.dismiss_handled.borrow_mut() = true;
-        self.anim.borrow_mut().set_target(0.0);
-        request_frame();
-    }
-
-    /// Fire the dismiss callback once when the spring settles past threshold.
-    fn try_handle_dismiss(&self, on_dismiss: &Option<Rc<dyn Fn()>>) {
-        let anim = self.anim.borrow();
-        if !anim.is_animating() && !*self.dismiss_handled.borrow() && *anim.get() < -150.0 {
-            *self.dismiss_handled.borrow_mut() = true;
-            if let Some(cb) = on_dismiss {
-                cb();
-            }
-        }
+        self.swipeable.animate_to(&DismissValue::Default);
     }
 
     /// Fire the dismiss callback once when the spring settles past a given threshold.
     fn try_handle_dismiss_with_threshold(&self, on_dismiss: &Option<Rc<dyn Fn()>>, threshold: f32) {
-        let anim = self.anim.borrow();
-        if !anim.is_animating() && !*self.dismiss_handled.borrow() && *anim.get() < -threshold {
-            *self.dismiss_handled.borrow_mut() = true;
-            if let Some(cb) = on_dismiss {
-                cb();
+        if !self.swipeable.is_animating() {
+            let val = self.swipeable.current_value();
+            if val != DismissValue::Default {
+                if let Some(cb) = on_dismiss {
+                    cb();
+                }
             }
         }
     }
 }
 
-/// M3 SwipeToDismiss - wraps content that can be swiped left to reveal
-/// a `background` action view.  On release past the threshold the content
+/// M3 SwipeToDismiss - wraps content that can be swiped to reveal
+/// a `background` action view. On release past the threshold the content
 /// springs to the dismissed position and `on_dismiss` fires **once**.
+///
+/// The gesture logic uses `SwipeableState<DismissValue>` internally, so it
+/// supports both left and right dismiss directions based on the config.
 pub fn SwipeToDismiss(
     state: Rc<SwipeToDismissState>,
     on_dismiss: Option<Rc<dyn Fn()>>,
@@ -3719,47 +3741,16 @@ pub fn SwipeToDismiss(
     let offset = state.offset();
     state.try_handle_dismiss_with_threshold(&on_dismiss, config.dismiss_threshold);
 
-    let drag_start_x = remember_with_key("swipe_drag_start", || RefCell::new(None::<f32>));
-    let drag_base = remember_with_key("swipe_drag_base", || RefCell::new(0.0f32));
+    let s1 = state.swipeable.clone();
+    let s2 = state.swipeable.clone();
+    let s3 = state.swipeable.clone();
+    let on_down = { move |e: PointerEvent| s1.on_pointer_down(e.position.x) };
+    let on_move = { move |e: PointerEvent| s2.on_pointer_move(e.position.x) };
+    let on_up = { move |_e: PointerEvent| s3.on_pointer_up() };
 
-    let st = state.clone();
-    let on_down = {
-        let d = drag_start_x.clone();
-        let base = drag_base.clone();
-        move |e: PointerEvent| {
-            *d.borrow_mut() = Some(e.position.x);
-            *base.borrow_mut() = *st.anim.borrow().get();
-        }
-    };
-
-    let st = state.clone();
-    let on_move = {
-        let d = drag_start_x.clone();
-        let base = drag_base.clone();
-        move |e: PointerEvent| {
-            if let Some(start) = *d.borrow() {
-                let dx = e.position.x - start;
-                st.set_offset_instant(*base.borrow() + dx);
-            }
-        }
-    };
-
-    let st = state.clone();
-    let on_up = {
-        let d = drag_start_x.clone();
-        let dt = config.dismiss_threshold;
-        move |_e: PointerEvent| {
-            *d.borrow_mut() = None;
-            let off = *st.anim.borrow().get();
-            if off > -dt * 0.333 {
-                st.reset();
-            } else {
-                st.dismiss();
-            }
-        }
-    };
-
-    let display_offset = offset.max(-config.dismissed_offset).min(0.0);
+    let display_offset = offset
+        .max(-config.dismissed_offset)
+        .min(config.dismissed_offset);
 
     let content_modifier = {
         let mut m = Modifier::new()

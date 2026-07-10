@@ -738,6 +738,8 @@ pub struct TextStyle {
     pub locale_list: Option<String>,
     /// OpenType font feature settings (e.g. "liga", "kern").
     pub font_feature_settings: Option<String>,
+    /// OpenType font variation settings (e.g. "wght 700, opsz 24").
+    pub font_variation_settings: Option<String>,
 }
 
 impl Default for TextStyle {
@@ -764,6 +766,7 @@ impl Default for TextStyle {
             alpha: 0.0,
             locale_list: None,
             font_feature_settings: None,
+            font_variation_settings: None,
         }
     }
 }
@@ -1090,6 +1093,8 @@ pub struct SpanStyle {
     pub text_indent: Option<TextIndent>,
     pub draw_style: Option<DrawStyle>,
     pub alpha: f32,
+    /// OpenType font variation settings (e.g. "wght 700, opsz 24").
+    pub font_variation_settings: Option<String>,
 }
 
 impl SpanStyle {
@@ -1113,6 +1118,7 @@ impl SpanStyle {
             text_indent: None,
             draw_style: None,
             alpha: 0.0,
+            font_variation_settings: None,
         }
     }
 

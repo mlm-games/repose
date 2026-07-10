@@ -149,6 +149,7 @@ impl Hud {
                 line_height: 0.0,
                 extra_style: Default::default(),
                 url: None,
+                font_variation_settings: None,
             });
             text_y += 16.0;
 
@@ -172,6 +173,7 @@ impl Hud {
                 line_height: 0.0,
                 extra_style: Default::default(),
                 url: None,
+                font_variation_settings: None,
             });
             text_y += 14.0;
 
@@ -195,6 +197,7 @@ impl Hud {
                 line_height: 0.0,
                 extra_style: Default::default(),
                 url: None,
+                font_variation_settings: None,
             });
             text_y += 14.0;
 
@@ -218,6 +221,7 @@ impl Hud {
                 line_height: 0.0,
                 extra_style: Default::default(),
                 url: None,
+                font_variation_settings: None,
             });
             text_y += 14.0;
 
@@ -241,6 +245,7 @@ impl Hud {
                 line_height: 0.0,
                 extra_style: Default::default(),
                 url: None,
+                font_variation_settings: None,
             });
             text_y += 14.0;
 
@@ -264,6 +269,7 @@ impl Hud {
                 line_height: 0.0,
                 extra_style: Default::default(),
                 url: None,
+                font_variation_settings: None,
             });
             text_y += 14.0;
 
@@ -287,6 +293,7 @@ impl Hud {
                 line_height: 0.0,
                 extra_style: Default::default(),
                 url: None,
+                font_variation_settings: None,
             });
 
             if let Some(hover) = &self.hovered_semantics {
@@ -311,6 +318,7 @@ impl Hud {
                     line_height: 0.0,
                     extra_style: Default::default(),
                     url: None,
+                    font_variation_settings: None,
                 });
                 if let Some(lbl) = &hover.label {
                     text_y += 14.0;
@@ -333,6 +341,7 @@ impl Hud {
                         line_height: 0.0,
                         extra_style: Default::default(),
                         url: None,
+                        font_variation_settings: None,
                     });
                 }
             }

@@ -110,6 +110,7 @@ pub mod error;
 pub mod focus;
 pub mod frame_clock;
 pub mod geometry;
+pub mod gesture;
 pub mod indication;
 pub mod input;
 pub mod locals;
@@ -140,6 +141,7 @@ pub use frame_clock::{
     peek_frame_request, request_frame, signal_fired, take_frame_request, take_signal_fired,
 };
 pub use geometry::*;
+pub use gesture::*;
 pub use indication::*;
 pub use locals::*;
 pub use modifier::*;

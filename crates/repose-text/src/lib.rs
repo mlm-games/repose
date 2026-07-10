@@ -26,9 +26,9 @@ const GLYPH_CACHE_CAP: usize = 4096;
 const WRAP_CACHE_CAP: usize = 1024;
 const ELLIP_CACHE_CAP: usize = 2048;
 
-static METRICS_LRU: OnceCell<Mutex<Lru<(u64, u32, u64, u16, u8, i32), TextMetrics>>> =
+static METRICS_LRU: OnceCell<Mutex<Lru<(u64, u32, u64, u16, u8, i32, u64), TextMetrics>>> =
     OnceCell::new();
-fn metrics_cache() -> &'static Mutex<Lru<(u64, u32, u64, u16, u8, i32), TextMetrics>> {
+fn metrics_cache() -> &'static Mutex<Lru<(u64, u32, u64, u16, u8, i32, u64), TextMetrics>> {
     METRICS_LRU.get_or_init(|| Mutex::new(Lru::new(4096)))
 }
 
@@ -74,26 +74,26 @@ impl<K: std::hash::Hash + Eq + Clone, V> Lru<K, V> {
 }
 
 static WRAP_LRU: OnceCell<
-    Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32), (Vec<String>, bool)>>,
+    Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32, u64), (Vec<String>, bool)>>,
 > = OnceCell::new();
 
 static WRAP_RANGES_LRU: OnceCell<
-    Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32), (Vec<(usize, usize)>, bool)>>,
+    Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32, u64), (Vec<(usize, usize)>, bool)>>,
 > = OnceCell::new();
 
-static ELLIP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32, u16, u8, i32), String>>> = OnceCell::new();
+static ELLIP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32, u16, u8, i32, u64), String>>> = OnceCell::new();
 
-fn wrap_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32), (Vec<String>, bool)>>
+fn wrap_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32, u64), (Vec<String>, bool)>>
 {
     WRAP_LRU.get_or_init(|| Mutex::new(Lru::new(WRAP_CACHE_CAP)))
 }
 
 fn wrap_ranges_cache()
--> &'static Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32), (Vec<(usize, usize)>, bool)>> {
+-> &'static Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32, u64), (Vec<(usize, usize)>, bool)>> {
     WRAP_RANGES_LRU.get_or_init(|| Mutex::new(Lru::new(WRAP_CACHE_CAP)))
 }
 
-fn ellip_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, u8, i32), String>> {
+fn ellip_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, u8, i32, u64), String>> {
     ELLIP_LRU.get_or_init(|| Mutex::new(Lru::new(ELLIP_CACHE_CAP)))
 }
 
@@ -360,6 +360,7 @@ fn shape_line_inner(
     font_weight: u16,
     font_style: u8,
     letter_spacing: f32,
+    font_variation_settings: Option<&str>,
 ) -> Vec<ShapedGlyph> {
     use parley::style::StyleProperty;
     use parley::FontWeight;
@@ -379,6 +380,12 @@ fn shape_line_inner(
         _ => parley::FontStyle::Normal,
     }));
     builder.push_default(StyleProperty::LetterSpacing(letter_spacing));
+
+    if let Some(settings) = font_variation_settings {
+        builder.push_default(StyleProperty::FontVariations(
+            parley::style::FontVariations::from(settings),
+        ));
+    }
 
     if let Some(family) = font_family {
         use parley::style::{FontFamilyName, GenericFamily};
@@ -458,9 +465,10 @@ pub fn shape_line(
     font_weight: u16,
     font_style: u8,
     letter_spacing: f32,
+    font_variation_settings: Option<&str>,
 ) -> Vec<ShapedGlyph> {
     let mut eng = engine().lock().unwrap();
-    shape_line_inner(&mut eng, text, px, line_height_ratio, font_family, font_weight, font_style, letter_spacing)
+    shape_line_inner(&mut eng, text, px, line_height_ratio, font_family, font_weight, font_style, letter_spacing, font_variation_settings)
 }
 
 pub fn rasterize(key: GlyphKey, px: f32) -> Option<GlyphBitmap> {
@@ -601,8 +609,10 @@ pub fn metrics_for_textfield(
     font_weight: u16,
     font_style: u8,
     letter_spacing: f32,
+    font_variation_settings: Option<&str>,
 ) -> TextMetrics {
     let family_hash = font_family.map(fast_hash).unwrap_or(0);
+    let fvs_hash = font_variation_settings.map(fast_hash).unwrap_or(0);
     let key = (
         fast_hash(text),
         (px * 100.0) as u32,
@@ -610,6 +620,7 @@ pub fn metrics_for_textfield(
         font_weight,
         font_style,
         (letter_spacing * 100.0) as i32,
+        fvs_hash,
     );
     if let Some(m) = metrics_cache().lock().unwrap().get(&key).cloned() {
         return m;
@@ -632,6 +643,11 @@ pub fn metrics_for_textfield(
         _ => parley::FontStyle::Normal,
     }));
     builder.push_default(StyleProperty::LetterSpacing(letter_spacing));
+    if let Some(settings) = font_variation_settings {
+        builder.push_default(StyleProperty::FontVariations(
+            parley::style::FontVariations::from(settings),
+        ));
+    }
     if let Some(family) = font_family {
         use parley::style::{FontFamilyName, GenericFamily};
         let names: &[FontFamilyName] = match family {
@@ -744,6 +760,7 @@ pub fn wrap_lines(
     font_weight: u16,
     font_style: u8,
     letter_spacing: f32,
+    font_variation_settings: Option<&str>,
 ) -> (Vec<String>, bool) {
     if text.is_empty() || max_width <= 0.0 {
         return (vec![String::new()], false);
@@ -759,6 +776,7 @@ pub fn wrap_lines(
             n.saturating_add(1)
         }
     };
+    let fvs_hash = font_variation_settings.map(fast_hash).unwrap_or(0);
     let key = (
         fast_hash(text),
         (px * 100.0) as u32,
@@ -768,12 +786,13 @@ pub fn wrap_lines(
         font_weight,
         font_style,
         (letter_spacing * 100.0) as i32,
+        fvs_hash,
     );
     if let Some(h) = wrap_cache().lock().unwrap().get(&key).cloned() {
         return h;
     }
 
-    let m = metrics_for_textfield(text, px, None, font_weight, font_style, letter_spacing);
+    let m = metrics_for_textfield(text, px, None, font_weight, font_style, letter_spacing, font_variation_settings);
     if let Some(&last) = m.positions.last()
         && last <= max_width + 0.5
     {
@@ -865,6 +884,7 @@ pub fn wrap_line_ranges(
     font_weight: u16,
     font_style: u8,
     letter_spacing: f32,
+    font_variation_settings: Option<&str>,
 ) -> (Vec<(usize, usize)>, bool) {
     if text.is_empty() || max_width <= 0.0 {
         return (vec![(0, 0)], false);
@@ -889,6 +909,7 @@ pub fn wrap_line_ranges(
             n.saturating_add(1)
         }
     };
+    let fvs_hash = font_variation_settings.map(fast_hash).unwrap_or(0);
     let key = (
         fast_hash(text),
         (px * 100.0) as u32,
@@ -898,12 +919,13 @@ pub fn wrap_line_ranges(
         font_weight,
         font_style,
         (letter_spacing * 100.0) as i32,
+        fvs_hash,
     );
     if let Some(v) = wrap_ranges_cache().lock().unwrap().get(&key).cloned() {
         return v;
     }
 
-    let m = metrics_for_textfield(text, px, None, font_weight, font_style, letter_spacing);
+    let m = metrics_for_textfield(text, px, None, font_weight, font_style, letter_spacing, font_variation_settings);
 
     let width_of = |start_b: usize, end_b: usize| -> f32 {
         let i0 = match m.byte_offsets.binary_search(&start_b) {
@@ -1049,10 +1071,12 @@ pub fn ellipsize_line(
     font_weight: u16,
     font_style: u8,
     letter_spacing: f32,
+    font_variation_settings: Option<&str>,
 ) -> String {
     if text.is_empty() || max_width <= 0.0 {
         return String::new();
     }
+    let fvs_hash = font_variation_settings.map(fast_hash).unwrap_or(0);
     let key = (
         fast_hash(text),
         (px * 100.0) as u32,
@@ -1060,11 +1084,12 @@ pub fn ellipsize_line(
         font_weight,
         font_style,
         (letter_spacing * 100.0) as i32,
+        fvs_hash,
     );
     if let Some(s) = ellip_cache().lock().unwrap().get(&key).cloned() {
         return s;
     }
-    let m = metrics_for_textfield(text, px, None, font_weight, font_style, letter_spacing);
+    let m = metrics_for_textfield(text, px, None, font_weight, font_style, letter_spacing, font_variation_settings);
     if let Some(&last) = m.positions.last()
         && last <= max_width + 0.5
     {
@@ -1107,7 +1132,7 @@ fn ellipsis_width(px: f32, letter_spacing: f32) -> f32 {
         return w;
     }
     let w =
-        if let Some(g) = crate::shape_line("…", px, px, None, 400, 0, letter_spacing).last() {
+        if let Some(g) = crate::shape_line("…", px, px, None, 400, 0, letter_spacing, None).last() {
             g.x + g.advance
         } else {
             0.0

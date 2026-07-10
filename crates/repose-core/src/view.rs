@@ -103,6 +103,8 @@ pub enum ViewKind {
         line_height: f32,
         /// URL for clickable link text.
         url: Option<Arc<str>>,
+        /// OpenType font variation settings (e.g. "wght 700, opsz 24").
+        font_variation_settings: Option<Arc<str>>,
     },
 
     Image {
@@ -278,6 +280,8 @@ pub enum SceneNode {
         extra_style: TextExtraStyle,
         /// URL for clickable link text.
         url: Option<Arc<str>>,
+        /// OpenType font variation settings (e.g. "wght 700, opsz 24").
+        font_variation_settings: Option<Arc<str>>,
     },
     Ellipse {
         rect: Rect,

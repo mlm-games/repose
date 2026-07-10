@@ -208,6 +208,7 @@ enum NodeContext {
         text_decoration: TextDecoration,
         letter_spacing: f32,
         line_height: f32,
+        font_variation_settings: Option<Arc<str>>,
     },
     Container,
     ScrollContainer,
@@ -1412,6 +1413,7 @@ impl LayoutEngine {
                 text_decoration,
                 letter_spacing,
                 line_height,
+                font_variation_settings,
                 ..
             } => NodeContext::Text {
                 text: text.clone(),
@@ -1428,6 +1430,7 @@ impl LayoutEngine {
                 text_decoration: *text_decoration,
                 letter_spacing: *letter_spacing,
                 line_height: *line_height,
+                font_variation_settings: font_variation_settings.clone(),
             },
             ViewKind::Expander { .. } => NodeContext::Container,
             ViewKind::OverlayHost => NodeContext::Container,
@@ -1463,6 +1466,7 @@ impl LayoutEngine {
                 text_decoration,
                 letter_spacing,
                 line_height,
+                font_variation_settings,
             }) => {
                 let size_px_val = font_px(*font_dp);
                 let lh = if *line_height > 0.0 {
@@ -1508,6 +1512,7 @@ impl LayoutEngine {
                     }
                 };
 
+                let fvs = font_variation_settings.as_deref();
                 let (lines, line_ranges): (Vec<String>, Vec<(usize, usize)>) = if *soft_wrap {
                     let (ranges, truncated) = repose_text::wrap_line_ranges(
                         text,
@@ -1518,6 +1523,7 @@ impl LayoutEngine {
                         fw,
                         fs,
                         *letter_spacing,
+                        fvs,
                     );
                     let mut lns: Vec<String> = ranges
                         .iter()
@@ -1527,12 +1533,12 @@ impl LayoutEngine {
                         if let Some(last) = lns.last_mut() {
                             let with_tail = format!("{}…", last);
                             *last =
-                                repose_text::ellipsize_line(&with_tail, size_px_val, wrap_w_px, fw, fs, *letter_spacing);
+                                repose_text::ellipsize_line(&with_tail, size_px_val, wrap_w_px, fw, fs, *letter_spacing, fvs);
                         }
                     }
                     (lns, ranges)
                 } else if matches!(overflow, TextOverflow::Ellipsis) {
-                    let elided = repose_text::ellipsize_line(text, size_px_val, wrap_w_px, fw, fs, *letter_spacing);
+                    let elided = repose_text::ellipsize_line(text, size_px_val, wrap_w_px, fw, fs, *letter_spacing, fvs);
                     let elided_len = elided.len();
                     (vec![elided], vec![(0, elided_len)])
                 } else {
@@ -2356,6 +2362,7 @@ impl LayoutEngine {
                 letter_spacing,
                 line_height,
                 url,
+                font_variation_settings,
                 ..
             } => {
                 let tl = self.text_cache.get(&node_id);
@@ -2427,6 +2434,7 @@ impl LayoutEngine {
                             draw_style: DrawStyle,
                             w: f32,
                             px: f32,
+                            font_variation_settings: Option<Arc<str>>,
                         }
                         fn style_to_fs(style: &FontStyle) -> u8 {
                             if matches!(style, FontStyle::Italic) { 1 } else { 0 }
@@ -2470,6 +2478,7 @@ impl LayoutEngine {
                                     draw_style: DrawStyle::Fill,
                                     w: 0.0,
                                     px: 0.0,
+                                    font_variation_settings: None,
                                 });
                             }
 
@@ -2491,6 +2500,7 @@ impl LayoutEngine {
                             let span_ti = span.style.text_indent;
                             let span_ds = span.style.draw_style.clone().unwrap_or(DrawStyle::Fill);
                             let span_url = span.url.clone();
+                            let span_fvs = span.style.font_variation_settings.clone().map(Arc::from);
                             segments.push(SegInfo {
                                 start: seg_start,
                                 end: seg_end,
@@ -2514,6 +2524,7 @@ impl LayoutEngine {
                                 draw_style: span_ds,
                                 w: 0.0,
                                 px: 0.0,
+                                font_variation_settings: span_fvs,
                             });
                             cursor = seg_end;
                         }
@@ -2542,6 +2553,7 @@ impl LayoutEngine {
                                 draw_style: DrawStyle::Fill,
                                 w: 0.0,
                                 px: 0.0,
+                                font_variation_settings: None,
                             });
                         }
 
@@ -2622,6 +2634,7 @@ impl LayoutEngine {
                                     draw_style: info.draw_style.clone(),
                                 },
                                 url: info.url.clone(),
+                                font_variation_settings: info.font_variation_settings.clone(),
                             });
                             // Create hit region for clickable links
                             if let Some(url) = &info.url {
@@ -2685,6 +2698,7 @@ impl LayoutEngine {
                             line_height: *line_height,
                             extra_style: Default::default(),
                             url: url.clone(),
+                            font_variation_settings: font_variation_settings.clone(),
                         });
                         // Create hit region for view-level URL
                         if let Some(link_url) = url {
@@ -2771,7 +2785,7 @@ impl LayoutEngine {
                         let mut st = st_rc.borrow_mut();
                         st.set_inner_height(h);
                         let layout =
-                            crate::textfield::layout_text_area(&st.text, font_val, wrap_w, 400, 0, 0.0);
+                            crate::textfield::layout_text_area(&st.text, font_val, wrap_w, 400, 0, 0.0, None);
                         let content_h = layout.ranges.len().max(1) as f32 * layout.line_h_px;
                         let max_y = (content_h - st.inner_height).max(0.0);
 
@@ -3024,6 +3038,7 @@ impl LayoutEngine {
                         line_height: 0.0,
                         extra_style: Default::default(),
                         url: None,
+                        font_variation_settings: None,
                     });
 
                     // Toggle hit region (chevron area)

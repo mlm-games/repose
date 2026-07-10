@@ -182,6 +182,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                         line_height: 0.0,
                         extra_style: Default::default(),
                         url: None,
+                        font_variation_settings: None,
                     });
                 }
             }

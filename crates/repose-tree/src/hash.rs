@@ -59,6 +59,7 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             letter_spacing,
             line_height,
             url: _,
+            font_variation_settings,
         } => {
             font_family.hash(hasher);
             text.hash(hasher);
@@ -77,6 +78,7 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             }
             ((letter_spacing * 100.0) as u32).hash(hasher);
             ((line_height * 100.0) as u32).hash(hasher);
+            font_variation_settings.hash(hasher);
             if let Some(annos) = annotations {
                 annos.len().hash(hasher);
                 for span in annos.iter() {
@@ -384,6 +386,7 @@ mod tests {
                 letter_spacing: 0.0,
                 line_height: 0.0,
                 url: None,
+            font_variation_settings: None,
             },
         );
         let v2 = View::new(
@@ -404,6 +407,7 @@ mod tests {
                 letter_spacing: 0.0,
                 line_height: 0.0,
                 url: None,
+            font_variation_settings: None,
             },
         );
         let v3 = View::new(
@@ -424,6 +428,7 @@ mod tests {
                 letter_spacing: 0.0,
                 line_height: 0.0,
                 url: None,
+            font_variation_settings: None,
             },
         );
 

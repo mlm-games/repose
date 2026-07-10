@@ -288,6 +288,7 @@ pub struct TextMeasureConfig {
     pub font_weight: u16,
     pub font_style: u8,
     pub letter_spacing: f32,
+    pub font_variation_settings: Option<String>,
 }
 
 impl Default for TextMeasureConfig {
@@ -297,6 +298,7 @@ impl Default for TextMeasureConfig {
             font_weight: 400,
             font_style: 0,
             letter_spacing: 0.0,
+            font_variation_settings: None,
         }
     }
 }
@@ -312,6 +314,7 @@ pub fn measure_text(text: &str, font_px: f32, config: TextMeasureConfig) -> Text
         config.font_weight,
         config.font_style,
         config.letter_spacing,
+        config.font_variation_settings.as_deref(),
     );
     TextMetrics {
         positions: m.positions,
@@ -1238,6 +1241,7 @@ pub fn layout_text_area(
     font_weight: u16,
     font_style: u8,
     letter_spacing: f32,
+    font_variation_settings: Option<&str>,
 ) -> TextAreaLayout {
     let line_h = font_px * 1.3;
     let (ranges, _) = repose_text::wrap_line_ranges(
@@ -1249,6 +1253,7 @@ pub fn layout_text_area(
         font_weight,
         font_style,
         letter_spacing,
+        font_variation_settings,
     );
     TextAreaLayout {
         ranges,
@@ -1296,7 +1301,7 @@ pub fn caret_xy_for_byte(
     wrap_w_px: f32,
     byte: usize,
 ) -> (f32, f32, usize) {
-    let layout = layout_text_area(text, font_px, wrap_w_px, 400, 0, 0.0);
+    let layout = layout_text_area(text, font_px, wrap_w_px, 400, 0, 0.0, None);
     let (ranges, line_h) = (&layout.ranges, layout.line_h_px);
     let (li, local, _) = locate_byte_in_ranges(ranges, byte);
     let (s, e) = ranges.get(li).copied().unwrap_or((0, 0));
@@ -1310,7 +1315,7 @@ pub fn caret_xy_for_byte(
 
 /// Given x/y (px) relative to inner content (not scrolled), return nearest grapheme boundary byte index.
 pub fn index_for_xy_bytes(text: &str, font_px: f32, wrap_w_px: f32, x_px: f32, y_px: f32) -> usize {
-    let layout = layout_text_area(text, font_px, wrap_w_px, 400, 0, 0.0);
+    let layout = layout_text_area(text, font_px, wrap_w_px, 400, 0, 0.0, None);
     let li = ((y_px / layout.line_h_px).floor() as isize).max(0) as usize;
     let li = li.min(layout.ranges.len().saturating_sub(1));
     let (s, e) = layout.ranges.get(li).copied().unwrap_or((0, 0));
@@ -1328,7 +1333,7 @@ pub fn move_caret_vertical(
     dir: i32, // -1 up, +1 down
     preferred_x: Option<f32>,
 ) -> (usize, f32) {
-    let layout = layout_text_area(text, font_px, wrap_w_px, 400, 0, 0.0);
+    let layout = layout_text_area(text, font_px, wrap_w_px, 400, 0, 0.0, None);
     if layout.ranges.is_empty() {
         return (cur_byte, preferred_x.unwrap_or(0.0));
     }
@@ -1351,7 +1356,7 @@ pub fn line_home_end(
     cur_byte: usize,
     to_end: bool,
 ) -> usize {
-    let layout = layout_text_area(text, font_px, wrap_w_px, 400, 0, 0.0);
+    let layout = layout_text_area(text, font_px, wrap_w_px, 400, 0, 0.0, None);
     let (li, _local, _) = locate_byte_in_ranges(&layout.ranges, cur_byte);
     let (s, e) = layout.ranges.get(li).copied().unwrap_or((0, 0));
     if to_end { e } else { s }
@@ -1456,6 +1461,7 @@ pub(crate) fn paint_text_field(
                     font_weight: ts.font_weight.unwrap_or(400),
                     font_style: ts.font_style.unwrap_or(0),
                     letter_spacing: ts.letter_spacing,
+                    font_variation_settings: None,
                 },
             );
 
@@ -1531,6 +1537,7 @@ pub(crate) fn paint_text_field(
                 line_height: ts.line_height,
                 extra_style: Default::default(),
                 url: None,
+            font_variation_settings: None,
             });
 
             // Caret (only when enabled && !readOnly)
@@ -1572,7 +1579,7 @@ pub(crate) fn paint_text_field(
             } else {
                 st.text.clone()
             };
-            let layout = layout_text_area(&render_text, font_val, rect.w.max(1.0), 400, 0, ts.letter_spacing);
+            let layout = layout_text_area(&render_text, font_val, rect.w.max(1.0), 400, 0, ts.letter_spacing, None);
             let lh = layout.line_h_px;
             let max_line_count = text_input.max_lines.unwrap_or(usize::MAX);
 
@@ -1600,6 +1607,7 @@ pub(crate) fn paint_text_field(
                     line_height: ts.line_height,
                     extra_style: Default::default(),
                     url: None,
+                    font_variation_settings: None,
                 });
             } else {
                 for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
@@ -1633,6 +1641,7 @@ pub(crate) fn paint_text_field(
                         line_height: ts.line_height,
                         extra_style: Default::default(),
                         url: None,
+                        font_variation_settings: None,
                     });
                 }
             }
@@ -1671,6 +1680,7 @@ pub(crate) fn paint_text_field(
                             font_weight: ts.font_weight.unwrap_or(400),
                             font_style: ts.font_style.unwrap_or(0),
                             letter_spacing: ts.letter_spacing,
+                            font_variation_settings: None,
                         },
                     );
                     let ls = os - s;
@@ -1755,6 +1765,7 @@ pub(crate) fn paint_text_field(
                 line_height: 0.0,
                 extra_style: Default::default(),
                 url: None,
+            font_variation_settings: None,
             });
         } else if text_input.multiline {
             let render_text = if text_input.value.is_empty() {
@@ -1765,7 +1776,7 @@ pub(crate) fn paint_text_field(
             } else {
                 text_input.value.clone()
             };
-            let layout = layout_text_area(&render_text, font_val, rect.w.max(1.0), 400, 0, ts.letter_spacing);
+            let layout = layout_text_area(&render_text, font_val, rect.w.max(1.0), 400, 0, ts.letter_spacing, None);
             let lh = layout.line_h_px;
             for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
                 let ln = render_text[s..e].to_string();
@@ -1792,6 +1803,7 @@ pub(crate) fn paint_text_field(
                     line_height: 0.0,
                     extra_style: Default::default(),
                     url: None,
+                    font_variation_settings: None,
                 });
             }
         } else {
@@ -1814,6 +1826,7 @@ pub(crate) fn paint_text_field(
                 line_height: 0.0,
                 extra_style: Default::default(),
                 url: None,
+            font_variation_settings: None,
             });
         }
     }
@@ -1840,7 +1853,7 @@ pub(crate) fn paint_text_field(
                 st.text.clone()
             };
             if text_input.multiline {
-                let l = layout_text_area(&display, font_val, rect.w.max(1.0), 400, 0, ts.letter_spacing);
+                let l = layout_text_area(&display, font_val, rect.w.max(1.0), 400, 0, ts.letter_spacing, None);
                 let lc = l.ranges.len();
                 let cw = rect.w.max(0.0);
                 let ch = (lc as f32 * l.line_h_px).max(0.0);

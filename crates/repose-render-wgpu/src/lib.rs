@@ -2840,6 +2840,7 @@ impl RenderBackend for WgpuBackend {
                     line_height: _,
                     extra_style,
                     url: _,
+                    font_variation_settings,
                 } => {
                     flush_batch!(); // flush any prior primitives
 
@@ -2859,6 +2860,7 @@ impl RenderBackend for WgpuBackend {
                         fw,
                         fs,
                         *letter_spacing,
+                        font_variation_settings.as_deref(),
                     );
                     let baseline_y = shaped.first().map(|g| rect.y + g.y);
 

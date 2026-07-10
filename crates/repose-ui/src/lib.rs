@@ -225,6 +225,7 @@ pub fn Text(text: impl Into<String>) -> View {
             letter_spacing: 0.0,
             line_height: 0.0,
             url: None,
+            font_variation_settings: None,
         },
     )
 }
@@ -256,6 +257,7 @@ pub fn AnnotatedText(annotated: AnnotatedString) -> View {
             letter_spacing: 0.0,
             line_height: 0.0,
             url: None,
+            font_variation_settings: None,
         },
     )
 }
@@ -542,6 +544,7 @@ pub trait TextStyle {
     fn letter_spacing(self, spacing: f32) -> View;
     fn line_height(self, height: f32) -> View;
     fn url(self, url: impl Into<std::sync::Arc<str>>) -> View;
+    fn font_variation_settings(self, settings: &str) -> View;
 }
 impl TextStyle for View {
     fn color(mut self, c: Color) -> View {
@@ -664,6 +667,16 @@ impl TextStyle for View {
             if !text_decoration.underline && !text_decoration.strikethrough {
                 *text_decoration = TextDecoration::UNDERLINE;
             }
+        }
+        self
+    }
+    fn font_variation_settings(mut self, settings: &str) -> View {
+        if let ViewKind::Text {
+            font_variation_settings,
+            ..
+        } = &mut self.kind
+        {
+            *font_variation_settings = Some(settings.into());
         }
         self
     }
