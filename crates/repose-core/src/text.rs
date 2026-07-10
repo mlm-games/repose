@@ -710,7 +710,7 @@ pub struct TextStyle {
     pub text_align: crate::TextAlign,
     /// Letter spacing in dp. 0 = no extra spacing.
     pub letter_spacing: f32,
-    /// Line height in dp. 0 = default (font_size * 1.2).
+    /// Line height in dp. 0 = default (font_size).
     pub line_height: f32,
     /// Text background color. None = transparent.
     pub background: Option<Color>,

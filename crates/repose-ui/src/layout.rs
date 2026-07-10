@@ -2371,7 +2371,7 @@ impl LayoutEngine {
                     let lh = if *line_height > 0.0 {
                         font_px(*line_height)
                     } else {
-                        px * 1.3
+                        px
                     };
                     (px, lh, vec![text.clone()], None)
                 };

@@ -549,6 +549,7 @@ pub fn overlay_drag_indicator(
         Color::from_hex("#44AAFF77")
     };
 
+    let ts = crate::locals::text_scale().0;
     let r = crate::locals::dp_to_px(8.0);
     scene.nodes.push(SceneNode::Rect {
         rect: badge,
@@ -560,11 +561,11 @@ pub fn overlay_drag_indicator(
             x: badge.x + crate::locals::dp_to_px(8.0),
             y: badge.y + crate::locals::dp_to_px(6.0),
             w: 0.0,
-            h: crate::locals::dp_to_px(14.0),
+            h: crate::locals::dp_to_px(14.0) * ts,
         },
         text: Arc::<str>::from(" "),
         color: Color::WHITE,
-        size: crate::locals::dp_to_px(12.0),
+        size: crate::locals::dp_to_px(12.0) * ts,
         font_family: None,
         text_align: TextAlign::Unspecified,
         font_weight: FontWeight::NORMAL,

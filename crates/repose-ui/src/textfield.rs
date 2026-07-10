@@ -1411,7 +1411,7 @@ pub(crate) fn paint_text_field(
     };
     let font_val = dp_to_px(font_size_dp) * locals::text_scale().0;
     let line_h = if ts.line_height != 0.0 {
-        dp_to_px(ts.line_height)
+        dp_to_px(ts.line_height) * locals::text_scale().0
     } else {
         font_val * 1.3
     };

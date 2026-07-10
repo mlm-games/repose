@@ -2843,7 +2843,7 @@ impl RenderBackend for WgpuBackend {
                 } => {
                     flush_batch!(); // flush any prior primitives
 
-                    let px = (*size).clamp(8.0, 96.0);
+                    let px = *size;
                     let lh_ratio = rect.h / px;
                     let fw = font_weight.0;
                     let fs = if *font_style == FontStyle::Italic {
