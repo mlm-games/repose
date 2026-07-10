@@ -4192,6 +4192,16 @@ pub fn Slider(
                     brush: Brush::Solid(mul_c(config.inactive_track_color)),
                     radius: [corner; 4],
                 });
+                let sx = track_x + track_w - corner;
+                scene.nodes.push(SceneNode::Ellipse {
+                    rect: Rect {
+                        x: sx - dot_r,
+                        y: cy - dot_r,
+                        w: dot_r * 2.0,
+                        h: dot_r * 2.0,
+                    },
+                    brush: Brush::Solid(mul_c(config.inactive_tick_color)),
+                });
             }
             let fill_w = (kx - gap - track_x).max(0.0);
             if fill_w > 0.0 {
@@ -4232,16 +4242,6 @@ pub fn Slider(
                     })),
                 });
             }
-            let sx = track_x + track_w - corner;
-            scene.nodes.push(SceneNode::Ellipse {
-                rect: Rect {
-                    x: sx - dot_r,
-                    y: cy - dot_r,
-                    w: dot_r * 2.0,
-                    h: dot_r * 2.0,
-                },
-                brush: Brush::Solid(mul_c(config.inactive_tick_color)),
-            });
             let da = *drag_active_p.borrow();
             let hv = hovered_sig.get();
             let tw = if da { thumb_w * 0.5 } else { thumb_w };
@@ -4472,6 +4472,16 @@ pub fn RangeSlider(
                     brush: Brush::Solid(mul_c(inact_trk)),
                     radius: [corner; 4],
                 });
+                let sx0 = track_x + corner;
+                scene.nodes.push(SceneNode::Ellipse {
+                    rect: Rect {
+                        x: sx0 - dot_r,
+                        y: cy - dot_r,
+                        w: dot_r * 2.0,
+                        h: dot_r * 2.0,
+                    },
+                    brush: Brush::Solid(mul_c(inact_tick)),
+                });
             }
             let rinactive_x = (active_r + gap).min(track_x + track_w);
             let rinactive_w = (track_x + track_w - rinactive_x).max(0.0);
@@ -4485,6 +4495,16 @@ pub fn RangeSlider(
                     },
                     brush: Brush::Solid(mul_c(inact_trk)),
                     radius: [corner; 4],
+                });
+                let sx = track_x + track_w - corner;
+                scene.nodes.push(SceneNode::Ellipse {
+                    rect: Rect {
+                        x: sx - dot_r,
+                        y: cy - dot_r,
+                        w: dot_r * 2.0,
+                        h: dot_r * 2.0,
+                    },
+                    brush: Brush::Solid(mul_c(inact_tick)),
                 });
             }
             let active_w = (active_r - gap - (active_l + gap)).max(0.0);
@@ -4524,27 +4544,6 @@ pub fn RangeSlider(
                     brush: Brush::Solid(mul_c(if on_active { act_tick } else { inact_tick })),
                 });
             }
-            // Stop indicators at both track ends (always drawn, matching Compose)
-            let sx0 = track_x + corner;
-            scene.nodes.push(SceneNode::Ellipse {
-                rect: Rect {
-                    x: sx0 - dot_r,
-                    y: cy - dot_r,
-                    w: dot_r * 2.0,
-                    h: dot_r * 2.0,
-                },
-                brush: Brush::Solid(mul_c(inact_tick)),
-            });
-            let sx = track_x + track_w - corner;
-            scene.nodes.push(SceneNode::Ellipse {
-                rect: Rect {
-                    x: sx - dot_r,
-                    y: cy - dot_r,
-                    w: dot_r * 2.0,
-                    h: dot_r * 2.0,
-                },
-                brush: Brush::Solid(mul_c(inact_tick)),
-            });
             let da = *drag_active_p.borrow();
             let at = *active_thumb_p.borrow();
             let hv = hovered_sig.get();
