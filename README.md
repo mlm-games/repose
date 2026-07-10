@@ -18,7 +18,7 @@ Useful for simple apps (though aiming for bigger ones in the future), and for de
 - **Cross-platform** - Desktop (winit), Android, and WebAssembly
 - **Layout** - Flexbox and Grid via Taffy
 - **Rendering** - Rectangles, borders, rounded clips, ellipses, text, images via WGPU
-- **Text** - Shaping, metrics, and wrapping via cosmic-text with caching
+- **Text** - Shaping, metrics, and wrapping with caching
 - **Input** - Pointer events, scrolling, focus traversal, IME support
 - **Widgets** - Text, Button, TextField, Checkbox, Switch, Slider, ScrollArea, LazyColumn
 - **Navigation** - Typed stack navigation with transitions (`repose-navigation`)
@@ -175,7 +175,6 @@ Consider donating if you'd like to support it's development. Open an issue or a 
 ## Mentions
 
 - [Taffy](https://github.com/DioxusLabs/taffy) for layout
-- [cosmic-text](https://github.com/pop-os/cosmic-text) for text shaping
 - [wgpu](https://github.com/gfx-rs/wgpu) for cross-platform graphics
 - [AccessKit](https://github.com/AccessKit/accesskit) for accessibility
 - Heavily inspired by Jetpack Compose's API design
