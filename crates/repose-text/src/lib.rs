@@ -355,6 +355,7 @@ fn shape_line_inner(
     eng: &mut Engine,
     text: &str,
     px: f32,
+    line_height_ratio: f32,
     font_family: Option<&str>,
     font_weight: u16,
     font_style: u8,
@@ -371,6 +372,7 @@ fn shape_line_inner(
     } = *eng;
     let mut builder = layout_cx.ranged_builder(font_cx, text, 1.0, true);
     builder.push_default(StyleProperty::FontSize(px));
+    builder.push_default(StyleProperty::LineHeight(parley::LineHeight::FontSizeRelative(line_height_ratio)));
     builder.push_default(StyleProperty::FontWeight(FontWeight::new(font_weight as f32)));
     builder.push_default(StyleProperty::FontStyle(match font_style {
         1 => parley::FontStyle::Italic,
@@ -451,13 +453,14 @@ fn shape_line_inner(
 pub fn shape_line(
     text: &str,
     px: f32,
+    line_height_ratio: f32,
     font_family: Option<&str>,
     font_weight: u16,
     font_style: u8,
     letter_spacing: f32,
 ) -> Vec<ShapedGlyph> {
     let mut eng = engine().lock().unwrap();
-    shape_line_inner(&mut eng, text, px, font_family, font_weight, font_style, letter_spacing)
+    shape_line_inner(&mut eng, text, px, line_height_ratio, font_family, font_weight, font_style, letter_spacing)
 }
 
 pub fn rasterize(key: GlyphKey, px: f32) -> Option<GlyphBitmap> {
@@ -1104,7 +1107,7 @@ fn ellipsis_width(px: f32, letter_spacing: f32) -> f32 {
         return w;
     }
     let w =
-        if let Some(g) = crate::shape_line("…", px, None, 400, 0, letter_spacing).last() {
+        if let Some(g) = crate::shape_line("…", px, px, None, 400, 0, letter_spacing).last() {
             g.x + g.advance
         } else {
             0.0

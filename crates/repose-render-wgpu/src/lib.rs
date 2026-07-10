@@ -2844,6 +2844,7 @@ impl RenderBackend for WgpuBackend {
                     flush_batch!(); // flush any prior primitives
 
                     let px = (*size).clamp(8.0, 96.0);
+                    let lh_ratio = rect.h / px;
                     let fw = font_weight.0;
                     let fs = if *font_style == FontStyle::Italic {
                         1
@@ -2853,6 +2854,7 @@ impl RenderBackend for WgpuBackend {
                     let shaped = repose_text::shape_line(
                         text.as_ref(),
                         px,
+                        lh_ratio,
                         *font_family,
                         fw,
                         fs,

@@ -1468,7 +1468,7 @@ impl LayoutEngine {
                 let lh = if *line_height > 0.0 {
                     font_px(*line_height)
                 } else {
-                    size_px_val * 1.3
+                    size_px_val
                 };
                 let line_h_px_val = lh;
                 let fw = font_weight.0;
