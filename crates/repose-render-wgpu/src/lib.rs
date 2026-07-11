@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use repose_core::color::{ChromaSiting, ColorInfo};
+use repose_core::color::{ChromaSiting, ColorInfo, PixelFormat};
 use repose_core::request_frame;
 use repose_core::{
     Brush, FontStyle, GlyphRasterConfig, RenderBackend, Scene, SceneNode, StrokeCap, Transform,
@@ -173,6 +173,16 @@ pub struct WgpuBackend {
     // Graphics layer pool. Maps `SceneNode::BeginLayer::layer_id` to a
     // cached offscreen render target.
     layer_pool: HashMap<u32, LayerTarget>,
+
+    // Linear working-space mode (default off -> fast playback path).
+    // When enabled, the scene is rendered into an Rgba16Float intermediate
+    // texture, then a final full-screen pass applies the display OETF.
+    working_space: bool,
+    ws_tex: Option<wgpu::Texture>,
+    ws_view: Option<wgpu::TextureView>,
+    ws_bind: Option<wgpu::BindGroup>,
+    display_pipeline: Option<wgpu::RenderPipeline>,
+    display_layout: Option<wgpu::BindGroupLayout>,
 }
 
 impl Drop for WgpuBackend {
@@ -1574,6 +1584,13 @@ impl WgpuBackend {
             image_evict_after_frames: 600,         // ~10s @ 60fps
             image_budget_bytes: 512 * 1024 * 1024, // 512 MB
             layer_pool: HashMap::new(),
+
+            working_space: false,
+            ws_tex: None,
+            ws_view: None,
+            ws_bind: None,
+            display_pipeline: None,
+            display_layout: None,
         };
 
         backend.recreate_msaa_and_depth_stencil();
@@ -1800,11 +1817,8 @@ impl WgpuBackend {
             });
 
             // Write initial transform.
-            self.queue.write_buffer(
-                &yuv_buf,
-                0,
-                bytemuck::bytes_of(&yuv_raw),
-            );
+            self.queue
+                .write_buffer(&yuv_buf, 0, bytemuck::bytes_of(&yuv_raw));
 
             let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("nv12 bind"),
@@ -1833,7 +1847,8 @@ impl WgpuBackend {
                 ],
             });
 
-            let bytes = (w as u64) * (h as u64) + (uv_w as u64) * (uv_h as u64) * 2
+            let bytes = (w as u64) * (h as u64)
+                + (uv_w as u64) * (uv_h as u64) * 2
                 + std::mem::size_of::<YuvTransformRaw>() as u64;
             self.image_bytes_total += bytes;
 
@@ -1856,11 +1871,8 @@ impl WgpuBackend {
         } else {
             // Re-use existing textures; just update the YUV transform if needed.
             if let Some(ImageTex::Nv12 { yuv_buf, .. }) = self.images.get(&handle) {
-                self.queue.write_buffer(
-                    yuv_buf,
-                    0,
-                    bytemuck::bytes_of(&yuv_raw),
-                );
+                self.queue
+                    .write_buffer(yuv_buf, 0, bytemuck::bytes_of(&yuv_raw));
             }
         }
 
@@ -1905,6 +1917,228 @@ impl WgpuBackend {
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(2 * uv_w),
+                rows_per_image: Some(uv_h),
+            },
+            wgpu::Extent3d {
+                width: uv_w,
+                height: uv_h,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        self.evict_budget_excess();
+        Ok(())
+    }
+
+    pub fn set_image_planes(
+        &mut self,
+        handle: u64,
+        w: u32,
+        h: u32,
+        pixel_format: PixelFormat,
+        planes: &[Vec<u8>],
+        color_info: ColorInfo,
+    ) -> anyhow::Result<()> {
+        match pixel_format {
+            PixelFormat::Nv12 => {
+                let y = planes.first().ok_or(anyhow::anyhow!("missing Y plane"))?;
+                let uv = planes.get(1).ok_or(anyhow::anyhow!("missing UV plane"))?;
+                self.set_image_nv12(handle, w, h, y, uv, color_info)
+            }
+            PixelFormat::P010 => {
+                let y = planes.first().ok_or(anyhow::anyhow!("missing Y plane"))?;
+                let uv = planes.get(1).ok_or(anyhow::anyhow!("missing UV plane"))?;
+                self.set_image_p010(handle, w, h, y, uv, color_info)
+            }
+            PixelFormat::I420 | PixelFormat::I444 => Err(anyhow::anyhow!(
+                "I420/I444 not implemented and unlikely -> cheap to convert to NV12 (better for the GPU too)"
+            )),
+            PixelFormat::Rgba => {
+                let rgba = planes
+                    .first()
+                    .ok_or(anyhow::anyhow!("missing RGBA plane"))?;
+                self.set_image_rgba8(handle, w, h, rgba, false)
+            }
+        }
+    }
+
+    fn set_image_p010(
+        &mut self,
+        handle: u64,
+        w: u32,
+        h: u32,
+        y: &[u8],
+        uv: &[u8],
+        color_info: ColorInfo,
+    ) -> anyhow::Result<()> {
+        let uv_w = (w / 2).max(1);
+        let uv_h = (h / 2).max(1);
+
+        let y_expected = (w as usize) * 2;
+        let uv_expected = (uv_w as usize) * (uv_h as usize) * 4;
+
+        if y.len() < y_expected {
+            return Err(anyhow::anyhow!("P010 Y plane too small"));
+        }
+        if uv.len() < uv_expected {
+            return Err(anyhow::anyhow!("P010 UV plane too small"));
+        }
+
+        // P010 reuses the NV12 pipeline (same bind group layout -> wgpu
+        // abstracts the storage format so R16Unorm/Rg16Unorm are
+        // filterable float textures just like R8Unorm/Rg8Unorm).
+        let needs_recreate = match self.images.get(&handle) {
+            Some(ImageTex::Nv12 { w: ww, h: hh, .. }) => *ww != w || *hh != h,
+            _ => true,
+        };
+
+        let yuv = color_info.to_yuv_transform();
+        let yuv_raw = YuvTransformRaw {
+            row0: [yuv.m[0][0], yuv.m[0][1], yuv.m[0][2], 0.0],
+            row1: [yuv.m[1][0], yuv.m[1][1], yuv.m[1][2], 0.0],
+            row2: [yuv.m[2][0], yuv.m[2][1], yuv.m[2][2], 0.0],
+            b: [yuv.b[0], yuv.b[1], yuv.b[2], 0.0],
+        };
+
+        if needs_recreate {
+            self.remove_image(handle);
+
+            let tex_y = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("p010 Y"),
+                size: wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::R16Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view_y = tex_y.create_view(&wgpu::TextureViewDescriptor::default());
+
+            let tex_uv = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("p010 UV"),
+                size: wgpu::Extent3d {
+                    width: uv_w,
+                    height: uv_h,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rg16Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view_uv = tex_uv.create_view(&wgpu::TextureViewDescriptor::default());
+
+            let yuv_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("p010 yuv transform"),
+                size: std::mem::size_of::<YuvTransformRaw>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.queue
+                .write_buffer(&yuv_buf, 0, bytemuck::bytes_of(&yuv_raw));
+
+            let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("p010 bind"),
+                layout: &self.image_bind_layout_nv12,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view_y),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&view_uv),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&self.image_sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                            buffer: &yuv_buf,
+                            offset: 0,
+                            size: None,
+                        }),
+                    },
+                ],
+            });
+
+            let bytes = (w as u64) * 2
+                + (uv_w as u64) * (uv_h as u64) * 4
+                + std::mem::size_of::<YuvTransformRaw>() as u64;
+            self.image_bytes_total += bytes;
+
+            self.images.insert(
+                handle,
+                ImageTex::Nv12 {
+                    tex_y,
+                    view_y,
+                    tex_uv,
+                    view_uv,
+                    bind,
+                    yuv_buf,
+                    w,
+                    h,
+                    color_info,
+                    last_used_frame: self.frame_index,
+                    bytes,
+                },
+            );
+        } else {
+            if let Some(ImageTex::Nv12 { yuv_buf, .. }) = self.images.get(&handle) {
+                self.queue
+                    .write_buffer(yuv_buf, 0, bytemuck::bytes_of(&yuv_raw));
+            }
+        }
+
+        let (tex_y, tex_uv, _bind) = match self.images.get(&handle) {
+            Some(ImageTex::Nv12 {
+                tex_y,
+                tex_uv,
+                bind,
+                ..
+            }) => (tex_y, tex_uv, bind),
+            _ => return Err(anyhow::anyhow!("Handle is not P010/NV12")),
+        };
+
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: tex_y,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &y[..y_expected],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(w * 2),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: tex_uv,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &uv[..uv_expected],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(uv_w * 4),
                 rows_per_image: Some(uv_h),
             },
             wgpu::Extent3d {
@@ -2003,6 +2237,144 @@ impl WgpuBackend {
             }
             self.remove_image(h);
         }
+    }
+
+    /// Enable or disable linear working-space rendering.
+    /// When enabled, the scene is rendered into an Rgba16Float intermediate
+    /// and a final full-screen pass applies the display OETF.
+    pub fn set_working_space(&mut self, enabled: bool) {
+        if enabled == self.working_space {
+            return;
+        }
+        self.working_space = enabled;
+        if enabled {
+            self.ensure_display_pipeline();
+            self.recreate_working_space_texture();
+        } else {
+            self.ws_tex = None;
+            self.ws_view = None;
+            self.ws_bind = None;
+        }
+    }
+
+    fn ensure_display_pipeline(&mut self) {
+        if self.display_pipeline.is_some() {
+            return;
+        }
+
+        let layout = self
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("display transform layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+        self.display_layout = Some(layout);
+
+        let shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("display_transform.wgsl"),
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                    "shaders/display_transform.wgsl"
+                ))),
+            });
+
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("display transform pipeline layout"),
+                bind_group_layouts: &[None, self.display_layout.as_ref()],
+                immediate_size: 0,
+            });
+
+        let pipeline = self
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("display transform pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: self.config.format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
+            });
+        self.display_pipeline = Some(pipeline);
+    }
+
+    fn recreate_working_space_texture(&mut self) {
+        if !self.working_space {
+            return;
+        }
+        let w = self.config.width.max(1);
+        let h = self.config.height.max(1);
+
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("working space"),
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("working space bind"),
+            layout: self.display_layout.as_ref().unwrap(),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.image_sampler),
+                },
+            ],
+        });
+
+        self.ws_tex = Some(tex);
+        self.ws_view = Some(view);
+        self.ws_bind = Some(bind);
     }
 
     fn recreate_msaa_and_depth_stencil(&mut self) {
@@ -2495,6 +2867,7 @@ impl RenderBackend for WgpuBackend {
         self.config.height = height;
         self.surface.configure(&self.device, &self.config);
         self.recreate_msaa_and_depth_stencil();
+        self.recreate_working_space_texture();
     }
 
     fn frame(&mut self, scene: &Scene, _glyph_cfg: GlyphRasterConfig) {
@@ -3349,9 +3722,8 @@ impl RenderBackend for WgpuBackend {
                     ];
 
                     if is_nv12 {
-                        let uv_x_offset = if let Some(ImageTex::Nv12 {
-                            w, color_info, ..
-                        }) = self.images.get(handle)
+                        let uv_x_offset = if let Some(ImageTex::Nv12 { w, color_info, .. }) =
+                            self.images.get(handle)
                         {
                             match color_info.chroma_siting {
                                 ChromaSiting::Center | ChromaSiting::TopLeft => 0.0,
@@ -3699,7 +4071,17 @@ impl RenderBackend for WgpuBackend {
                     let swap_view = frame
                         .texture
                         .create_view(&wgpu::TextureViewDescriptor::default());
-                    let (color, resolve) = if let Some(msaa_view) = &self.msaa_view {
+                    let use_ws = self.working_space && self.ws_view.is_some();
+                    let (color, resolve) = if use_ws {
+                        let ws_view = self.ws_view.as_ref().unwrap();
+                        if let Some(msaa_view) = &self.msaa_view {
+                            // MSAA resolves to working-space texture
+                            (msaa_view.clone(), Some(ws_view.clone()))
+                        } else {
+                            // Direct render to working-space texture
+                            (ws_view.clone(), None)
+                        }
+                    } else if let Some(msaa_view) = &self.msaa_view {
                         (msaa_view.clone(), Some(swap_view))
                     } else {
                         (swap_view, None)
@@ -3969,6 +4351,36 @@ impl RenderBackend for WgpuBackend {
                         }
                     }
                 }
+            }
+        }
+
+        // Display pass: linear working space → sRGB OETF → swapchain
+        if self.working_space {
+            if let (Some(_ws_view), Some(ws_bind), Some(display_pipeline)) =
+                (&self.ws_view, &self.ws_bind, &self.display_pipeline)
+            {
+                let swap_view = frame
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
+                let mut display_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("display transform"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &swap_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                display_pass.set_pipeline(display_pipeline);
+                display_pass.set_bind_group(1, ws_bind, &[]);
+                display_pass.draw(0..3, 0..1);
             }
         }
 

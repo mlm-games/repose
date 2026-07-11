@@ -13,7 +13,7 @@ pub enum ColorRange {
 /// Matrix coefficients for luma/chroma-to-RGB conversion (H.273 Table 4).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MatrixCoeffs {
-    /// Identity / GBR — the "matrix" is the identity, meaning the
+    /// Identity / GBR -> the "matrix" is the identity, meaning the
     /// signal *is* RGB (or GBR order with different primaries).
     Identity,
     /// BT.601 525-line (Kr=0.299, Kb=0.114).
@@ -46,7 +46,7 @@ pub enum Primaries {
 pub enum Transfer {
     /// BT.709 / BT.601 (gamma ≈ 2.2, same curve as BT.1886).
     Bt709,
-    /// sRGB (IEC 61966-2-1) — piecewise 2.4 gamma with linear toe.
+    /// sRGB (IEC 61966-2-1) -> piecewise 2.4 gamma with linear toe.
     #[default]
     Srgb,
     /// SMPTE ST 2084 (Perceptual Quantizer) for HDR10.
@@ -68,6 +68,47 @@ pub enum ChromaSiting {
     Center,
     /// Top-left: chroma aligned with top-left corner (rare, some JPEG).
     TopLeft,
+}
+
+/// Describes the memory layout of a planar (or packed) video frame.
+///
+/// Maps 1:1 to common video pixel formats. Each variant implies the
+/// number of planes, their texture formats, and subsampling factors.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PixelFormat {
+    /// 8-bit YUV 4:2:0, 2 planes: Y (R8, full res), interleaved UV (Rg8, half res).
+    #[default]
+    Nv12,
+    /// 8-bit YUV 4:2:0, 3 planes: Y (R8), U (R8), V (R8), all half res.
+    I420,
+    /// 8-bit YUV 4:4:4, 3 planes: Y (R8), U (R8), V (R8), full res.
+    I444,
+    /// 10-bit YUV 4:2:0, 2 planes: Y (R16Unorm, high bits), UV (Rg16Unorm, high bits), half res.
+    P010,
+    /// Packed 8-bit RGBA (single Rgba8Unorm plane, full res).
+    Rgba,
+}
+
+impl PixelFormat {
+    pub fn num_planes(&self) -> u32 {
+        match self {
+            PixelFormat::Nv12 | PixelFormat::P010 => 2,
+            PixelFormat::I420 | PixelFormat::I444 => 3,
+            PixelFormat::Rgba => 1,
+        }
+    }
+
+    /// Chroma width/height for a given luma resolution.
+    /// Returns `(0, 0)` for RGB-like formats.
+    pub fn chroma_size(&self, luma_w: u32, luma_h: u32) -> (u32, u32) {
+        match self {
+            PixelFormat::Nv12 | PixelFormat::I420 | PixelFormat::P010 => {
+                (luma_w.div_ceil(2), luma_h.div_ceil(2))
+            }
+            PixelFormat::I444 => (luma_w, luma_h),
+            PixelFormat::Rgba => (0, 0),
+        }
+    }
 }
 
 /// Minimum viable color metadata for a video frame or stream.

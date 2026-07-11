@@ -1,8 +1,8 @@
 use font_awl::FontProvider;
 use once_cell::sync::OnceCell;
 use rapidhash::{HashMapExt, RapidHashMap, fast::RapidHasher};
-use skrifa::outline::OutlinePen;
 use skrifa::MetadataProvider;
+use skrifa::outline::OutlinePen;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
@@ -81,10 +81,11 @@ static WRAP_RANGES_LRU: OnceCell<
     Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32, u64), (Vec<(usize, usize)>, bool)>>,
 > = OnceCell::new();
 
-static ELLIP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32, u16, u8, i32, u64), String>>> = OnceCell::new();
+static ELLIP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32, u16, u8, i32, u64), String>>> =
+    OnceCell::new();
 
-fn wrap_cache() -> &'static Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32, u64), (Vec<String>, bool)>>
-{
+fn wrap_cache()
+-> &'static Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32, u64), (Vec<String>, bool)>> {
     WRAP_LRU.get_or_init(|| Mutex::new(Lru::new(WRAP_CACHE_CAP)))
 }
 
@@ -107,7 +108,7 @@ fn fast_hash(s: &str) -> u64 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct GlyphKey(pub u64);
 
-/// Cache key for the renderer's glyph slug cache — uniquely identifies a
+/// Cache key for the renderer's glyph slug cache -> uniquely identifies a
 /// specific glyph in a specific font face.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct CacheKey {
@@ -163,17 +164,18 @@ struct Engine {
     next_font_id: u64,
     /// Cache of rendered glyphs keyed by (font_id, glyph_id, font_size_bits).
     /// Contains (width, height, left, top, content, data).
-    glyph_cache: HashMap<(u64, u16, u32), (u32, u32, i32, i32, swash::scale::image::Content, Vec<u8>)>,
+    glyph_cache:
+        HashMap<(u64, u16, u32), (u32, u32, i32, i32, swash::scale::image::Content, Vec<u8>)>,
 }
 
 impl Engine {
     fn ensure_font(&mut self, fd: &parley::FontData) -> u64 {
-        if let Some(existing) = self
-            .font_registry
-            .iter()
-            .find(|r| r.data == *fd)
-        {
-            log::debug!("[font] reuse id={} len={}", existing.id, fd.data.as_ref().len());
+        if let Some(existing) = self.font_registry.iter().find(|r| r.data == *fd) {
+            log::debug!(
+                "[font] reuse id={} len={}",
+                existing.id,
+                fd.data.as_ref().len()
+            );
             return existing.id;
         }
         let id = self.next_font_id;
@@ -207,8 +209,22 @@ impl Engine {
         use swash::scale::{Render, Source, StrikeWith};
         let cache_key = (font_id, glyph_id, px.to_bits());
         if let Some(cached) = self.glyph_cache.get(&cache_key) {
-            log::debug!("[raster_placement] HIT fid={} gid={} px={} => {}x{} {}x{}", font_id, glyph_id, px, cached.0, cached.1, cached.2, cached.3);
-            return Some((cached.0 as f32, cached.1 as f32, cached.2 as f32, cached.3 as f32));
+            log::debug!(
+                "[raster_placement] HIT fid={} gid={} px={} => {}x{} {}x{}",
+                font_id,
+                glyph_id,
+                px,
+                cached.0,
+                cached.1,
+                cached.2,
+                cached.3
+            );
+            return Some((
+                cached.0 as f32,
+                cached.1 as f32,
+                cached.2 as f32,
+                cached.3 as f32,
+            ));
         }
         let data_bytes = self
             .font_registry
@@ -217,19 +233,23 @@ impl Engine {
             .data_bytes
             .clone();
         let font = swash::FontRef::from_index(&data_bytes, 0)?;
-        let mut scaler = self
-            .swash_cx
-            .builder(font)
-            .size(px)
-            .hint(true)
-            .build();
+        let mut scaler = self.swash_cx.builder(font).size(px).hint(true).build();
         let image = Render::new(&[
             Source::Outline,
             Source::ColorBitmap(StrikeWith::BestFit),
             Source::ColorOutline(0),
         ])
         .render(&mut scaler, glyph_id)?;
-        log::debug!("[raster_placement] MISS fid={} gid={} px={} => {}x{} {}x{}", font_id, glyph_id, px, image.placement.width, image.placement.height, image.placement.left, image.placement.top);
+        log::debug!(
+            "[raster_placement] MISS fid={} gid={} px={} => {}x{} {}x{}",
+            font_id,
+            glyph_id,
+            px,
+            image.placement.width,
+            image.placement.height,
+            image.placement.left,
+            image.placement.top
+        );
         self.glyph_cache.insert(
             cache_key,
             (
@@ -266,8 +286,7 @@ fn init_engine_sync() -> Engine {
     let mut font_cx = provider.new_parley_context();
     let layout_cx = parley::LayoutContext::new();
 
-    static MATERIAL_SYMBOLS_TTF: &[u8] =
-        include_bytes!("assets/MaterialSymbolsOutlined.ttf");
+    static MATERIAL_SYMBOLS_TTF: &[u8] = include_bytes!("assets/MaterialSymbolsOutlined.ttf");
     let blob: parley::fontique::Blob<u8> = MATERIAL_SYMBOLS_TTF.to_vec().into();
     font_cx.collection.register_fonts(blob, None);
 
@@ -362,9 +381,9 @@ fn shape_line_inner(
     letter_spacing: f32,
     font_variation_settings: Option<&str>,
 ) -> Vec<ShapedGlyph> {
-    use parley::style::StyleProperty;
     use parley::FontWeight;
     use parley::layout::PositionedLayoutItem;
+    use parley::style::StyleProperty;
 
     let Engine {
         ref mut font_cx,
@@ -374,9 +393,13 @@ fn shape_line_inner(
     let mut builder = layout_cx.ranged_builder(font_cx, text, 1.0, true);
     builder.push_default(StyleProperty::FontSize(px));
     if line_height_ratio > 0.0 {
-        builder.push_default(StyleProperty::LineHeight(parley::LineHeight::FontSizeRelative(line_height_ratio)));
+        builder.push_default(StyleProperty::LineHeight(
+            parley::LineHeight::FontSizeRelative(line_height_ratio),
+        ));
     }
-    builder.push_default(StyleProperty::FontWeight(FontWeight::new(font_weight as f32)));
+    builder.push_default(StyleProperty::FontWeight(FontWeight::new(
+        font_weight as f32,
+    )));
     builder.push_default(StyleProperty::FontStyle(match font_style {
         1 => parley::FontStyle::Italic,
         _ => parley::FontStyle::Normal,
@@ -424,10 +447,16 @@ fn shape_line_inner(
     let mut out: Vec<ShapedGlyph> = Vec::new();
     for line in layout.lines() {
         for item in line.items() {
-            let PositionedLayoutItem::GlyphRun(glyph_run) = item else { continue };
+            let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                continue;
+            };
             let font_data = glyph_run.run().font();
             let fid = eng.ensure_font(font_data);
-            log::debug!("[shape] run: fid={} font_data_len={}", fid, font_data.data.as_ref().len());
+            log::debug!(
+                "[shape] run: fid={} font_data_len={}",
+                fid,
+                font_data.data.as_ref().len()
+            );
             for g in glyph_run.positioned_glyphs() {
                 let gid = g.id as u16;
                 let key = key_from_pair(fid, gid);
@@ -439,7 +468,15 @@ fn shape_line_inner(
 
                 log::debug!(
                     "[shape] glyph: gid={} px={} x={:.1} y={:.1} advance={:.1} bitmap={}x{} {}x{}",
-                    gid, px, g.x, g.y, g.advance, w, h, left, top,
+                    gid,
+                    px,
+                    g.x,
+                    g.y,
+                    g.advance,
+                    w,
+                    h,
+                    left,
+                    top,
                 );
 
                 out.push(ShapedGlyph {
@@ -470,7 +507,17 @@ pub fn shape_line(
     font_variation_settings: Option<&str>,
 ) -> Vec<ShapedGlyph> {
     let mut eng = engine().lock().unwrap();
-    shape_line_inner(&mut eng, text, px, line_height_ratio, font_family, font_weight, font_style, letter_spacing, font_variation_settings)
+    shape_line_inner(
+        &mut eng,
+        text,
+        px,
+        line_height_ratio,
+        font_family,
+        font_weight,
+        font_style,
+        letter_spacing,
+        font_variation_settings,
+    )
 }
 
 pub fn rasterize(key: GlyphKey, px: f32) -> Option<GlyphBitmap> {
@@ -479,7 +526,14 @@ pub fn rasterize(key: GlyphKey, px: f32) -> Option<GlyphBitmap> {
     let &(fid, gid) = eng.key_map.get(&key)?;
     let cache_key = (fid, gid, px.to_bits());
     if let Some(cached) = eng.glyph_cache.get(&cache_key) {
-        log::debug!("[rasterize] HIT fid={} gid={} px={} => {}x{}", fid, gid, px, cached.0, cached.1);
+        log::debug!(
+            "[rasterize] HIT fid={} gid={} px={} => {}x{}",
+            fid,
+            gid,
+            px,
+            cached.0,
+            cached.1
+        );
         return Some(GlyphBitmap {
             key,
             w: cached.0,
@@ -495,19 +549,21 @@ pub fn rasterize(key: GlyphKey, px: f32) -> Option<GlyphBitmap> {
         .data_bytes
         .clone();
     let font = swash::FontRef::from_index(&data_bytes, 0)?;
-    let mut scaler = eng
-        .swash_cx
-        .builder(font)
-        .size(px)
-        .hint(true)
-        .build();
+    let mut scaler = eng.swash_cx.builder(font).size(px).hint(true).build();
     let image = Render::new(&[
         Source::Outline,
         Source::ColorBitmap(StrikeWith::BestFit),
         Source::ColorOutline(0),
     ])
     .render(&mut scaler, gid)?;
-    log::debug!("[rasterize] MISS fid={} gid={} px={} => {}x{}", fid, gid, px, image.placement.width, image.placement.height);
+    log::debug!(
+        "[rasterize] MISS fid={} gid={} px={} => {}x{}",
+        fid,
+        gid,
+        px,
+        image.placement.width,
+        image.placement.height
+    );
     let bitmap = GlyphBitmap {
         key,
         w: image.placement.width,
@@ -540,10 +596,7 @@ pub fn lookup_cache_key(key: GlyphKey, px: f32) -> Option<CacheKey> {
     })
 }
 
-fn extract_outlines_for(
-    data_bytes: &[u8],
-    glyph_id: u16,
-) -> Option<Box<[Command]>> {
+fn extract_outlines_for(data_bytes: &[u8], glyph_id: u16) -> Option<Box<[Command]>> {
     let font = skrifa::FontRef::new(data_bytes).ok()?;
     let mut pen = OutlinePenCollector(Vec::new());
     font.outline_glyphs()
@@ -562,10 +615,7 @@ pub fn extract_outline_commands(cache_key: CacheKey) -> Option<Box<[Command]>> {
     extract_outlines_for(&record.data_bytes, cache_key.glyph_id)
 }
 
-pub fn lookup_and_extract_outline(
-    key: GlyphKey,
-    px: f32,
-) -> Option<(CacheKey, Box<[Command]>)> {
+pub fn lookup_and_extract_outline(key: GlyphKey, px: f32) -> Option<(CacheKey, Box<[Command]>)> {
     let eng = engine().lock().unwrap();
     let &(fid, gid) = eng.key_map.get(&key)?;
     let record = eng.font_registry.iter().find(|r| r.id == fid)?;
@@ -629,8 +679,8 @@ pub fn metrics_for_textfield(
     }
     let mut eng = engine().lock().unwrap();
 
-    use parley::style::StyleProperty;
     use parley::FontWeight;
+    use parley::style::StyleProperty;
 
     let Engine {
         ref mut font_cx,
@@ -639,7 +689,9 @@ pub fn metrics_for_textfield(
     } = *eng;
     let mut builder = layout_cx.ranged_builder(font_cx, text, 1.0, true);
     builder.push_default(StyleProperty::FontSize(px));
-    builder.push_default(StyleProperty::FontWeight(FontWeight::new(font_weight as f32)));
+    builder.push_default(StyleProperty::FontWeight(FontWeight::new(
+        font_weight as f32,
+    )));
     builder.push_default(StyleProperty::FontStyle(match font_style {
         1 => parley::FontStyle::Italic,
         _ => parley::FontStyle::Normal,
@@ -687,7 +739,9 @@ pub fn metrics_for_textfield(
     let mut glyph_idx = 0usize;
     for line in layout.lines() {
         for item in line.items() {
-            let parley::layout::PositionedLayoutItem::GlyphRun(glyph_run) = item else { continue };
+            let parley::layout::PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                continue;
+            };
             let run_offset = glyph_run.offset();
             let run = glyph_run.run();
             let mut cluster_offset = run_offset;
@@ -715,9 +769,8 @@ pub fn metrics_for_textfield(
     byte_offsets.push(0);
     let mut last_byte = 0usize;
     for (b, _) in text.grapheme_indices(true) {
-        positions.push(
-            positions.last().copied().unwrap_or(0.0) + width_between(&edges, last_byte, b),
-        );
+        positions
+            .push(positions.last().copied().unwrap_or(0.0) + width_between(&edges, last_byte, b));
         byte_offsets.push(b);
         last_byte = b;
     }
@@ -794,7 +847,15 @@ pub fn wrap_lines(
         return h;
     }
 
-    let m = metrics_for_textfield(text, px, None, font_weight, font_style, letter_spacing, font_variation_settings);
+    let m = metrics_for_textfield(
+        text,
+        px,
+        None,
+        font_weight,
+        font_style,
+        letter_spacing,
+        font_variation_settings,
+    );
     if let Some(&last) = m.positions.last()
         && last <= max_width + 0.5
     {
@@ -927,7 +988,15 @@ pub fn wrap_line_ranges(
         return v;
     }
 
-    let m = metrics_for_textfield(text, px, None, font_weight, font_style, letter_spacing, font_variation_settings);
+    let m = metrics_for_textfield(
+        text,
+        px,
+        None,
+        font_weight,
+        font_style,
+        letter_spacing,
+        font_variation_settings,
+    );
 
     let width_of = |start_b: usize, end_b: usize| -> f32 {
         let i0 = match m.byte_offsets.binary_search(&start_b) {
@@ -1091,7 +1160,15 @@ pub fn ellipsize_line(
     if let Some(s) = ellip_cache().lock().unwrap().get(&key).cloned() {
         return s;
     }
-    let m = metrics_for_textfield(text, px, None, font_weight, font_style, letter_spacing, font_variation_settings);
+    let m = metrics_for_textfield(
+        text,
+        px,
+        None,
+        font_weight,
+        font_style,
+        letter_spacing,
+        font_variation_settings,
+    );
     if let Some(&last) = m.positions.last()
         && last <= max_width + 0.5
     {
@@ -1133,12 +1210,13 @@ fn ellipsis_width(px: f32, letter_spacing: f32) -> f32 {
     if let Some(w) = cache.lock().unwrap().get(&key).copied() {
         return w;
     }
-    let w =
-        if let Some(g) = crate::shape_line("…", px, px, None, 400, 0, letter_spacing, None).last() {
-            g.x + g.advance
-        } else {
-            0.0
-        };
+    let w = if let Some(g) =
+        crate::shape_line("…", px, px, None, 400, 0, letter_spacing, None).last()
+    {
+        g.x + g.advance
+    } else {
+        0.0
+    };
     cache.lock().unwrap().put(key, w);
     w
 }

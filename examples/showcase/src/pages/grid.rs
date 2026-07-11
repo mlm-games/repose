@@ -29,14 +29,22 @@ pub fn screen() -> View {
         Section(
             "LazyVerticalGrid",
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
-                Hint("Virtualized 4-column grid over 200 items — only visible cells are composed."),
+                Hint(
+                    "Virtualized 4-column grid over 200 items -> only visible cells are composed.",
+                ),
                 LazyVerticalGrid(
                     4,
                     items.get(),
                     100.0,
                     |item, _| {
                         let (bg, fg) = tile_colors(item.id);
-                        DemoTile(format!("#{}", item.id + 1), format!("id {}", item.id), bg, fg, 100.0)
+                        DemoTile(
+                            format!("#{}", item.id + 1),
+                            format!("id {}", item.id),
+                            bg,
+                            fg,
+                            100.0,
+                        )
                     },
                     LazyGridConfig {
                         state: vert_state,
@@ -61,7 +69,13 @@ pub fn screen() -> View {
                     120.0,
                     |item, _| {
                         let (bg, fg) = tile_colors(item.id);
-                        DemoTile(format!("#{}", item.id + 1), format!("id {}", item.id), bg, fg, 60.0)
+                        DemoTile(
+                            format!("#{}", item.id + 1),
+                            format!("id {}", item.id),
+                            bg,
+                            fg,
+                            60.0,
+                        )
                     },
                     LazyGridConfig {
                         state: horiz_state,

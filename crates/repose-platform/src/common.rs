@@ -425,6 +425,16 @@ pub(crate) fn process_render_commands(
             } => {
                 let _ = backend.set_image_nv12(handle, w, h, &y, &uv, color_info);
             }
+            RenderCommand::SetImagePlanes {
+                handle,
+                w,
+                h,
+                pixel_format,
+                planes,
+                color_info,
+            } => {
+                let _ = backend.set_image_planes(handle, w, h, pixel_format, &planes, color_info);
+            }
             RenderCommand::RemoveImage { handle } => {
                 backend.remove_image(handle);
             }

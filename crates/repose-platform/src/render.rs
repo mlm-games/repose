@@ -1,5 +1,5 @@
 //! Render context for image upload commands
-use repose_core::color::ColorInfo;
+use repose_core::color::{ColorInfo, PixelFormat};
 use repose_core::{ImageHandle, request_frame};
 
 #[derive(Debug)]
@@ -22,6 +22,14 @@ pub enum RenderCommand {
         h: u32,
         y: Vec<u8>,
         uv: Vec<u8>,
+        color_info: ColorInfo,
+    },
+    SetImagePlanes {
+        handle: ImageHandle,
+        w: u32,
+        h: u32,
+        pixel_format: PixelFormat,
+        planes: Vec<Vec<u8>>,
         color_info: ColorInfo,
     },
     RemoveImage {
@@ -114,16 +122,28 @@ mod imp {
             uv: Vec<u8>,
             color_info: ColorInfo,
         ) {
+            self.set_image_planes(handle, w, h, PixelFormat::Nv12, vec![y, uv], color_info);
+        }
+
+        pub fn set_image_planes(
+            &self,
+            handle: ImageHandle,
+            w: u32,
+            h: u32,
+            pixel_format: PixelFormat,
+            planes: Vec<Vec<u8>>,
+            color_info: ColorInfo,
+        ) {
             let mut q = self.q.lock().unwrap();
             q.removals.remove(&handle);
             q.updates.insert(
                 handle,
-                RenderCommand::SetImageNv12 {
+                RenderCommand::SetImagePlanes {
                     handle,
                     w,
                     h,
-                    y,
-                    uv,
+                    pixel_format,
+                    planes,
                     color_info,
                 },
             );
@@ -248,16 +268,28 @@ mod imp {
             uv: Vec<u8>,
             color_info: ColorInfo,
         ) {
+            self.set_image_planes(handle, w, h, PixelFormat::Nv12, vec![y, uv], color_info);
+        }
+
+        pub fn set_image_planes(
+            &self,
+            handle: ImageHandle,
+            w: u32,
+            h: u32,
+            pixel_format: PixelFormat,
+            planes: Vec<Vec<u8>>,
+            color_info: ColorInfo,
+        ) {
             let mut s = self.inner.borrow_mut();
             s.q.removals.remove(&handle);
             s.q.updates.insert(
                 handle,
-                RenderCommand::SetImageNv12 {
+                RenderCommand::SetImagePlanes {
                     handle,
                     w,
                     h,
-                    y,
-                    uv,
+                    pixel_format,
+                    planes,
                     color_info,
                 },
             );
