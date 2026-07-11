@@ -40,12 +40,14 @@ fn vs_main(
 @group(1) @binding(2) var samp: sampler;
 
 fn yuv_to_rgb(y: f32, u: f32, v: f32, full_range: bool) -> vec3<f32> {
-  let uu = u - 0.5;
-  let vv = v - 0.5;
-
   var yy = y;
+  var uu = u - 0.5;
+  var vv = v - 0.5;
+
   if (!full_range) {
-    yy = clamp((y - (16.0/255.0)) * (255.0/219.0), 0.0, 1.0);
+    yy = clamp((y - (16.0 / 255.0)) * (255.0 / 219.0), 0.0, 1.0);
+    uu = (u - (128.0 / 255.0)) * (255.0 / 224.0);
+    vv = (v - (128.0 / 255.0)) * (255.0 / 224.0);
   }
 
   let r = yy + 1.5748 * vv;
