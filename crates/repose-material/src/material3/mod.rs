@@ -806,20 +806,25 @@ impl Default for ScaffoldConfig {
 
 pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig) -> View {
     let insets = window_insets();
+    let itop = px_to_dp(insets.top);
+    let ibottom = px_to_dp(insets.bottom);
+    let iime = px_to_dp(insets.ime_bottom);
+    let ileft = px_to_dp(insets.left);
+    let iright = px_to_dp(insets.right);
 
     let content_padding = PaddingValues {
         top: if config.top_bar.is_some() {
             64.0
         } else {
-            insets.top
+            itop
         },
         bottom: if config.bottom_bar.is_some() {
-            80.0 + insets.bottom + insets.ime_bottom
+            80.0 + ibottom + iime
         } else {
-            insets.bottom + insets.ime_bottom
+            ibottom + iime
         },
-        left: insets.left,
-        right: insets.right,
+        left: ileft,
+        right: iright,
     };
 
     Stack(
@@ -833,14 +838,14 @@ pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig)
             .fill_max_size()
             .padding_values(PaddingValues {
                 top: if config.top_bar.is_some() {
-                    64.0 + insets.top
+                    64.0 + itop
                 } else {
                     0.0
                 },
                 bottom: if config.bottom_bar.is_some() {
-                    80.0 + insets.bottom + insets.ime_bottom
+                    80.0 + ibottom + iime
                 } else {
-                    insets.bottom + insets.ime_bottom
+                    ibottom + iime
                 },
                 ..Default::default()
             }))
@@ -848,7 +853,7 @@ pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig)
         if let Some(bar) = config.top_bar {
             Box(Modifier::new()
                 .absolute()
-                .offset(Some(0.0), Some(insets.top), Some(0.0), None))
+                .offset(Some(0.0), Some(itop), Some(0.0), None))
             .child(bar)
         } else {
             Box(Modifier::new())
@@ -857,7 +862,7 @@ pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig)
             Box(Modifier::new().absolute().offset(
                 Some(0.0),
                 None,
-                Some(insets.bottom + insets.ime_bottom),
+                Some(ibottom + iime),
                 Some(0.0),
             ))
             .child(bar)
@@ -871,7 +876,7 @@ pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig)
                     fab_m = fab_m.offset(
                         None,
                         None,
-                        Some(16.0 + insets.bottom + insets.ime_bottom),
+                        Some(16.0 + ibottom + iime),
                         Some(16.0),
                     );
                 }
@@ -879,7 +884,7 @@ pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig)
                     fab_m = fab_m.fill_max_width().align_self(AlignSelf::CENTER).offset(
                         None,
                         None,
-                        Some(16.0 + insets.bottom + insets.ime_bottom),
+                        Some(16.0 + ibottom + iime),
                         None,
                     );
                 }
