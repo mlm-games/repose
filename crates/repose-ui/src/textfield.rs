@@ -346,7 +346,6 @@ pub fn index_for_x_bytes(
         },
     );
 
-
     let mut best_i = 0usize;
     let mut best_d = f32::INFINITY;
     for i in 0..m.positions.len() {
@@ -1417,10 +1416,12 @@ pub(crate) fn paint_text_field(
     let font_val = dp_to_px(font_size_dp) * locals::text_scale().0;
     let line_h = if ts.line_height != 0.0 {
         dp_to_px(ts.line_height) * locals::text_scale().0
+    } else if text_input.multiline {
+        0.0 // sentinel → renderer uses Normal line height (font-metric-based)
     } else {
-        font_val
+        font_val // single-line needs tp use font em-size for correct cursor–text alignment
     };
-    let text_off_y = (rect.h - line_h) / 2.0;
+    let text_off_y = (rect.h - line_h.max(font_val)) / 2.0;
 
     let clip_radius = clip_rounded.unwrap_or([0.0; 4]).map(dp_to_px);
     scene.nodes.push(SceneNode::PushClip {
@@ -1497,7 +1498,7 @@ pub(crate) fn paint_text_field(
                         x: rect.x + vis_x,
                         y: rect.y + text_off_y,
                         w: (vis_ex - vis_x).max(0.0),
-                        h: line_h,
+                        h: line_h.max(font_val),
                     },
                     brush: Brush::Solid(selection),
                     radius: [0.0; 4],
@@ -1537,7 +1538,7 @@ pub(crate) fn paint_text_field(
                 line_height: ts.line_height,
                 extra_style: Default::default(),
                 url: None,
-            font_variation_settings: None,
+                font_variation_settings: None,
             });
 
             // Caret (only when enabled && !readOnly)
@@ -1557,7 +1558,7 @@ pub(crate) fn paint_text_field(
                     .copied()
                     .unwrap_or(0.0)
                     - st.scroll_offset;
-                let cursor_y = rect.y + text_off_y + (line_h - font_val) / 2.0;
+                let cursor_y = rect.y + text_off_y + (line_h.max(font_val) - font_val) / 2.0;
                 scene.nodes.push(SceneNode::Rect {
                     rect: repose_core::Rect {
                         x: rect.x + cx.max(0.0),
@@ -1579,7 +1580,15 @@ pub(crate) fn paint_text_field(
             } else {
                 st.text.clone()
             };
-            let layout = layout_text_area(&render_text, font_val, rect.w.max(1.0), 400, 0, ts.letter_spacing, None);
+            let layout = layout_text_area(
+                &render_text,
+                font_val,
+                rect.w.max(1.0),
+                400,
+                0,
+                ts.letter_spacing,
+                None,
+            );
             let lh = layout.line_h_px;
             let max_line_count = text_input.max_lines.unwrap_or(usize::MAX);
 
@@ -1765,7 +1774,7 @@ pub(crate) fn paint_text_field(
                 line_height: 0.0,
                 extra_style: Default::default(),
                 url: None,
-            font_variation_settings: None,
+                font_variation_settings: None,
             });
         } else if text_input.multiline {
             let render_text = if text_input.value.is_empty() {
@@ -1776,7 +1785,15 @@ pub(crate) fn paint_text_field(
             } else {
                 text_input.value.clone()
             };
-            let layout = layout_text_area(&render_text, font_val, rect.w.max(1.0), 400, 0, ts.letter_spacing, None);
+            let layout = layout_text_area(
+                &render_text,
+                font_val,
+                rect.w.max(1.0),
+                400,
+                0,
+                ts.letter_spacing,
+                None,
+            );
             let lh = layout.line_h_px;
             for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
                 let ln = render_text[s..e].to_string();
@@ -1826,7 +1843,7 @@ pub(crate) fn paint_text_field(
                 line_height: 0.0,
                 extra_style: Default::default(),
                 url: None,
-            font_variation_settings: None,
+                font_variation_settings: None,
             });
         }
     }
@@ -1853,7 +1870,15 @@ pub(crate) fn paint_text_field(
                 st.text.clone()
             };
             if text_input.multiline {
-                let l = layout_text_area(&display, font_val, rect.w.max(1.0), 400, 0, ts.letter_spacing, None);
+                let l = layout_text_area(
+                    &display,
+                    font_val,
+                    rect.w.max(1.0),
+                    400,
+                    0,
+                    ts.letter_spacing,
+                    None,
+                );
                 let lc = l.ranges.len();
                 let cw = rect.w.max(0.0);
                 let ch = (lc as f32 * l.line_h_px).max(0.0);
@@ -1886,8 +1911,8 @@ pub(crate) fn paint_text_field(
                 let m = measure_text(&display, font_val, TextMeasureConfig::default());
                 let w = m.positions.last().copied().unwrap_or(0.0);
                 let top = 0.0;
-                let bottom = line_h;
-                let baseline = line_h * 0.8;
+                let bottom = line_h.max(font_val);
+                let baseline = bottom * 0.8;
                 let line_info = TextLineInfo {
                     start: 0,
                     end: display.len(),
@@ -1901,11 +1926,11 @@ pub(crate) fn paint_text_field(
                 (
                     1,
                     w.max(0.0),
-                    line_h.max(0.0),
+                    bottom,
                     baseline,
                     baseline,
                     w > rect.w,
-                    line_h > rect.h,
+                    bottom > rect.h,
                     vec![line_info],
                 )
             }

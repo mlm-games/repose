@@ -3001,8 +3001,8 @@ pub fn OutlinedTextField(
     // Minimized label half-height matches bodySmall line height (~16dp) / 2
     let min_label_half_h: f32 = if has_label { 8.0 } else { 0.0 };
 
-    // Label Y: expanded at text-line (~16dp) → minimized overlapping top border (-labelHeight/2)
-    let label_start_y = 16.0;
+    // Label Y: expanded centered within 56dp field → minimized overlapping top border (-labelHeight/2)
+    let label_start_y = (56.0 - 16.0) / 2.0;
     let label_end_y = -min_label_half_h;
     let label_y = label_start_y - (label_start_y - label_end_y) * float_t;
 
@@ -3239,10 +3239,8 @@ pub fn TextField(
 
     let label_size = 16.0 - 4.0 * float_t;
 
-    let min_label_half_h: f32 = if has_label { 8.0 } else { 0.0 };
-
-    let label_start_y = 16.0;
-    let label_end_y = -min_label_half_h;
+    let label_start_y = (56.0 - 16.0) / 2.0;
+    let label_end_y = if has_label { 8.0 } else { 0.0 };
     let label_y = label_start_y - (label_start_y - label_end_y) * float_t;
 
     let label_start_x = if has_label { 24.0 } else { 0.0 };

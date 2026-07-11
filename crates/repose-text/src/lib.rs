@@ -373,7 +373,9 @@ fn shape_line_inner(
     } = *eng;
     let mut builder = layout_cx.ranged_builder(font_cx, text, 1.0, true);
     builder.push_default(StyleProperty::FontSize(px));
-    builder.push_default(StyleProperty::LineHeight(parley::LineHeight::FontSizeRelative(line_height_ratio)));
+    if line_height_ratio > 0.0 {
+        builder.push_default(StyleProperty::LineHeight(parley::LineHeight::FontSizeRelative(line_height_ratio)));
+    }
     builder.push_default(StyleProperty::FontWeight(FontWeight::new(font_weight as f32)));
     builder.push_default(StyleProperty::FontStyle(match font_style {
         1 => parley::FontStyle::Italic,
