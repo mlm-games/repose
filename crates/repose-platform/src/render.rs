@@ -1,4 +1,5 @@
 //! Render context for image upload commands
+use repose_core::color::ColorInfo;
 use repose_core::{ImageHandle, request_frame};
 
 #[derive(Debug)]
@@ -21,7 +22,7 @@ pub enum RenderCommand {
         h: u32,
         y: Vec<u8>,
         uv: Vec<u8>,
-        full_range: bool,
+        color_info: ColorInfo,
     },
     RemoveImage {
         handle: ImageHandle,
@@ -111,7 +112,7 @@ mod imp {
             h: u32,
             y: Vec<u8>,
             uv: Vec<u8>,
-            full_range: bool,
+            color_info: ColorInfo,
         ) {
             let mut q = self.q.lock().unwrap();
             q.removals.remove(&handle);
@@ -123,7 +124,7 @@ mod imp {
                     h,
                     y,
                     uv,
-                    full_range,
+                    color_info,
                 },
             );
             request_frame();
@@ -131,8 +132,8 @@ mod imp {
 
         pub fn remove_image(&self, handle: ImageHandle) {
             let mut q = self.q.lock().unwrap();
+            q.removals.remove(&handle);
             q.updates.remove(&handle);
-            q.removals.insert(handle);
             request_frame();
         }
 
@@ -245,7 +246,7 @@ mod imp {
             h: u32,
             y: Vec<u8>,
             uv: Vec<u8>,
-            full_range: bool,
+            color_info: ColorInfo,
         ) {
             let mut s = self.inner.borrow_mut();
             s.q.removals.remove(&handle);
@@ -257,7 +258,7 @@ mod imp {
                     h,
                     y,
                     uv,
-                    full_range,
+                    color_info,
                 },
             );
             request_frame();

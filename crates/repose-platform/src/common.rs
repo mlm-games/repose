@@ -421,9 +421,9 @@ pub(crate) fn process_render_commands(
                 h,
                 y,
                 uv,
-                full_range,
+                color_info,
             } => {
-                let _ = backend.set_image_nv12(handle, w, h, &y, &uv, full_range);
+                let _ = backend.set_image_nv12(handle, w, h, &y, &uv, color_info);
             }
             RenderCommand::RemoveImage { handle } => {
                 backend.remove_image(handle);

@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use repose_core::color::{ChromaSiting, ColorInfo};
 use repose_core::request_frame;
 use repose_core::{
     Brush, FontStyle, GlyphRasterConfig, RenderBackend, Scene, SceneNode, StrokeCap, Transform,
@@ -978,9 +979,10 @@ enum ImageTex {
         tex_uv: wgpu::Texture,
         view_uv: wgpu::TextureView,
         bind: wgpu::BindGroup,
+        yuv_buf: wgpu::Buffer,
         w: u32,
         h: u32,
-        full_range: bool,
+        color_info: ColorInfo,
         last_used_frame: u64,
         bytes: u64,
     },
@@ -1095,13 +1097,24 @@ struct BlurInstance {
     sin_cos: [f32; 2],
 }
 
+/// CPU-computed Y′CbCr → R′G′B′ transform uploaded as a uniform buffer.
+/// Layout matches the WGSL `YuvTransform` struct (4 × vec4<f32>).
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct YuvTransformRaw {
+    row0: [f32; 4],
+    row1: [f32; 4],
+    row2: [f32; 4],
+    b: [f32; 4],
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Nv12Instance {
     xywh: [f32; 4],
     uv: [f32; 4],
     color: [f32; 4], // tint
-    full_range: f32,
+    uv_x_offset: f32,
     sin_cos: [f32; 2],
     _pad: [f32; 1],
 }
@@ -1356,7 +1369,7 @@ impl WgpuBackend {
         // We reuse this for RGBA images for simplicity, or create a distinct one
         let image_bind_layout_rgba = text_bind_layout.clone();
 
-        // Layout for NV12 Images (TextureY + TextureUV + Sampler)
+        // Layout for NV12 Images (TextureY + TextureUV + Sampler + YuvTransform uniform)
         let image_bind_layout_nv12 =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("image bind layout nv12"),
@@ -1388,6 +1401,17 @@ impl WgpuBackend {
                         binding: 2,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                    // YUV transform uniform buffer
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
                         count: None,
                     },
                 ],
@@ -1704,7 +1728,7 @@ impl WgpuBackend {
         h: u32,
         y: &[u8],
         uv: &[u8],
-        full_range: bool,
+        color_info: ColorInfo,
     ) -> anyhow::Result<()> {
         let y_expected = (w as usize) * (h as usize);
         let uv_w = (w / 2).max(1);
@@ -1721,6 +1745,15 @@ impl WgpuBackend {
         let needs_recreate = match self.images.get(&handle) {
             Some(ImageTex::Nv12 { w: ww, h: hh, .. }) => *ww != w || *hh != h,
             _ => true,
+        };
+
+        // Compute the YUV→RGB transform on the CPU.
+        let yuv = color_info.to_yuv_transform();
+        let yuv_raw = YuvTransformRaw {
+            row0: [yuv.m[0][0], yuv.m[0][1], yuv.m[0][2], 0.0],
+            row1: [yuv.m[1][0], yuv.m[1][1], yuv.m[1][2], 0.0],
+            row2: [yuv.m[2][0], yuv.m[2][1], yuv.m[2][2], 0.0],
+            b: [yuv.b[0], yuv.b[1], yuv.b[2], 0.0],
         };
 
         if needs_recreate {
@@ -1758,6 +1791,21 @@ impl WgpuBackend {
             });
             let view_uv = tex_uv.create_view(&wgpu::TextureViewDescriptor::default());
 
+            // Create a uniform buffer for the YUV transform (per-image).
+            let yuv_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("nv12 yuv transform"),
+                size: std::mem::size_of::<YuvTransformRaw>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+
+            // Write initial transform.
+            self.queue.write_buffer(
+                &yuv_buf,
+                0,
+                bytemuck::bytes_of(&yuv_raw),
+            );
+
             let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("nv12 bind"),
                 layout: &self.image_bind_layout_nv12,
@@ -1774,10 +1822,19 @@ impl WgpuBackend {
                         binding: 2,
                         resource: wgpu::BindingResource::Sampler(&self.image_sampler),
                     },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                            buffer: &yuv_buf,
+                            offset: 0,
+                            size: None,
+                        }),
+                    },
                 ],
             });
 
-            let bytes = (w as u64) * (h as u64) + (uv_w as u64) * (uv_h as u64) * 2;
+            let bytes = (w as u64) * (h as u64) + (uv_w as u64) * (uv_h as u64) * 2
+                + std::mem::size_of::<YuvTransformRaw>() as u64;
             self.image_bytes_total += bytes;
 
             self.images.insert(
@@ -1788,13 +1845,23 @@ impl WgpuBackend {
                     tex_uv,
                     view_uv,
                     bind,
+                    yuv_buf,
                     w,
                     h,
-                    full_range,
+                    color_info,
                     last_used_frame: self.frame_index,
                     bytes,
                 },
             );
+        } else {
+            // Re-use existing textures; just update the YUV transform if needed.
+            if let Some(ImageTex::Nv12 { yuv_buf, .. }) = self.images.get(&handle) {
+                self.queue.write_buffer(
+                    yuv_buf,
+                    0,
+                    bytemuck::bytes_of(&yuv_raw),
+                );
+            }
         }
 
         let (tex_y, tex_uv, _bind) = match self.images.get(&handle) {
@@ -1853,9 +1920,9 @@ impl WgpuBackend {
 
     pub fn remove_image(&mut self, handle: u64) {
         if let Some(img) = self.images.remove(&handle) {
-            let b = match img {
-                ImageTex::Rgba { bytes, .. } => bytes,
-                ImageTex::Nv12 { bytes, .. } => bytes,
+            let b = match &img {
+                ImageTex::Rgba { bytes, .. } => *bytes,
+                ImageTex::Nv12 { bytes, .. } => *bytes,
             };
             self.image_bytes_total = self.image_bytes_total.saturating_sub(b);
         }
@@ -3282,10 +3349,14 @@ impl RenderBackend for WgpuBackend {
                     ];
 
                     if is_nv12 {
-                        let full_range = if let Some(ImageTex::Nv12 { full_range, .. }) =
-                            self.images.get(handle)
+                        let uv_x_offset = if let Some(ImageTex::Nv12 {
+                            w, color_info, ..
+                        }) = self.images.get(handle)
                         {
-                            if *full_range { 1.0 } else { 0.0 }
+                            match color_info.chroma_siting {
+                                ChromaSiting::Center | ChromaSiting::TopLeft => 0.0,
+                                ChromaSiting::Left => -1.0 / *w as f32,
+                            }
                         } else {
                             0.0
                         };
@@ -3294,7 +3365,7 @@ impl RenderBackend for WgpuBackend {
                             xywh: ndc_center,
                             uv: uv_rect,
                             color: tint.to_linear(),
-                            full_range,
+                            uv_x_offset,
                             sin_cos: [1.0, 0.0],
                             _pad: [0.0],
                         };
