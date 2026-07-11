@@ -91,7 +91,7 @@ impl Default for ColorInfo {
             matrix: MatrixCoeffs::Bt709,
             primaries: Primaries::Bt709,
             transfer: Transfer::Bt709,
-            chroma_siting: ChromaSiting::Center,
+            chroma_siting: ChromaSiting::Left,
         }
     }
 }
