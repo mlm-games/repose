@@ -1243,7 +1243,7 @@ pub fn layout_text_area(
     letter_spacing: f32,
     font_variation_settings: Option<&str>,
 ) -> TextAreaLayout {
-    let line_h = font_px * 1.3;
+    let line_h = font_px;
     let (ranges, _) = repose_text::wrap_line_ranges(
         text,
         font_px,
@@ -1418,7 +1418,7 @@ pub(crate) fn paint_text_field(
     let line_h = if ts.line_height != 0.0 {
         dp_to_px(ts.line_height) * locals::text_scale().0
     } else {
-        font_val * 1.3
+        font_val
     };
     let text_off_y = (rect.h - line_h) / 2.0;
 
