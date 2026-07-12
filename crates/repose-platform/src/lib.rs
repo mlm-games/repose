@@ -1565,13 +1565,13 @@ pub fn run_desktop_app(
                 WindowEvent::Ime(ime) => {
                     if let Some(focused_id) = self.sched.focused {
                         let key = self.tf_key_of(focused_id);
-                        if let Some(state_rc) = self.textfield_states.get(&key)
-                            && let Some(f) = &self.frame_cache
-                            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == focused_id)
-                        {
+                        if let Some(state_rc) = self.textfield_states.get(&key) {
                             let mut state = state_rc.borrow_mut();
-                            let hit_rect = hit.rect;
-                            let on_text_change = hit.on_text_change.clone();
+                            let on_text_change = self
+                                .frame_cache
+                                .as_ref()
+                                .and_then(|f| f.hit_regions.iter().find(|h| h.id == focused_id))
+                                .and_then(|h| h.on_text_change.clone());
                             let mut notify = |text: String| {
                                 if let Some(cb) = &on_text_change {
                                     cb(text);
@@ -1580,7 +1580,6 @@ pub fn run_desktop_app(
                             rc_android::handle_ime_event(
                                 ime,
                                 &mut state,
-                                hit_rect,
                                 &mut notify,
                                 &mut self.ime_preedit,
                             );
