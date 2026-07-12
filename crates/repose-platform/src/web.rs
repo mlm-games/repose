@@ -731,23 +731,6 @@ impl ApplicationHandler<()> for App {
 
                             state.drag_to(idx);
 
-                            // Ensure caret visible
-                            if hit.tf_multiline {
-                                let caret_idx = state.caret_index();
-                                let (cx, cy, _) =
-                                    caret_xy_for_byte(&state.text, font_px, wrap_w, caret_idx);
-                                let iw = state.inner_width;
-                                let ih = state.inner_height;
-                                state.ensure_caret_visible_xy(
-                                    cx,
-                                    cy,
-                                    iw,
-                                    ih,
-                                    2.0 * self.scale(&window),
-                                );
-                            } else {
-                                self.tf_ensure_caret_visible_in_hit(&mut state, hit.tf_multiline);
-                            }
                             self.request_redraw();
                         }
                     }

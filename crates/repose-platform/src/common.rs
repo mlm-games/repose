@@ -260,28 +260,6 @@ pub(crate) fn tf_place_caret_at_pointer(
         index_for_x_bytes_vt(state, font_px, content_x_px)
     };
     state.begin_drag(idx, shift);
-
-    // Ensure caret visible
-    let caret_idx = state.caret_index();
-    if is_multiline {
-        let (cx, cy, _) = caret_xy_for_byte(&state.text, font_px, wrap_w, caret_idx);
-        let iw = state.inner_width;
-        let ih = state.inner_height;
-        state.ensure_caret_visible_xy(cx, cy, iw, ih, 2.0 * scale);
-    } else {
-        let (display, caret_display_off) = if let Some(vt) = &state.visual_transformation {
-            let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
-            let tfmd = vt.filter(&annotated);
-            let off =
-                repose_core::original_offset_to_display(&state.text, tfmd.text.as_str(), caret_idx);
-            (tfmd.text.text, off)
-        } else {
-            (state.text.clone(), caret_idx)
-        };
-        let m = measure_text(&display, font_px, TextMeasureConfig::default());
-        let cx = m.positions.get(caret_display_off).copied().unwrap_or(0.0);
-        state.ensure_caret_visible(cx, wrap_w, 2.0 * scale);
-    }
 }
 
 /// Dispatch wheel/touch-scroll to scroll consumers under `pos`, propagating

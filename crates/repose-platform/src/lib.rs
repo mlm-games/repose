@@ -756,19 +756,6 @@ pub fn run_desktop_app(
 
                             st.drag_to(idx);
 
-                            // Ensure caret visible
-                            if hit.tf_multiline {
-                                let (cx, cy, _) =
-                                    caret_xy_for_byte(&st.text, font_px, wrap_w, st.caret_index());
-                                let iw = st.inner_width;
-                                let ih = st.inner_height;
-                                st.ensure_caret_visible_xy(cx, cy, iw, ih, dp_to_px(2.0));
-                            } else {
-                                let m = measure_text(&st.text, font_px, TextMeasureConfig::default());
-                                let cx = m.positions.get(st.caret_index()).copied().unwrap_or(0.0);
-                                st.ensure_caret_visible(cx, wrap_w, dp_to_px(2.0));
-                            }
-
                             self.request_redraw();
                         }
                     }
@@ -933,21 +920,6 @@ pub fn run_desktop_app(
                                     };
 
                                     st.begin_drag(idx, self.modifiers.shift);
-
-                                    // Ensure caret visible
-                                    let caret_idx = st.caret_index();
-                                    let iw = st.inner_width;
-                                    let ih = st.inner_height;
-                                    if hit.tf_multiline {
-                                        let (cx, cy, _) = textfield::caret_xy_for_byte(
-                                            &st.text, font_px, wrap_w, caret_idx,
-                                        );
-                                        st.ensure_caret_visible_xy(cx, cy, iw, ih, self.dp_px(2.0));
-                                    } else {
-                                        let m = measure_text(&st.text, font_px, TextMeasureConfig::default());
-                                        let cx = m.positions.get(caret_idx).copied().unwrap_or(0.0);
-                                        st.ensure_caret_visible(cx, iw, self.dp_px(2.0));
-                                    }
                                 }
                             }
                             // Pressed visual for mouse

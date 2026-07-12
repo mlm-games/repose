@@ -480,7 +480,6 @@ pub fn run_android_app_with_options(
                                                 rc::index_for_x_bytes_vt(&st, font_px, content_x)
                                             };
                                             st.begin_drag(idx, self.modifiers.shift);
-                                            self.ensure_caret_visible_in_hit(&mut st, hit.rect);
                                         }
                                     } else {
                                         self.sched.focused = None;
