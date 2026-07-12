@@ -1,43 +1,165 @@
-//! Selectable text. `SelectableText` mirrors Compose's `SelectionContainer`
-//! for a single `Text` view: drag to select a byte range, and a highlight
-//! rect is painted on top of the glyphs. Single-line selection is
-//! pixel-accurate; multi-line tracks the range but the highlight is drawn
-//! per-line.
+//! Selectable text as a fluent modifier on `Text` views.
+//!
+//! Mirrors Compose-style selection for a single `Text`:
+//! - Drag to select (byte range, multi-line highlight)
+//! - Double-tap → select word under pointer
+//! - Triple-tap → select all
+//! - Shift+click / shift+drag → extend from previous anchor
+//! - Primary selection (middle-click paste) + Ctrl/Cmd+C via `Action::Copy`
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_core::prelude::*;
-use repose_core::{Brush, PointerEvent, Rect, Scene, SceneNode, View};
+use repose_core::{Brush, CursorIcon, PointerEvent, Rect, Scene, SceneNode, View};
+use unicode_segmentation::UnicodeSegmentation;
+use web_time::{Duration, Instant};
 
-use crate::Text;
 use crate::textfield::{caret_xy_for_byte, index_for_xy_bytes};
+use crate::{Text, TextStyle};
 
+const DOUBLE_TAP_MS: u64 = 300;
+const TRIPLE_TAP_MS: u64 = 500;
+const TAP_SLOP_PX: f32 = 12.0;
+
+/// Fluent selectable modifier for `Text` views.
+///
+/// Call after styling: `Text(...).size(16.0).selectable(|sel| ...)`.
+pub trait SelectableTextExt {
+    fn selectable(
+        self,
+        on_selection_change: impl Fn(Option<(usize, usize)>) + 'static,
+    ) -> View;
+}
+
+impl SelectableTextExt for View {
+    fn selectable(
+        self,
+        on_selection_change: impl Fn(Option<(usize, usize)>) + 'static,
+    ) -> View {
+        let (text, font_size_dp) = match &self.kind {
+            ViewKind::Text {
+                text,
+                font_size,
+                ..
+            } => (text.clone(), *font_size),
+            _ => return self,
+        };
+        make_selectable(self, text, font_size_dp, on_selection_change)
+    }
+}
+
+/// Backward-compatible free function.
 pub fn SelectableText(
     text: impl Into<String>,
     font_size_dp: f32,
     on_selection_change: impl Fn(Option<(usize, usize)>) + 'static,
 ) -> View {
     let text: String = text.into();
+    let v = Text(text.clone()).size(font_size_dp);
+    make_selectable(v, text, font_size_dp, on_selection_change)
+}
+
+fn make_selectable(
+    mut v: View,
+    text: String,
+    font_size_dp: f32,
+    on_selection_change: impl Fn(Option<(usize, usize)>) + 'static,
+) -> View {
     let text_for_handlers = text.clone();
     let text_for_paint = text.clone();
 
     let selection: Rc<RefCell<Option<(usize, usize)>>> =
-        remember_with_key("sel:range", || RefCell::new(None));
-    let anchor: Rc<RefCell<usize>> = remember_with_key("sel:anchor", || RefCell::new(0));
-    let dragging: Rc<RefCell<bool>> = remember_with_key("sel:dragging", || RefCell::new(false));
-    let last_rect: Rc<RefCell<Rect>> =
-        remember_with_key("sel:last_rect", || RefCell::new(Rect::default()));
+        remember(|| RefCell::new(None));
+    let anchor: Rc<RefCell<usize>> = remember(|| RefCell::new(0));
+    let dragging: Rc<RefCell<bool>> = remember(|| RefCell::new(false));
+    let last_rect: Rc<RefCell<Rect>> = remember(|| RefCell::new(Rect::default()));
+
+    // Tap counting for double/triple
+    let last_tap_time: Rc<RefCell<Option<Instant>>> = remember(|| RefCell::new(None));
+    let last_tap_pos: Rc<RefCell<Option<(f32, f32)>>> = remember(|| RefCell::new(None));
+    let tap_count: Rc<RefCell<u8>> = remember(|| RefCell::new(0));
 
     let callback = Rc::new(on_selection_change);
 
-    let cb_down = callback.clone();
+    let set_sel = {
+        let selection = selection.clone();
+        let callback = callback.clone();
+        move |s: Option<(usize, usize)>| {
+            *selection.borrow_mut() = s;
+            callback(s);
+        }
+    };
+
+    // --- helpers -----------------------------------------------------------
+
+    fn prev_grapheme_boundary(text: &str, byte: usize) -> usize {
+        let mut last = 0usize;
+        for (i, _) in text.grapheme_indices(true) {
+            if i >= byte {
+                break;
+            }
+            last = i;
+        }
+        last
+    }
+
+    fn next_grapheme_boundary(text: &str, byte: usize) -> usize {
+        for (i, _) in text.grapheme_indices(true) {
+            if i > byte {
+                return i;
+            }
+        }
+        text.len()
+    }
+
+    fn word_range(text: &str, byte: usize) -> (usize, usize) {
+        let byte = byte.min(text.len());
+        let is_word = |g: &str| g.chars().all(|c| c.is_alphanumeric() || c == '_');
+
+        let mut start = byte;
+        while start > 0 {
+            let p = prev_grapheme_boundary(text, start);
+            if is_word(&text[p..start]) {
+                start = p;
+            } else {
+                break;
+            }
+        }
+        let mut end = byte;
+        while end < text.len() {
+            let n = next_grapheme_boundary(text, end);
+            if is_word(&text[end..n]) {
+                end = n;
+            } else {
+                break;
+            }
+        }
+        if start == end {
+            let s = if byte == 0 {
+                0
+            } else {
+                prev_grapheme_boundary(text, byte)
+            };
+            let e = next_grapheme_boundary(text, byte);
+            (s, e.max(s))
+        } else {
+            (start, end)
+        }
+    }
+
+    // --- pointer handlers --------------------------------------------------
+
     let on_down = {
         let text = text_for_handlers.clone();
         let selection = selection.clone();
         let anchor = anchor.clone();
         let dragging = dragging.clone();
         let last_rect = last_rect.clone();
+        let last_tap_time = last_tap_time.clone();
+        let last_tap_pos = last_tap_pos.clone();
+        let tap_count = tap_count.clone();
+        let set_sel = set_sel.clone();
         move |ev: PointerEvent| {
             let r = *last_rect.borrow();
             if r.w <= 0.0 || r.h <= 0.0 {
@@ -48,21 +170,86 @@ pub fn SelectableText(
             let ly = (ev.position.y - r.y).max(0.0);
             let wrap_w = r.w.max(1.0);
             let byte = index_for_xy_bytes(&text, font_px, wrap_w, lx, ly);
-            *anchor.borrow_mut() = byte;
-            *selection.borrow_mut() = Some((byte, byte));
+
+            // Tap counting
+            let now = Instant::now();
+            let pos = (ev.position.x, ev.position.y);
+            let mut count = *tap_count.borrow();
+            let mut is_multi = false;
+            if let (Some(t), Some(p)) = (*last_tap_time.borrow(), *last_tap_pos.borrow()) {
+                let dt = now.saturating_duration_since(t);
+                let dist = ((pos.0 - p.0).powi(2) + (pos.1 - p.1).powi(2)).sqrt();
+                if dt < Duration::from_millis(DOUBLE_TAP_MS) && dist < TAP_SLOP_PX {
+                    count = count.saturating_add(1);
+                    is_multi = true;
+                } else if dt < Duration::from_millis(TRIPLE_TAP_MS) && dist < TAP_SLOP_PX {
+                    count = count.saturating_add(1);
+                    is_multi = true;
+                } else {
+                    count = 1;
+                }
+            } else {
+                count = 1;
+            }
+            *tap_count.borrow_mut() = count;
+            *last_tap_time.borrow_mut() = Some(now);
+            *last_tap_pos.borrow_mut() = Some(pos);
+
+            let shift = ev.modifiers.shift;
+
+            if count >= 3 {
+                // Triple-tap: select all
+                let sel = Some((0, text.len()));
+                *anchor.borrow_mut() = 0;
+                set_sel(sel);
+                *dragging.borrow_mut() = false;
+                if text.len() > 0 {
+                    repose_core::clipboard::set_primary_selection(&text);
+                }
+                let _ = is_multi;
+                return;
+            }
+
+            if count == 2 {
+                // Double-tap: select word
+                let (s, e) = word_range(&text, byte);
+                let sel = Some((s, e));
+                *anchor.borrow_mut() = s;
+                set_sel(sel);
+                *dragging.borrow_mut() = true;
+                if e > s {
+                    repose_core::clipboard::set_primary_selection(&text[s..e]);
+                }
+                let _ = is_multi;
+                return;
+            }
+
+            // Single tap / start drag
+            if shift {
+                let a = selection
+                    .borrow()
+                    .map(|(s, e)| {
+                        let _ = (s, e);
+                        *anchor.borrow()
+                    })
+                    .unwrap_or(*anchor.borrow());
+                let sel = Some((a.min(byte), a.max(byte)));
+                set_sel(sel);
+            } else {
+                *anchor.borrow_mut() = byte;
+                set_sel(Some((byte, byte)));
+            }
             *dragging.borrow_mut() = true;
-            cb_down(Some((byte, byte)));
+            let _ = is_multi;
         }
     };
 
-    let cb_move = callback.clone();
-    let text_for_primary = text_for_handlers.clone();
     let on_move = {
         let text = text_for_handlers.clone();
-        let selection = selection.clone();
         let anchor = anchor.clone();
         let dragging = dragging.clone();
         let last_rect = last_rect.clone();
+        let set_sel = set_sel.clone();
         move |ev: PointerEvent| {
             if !*dragging.borrow() {
                 return;
@@ -78,8 +265,7 @@ pub fn SelectableText(
             let byte = index_for_xy_bytes(&text, font_px, wrap_w, lx, ly);
             let a = *anchor.borrow();
             let sel = Some((a.min(byte), a.max(byte)));
-            *selection.borrow_mut() = sel;
-            cb_move(sel);
+            set_sel(sel);
             if let Some((s, e)) = sel
                 && e > s
             {
@@ -88,11 +274,11 @@ pub fn SelectableText(
         }
     };
 
-    let cb_up = callback.clone();
     let on_up = {
-        let text = text_for_primary.clone();
+        let text = text_for_handlers.clone();
         let selection = selection.clone();
         let dragging = dragging.clone();
+        let set_sel = set_sel.clone();
         move |_ev: PointerEvent| {
             *dragging.borrow_mut() = false;
             let sel = *selection.borrow();
@@ -103,9 +289,11 @@ pub fn SelectableText(
                     repose_core::clipboard::set_primary_selection(&text[s..e]);
                 }
             }
-            cb_up(sel);
+            set_sel(sel);
         }
     };
+
+    // --- highlight painter -------------------------------------------------
 
     let painter = {
         let text = text_for_paint.clone();
@@ -150,6 +338,7 @@ pub fn SelectableText(
                     radius: [0.0; 4],
                 });
             } else {
+                // First partial line
                 scene.nodes.push(SceneNode::Rect {
                     rect: Rect {
                         x: rect.x + sx,
@@ -160,6 +349,7 @@ pub fn SelectableText(
                     brush: brush,
                     radius: [0.0; 4],
                 });
+                // Full middle lines
                 if eli > sli + 1 {
                     scene.nodes.push(SceneNode::Rect {
                         rect: Rect {
@@ -172,6 +362,7 @@ pub fn SelectableText(
                         radius: [0.0; 4],
                     });
                 }
+                // Last partial line
                 scene.nodes.push(SceneNode::Rect {
                     rect: Rect {
                         x: rect.x,
@@ -186,13 +377,13 @@ pub fn SelectableText(
         }
     };
 
-    let mut v = Text(text_for_paint);
     v.modifier = v
         .modifier
         .on_pointer_down(on_down)
         .on_pointer_move(on_move)
         .on_pointer_up(on_up)
         .painter(painter)
+        .cursor(CursorIcon::Text)
         .on_action({
             let selection = selection.clone();
             let text = text_for_handlers.clone();
@@ -209,8 +400,14 @@ pub fn SelectableText(
                     }
                     false
                 }
+                repose_core::shortcuts::Action::SelectAll => {
+                    let len = text.len();
+                    *selection.borrow_mut() = Some((0, len));
+                    true
+                }
                 _ => false,
             }
         });
+
     v
 }

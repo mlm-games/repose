@@ -312,17 +312,32 @@ pub fn screen() -> View {
         let sel = remember_with_key("text_selectable_range", || signal("none".to_string()));
         let sel2 = sel.clone();
         Column(Modifier::new().padding(sp::SM).gap(sp::SM)).child((
-            SelectableText(
-                "Try clicking and dragging to select text in this paragraph.",
-                16.0,
-                move |range| {
+            Text("Try clicking and dragging to select text in this paragraph.")
+                .size(16.0)
+                .selectable(move |range| {
                     sel2.set(match range {
                         Some((a, b)) if a != b => format!("{}..{}", a.min(b), a.max(b)),
                         Some((a, _)) => format!("caret at {a}"),
                         None => "cleared".into(),
                     });
-                },
-            ),
+                }),
+            Caption(format!("Selection: {}", sel.get())),
+        ))
+    }));
+
+    sections.push(Section("Double/Triple Tap", {
+        let sel = remember_with_key("text_sel_dt", || signal("none".to_string()));
+        let sel2 = sel.clone();
+        Column(Modifier::new().padding(sp::SM).gap(sp::SM)).child((
+            Text("Double-tap a word to select it. Triple-tap to select all. Shift+click to extend.")
+                .size(16.0)
+                .selectable(move |range| {
+                    sel2.set(match range {
+                        Some((a, b)) if a != b => format!("{}..{}", a.min(b), a.max(b)),
+                        Some((a, _)) => format!("caret at {a}"),
+                        None => "cleared".into(),
+                    });
+                }),
             Caption(format!("Selection: {}", sel.get())),
         ))
     }));

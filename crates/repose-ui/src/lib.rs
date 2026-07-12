@@ -140,7 +140,7 @@ use taffy::style::FlexDirection;
 
 pub mod textfield;
 use repose_core::locals;
-pub use selection::SelectableText;
+pub use selection::{SelectableText, SelectableTextExt};
 pub use textfield::{
     BasicSecureTextField, BasicTextField, KeyboardOptions, TextFieldConfig, TextFieldState,
 };
