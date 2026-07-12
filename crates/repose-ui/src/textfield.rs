@@ -899,9 +899,19 @@ impl TextFieldState {
         }
         self.preferred_x_px = None;
         self.reset_caret_blink();
+        if self.selection.start < self.selection.end {
+            repose_core::clipboard::set_primary_selection(
+                &self.text[self.selection.start..self.selection.end],
+            );
+        }
     }
     pub fn end_drag(&mut self) {
         self.drag_anchor = None;
+        if self.selection.start < self.selection.end {
+            repose_core::clipboard::set_primary_selection(
+                &self.text[self.selection.start..self.selection.end],
+            );
+        }
     }
 
     pub fn handle_pointer_down(
@@ -938,6 +948,9 @@ impl TextFieldState {
             self.drag_anchor = None;
             self.preferred_x_px = None;
             self.reset_caret_blink();
+            if self.selection.end > 0 {
+                repose_core::clipboard::set_primary_selection(&self.text);
+            }
             return;
         }
 
@@ -948,6 +961,9 @@ impl TextFieldState {
             self.drag_anchor = Some(s);
             self.preferred_x_px = None;
             self.reset_caret_blink();
+            if e > s {
+                repose_core::clipboard::set_primary_selection(&self.text[s..e]);
+            }
             return;
         }
 
