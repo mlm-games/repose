@@ -410,12 +410,8 @@ pub fn run_desktop_app(
         }
 
         fn paste_from_primary(&self) -> Option<String> {
-            let opts = clipawl::ClipboardOptions {
-                linux: clipawl::LinuxOptions {
-                    selection: clipawl::LinuxSelection::Primary,
-                    ..Default::default()
-                },
-            };
+            let mut opts = clipawl::ClipboardOptions::default();
+            opts.linux.selection = clipawl::LinuxSelection::Primary;
             if let Ok(cb) = clipawl::Clipboard::new_with_options(opts) {
                 match pollster::block_on(cb.read()) {
                     Ok(t) => Some(t),
@@ -486,12 +482,8 @@ pub fn run_desktop_app(
             }));
 
             repose_core::clipboard::set_primary_fn(Box::new(|text| {
-                let opts = clipawl::ClipboardOptions {
-                    linux: clipawl::LinuxOptions {
-                        selection: clipawl::LinuxSelection::Primary,
-                        ..Default::default()
-                    },
-                };
+                let mut opts = clipawl::ClipboardOptions::default();
+                opts.linux.selection = clipawl::LinuxSelection::Primary;
                 match clipawl::Clipboard::new_with_options(opts) {
                     Ok(cb) => {
                         if let Err(e) = pollster::block_on(cb.write(text)) {
