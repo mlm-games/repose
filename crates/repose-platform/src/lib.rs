@@ -919,7 +919,7 @@ pub fn run_desktop_app(
                                         rc::index_for_x_bytes_vt(&st, font_px, content_x)
                                     };
 
-                                    st.begin_drag(idx, self.modifiers.shift);
+                                    st.handle_pointer_down(idx, self.mouse_pos_px, self.modifiers.shift);
                                 }
                             }
                             // Pressed visual for mouse

@@ -259,7 +259,7 @@ pub(crate) fn tf_place_caret_at_pointer(
     } else {
         index_for_x_bytes_vt(state, font_px, content_x_px)
     };
-    state.begin_drag(idx, shift);
+    state.handle_pointer_down(idx, (pos_px.0, pos_px.1), shift);
 }
 
 /// Dispatch wheel/touch-scroll to scroll consumers under `pos`, propagating

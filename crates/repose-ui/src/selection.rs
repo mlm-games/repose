@@ -12,10 +12,9 @@ use std::rc::Rc;
 
 use repose_core::prelude::*;
 use repose_core::{Brush, CursorIcon, PointerEvent, Rect, Scene, SceneNode, View};
-use unicode_segmentation::UnicodeSegmentation;
 use web_time::{Duration, Instant};
 
-use crate::textfield::{caret_xy_for_byte, index_for_xy_bytes};
+use crate::textfield::{caret_xy_for_byte, index_for_xy_bytes, word_range};
 use crate::{Text, TextStyle};
 
 const DOUBLE_TAP_MS: u64 = 300;
@@ -90,65 +89,6 @@ fn make_selectable(
             callback(s);
         }
     };
-
-    // --- helpers -----------------------------------------------------------
-
-    fn prev_grapheme_boundary(text: &str, byte: usize) -> usize {
-        let mut last = 0usize;
-        for (i, _) in text.grapheme_indices(true) {
-            if i >= byte {
-                break;
-            }
-            last = i;
-        }
-        last
-    }
-
-    fn next_grapheme_boundary(text: &str, byte: usize) -> usize {
-        for (i, _) in text.grapheme_indices(true) {
-            if i > byte {
-                return i;
-            }
-        }
-        text.len()
-    }
-
-    fn word_range(text: &str, byte: usize) -> (usize, usize) {
-        let byte = byte.min(text.len());
-        let is_word = |g: &str| g.chars().all(|c| c.is_alphanumeric() || c == '_');
-
-        let mut start = byte;
-        while start > 0 {
-            let p = prev_grapheme_boundary(text, start);
-            if is_word(&text[p..start]) {
-                start = p;
-            } else {
-                break;
-            }
-        }
-        let mut end = byte;
-        while end < text.len() {
-            let n = next_grapheme_boundary(text, end);
-            if is_word(&text[end..n]) {
-                end = n;
-            } else {
-                break;
-            }
-        }
-        if start == end {
-            let s = if byte == 0 {
-                0
-            } else {
-                prev_grapheme_boundary(text, byte)
-            };
-            let e = next_grapheme_boundary(text, byte);
-            (s, e.max(s))
-        } else {
-            (start, end)
-        }
-    }
-
-    // --- pointer handlers --------------------------------------------------
 
     let on_down = {
         let text = text_for_handlers.clone();
@@ -292,8 +232,6 @@ fn make_selectable(
             set_sel(sel);
         }
     };
-
-    // --- highlight painter -------------------------------------------------
 
     let painter = {
         let text = text_for_paint.clone();

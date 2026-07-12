@@ -162,13 +162,11 @@ impl ColorInfo {
     /// let rgb = clamp(transform.m * vec3(y, u, v) + transform.b, 0, 1);
     /// ```
     pub fn to_yuv_transform(&self) -> YuvTransform {
-        // --- Range expansion --------------------------------------------------
         let (y_scale, y_off, uv_scale, uv_off) = match self.range {
             ColorRange::Limited => (255.0 / 219.0, 16.0 / 255.0, 255.0 / 224.0, 128.0 / 255.0),
             ColorRange::Full => (1.0, 0.0, 1.0, 0.5),
         };
 
-        // --- Matrix coefficients ----------------------------------------------
         if self.matrix == MatrixCoeffs::Identity {
             return YuvTransform {
                 m: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],

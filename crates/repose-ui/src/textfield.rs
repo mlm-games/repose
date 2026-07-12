@@ -359,7 +359,7 @@ pub fn index_for_x_bytes(
 }
 
 /// find prev/next grapheme boundaries around a byte index
-fn prev_grapheme_boundary(text: &str, byte: usize) -> usize {
+pub(crate) fn prev_grapheme_boundary(text: &str, byte: usize) -> usize {
     let mut last = 0usize;
     for (i, _) in text.grapheme_indices(true) {
         if i >= byte {
@@ -370,13 +370,50 @@ fn prev_grapheme_boundary(text: &str, byte: usize) -> usize {
     last
 }
 
-fn next_grapheme_boundary(text: &str, byte: usize) -> usize {
+pub(crate) fn next_grapheme_boundary(text: &str, byte: usize) -> usize {
     for (i, _) in text.grapheme_indices(true) {
         if i > byte {
             return i;
         }
     }
     text.len()
+}
+
+/// Find the word boundaries around the given byte index.
+/// Selects alphanumeric+underscore runs; falls back to the grapheme cluster.
+pub(crate) fn word_range(text: &str, byte: usize) -> (usize, usize) {
+    let byte = byte.min(text.len());
+    let is_word = |g: &str| g.chars().all(|c| c.is_alphanumeric() || c == '_');
+
+    let mut start = byte;
+    while start > 0 {
+        let p = prev_grapheme_boundary(text, start);
+        if is_word(&text[p..start]) {
+            start = p;
+        } else {
+            break;
+        }
+    }
+    let mut end = byte;
+    while end < text.len() {
+        let n = next_grapheme_boundary(text, end);
+        if is_word(&text[end..n]) {
+            end = n;
+        } else {
+            break;
+        }
+    }
+    if start == end {
+        let s = if byte == 0 {
+            0
+        } else {
+            prev_grapheme_boundary(text, byte)
+        };
+        let e = next_grapheme_boundary(text, byte);
+        (s, e.max(s))
+    } else {
+        (start, end)
+    }
 }
 
 pub struct TextFieldState {
@@ -386,6 +423,12 @@ pub struct TextFieldState {
     pub scroll_offset: f32,                // px (x) - current animated display value
     pub scroll_offset_y: f32,              // px (y) for multiline - current animated display value
     pub drag_anchor: Option<usize>,        // byte index where drag began
+
+    // Double/triple-tap tracking
+    pub(crate) last_tap_time: Option<Instant>,
+    pub(crate) last_tap_pos: Option<(f32, f32)>,
+    pub(crate) tap_count: u8,
+
     pub blink_start: Instant,              // caret blink timer
     pub inner_width: f32,                  // px
     pub inner_height: f32,                 // px
@@ -461,6 +504,9 @@ impl Clone for TextFieldState {
             scroll_offset: self.scroll_offset,
             scroll_offset_y: self.scroll_offset_y,
             drag_anchor: self.drag_anchor,
+            last_tap_time: self.last_tap_time,
+            last_tap_pos: self.last_tap_pos,
+            tap_count: self.tap_count,
             blink_start: self.blink_start,
             inner_width: self.inner_width,
             inner_height: self.inner_height,
@@ -488,6 +534,9 @@ impl TextFieldState {
             scroll_offset: 0.0,
             scroll_offset_y: 0.0,
             drag_anchor: None,
+            last_tap_time: None,
+            last_tap_pos: None,
+            tap_count: 0,
             blink_start: Instant::now(),
             inner_width: 0.0,
             inner_height: 0.0,
@@ -853,6 +902,74 @@ impl TextFieldState {
     }
     pub fn end_drag(&mut self) {
         self.drag_anchor = None;
+    }
+
+    pub fn handle_pointer_down(
+        &mut self,
+        idx_byte: usize,
+        pos_px: (f32, f32),
+        shift: bool,
+    ) {
+        const DOUBLE_TAP_MS: u64 = 300;
+        const TAP_SLOP_PX: f32 = 12.0;
+
+        let now = Instant::now();
+        let mut count = self.tap_count;
+        if let (Some(t), Some(p)) = (self.last_tap_time, self.last_tap_pos) {
+            let dt = now.saturating_duration_since(t);
+            let dist = ((pos_px.0 - p.0).powi(2) + (pos_px.1 - p.1).powi(2)).sqrt();
+            if dt < Duration::from_millis(DOUBLE_TAP_MS) && dist < TAP_SLOP_PX {
+                count = count.saturating_add(1);
+            } else {
+                count = 1;
+            }
+        } else {
+            count = 1;
+        }
+        self.tap_count = count;
+        self.last_tap_time = Some(now);
+        self.last_tap_pos = Some(pos_px);
+
+        let idx = idx_byte.min(self.text.len());
+
+        if count >= 3 {
+            // Triple-tap: select all
+            self.selection = 0..self.text.len();
+            self.drag_anchor = None;
+            self.preferred_x_px = None;
+            self.reset_caret_blink();
+            return;
+        }
+
+        if count == 2 {
+            // Double-tap: select word
+            let (s, e) = word_range(&self.text, idx);
+            self.selection = s..e;
+            self.drag_anchor = Some(s);
+            self.preferred_x_px = None;
+            self.reset_caret_blink();
+            return;
+        }
+
+        // Single tap
+        self.begin_drag(idx, shift);
+    }
+
+    /// Select the word at the given byte index.
+    pub fn select_word_at(&mut self, byte: usize) {
+        let (s, e) = word_range(&self.text, byte.min(self.text.len()));
+        self.selection = s..e;
+        self.drag_anchor = Some(s);
+        self.preferred_x_px = None;
+        self.reset_caret_blink();
+    }
+
+    /// Select all text.
+    pub fn select_all(&mut self) {
+        self.selection = 0..self.text.len();
+        self.drag_anchor = None;
+        self.preferred_x_px = None;
+        self.reset_caret_blink();
     }
 
     pub fn caret_index(&self) -> usize {
