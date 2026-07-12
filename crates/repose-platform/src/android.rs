@@ -458,19 +458,21 @@ pub fn run_android_app_with_options(
                                         let key = self.tf_key_of(hit.id);
                                         if let Some(state_rc) = self.textfield_states.get(&key) {
                                             let mut st = state_rc.borrow_mut();
-                                            let content_x = (pos_px.0 - hit.rect.x
+                                            let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
+                                            let content_x = (pos_px.0 - ox
                                                 + st.scroll_offset)
                                                 .max(0.0);
-                                            let content_y = (pos_px.1 - hit.rect.y
+                                            let content_y = (pos_px.1 - oy
                                                 + st.scroll_offset_y)
                                                 .max(0.0);
                                             let font_px = dp_to_px(TF_FONT_DP)
                                                 * repose_core::locals::text_scale().0;
+                                            let wrap_w = st.inner_width.max(1.0);
                                             let idx = if hit.tf_multiline {
                                                 rc::index_for_xy_bytes_vt(
                                                     &st,
                                                     font_px,
-                                                    hit.rect.w,
+                                                    wrap_w,
                                                     content_x,
                                                     content_y,
                                                 )

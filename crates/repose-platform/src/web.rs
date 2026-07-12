@@ -708,18 +708,20 @@ impl ApplicationHandler<()> for App {
                         let mut state = state_rc.borrow_mut();
 
                         if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
+                            let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
                             let content_x_px =
-                                (self.mouse_pos_px.0 - hit.rect.x + state.scroll_offset).max(0.0);
+                                (self.mouse_pos_px.0 - ox + state.scroll_offset).max(0.0);
                             let content_y_px =
-                                (self.mouse_pos_px.1 - hit.rect.y + state.scroll_offset_y).max(0.0);
+                                (self.mouse_pos_px.1 - oy + state.scroll_offset_y).max(0.0);
                             let font_px =
                                 dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+                            let wrap_w = state.inner_width.max(1.0);
 
                             let idx = if hit.tf_multiline {
                                 rc::index_for_xy_bytes_vt(
                                     &state,
                                     font_px,
-                                    hit.rect.w,
+                                    wrap_w,
                                     content_x_px,
                                     content_y_px,
                                 )
@@ -733,7 +735,7 @@ impl ApplicationHandler<()> for App {
                             if hit.tf_multiline {
                                 let caret_idx = state.caret_index();
                                 let (cx, cy, _) =
-                                    caret_xy_for_byte(&state.text, font_px, hit.rect.w, caret_idx);
+                                    caret_xy_for_byte(&state.text, font_px, wrap_w, caret_idx);
                                 let iw = state.inner_width;
                                 let ih = state.inner_height;
                                 state.ensure_caret_visible_xy(
@@ -886,6 +888,7 @@ impl ApplicationHandler<()> for App {
                                         rc::tf_place_caret_at_pointer(
                                             &mut st,
                                             hit.rect,
+                                            hit.tf_content_origin,
                                             hit.tf_multiline,
                                             self.mouse_pos_px,
                                             self.scale(&window),
@@ -1080,6 +1083,7 @@ impl ApplicationHandler<()> for App {
                                         rc::tf_place_caret_at_pointer(
                                             &mut st,
                                             hit.rect,
+                                            hit.tf_content_origin,
                                             hit.tf_multiline,
                                             pos_px,
                                             self.scale(&window),

@@ -2943,6 +2943,7 @@ impl LayoutEngine {
                         on_text_submit: on_submit.clone(),
                         tf_state_key: Some(tf_key),
                         tf_multiline: multiline,
+                        tf_content_origin: Some((content_rect.x, content_rect.y)),
                         on_action: combined,
                         cursor: Some(crate::CursorIcon::Text),
                         focus_group_id: if modifier.focus_group {

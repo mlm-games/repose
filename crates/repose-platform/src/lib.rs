@@ -736,17 +736,19 @@ pub fn run_desktop_app(
                         if let Some(state_rc) = self.textfield_states.get(&key) {
                             let mut st = state_rc.borrow_mut();
 
+                            let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
                             let content_x =
-                                (self.mouse_pos_px.0 - hit.rect.x + st.scroll_offset).max(0.0);
+                                (self.mouse_pos_px.0 - ox + st.scroll_offset).max(0.0);
                             let content_y =
-                                (self.mouse_pos_px.1 - hit.rect.y + st.scroll_offset_y).max(0.0);
+                                (self.mouse_pos_px.1 - oy + st.scroll_offset_y).max(0.0);
 
                             let font_px =
                                 dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+                            let wrap_w = st.inner_width.max(1.0);
 
                             let idx = if hit.tf_multiline {
                                 rc::index_for_xy_bytes_vt(
-                                    &st, font_px, hit.rect.w, content_x, content_y,
+                                    &st, font_px, wrap_w, content_x, content_y,
                                 )
                             } else {
                                 rc::index_for_x_bytes_vt(&st, font_px, content_x)
@@ -757,12 +759,14 @@ pub fn run_desktop_app(
                             // Ensure caret visible
                             if hit.tf_multiline {
                                 let (cx, cy, _) =
-                                    caret_xy_for_byte(&st.text, font_px, hit.rect.w, st.caret_index());
-                                st.ensure_caret_visible_xy(cx, cy, hit.rect.w, hit.rect.h, dp_to_px(2.0));
+                                    caret_xy_for_byte(&st.text, font_px, wrap_w, st.caret_index());
+                                let iw = st.inner_width;
+                                let ih = st.inner_height;
+                                st.ensure_caret_visible_xy(cx, cy, iw, ih, dp_to_px(2.0));
                             } else {
                                 let m = measure_text(&st.text, font_px, TextMeasureConfig::default());
                                 let cx = m.positions.get(st.caret_index()).copied().unwrap_or(0.0);
-                                st.ensure_caret_visible(cx, hit.rect.w, dp_to_px(2.0));
+                                st.ensure_caret_visible(cx, wrap_w, dp_to_px(2.0));
                             }
 
                             self.request_redraw();
@@ -905,20 +909,22 @@ pub fn run_desktop_app(
                                 });
                                 if let Some(st_rc) = self.textfield_states.get(&key) {
                                     let mut st = st_rc.borrow_mut();
+                                    let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
                                     let content_x =
-                                        (self.mouse_pos_px.0 - hit.rect.x + st.scroll_offset)
+                                        (self.mouse_pos_px.0 - ox + st.scroll_offset)
                                             .max(0.0);
-                                    let content_y = (self.mouse_pos_px.1 - hit.rect.y
+                                    let content_y = (self.mouse_pos_px.1 - oy
                                         + st.scroll_offset_y)
                                         .max(0.0);
                                     let font_px = self.dp_px(TF_FONT_DP)
                                         * repose_core::locals::text_scale().0;
+                                    let wrap_w = st.inner_width.max(1.0);
 
                                     let idx = if hit.tf_multiline {
                                         rc::index_for_xy_bytes_vt(
                                             &st,
                                             font_px,
-                                            hit.rect.w,
+                                            wrap_w,
                                             content_x,
                                             content_y,
                                         )
@@ -934,7 +940,7 @@ pub fn run_desktop_app(
                                     let ih = st.inner_height;
                                     if hit.tf_multiline {
                                         let (cx, cy, _) = textfield::caret_xy_for_byte(
-                                            &st.text, font_px, hit.rect.w, caret_idx,
+                                            &st.text, font_px, wrap_w, caret_idx,
                                         );
                                         st.ensure_caret_visible_xy(cx, cy, iw, ih, self.dp_px(2.0));
                                     } else {
