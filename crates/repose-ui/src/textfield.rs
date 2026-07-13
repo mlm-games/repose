@@ -1046,6 +1046,19 @@ impl TextFieldState {
         ((Instant::now() - self.blink_start).as_millis() / PERIOD.as_millis()).is_multiple_of(2)
     }
 
+    /// If the selection is collapsed (caret is visible), return the [`Instant`]
+    /// of the next 500 ms blink boundary.
+    pub fn next_blink_deadline(&self) -> Option<Instant> {
+        if self.selection.start != self.selection.end {
+            return None;
+        }
+        const PERIOD_MS: u128 = 500;
+        let now = Instant::now();
+        let elapsed = now.saturating_duration_since(self.blink_start).as_millis();
+        let next_tick = (elapsed / PERIOD_MS) + 1;
+        Some(self.blink_start + Duration::from_millis((next_tick * PERIOD_MS) as u64))
+    }
+
     pub fn set_inner_width(&mut self, w_px: f32) {
         self.inner_width = w_px.max(0.0);
         if self.scroll_offset.is_nan() {

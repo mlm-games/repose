@@ -1142,6 +1142,14 @@ pub fn run_android_app_with_options(
             crate::process_deeplinks();
             if self.options.continuous_redraw || self.dirty || take_frame_request() {
                 self.request_redraw();
+            } else if crate::next_caret_blink_deadline(
+                &self.sched,
+                &self.frame_cache,
+                &self.textfield_states,
+            )
+            .is_some_and(|d| d <= web_time::Instant::now())
+            {
+                self.request_redraw();
             }
         }
     }

@@ -221,6 +221,18 @@ where
     frame
 }
 
+pub(crate) fn next_caret_blink_deadline(
+    sched: &Scheduler,
+    frame_cache: &Option<Frame>,
+    textfield_states: &std::collections::HashMap<u64, Rc<RefCell<TextFieldState>>>,
+) -> Option<Instant> {
+    let fid = sched.focused?;
+    let frame = frame_cache.as_ref()?;
+    let hit = frame.hit_regions.iter().find(|h| h.id == fid)?;
+    let key = hit.tf_state_key?;
+    textfield_states.get(&key)?.borrow().next_blink_deadline()
+}
+
 /// Helper: ensure caret visibility for a TextFieldState inside a given rect (px).
 pub fn tf_ensure_visible_in_rect(state: &mut repose_ui::TextFieldState, inner_rect: Rect) {
     let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
@@ -1730,15 +1742,19 @@ pub fn run_desktop_app(
             }
             if !self.pending_redraw {
                 let now = Instant::now();
-                let idle_interval = web_time::Duration::from_millis(1000);
-                if now.saturating_duration_since(self.last_redraw) >= idle_interval {
+                let idle_cap = web_time::Duration::from_millis(1000);
+                let deadline = self
+                    .next_caret_blink_deadline()
+                    .unwrap_or(now + idle_cap);
+
+                if now.saturating_duration_since(self.last_redraw) >= idle_cap || now >= deadline {
                     self.redraw_requested.set(true);
                     request_frame();
                     rc::request_redraw(&self.window);
                     self.last_redraw = now;
                 }
                 el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
-                    self.last_redraw + idle_interval,
+                    Ord::min(deadline, now + idle_cap),
                 ));
                 return;
             }
@@ -1872,6 +1888,12 @@ pub fn run_desktop_app(
 
         fn tf_key_of(&self, visual_id: u64) -> u64 {
             rc::tf_key_of_in_frame(&self.frame_cache, visual_id)
+        }
+
+        /// If a text field is focused with a collapsed selection (caret blinking),
+        /// return the [`Instant`] of the next 500 ms blink edge.
+        fn next_caret_blink_deadline(&self) -> Option<Instant> {
+            next_caret_blink_deadline(&self.sched, &self.frame_cache, &self.textfield_states)
         }
 
         fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {

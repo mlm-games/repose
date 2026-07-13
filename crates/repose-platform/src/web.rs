@@ -1762,8 +1762,18 @@ impl ApplicationHandler<()> for App {
 
     fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
         crate::process_deeplinks();
-        if !self.options.continuous_redraw && take_frame_request() {
-            self.request_redraw();
+        if !self.options.continuous_redraw {
+            if take_frame_request() {
+                self.request_redraw();
+            } else if crate::next_caret_blink_deadline(
+                &self.sched,
+                &self.frame_cache,
+                &self.textfield_states,
+            )
+            .is_some_and(|d| d <= web_time::Instant::now())
+            {
+                self.request_redraw();
+            }
         }
     }
 }
