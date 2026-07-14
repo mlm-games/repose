@@ -1,0 +1,14 @@
+[package]
+name = "repose-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Embeddable Repose runtime with composition, input handling, and frame output"
+
+[dependencies]
+repose-core.workspace = true
+repose-ui.workspace = true
+repose-text.workspace = true
+log = { workspace = true }
+web-time.workspace = true
+rustc-hash.workspace = true

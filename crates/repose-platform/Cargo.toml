@@ -6,6 +6,7 @@ license.workspace = true
 description = "Platform runners (winit Desktop, Android and Web)"
 
 [dependencies]
+repose-app.workspace = true
 repose-core.workspace = true
 repose-ui.workspace = true
 repose-navigation.workspace = true

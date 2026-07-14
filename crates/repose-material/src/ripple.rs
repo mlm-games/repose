@@ -118,12 +118,10 @@ impl IndicationDrawNode for RippleDrawNode {
 
         let base_color = self.config.color.unwrap_or(Color(0, 0, 0, 255));
 
-        // ── Interaction state ──
         let is_pressed = self.interaction_source.collect_is_pressed();
         let press_pos = self.interaction_source.collect_last_press_position();
         let current_pid = self.interaction_source.collect_last_press_id();
 
-        // ── Persistent animation state ──
         let k_alpha = format!("{}:a", base);
         let k_rad = format!("{}:r", base);
         let k_ctr = format!("{}:c", base);
@@ -161,7 +159,6 @@ impl IndicationDrawNode for RippleDrawNode {
 
         let prev_pid = *last_pid.borrow();
 
-        // ── Detect new press ──
         // Use last_press_id which persists after release (unlike is_pressed which is transient
         // because press+release can both happen before the next frame renders).
         let new_press = current_pid.is_some() && current_pid != prev_pid;
@@ -189,7 +186,6 @@ impl IndicationDrawNode for RippleDrawNode {
             Self::register_driver(&format!("{}:drv:c", base), ctr_anim.clone());
         }
 
-        // ── Check for release (regardless of phase) ──
         // Compare against *last_pid.borrow(), not prev_pid, because prev_pid was
         // captured before the new-press block and would be None on first detection.
         if *phase.borrow() != 0
@@ -200,7 +196,6 @@ impl IndicationDrawNode for RippleDrawNode {
             *release_pending.borrow_mut() = true;
         }
 
-        // ── Phase transitions ──
         let fade_pct = *alpha_anim.borrow().get();
 
         if *phase.borrow() == 1 && fade_pct >= 1.0 {
@@ -235,7 +230,6 @@ impl IndicationDrawNode for RippleDrawNode {
             return;
         }
 
-        // ── Draw ──
         if fade_pct <= 0.01 || *phase.borrow() == 0 {
             return;
         }

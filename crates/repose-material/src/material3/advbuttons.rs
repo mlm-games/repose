@@ -122,7 +122,6 @@ fn split_button_impl(
     with_content_color(effective, || Box(m).child(content()))
 }
 
-// ── Filled variants ──
 
 pub fn SplitButtonLeadingButton(
     modifier: Modifier,
@@ -261,7 +260,6 @@ pub fn SplitButtonTrailingToggleButton(
     with_content_color(fg, || Box(m).child(content(checked)))
 }
 
-// ── Tonal variants ──
 
 pub fn SplitButtonTonalLeadingButton(
     modifier: Modifier,

@@ -1790,7 +1790,6 @@ fn track_collapsed_layout(state: &Rc<SearchBarState>) -> Modifier {
     })
 }
 
-// ─── Collapsed SearchBar (state-based, no content) ─────────────────────────
 
 /// M3 Collapsed Search Bar -> renders ONLY the collapsed bar surface wrapping
 /// the provided `input_field`. Does NOT manage expanded content.
@@ -1870,7 +1869,6 @@ pub fn SearchBar(
     )
 }
 
-// ─── SearchBar with expanded content (expanded/onExpandedChange) ───────────
 
 /// M3 Search Bar that manages expanded content with animated width and
 /// suggestions dropdown. Equivalent to CK's

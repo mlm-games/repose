@@ -272,6 +272,7 @@ pub fn run_desktop_app(
     use winit::window::{Window, WindowAttributes};
 
     use crate::a11y::A11yTree;
+    use repose_app::ReposeRuntime;
 
     struct ReposeActivationHandler {
         initial_tree: Option<accesskit::TreeUpdate>,
@@ -296,16 +297,8 @@ pub fn run_desktop_app(
         render: RenderContext,
         window: Option<Arc<Window>>,
         backend: Option<repose_render_wgpu::WgpuBackend>,
-        sched: Scheduler,
+        rt: ReposeRuntime,
         inspector: repose_devtools::Inspector,
-        frame_cache: Option<Frame>,
-        mouse_pos_px: (f32, f32),
-        modifiers: Modifiers,
-        textfield_states: HashMap<u64, Rc<RefCell<TextFieldState>>>,
-        ime_preedit: bool,
-        hover_id: Option<u64>,
-        capture_id: Option<u64>,
-        pressed_ids: HashSet<u64>,
 
         // Files
         pending_dropped_files: Vec<std::path::PathBuf>,
@@ -315,10 +308,8 @@ pub fn run_desktop_app(
         external_file_drag: bool,
         hovered_files: Vec<std::path::PathBuf>,
 
-        key_pressed_active: Option<u64>,
         clipboard: Option<clipawl::Clipboard>,
         a11y: Box<dyn A11yBridge>,
-        last_focus: Option<u64>,
 
         accesskit_adapter: Option<Adapter>,
         a11y_actions: Arc<Mutex<Vec<accesskit::ActionRequest>>>,
@@ -340,7 +331,7 @@ pub fn run_desktop_app(
             let pending = actions.drain(..).collect::<Vec<_>>();
             drop(actions);
 
-            let Some(f) = &self.frame_cache else {
+            let Some(f) = &self.rt.frame_cache else {
                 return;
             };
 
@@ -356,7 +347,7 @@ pub fn run_desktop_app(
                         }
                     }
                     accesskit::Action::Focus => {
-                        self.sched.focused = Some(target_id);
+                        self.rt.sched.focused = Some(target_id);
                         self.request_redraw();
                     }
                     _ => {}
@@ -370,23 +361,14 @@ pub fn run_desktop_app(
                 render: RenderContext::new(),
                 window: None,
                 backend: None,
-                sched: Scheduler::new(),
+                rt: ReposeRuntime::new(),
                 inspector: repose_devtools::Inspector::new(),
-                frame_cache: None,
-                mouse_pos_px: (0.0, 0.0),
-                modifiers: Modifiers::default(),
-                textfield_states: HashMap::new(),
-                ime_preedit: false,
-                hover_id: None,
-                capture_id: None,
-                pressed_ids: HashSet::new(),
                 pending_dropped_files: Vec::new(),
                 pending_drop_pos_px: None,
 
                 external_file_drag: false,
                 hovered_files: Vec::new(),
 
-                key_pressed_active: None,
                 clipboard: None,
                 a11y: {
                     #[cfg(target_os = "linux")]
@@ -398,7 +380,6 @@ pub fn run_desktop_app(
                         Box::new(NoopA11y) as Box<dyn A11yBridge>
                     }
                 },
-                last_focus: None,
 
                 accesskit_adapter: None,
                 a11y_actions: Arc::new(Mutex::new(Vec::new())),
@@ -445,17 +426,17 @@ pub fn run_desktop_app(
         }
 
         fn reset_pointer_state(&mut self) {
-            self.capture_id = None;
-            self.pressed_ids.clear();
-            self.hover_id = None;
+            self.rt.capture_id = None;
+            self.rt.pressed_ids.clear();
+            self.rt.hover_id = None;
         }
 
         fn is_textfield(&self, id: u64) -> bool {
-            rc::is_textfield_in_frame(&self.frame_cache, id)
+            rc::is_textfield_in_frame(&self.rt.frame_cache, id)
         }
 
         fn is_multiline_id(&self, id: u64) -> bool {
-            if let Some(f) = &self.frame_cache {
+            if let Some(f) = &self.rt.frame_cache {
                 f.hit_regions
                     .iter()
                     .find(|h| h.id == id)
@@ -539,7 +520,7 @@ pub fn run_desktop_app(
                         w.set_visible(true);
 
                         let size = w.inner_size();
-                        self.sched.size = (size.width, size.height);
+                        self.rt.sched.size = (size.width, size.height);
 
                         match repose_render_wgpu::WgpuBackend::new(w.clone()) {
                             Ok(b) => {
@@ -594,12 +575,12 @@ pub fn run_desktop_app(
                     );
 
                     // Emit interaction Cancel for the captured hit region
-                    if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
+                    if let (Some(f), Some(cid)) = (&self.rt.frame_cache, self.rt.capture_id) {
                         if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
                             if let Some(cb) = &hit.on_pointer_cancel {
                                 let pos = repose_core::Vec2 {
-                                    x: self.mouse_pos_px.0,
-                                    y: self.mouse_pos_px.1,
+                                    x: self.rt.mouse_pos_px.0,
+                                    y: self.rt.mouse_pos_px.1,
                                 };
                                 let pe = PointerEvent::new(
                                     PointerId(0),
@@ -607,7 +588,7 @@ pub fn run_desktop_app(
                                     PointerEventKind::Cancel,
                                     pos,
                                     1.0,
-                                    self.modifiers,
+                                    self.rt.modifiers,
                                 );
                                 cb(pe);
                             }
@@ -622,7 +603,7 @@ pub fn run_desktop_app(
                     if let Some(w) = &self.window {
                         rc_web::set_ime_for_textfield(w, false);
                     }
-                    self.ime_preedit = false;
+                    self.rt.ime_preedit = false;
 
                     self.request_redraw();
                 }
@@ -635,7 +616,7 @@ pub fn run_desktop_app(
                     }
                     // Update drop position (best effort)
                     if self.pending_drop_pos_px.is_none() {
-                        self.pending_drop_pos_px = Some(self.mouse_pos_px);
+                        self.pending_drop_pos_px = Some(self.rt.mouse_pos_px);
                     }
                     self.request_redraw();
                 }
@@ -654,7 +635,7 @@ pub fn run_desktop_app(
                     // DroppedFile is emitted once per file. Batch them.
                     self.pending_dropped_files.push(path);
                     if self.pending_drop_pos_px.is_none() {
-                        self.pending_drop_pos_px = Some(self.mouse_pos_px);
+                        self.pending_drop_pos_px = Some(self.rt.mouse_pos_px);
                     }
 
                     // Drop ends the external file drag session.
@@ -665,7 +646,7 @@ pub fn run_desktop_app(
                 }
 
                 WindowEvent::Resized(size) => {
-                    self.sched.size = (size.width, size.height);
+                    self.rt.sched.size = (size.width, size.height);
                     if let Some(b) = self.backend.as_mut() {
                         b.configure_surface(size.width, size.height);
                     }
@@ -686,21 +667,21 @@ pub fn run_desktop_app(
                 }
 
                 WindowEvent::CursorMoved { position, .. } => {
-                    self.mouse_pos_px = (position.x as f32, position.y as f32);
+                    self.rt.mouse_pos_px = (position.x as f32, position.y as f32);
 
                     if self.external_file_drag {
-                        self.pending_drop_pos_px = Some(self.mouse_pos_px);
+                        self.pending_drop_pos_px = Some(self.rt.mouse_pos_px);
                     }
 
                     let pos = Vec2 {
-                        x: self.mouse_pos_px.0,
-                        y: self.mouse_pos_px.1,
+                        x: self.rt.mouse_pos_px.0,
+                        y: self.rt.mouse_pos_px.1,
                     };
 
                     if repose_core::dnd::handle_drag_action(
                         &repose_core::shortcuts::DragAction::Move {
                             position: pos,
-                            modifiers: self.modifiers,
+                            modifiers: self.rt.modifiers,
                         },
                     ) {
                         self.request_redraw();
@@ -709,12 +690,12 @@ pub fn run_desktop_app(
 
                     // Inspector hover
                     if self.inspector.hud.inspector_enabled
-                        && let Some(f) = &self.frame_cache
+                        && let Some(f) = &self.rt.frame_cache
                     {
                         let hit = f.hit_regions.iter().find(|h| {
                             h.rect.contains(Vec2 {
-                                x: self.mouse_pos_px.0,
-                                y: self.mouse_pos_px.1,
+                                x: self.rt.mouse_pos_px.0,
+                                y: self.rt.mouse_pos_px.1,
                             })
                         });
                         let hover_rect = hit.map(|h| h.rect);
@@ -732,19 +713,19 @@ pub fn run_desktop_app(
                     }
 
                     // TextField/TextArea drag selection (if captured)
-                    if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id)
+                    if let (Some(f), Some(cid)) = (&self.rt.frame_cache, self.rt.capture_id)
                         && self.is_textfield(cid)
                         && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
                     {
                         let key = self.tf_key_of(cid);
-                        if let Some(state_rc) = self.textfield_states.get(&key) {
+                        if let Some(state_rc) = self.rt.textfield_states.get(&key) {
                             let mut st = state_rc.borrow_mut();
 
                             let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
                             let content_x =
-                                (self.mouse_pos_px.0 - ox + st.scroll_offset).max(0.0);
+                                (self.rt.mouse_pos_px.0 - ox + st.scroll_offset).max(0.0);
                             let content_y =
-                                (self.mouse_pos_px.1 - oy + st.scroll_offset_y).max(0.0);
+                                (self.rt.mouse_pos_px.1 - oy + st.scroll_offset_y).max(0.0);
 
                             let font_px =
                                 dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
@@ -765,11 +746,11 @@ pub fn run_desktop_app(
                     }
 
                     // Pointer routing: hover + move/capture
-                    if let Some(f) = &self.frame_cache {
+                    if let Some(f) = &self.rt.frame_cache {
                         // Determine topmost hit
                         let pos = Vec2 {
-                            x: self.mouse_pos_px.0,
-                            y: self.mouse_pos_px.1,
+                            x: self.rt.mouse_pos_px.0,
+                            y: self.rt.mouse_pos_px.1,
                         };
                         let top = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos));
 
@@ -784,8 +765,8 @@ pub fn run_desktop_app(
                         let new_hover = top.map(|h| h.id);
 
                         // Enter/Leave
-                        if new_hover != self.hover_id {
-                            if let Some(prev_id) = self.hover_id
+                        if new_hover != self.rt.hover_id {
+                            if let Some(prev_id) = self.rt.hover_id
                                 && let Some(prev) = f.hit_regions.iter().find(|h| h.id == prev_id)
                                 && let Some(cb) = &prev.on_pointer_leave
                             {
@@ -795,7 +776,7 @@ pub fn run_desktop_app(
                                     PointerEventKind::Leave,
                                     pos,
                                     1.0,
-                                    self.modifiers,
+                                    self.rt.modifiers,
                                 );
                                 cb(pe);
                             }
@@ -808,11 +789,11 @@ pub fn run_desktop_app(
                                     PointerEventKind::Enter,
                                     pos,
                                     1.0,
-                                    self.modifiers,
+                                    self.rt.modifiers,
                                 );
                                 cb(pe);
                             }
-                            self.hover_id = new_hover;
+                            self.rt.hover_id = new_hover;
                             self.request_redraw();
                         }
 
@@ -823,11 +804,11 @@ pub fn run_desktop_app(
                             PointerEventKind::Move,
                             pos,
                             1.0,
-                            self.modifiers,
+                            self.rt.modifiers,
                         );
 
                         // Move delivery (captured first)
-                        if let Some(cid) = self.capture_id {
+                        if let Some(cid) = self.rt.capture_id {
                             if let Some(h) = f.hit_regions.iter().find(|h| h.id == cid)
                                 && let Some(cb) = &h.on_pointer_move
                             {
@@ -852,10 +833,10 @@ pub fn run_desktop_app(
                     };
                     log::debug!("MouseWheel: dx={}, dy={}", dx_px, dy_px);
 
-                    if let Some(f) = &self.frame_cache {
+                    if let Some(f) = &self.rt.frame_cache {
                         let pos = Vec2 {
-                            x: self.mouse_pos_px.0,
-                            y: self.mouse_pos_px.1,
+                            x: self.rt.mouse_pos_px.0,
+                            y: self.rt.mouse_pos_px.1,
                         };
 
                         if rc::dispatch_scroll(f, pos, Vec2 { x: dx_px, y: dy_px }, None).0 {
@@ -870,41 +851,41 @@ pub fn run_desktop_app(
                     ..
                 } => {
                     let mut need_announce = false;
-                    if let Some(f) = &self.frame_cache {
+                    if let Some(f) = &self.rt.frame_cache {
                         let pos = Vec2 {
-                            x: self.mouse_pos_px.0,
-                            y: self.mouse_pos_px.1,
+                            x: self.rt.mouse_pos_px.0,
+                            y: self.rt.mouse_pos_px.1,
                         };
                         if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos))
                         {
                             repose_core::dnd::handle_drag_action(
                                 &repose_core::shortcuts::DragAction::Press {
                                     position: Vec2 {
-                                        x: self.mouse_pos_px.0,
-                                        y: self.mouse_pos_px.1,
+                                        x: self.rt.mouse_pos_px.0,
+                                        y: self.rt.mouse_pos_px.1,
                                     },
                                     capture_id: hit.id,
                                     kind: repose_core::input::PointerKind::Mouse,
-                                    modifiers: self.modifiers,
+                                    modifiers: self.rt.modifiers,
                                 },
                             );
 
                             // Capture starts on press
-                            self.capture_id = Some(hit.id);
+                            self.rt.capture_id = Some(hit.id);
 
                             // Text input caret placement + begin drag selection
                             if self.is_textfield(hit.id) {
                                 let key = self.tf_key_of(hit.id);
-                                self.textfield_states.entry(key).or_insert_with(|| {
+                                self.rt.textfield_states.entry(key).or_insert_with(|| {
                                     Rc::new(RefCell::new(TextFieldState::new()))
                                 });
-                                if let Some(st_rc) = self.textfield_states.get(&key) {
+                                if let Some(st_rc) = self.rt.textfield_states.get(&key) {
                                     let mut st = st_rc.borrow_mut();
                                     let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
                                     let content_x =
-                                        (self.mouse_pos_px.0 - ox + st.scroll_offset)
+                                        (self.rt.mouse_pos_px.0 - ox + st.scroll_offset)
                                             .max(0.0);
-                                    let content_y = (self.mouse_pos_px.1 - oy
+                                    let content_y = (self.rt.mouse_pos_px.1 - oy
                                         + st.scroll_offset_y)
                                         .max(0.0);
                                     let font_px = self.dp_px(TF_FONT_DP)
@@ -923,20 +904,20 @@ pub fn run_desktop_app(
                                         rc::index_for_x_bytes_vt(&st, font_px, content_x)
                                     };
 
-                                    st.handle_pointer_down(idx, self.mouse_pos_px, self.modifiers.shift);
+                                    st.handle_pointer_down(idx, self.rt.mouse_pos_px, self.rt.modifiers.shift);
                                 }
                             }
                             // Pressed visual for mouse
-                            self.pressed_ids.insert(hit.id);
+                            self.rt.pressed_ids.insert(hit.id);
                             // Repaint for pressed state
                             self.request_redraw();
 
                             // Focus & IME first for focusables (so state exists)
                             if hit.focusable {
-                                self.sched.focused = Some(hit.id);
+                                self.rt.sched.focused = Some(hit.id);
                                 need_announce = true;
                                 let key = self.tf_key_of(hit.id);
-                                self.textfield_states.entry(key).or_insert_with(|| {
+                                self.rt.textfield_states.entry(key).or_insert_with(|| {
                                     Rc::new(RefCell::new(TextFieldState::new()))
                                 });
                                 if let Some(win) = &self.window {
@@ -963,7 +944,7 @@ pub fn run_desktop_app(
                                     PointerEventKind::Down(PointerButton::Primary),
                                     pos,
                                     1.0,
-                                    self.modifiers,
+                                    self.rt.modifiers,
                                 );
                                 cb(pe);
                             }
@@ -975,13 +956,13 @@ pub fn run_desktop_app(
                             self.request_redraw();
                         } else {
                             // Click outside: drop focus/IME
-                            if self.ime_preedit {
+                            if self.rt.ime_preedit {
                                 if let Some(win) = &self.window {
                                     rc_web::set_ime_for_textfield(win, false);
                                 }
-                                self.ime_preedit = false;
+                                self.rt.ime_preedit = false;
                             }
-                            self.sched.focused = None;
+                            self.rt.sched.focused = None;
                             self.request_redraw();
                         }
                     }
@@ -992,12 +973,12 @@ pub fn run_desktop_app(
                     button: MouseButton::Middle,
                     ..
                 } => {
-                    let Some(f) = &self.frame_cache else {
+                    let Some(f) = &self.rt.frame_cache else {
                         return;
                     };
                     let pos = Vec2 {
-                        x: self.mouse_pos_px.0,
-                        y: self.mouse_pos_px.1,
+                        x: self.rt.mouse_pos_px.0,
+                        y: self.rt.mouse_pos_px.1,
                     };
                     if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos)) {
                         // Dispatch Tertiary pointer event
@@ -1008,18 +989,18 @@ pub fn run_desktop_app(
                                 PointerEventKind::Down(PointerButton::Tertiary),
                                 pos,
                                 1.0,
-                                self.modifiers,
+                                self.rt.modifiers,
                             ));
                         }
                         // Paste primary selection into textfield
                         if self.is_textfield(hit.id) {
                             let key = self.tf_key_of(hit.id);
-                            if let Some(state_rc) = self.textfield_states.get(&key) {
+                            if let Some(state_rc) = self.rt.textfield_states.get(&key) {
                                 if let Some(txt) = self.paste_from_primary() {
                                     let mut st = state_rc.borrow_mut();
                                     st.insert_text_atomic(&txt);
                                     self.notify_text_change(hit.id, st.text.clone());
-                                    if let Some(f) = &self.frame_cache
+                                    if let Some(f) = &self.rt.frame_cache
                                         && let Some(h) =
                                             f.hit_regions.iter().find(|h| h.id == hit.id)
                                     {
@@ -1038,34 +1019,34 @@ pub fn run_desktop_app(
                     ..
                 } => {
                     let pos = Vec2 {
-                        x: self.mouse_pos_px.0,
-                        y: self.mouse_pos_px.1,
+                        x: self.rt.mouse_pos_px.0,
+                        y: self.rt.mouse_pos_px.1,
                     };
 
                     if repose_core::dnd::handle_drag_action(
                         &repose_core::shortcuts::DragAction::Release {
                             position: pos,
-                            modifiers: self.modifiers,
+                            modifiers: self.rt.modifiers,
                         },
                     ) {
-                        self.capture_id = None;
-                        self.pressed_ids.clear();
+                        self.rt.capture_id = None;
+                        self.rt.pressed_ids.clear();
                         repose_core::request_frame();
                         return;
                     }
 
-                    if let Some(cid) = self.capture_id {
-                        self.pressed_ids.remove(&cid);
+                    if let Some(cid) = self.rt.capture_id {
+                        self.rt.pressed_ids.remove(&cid);
                         self.request_redraw();
                     }
 
-                    if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id)
+                    if let (Some(f), Some(cid)) = (&self.rt.frame_cache, self.rt.capture_id)
                         && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
                         && let Some(cb) = &hit.on_pointer_up
                     {
                         let pos = Vec2 {
-                            x: self.mouse_pos_px.0,
-                            y: self.mouse_pos_px.1,
+                            x: self.rt.mouse_pos_px.0,
+                            y: self.rt.mouse_pos_px.1,
                         };
                         let pe = PointerEvent::new(
                             PointerId(0),
@@ -1073,16 +1054,16 @@ pub fn run_desktop_app(
                             PointerEventKind::Up(PointerButton::Primary),
                             pos,
                             1.0,
-                            self.modifiers,
+                            self.rt.modifiers,
                         );
                         cb(pe);
                     }
 
                     // Click on release if pointer is still over the captured hit region
-                    if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
+                    if let (Some(f), Some(cid)) = (&self.rt.frame_cache, self.rt.capture_id) {
                         let pos = Vec2 {
-                            x: self.mouse_pos_px.0,
-                            y: self.mouse_pos_px.1,
+                            x: self.rt.mouse_pos_px.0,
+                            y: self.rt.mouse_pos_px.1,
                         };
                         if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
                             && hit.rect.contains(pos)
@@ -1097,19 +1078,19 @@ pub fn run_desktop_app(
                         }
                     }
                     // TextField drag end
-                    if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id)
+                    if let (Some(f), Some(cid)) = (&self.rt.frame_cache, self.rt.capture_id)
                         && let Some(_sem) = f
                             .semantics_nodes
                             .iter()
                             .find(|n| n.id == cid && n.role == Role::TextField)
                     {
                         let key = self.tf_key_of(cid);
-                        if let Some(state_rc) = self.textfield_states.get(&key) {
+                        if let Some(state_rc) = self.rt.textfield_states.get(&key) {
                             state_rc.borrow_mut().end_drag();
                         }
                     }
 
-                    self.capture_id = None;
+                    self.rt.capture_id = None;
 
                     repose_core::request_frame();
                 }
@@ -1119,10 +1100,10 @@ pub fn run_desktop_app(
                     button: MouseButton::Middle,
                     ..
                 } => {
-                    if let Some(f) = &self.frame_cache {
+                    if let Some(f) = &self.rt.frame_cache {
                         let pos = Vec2 {
-                            x: self.mouse_pos_px.0,
-                            y: self.mouse_pos_px.1,
+                            x: self.rt.mouse_pos_px.0,
+                            y: self.rt.mouse_pos_px.1,
                         };
                         if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos))
                         {
@@ -1133,7 +1114,7 @@ pub fn run_desktop_app(
                                     PointerEventKind::Up(PointerButton::Tertiary),
                                     pos,
                                     1.0,
-                                    self.modifiers,
+                                    self.rt.modifiers,
                                 ));
                             }
                         }
@@ -1141,7 +1122,7 @@ pub fn run_desktop_app(
                 }
 
                 WindowEvent::ModifiersChanged(new_mods) => {
-                    rc::update_modifiers(&mut self.modifiers, &new_mods.state());
+                    rc::update_modifiers(&mut self.rt.modifiers, &new_mods.state());
                 }
 
                 WindowEvent::KeyboardInput {
@@ -1182,18 +1163,18 @@ pub fn run_desktop_app(
                         repose_core::input::Key::Character(c) => c as u16,
                         _ => 0,
                     };
-                    let mods = self.modifiers;
+                    let mods = self.rt.modifiers;
                     let repeat = key_event.repeat;
                     let ev_type = if key_event.state == ElementState::Pressed {
                         repose_core::input::KeyEventType::Down
                     } else {
                         repose_core::input::KeyEventType::Up
                     };
-                    let consumed = self
+                    let consumed = self.rt
                         .frame_cache
                         .as_ref()
                         .and_then(|f| {
-                            let focused = self.sched.focused.or_else(|| {
+                            let focused = self.rt.sched.focused.or_else(|| {
                                 f.semantics_nodes
                                     .iter()
                                     .find(|n| n.parent.is_none())
@@ -1253,7 +1234,7 @@ pub fn run_desktop_app(
 
                     if key_event.state == ElementState::Pressed
                         && let Some(action) = repose_core::shortcuts::resolve_action(
-                            repose_core::shortcuts::KeyChord::new(mapped_key, self.modifiers),
+                            repose_core::shortcuts::KeyChord::new(mapped_key, self.rt.modifiers),
                         )
                         && self.dispatch_action(action)
                     {
@@ -1261,9 +1242,9 @@ pub fn run_desktop_app(
                         return;
                     }
 
-                    if let Some(fid) = self.sched.focused {
+                    if let Some(fid) = self.rt.sched.focused {
                         // If focused is NOT a TextField, allow Space/Enter activation
-                        let is_textfield = if let Some(f) = &self.frame_cache {
+                        let is_textfield = if let Some(f) = &self.rt.frame_cache {
                             f.semantics_nodes
                                 .iter()
                                 .any(|n| n.id == fid && n.role == Role::TextField)
@@ -1277,8 +1258,8 @@ pub fn run_desktop_app(
                                 | PhysicalKey::Code(KeyCode::Enter) => {
                                     if key_event.state == ElementState::Pressed && !key_event.repeat
                                     {
-                                        self.pressed_ids.insert(fid);
-                                        self.key_pressed_active = Some(fid);
+                                        self.rt.pressed_ids.insert(fid);
+                                        self.rt.key_pressed_active = Some(fid);
                                         self.request_redraw();
                                         return;
                                     }
@@ -1294,14 +1275,14 @@ pub fn run_desktop_app(
                     if key_event.state == ElementState::Pressed
                         && !key_event.repeat
                         && let PhysicalKey::Code(KeyCode::Enter) = key_event.physical_key
-                        && let Some(focused_id) = self.sched.focused
-                        && let Some(f) = &self.frame_cache
+                        && let Some(focused_id) = self.rt.sched.focused
+                        && let Some(f) = &self.rt.frame_cache
                         && let Some(hit) = f.hit_regions.iter().find(|h| h.id == focused_id)
                     {
                         let is_multiline = hit.tf_multiline;
                         let should_submit = if is_multiline {
                             // Multiline: Ctrl+Enter or Cmd+Enter submits
-                            self.modifiers.ctrl || self.modifiers.meta
+                            self.rt.modifiers.ctrl || self.rt.modifiers.meta
                         } else {
                             // Single-line: Enter always submits
                             true
@@ -1310,7 +1291,7 @@ pub fn run_desktop_app(
                         if should_submit {
                             if let Some(on_submit) = &hit.on_text_submit {
                                 let key = self.tf_key_of(focused_id);
-                                if let Some(state) = self.textfield_states.get(&key) {
+                                if let Some(state) = self.rt.textfield_states.get(&key) {
                                     let text = state.borrow().text.clone();
                                     on_submit(text);
                                     self.request_redraw();
@@ -1320,7 +1301,7 @@ pub fn run_desktop_app(
                         } else {
                             // Multiline with plain Enter: insert newline
                             let key = self.tf_key_of(focused_id);
-                            if let Some(state_rc) = self.textfield_states.get(&key) {
+                            if let Some(state_rc) = self.rt.textfield_states.get(&key) {
                                 let mut st = state_rc.borrow_mut();
                                 st.insert_text("\n");
                                 let new_text = st.text.clone();
@@ -1334,8 +1315,8 @@ pub fn run_desktop_app(
 
                     if key_event.state == ElementState::Pressed {
                         // Inspector hotkey: Ctrl+Shift+I
-                        if self.modifiers.ctrl
-                            && self.modifiers.shift
+                        if self.rt.modifiers.ctrl
+                            && self.rt.modifiers.shift
                             && let PhysicalKey::Code(KeyCode::KeyI) = key_event.physical_key
                         {
                             self.inspector.hud.toggle_inspector();
@@ -1344,9 +1325,9 @@ pub fn run_desktop_app(
                         }
 
                         // TextField navigation/edit
-                        if let Some(focused_id) = self.sched.focused {
+                        if let Some(focused_id) = self.rt.sched.focused {
                             let key = self.tf_key_of(focused_id);
-                            if let Some(state_rc) = self.textfield_states.get(&key) {
+                            if let Some(state_rc) = self.rt.textfield_states.get(&key) {
                                 let mut state = state_rc.borrow_mut();
                                 match key_event.physical_key {
                                     PhysicalKey::Code(KeyCode::Backspace) => {
@@ -1370,7 +1351,7 @@ pub fn run_desktop_app(
                                         self.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::ArrowLeft) => {
-                                        state.move_cursor(-1, self.modifiers.shift);
+                                        state.move_cursor(-1, self.rt.modifiers.shift);
                                         state.preferred_x_px = None; // Reset preferred x on horizontal movement
                                         App::tf_ensure_caret_visible(
                                             &mut state,
@@ -1379,7 +1360,7 @@ pub fn run_desktop_app(
                                         self.request_redraw();
                                     }
                                     PhysicalKey::Code(KeyCode::ArrowRight) => {
-                                        state.move_cursor(1, self.modifiers.shift);
+                                        state.move_cursor(1, self.rt.modifiers.shift);
                                         state.preferred_x_px = None; // Reset preferred x on horizontal movement
                                         App::tf_ensure_caret_visible(
                                             &mut state,
@@ -1389,7 +1370,7 @@ pub fn run_desktop_app(
                                     }
                                     PhysicalKey::Code(KeyCode::ArrowUp) => {
                                         if self.is_multiline_id(focused_id)
-                                            && let Some(f) = &self.frame_cache
+                                            && let Some(f) = &self.rt.frame_cache
                                             && let Some(hit) =
                                                 f.hit_regions.iter().find(|h| h.id == focused_id)
                                         {
@@ -1404,7 +1385,7 @@ pub fn run_desktop_app(
                                                     -1,
                                                     state.preferred_x_px,
                                                 );
-                                            if self.modifiers.shift {
+                                            if self.rt.modifiers.shift {
                                                 state.selection.end = new_pos;
                                             } else {
                                                 state.selection = new_pos..new_pos;
@@ -1431,7 +1412,7 @@ pub fn run_desktop_app(
                                     }
                                     PhysicalKey::Code(KeyCode::ArrowDown) => {
                                         if self.is_multiline_id(focused_id)
-                                            && let Some(f) = &self.frame_cache
+                                            && let Some(f) = &self.rt.frame_cache
                                             && let Some(hit) =
                                                 f.hit_regions.iter().find(|h| h.id == focused_id)
                                         {
@@ -1447,7 +1428,7 @@ pub fn run_desktop_app(
                                                     1,
                                                     state.preferred_x_px,
                                                 );
-                                            if self.modifiers.shift {
+                                            if self.rt.modifiers.shift {
                                                 state.selection.end = new_pos;
                                             } else {
                                                 state.selection = new_pos..new_pos;
@@ -1497,10 +1478,10 @@ pub fn run_desktop_app(
                         }
 
                         // Plain text input when IME is not active
-                        if !self.ime_preedit
-                            && !self.modifiers.ctrl
-                            && !self.modifiers.alt
-                            && !self.modifiers.meta
+                        if !self.rt.ime_preedit
+                            && !self.rt.modifiers.ctrl
+                            && !self.rt.modifiers.alt
+                            && !self.rt.modifiers.meta
                             && let Some(raw) = key_event.text.as_deref()
                         {
                             let text: String = raw
@@ -1508,14 +1489,14 @@ pub fn run_desktop_app(
                                 .filter(|c| !c.is_control() && *c != '\n' && *c != '\r')
                                 .collect();
                             if !text.is_empty()
-                                && let Some(fid) = self.sched.focused
+                                && let Some(fid) = self.rt.sched.focused
                             {
                                 let key = self.tf_key_of(fid);
-                                if let Some(state_rc) = self.textfield_states.get(&key) {
+                                if let Some(state_rc) = self.rt.textfield_states.get(&key) {
                                     let mut st = state_rc.borrow_mut();
                                     st.insert_text(&text);
                                     self.notify_text_change(fid, st.text.clone());
-                                    if let Some(f) = &self.frame_cache
+                                    if let Some(f) = &self.rt.frame_cache
                                         && let Some(hit) =
                                             f.hit_regions.iter().find(|h| h.id == fid)
                                     {
@@ -1527,14 +1508,14 @@ pub fn run_desktop_app(
                         }
                     } else if key_event.state == ElementState::Released {
                         // Finish keyboard activation on release (Space/Enter)
-                        if let Some(active_id) = self.key_pressed_active {
+                        if let Some(active_id) = self.rt.key_pressed_active {
                             match key_event.physical_key {
                                 PhysicalKey::Code(KeyCode::Space)
                                 | PhysicalKey::Code(KeyCode::Enter) => {
-                                    self.pressed_ids.remove(&active_id);
-                                    self.key_pressed_active = None;
+                                    self.rt.pressed_ids.remove(&active_id);
+                                    self.rt.key_pressed_active = None;
 
-                                    if let Some(f) = &self.frame_cache
+                                    if let Some(f) = &self.rt.frame_cache
                                         && let Some(hit) =
                                             f.hit_regions.iter().find(|h| h.id == active_id)
                                     {
@@ -1547,7 +1528,7 @@ pub fn run_desktop_app(
                                                 PointerEventKind::Down(PointerButton::Primary),
                                                 Vec2 { x: 0.0, y: 0.0 },
                                                 1.0,
-                                                self.modifiers,
+                                                self.rt.modifiers,
                                             );
                                             cb(pe);
                                         }
@@ -1567,11 +1548,11 @@ pub fn run_desktop_app(
                 }
 
                 WindowEvent::Ime(ime) => {
-                    if let Some(focused_id) = self.sched.focused {
+                    if let Some(focused_id) = self.rt.sched.focused {
                         let key = self.tf_key_of(focused_id);
-                        if let Some(state_rc) = self.textfield_states.get(&key) {
+                        if let Some(state_rc) = self.rt.textfield_states.get(&key) {
                             let mut state = state_rc.borrow_mut();
-                            let on_text_change = self
+                            let on_text_change = self.rt
                                 .frame_cache
                                 .as_ref()
                                 .and_then(|f| f.hit_regions.iter().find(|h| h.id == focused_id))
@@ -1585,7 +1566,7 @@ pub fn run_desktop_app(
                                 ime,
                                 &mut state,
                                 &mut notify,
-                                &mut self.ime_preedit,
+                                &mut self.rt.ime_preedit,
                             );
                             self.request_redraw();
                         }
@@ -1619,27 +1600,27 @@ pub fn run_desktop_app(
 
                     let t0 = Instant::now();
                     let scale = win.scale_factor() as f32;
-                    let size_px_u32 = self.sched.size;
-                    let focused = self.sched.focused;
+                    let size_px_u32 = self.rt.sched.size;
+                    let focused = self.rt.sched.focused;
 
                     let rc = self.render.clone();
                     let root_fn = &mut self.root;
                     let mut composed_root = |s: &mut Scheduler| (root_fn)(s, &rc);
 
                     let frame = compose_frame(
-                        &mut self.sched,
+                        &mut self.rt.sched,
                         &mut composed_root,
                         scale,
                         size_px_u32,
-                        self.hover_id,
-                        &self.pressed_ids,
-                        &self.textfield_states,
+                        self.rt.hover_id,
+                        &self.rt.pressed_ids,
+                        &self.rt.textfield_states,
                         focused,
                     );
 
-                    if focused.is_some() && self.sched.focused.is_none() && self.ime_preedit {
+                    if focused.is_some() && self.rt.sched.focused.is_none() && self.rt.ime_preedit {
                         rc_web::set_ime_for_textfield(win, false);
-                        self.ime_preedit = false;
+                        self.rt.ime_preedit = false;
                     }
 
                     let build_layout_ms = (Instant::now() - t0).as_secs_f32() * 1000.0;
@@ -1650,7 +1631,7 @@ pub fn run_desktop_app(
                         let scale = win.scale_factor();
                         if let Some(update) =
                             self.a11y_tree
-                                .update(&frame.semantics_nodes, scale, self.sched.focused)
+                                .update(&frame.semantics_nodes, scale, self.rt.sched.focused)
                         {
                             adapter.update_if_active(|| update);
                         }
@@ -1660,7 +1641,7 @@ pub fn run_desktop_app(
                     let mut scene = frame.scene.clone();
                     // Update HUD metrics before overlay draws
                     let widget_count = frame.semantics_nodes.len() + frame.hit_regions.len();
-                    let signal_count = self.sched.id_count() as usize;
+                    let signal_count = self.rt.sched.id_count() as usize;
                     self.inspector.hud.metrics = Some(repose_devtools::Metrics {
                         build_ms: build_layout_ms,
                         layout_ms: build_layout_ms * 0.5,
@@ -1673,7 +1654,7 @@ pub fn run_desktop_app(
                     // Drag indicator overlay (internal + file drop)
                     repose_core::dnd::overlay_drag_indicator(
                         &mut scene,
-                        self.mouse_pos_px,
+                        self.rt.mouse_pos_px,
                         self.external_file_drag,
                     );
 
@@ -1686,12 +1667,12 @@ pub fn run_desktop_app(
 
                     // Initialize TextFieldState for any focused TextField that
                     // doesn't have one yet (e.g. after FocusRequester::request_focus)
-                    if let Some(fid) = self.sched.focused {
+                    if let Some(fid) = self.rt.sched.focused {
                         if let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid)
                             && let Some(key) = hit.tf_state_key
-                            && !self.textfield_states.contains_key(&key)
+                            && !self.rt.textfield_states.contains_key(&key)
                         {
-                            self.textfield_states
+                            self.rt.textfield_states
                                 .entry(key)
                                 .or_insert_with(|| {
                                     Rc::new(RefCell::new(repose_ui::TextFieldState::new()))
@@ -1702,7 +1683,7 @@ pub fn run_desktop_app(
                     }
 
                     repose_core::dnd::set_dnd_frame(Some(frame.clone()));
-                    self.frame_cache = Some(frame);
+                    self.rt.frame_cache = Some(frame);
                     repose_core::dnd::set_dnd_scale(scale);
 
                     self.dispatch_file_drop_now();
@@ -1803,17 +1784,17 @@ pub fn run_desktop_app(
             key_event: &winit::event::KeyEvent,
             mapped_key: &repose_core::input::Key,
         ) -> bool {
-            let Some(f) = &self.frame_cache else {
+            let Some(f) = &self.rt.frame_cache else {
                 return false;
             };
-            let Some(focused) = self.sched.focused else {
+            let Some(focused) = self.rt.sched.focused else {
                 return false;
             };
             let utf16 = match mapped_key {
                 repose_core::input::Key::Character(c) => *c as u16,
                 _ => 0,
             };
-            let mods = self.modifiers;
+            let mods = self.rt.modifiers;
             let repeat = key_event.repeat;
             let ev_type = if key_event.state == ElementState::Pressed {
                 repose_core::input::KeyEventType::Down
@@ -1868,8 +1849,8 @@ pub fn run_desktop_app(
         }
 
         fn announce_focus_change(&mut self) {
-            if let Some(f) = &self.frame_cache {
-                let focused_node = self
+            if let Some(f) = &self.rt.frame_cache {
+                let focused_node = self.rt
                     .sched
                     .focused
                     .and_then(|id| f.semantics_nodes.iter().find(|n| n.id == id));
@@ -1878,7 +1859,7 @@ pub fn run_desktop_app(
         }
 
         fn notify_text_change(&self, id: u64, text: String) {
-            if let Some(f) = &self.frame_cache
+            if let Some(f) = &self.rt.frame_cache
                 && let Some(h) = f.hit_regions.iter().find(|h| h.id == id)
                 && let Some(cb) = &h.on_text_change
             {
@@ -1887,19 +1868,19 @@ pub fn run_desktop_app(
         }
 
         fn tf_key_of(&self, visual_id: u64) -> u64 {
-            rc::tf_key_of_in_frame(&self.frame_cache, visual_id)
+            rc::tf_key_of_in_frame(&self.rt.frame_cache, visual_id)
         }
 
         /// If a text field is focused with a collapsed selection (caret blinking),
         /// return the [`Instant`] of the next 500 ms blink edge.
         fn next_caret_blink_deadline(&self) -> Option<Instant> {
-            next_caret_blink_deadline(&self.sched, &self.frame_cache, &self.textfield_states)
+            next_caret_blink_deadline(&self.rt.sched, &self.rt.frame_cache, &self.rt.textfield_states)
         }
 
         fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
             use repose_core::shortcuts;
 
-            if let (Some(f), Some(fid)) = (&self.frame_cache, self.sched.focused)
+            if let (Some(f), Some(fid)) = (&self.rt.frame_cache, self.rt.sched.focused)
                 && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
                 && let Some(cb) = &hit.on_action
                 && cb(action.clone())
@@ -1912,11 +1893,11 @@ pub fn run_desktop_app(
             }
 
             // Focus navigation (Tab/arrows)
-            if let Some(f) = &self.frame_cache {
-                if let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.sched, f)
+            if let Some(f) = &self.rt.frame_cache {
+                if let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.rt.sched, f)
                 {
-                    if let Some(active) = self.key_pressed_active.take() {
-                        self.pressed_ids.remove(&active);
+                    if let Some(active) = self.rt.key_pressed_active.take() {
+                        self.rt.pressed_ids.remove(&active);
                     }
                     let tf_state_key = f
                         .hit_regions
@@ -1924,10 +1905,10 @@ pub fn run_desktop_app(
                         .find(|h| h.id == new_id)
                         .and_then(|h| h.tf_state_key);
                     if let Some(key) = tf_state_key {
-                        self.textfield_states.entry(key).or_insert_with(|| {
+                        self.rt.textfield_states.entry(key).or_insert_with(|| {
                             Rc::new(RefCell::new(repose_ui::TextFieldState::new()))
                         });
-                        if let Some(state_rc) = self.textfield_states.get(&key) {
+                        if let Some(state_rc) = self.rt.textfield_states.get(&key) {
                             state_rc.borrow_mut().reset_caret_blink();
                         }
                     }
@@ -1946,7 +1927,7 @@ pub fn run_desktop_app(
         }
 
         fn dispatch_file_drop_now(&mut self) {
-            let Some(f) = &self.frame_cache else {
+            let Some(f) = &self.rt.frame_cache else {
                 self.pending_dropped_files.clear();
                 self.pending_drop_pos_px = None;
                 return;
@@ -1956,7 +1937,7 @@ pub fn run_desktop_app(
                 return;
             }
 
-            let pos_px = self.pending_drop_pos_px.unwrap_or(self.mouse_pos_px);
+            let pos_px = self.pending_drop_pos_px.unwrap_or(self.rt.mouse_pos_px);
             let pos = Vec2 {
                 x: pos_px.0,
                 y: pos_px.1,
@@ -1990,7 +1971,7 @@ pub fn run_desktop_app(
                     source_id: 0, // external source (OS)
                     target_id,
                     position: pos,
-                    modifiers: self.modifiers,
+                    modifiers: self.rt.modifiers,
                     payload: payload.clone(),
                 });
 
