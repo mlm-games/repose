@@ -1,13 +1,15 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+#[cfg(feature = "winit-surface")]
 use std::sync::Arc;
+#[cfg(feature = "winit-surface")]
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use repose_core::color::{ChromaSiting, ColorInfo, PixelFormat};
 use repose_core::request_frame;
 use repose_core::{
     Brush, FontStyle, GlyphRasterConfig, RenderBackend, Scene, SceneNode, StrokeCap, Transform,
 };
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use wgpu::Instance;
 
 mod slug;
@@ -102,10 +104,13 @@ struct Globals {
 }
 
 pub struct WgpuBackend {
-    surface: wgpu::Surface<'static>,
+    surface: Option<wgpu::Surface<'static>>,
+    surface_config: Option<wgpu::SurfaceConfiguration>,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
+    output_format: wgpu::TextureFormat,
+    output_width: u32,
+    output_height: u32,
 
     // Render pipelines. Two sets: one for the MSAA surface pass, one for
     // graphics-layer render-to-texture passes (sample_count = 1).
@@ -1155,6 +1160,381 @@ fn swash_to_a8_coverage(content: repose_text::SwashContent, data: &[u8]) -> Opti
 }
 
 impl WgpuBackend {
+    pub fn from_device(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        output_format: wgpu::TextureFormat,
+    ) -> Self {
+        let globals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("globals layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let globals_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("globals buf"),
+            size: std::mem::size_of::<Globals>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let globals_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("globals bind"),
+            layout: &globals_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: globals_buf.as_entire_binding(),
+            }],
+        });
+
+        // Pick MSAA sample count (conservative default for headless path)
+        let msaa_samples = 1;
+
+        let ds_format = wgpu::TextureFormat::Depth24PlusStencil8;
+
+        let stencil_for_content = wgpu::DepthStencilState {
+            format: ds_format,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Always),
+            stencil: wgpu::StencilState {
+                front: wgpu::StencilFaceState {
+                    compare: wgpu::CompareFunction::LessEqual,
+                    fail_op: wgpu::StencilOperation::Keep,
+                    depth_fail_op: wgpu::StencilOperation::Keep,
+                    pass_op: wgpu::StencilOperation::Keep,
+                },
+                back: wgpu::StencilFaceState {
+                    compare: wgpu::CompareFunction::LessEqual,
+                    fail_op: wgpu::StencilOperation::Keep,
+                    depth_fail_op: wgpu::StencilOperation::Keep,
+                    pass_op: wgpu::StencilOperation::Keep,
+                },
+                read_mask: 0xFF,
+                write_mask: 0x00,
+            },
+            bias: wgpu::DepthBiasState::default(),
+        };
+
+        let stencil_for_clip_inc = wgpu::DepthStencilState {
+            format: ds_format,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Always),
+            stencil: wgpu::StencilState {
+                front: wgpu::StencilFaceState {
+                    compare: wgpu::CompareFunction::Equal,
+                    fail_op: wgpu::StencilOperation::Keep,
+                    depth_fail_op: wgpu::StencilOperation::Keep,
+                    pass_op: wgpu::StencilOperation::IncrementClamp,
+                },
+                back: wgpu::StencilFaceState {
+                    compare: wgpu::CompareFunction::Equal,
+                    fail_op: wgpu::StencilOperation::Keep,
+                    depth_fail_op: wgpu::StencilOperation::Keep,
+                    pass_op: wgpu::StencilOperation::IncrementClamp,
+                },
+                read_mask: 0xFF,
+                write_mask: 0xFF,
+            },
+            bias: wgpu::DepthBiasState::default(),
+        };
+
+        let stencil_for_clip_dec = wgpu::DepthStencilState {
+            format: ds_format,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Always),
+            stencil: wgpu::StencilState {
+                front: wgpu::StencilFaceState {
+                    compare: wgpu::CompareFunction::Equal,
+                    fail_op: wgpu::StencilOperation::Keep,
+                    depth_fail_op: wgpu::StencilOperation::Keep,
+                    pass_op: wgpu::StencilOperation::DecrementClamp,
+                },
+                back: wgpu::StencilFaceState {
+                    compare: wgpu::CompareFunction::Equal,
+                    fail_op: wgpu::StencilOperation::Keep,
+                    depth_fail_op: wgpu::StencilOperation::Keep,
+                    pass_op: wgpu::StencilOperation::DecrementClamp,
+                },
+                read_mask: 0xFF,
+                write_mask: 0xFF,
+            },
+            bias: wgpu::DepthBiasState::default(),
+        };
+
+        let _multisample_state = wgpu::MultisampleState {
+            count: msaa_samples,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        };
+
+        // PIPELINES
+
+        // Single shared sampler for images/text
+        let image_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("image/text sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            ..Default::default()
+        });
+
+        // Layout for Text / RGBA Images (Texture + Sampler)
+        let text_bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("text/rgba bind layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        // We reuse this for RGBA images for simplicity, or create a distinct one
+        let image_bind_layout_rgba = text_bind_layout.clone();
+
+        // Layout for NV12 Images (TextureY + TextureUV + Sampler + YuvTransform uniform)
+        let image_bind_layout_nv12 =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("image bind layout nv12"),
+                entries: &[
+                    // Y plane
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    // UV plane
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    // Sampler
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                    // YUV transform uniform buffer
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        // Clipping layout
+        let clip_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("clip pipeline layout"),
+            bind_group_layouts: &[Some(&globals_layout)],
+            immediate_size: 0,
+        });
+        let clip_vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<ClipInstance>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    shader_location: 0,
+                    offset: 0,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 1,
+                    offset: 16,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 2,
+                    offset: 32,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+            ],
+        };
+        let clip_color_target = wgpu::ColorTargetState {
+            format: output_format,
+            blend: None,
+            write_mask: wgpu::ColorWrites::empty(),
+        };
+
+        // Two sets of pipelines: one for the MSAA surface pass, one for layer
+        // render-to-texture passes (sample_count = 1).
+        let surface_pipes = Pipelines::create(
+            &device,
+            output_format,
+            msaa_samples,
+            &globals_layout,
+            &text_bind_layout,
+            &image_bind_layout_nv12,
+            &clip_pipeline_layout,
+            &stencil_for_content,
+            &stencil_for_clip_inc,
+            &stencil_for_clip_dec,
+            &clip_color_target,
+            &clip_vertex_layout,
+        );
+        let layer_pipes = Pipelines::create(
+            &device,
+            output_format,
+            1,
+            &globals_layout,
+            &text_bind_layout,
+            &image_bind_layout_nv12,
+            &clip_pipeline_layout,
+            &stencil_for_content,
+            &stencil_for_clip_inc,
+            &stencil_for_clip_dec,
+            &clip_color_target,
+            &clip_vertex_layout,
+        );
+
+        // Vector glyph rendering always available with tessellation+MSAA approach.
+        let slug_enabled = true;
+
+        // Blur composite ring (for graphics-layer drop shadows)
+        let blur_ring = UploadRing::new(&device, "blur ring", 1024 * 1024);
+
+        // Atlases
+        let atlas_mask = init_atlas_mask(&device);
+        let atlas_color = init_atlas_color(&device);
+
+        // Upload rings
+        let ring_rect = UploadRing::new(&device, "ring rect", 1 << 20);
+        let ring_border = UploadRing::new(&device, "ring border", 1 << 20);
+        let ring_ellipse = UploadRing::new(&device, "ring ellipse", 1 << 20);
+        let ring_ellipse_border = UploadRing::new(&device, "ring ellipse border", 1 << 20);
+        let ring_arc = UploadRing::new(&device, "ring arc", 1 << 20);
+        let ring_glyph_mask = UploadRing::new(&device, "ring glyph mask", 1 << 20);
+        let ring_glyph_color = UploadRing::new(&device, "ring glyph color", 1 << 20);
+        let ring_slug = UploadRing::new(&device, "ring slug", 1 << 22);
+        let ring_clip = UploadRing::new(&device, "ring clip", 1 << 16);
+        let ring_nv12 = UploadRing::new(&device, "ring nv12", 1 << 20);
+
+        // Placeholder textures
+        let depth_stencil_tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("temp ds"),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth24PlusStencil8,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let depth_stencil_view =
+            depth_stencil_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut backend = Self {
+            surface: None,
+            surface_config: None,
+            device,
+            queue,
+            output_format,
+            output_width: 0,
+            output_height: 0,
+
+            surface_pipes,
+            layer_pipes,
+
+            rects: InstancedPipe::new(ring_rect),
+            borders: InstancedPipe::new(ring_border),
+            ellipses: InstancedPipe::new(ring_ellipse),
+            ellipse_borders: InstancedPipe::new(ring_ellipse_border),
+            arcs: InstancedPipe::new(ring_arc),
+            glyph_mask: InstancedPipe::new(ring_glyph_mask),
+            glyph_color: InstancedPipe::new(ring_glyph_color),
+
+            text_bind_layout,
+
+            image_bind_layout_rgba,
+            image_bind_layout_nv12,
+            image_sampler,
+
+            blur_ring,
+
+            slug_enabled,
+            slug_ring: ring_slug,
+            slug_cache: slug::GlyphSlugCache::new(),
+
+            clip_ring: ring_clip,
+
+            nv12: InstancedPipe::new(ring_nv12),
+
+            msaa_samples,
+            depth_stencil_tex,
+            depth_stencil_view,
+            msaa_tex: None,
+            msaa_view: None,
+            globals_bind,
+            globals_buf,
+            globals_layout,
+
+            atlas_mask,
+            atlas_color,
+
+            next_image_handle: 1,
+            images: HashMap::new(),
+
+            frame_index: 0,
+            image_bytes_total: 0,
+            image_evict_after_frames: 600,         // ~10s @ 60fps
+            image_budget_bytes: 512 * 1024 * 1024, // 512 MB
+            layer_pool: HashMap::new(),
+
+            working_space: false,
+            ws_tex: None,
+            ws_view: None,
+            ws_bind: None,
+            display_pipeline: None,
+            display_layout: None,
+        };
+
+        backend.recreate_msaa_and_depth_stencil();
+        backend
+    }
+
+    #[cfg(feature = "winit-surface")]
     pub async fn new_async(window: Arc<winit::window::Window>) -> anyhow::Result<Self> {
         let instance: Instance;
 
@@ -1498,8 +1878,8 @@ impl WgpuBackend {
         let blur_ring = UploadRing::new(&device, "blur ring", 1024 * 1024);
 
         // Atlases
-        let atlas_mask = Self::init_atlas_mask(&device)?;
-        let atlas_color = Self::init_atlas_color(&device)?;
+        let atlas_mask = init_atlas_mask(&device);
+        let atlas_color = init_atlas_color(&device);
 
         // Upload rings
         let ring_rect = UploadRing::new(&device, "ring rect", 1 << 20);
@@ -1532,10 +1912,13 @@ impl WgpuBackend {
             depth_stencil_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
         let mut backend = Self {
-            surface,
+            surface: Some(surface),
             device,
             queue,
-            config,
+            output_format: config.format,
+            output_width: size.width.max(1),
+            output_height: size.height.max(1),
+            surface_config: Some(config),
 
             surface_pipes,
             layer_pipes,
@@ -1597,12 +1980,12 @@ impl WgpuBackend {
         Ok(backend)
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(feature = "winit-surface", not(target_arch = "wasm32")))]
     pub fn new(window: Arc<winit::window::Window>) -> anyhow::Result<Self> {
         pollster::block_on(Self::new_async(window))
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(feature = "winit-surface", target_arch = "wasm32"))]
     pub fn new(_window: Arc<winit::window::Window>) -> anyhow::Result<Self> {
         anyhow::bail!("Use WgpuBackend::new_async(window).await on wasm32")
     }
@@ -2319,7 +2702,7 @@ impl WgpuBackend {
                     module: &shader,
                     entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: self.config.format,
+                        format: self.output_format,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -2338,8 +2721,8 @@ impl WgpuBackend {
         if !self.working_space {
             return;
         }
-        let w = self.config.width.max(1);
-        let h = self.config.height.max(1);
+        let w = self.output_width.max(1);
+        let h = self.output_height.max(1);
 
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("working space"),
@@ -2382,14 +2765,14 @@ impl WgpuBackend {
             let tex = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("msaa color"),
                 size: wgpu::Extent3d {
-                    width: self.config.width.max(1),
-                    height: self.config.height.max(1),
+                    width: self.output_width.max(1),
+                    height: self.output_height.max(1),
                     depth_or_array_layers: 1,
                 },
                 mip_level_count: 1,
                 sample_count: self.msaa_samples,
                 dimension: wgpu::TextureDimension::D2,
-                format: self.config.format,
+                format: self.output_format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 view_formats: &[],
             });
@@ -2404,8 +2787,8 @@ impl WgpuBackend {
         self.depth_stencil_tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("depth-stencil (stencil clips)"),
             size: wgpu::Extent3d {
-                width: self.config.width.max(1),
-                height: self.config.height.max(1),
+                width: self.output_width.max(1),
+                height: self.output_height.max(1),
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -2420,84 +2803,7 @@ impl WgpuBackend {
             .create_view(&wgpu::TextureViewDescriptor::default());
     }
 
-    fn init_atlas_mask(device: &wgpu::Device) -> anyhow::Result<AtlasA8> {
-        let size = 1024u32;
-        let tex = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("glyph atlas A8"),
-            size: wgpu::Extent3d {
-                width: size,
-                height: size,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("glyph atlas sampler A8"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Linear,
-            ..Default::default()
-        });
 
-        Ok(AtlasA8 {
-            tex,
-            view,
-            sampler,
-            size,
-            next_x: 1,
-            next_y: 1,
-            row_h: 0,
-            map: HashMap::new(),
-        })
-    }
-
-    fn init_atlas_color(device: &wgpu::Device) -> anyhow::Result<AtlasRGBA> {
-        let size = 1024u32;
-        let tex = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("glyph atlas RGBA"),
-            size: wgpu::Extent3d {
-                width: size,
-                height: size,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("glyph atlas sampler RGBA"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Linear,
-            ..Default::default()
-        });
-        Ok(AtlasRGBA {
-            tex,
-            view,
-            sampler,
-            size,
-            next_x: 1,
-            next_y: 1,
-            row_h: 0,
-            map: HashMap::new(),
-        })
-    }
 
     fn get_or_create_layer(
         &mut self,
@@ -2523,7 +2829,7 @@ impl WgpuBackend {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: self.config.format,
+            format: self.output_format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
@@ -2858,57 +3164,142 @@ fn brush_to_solid_color(brush: &Brush) -> [f32; 4] {
     }
 }
 
+fn init_atlas_mask(device: &wgpu::Device) -> AtlasA8 {
+    let size = 1024u32;
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("glyph atlas A8"),
+        size: wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::R8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("glyph atlas sampler A8"),
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        address_mode_w: wgpu::AddressMode::ClampToEdge,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::MipmapFilterMode::Linear,
+        ..Default::default()
+    });
+
+    AtlasA8 {
+        tex,
+        view,
+        sampler,
+        size,
+        next_x: 1,
+        next_y: 1,
+        row_h: 0,
+        map: HashMap::new(),
+    }
+}
+
+fn init_atlas_color(device: &wgpu::Device) -> AtlasRGBA {
+    let size = 1024u32;
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("glyph atlas RGBA"),
+        size: wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("glyph atlas sampler RGBA"),
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        address_mode_w: wgpu::AddressMode::ClampToEdge,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::MipmapFilterMode::Linear,
+        ..Default::default()
+    });
+    AtlasRGBA {
+        tex,
+        view,
+        sampler,
+        size,
+        next_x: 1,
+        next_y: 1,
+        row_h: 0,
+        map: HashMap::new(),
+    }
+}
+
+#[cfg(feature = "winit-surface")]
 impl RenderBackend for WgpuBackend {
     fn configure_surface(&mut self, width: u32, height: u32) {
         if width == 0 || height == 0 {
             return;
         }
-        self.config.width = width;
-        self.config.height = height;
-        self.surface.configure(&self.device, &self.config);
+        self.output_width = width;
+        self.output_height = height;
+        if let Some(ref mut config) = self.surface_config {
+            config.width = width;
+            config.height = height;
+        }
+        if let (Some(surface), Some(config)) = (self.surface.as_ref(), self.surface_config.as_ref()) {
+            surface.configure(&self.device, config);
+        }
         self.recreate_msaa_and_depth_stencil();
         self.recreate_working_space_texture();
     }
 
     fn frame(&mut self, scene: &Scene, _glyph_cfg: GlyphRasterConfig) {
-        // Frame start maintenance
+        let surface = self.surface.as_ref().expect("WgpuBackend::frame() requires a surface (use from_device + render_to_view instead)");
+        let surface_config = self.surface_config.as_ref().expect("surface_config required for frame()");
+
         self.frame_index = self.frame_index.wrapping_add(1);
         self.slug_cache.next_frame();
 
-        if self.config.width == 0 || self.config.height == 0 {
+        if self.output_width == 0 || self.output_height == 0 {
             return;
         }
+
         let mut retries = 0u32;
         const MAX_RETRIES: u32 = 4;
         let frame = loop {
-            match self.surface.get_current_texture() {
+            match surface.get_current_texture() {
                 wgpu::CurrentSurfaceTexture::Success(f) => break f,
                 wgpu::CurrentSurfaceTexture::Suboptimal(f) => {
                     log::warn!("suboptimal surface; reconfiguring");
-                    self.surface.configure(&self.device, &self.config);
+                    surface.configure(&self.device, surface_config);
                     break f;
                 }
                 wgpu::CurrentSurfaceTexture::Outdated => {
                     retries += 1;
                     if retries >= MAX_RETRIES {
-                        log::warn!(
-                            "surface outdated persisted after {MAX_RETRIES} retries; skipping frame"
-                        );
+                        log::warn!("surface outdated persisted after {MAX_RETRIES} retries; skipping frame");
                         return;
                     }
                     log::warn!("surface outdated; reconfiguring");
-                    self.surface.configure(&self.device, &self.config);
+                    surface.configure(&self.device, surface_config);
                 }
                 wgpu::CurrentSurfaceTexture::Lost => {
                     retries += 1;
                     if retries >= MAX_RETRIES {
-                        log::warn!(
-                            "surface lost persisted after {MAX_RETRIES} retries; skipping frame"
-                        );
+                        log::warn!("surface lost persisted after {MAX_RETRIES} retries; skipping frame");
                         return;
                     }
                     log::warn!("surface lost; reconfiguring");
-                    self.surface.configure(&self.device, &self.config);
+                    surface.configure(&self.device, surface_config);
                 }
                 wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
                     request_frame();
@@ -2917,16 +3308,43 @@ impl RenderBackend for WgpuBackend {
                 wgpu::CurrentSurfaceTexture::Validation => {
                     retries += 1;
                     if retries >= MAX_RETRIES {
-                        log::warn!(
-                            "surface validation persisted after {MAX_RETRIES} retries; skipping frame"
-                        );
+                        log::warn!("surface validation persisted after {MAX_RETRIES} retries; skipping frame");
                         return;
                     }
-                    self.surface.configure(&self.device, &self.config);
+                    surface.configure(&self.device, surface_config);
                 }
             }
         };
 
+        let swap_view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("frame encoder"),
+        });
+
+        let clear_color = Some([
+            scene.clear_color.0 as f64 / 255.0,
+            scene.clear_color.1 as f64 / 255.0,
+            scene.clear_color.2 as f64 / 255.0,
+            scene.clear_color.3 as f64 / 255.0,
+        ]);
+
+        self.render_scene_to_encoder(scene, &mut encoder, &swap_view, clear_color);
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+        if let Err(e) = catch_unwind(AssertUnwindSafe(|| self.queue.present(frame))) {
+            log::warn!("queue.present panicked: {:?}", e);
+        }
+    }
+}
+
+impl WgpuBackend {
+    pub fn render_scene_to_encoder(
+        &mut self,
+        scene: &Scene,
+        encoder: &mut wgpu::CommandEncoder,
+        target_view: &wgpu::TextureView,
+        clear_color_override: Option<[f64; 4]>,
+    ) {
         fn to_ndc(x: f32, y: f32, w: f32, h: f32, fb_w: f32, fb_h: f32) -> [f32; 4] {
             let x0 = (x / fb_w) * 2.0 - 1.0;
             let y0 = 1.0 - (y / fb_h) * 2.0;
@@ -2981,8 +3399,8 @@ impl RenderBackend for WgpuBackend {
             (x as u32, y as u32, w as u32, h as u32)
         }
 
-        let fb_w = self.config.width as f32;
-        let fb_h = self.config.height as f32;
+        let fb_w = self.output_width as f32;
+        let fb_h = self.output_height as f32;
 
         let globals = Globals {
             ndc_to_px: [fb_w * 0.5, fb_h * 0.5],
@@ -2992,14 +3410,22 @@ impl RenderBackend for WgpuBackend {
             .write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&globals));
 
         let mut passes: Vec<Pass> = Vec::with_capacity(1);
+        let clear_color = clear_color_override.unwrap_or_else(|| {
+            [
+                scene.clear_color.0 as f64 / 255.0,
+                scene.clear_color.1 as f64 / 255.0,
+                scene.clear_color.2 as f64 / 255.0,
+                scene.clear_color.3 as f64 / 255.0,
+            ]
+        });
         let mut current_pass: Pass = Pass {
             target: PassTarget::Surface,
-            initial_scissor: (0, 0, self.config.width, self.config.height),
+            initial_scissor: (0, 0, self.output_width, self.output_height),
             clear_color: Some([
-                scene.clear_color.0 as f32 / 255.0,
-                scene.clear_color.1 as f32 / 255.0,
-                scene.clear_color.2 as f32 / 255.0,
-                scene.clear_color.3 as f32 / 255.0,
+                clear_color[0] as f32,
+                clear_color[1] as f32,
+                clear_color[2] as f32,
+                clear_color[3] as f32,
             ]),
             cmds: Vec::with_capacity(scene.nodes.len()),
         };
@@ -3147,7 +3573,6 @@ impl RenderBackend for WgpuBackend {
                 }
             };
         }
-
         for node in &scene.nodes {
             let t_identity = Transform::identity();
             let current_transform = transform_stack.last().unwrap_or(&t_identity);
@@ -3918,7 +4343,7 @@ impl RenderBackend for WgpuBackend {
                         &mut current_pass,
                         Pass {
                             target: target_stack.pop().unwrap_or(PassTarget::Surface),
-                            initial_scissor: (0, 0, self.config.width, self.config.height),
+                            initial_scissor: (0, 0, self.output_width, self.output_height),
                             clear_color: None, // LoadOp::Load - don't wipe earlier surface content
                             cmds: Vec::new(),
                         },
@@ -4055,12 +4480,6 @@ impl RenderBackend for WgpuBackend {
         // Push the final pass.
         passes.push(current_pass);
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("frame encoder"),
-            });
-
         let bind_mask = self.atlas_bind_group_mask();
         let bind_color = self.atlas_bind_group_color();
         let mut clip_depth: u32 = 0;
@@ -4068,9 +4487,7 @@ impl RenderBackend for WgpuBackend {
         for pass in std::mem::take(&mut passes) {
             let (color_view, resolve_target, depth_stencil_view, is_layer) = match pass.target {
                 PassTarget::Surface => {
-                    let swap_view = frame
-                        .texture
-                        .create_view(&wgpu::TextureViewDescriptor::default());
+                    let swap_view = target_view.clone();
                     let use_ws = self.working_space && self.ws_view.is_some();
                     let (color, resolve) = if use_ws {
                         let ws_view = self.ws_view.as_ref().unwrap();
@@ -4359,9 +4776,7 @@ impl RenderBackend for WgpuBackend {
             if let (Some(_ws_view), Some(ws_bind), Some(display_pipeline)) =
                 (&self.ws_view, &self.ws_bind, &self.display_pipeline)
             {
-                let swap_view = frame
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
+                let swap_view = target_view.clone();
                 let mut display_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("display transform"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -4384,15 +4799,37 @@ impl RenderBackend for WgpuBackend {
             }
         }
 
-        self.queue.submit(std::iter::once(encoder.finish()));
-        if let Err(e) = catch_unwind(AssertUnwindSafe(|| self.queue.present(frame))) {
-            log::warn!("queue.present panicked: {:?}", e);
-        }
 
         // Frame end maintenance: Evict unused images
         self.evict_unused_images();
     }
+
+    /// Render a scene into an externally-provided texture view.
+    /// Use this when embedding Repose in a host that owns the GPU.
+    /// The host is responsible for submitting the encoder and handling present.
+    pub fn render_to_view(
+        &mut self,
+        scene: &Scene,
+        encoder: &mut wgpu::CommandEncoder,
+        target_view: &wgpu::TextureView,
+        width: u32,
+        height: u32,
+        clear_color: Option<[f64; 4]>,
+    ) {
+        self.output_width = width;
+        self.output_height = height;
+
+        self.frame_index = self.frame_index.wrapping_add(1);
+        self.slug_cache.next_frame();
+
+        if width == 0 || height == 0 {
+            return;
+        }
+
+        self.render_scene_to_encoder(scene, encoder, target_view, clear_color);
+    }
 }
+
 
 fn intersect(a: repose_core::Rect, b: repose_core::Rect) -> repose_core::Rect {
     let x0 = a.x.max(b.x);

@@ -5,11 +5,15 @@ edition.workspace = true
 license.workspace = true
 description = "Repose wgpu handler"
 
+[features]
+default = ["winit-surface"]
+winit-surface = ["dep:winit"]
+
 [dependencies]
 repose-core.workspace = true
 repose-text.workspace = true
 wgpu = { workspace = true }
-winit = { workspace = true }
+winit = { workspace = true, optional = true }
 log = { workspace = true }
 anyhow = { workspace = true }
 bytemuck = { workspace = true }
