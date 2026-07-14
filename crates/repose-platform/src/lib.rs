@@ -520,7 +520,8 @@ pub fn run_desktop_app(
                         w.set_visible(true);
 
                         let size = w.inner_size();
-                        self.rt.sched.size = (size.width, size.height);
+                        let sf = w.scale_factor() as f32;
+                        self.rt.set_viewport_and_scale(size.width, size.height, sf);
 
                         match repose_render_wgpu::WgpuBackend::new(w.clone()) {
                             Ok(b) => {
@@ -646,7 +647,8 @@ pub fn run_desktop_app(
                 }
 
                 WindowEvent::Resized(size) => {
-                    self.rt.sched.size = (size.width, size.height);
+                    let sf = self.window.as_ref().map(|w| w.scale_factor() as f32).unwrap_or(1.0);
+                    self.rt.set_viewport_and_scale(size.width, size.height, sf);
                     if let Some(b) = self.backend.as_mut() {
                         b.configure_surface(size.width, size.height);
                     }
@@ -1600,9 +1602,10 @@ pub fn run_desktop_app(
 
                     let t0 = Instant::now();
                     let scale = win.scale_factor() as f32;
+                    self.rt.scale = scale;
                     let focused = self.rt.sched.focused;
 
-                    let output = self.rt.frame(&mut self.root, &self.render, scale);
+                    let output = self.rt.frame(&mut self.root, &self.render);
 
                     // Apply cursor from platform output
                     if let Some(cursor) = &output.platform.cursor {

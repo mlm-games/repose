@@ -1,10 +1,8 @@
-use parking_lot::RwLock;
-use std::sync::OnceLock;
+use std::cell::RefCell;
 use web_time::{Duration, Instant};
 
 pub(crate) fn now() -> Instant {
-    let lock = CLOCK.get_or_init(|| RwLock::new(Box::new(SystemClock) as Box<dyn Clock>));
-    lock.read().now()
+    CLOCK.with(|c| c.borrow().now())
 }
 
 /// Physical spring parameters. Duration is emergent (determined by physics), not specified.
@@ -700,16 +698,17 @@ impl Clock for SystemClock {
     }
 }
 
-static CLOCK: OnceLock<RwLock<Box<dyn Clock>>> = OnceLock::new();
-
-/// Install a global animation clock. Platform sets this to SystemClock; tests can set TestClock.
-pub fn set_clock(clock: Box<dyn Clock>) {
-    let lock = CLOCK.get_or_init(|| RwLock::new(Box::new(SystemClock) as Box<dyn Clock>));
-    *lock.write() = clock;
+thread_local! {
+    static CLOCK: RefCell<Box<dyn Clock>> = RefCell::new(Box::new(SystemClock) as Box<dyn Clock>);
 }
-/// Install default system clock if none present (idempotent).
+
+/// Install a per-thread animation clock.
+pub fn set_clock(clock: Box<dyn Clock>) {
+    CLOCK.with(|c| *c.borrow_mut() = clock);
+}
+/// Ensure a system clock is installed on this thread (always present since thread_local initializes it).
 pub fn ensure_system_clock() {
-    let _ = CLOCK.get_or_init(|| RwLock::new(Box::new(SystemClock) as Box<dyn Clock>));
+    // Already initialized by thread_local default — no-op.
 }
 
 /// A test clock you can drive deterministically.

@@ -77,6 +77,7 @@ pub struct PointerButtonResult {
 /// is purely the UI logic layer.
 pub struct ReposeRuntime {
     pub sched: Scheduler,
+    pub scale: f32,
 
     // Input state
     pub modifiers: Modifiers,
@@ -102,6 +103,7 @@ impl ReposeRuntime {
     pub fn new() -> Self {
         Self {
             sched: Scheduler::new(),
+            scale: 1.0,
             modifiers: Modifiers::default(),
             mouse_pos_px: (0.0, 0.0),
             hover_id: None,
@@ -122,6 +124,11 @@ impl ReposeRuntime {
         self.sched.size = (width_px, height_px);
     }
 
+    /// Set viewport size and DPI scale factor.
+    pub fn set_viewport_and_scale(&mut self, width_px: u32, height_px: u32, scale: f32) {
+        self.scale = scale;
+        self.sched.size = (width_px, height_px);
+    }
 
     /// Advance animations. Call before `compose` each frame.
     pub fn tick_animations(&self) {
@@ -137,7 +144,6 @@ impl ReposeRuntime {
         &mut self,
         root_fn: &mut F,
         render_ctx: &RenderContext,
-        scale: f32,
     ) -> Frame
     where
         F: FnMut(&mut Scheduler, &RenderContext) -> View,
@@ -148,7 +154,7 @@ impl ReposeRuntime {
         compose_frame_inner(
             &mut self.sched,
             &mut inner,
-            scale,
+            self.scale,
             size,
             self.hover_id,
             &self.pressed_ids,
@@ -161,9 +167,8 @@ impl ReposeRuntime {
         &mut self,
         mut root_fn: impl FnMut(&mut Scheduler, &RenderContext) -> View,
         render_ctx: &RenderContext,
-        scale: f32,
     ) -> FrameOutput {
-        let f = self.compose(&mut root_fn, render_ctx, scale);
+        let f = self.compose(&mut root_fn, render_ctx);
         let wants_pointer = !f.hit_regions.is_empty() || self.hover_id.is_some() || self.capture_id.is_some();
         let wants_keyboard = !self.textfield_states.is_empty() || self.ime_preedit;
         let platform = PlatformOutput {

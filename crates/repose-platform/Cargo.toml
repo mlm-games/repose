@@ -7,7 +7,7 @@ description = "Platform runners (winit Desktop, Android and Web)"
 
 [dependencies]
 repose-app.workspace = true
-repose-core.workspace = true
+repose-core = { workspace = true, features = ["accesskit"] }
 repose-ui.workspace = true
 repose-navigation.workspace = true
 repose-render-wgpu.workspace = true

@@ -130,6 +130,9 @@ pub mod signal;
 pub mod state;
 pub mod tests;
 pub mod text;
+
+#[cfg(feature = "accesskit")]
+pub mod a11y;
 pub mod view;
 
 pub use color::*;

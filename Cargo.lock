@@ -2968,6 +2968,7 @@ dependencies = [
 name = "repose-core"
 version = "0.23.3"
 dependencies = [
+ "accesskit",
  "bitflags 2.13.0",
  "log",
  "parking_lot",
