@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 #[cfg(feature = "winit-surface")]
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::ops::{Deref, DerefMut};
 
 use repose_core::color::{ChromaSiting, ColorInfo, PixelFormat};
 use repose_core::request_frame;
@@ -103,14 +104,12 @@ struct Globals {
     _pad: [f32; 2],
 }
 
-pub struct WgpuBackend {
-    surface: Option<wgpu::Surface<'static>>,
-    surface_config: Option<wgpu::SurfaceConfiguration>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    output_format: wgpu::TextureFormat,
-    output_width: u32,
-    output_height: u32,
+pub struct WgpuSceneRenderer {
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub output_format: wgpu::TextureFormat,
+    pub output_width: u32,
+    pub output_height: u32,
 
     // Render pipelines. Two sets: one for the MSAA surface pass, one for
     // graphics-layer render-to-texture passes (sample_count = 1).
@@ -190,7 +189,24 @@ pub struct WgpuBackend {
     display_layout: Option<wgpu::BindGroupLayout>,
 }
 
-impl Drop for WgpuBackend {
+pub struct WgpuSurfaceBackend {
+    pub surface: Option<wgpu::Surface<'static>>,
+    pub surface_config: Option<wgpu::SurfaceConfiguration>,
+    pub renderer: WgpuSceneRenderer,
+}
+
+impl std::ops::Deref for WgpuSurfaceBackend {
+    type Target = WgpuSceneRenderer;
+    fn deref(&self) -> &Self::Target { &self.renderer }
+}
+impl std::ops::DerefMut for WgpuSurfaceBackend {
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.renderer }
+}
+
+#[cfg(feature = "winit-surface")]
+pub type WgpuBackend = WgpuSurfaceBackend;
+
+impl Drop for WgpuSceneRenderer {
     fn drop(&mut self) {
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
     }
@@ -1159,11 +1175,12 @@ fn swash_to_a8_coverage(content: repose_text::SwashContent, data: &[u8]) -> Opti
     }
 }
 
-impl WgpuBackend {
+impl WgpuSceneRenderer {
     pub fn from_device(
         device: wgpu::Device,
         queue: wgpu::Queue,
         output_format: wgpu::TextureFormat,
+        msaa_samples: u32,
     ) -> Self {
         let globals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("globals layout"),
@@ -1195,8 +1212,6 @@ impl WgpuBackend {
             }],
         });
 
-        // Pick MSAA sample count (conservative default for headless path)
-        let msaa_samples = 1;
 
         let ds_format = wgpu::TextureFormat::Depth24PlusStencil8;
 
@@ -1465,9 +1480,7 @@ impl WgpuBackend {
         let depth_stencil_view =
             depth_stencil_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut backend = Self {
-            surface: None,
-            surface_config: None,
+        let mut renderer = WgpuSceneRenderer {
             device,
             queue,
             output_format,
@@ -1530,12 +1543,14 @@ impl WgpuBackend {
             display_layout: None,
         };
 
-        backend.recreate_msaa_and_depth_stencil();
-        backend
+        renderer.recreate_msaa_and_depth_stencil();
+        renderer
     }
+}
 
+impl WgpuSurfaceBackend {
     #[cfg(feature = "winit-surface")]
-    pub async fn new_async(window: Arc<winit::window::Window>) -> anyhow::Result<Self> {
+    pub async fn new_async(window: Arc<winit::window::Window>) -> anyhow::Result<WgpuSurfaceBackend> {
         let instance: Instance;
 
         if cfg!(target_arch = "wasm32") {
@@ -1589,49 +1604,6 @@ impl WgpuBackend {
             .unwrap_or(wgpu::PresentMode::Fifo);
         let alpha_mode = caps.alpha_modes[0];
 
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format,
-            width: size.width.max(1),
-            height: size.height.max(1),
-            present_mode,
-            alpha_mode,
-            color_space: wgpu::SurfaceColorSpace::Auto,
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2,
-        };
-        surface.configure(&device, &config);
-
-        let globals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("globals layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
-        let globals_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("globals buf"),
-            size: std::mem::size_of::<Globals>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let globals_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("globals bind"),
-            layout: &globals_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: globals_buf.as_entire_binding(),
-            }],
-        });
-
         // Pick MSAA sample count
         let fmt_features = adapter.get_texture_format_features(format);
         let msaa_samples = if fmt_features.flags.sample_count_supported(4)
@@ -1644,352 +1616,36 @@ impl WgpuBackend {
             1
         };
 
-        let ds_format = wgpu::TextureFormat::Depth24PlusStencil8;
+        let renderer = WgpuSceneRenderer::from_device(device, queue, format, msaa_samples);
 
-        let stencil_for_content = wgpu::DepthStencilState {
-            format: ds_format,
-            depth_write_enabled: Some(false),
-            depth_compare: Some(wgpu::CompareFunction::Always),
-            stencil: wgpu::StencilState {
-                front: wgpu::StencilFaceState {
-                    compare: wgpu::CompareFunction::LessEqual,
-                    fail_op: wgpu::StencilOperation::Keep,
-                    depth_fail_op: wgpu::StencilOperation::Keep,
-                    pass_op: wgpu::StencilOperation::Keep,
-                },
-                back: wgpu::StencilFaceState {
-                    compare: wgpu::CompareFunction::LessEqual,
-                    fail_op: wgpu::StencilOperation::Keep,
-                    depth_fail_op: wgpu::StencilOperation::Keep,
-                    pass_op: wgpu::StencilOperation::Keep,
-                },
-                read_mask: 0xFF,
-                write_mask: 0x00,
-            },
-            bias: wgpu::DepthBiasState::default(),
-        };
-
-        let stencil_for_clip_inc = wgpu::DepthStencilState {
-            format: ds_format,
-            depth_write_enabled: Some(false),
-            depth_compare: Some(wgpu::CompareFunction::Always),
-            stencil: wgpu::StencilState {
-                front: wgpu::StencilFaceState {
-                    compare: wgpu::CompareFunction::Equal,
-                    fail_op: wgpu::StencilOperation::Keep,
-                    depth_fail_op: wgpu::StencilOperation::Keep,
-                    pass_op: wgpu::StencilOperation::IncrementClamp,
-                },
-                back: wgpu::StencilFaceState {
-                    compare: wgpu::CompareFunction::Equal,
-                    fail_op: wgpu::StencilOperation::Keep,
-                    depth_fail_op: wgpu::StencilOperation::Keep,
-                    pass_op: wgpu::StencilOperation::IncrementClamp,
-                },
-                read_mask: 0xFF,
-                write_mask: 0xFF,
-            },
-            bias: wgpu::DepthBiasState::default(),
-        };
-
-        let stencil_for_clip_dec = wgpu::DepthStencilState {
-            format: ds_format,
-            depth_write_enabled: Some(false),
-            depth_compare: Some(wgpu::CompareFunction::Always),
-            stencil: wgpu::StencilState {
-                front: wgpu::StencilFaceState {
-                    compare: wgpu::CompareFunction::Equal,
-                    fail_op: wgpu::StencilOperation::Keep,
-                    depth_fail_op: wgpu::StencilOperation::Keep,
-                    pass_op: wgpu::StencilOperation::DecrementClamp,
-                },
-                back: wgpu::StencilFaceState {
-                    compare: wgpu::CompareFunction::Equal,
-                    fail_op: wgpu::StencilOperation::Keep,
-                    depth_fail_op: wgpu::StencilOperation::Keep,
-                    pass_op: wgpu::StencilOperation::DecrementClamp,
-                },
-                read_mask: 0xFF,
-                write_mask: 0xFF,
-            },
-            bias: wgpu::DepthBiasState::default(),
-        };
-
-        let _multisample_state = wgpu::MultisampleState {
-            count: msaa_samples,
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        };
-
-        // PIPELINES
-
-        // Single shared sampler for images/text
-        let image_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("image/text sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Linear,
-            ..Default::default()
-        });
-
-        // Layout for Text / RGBA Images (Texture + Sampler)
-        let text_bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("text/rgba bind layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-        // We reuse this for RGBA images for simplicity, or create a distinct one
-        let image_bind_layout_rgba = text_bind_layout.clone();
-
-        // Layout for NV12 Images (TextureY + TextureUV + Sampler + YuvTransform uniform)
-        let image_bind_layout_nv12 =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("image bind layout nv12"),
-                entries: &[
-                    // Y plane
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        },
-                        count: None,
-                    },
-                    // UV plane
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        },
-                        count: None,
-                    },
-                    // Sampler
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                    // YUV transform uniform buffer
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
-            });
-
-        // Clipping layout
-        let clip_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("clip pipeline layout"),
-            bind_group_layouts: &[Some(&globals_layout)],
-            immediate_size: 0,
-        });
-        let clip_vertex_layout = wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<ClipInstance>() as u64,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    shader_location: 0,
-                    offset: 0,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    shader_location: 1,
-                    offset: 16,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    shader_location: 2,
-                    offset: 32,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-            ],
-        };
-        let clip_color_target = wgpu::ColorTargetState {
-            format: config.format,
-            blend: None,
-            write_mask: wgpu::ColorWrites::empty(),
-        };
-
-        // Two sets of pipelines: one for the MSAA surface pass, one for layer
-        // render-to-texture passes (sample_count = 1).
-        let surface_pipes = Pipelines::create(
-            &device,
-            config.format,
-            msaa_samples,
-            &globals_layout,
-            &text_bind_layout,
-            &image_bind_layout_nv12,
-            &clip_pipeline_layout,
-            &stencil_for_content,
-            &stencil_for_clip_inc,
-            &stencil_for_clip_dec,
-            &clip_color_target,
-            &clip_vertex_layout,
-        );
-        let layer_pipes = Pipelines::create(
-            &device,
-            config.format,
-            1,
-            &globals_layout,
-            &text_bind_layout,
-            &image_bind_layout_nv12,
-            &clip_pipeline_layout,
-            &stencil_for_content,
-            &stencil_for_clip_inc,
-            &stencil_for_clip_dec,
-            &clip_color_target,
-            &clip_vertex_layout,
-        );
-
-        // Vector glyph rendering always available with tessellation+MSAA approach.
-        let slug_enabled = true;
-
-        // Blur composite ring (for graphics-layer drop shadows)
-        let blur_ring = UploadRing::new(&device, "blur ring", 1024 * 1024);
-
-        // Atlases
-        let atlas_mask = init_atlas_mask(&device);
-        let atlas_color = init_atlas_color(&device);
-
-        // Upload rings
-        let ring_rect = UploadRing::new(&device, "ring rect", 1 << 20);
-        let ring_border = UploadRing::new(&device, "ring border", 1 << 20);
-        let ring_ellipse = UploadRing::new(&device, "ring ellipse", 1 << 20);
-        let ring_ellipse_border = UploadRing::new(&device, "ring ellipse border", 1 << 20);
-        let ring_arc = UploadRing::new(&device, "ring arc", 1 << 20);
-        let ring_glyph_mask = UploadRing::new(&device, "ring glyph mask", 1 << 20);
-        let ring_glyph_color = UploadRing::new(&device, "ring glyph color", 1 << 20);
-        let ring_slug = UploadRing::new(&device, "ring slug", 1 << 22);
-        let ring_clip = UploadRing::new(&device, "ring clip", 1 << 16);
-        let ring_nv12 = UploadRing::new(&device, "ring nv12", 1 << 20);
-
-        // Placeholder textures
-        let depth_stencil_tex = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("temp ds"),
-            size: wgpu::Extent3d {
-                width: 1,
-                height: 1,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth24PlusStencil8,
+        let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let depth_stencil_view =
-            depth_stencil_tex.create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mut backend = Self {
-            surface: Some(surface),
-            device,
-            queue,
-            output_format: config.format,
-            output_width: size.width.max(1),
-            output_height: size.height.max(1),
-            surface_config: Some(config),
-
-            surface_pipes,
-            layer_pipes,
-
-            rects: InstancedPipe::new(ring_rect),
-            borders: InstancedPipe::new(ring_border),
-            ellipses: InstancedPipe::new(ring_ellipse),
-            ellipse_borders: InstancedPipe::new(ring_ellipse_border),
-            arcs: InstancedPipe::new(ring_arc),
-            glyph_mask: InstancedPipe::new(ring_glyph_mask),
-            glyph_color: InstancedPipe::new(ring_glyph_color),
-
-            text_bind_layout,
-
-            image_bind_layout_rgba,
-            image_bind_layout_nv12,
-            image_sampler,
-
-            blur_ring,
-
-            slug_enabled,
-            slug_ring: ring_slug,
-            slug_cache: slug::GlyphSlugCache::new(),
-
-            clip_ring: ring_clip,
-
-            nv12: InstancedPipe::new(ring_nv12),
-
-            msaa_samples,
-            depth_stencil_tex,
-            depth_stencil_view,
-            msaa_tex: None,
-            msaa_view: None,
-            globals_bind,
-            globals_buf,
-            globals_layout,
-
-            atlas_mask,
-            atlas_color,
-
-            next_image_handle: 1,
-            images: HashMap::new(),
-
-            frame_index: 0,
-            image_bytes_total: 0,
-            image_evict_after_frames: 600,         // ~10s @ 60fps
-            image_budget_bytes: 512 * 1024 * 1024, // 512 MB
-            layer_pool: HashMap::new(),
-
-            working_space: false,
-            ws_tex: None,
-            ws_view: None,
-            ws_bind: None,
-            display_pipeline: None,
-            display_layout: None,
+            format,
+            width: size.width.max(1),
+            height: size.height.max(1),
+            present_mode,
+            alpha_mode,
+            color_space: wgpu::SurfaceColorSpace::Auto,
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
         };
+        surface.configure(&renderer.device, &config);
 
-        backend.recreate_msaa_and_depth_stencil();
-        Ok(backend)
+        Ok(WgpuSurfaceBackend { surface: Some(surface), surface_config: Some(config), renderer })
     }
 
     #[cfg(all(feature = "winit-surface", not(target_arch = "wasm32")))]
-    pub fn new(window: Arc<winit::window::Window>) -> anyhow::Result<Self> {
+    pub fn new(window: Arc<winit::window::Window>) -> anyhow::Result<WgpuSurfaceBackend> {
         pollster::block_on(Self::new_async(window))
     }
 
     #[cfg(all(feature = "winit-surface", target_arch = "wasm32"))]
-    pub fn new(_window: Arc<winit::window::Window>) -> anyhow::Result<Self> {
-        anyhow::bail!("Use WgpuBackend::new_async(window).await on wasm32")
+    pub fn new(_window: Arc<winit::window::Window>) -> anyhow::Result<WgpuSurfaceBackend> {
+        anyhow::bail!("Use WgpuSurfaceBackend::new_async(window).await on wasm32")
     }
+}
 
+impl WgpuSceneRenderer {
     // Image API
 
     pub fn set_image_from_bytes(
@@ -3244,32 +2900,32 @@ fn init_atlas_color(device: &wgpu::Device) -> AtlasRGBA {
 }
 
 #[cfg(feature = "winit-surface")]
-impl RenderBackend for WgpuBackend {
+impl RenderBackend for WgpuSurfaceBackend {
     fn configure_surface(&mut self, width: u32, height: u32) {
         if width == 0 || height == 0 {
             return;
         }
-        self.output_width = width;
-        self.output_height = height;
+        self.renderer.output_width = width;
+        self.renderer.output_height = height;
         if let Some(ref mut config) = self.surface_config {
             config.width = width;
             config.height = height;
         }
         if let (Some(surface), Some(config)) = (self.surface.as_ref(), self.surface_config.as_ref()) {
-            surface.configure(&self.device, config);
+            surface.configure(&self.renderer.device, config);
         }
-        self.recreate_msaa_and_depth_stencil();
-        self.recreate_working_space_texture();
+        self.renderer.recreate_msaa_and_depth_stencil();
+        self.renderer.recreate_working_space_texture();
     }
 
     fn frame(&mut self, scene: &Scene, _glyph_cfg: GlyphRasterConfig) {
-        let surface = self.surface.as_ref().expect("WgpuBackend::frame() requires a surface (use from_device + render_to_view instead)");
+        let surface = self.surface.as_ref().expect("WgpuSurfaceBackend::frame() requires a surface (use from_device + render_to_view instead)");
         let surface_config = self.surface_config.as_ref().expect("surface_config required for frame()");
 
-        self.frame_index = self.frame_index.wrapping_add(1);
-        self.slug_cache.next_frame();
+        self.renderer.frame_index = self.renderer.frame_index.wrapping_add(1);
+        self.renderer.slug_cache.next_frame();
 
-        if self.output_width == 0 || self.output_height == 0 {
+        if self.renderer.output_width == 0 || self.renderer.output_height == 0 {
             return;
         }
 
@@ -3280,7 +2936,7 @@ impl RenderBackend for WgpuBackend {
                 wgpu::CurrentSurfaceTexture::Success(f) => break f,
                 wgpu::CurrentSurfaceTexture::Suboptimal(f) => {
                     log::warn!("suboptimal surface; reconfiguring");
-                    surface.configure(&self.device, surface_config);
+                    surface.configure(&self.renderer.device, surface_config);
                     break f;
                 }
                 wgpu::CurrentSurfaceTexture::Outdated => {
@@ -3290,7 +2946,7 @@ impl RenderBackend for WgpuBackend {
                         return;
                     }
                     log::warn!("surface outdated; reconfiguring");
-                    surface.configure(&self.device, surface_config);
+                    surface.configure(&self.renderer.device, surface_config);
                 }
                 wgpu::CurrentSurfaceTexture::Lost => {
                     retries += 1;
@@ -3299,7 +2955,7 @@ impl RenderBackend for WgpuBackend {
                         return;
                     }
                     log::warn!("surface lost; reconfiguring");
-                    surface.configure(&self.device, surface_config);
+                    surface.configure(&self.renderer.device, surface_config);
                 }
                 wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
                     request_frame();
@@ -3311,13 +2967,13 @@ impl RenderBackend for WgpuBackend {
                         log::warn!("surface validation persisted after {MAX_RETRIES} retries; skipping frame");
                         return;
                     }
-                    surface.configure(&self.device, surface_config);
+                    surface.configure(&self.renderer.device, surface_config);
                 }
             }
         };
 
         let swap_view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        let mut encoder = self.renderer.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("frame encoder"),
         });
 
@@ -3328,16 +2984,16 @@ impl RenderBackend for WgpuBackend {
             scene.clear_color.3 as f64 / 255.0,
         ]);
 
-        self.render_scene_to_encoder(scene, &mut encoder, &swap_view, clear_color);
+        self.renderer.render_scene_to_encoder(scene, &mut encoder, &swap_view, clear_color);
 
-        self.queue.submit(std::iter::once(encoder.finish()));
-        if let Err(e) = catch_unwind(AssertUnwindSafe(|| self.queue.present(frame))) {
+        self.renderer.queue.submit(std::iter::once(encoder.finish()));
+        if let Err(e) = catch_unwind(AssertUnwindSafe(|| self.renderer.queue.present(frame))) {
             log::warn!("queue.present panicked: {:?}", e);
         }
     }
 }
 
-impl WgpuBackend {
+impl WgpuSceneRenderer {
     pub fn render_scene_to_encoder(
         &mut self,
         scene: &Scene,
