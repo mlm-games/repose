@@ -1100,7 +1100,22 @@ pub fn run_android_app_with_options(
                         focused,
                     );
 
-                    if focused.is_some() && self.sched.focused.is_none() && self.ime_preedit {
+                    let output = repose_app::FrameOutput {
+                        scene: frame.scene.clone(),
+                        hit_regions: frame.hit_regions.clone(),
+                        semantics_nodes: frame.semantics_nodes.clone(),
+                        focus_chain: frame.focus_chain.clone(),
+                        platform: repose_app::PlatformOutput {
+                            cursor: None,
+                            ime_allowed: false,
+                            ime_cursor_area: None,
+                            clipboard_text: None,
+                        },
+                        wants_pointer: !frame.hit_regions.is_empty() || self.capture_id.is_some(),
+                        wants_keyboard: !self.textfield_states.is_empty() || self.ime_preedit,
+                    };
+
+                    if !output.wants_keyboard && focused.is_some() && self.sched.focused.is_none() && self.ime_preedit {
                         self.ime_preedit = false;
                         win.set_ime_allowed(false);
                     }

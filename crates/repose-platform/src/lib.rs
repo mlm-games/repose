@@ -1600,28 +1600,27 @@ pub fn run_desktop_app(
 
                     let t0 = Instant::now();
                     let scale = win.scale_factor() as f32;
-                    let size_px_u32 = self.rt.sched.size;
                     let focused = self.rt.sched.focused;
 
-                    let rc = self.render.clone();
-                    let root_fn = &mut self.root;
-                    let mut composed_root = |s: &mut Scheduler| (root_fn)(s, &rc);
+                    let output = self.rt.frame(&mut self.root, &self.render, scale);
 
-                    let frame = compose_frame(
-                        &mut self.rt.sched,
-                        &mut composed_root,
-                        scale,
-                        size_px_u32,
-                        self.rt.hover_id,
-                        &self.rt.pressed_ids,
-                        &self.rt.textfield_states,
-                        focused,
-                    );
+                    // Apply cursor from platform output
+                    if let Some(cursor) = &output.platform.cursor {
+                        win.set_cursor(winit::window::Cursor::Icon(map_cursor(*cursor)));
+                    }
 
-                    if focused.is_some() && self.rt.sched.focused.is_none() && self.rt.ime_preedit {
+                    // Apply IME state based on wants_keyboard
+                    if !output.wants_keyboard && focused.is_some() && self.rt.sched.focused.is_none() && self.rt.ime_preedit {
                         rc_web::set_ime_for_textfield(win, false);
                         self.rt.ime_preedit = false;
                     }
+
+                    let frame = Frame {
+                        scene: output.scene,
+                        hit_regions: output.hit_regions,
+                        semantics_nodes: output.semantics_nodes,
+                        focus_chain: output.focus_chain,
+                    };
 
                     let build_layout_ms = (Instant::now() - t0).as_secs_f32() * 1000.0;
 

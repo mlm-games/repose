@@ -156,6 +156,33 @@ impl ReposeRuntime {
         )
     }
 
+    /// Compose a frame and return structured output for the host.
+    pub fn frame(
+        &mut self,
+        mut root_fn: impl FnMut(&mut Scheduler, &RenderContext) -> View,
+        render_ctx: &RenderContext,
+        scale: f32,
+    ) -> FrameOutput {
+        let f = self.compose(&mut root_fn, render_ctx, scale);
+        let wants_pointer = !f.hit_regions.is_empty() || self.hover_id.is_some() || self.capture_id.is_some();
+        let wants_keyboard = !self.textfield_states.is_empty() || self.ime_preedit;
+        let platform = PlatformOutput {
+            cursor: self.take_cursor_suggestion(),
+            ime_allowed: false,
+            ime_cursor_area: None,
+            clipboard_text: None,
+        };
+        FrameOutput {
+            scene: f.scene,
+            hit_regions: f.hit_regions,
+            semantics_nodes: f.semantics_nodes,
+            focus_chain: f.focus_chain,
+            platform,
+            wants_pointer,
+            wants_keyboard,
+        }
+    }
+
     /// Store the composed frame for event hit testing.
     pub fn cache_frame(&mut self, frame: Frame) {
         self.frame_cache = Some(frame);
