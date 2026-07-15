@@ -2373,6 +2373,17 @@ impl WgpuSceneRenderer {
         self.display_pipeline = Some(pipeline);
     }
 
+    /// Resize the render target dimensions.
+    ///
+    /// Recreates MSAA, depth-stencil, and working-space textures to match the
+    /// new size..
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.output_width = width;
+        self.output_height = height;
+        self.recreate_msaa_and_depth_stencil();
+        self.recreate_working_space_texture();
+    }
+
     fn recreate_working_space_texture(&mut self) {
         if !self.working_space {
             return;
@@ -4472,8 +4483,7 @@ impl WgpuSceneRenderer {
         height: u32,
         clear_color: Option<[f64; 4]>,
     ) {
-        self.output_width = width;
-        self.output_height = height;
+        self.resize(width, height);
 
         self.frame_index = self.frame_index.wrapping_add(1);
         self.slug_cache.next_frame();
