@@ -478,6 +478,7 @@ impl ReposeRuntime {
 
     /// Cancel pointer state (focus lost, etc.).
     pub fn handle_pointer_cancel(&mut self) {
+        dnd::handle_drag_action(&DragAction::Cancel);
         // Emit Cancel for captured region
         if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
             if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {

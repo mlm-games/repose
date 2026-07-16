@@ -842,22 +842,26 @@ impl ApplicationHandler<()> for App {
                                 self.touch_scroll_accum_x_px += dx_px;
                                 self.touch_scroll_accum_y_px += dy_px;
 
-                                if rc::dispatch_scroll(
-                                    &self.rt.frame_cache.as_ref().unwrap(),
-                                    pos,
-                                    Vec2 {
-                                        x: -dx_px,
-                                        y: -dy_px,
-                                    },
-                                    self.scroll_capture_id,
-                                )
-                                .0
-                                    && (self.touch_scroll_accum_x_px.abs()
-                                        > self.touch_slop_px(&window)
-                                        || self.touch_scroll_accum_y_px.abs()
-                                            > self.touch_slop_px(&window))
-                                {
-                                    self.touch_scrolled = true;
+                                if let Some(f) = &self.rt.frame_cache {
+                                    let (consumed, cap) = rc::dispatch_scroll(
+                                        f,
+                                        pos,
+                                        Vec2 {
+                                            x: -dx_px,
+                                            y: -dy_px,
+                                        },
+                                        self.scroll_capture_id,
+                                    );
+                                    self.scroll_capture_id = cap;
+
+                                    if consumed
+                                        && (self.touch_scroll_accum_x_px.abs()
+                                            > self.touch_slop_px(&window)
+                                            || self.touch_scroll_accum_y_px.abs()
+                                                > self.touch_slop_px(&window))
+                                    {
+                                        self.touch_scrolled = true;
+                                    }
                                 }
                             }
 
