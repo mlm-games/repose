@@ -310,8 +310,9 @@ impl App {
 
     fn sync_size_from_window(&mut self, window: &Window) {
         let s = window.inner_size();
+        let sf = window.scale_factor() as f32;
         if (s.width, s.height) != self.rt.sched.size {
-            self.rt.sched.size = (s.width, s.height);
+            self.rt.set_viewport_and_scale(s.width, s.height, sf);
             if let Some(b) = self.backend.borrow_mut().as_mut() {
                 b.configure_surface(s.width, s.height);
             }
