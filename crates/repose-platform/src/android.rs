@@ -12,6 +12,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
+use repose_app::ReposeRuntime;
 use repose_core::shortcuts::{Action, Gesture};
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
@@ -69,15 +70,7 @@ pub fn run_android_app_with_options(
 
         window: Option<Arc<Window>>,
         backend: Option<repose_render_wgpu::WgpuBackend>,
-        sched: Scheduler,
-        frame_cache: Option<Frame>,
-
-        // input state
-        last_pos_px: (f32, f32),
-        modifiers: Modifiers,
-        capture_id: Option<u64>,
-        pressed_ids: HashSet<u64>,
-        key_pressed_active: Option<u64>,
+        rt: ReposeRuntime,
 
         // touch scroll cancel-click
         touch_scrolled: bool,
@@ -85,10 +78,6 @@ pub fn run_android_app_with_options(
         touch_scroll_accum_x_px: f32,
         touch_scroll_accum_y_px: f32,
         prev_touch_px: Option<(f32, f32)>,
-
-        // TextFields
-        textfield_states: HashMap<u64, Rc<RefCell<TextFieldState>>>,
-        ime_preedit: bool,
 
         // IME (soft keyboard) tracking
         ime_visible: bool,
@@ -122,23 +111,13 @@ pub fn run_android_app_with_options(
                 options,
                 window: None,
                 backend: None,
-                sched: Scheduler::new(),
-                frame_cache: None,
-
-                last_pos_px: (0.0, 0.0),
-                modifiers: Modifiers::default(),
-                capture_id: None,
-                pressed_ids: HashSet::new(),
-                key_pressed_active: None,
+                rt: ReposeRuntime::new(),
 
                 touch_scrolled: false,
                 scroll_capture_id: None,
                 touch_scroll_accum_x_px: 0.0,
                 touch_scroll_accum_y_px: 0.0,
                 prev_touch_px: None,
-
-                textfield_states: HashMap::new(),
-                ime_preedit: false,
 
                 ime_visible: false,
                 dirty: true,
@@ -171,16 +150,8 @@ pub fn run_android_app_with_options(
             dp * self.scale()
         }
 
-        fn tf_key_of(&self, visual_id: u64) -> u64 {
-            rc::tf_key_of_in_frame(&self.frame_cache, visual_id)
-        }
-
-        fn is_textfield(&self, id: u64) -> bool {
-            rc::is_textfield_in_frame(&self.frame_cache, id)
-        }
-
         fn notify_text_change(&self, id: u64, text: String) {
-            if let Some(f) = &self.frame_cache
+            if let Some(f) = &self.rt.frame_cache
                 && let Some(i) = rc::hit_index_by_id(f, id)
                 && let Some(cb) = &f.hit_regions[i].on_text_change
             {
@@ -188,10 +159,18 @@ pub fn run_android_app_with_options(
             }
         }
 
+        fn tf_key_of(&self, visual_id: u64) -> u64 {
+            rc::tf_key_of_in_frame(&self.rt.frame_cache, visual_id)
+        }
+
+        fn is_textfield(&self, id: u64) -> bool {
+            rc::is_textfield_in_frame(&self.rt.frame_cache, id)
+        }
+
         fn update_ime_state(&mut self) {
             let Some(win) = &self.window else { return };
 
-            let allow = self.sched.focused.map_or(false, |id| self.is_textfield(id));
+            let allow = self.rt.sched.focused.map_or(false, |id| self.rt.is_textfield(id));
 
             win.set_ime_allowed(allow);
 
@@ -199,15 +178,15 @@ pub fn run_android_app_with_options(
                 win.set_ime_purpose(ImePurpose::Normal);
                 self.update_ime_cursor_area(win);
             } else {
-                self.ime_preedit = false;
+                self.rt.ime_preedit = false;
             }
         }
 
         fn update_ime_cursor_area(&self, win: &Window) {
-            let Some(fid) = self.sched.focused else {
+            let Some(fid) = self.rt.sched.focused else {
                 return;
             };
-            let Some(f) = &self.frame_cache else { return };
+            let Some(f) = &self.rt.frame_cache else { return };
             let Some(i) = rc::hit_index_by_id(f, fid) else {
                 return;
             };
@@ -219,16 +198,6 @@ pub fn run_android_app_with_options(
                 PhysicalPosition::new((hit.rect.x * sf) as i32, (hit.rect.y * sf) as i32),
                 PhysicalSize::new((hit.rect.w * sf) as u32, (hit.rect.h * sf) as u32),
             );
-        }
-
-        fn ensure_caret_visible_in_hit(&self, st: &mut TextFieldState, hit_rect: Rect) {
-            let is_multiline = self
-                .frame_cache
-                .as_ref()
-                .and_then(|f| f.hit_regions.iter().find(|h| h.rect == hit_rect))
-                .map(|h| h.tf_multiline)
-                .unwrap_or(false);
-            rc::tf_ensure_caret_visible(st, is_multiline);
         }
 
         // IME inset should be provided by the platform's OnApplyWindowInsetsListener
@@ -251,8 +220,8 @@ pub fn run_android_app_with_options(
             set_ime_inset(h);
         }
 
-        fn sync_window_size(&mut self, size: PhysicalSize<u32>) {
-            self.sched.size = (size.width, size.height);
+        fn sync_window_size(&mut self, size: PhysicalSize<u32>, scale: f32) {
+            self.rt.set_viewport_and_scale(size.width, size.height, scale);
             if let Some(b) = &mut self.backend {
                 b.configure_surface(size.width, size.height);
             }
@@ -284,7 +253,7 @@ pub fn run_android_app_with_options(
         fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
             use repose_core::shortcuts;
 
-            if let (Some(f), Some(fid)) = (&self.frame_cache, self.sched.focused) {
+            if let (Some(f), Some(fid)) = (&self.rt.frame_cache, self.rt.sched.focused) {
                 if let Some(i) = rc::hit_index_by_id(f, fid) {
                     if let Some(cb) = &f.hit_regions[i].on_action {
                         if cb(action.clone()) {
@@ -299,8 +268,8 @@ pub fn run_android_app_with_options(
             }
 
             // Focus navigation (Tab/arrows)
-            if let Some(f) = &self.frame_cache {
-                if let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.sched, f)
+            if let Some(f) = &self.rt.frame_cache {
+                if let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.rt.sched, f)
                 {
                     let tf_state_key = f
                         .hit_regions
@@ -308,15 +277,15 @@ pub fn run_android_app_with_options(
                         .find(|h| h.id == new_id)
                         .and_then(|h| h.tf_state_key);
                     if let Some(key) = tf_state_key {
-                        self.textfield_states
+                        self.rt.textfield_states
                             .entry(key)
                             .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
-                        if let Some(state_rc) = self.textfield_states.get(&key) {
+                        if let Some(state_rc) = self.rt.textfield_states.get(&key) {
                             state_rc.borrow_mut().reset_caret_blink();
                         }
                     }
                     if let Some(win) = &self.window {
-                        rc_web::set_ime_for_textfield(win, self.is_textfield(new_id));
+                        rc_web::set_ime_for_textfield(win, self.rt.is_textfield(new_id));
                     }
                     return true;
                 }
@@ -327,7 +296,7 @@ pub fn run_android_app_with_options(
         fn overlay_drag_indicator(&self, scene: &mut Scene) {
             repose_core::dnd::overlay_drag_indicator(
                 scene,
-                self.last_pos_px,
+                self.rt.mouse_pos_px,
                 false,
             );
         }
@@ -344,11 +313,12 @@ pub fn run_android_app_with_options(
                 return;
             }
 
-            match el.create_window(WindowAttributes::default().with_title("Repose Android")) {
-                Ok(win) => {
-                    let w = Arc::new(win);
-                    let sz = w.inner_size();
-                    self.sync_window_size(sz);
+                match el.create_window(WindowAttributes::default().with_title("Repose Android")) {
+                    Ok(win) => {
+                        let w = Arc::new(win);
+                        let sz = w.inner_size();
+                        let sf = w.scale_factor() as f32;
+                        self.sync_window_size(sz, sf);
 
                     match repose_render_wgpu::WgpuBackend::new(w.clone()) {
                         Ok(b) => {
@@ -389,19 +359,28 @@ pub fn run_android_app_with_options(
                 WindowEvent::CloseRequested => el.exit(),
 
                 WindowEvent::Resized(size) => {
-                    self.sync_window_size(size);
+                    self.sync_window_size(size, self.scale());
                     self.dirty = true;
                     self.request_redraw();
                 }
 
                 WindowEvent::ModifiersChanged(new_mods) => {
-                    rc::update_modifiers(&mut self.modifiers, &new_mods.state());
+                    let state = new_mods.state();
+                    self.rt.modifiers.shift = state.shift_key();
+                    self.rt.modifiers.ctrl = state.control_key();
+                    self.rt.modifiers.alt = state.alt_key();
+                    self.rt.modifiers.meta = state.super_key();
+                    self.rt.modifiers.command = if cfg!(target_os = "macos") {
+                        self.rt.modifiers.meta
+                    } else {
+                        self.rt.modifiers.ctrl
+                    };
                 }
 
                 // Touch handling (Android primary)
                 WindowEvent::Touch(t) => {
                     let pos_px = (t.location.x as f32, t.location.y as f32);
-                    self.last_pos_px = pos_px;
+                    self.rt.mouse_pos_px = pos_px;
                     let pos = Vec2 {
                         x: pos_px.0,
                         y: pos_px.1,
@@ -423,96 +402,35 @@ pub fn run_android_app_with_options(
                                 self.touch_long_press_pending = true;
                             }
 
-                            if let Some(f) = &self.frame_cache {
-                                if let Some(i) = rc::top_hit_index(f, pos) {
-                                    let hit = &f.hit_regions[i];
+                            // Delegate common pointer-press logic to the runtime
+                            let press_result = self.rt.handle_pointer_press(pos, PointerButton::Primary);
 
-                                    self.capture_id = Some(hit.id);
-                                    self.pressed_ids.insert(hit.id);
-
-                                    // focus + IME for textfields
-                                    if self.is_textfield(hit.id) {
-                                        self.sched.focused = Some(hit.id);
-                                        let key = self.tf_key_of(hit.id);
-                                        self.textfield_states.entry(key).or_insert_with(|| {
-                                            Rc::new(RefCell::new(TextFieldState::new()))
-                                        });
-
-                                        if let Some(win) = &self.window {
-                                            let sf = win.scale_factor() as f32;
-                                            win.set_ime_allowed(true);
-                                            win.set_ime_purpose(ImePurpose::Normal);
-                                            win.set_ime_cursor_area(
-                                                PhysicalPosition::new(
-                                                    (hit.rect.x * sf) as i32,
-                                                    (hit.rect.y * sf) as i32,
-                                                ),
-                                                PhysicalSize::new(
-                                                    (hit.rect.w * sf) as u32,
-                                                    (hit.rect.h * sf) as u32,
-                                                ),
-                                            );
-                                        }
-
-                                        // caret placement on touch down
-                                        let key = self.tf_key_of(hit.id);
-                                        if let Some(state_rc) = self.textfield_states.get(&key) {
-                                            let mut st = state_rc.borrow_mut();
-                                            let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
-                                            let content_x = (pos_px.0 - ox
-                                                + st.scroll_offset)
-                                                .max(0.0);
-                                            let content_y = (pos_px.1 - oy
-                                                + st.scroll_offset_y)
-                                                .max(0.0);
-                                            let font_px = dp_to_px(TF_FONT_DP)
-                                                * repose_core::locals::text_scale().0;
-                                            let wrap_w = st.inner_width.max(1.0);
-                                            let idx = if hit.tf_multiline {
-                                                rc::index_for_xy_bytes_vt(
-                                                    &st,
-                                                    font_px,
-                                                    wrap_w,
-                                                    content_x,
-                                                    content_y,
-                                                )
-                                            } else {
-                                                rc::index_for_x_bytes_vt(&st, font_px, content_x)
-                                            };
-                                            st.handle_pointer_down(idx, pos_px, self.modifiers.shift);
-                                        }
-                                    } else {
-                                        self.sched.focused = None;
-                                        self.ime_preedit = false;
-                                        if let Some(win) = &self.window {
-                                            win.set_ime_allowed(false);
-                                        }
-                                    }
-
-                                    // DnD press
-                                    repose_core::dnd::handle_drag_action(
-                                        &repose_core::shortcuts::DragAction::Press {
-                                            position: pos,
-                                            capture_id: hit.id,
-                                            kind: repose_core::input::PointerKind::Touch,
-                                            modifiers: self.modifiers,
-                                        },
+                            // Platform-specific IME setup for focused textfields
+                            if let Some(fid) = press_result.focused
+                                && self.is_textfield(fid)
+                            {
+                                if let Some(win) = &self.window
+                                    && let Some(f) = &self.rt.frame_cache
+                                    && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
+                                {
+                                    let sf = win.scale_factor() as f32;
+                                    win.set_ime_allowed(true);
+                                    win.set_ime_purpose(ImePurpose::Normal);
+                                    win.set_ime_cursor_area(
+                                        PhysicalPosition::new(
+                                            (hit.rect.x * sf) as i32,
+                                            (hit.rect.y * sf) as i32,
+                                        ),
+                                        PhysicalSize::new(
+                                            (hit.rect.w * sf) as u32,
+                                            (hit.rect.h * sf) as u32,
+                                        ),
                                     );
-
-                                    // pointer down callback
-                                    if let Some(cb) = &hit.on_pointer_down {
-                                        cb(rc::pe_down_primary(
-                                            repose_core::input::PointerKind::Touch,
-                                            pos,
-                                            self.modifiers,
-                                        ));
-                                    }
-                                } else {
-                                    self.sched.focused = None;
-                                    self.ime_preedit = false;
-                                    if let Some(win) = &self.window {
-                                        win.set_ime_allowed(false);
-                                    }
+                                }
+                            } else {
+                                // Click outside — no focus, drop IME
+                                if let Some(win) = &self.window {
+                                    win.set_ime_allowed(false);
                                 }
                             }
 
@@ -522,17 +440,7 @@ pub fn run_android_app_with_options(
                         }
 
                         winit::event::TouchPhase::Moved => {
-                            if repose_core::dnd::handle_drag_action(
-                                &repose_core::shortcuts::DragAction::Move {
-                                    position: pos,
-                                    modifiers: self.modifiers,
-                                },
-                            ) {
-                                self.dirty = true;
-                                self.request_redraw();
-                                return;
-                            }
-                            // Pinch gesture detection
+                            // Pinch gesture detection (platform-specific)
                             if self.active_touches.len() == 2 {
                                 let mut it = self.active_touches.values();
                                 let a = it.next().copied().unwrap();
@@ -557,7 +465,8 @@ pub fn run_android_app_with_options(
                                 return;
                             }
 
-                            if let (Some(prev), Some(f)) = (self.prev_touch_px, &self.frame_cache) {
+                            // Touch-scroll detection + dispatch
+                            if let Some(prev) = self.prev_touch_px {
                                 let dx_px = pos_px.0 - prev.0;
                                 let dy_px = pos_px.1 - prev.1;
 
@@ -565,38 +474,21 @@ pub fn run_android_app_with_options(
                                     self.touch_scroll_accum_x_px += dx_px;
                                     self.touch_scroll_accum_y_px += dy_px;
 
-                                    let (consumed, cap) = rc::dispatch_scroll(
-                                        f,
-                                        pos,
-                                        Vec2 {
-                                            x: -dx_px,
-                                            y: -dy_px,
-                                        },
-                                        self.scroll_capture_id,
-                                    );
-                                    self.scroll_capture_id = cap;
-
-                                    if consumed
-                                        && (self.touch_scroll_accum_x_px.abs()
-                                            > 6.0 * self.scale()
+                                    if self.rt.handle_scroll(Vec2 {
+                                        x: -dx_px,
+                                        y: -dy_px,
+                                    }) {
+                                        if self.touch_scroll_accum_x_px.abs() > 6.0 * self.scale()
                                             || self.touch_scroll_accum_y_px.abs()
-                                                > 6.0 * self.scale())
-                                    {
-                                        self.touch_scrolled = true;
+                                                > 6.0 * self.scale()
+                                        {
+                                            self.touch_scrolled = true;
+                                        }
                                     }
                                 }
 
-                                // still deliver pointer_move to captured widget if present
-                                if let Some(cid) = self.capture_id
-                                    && let Some(i) = rc::hit_index_by_id(f, cid)
-                                    && let Some(cb) = &f.hit_regions[i].on_pointer_move
-                                {
-                                    cb(rc::pe_touch(
-                                        repose_core::input::PointerEventKind::Move,
-                                        pos,
-                                        self.modifiers,
-                                    ));
-                                }
+                                // Delegate pointer-move to runtime for enter/leave/move dispatch
+                                self.rt.handle_pointer_move(pos);
                             }
 
                             self.prev_touch_px = Some(pos_px);
@@ -606,19 +498,11 @@ pub fn run_android_app_with_options(
 
                         winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
                             self.touch_long_press_pending = false;
-                            if repose_core::dnd::handle_drag_action(
-                                &repose_core::shortcuts::DragAction::Release {
-                                    position: pos,
-                                    modifiers: self.modifiers,
-                                },
-                            ) {
-                                self.capture_id = None;
-                                self.scroll_capture_id = None;
-                                self.prev_touch_px = None;
-                                self.pressed_ids.clear();
-                                self.dirty = true;
-                                self.request_redraw();
-                                return;
+
+                            if t.phase == winit::event::TouchPhase::Cancelled {
+                                self.rt.handle_pointer_cancel();
+                            } else {
+                                self.rt.handle_pointer_release(pos, PointerButton::Primary);
                             }
 
                             self.active_touches.remove(&tid);
@@ -626,7 +510,7 @@ pub fn run_android_app_with_options(
                                 self.pinch_last_dist = None;
                             }
 
-                            // Swipe gesture detection
+                            // Swipe gesture detection (platform-specific)
                             if self.primary_touch_id == Some(tid) {
                                 self.primary_touch_id = None;
 
@@ -649,9 +533,6 @@ pub fn run_android_app_with_options(
                                         if self.dispatch_action(Action::Gesture(g.clone()))
                                             || (dx > 0.0 && self.dispatch_action(Action::Back))
                                         {
-                                            self.capture_id = None;
-                                            self.prev_touch_px = None;
-                                            self.pressed_ids.clear();
                                             self.dirty = true;
                                             self.request_redraw();
                                             return;
@@ -660,50 +541,8 @@ pub fn run_android_app_with_options(
                                 }
                             }
 
-                            if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
-                                if let Some(i) = rc::hit_index_by_id(f, cid) {
-                                    let hit = &f.hit_regions[i];
-
-                                    if t.phase == winit::event::TouchPhase::Cancelled {
-                                        if let Some(cb) = &hit.on_pointer_cancel {
-                                            cb(rc::pe_touch(
-                                                repose_core::input::PointerEventKind::Cancel,
-                                                pos,
-                                                self.modifiers,
-                                            ));
-                                        }
-                                    } else {
-                                        if let Some(cb) = &hit.on_pointer_up {
-                                            cb(rc::pe_up_primary(
-                                                repose_core::input::PointerKind::Touch,
-                                                pos,
-                                                self.modifiers,
-                                            ));
-                                        }
-
-                                        // click only if we didn't scroll-drag
-                                        if !self.touch_scrolled
-                                            && hit.rect.contains(pos)
-                                            && let Some(cb) = &hit.on_click
-                                        {
-                                            cb();
-                                        }
-                                    }
-
-                                    // end drag selection for textfields
-                                    if self.is_textfield(cid) {
-                                        let key = self.tf_key_of(cid);
-                                        if let Some(st) = self.textfield_states.get(&key) {
-                                            st.borrow_mut().end_drag();
-                                        }
-                                    }
-                                }
-                            }
-
-                            self.capture_id = None;
                             self.scroll_capture_id = None;
                             self.prev_touch_px = None;
-                            self.pressed_ids.clear();
                             self.dirty = true;
                             self.request_redraw();
                         }
@@ -732,9 +571,9 @@ pub fn run_android_app_with_options(
                             && !is_backspace_char
                             && key_event.state == ElementState::Pressed
                         {
-                            if let Some(focused_id) = self.sched.focused {
+                            if let Some(focused_id) = self.rt.sched.focused {
                                 let key = self.tf_key_of(focused_id);
-                                if let Some(state_rc) = self.textfield_states.get(&key) {
+                                if let Some(state_rc) = self.rt.textfield_states.get(&key) {
                                     let mut state = state_rc.borrow_mut();
                                     state.insert_text(text);
                                     self.notify_text_change(focused_id, state.text.clone());
@@ -755,9 +594,9 @@ pub fn run_android_app_with_options(
                             winit::keyboard::Key::Named(winit::keyboard::NamedKey::Backspace)
                         );
                         if is_backspace {
-                            if let Some(focused_id) = self.sched.focused {
+                            if let Some(focused_id) = self.rt.sched.focused {
                                 let key = self.tf_key_of(focused_id);
-                                if let Some(state_rc) = self.textfield_states.get(&key) {
+                                if let Some(state_rc) = self.rt.textfield_states.get(&key) {
                                     let mut state = state_rc.borrow_mut();
                                     state.delete_backward();
                                     self.notify_text_change(focused_id, state.text.clone());
@@ -769,9 +608,9 @@ pub fn run_android_app_with_options(
 
                         // Handle Enter for textfields (commit composition or submit)
                         if matches!(key_event.physical_key, PhysicalKey::Code(KeyCode::Enter)) {
-                            if let Some(focused_id) = self.sched.focused {
+                            if let Some(focused_id) = self.rt.sched.focused {
                                 let key = self.tf_key_of(focused_id);
-                                if let Some(state) = self.textfield_states.get(&key) {
+                                if let Some(state) = self.rt.textfield_states.get(&key) {
                                     let mut st = state.borrow_mut();
                                     // If we have a composition, commit it
                                     if st.composition.is_some() {
@@ -806,18 +645,18 @@ pub fn run_android_app_with_options(
                         repose_core::input::Key::Character(c) => c as u16,
                         _ => 0,
                     };
-                    let mods = self.modifiers;
+                    let mods = self.rt.modifiers;
                     let repeat = key_event.repeat;
                     let ev_type = if key_event.state == ElementState::Pressed {
                         repose_core::input::KeyEventType::Down
                     } else {
                         repose_core::input::KeyEventType::Up
                     };
-                    let consumed = self
+                    let consumed = self.rt
                         .frame_cache
                         .as_ref()
                         .and_then(|f| {
-                            let focused = self.sched.focused.or_else(|| {
+                            let focused = self.rt.sched.focused.or_else(|| {
                                 f.semantics_nodes
                                     .iter()
                                     .find(|n| n.parent.is_none())
@@ -880,7 +719,7 @@ pub fn run_android_app_with_options(
                         if let Some(action) = repose_core::shortcuts::resolve_action(
                             repose_core::shortcuts::KeyChord::new(
                                 rc::map_key(key_event.physical_key),
-                                self.modifiers,
+                                self.rt.modifiers,
                             ),
                         ) {
                             if self.dispatch_action(action) {
@@ -892,8 +731,8 @@ pub fn run_android_app_with_options(
                     }
 
                     // Keyboard activation for focused buttons (Space/Enter)
-                    if let Some(fid) = self.sched.focused {
-                        let is_textfield = if let Some(f) = &self.frame_cache {
+                    if let Some(fid) = self.rt.sched.focused {
+                        let is_textfield = if let Some(f) = &self.rt.frame_cache {
                             f.semantics_nodes
                                 .iter()
                                 .any(|n| n.id == fid && n.role == Role::TextField)
@@ -906,15 +745,15 @@ pub fn run_android_app_with_options(
                                 | PhysicalKey::Code(KeyCode::Enter) => {
                                     if key_event.state == ElementState::Pressed && !key_event.repeat
                                     {
-                                        self.pressed_ids.insert(fid);
-                                        self.key_pressed_active = Some(fid);
+                                        self.rt.pressed_ids.insert(fid);
+                                        self.rt.key_pressed_active = Some(fid);
                                         self.dirty = true;
                                         self.request_redraw();
                                         return;
                                     } else if key_event.state == ElementState::Released {
-                                        if let Some(active_id) = self.key_pressed_active.take() {
-                                            self.pressed_ids.remove(&active_id);
-                                            if let Some(f) = &self.frame_cache
+                                        if let Some(active_id) = self.rt.key_pressed_active.take() {
+                                            self.rt.pressed_ids.remove(&active_id);
+                                            if let Some(f) = &self.rt.frame_cache
                                                 && let Some(hit) =
                                                     f.hit_regions.iter().find(|h| h.id == active_id)
                                             {
@@ -929,7 +768,7 @@ pub fn run_android_app_with_options(
                                                         ),
                                                         Vec2 { x: 0.0, y: 0.0 },
                                                         1.0,
-                                                        self.modifiers,
+                                                        self.rt.modifiers,
                                                     );
                                                     cb(pe);
                                                 }
@@ -947,13 +786,13 @@ pub fn run_android_app_with_options(
                     // Enter submits focused TextField
                     if key_event.state == ElementState::Pressed && !key_event.repeat {
                         if let PhysicalKey::Code(KeyCode::Enter) = key_event.physical_key {
-                            if let Some(focused_id) = self.sched.focused
-                                && let Some(f) = &self.frame_cache
+                            if let Some(focused_id) = self.rt.sched.focused
+                                && let Some(f) = &self.rt.frame_cache
                                 && let Some(i) = rc::hit_index_by_id(f, focused_id)
                                 && let Some(on_submit) = &f.hit_regions[i].on_text_submit
                             {
                                 let key = self.tf_key_of(focused_id);
-                                if let Some(state) = self.textfield_states.get(&key) {
+                                if let Some(state) = self.rt.textfield_states.get(&key) {
                                     on_submit(state.borrow().text.clone());
                                 }
                             }
@@ -963,12 +802,12 @@ pub fn run_android_app_with_options(
 
                 // IME (Preedit/Commit)
                 WindowEvent::Ime(ime) => {
-                    if let Some(focused_id) = self.sched.focused {
+                    if let Some(focused_id) = self.rt.sched.focused {
                         let key = self.tf_key_of(focused_id);
-                        if let Some(state_rc) = self.textfield_states.get(&key) {
+                        if let Some(state_rc) = self.rt.textfield_states.get(&key) {
                             let mut state = state_rc.borrow_mut();
 
-                            let hit_rect = if let Some(f) = self.frame_cache.as_ref() {
+                            let hit_rect = if let Some(f) = self.rt.frame_cache.as_ref() {
                                 rc::hit_index_by_id(f, focused_id)
                                     .map(|i| f.hit_regions[i].rect)
                                     .unwrap_or_default()
@@ -978,7 +817,7 @@ pub fn run_android_app_with_options(
 
                             match ime {
                                 Ime::Enabled => {
-                                    self.ime_preedit = false;
+                                    self.rt.ime_preedit = false;
                                     if !self.ime_visible {
                                         self.ime_visible = true;
                                         self.update_ime_inset();
@@ -988,7 +827,7 @@ pub fn run_android_app_with_options(
                                     let cursor_usize =
                                         cursor.map(|(a, b)| (a as usize, b as usize));
                                     state.set_composition(text.clone(), cursor_usize);
-                                    self.ime_preedit = !text.is_empty();
+                                    self.rt.ime_preedit = !text.is_empty();
                                     self.notify_text_change(focused_id, state.text.clone());
                                     let font_px =
                                         dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
@@ -1010,7 +849,7 @@ pub fn run_android_app_with_options(
                                 }
                                 Ime::Commit(text) => {
                                     state.commit_composition(text);
-                                    self.ime_preedit = false;
+                                    self.rt.ime_preedit = false;
                                     self.notify_text_change(focused_id, state.text.clone());
                                     let font_px =
                                         dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
@@ -1031,7 +870,7 @@ pub fn run_android_app_with_options(
                                     );
                                 }
                                 Ime::Disabled => {
-                                    self.ime_preedit = false;
+                                    self.rt.ime_preedit = false;
                                     if self.ime_visible {
                                         self.ime_visible = false;
                                         self.update_ime_inset();
@@ -1081,8 +920,8 @@ pub fn run_android_app_with_options(
                     let Some(win) = self.window.as_ref() else { return; };
 
                     let scale = win.scale_factor() as f32;
-                    let size_px_u32 = self.sched.size;
-                    let focused = self.sched.focused;
+                    let size_px_u32 = self.rt.sched.size;
+                    let focused = self.rt.sched.focused;
 
                     let rc = self.render.clone();
                     let root_fn = &mut self.root;
@@ -1090,13 +929,13 @@ pub fn run_android_app_with_options(
                     let mut composed_root = move |s: &mut Scheduler| (root_fn)(s, &rc);
 
                     let mut frame = compose_frame(
-                        &mut self.sched,
+                        &mut self.rt.sched,
                         &mut composed_root,
                         scale,
                         size_px_u32,
                         None, // hover_id (no mouse on Android usually)
-                        &self.pressed_ids,
-                        &self.textfield_states,
+                        &self.rt.pressed_ids,
+                        &self.rt.textfield_states,
                         focused,
                     );
 
@@ -1111,12 +950,12 @@ pub fn run_android_app_with_options(
                             ime_cursor_area: None,
                             clipboard_text: None,
                         },
-                        wants_pointer: !frame.hit_regions.is_empty() || self.capture_id.is_some(),
-                        wants_keyboard: !self.textfield_states.is_empty() || self.ime_preedit,
+                        wants_pointer: !frame.hit_regions.is_empty() || self.rt.capture_id.is_some(),
+                        wants_keyboard: !self.rt.textfield_states.is_empty() || self.rt.ime_preedit,
                     };
 
-                    if !output.wants_keyboard && focused.is_some() && self.sched.focused.is_none() && self.ime_preedit {
-                        self.ime_preedit = false;
+                    if !output.wants_keyboard && focused.is_some() && self.rt.sched.focused.is_none() && self.rt.ime_preedit {
+                        self.rt.ime_preedit = false;
                         win.set_ime_allowed(false);
                     }
 
@@ -1127,12 +966,12 @@ pub fn run_android_app_with_options(
                     let Some(backend) = self.backend.as_mut() else { return; };
                     backend.frame(&frame.scene, GlyphRasterConfig { px: 18.0 * scale });
 
-                    if let Some(fid) = self.sched.focused {
+                    if let Some(fid) = self.rt.sched.focused {
                         if let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid)
                             && let Some(key) = hit.tf_state_key
-                            && !self.textfield_states.contains_key(&key)
+                            && !self.rt.textfield_states.contains_key(&key)
                         {
-                            self.textfield_states
+                            self.rt.textfield_states
                                 .entry(key)
                                 .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())))
                                 .borrow_mut()
@@ -1140,7 +979,7 @@ pub fn run_android_app_with_options(
                         }
                     }
 
-                    self.frame_cache = Some(frame);
+                    self.rt.frame_cache = Some(frame);
                     self.last_redraw = web_time::Instant::now();
 
                     self.dirty = false;
@@ -1158,9 +997,9 @@ pub fn run_android_app_with_options(
             if self.options.continuous_redraw || self.dirty || take_frame_request() {
                 self.request_redraw();
             } else if crate::next_caret_blink_deadline(
-                &self.sched,
-                &self.frame_cache,
-                &self.textfield_states,
+                &self.rt.sched,
+                &self.rt.frame_cache,
+                &self.rt.textfield_states,
             )
             .is_some_and(|d| d <= web_time::Instant::now())
             {

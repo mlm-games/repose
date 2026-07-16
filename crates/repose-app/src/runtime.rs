@@ -217,6 +217,29 @@ impl ReposeRuntime {
             };
         };
 
+        // TextField/TextArea drag selection (if captured)
+        if let Some(cid) = self.capture_id {
+            if is_textfield_in_frame(f, cid) {
+                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
+                    let key = tf_key_of(f, cid);
+                    if let Some(st_rc) = self.textfield_states.get(&key) {
+                        let mut st = st_rc.borrow_mut();
+                        let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
+                        let content_x = (pos.x - ox + st.scroll_offset).max(0.0);
+                        let content_y = (pos.y - oy + st.scroll_offset_y).max(0.0);
+                        let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+                        let wrap_w = st.inner_width.max(1.0);
+                        let idx = if hit.tf_multiline {
+                            index_for_xy_bytes_vt(&st, font_px, wrap_w, content_x, content_y)
+                        } else {
+                            index_for_x_bytes_vt(&st, font_px, content_x)
+                        };
+                        st.drag_to(idx);
+                    }
+                }
+            }
+        }
+
         // Determine topmost hit
         let top = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos));
 

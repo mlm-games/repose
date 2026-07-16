@@ -23,6 +23,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys, WindowExtWebSys};
 use winit::window::{ImePurpose, Window};
 
+use repose_app::ReposeRuntime;
 use repose_ui::TextFieldState;
 use repose_ui::textfield::{
     TF_FONT_DP, caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes,
@@ -151,16 +152,8 @@ struct App {
     window: Option<Arc<Window>>,
     backend: Rc<RefCell<Option<repose_render_wgpu::WgpuBackend>>>,
 
-    sched: Scheduler,
-    frame_cache: Option<Frame>,
+    rt: ReposeRuntime,
     render: RenderContext,
-
-    // pointer + focus
-    mouse_pos_px: (f32, f32),
-    modifiers: Modifiers,
-    hover_id: Option<u64>,
-    capture_id: Option<u64>,
-    pressed_ids: HashSet<u64>,
 
     // touch click-cancel after scroll
     touch_scrolled: bool,
@@ -168,10 +161,6 @@ struct App {
     touch_scroll_accum_x_px: f32,
     touch_scroll_accum_y_px: f32,
     prev_touch_px: Option<(f32, f32)>,
-
-    // text
-    ime_preedit: bool,
-    textfield_states: HashMap<u64, Rc<RefCell<TextFieldState>>>,
 
     // clipboard async results
     clipboard_actions: Rc<RefCell<Vec<ClipboardAction>>>,
@@ -190,8 +179,6 @@ struct App {
     // swipe tracking
     touch_start: Option<(web_time::Instant, (f32, f32))>,
 
-    key_pressed_active: Option<u64>,
-
     last_redraw: web_time::Instant,
 }
 
@@ -205,25 +192,15 @@ impl App {
             options,
             window: None,
             backend: Rc::new(RefCell::new(None)),
-            sched: Scheduler::new(),
-            frame_cache: None,
+            rt: ReposeRuntime::new(),
 
             render: RenderContext::new(),
-
-            mouse_pos_px: (0.0, 0.0),
-            modifiers: Modifiers::default(),
-            hover_id: None,
-            capture_id: None,
-            pressed_ids: HashSet::new(),
 
             touch_scrolled: false,
             scroll_capture_id: None,
             touch_scroll_accum_x_px: 0.0,
             touch_scroll_accum_y_px: 0.0,
             prev_touch_px: None,
-
-            ime_preedit: false,
-            textfield_states: HashMap::new(),
 
             clipboard_actions: Rc::new(RefCell::new(Vec::new())),
 
@@ -235,8 +212,6 @@ impl App {
             primary_touch_id: None,
             pinch_last_dist: None,
             touch_start: None,
-
-            key_pressed_active: None,
 
             last_redraw: web_time::Instant::now(),
         }
@@ -256,11 +231,11 @@ impl App {
     }
 
     fn tf_key_of(&self, visual_id: u64) -> u64 {
-        rc::tf_key_of_in_frame(&self.frame_cache, visual_id)
+        rc::tf_key_of_in_frame(&self.rt.frame_cache, visual_id)
     }
 
     fn notify_text_change(&self, id: u64, text: String) {
-        if let Some(f) = &self.frame_cache
+        if let Some(f) = &self.rt.frame_cache
             && let Some(i) = rc::hit_index_by_id(f, id)
             && let Some(cb) = &f.hit_regions[i].on_text_change
         {
@@ -269,7 +244,7 @@ impl App {
     }
 
     fn is_textfield(&self, id: u64) -> bool {
-        rc::is_textfield_in_frame(&self.frame_cache, id)
+        rc::is_textfield_in_frame(&self.rt.frame_cache, id)
     }
 
     fn tf_ensure_caret_visible_in_hit(&self, state: &mut TextFieldState, is_multiline: bool) {
@@ -335,8 +310,8 @@ impl App {
 
     fn sync_size_from_window(&mut self, window: &Window) {
         let s = window.inner_size();
-        if (s.width, s.height) != self.sched.size {
-            self.sched.size = (s.width, s.height);
+        if (s.width, s.height) != self.rt.sched.size {
+            self.rt.sched.size = (s.width, s.height);
             if let Some(b) = self.backend.borrow_mut().as_mut() {
                 b.configure_surface(s.width, s.height);
             }
@@ -376,11 +351,11 @@ impl App {
         for a in actions {
             match a {
                 ClipboardAction::PasteText(mut txt) => {
-                    let multiline = if let Some(fid) = self.sched.focused {
-                        self.frame_cache
+                    let multiline = if let Some(fid) = self.rt.sched.focused {
+                        self.rt.frame_cache
                             .as_ref()
                             .and_then(|f| rc::hit_index_by_id(f, fid))
-                            .map(|i| self.frame_cache.as_ref().unwrap().hit_regions[i].tf_multiline)
+                            .map(|i| self.rt.frame_cache.as_ref().unwrap().hit_regions[i].tf_multiline)
                             .unwrap_or(false)
                     } else {
                         false
@@ -390,14 +365,14 @@ impl App {
                         continue;
                     }
 
-                    if let Some(fid) = self.sched.focused {
+                    if let Some(fid) = self.rt.sched.focused {
                         let key = self.tf_key_of(fid);
-                        if let Some(st_rc) = self.textfield_states.get(&key).cloned() {
+                        if let Some(st_rc) = self.rt.textfield_states.get(&key).cloned() {
                             let mut st = st_rc.borrow_mut();
                             st.insert_text(&txt);
                             self.notify_text_change(fid, st.text.clone());
 
-                            if let Some(f) = &self.frame_cache
+                            if let Some(f) = &self.rt.frame_cache
                                 && let Some(i) = rc::hit_index_by_id(f, fid)
                             {
                                 self.tf_ensure_caret_visible_in_hit(
@@ -415,7 +390,7 @@ impl App {
     fn dispatch_action(&mut self, window: &Window, action: repose_core::shortcuts::Action) -> bool {
         use repose_core::shortcuts;
 
-        if let (Some(f), Some(fid)) = (&self.frame_cache, self.sched.focused) {
+        if let (Some(f), Some(fid)) = (&self.rt.frame_cache, self.rt.sched.focused) {
             if let Some(i) = rc::hit_index_by_id(f, fid) {
                 if let Some(cb) = &f.hit_regions[i].on_action {
                     if cb(action.clone()) {
@@ -430,18 +405,18 @@ impl App {
         }
 
         // Focus navigation (Tab/arrows)
-        if let Some(f) = &self.frame_cache {
-            if let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.sched, f) {
+        if let Some(f) = &self.rt.frame_cache {
+            if let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.rt.sched, f) {
                 let tf_state_key = f
                     .hit_regions
                     .iter()
                     .find(|h| h.id == new_id)
                     .and_then(|h| h.tf_state_key);
                 if let Some(key) = tf_state_key {
-                    self.textfield_states
+                    self.rt.textfield_states
                         .entry(key)
                         .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
-                    if let Some(state_rc) = self.textfield_states.get(&key) {
+                    if let Some(state_rc) = self.rt.textfield_states.get(&key) {
                         state_rc.borrow_mut().reset_caret_blink();
                     }
                 }
@@ -471,7 +446,7 @@ impl App {
         rc::process_render_commands(backend, cmds);
     }
     fn dispatch_dropped_files(&mut self, window: &Window, names: Vec<String>, pos_px: (f32, f32)) {
-        let Some(f) = &self.frame_cache else {
+        let Some(f) = &self.rt.frame_cache else {
             return;
         };
 
@@ -498,7 +473,7 @@ impl App {
                     source_id: 0,
                     target_id,
                     position: pos,
-                    modifiers: self.modifiers,
+                    modifiers: self.rt.modifiers,
                     payload,
                 });
                 self.request_redraw();
@@ -680,112 +655,16 @@ impl ApplicationHandler<()> for App {
             }
 
             WindowEvent::ModifiersChanged(new_mods) => {
-                rc::update_modifiers(&mut self.modifiers, &new_mods.state());
+                rc::update_modifiers(&mut self.rt.modifiers, &new_mods.state());
             }
 
             WindowEvent::CursorMoved { position, .. } => {
-                self.mouse_pos_px = (position.x as f32, position.y as f32);
-
                 let pos = Vec2 {
-                    x: self.mouse_pos_px.0,
-                    y: self.mouse_pos_px.1,
+                    x: position.x as f32,
+                    y: position.y as f32,
                 };
-
-                if repose_core::dnd::handle_drag_action(&repose_core::shortcuts::DragAction::Move {
-                    position: pos,
-                    modifiers: self.modifiers,
-                }) {
-                    self.request_redraw();
-                    return;
-                }
-
-                // TextField drag selection (if captured)
-                if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id)
-                    && self.is_textfield(cid)
-                {
-                    let key = self.tf_key_of(cid);
-                    if let Some(state_rc) = self.textfield_states.get(&key) {
-                        let mut state = state_rc.borrow_mut();
-
-                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
-                            let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
-                            let content_x_px =
-                                (self.mouse_pos_px.0 - ox + state.scroll_offset).max(0.0);
-                            let content_y_px =
-                                (self.mouse_pos_px.1 - oy + state.scroll_offset_y).max(0.0);
-                            let font_px =
-                                dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-                            let wrap_w = state.inner_width.max(1.0);
-
-                            let idx = if hit.tf_multiline {
-                                rc::index_for_xy_bytes_vt(
-                                    &state,
-                                    font_px,
-                                    wrap_w,
-                                    content_x_px,
-                                    content_y_px,
-                                )
-                            } else {
-                                rc::index_for_x_bytes_vt(&state, font_px, content_x_px)
-                            };
-
-                            state.drag_to(idx);
-
-                            self.request_redraw();
-                        }
-                    }
-                }
-
-                // Hover/move
-                if let Some(f) = &self.frame_cache {
-                    let pos = Vec2 {
-                        x: self.mouse_pos_px.0,
-                        y: self.mouse_pos_px.1,
-                    };
-                    let top_i = rc::top_hit_index(f, pos);
-                    let new_hover = top_i.map(|i| f.hit_regions[i].id);
-
-                    if new_hover != self.hover_id {
-                        if let Some(prev_id) = self.hover_id
-                            && let Some(pi) = rc::hit_index_by_id(f, prev_id)
-                            && let Some(cb) = &f.hit_regions[pi].on_pointer_leave
-                        {
-                            cb(rc::pe_mouse(
-                                repose_core::input::PointerEventKind::Leave,
-                                pos,
-                                self.modifiers,
-                            ));
-                        }
-                        if let Some(i) = top_i
-                            && let Some(cb) = &f.hit_regions[i].on_pointer_enter
-                        {
-                            cb(rc::pe_mouse(
-                                repose_core::input::PointerEventKind::Enter,
-                                pos,
-                                self.modifiers,
-                            ));
-                        }
-                        self.hover_id = new_hover;
-                    }
-
-                    let pe = rc::pe_mouse(
-                        repose_core::input::PointerEventKind::Move,
-                        pos,
-                        self.modifiers,
-                    );
-
-                    if let Some(cid) = self.capture_id {
-                        if let Some(i) = rc::hit_index_by_id(f, cid)
-                            && let Some(cb) = &f.hit_regions[i].on_pointer_move
-                        {
-                            cb(pe);
-                        }
-                    } else if let Some(i) = top_i
-                        && let Some(cb) = &f.hit_regions[i].on_pointer_move
-                    {
-                        cb(pe);
-                    }
-                }
+                self.rt.handle_pointer_move(pos);
+                self.request_redraw();
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
@@ -797,15 +676,8 @@ impl ApplicationHandler<()> for App {
                     }
                     MouseScrollDelta::PixelDelta(p) => (-(p.x as f32), -(p.y as f32)),
                 };
-
-                if let Some(f) = &self.frame_cache {
-                    let pos = Vec2 {
-                        x: self.mouse_pos_px.0,
-                        y: self.mouse_pos_px.1,
-                    };
-                    if rc::dispatch_scroll(f, pos, Vec2 { x: dx_px, y: dy_px }, None).0 {
-                        self.request_redraw();
-                    }
+                if self.rt.handle_scroll(Vec2 { x: dx_px, y: dy_px }) {
+                    self.request_redraw();
                 }
             }
 
@@ -814,140 +686,30 @@ impl ApplicationHandler<()> for App {
                 button: MouseButton::Left,
                 ..
             } => {
-                if let Some(f) = &self.frame_cache {
-                    let pos = Vec2 {
-                        x: self.mouse_pos_px.0,
-                        y: self.mouse_pos_px.1,
-                    };
+                let pos = Vec2 {
+                    x: self.rt.mouse_pos_px.0,
+                    y: self.rt.mouse_pos_px.1,
+                };
 
-                    match state {
-                        ElementState::Pressed => {
-                            let mp = Vec2 {
-                                x: self.mouse_pos_px.0,
-                                y: self.mouse_pos_px.1,
-                            };
-
-                            // Find top-most hit for capture
-                            if let Some(i) = rc::top_hit_index(f, pos) {
-                                let hit = &f.hit_regions[i];
-                                self.capture_id = Some(hit.id);
-                                self.pressed_ids.insert(hit.id);
-                                repose_core::dnd::handle_drag_action(
-                                    &repose_core::shortcuts::DragAction::Press {
-                                        position: mp,
-                                        capture_id: hit.id,
-                                        kind: repose_core::input::PointerKind::Mouse,
-                                        modifiers: self.modifiers,
-                                    },
-                                );
-
-                                if hit.focusable {
-                                    self.sched.focused = Some(hit.id);
-
-                                    let key = self.tf_key_of(hit.id);
-                                    self.textfield_states.entry(key).or_insert_with(|| {
-                                        Rc::new(RefCell::new(TextFieldState::new()))
-                                    });
-
-                                    rc_web::set_ime_for_textfield(
-                                        &window,
-                                        self.is_textfield(hit.id),
-                                    );
-                                }
-
-                                if let Some(cb) = &hit.on_pointer_down {
-                                    cb(rc::pe_down_primary(
-                                        repose_core::input::PointerKind::Mouse,
-                                        pos,
-                                        self.modifiers,
-                                    ));
-                                }
-
-                                // TextField begin selection
-                                if self.is_textfield(hit.id) {
-                                    let key = self.tf_key_of(hit.id);
-                                    if let Some(state_rc) = self.textfield_states.get(&key) {
-                                        let mut st = state_rc.borrow_mut();
-                                        rc::tf_place_caret_at_pointer(
-                                            &mut st,
-                                            hit.rect,
-                                            hit.tf_content_origin,
-                                            hit.tf_multiline,
-                                            self.mouse_pos_px,
-                                            self.scale(&window),
-                                            self.modifiers.shift,
-                                        );
-                                    }
-                                }
-                            } else {
-                                self.sched.focused = None;
-                                rc_web::set_ime_for_textfield(&window, false);
+                match state {
+                    ElementState::Pressed => {
+                        let press_result = self.rt.handle_pointer_press(pos, PointerButton::Primary);
+                        // Platform-specific IME setup for focused textfields
+                        if let Some(fid) = press_result.focused {
+                            if let Some(f) = &self.rt.frame_cache
+                                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
+                            {
+                                rc_web::set_ime_for_textfield(&window, self.is_textfield(fid));
                             }
-                            self.request_redraw();
+                        } else {
+                            rc_web::set_ime_for_textfield(&window, false);
                         }
+                        self.request_redraw();
+                    }
 
-                        ElementState::Released => {
-                            let pos = Vec2 {
-                                x: self.mouse_pos_px.0,
-                                y: self.mouse_pos_px.1,
-                            };
-
-                            if repose_core::dnd::handle_drag_action(
-                                &repose_core::shortcuts::DragAction::Release {
-                                    position: pos,
-                                    modifiers: self.modifiers,
-                                },
-                            ) {
-                                self.capture_id = None;
-                                self.pressed_ids.clear();
-                                self.request_redraw();
-                                return;
-                            }
-
-                            if let Some(cid) = self.capture_id {
-                                self.pressed_ids.remove(&cid);
-
-                                if let Some(i) = rc::hit_index_by_id(f, cid)
-                                    && let Some(cb) = &f.hit_regions[i].on_pointer_up
-                                {
-                                    cb(rc::pe_up_primary(
-                                        repose_core::input::PointerKind::Mouse,
-                                        pos,
-                                        self.modifiers,
-                                    ));
-                                }
-
-                                // Robust click search: find the top-most region with this ID
-                                // that actually contains the point and has a click handler.
-                                // NOTE: We search in reverse (top-to-bottom) because overlays
-                                // are usually drawn last (at the end of the list).
-                                let click_hit = f.hit_regions.iter().rev().find(|h| {
-                                    h.id == cid && h.rect.contains(pos) && h.on_click.is_some()
-                                });
-
-                                if let Some(hit) = click_hit {
-                                    log::info!("MouseUp: Clicked! id={}", hit.id);
-                                    if let Some(cb) = &hit.on_click {
-                                        cb();
-                                    }
-                                } else {
-                                    log::info!(
-                                        "MouseUp: No click match for captured id={} at pos={:?}",
-                                        cid,
-                                        pos
-                                    );
-                                }
-
-                                if self.is_textfield(cid) {
-                                    let key = self.tf_key_of(cid);
-                                    if let Some(st) = self.textfield_states.get(&key) {
-                                        st.borrow_mut().end_drag();
-                                    }
-                                }
-                            }
-                            self.capture_id = None;
-                            self.request_redraw();
-                        }
+                    ElementState::Released => {
+                        self.rt.handle_pointer_release(pos, PointerButton::Primary);
+                        self.request_redraw();
                     }
                 }
             }
@@ -957,10 +719,10 @@ impl ApplicationHandler<()> for App {
                 button: MouseButton::Middle,
                 ..
             } => {
-                if let Some(f) = &self.frame_cache {
+                if let Some(f) = &self.rt.frame_cache {
                     let pos = Vec2 {
-                        x: self.mouse_pos_px.0,
-                        y: self.mouse_pos_px.1,
+                        x: self.rt.mouse_pos_px.0,
+                        y: self.rt.mouse_pos_px.1,
                     };
                     match state {
                         ElementState::Pressed => {
@@ -973,7 +735,7 @@ impl ApplicationHandler<()> for App {
                                         PointerEventKind::Down(PointerButton::Tertiary),
                                         pos,
                                         1.0,
-                                        self.modifiers,
+                                        self.rt.modifiers,
                                     ));
                                 }
                                 // Paste from clipboard as a best-effort for middle-click
@@ -985,8 +747,8 @@ impl ApplicationHandler<()> for App {
                         }
                         ElementState::Released => {
                             let pos = Vec2 {
-                                x: self.mouse_pos_px.0,
-                                y: self.mouse_pos_px.1,
+                                x: self.rt.mouse_pos_px.0,
+                                y: self.rt.mouse_pos_px.1,
                             };
                             if let Some(i) = rc::top_hit_index(f, pos)
                                 && let Some(cb) = &f.hit_regions[i].on_pointer_up
@@ -997,7 +759,7 @@ impl ApplicationHandler<()> for App {
                                     PointerEventKind::Up(PointerButton::Tertiary),
                                     pos,
                                     1.0,
-                                    self.modifiers,
+                                    self.rt.modifiers,
                                 ));
                             }
                         }
@@ -1009,7 +771,6 @@ impl ApplicationHandler<()> for App {
                 use repose_core::shortcuts::{Action, Gesture};
 
                 let pos_px = (t.location.x as f32, t.location.y as f32);
-                self.mouse_pos_px = pos_px;
                 let pos = Vec2 {
                     x: pos_px.0,
                     y: pos_px.1,
@@ -1030,51 +791,15 @@ impl ApplicationHandler<()> for App {
                             self.touch_start = Some((web_time::Instant::now(), pos_px));
                         }
 
-                        if let Some(f) = &self.frame_cache {
-                            if let Some(i) = rc::top_hit_index(f, pos) {
-                                let hit = &f.hit_regions[i];
-                                self.capture_id = Some(hit.id);
-                                self.pressed_ids.insert(hit.id);
-                                repose_core::dnd::handle_drag_action(
-                                    &repose_core::shortcuts::DragAction::Press {
-                                        position: pos,
-                                        capture_id: hit.id,
-                                        kind: repose_core::input::PointerKind::Touch,
-                                        modifiers: self.modifiers,
-                                    },
-                                );
+                        self.rt.handle_pointer_press(pos, PointerButton::Primary);
 
-                                if let Some(cb) = &hit.on_pointer_down {
-                                    cb(rc::pe_down_primary(
-                                        repose_core::input::PointerKind::Touch,
-                                        pos,
-                                        self.modifiers,
-                                    ));
-                                }
-
-                                if self.is_textfield(hit.id) {
-                                    self.sched.focused = Some(hit.id);
-                                    let key = self.tf_key_of(hit.id);
-                                    self.textfield_states.entry(key).or_insert_with(|| {
-                                        Rc::new(RefCell::new(TextFieldState::new()))
-                                    });
-                                    rc_web::set_ime_for_textfield(&window, true);
-
-                                    // Place caret at touch position
-                                    if let Some(state_rc) = self.textfield_states.get(&key) {
-                                        let mut st = state_rc.borrow_mut();
-                                        rc::tf_place_caret_at_pointer(
-                                            &mut st,
-                                            hit.rect,
-                                            hit.tf_content_origin,
-                                            hit.tf_multiline,
-                                            pos_px,
-                                            self.scale(&window),
-                                            self.modifiers.shift,
-                                        );
-                                    }
-                                }
-                            }
+                        // Platform-specific IME setup for focused textfields
+                        if let Some(fid) = self.rt.sched.focused
+                            && self.is_textfield(fid)
+                        {
+                            rc_web::set_ime_for_textfield(&window, true);
+                        } else {
+                            rc_web::set_ime_for_textfield(&window, false);
                         }
 
                         self.prev_touch_px = Some(pos_px);
@@ -1082,17 +807,7 @@ impl ApplicationHandler<()> for App {
                     }
 
                     TouchPhase::Moved => {
-                        if repose_core::dnd::handle_drag_action(
-                            &repose_core::shortcuts::DragAction::Move {
-                                position: pos,
-                                modifiers: self.modifiers,
-                            },
-                        ) {
-                            self.request_redraw();
-                            return;
-                        }
-
-                        // Handle pinch gesture with two touches
+                        // Handle pinch gesture with two touches (platform-specific)
                         if self.active_touches.len() == 2 {
                             let mut it = self.active_touches.values();
                             let a = it.next().copied().unwrap();
@@ -1118,7 +833,8 @@ impl ApplicationHandler<()> for App {
                             return;
                         }
 
-                        if let (Some(prev), Some(f)) = (self.prev_touch_px, &self.frame_cache) {
+                        // Touch-scroll detection + dispatch
+                        if let Some(prev) = self.prev_touch_px {
                             let dx_px = pos_px.0 - prev.0;
                             let dy_px = pos_px.1 - prev.1;
 
@@ -1126,18 +842,16 @@ impl ApplicationHandler<()> for App {
                                 self.touch_scroll_accum_x_px += dx_px;
                                 self.touch_scroll_accum_y_px += dy_px;
 
-                                let (consumed, cap) = rc::dispatch_scroll(
-                                    f,
+                                if rc::dispatch_scroll(
+                                    &self.rt.frame_cache.as_ref().unwrap(),
                                     pos,
                                     Vec2 {
                                         x: -dx_px,
                                         y: -dy_px,
                                     },
                                     self.scroll_capture_id,
-                                );
-                                self.scroll_capture_id = cap;
-
-                                if consumed
+                                )
+                                .0
                                     && (self.touch_scroll_accum_x_px.abs()
                                         > self.touch_slop_px(&window)
                                         || self.touch_scroll_accum_y_px.abs()
@@ -1147,17 +861,8 @@ impl ApplicationHandler<()> for App {
                                 }
                             }
 
-                            // still deliver pointer_move to captured widget (if any)
-                            if let Some(cid) = self.capture_id
-                                && let Some(i) = rc::hit_index_by_id(f, cid)
-                                && let Some(cb) = &f.hit_regions[i].on_pointer_move
-                            {
-                                cb(rc::pe_touch(
-                                    repose_core::input::PointerEventKind::Move,
-                                    pos,
-                                    self.modifiers,
-                                ));
-                            }
+                            // Delegate pointer-move to runtime for enter/leave/move dispatch
+                            self.rt.handle_pointer_move(pos);
                         }
 
                         self.prev_touch_px = Some(pos_px);
@@ -1165,18 +870,10 @@ impl ApplicationHandler<()> for App {
                     }
 
                     TouchPhase::Ended | TouchPhase::Cancelled => {
-                        if repose_core::dnd::handle_drag_action(
-                            &repose_core::shortcuts::DragAction::Release {
-                                position: pos,
-                                modifiers: self.modifiers,
-                            },
-                        ) {
-                            self.capture_id = None;
-                            self.scroll_capture_id = None;
-                            self.prev_touch_px = None;
-                            self.pressed_ids.clear();
-                            self.request_redraw();
-                            return;
+                        if t.phase == TouchPhase::Cancelled {
+                            self.rt.handle_pointer_cancel();
+                        } else {
+                            self.rt.handle_pointer_release(pos, PointerButton::Primary);
                         }
 
                         self.active_touches.remove(&tid);
@@ -1184,7 +881,7 @@ impl ApplicationHandler<()> for App {
                             self.pinch_last_dist = None;
                         }
 
-                        // Handle swipe gesture for primary touch
+                        // Handle swipe gesture for primary touch (platform-specific)
                         if self.primary_touch_id == Some(tid) {
                             self.primary_touch_id = None;
 
@@ -1208,10 +905,8 @@ impl ApplicationHandler<()> for App {
                                     if self.dispatch_action(&window, Action::Gesture(g.clone()))
                                         || (dx > 0.0 && self.dispatch_action(&window, Action::Back))
                                     {
-                                        self.capture_id = None;
                                         self.scroll_capture_id = None;
                                         self.prev_touch_px = None;
-                                        self.pressed_ids.clear();
                                         self.request_redraw();
                                         return;
                                     }
@@ -1219,42 +914,8 @@ impl ApplicationHandler<()> for App {
                             }
                         }
 
-                        if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
-                            if let Some(i) = rc::hit_index_by_id(f, cid) {
-                                let hit = &f.hit_regions[i];
-
-                                if t.phase == TouchPhase::Cancelled {
-                                    if let Some(cb) = &hit.on_pointer_cancel {
-                                        cb(rc::pe_touch(
-                                            repose_core::input::PointerEventKind::Cancel,
-                                            pos,
-                                            self.modifiers,
-                                        ));
-                                    }
-                                } else {
-                                    if let Some(cb) = &hit.on_pointer_up {
-                                        cb(rc::pe_up_primary(
-                                            repose_core::input::PointerKind::Touch,
-                                            pos,
-                                            self.modifiers,
-                                        ));
-                                    }
-
-                                    // click only if we didn't scroll-drag
-                                    if !self.touch_scrolled
-                                        && hit.rect.contains(pos)
-                                        && let Some(cb) = &hit.on_click
-                                    {
-                                        cb();
-                                    }
-                                }
-                            }
-                        }
-
-                        self.capture_id = None;
                         self.scroll_capture_id = None;
                         self.prev_touch_px = None;
-                        self.pressed_ids.clear();
                         self.request_redraw();
                     }
                 }
@@ -1263,429 +924,45 @@ impl ApplicationHandler<()> for App {
             WindowEvent::KeyboardInput {
                 event: key_event, ..
             } => {
-                use repose_core::shortcuts::Action;
-
-                if key_event.state == ElementState::Pressed
-                    && !key_event.repeat
-                    && matches!(key_event.physical_key, PhysicalKey::Code(KeyCode::Escape))
-                    && repose_core::dnd::handle_drag_action(
-                        &repose_core::shortcuts::DragAction::Cancel,
-                    )
-                {
-                    return;
-                }
-
-                // Dispatch key event through focus ancestor chain (Compose-compatible)
+                // Convert to KeyEvent for runtime dispatch
                 let mapped_key = rc::map_key(key_event.physical_key);
                 let utf16 = match mapped_key {
                     repose_core::input::Key::Character(c) => c as u16,
                     _ => 0,
                 };
-                let mods = self.modifiers;
-                let repeat = key_event.repeat;
                 let ev_type = if key_event.state == ElementState::Pressed {
                     repose_core::input::KeyEventType::Down
                 } else {
                     repose_core::input::KeyEventType::Up
                 };
-                let consumed = self
-                    .frame_cache
-                    .as_ref()
-                    .and_then(|f| {
-                        let focused = self.sched.focused.or_else(|| {
-                            f.semantics_nodes
-                                .iter()
-                                .find(|n| n.parent.is_none())
-                                .map(|n| n.id)
-                        })?;
-                        let sem_parent_of: std::collections::HashMap<u64, u64> = f
-                            .semantics_nodes
-                            .iter()
-                            .filter_map(|n| n.parent.map(|p| (n.id, p)))
-                            .collect();
-                        let hit_by_id: std::collections::HashMap<u64, &HitRegion> =
-                            f.hit_regions.iter().map(|h| (h.id, h)).collect();
-                        let mut ancestors = Vec::new();
-                        let mut cur = focused;
-                        loop {
-                            ancestors.push(cur);
-                            if let Some(&p) = sem_parent_of.get(&cur) {
-                                cur = p;
-                            } else {
-                                break;
-                            }
-                        }
-                        let make_ke = || repose_core::input::KeyEvent {
-                            key: mapped_key.clone(),
-                            modifiers: mods,
-                            is_repeat: repeat,
-                            event_type: ev_type,
-                            utf16_code_point: utf16,
-                        };
-                        // Top-down preview: root → focused
-                        for &id in ancestors.iter().rev() {
-                            if let Some(hit) = hit_by_id.get(&id) {
-                                if let Some(cb) = &hit.on_preview_key_event {
-                                    if cb(make_ke()) {
-                                        return Some(true);
-                                    }
-                                }
-                            }
-                        }
-                        // Bottom-up normal: focused → root
-                        for &id in ancestors.iter() {
-                            if let Some(hit) = hit_by_id.get(&id) {
-                                if let Some(cb) = &hit.on_key_event {
-                                    if cb(make_ke()) {
-                                        return Some(true);
-                                    }
-                                }
-                            }
-                        }
-                        None
-                    })
-                    .unwrap_or(false);
-                if consumed {
+
+                let ke = repose_core::input::KeyEvent {
+                    key: mapped_key,
+                    modifiers: self.rt.modifiers,
+                    is_repeat: key_event.repeat,
+                    event_type: ev_type,
+                    utf16_code_point: utf16,
+                };
+
+                if self.rt.handle_key(&ke) {
                     self.request_redraw();
                     return;
-                }
-
-                if key_event.state == ElementState::Pressed {
-                    if let Some(action) = repose_core::shortcuts::resolve_action(
-                        repose_core::shortcuts::KeyChord::new(mapped_key, self.modifiers),
-                    ) {
-                        if self.dispatch_action(&window, action) {
-                            self.request_redraw();
-                            return;
-                        }
-                    }
-                }
-
-                if let Some(fid) = self.sched.focused {
-                    // If focused is NOT a TextField, allow Space/Enter activation
-                    let is_textfield = if let Some(f) = &self.frame_cache {
-                        f.semantics_nodes
-                            .iter()
-                            .any(|n| n.id == fid && n.role == Role::TextField)
-                    } else {
-                        false
-                    };
-
-                    if !is_textfield {
-                        match key_event.physical_key {
-                            PhysicalKey::Code(KeyCode::Space)
-                            | PhysicalKey::Code(KeyCode::Enter) => {
-                                if key_event.state == ElementState::Pressed && !key_event.repeat {
-                                    self.pressed_ids.insert(fid);
-                                    self.key_pressed_active = Some(fid);
-                                    self.request_redraw();
-                                    return;
-                                } else if key_event.state == ElementState::Released {
-                                    if self.pressed_ids.contains(&fid) {
-                                        self.pressed_ids.remove(&fid);
-                                        self.key_pressed_active = None;
-
-                                        // Execute click
-                                        if let Some(f) = &self.frame_cache {
-                                            if let Some(hit) =
-                                                f.hit_regions.iter().rev().find(|h| h.id == fid)
-                                            {
-                                                if let Some(cb) = &hit.on_click {
-                                                    cb();
-                                                } else if let Some(cb) = &hit.on_pointer_down {
-                                                    let pe = PointerEvent::new(
-                                                        PointerId(0),
-                                                        PointerKind::Mouse,
-                                                        PointerEventKind::Down(
-                                                            PointerButton::Primary,
-                                                        ),
-                                                        Vec2 { x: 0.0, y: 0.0 },
-                                                        1.0,
-                                                        self.modifiers,
-                                                    );
-                                                    cb(pe);
-                                                }
-                                            }
-                                        }
-                                        self.request_redraw();
-                                        return;
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-
-                // Enter behavior for focused TextField
-                if key_event.state == ElementState::Pressed && !key_event.repeat {
-                    if let PhysicalKey::Code(KeyCode::Enter) = key_event.physical_key {
-                        if let Some(focused_id) = self.sched.focused
-                            && let Some(f) = &self.frame_cache
-                            && let Some(i) = rc::hit_index_by_id(f, focused_id)
-                        {
-                            let hit = &f.hit_regions[i];
-                            let is_multiline = hit.tf_multiline;
-                            let should_submit = if is_multiline {
-                                self.modifiers.ctrl || self.modifiers.meta
-                            } else {
-                                true
-                            };
-
-                            if should_submit {
-                                if let Some(on_submit) = &hit.on_text_submit {
-                                    let key = self.tf_key_of(focused_id);
-                                    if let Some(state) = self.textfield_states.get(&key) {
-                                        on_submit(state.borrow().text.clone());
-                                        self.request_redraw();
-                                        return;
-                                    }
-                                }
-                            } else {
-                                let key = self.tf_key_of(focused_id);
-                                if let Some(state_rc) = self.textfield_states.get(&key) {
-                                    let mut st = state_rc.borrow_mut();
-                                    st.insert_text("\n");
-                                    self.notify_text_change(focused_id, st.text.clone());
-                                    self.tf_ensure_caret_visible_in_hit(&mut st, hit.tf_multiline);
-                                    self.request_redraw();
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Basic TextField edit + plaintext input
-                if key_event.state == ElementState::Pressed {
-                    if let Some(fid) = self.sched.focused {
-                        let key = self.tf_key_of(fid);
-                        if let Some(state_rc) = self.textfield_states.get(&key) {
-                            let mut st = state_rc.borrow_mut();
-                            match key_event.physical_key {
-                                PhysicalKey::Code(KeyCode::Backspace) => {
-                                    st.delete_backward();
-                                    self.notify_text_change(fid, st.text.clone());
-                                }
-                                PhysicalKey::Code(KeyCode::Delete) => {
-                                    st.delete_forward();
-                                    self.notify_text_change(fid, st.text.clone());
-                                }
-                                PhysicalKey::Code(KeyCode::ArrowLeft) => {
-                                    st.move_cursor(-1, self.modifiers.shift);
-                                    st.preferred_x_px = None;
-                                }
-                                PhysicalKey::Code(KeyCode::ArrowRight) => {
-                                    st.move_cursor(1, self.modifiers.shift);
-                                    st.preferred_x_px = None;
-                                }
-                                PhysicalKey::Code(KeyCode::ArrowUp) => {
-                                    if let Some(f) = &self.frame_cache
-                                        && let Some(hit) =
-                                            f.hit_regions.iter().find(|h| h.id == fid)
-                                        && hit.tf_multiline
-                                    {
-                                        let font_px = dp_to_px(TF_FONT_DP)
-                                            * repose_core::locals::text_scale().0;
-                                        let cur = st.caret_index();
-                                        let (new_pos, px) = move_caret_vertical(
-                                            &st.text,
-                                            font_px,
-                                            hit.rect.w,
-                                            cur,
-                                            -1,
-                                            st.preferred_x_px,
-                                        );
-                                        if self.modifiers.shift {
-                                            st.selection.end = new_pos;
-                                        } else {
-                                            st.selection = new_pos..new_pos;
-                                        }
-                                        st.preferred_x_px = Some(px);
-                                        // Use multiline-aware caret visibility
-                                        let (cx, cy, _) = caret_xy_for_byte(
-                                            &st.text,
-                                            font_px,
-                                            hit.rect.w,
-                                            st.caret_index(),
-                                        );
-                                        let iw = st.inner_width;
-                                        let ih = st.inner_height;
-                                        st.ensure_caret_visible_xy(
-                                            cx,
-                                            cy,
-                                            iw,
-                                            ih,
-                                            2.0 * self.scale(&window),
-                                        );
-                                    }
-                                }
-                                PhysicalKey::Code(KeyCode::ArrowDown) => {
-                                    if let Some(f) = &self.frame_cache
-                                        && let Some(hit) =
-                                            f.hit_regions.iter().find(|h| h.id == fid)
-                                        && hit.tf_multiline
-                                    {
-                                        let font_px = dp_to_px(TF_FONT_DP)
-                                            * repose_core::locals::text_scale().0;
-                                        let cur = st.caret_index();
-                                        let (new_pos, px) = move_caret_vertical(
-                                            &st.text,
-                                            font_px,
-                                            hit.rect.w,
-                                            cur,
-                                            1,
-                                            st.preferred_x_px,
-                                        );
-                                        if self.modifiers.shift {
-                                            st.selection.end = new_pos;
-                                        } else {
-                                            st.selection = new_pos..new_pos;
-                                        }
-                                        st.preferred_x_px = Some(px);
-                                        // Use multiline-aware caret visibility
-                                        let (cx, cy, _) = caret_xy_for_byte(
-                                            &st.text,
-                                            font_px,
-                                            hit.rect.w,
-                                            st.caret_index(),
-                                        );
-                                        let iw = st.inner_width;
-                                        let ih = st.inner_height;
-                                        st.ensure_caret_visible_xy(
-                                            cx,
-                                            cy,
-                                            iw,
-                                            ih,
-                                            2.0 * self.scale(&window),
-                                        );
-                                    }
-                                }
-                                PhysicalKey::Code(KeyCode::Home) => st.selection = 0..0,
-                                PhysicalKey::Code(KeyCode::End) => {
-                                    let end = st.text.len();
-                                    st.selection = end..end;
-                                }
-
-                                _ => {}
-                            }
-
-                            if let Some(f) = &self.frame_cache
-                                && let Some(i) = rc::hit_index_by_id(f, fid)
-                            {
-                                self.tf_ensure_caret_visible_in_hit(
-                                    &mut st,
-                                    f.hit_regions[i].tf_multiline,
-                                );
-                            }
-                            self.request_redraw();
-                        }
-                    }
-
-                    if !self.ime_preedit
-                        && !self.modifiers.ctrl
-                        && !self.modifiers.alt
-                        && !self.modifiers.meta
-                        && let Some(raw) = key_event.text.as_deref()
-                    {
-                        let multiline = if let Some(fid) = self.sched.focused {
-                            self.frame_cache
-                                .as_ref()
-                                .and_then(|f| rc::hit_index_by_id(f, fid))
-                                .map(|i| {
-                                    self.frame_cache.as_ref().unwrap().hit_regions[i].tf_multiline
-                                })
-                                .unwrap_or(false)
-                        } else {
-                            false
-                        };
-                        let text: String = raw
-                            .chars()
-                            .filter(|c| !c.is_control() && *c != '\r' && (multiline || *c != '\n'))
-                            .collect();
-
-                        if !text.is_empty()
-                            && let Some(fid) = self.sched.focused
-                        {
-                            let key = self.tf_key_of(fid);
-                            if let Some(state_rc) = self.textfield_states.get(&key) {
-                                let mut st = state_rc.borrow_mut();
-                                st.insert_text(&text);
-                                self.notify_text_change(fid, st.text.clone());
-
-                                if let Some(f) = &self.frame_cache
-                                    && let Some(i) = rc::hit_index_by_id(f, fid)
-                                {
-                                    self.tf_ensure_caret_visible_in_hit(
-                                        &mut st,
-                                        f.hit_regions[i].tf_multiline,
-                                    );
-                                }
-                                self.request_redraw();
-                            }
-                        }
-                    }
                 }
             }
 
             WindowEvent::Ime(ime) => {
-                if let Some(focused_id) = self.sched.focused {
-                    let key = self.tf_key_of(focused_id);
-                    if let Some(state_rc) = self.textfield_states.get(&key) {
-                        let mut state = state_rc.borrow_mut();
-                        match ime {
-                            Ime::Enabled => self.ime_preedit = false,
-                            Ime::Preedit(text, cursor) => {
-                                let cursor_usize = cursor.map(|(a, b)| (a, b));
-                                state.set_composition(text.clone(), cursor_usize);
-                                self.ime_preedit = !text.is_empty();
-                                self.notify_text_change(focused_id, state.text.clone());
-
-                                if let Some(f) = &self.frame_cache
-                                    && let Some(i) = rc::hit_index_by_id(f, focused_id)
-                                {
-                                    self.tf_ensure_caret_visible_in_hit(
-                                        &mut state,
-                                        f.hit_regions[i].tf_multiline,
-                                    );
-                                }
-                                self.request_redraw();
-                            }
-                            Ime::Commit(text) => {
-                                state.commit_composition(text);
-                                self.ime_preedit = false;
-                                self.notify_text_change(focused_id, state.text.clone());
-
-                                if let Some(f) = &self.frame_cache
-                                    && let Some(i) = rc::hit_index_by_id(f, focused_id)
-                                {
-                                    self.tf_ensure_caret_visible_in_hit(
-                                        &mut state,
-                                        f.hit_regions[i].tf_multiline,
-                                    );
-                                }
-                                self.request_redraw();
-                            }
-                            Ime::Disabled => {
-                                self.ime_preedit = false;
-                                if state.composition.is_some() {
-                                    state.cancel_composition();
-                                    self.notify_text_change(focused_id, state.text.clone());
-
-                                    if let Some(f) = &self.frame_cache
-                                        && let Some(i) = rc::hit_index_by_id(f, focused_id)
-                                    {
-                                        self.tf_ensure_caret_visible_in_hit(
-                                            &mut state,
-                                            f.hit_regions[i].tf_multiline,
-                                        );
-                                    }
-                                    self.request_redraw();
-                                }
-                            }
+                let ime_event = match &ime {
+                    Ime::Enabled => repose_core::input::ImeEvent::Start,
+                    Ime::Preedit(text, cursor) => {
+                        repose_core::input::ImeEvent::Update {
+                            text: text.clone(),
+                            cursor: cursor.map(|(a, b)| (a as usize, b as usize)),
                         }
                     }
-                }
+                    Ime::Commit(text) => repose_core::input::ImeEvent::Commit(text.clone()),
+                    Ime::Disabled => repose_core::input::ImeEvent::Cancel,
+                };
+                self.rt.handle_ime(&ime_event);
             }
 
             WindowEvent::RedrawRequested => {
@@ -1705,24 +982,11 @@ impl ApplicationHandler<()> for App {
                 }
 
                 let scale = self.scale(&window);
-                let size_px_u32 = self.sched.size;
-                let focused = self.sched.focused;
 
+                // Compose frame through runtime
                 let root_fn = &mut self.root;
                 let rc = self.render.clone();
-
-                let mut composed_root = move |s: &mut Scheduler| (root_fn)(s, &rc);
-
-                let frame = compose_frame(
-                    &mut self.sched,
-                    &mut composed_root,
-                    scale,
-                    size_px_u32,
-                    self.hover_id,
-                    &self.pressed_ids,
-                    &self.textfield_states,
-                    focused,
-                );
+                let frame = self.rt.compose(root_fn, &rc);
 
                 let output = repose_app::FrameOutput {
                     scene: frame.scene.clone(),
@@ -1730,40 +994,27 @@ impl ApplicationHandler<()> for App {
                     semantics_nodes: frame.semantics_nodes.clone(),
                     focus_chain: frame.focus_chain.clone(),
                     platform: repose_app::PlatformOutput {
-                        cursor: None,
+                        cursor: self.rt.take_cursor_suggestion(),
                         ime_allowed: false,
                         ime_cursor_area: None,
                         clipboard_text: None,
                     },
-                    wants_pointer: !frame.hit_regions.is_empty() || self.hover_id.is_some() || self.capture_id.is_some(),
-                    wants_keyboard: !self.textfield_states.is_empty() || self.ime_preedit,
+                    wants_pointer: !frame.hit_regions.is_empty() || self.rt.hover_id.is_some() || self.rt.capture_id.is_some(),
+                    wants_keyboard: !self.rt.textfield_states.is_empty() || self.rt.ime_preedit,
                 };
 
-                if !output.wants_keyboard && focused.is_some() && self.sched.focused.is_none() && self.ime_preedit {
+                if !output.wants_keyboard && self.rt.sched.focused.is_some() && self.rt.ime_preedit {
                     rc_web::set_ime_for_textfield(&window, false);
-                    self.ime_preedit = false;
+                    self.rt.ime_preedit = false;
                 }
 
                 if let Some(backend) = self.backend.borrow_mut().as_mut() {
                     backend.frame(&frame.scene, GlyphRasterConfig { px: 18.0 * scale });
                 }
 
-                if let Some(fid) = self.sched.focused {
-                    if let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid)
-                        && let Some(key) = hit.tf_state_key
-                        && !self.textfield_states.contains_key(&key)
-                    {
-                        self.textfield_states
-                            .entry(key)
-                            .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())))
-                            .borrow_mut()
-                            .reset_caret_blink();
-                    }
-                }
-
                 repose_core::dnd::set_dnd_frame(Some(frame.clone()));
                 repose_core::dnd::set_dnd_scale(scale);
-                self.frame_cache = Some(frame);
+                self.rt.cache_frame(frame);
                 self.last_redraw = web_time::Instant::now();
 
                 if self.options.continuous_redraw {
@@ -1781,9 +1032,9 @@ impl ApplicationHandler<()> for App {
             if take_frame_request() {
                 self.request_redraw();
             } else if crate::next_caret_blink_deadline(
-                &self.sched,
-                &self.frame_cache,
-                &self.textfield_states,
+                &self.rt.sched,
+                &self.rt.frame_cache,
+                &self.rt.textfield_states,
             )
             .is_some_and(|d| d <= web_time::Instant::now())
             {
