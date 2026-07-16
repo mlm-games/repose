@@ -14,7 +14,7 @@ repose-render-wgpu.workspace = true
 repose-devtools.workspace = true
 log = { workspace = true }
 anyhow = { workspace = true }
-clipawl = { workspace = true, features = ["linux-wayland", "linux-x11"] }
+clipawl = { workspace = true, features = ["async-io", "linux-wayland", "linux-x11"] }
 web-time.workspace = true
 pollster = { workspace = true }
 accesskit = "0.24"
