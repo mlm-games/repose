@@ -341,6 +341,9 @@ fn make_selectable(
                 repose_core::shortcuts::Action::SelectAll => {
                     let len = text.len();
                     *selection.borrow_mut() = Some((0, len));
+                    if len > 0 {
+                        repose_core::clipboard::set_primary_selection(&text);
+                    }
                     true
                 }
                 _ => false,

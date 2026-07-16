@@ -2888,6 +2888,9 @@ impl LayoutEngine {
                                 Action::SelectAll => {
                                     s.selection = 0..s.text.len();
                                     crate::textfield::ensure_caret_visible(&mut s, is_multiline);
+                                    if !s.text.is_empty() {
+                                        repose_core::clipboard::set_primary_selection(&s.text);
+                                    }
                                     handled = true;
                                 }
                                 Action::Undo => {
