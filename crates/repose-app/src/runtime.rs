@@ -168,14 +168,47 @@ impl ReposeRuntime {
         mut root_fn: impl FnMut(&mut Scheduler, &RenderContext) -> View,
         render_ctx: &RenderContext,
     ) -> FrameOutput {
+        let captured = Rc::new(RefCell::new(None::<String>));
+        let hook = captured.clone();
+        repose_core::clipboard::set_clipboard_observer(Box::new(move |text| {
+            *hook.borrow_mut() = Some(text.to_string());
+        }));
+
         let f = self.compose(&mut root_fn, render_ctx);
+
+        repose_core::clipboard::clear_clipboard_observer();
+        let clipboard_text = captured.borrow_mut().take();
+
         let wants_pointer = !f.hit_regions.is_empty() || self.hover_id.is_some() || self.capture_id.is_some();
         let wants_keyboard = !self.textfield_states.is_empty() || self.ime_preedit;
+
+        let ime_allowed = self.sched.focused.map_or(false, |fid| {
+            f.semantics_nodes
+                .iter()
+                .any(|n| n.id == fid && n.role == repose_core::semantics::Role::TextField)
+        });
+
+        let ime_cursor_area = if ime_allowed {
+            self.sched.focused.and_then(|fid| {
+                f.hit_regions.iter().find(|h| h.id == fid).map(|hit| {
+                    let sf = self.scale as f64;
+                    (
+                        hit.rect.x as f64 / sf,
+                        hit.rect.y as f64 / sf,
+                        hit.rect.w as f64 / sf,
+                        hit.rect.h as f64 / sf,
+                    )
+                })
+            })
+        } else {
+            None
+        };
+
         let platform = PlatformOutput {
             cursor: self.take_cursor_suggestion(),
-            ime_allowed: false,
-            ime_cursor_area: None,
-            clipboard_text: None,
+            ime_allowed,
+            ime_cursor_area,
+            clipboard_text,
         };
         FrameOutput {
             scene: f.scene,
