@@ -1788,8 +1788,8 @@ impl WgpuSceneRenderer {
         color_info: ColorInfo,
     ) -> anyhow::Result<()> {
         let y_expected = (w as usize) * (h as usize);
-        let uv_w = (w / 2).max(1);
-        let uv_h = (h / 2).max(1);
+        let uv_w = w.div_ceil(2);
+        let uv_h = h.div_ceil(2);
         let uv_expected = (uv_w as usize) * (uv_h as usize) * 2;
 
         if y.len() < y_expected {
@@ -2011,8 +2011,8 @@ impl WgpuSceneRenderer {
         uv: &[u8],
         color_info: ColorInfo,
     ) -> anyhow::Result<()> {
-        let uv_w = (w / 2).max(1);
-        let uv_h = (h / 2).max(1);
+        let uv_w = w.div_ceil(2);
+        let uv_h = h.div_ceil(2);
 
         let y_expected = (w as usize) * 2;
         let uv_expected = (uv_w as usize) * (uv_h as usize) * 4;

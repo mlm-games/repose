@@ -183,8 +183,8 @@ impl ColorInfo {
         let kg = 1.0 - kr - kb;
 
         // G′ coefficient for Cb and Cr
-        let cb_factor = 2.0 * kb * (1.0 - kb) / (1.0 - kg);
-        let cr_factor = 2.0 * kr * (1.0 - kr) / (1.0 - kg);
+        let cb_factor = 2.0 * kb * (1.0 - kb) / kg;
+        let cr_factor = 2.0 * kr * (1.0 - kr) / kg;
 
         // Combined matrix: [M] * [range_expansion]
         let m00 = y_scale;
