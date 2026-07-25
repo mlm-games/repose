@@ -1,5 +1,4 @@
 name: Release crates
-
 on:
   push:
     tags:
@@ -12,150 +11,14 @@ on:
         default: true
         type: boolean
 
-permissions:
-  contents: write
-
-concurrency:
-  group: release-crate-${{ github.ref }}
-  cancel-in-progress: false
-
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
-  prepare-version:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      version_name: ${{ steps.meta.outputs.version_name }}
-      tag: ${{ steps.meta.outputs.tag }}
-      commit_sha: ${{ steps.meta.outputs.commit_sha }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Install cargo-workspaces
-        run: cargo install cargo-workspaces
-
-      - name: Set version/tag metadata
-        id: meta
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            TAG="${GITHUB_REF_NAME}"
-            VERSION="${TAG#v}"
-            COMMIT_SHA="$(git rev-parse HEAD)"
-          else
-            OLD_VERSION=$(grep -m1 '^version\s*=\s*"' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
-            IFS='.' read -r MAJ MIN PAT <<<"$OLD_VERSION"
-            VERSION="$MAJ.$MIN.$((PAT+1))"
-
-            git config --local user.email "github-actions[bot]@users.noreply.github.com"
-            git config --local user.name "github-actions[bot]"
-
-            cargo workspaces version custom "$VERSION" -y --all --no-individual-tags \
-              -m "chore: bump to v%v [skip ci]" --no-git-push
-
-            git push
-            git push origin "v$VERSION"
-
-            TAG="v$VERSION"
-            COMMIT_SHA="$(git rev-parse HEAD)"
-          fi
-
-          echo "version_name=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
-
-      - name: Validate tag matches workspace version
-        run: |
-          VERSION=$(grep -m1 '^version\s*=\s*"' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
-          if [ "v$VERSION" != "${{ steps.meta.outputs.tag }}" ]; then
-            echo "Version mismatch: tag ${{ steps.meta.outputs.tag }} != Cargo.toml v$VERSION"
-            exit 1
-          fi
-
-  publish:
-    name: Publish to crates.io
-    needs: prepare-version
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.prepare-version.outputs.commit_sha }}
-
-      - name: Install deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwayland-dev libxkbcommon-dev libfontconfig-dev \
-            libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
-            pkg-config
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Package workspace crates
-        run: |
-          cargo package --workspace --locked \
-            --exclude showcase --exclude animation_demo --exclude android_counter
-
-      - name: Upload crate artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: crates
-          path: target/package/*.crate
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Publish workspace crates
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          set -euo pipefail
-          for i in 1 2 3; do
-            if cargo publish --workspace --locked \
-              --exclude showcase --exclude animation_demo --exclude android_counter \
-              2>&1; then
-              exit 0
-            fi
-            echo "Retry $i/3 failed, waiting $((i*10))s..."
-            sleep $((i*10))
-          done
-          exit 1
-
   release:
-    name: Create GitHub Release
-    needs:
-      - prepare-version
-      - publish
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v7
-        with:
-          name: crates
-          path: dist
-
-      - name: Generate checksums
-        run: |
-          cd dist
-          sha256sum *.crate > SHA256SUMS.txt
-          cat SHA256SUMS.txt
-
-      - name: Create/Update Release
-        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_release == true) }}
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ needs.prepare-version.outputs.tag }}
-          name: ${{ needs.prepare-version.outputs.tag }}
-          generate_release_notes: true
-          target_commitish: ${{ needs.prepare-version.outputs.commit_sha }}
-          files: |
-            dist/*.crate
-            dist/SHA256SUMS.txt
+    uses: mlm-games/ci/.github/workflows/crate-publish.yml@main
+    with:
+      auto-bump: ${{ github.event_name == 'workflow_dispatch' }}
+      create-release: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_release) }}
+      workspace-publish: true
+      workspace-exclude: "showcase animation_demo android_counter"
+      system-deps: "libwayland-dev libxkbcommon-dev libfontconfig-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev pkg-config"
+    secrets:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
