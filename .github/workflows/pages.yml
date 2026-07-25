@@ -14,4 +14,4 @@ jobs:
     uses: mlm-games/ci/.github/workflows/pages.yml@main
     with:
       working-directory: examples/showcase
-      dist-dir: examples/showcase/dist
+      dist-dir: dist
