@@ -924,9 +924,10 @@ pub fn run_android_app_with_options(
 
                     self.process_render_commands();
 
-                    let Some(win) = self.window.as_ref() else { return; };
-
-                    let scale = win.scale_factor() as f32;
+                    let scale = {
+                        let Some(win) = self.window.as_ref() else { return; };
+                        win.scale_factor() as f32
+                    };
                     let size_px_u32 = self.rt.sched.size;
                     let focused = self.rt.sched.focused;
 
@@ -966,7 +967,9 @@ pub fn run_android_app_with_options(
 
                     if !output.wants_keyboard && focused.is_some() && self.rt.sched.focused.is_none() && self.rt.ime_preedit {
                         self.rt.ime_preedit = false;
-                        win.set_ime_allowed(false);
+                        if let Some(win) = self.window.as_ref() {
+                            win.set_ime_allowed(false);
+                        }
                     }
 
                     repose_core::dnd::set_dnd_frame(Some(frame.clone()));
@@ -995,7 +998,9 @@ pub fn run_android_app_with_options(
                     self.dirty = false;
 
                     if self.options.continuous_redraw {
-                        win.request_redraw();
+                        if let Some(win) = self.window.as_ref() {
+                            win.request_redraw();
+                        }
                     }
                 }
                 _ => {}
