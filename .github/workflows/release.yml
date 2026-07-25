@@ -10,12 +10,22 @@ on:
         required: true
         default: true
         type: boolean
+      bump_type:
+        description: "Version bump type (patch/minor/major)"
+        required: false
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 jobs:
   release:
     uses: mlm-games/ci/.github/workflows/crate-publish.yml@main
     with:
       auto-bump: ${{ github.event_name == 'workflow_dispatch' }}
+      bump-type: ${{ inputs.bump_type }}
       create-release: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_release) }}
       workspace-publish: true
       workspace-exclude: "showcase animation_demo android_counter"
