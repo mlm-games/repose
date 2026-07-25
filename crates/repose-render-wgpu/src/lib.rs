@@ -1600,8 +1600,9 @@ impl WgpuSurfaceBackend {
             .present_modes
             .iter()
             .copied()
-            .find(|m| *m == wgpu::PresentMode::Mailbox || *m == wgpu::PresentMode::Immediate)
-            .unwrap_or(wgpu::PresentMode::Fifo);
+            .find(|m| *m == wgpu::PresentMode::Fifo)
+            .or_else(|| caps.present_modes.iter().copied().find(|m| *m == wgpu::PresentMode::Mailbox))
+            .unwrap_or(wgpu::PresentMode::Immediate);
         let alpha_mode = caps.alpha_modes[0];
 
         // Pick MSAA sample count
@@ -1627,7 +1628,7 @@ impl WgpuSurfaceBackend {
             alpha_mode,
             color_space: wgpu::SurfaceColorSpace::Auto,
             view_formats: vec![],
-            desired_maximum_frame_latency: 2,
+            desired_maximum_frame_latency: 1,
         };
         surface.configure(&renderer.device, &config);
 
@@ -1975,7 +1976,7 @@ impl WgpuSceneRenderer {
         w: u32,
         h: u32,
         pixel_format: PixelFormat,
-        planes: &[Vec<u8>],
+        planes: &[&[u8]],
         color_info: ColorInfo,
     ) -> anyhow::Result<()> {
         match pixel_format {

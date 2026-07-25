@@ -7,7 +7,7 @@ pub use crate::color::Color;
 pub use crate::dnd::*;
 pub use crate::effects::{Dispose, effect, on_unmount};
 pub use crate::error::*;
-pub use crate::frame_clock::{peek_frame_request, request_frame, take_frame_request};
+pub use crate::frame_clock::{peek_frame_request, request_frame, request_present, take_frame_request};
 pub use crate::geometry::{Rect, Size, Vec2};
 pub use crate::indication::*;
 pub use crate::input::*;

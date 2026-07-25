@@ -142,7 +142,8 @@ pub use effects::*;
 pub use effects_ext::*;
 pub use focus::*;
 pub use frame_clock::{
-    peek_frame_request, request_frame, signal_fired, take_frame_request, take_signal_fired,
+    peek_frame_request, request_frame, request_present, signal_fired, take_frame_request,
+    take_present_request, take_signal_fired,
 };
 pub use geometry::*;
 pub use gesture::*;

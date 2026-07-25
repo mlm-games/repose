@@ -1,5 +1,7 @@
+use std::sync::Arc;
+
 use crate::color::{ColorInfo, PixelFormat};
-use crate::{ImageHandle, request_frame};
+use crate::{ImageHandle, request_present};
 
 #[derive(Debug)]
 pub enum RenderCommand {
@@ -28,7 +30,7 @@ pub enum RenderCommand {
         w: u32,
         h: u32,
         pixel_format: PixelFormat,
-        planes: Vec<Vec<u8>>,
+        planes: Vec<Arc<[u8]>>,
         color_info: ColorInfo,
     },
     RemoveImage {
@@ -86,7 +88,7 @@ mod imp {
                     srgb,
                 },
             );
-            request_frame();
+            request_present();
         }
 
         pub fn set_image_rgba8(
@@ -109,7 +111,7 @@ mod imp {
                     srgb,
                 },
             );
-            request_frame();
+            request_present();
         }
 
         pub fn set_image_nv12(
@@ -117,8 +119,8 @@ mod imp {
             handle: ImageHandle,
             w: u32,
             h: u32,
-            y: Vec<u8>,
-            uv: Vec<u8>,
+            y: Arc<[u8]>,
+            uv: Arc<[u8]>,
             color_info: ColorInfo,
         ) {
             self.set_image_planes(handle, w, h, PixelFormat::Nv12, vec![y, uv], color_info);
@@ -130,7 +132,7 @@ mod imp {
             w: u32,
             h: u32,
             pixel_format: PixelFormat,
-            planes: Vec<Vec<u8>>,
+            planes: Vec<Arc<[u8]>>,
             color_info: ColorInfo,
         ) {
             let mut q = self.q.lock().unwrap();
@@ -146,14 +148,14 @@ mod imp {
                     color_info,
                 },
             );
-            request_frame();
+            request_present();
         }
 
         pub fn remove_image(&self, handle: ImageHandle) {
             let mut q = self.q.lock().unwrap();
             q.removals.remove(&handle);
             q.updates.remove(&handle);
-            request_frame();
+            request_present();
         }
 
         pub fn drain(&self) -> Vec<RenderCommand> {
@@ -185,6 +187,7 @@ mod imp {
     use std::cell::RefCell;
     use std::collections::{HashMap, HashSet};
     use std::rc::Rc;
+    use std::sync::Arc;
 
     struct Queue {
         updates: HashMap<ImageHandle, RenderCommand>,
@@ -232,7 +235,7 @@ mod imp {
                     srgb,
                 },
             );
-            request_frame();
+            request_present();
         }
 
         pub fn set_image_rgba8(
@@ -255,7 +258,7 @@ mod imp {
                     srgb,
                 },
             );
-            request_frame();
+            request_present();
         }
 
         pub fn set_image_nv12(
@@ -263,8 +266,8 @@ mod imp {
             handle: ImageHandle,
             w: u32,
             h: u32,
-            y: Vec<u8>,
-            uv: Vec<u8>,
+            y: Arc<[u8]>,
+            uv: Arc<[u8]>,
             color_info: ColorInfo,
         ) {
             self.set_image_planes(handle, w, h, PixelFormat::Nv12, vec![y, uv], color_info);
@@ -276,7 +279,7 @@ mod imp {
             w: u32,
             h: u32,
             pixel_format: PixelFormat,
-            planes: Vec<Vec<u8>>,
+            planes: Vec<Arc<[u8]>>,
             color_info: ColorInfo,
         ) {
             let mut s = self.inner.borrow_mut();
@@ -292,14 +295,14 @@ mod imp {
                     color_info,
                 },
             );
-            request_frame();
+            request_present();
         }
 
         pub fn remove_image(&self, handle: ImageHandle) {
             let mut s = self.inner.borrow_mut();
             s.q.updates.remove(&handle);
             s.q.removals.insert(handle);
-            request_frame();
+            request_present();
         }
 
         pub fn drain(&self) -> Vec<RenderCommand> {

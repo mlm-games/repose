@@ -1063,6 +1063,15 @@ pub fn run_desktop_app(
                     if !self.redraw_requested.replace(false) {
                         self.process_a11y_actions();
                         self.process_render_commands();
+                        // Present-only: redraw last cached scene with updated textures
+                        if let (Some(backend), Some(frame)) =
+                            (self.backend.as_mut(), self.rt.frame_cache.as_ref())
+                        {
+                            let scale = self.window.as_ref().map(|w| w.scale_factor() as f32).unwrap_or(1.0);
+                            let mut scene = frame.scene.clone();
+                            self.inspector.frame(&mut scene);
+                            backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
+                        }
                         log::trace!("RedrawRequested: no frame request, skipping compose");
                         return;
                     }
@@ -1143,6 +1152,10 @@ pub fn run_desktop_app(
                         self.external_file_drag,
                     );
 
+                    // Drain upload commands queued during compose (e.g. VideoSink set_image_*)
+                    // before presenting to avoid 1-frame GPU texture lag.
+                    self.process_render_commands();
+
                     // Now borrow backend mutably only for the frame() call
                     let win = self.window.as_ref().unwrap();
                     let scale = win.scale_factor() as f32;
@@ -1203,9 +1216,28 @@ pub fn run_desktop_app(
                 }
             }
 
-            if take_frame_request() {
+            let needs_compose = take_frame_request();
+            let needs_present = take_present_request();
+
+            if needs_compose {
                 self.pending_redraw = true;
             }
+
+            // Present-only: texture was updated, redraw last cached scene without compose.
+            if !self.pending_redraw && needs_present && self.rt.frame_cache.is_some() {
+                let now = Instant::now();
+                let interval = web_time::Duration::from_millis(16);
+                if now.saturating_duration_since(self.last_redraw) >= interval {
+                    rc::request_redraw(&self.window);
+                    self.last_redraw = now;
+                } else {
+                    el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                        self.last_redraw + interval,
+                    ));
+                }
+                return;
+            }
+
             if !self.pending_redraw {
                 let now = Instant::now();
                 let idle_cap = web_time::Duration::from_millis(1000);

@@ -993,6 +993,9 @@ impl ApplicationHandler<()> for App {
                 let rc = self.render.clone();
                 let frame = self.rt.compose(root_fn, &rc);
 
+                // Drain upload commands queued during compose before presenting
+                self.drain_render_commands();
+
                 let output = repose_app::FrameOutput {
                     scene: frame.scene.clone(),
                     hit_regions: frame.hit_regions.clone(),
@@ -1035,6 +1038,8 @@ impl ApplicationHandler<()> for App {
         crate::process_deeplinks();
         if !self.options.continuous_redraw {
             if take_frame_request() {
+                self.request_redraw();
+            } else if take_present_request() && self.rt.frame_cache.is_some() {
                 self.request_redraw();
             } else if crate::next_caret_blink_deadline(
                 &self.rt.sched,

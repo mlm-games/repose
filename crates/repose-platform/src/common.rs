@@ -406,7 +406,8 @@ pub(crate) fn process_render_commands(
                 planes,
                 color_info,
             } => {
-                let _ = backend.set_image_planes(handle, w, h, pixel_format, &planes, color_info);
+                let refs: Vec<&[u8]> = planes.iter().map(|p| p.as_ref()).collect();
+                let _ = backend.set_image_planes(handle, w, h, pixel_format, &refs, color_info);
             }
             RenderCommand::RemoveImage { handle } => {
                 backend.remove_image(handle);

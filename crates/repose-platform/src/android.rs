@@ -946,6 +946,9 @@ pub fn run_android_app_with_options(
                         focused,
                     );
 
+                    // Drain upload commands queued during compose before presenting
+                    self.process_render_commands();
+
                     let output = repose_app::FrameOutput {
                         scene: frame.scene.clone(),
                         hit_regions: frame.hit_regions.clone(),
@@ -1002,6 +1005,8 @@ pub fn run_android_app_with_options(
         fn about_to_wait(&mut self, _el: &winit::event_loop::ActiveEventLoop) {
             crate::process_deeplinks();
             if self.options.continuous_redraw || self.dirty || take_frame_request() {
+                self.request_redraw();
+            } else if take_present_request() && self.rt.frame_cache.is_some() {
                 self.request_redraw();
             } else if crate::next_caret_blink_deadline(
                 &self.rt.sched,

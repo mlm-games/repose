@@ -1,26 +1,40 @@
 use std::cell::Cell;
 
 thread_local! {
-    static NEEDS_FRAME: Cell<bool> = const { Cell::new(true) };
+    static NEEDS_COMPOSE: Cell<bool> = const { Cell::new(true) };
+    static NEEDS_PRESENT: Cell<bool> = const { Cell::new(false) };
     static SIGNAL_FIRED: Cell<bool> = const { Cell::new(false) };
 }
 
-/// Request another frame (coalesced).
+/// Request another frame (coalesced). Sets both compose and present flags.
 #[inline]
 pub fn request_frame() {
-    NEEDS_FRAME.set(true);
+    NEEDS_COMPOSE.set(true);
+    NEEDS_PRESENT.set(true);
 }
 
-/// Returns true if a frame was requested since last check, and clears the flag.
+/// Request a present-only (no full recompose), e.g. for texture uploads.
+#[inline]
+pub fn request_present() {
+    NEEDS_PRESENT.set(true);
+}
+
+/// Returns true if a compose was requested since last check, and clears the flag.
 #[inline]
 pub fn take_frame_request() -> bool {
-    NEEDS_FRAME.replace(false)
+    NEEDS_COMPOSE.replace(false)
+}
+
+/// Returns true if a present was requested since last check, and clears the flag.
+#[inline]
+pub fn take_present_request() -> bool {
+    NEEDS_PRESENT.replace(false)
 }
 
 /// Non-consuming check (rarely needed).
 #[inline]
 pub fn peek_frame_request() -> bool {
-    NEEDS_FRAME.get()
+    NEEDS_COMPOSE.get()
 }
 
 /// Mark that a signal just fired (real data change).
