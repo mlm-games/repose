@@ -23,6 +23,8 @@ on:
 
 jobs:
   release:
+    permissions:
+      contents: write
     uses: mlm-games/ci/.github/workflows/crate-publish.yml@main
     with:
       auto-bump: ${{ github.event_name == 'workflow_dispatch' && inputs.bump_type != 'none' }}
