@@ -33,6 +33,18 @@ pub enum RenderCommand {
         planes: Vec<Arc<[u8]>>,
         color_info: ColorInfo,
     },
+    #[cfg(target_os = "linux")]
+    SetImageDmaBuf {
+        handle: ImageHandle,
+        w: u32,
+        h: u32,
+        fds: Vec<std::os::unix::io::OwnedFd>,
+        fourcc: u32,
+        modifier: u64,
+        strides: Vec<u32>,
+        offsets: Vec<u64>,
+        color_info: ColorInfo,
+    },
     RemoveImage {
         handle: ImageHandle,
     },
@@ -155,6 +167,38 @@ mod imp {
             let mut q = self.q.lock().unwrap();
             q.removals.remove(&handle);
             q.updates.remove(&handle);
+            request_present();
+        }
+
+        #[cfg(target_os = "linux")]
+        pub fn set_image_dmabuf(
+            &self,
+            handle: ImageHandle,
+            w: u32,
+            h: u32,
+            fds: Vec<std::os::unix::io::OwnedFd>,
+            fourcc: u32,
+            modifier: u64,
+            strides: Vec<u32>,
+            offsets: Vec<u64>,
+            color_info: ColorInfo,
+        ) {
+            let mut q = self.q.lock().unwrap();
+            q.removals.remove(&handle);
+            q.updates.insert(
+                handle,
+                RenderCommand::SetImageDmaBuf {
+                    handle,
+                    w,
+                    h,
+                    fds,
+                    fourcc,
+                    modifier,
+                    strides,
+                    offsets,
+                    color_info,
+                },
+            );
             request_present();
         }
 
@@ -303,6 +347,22 @@ mod imp {
             s.q.updates.remove(&handle);
             s.q.removals.insert(handle);
             request_present();
+        }
+
+        #[cfg(target_os = "linux")]
+        pub fn set_image_dmabuf(
+            &self,
+            _handle: ImageHandle,
+            _w: u32,
+            _h: u32,
+            _fds: Vec<std::os::unix::io::OwnedFd>,
+            _fourcc: u32,
+            _modifier: u64,
+            _strides: Vec<u32>,
+            _offsets: Vec<u64>,
+            _color_info: ColorInfo,
+        ) {
+            // DMA-BUF not supported on WASM
         }
 
         pub fn drain(&self) -> Vec<RenderCommand> {

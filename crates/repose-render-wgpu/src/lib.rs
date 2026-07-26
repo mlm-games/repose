@@ -1575,10 +1575,25 @@ impl WgpuSurfaceBackend {
 
         let limits = adapter.limits();
 
+        #[cfg(target_os = "linux")]
+        let features = {
+            let af = adapter.features();
+            let mut f = wgpu::Features::empty();
+            if af.contains(wgpu::Features::VULKAN_EXTERNAL_MEMORY_FD) {
+                f |= wgpu::Features::VULKAN_EXTERNAL_MEMORY_FD;
+            }
+            if af.contains(wgpu::Features::VULKAN_EXTERNAL_MEMORY_DMA_BUF) {
+                f |= wgpu::Features::VULKAN_EXTERNAL_MEMORY_DMA_BUF;
+            }
+            f
+        };
+        #[cfg(not(target_os = "linux"))]
+        let features = wgpu::Features::empty();
+
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("repose-rs device"),
-                required_features: wgpu::Features::empty(),
+                required_features: features,
                 required_limits: limits,
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
                 memory_hints: wgpu::MemoryHints::default(),
@@ -2185,6 +2200,175 @@ impl WgpuSceneRenderer {
                 width: uv_w,
                 height: uv_h,
                 depth_or_array_layers: 1,
+            },
+        );
+
+        self.evict_budget_excess();
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn set_image_dmabuf(
+        &mut self,
+        handle: u64,
+        w: u32,
+        h: u32,
+        fds: Vec<std::os::unix::io::OwnedFd>,
+        modifier: u64,
+        strides: Vec<u32>,
+        offsets: Vec<u64>,
+        color_info: ColorInfo,
+    ) -> anyhow::Result<()> {
+        log::info!("set_image_dmabuf handle={handle} {}x{} fds={} modifier=0x{modifier:x}", w, h, fds.len());
+
+        self.remove_image(handle);
+
+        let yuv = color_info.to_yuv_transform();
+        let yuv_raw = YuvTransformRaw {
+            row0: [yuv.m[0][0], yuv.m[0][1], yuv.m[0][2], 0.0],
+            row1: [yuv.m[1][0], yuv.m[1][1], yuv.m[1][2], 0.0],
+            row2: [yuv.m[2][0], yuv.m[2][1], yuv.m[2][2], 0.0],
+            b: [yuv.b[0], yuv.b[1], yuv.b[2], 0.0],
+        };
+
+        if fds.len() != 2 {
+            return Err(anyhow::anyhow!(
+                "unsupported fd count {} - need exactly 2 for separate Y/UV planes",
+                fds.len()
+            ));
+        }
+
+        let uv_w = w.div_ceil(2);
+        let uv_h = h.div_ceil(2);
+
+        let hal_y_desc = wgpu::hal::TextureDescriptor {
+            label: Some("dmabuf y"),
+            size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::wgt::TextureUses::RESOURCE,
+            memory_flags: wgpu::hal::MemoryFlags::empty(),
+            view_formats: vec![],
+        };
+        let hal_uv_desc = wgpu::hal::TextureDescriptor {
+            label: Some("dmabuf uv"),
+            size: wgpu::Extent3d { width: uv_w, height: uv_h, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rg8Unorm,
+            usage: wgpu::wgt::TextureUses::RESOURCE,
+            memory_flags: wgpu::hal::MemoryFlags::empty(),
+            view_formats: vec![],
+        };
+
+        let wgpu_y_desc = wgpu::TextureDescriptor {
+            label: Some("dmabuf y"),
+            size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        };
+        let wgpu_uv_desc = wgpu::TextureDescriptor {
+            label: Some("dmabuf uv"),
+            size: wgpu::Extent3d { width: uv_w, height: uv_h, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rg8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        };
+
+        let (tex_y, view_y, tex_uv, view_uv) = unsafe {
+            let mut hal_guard = self.device.as_hal::<wgpu::hal::vulkan::Api>()
+                .ok_or_else(|| {
+                    log::warn!("as_hal::<vulkan::Api> returned None");
+                    anyhow::anyhow!("Device is not Vulkan")
+                })?;
+
+            let mut fds = fds;
+            let uv_fd = fds.remove(1);
+            let y_fd = fds.remove(0);
+
+            let yt = hal_guard
+                .texture_from_dmabuf_fd(y_fd, &hal_y_desc, modifier, strides[0] as u64, offsets[0] as u64)
+                .map_err(|e| anyhow::anyhow!("import Y dmabuf: {e:?}"))?;
+            log::info!("imported Y dmabuf OK");
+
+            let uvt = hal_guard
+                .texture_from_dmabuf_fd(uv_fd, &hal_uv_desc, modifier, strides[1] as u64, offsets[1] as u64)
+                .map_err(|e| anyhow::anyhow!("import UV dmabuf: {e:?}"))?;
+            log::info!("imported UV dmabuf OK");
+
+            drop(hal_guard);
+
+            let tex_y = self.device.create_texture_from_hal::<wgpu::hal::vulkan::Api>(
+                yt,
+                &wgpu_y_desc,
+                wgpu::wgt::TextureUses::UNINITIALIZED,
+            );
+            let view_y = tex_y.create_view(&wgpu::TextureViewDescriptor::default());
+
+            let tex_uv = self.device.create_texture_from_hal::<wgpu::hal::vulkan::Api>(
+                uvt,
+                &wgpu_uv_desc,
+                wgpu::wgt::TextureUses::UNINITIALIZED,
+            );
+            let view_uv = tex_uv.create_view(&wgpu::TextureViewDescriptor::default());
+
+            (tex_y, view_y, tex_uv, view_uv)
+        };
+
+        let yuv_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("dmabuf yuv transform"),
+            size: std::mem::size_of::<YuvTransformRaw>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(&yuv_buf, 0, bytemuck::bytes_of(&yuv_raw));
+
+        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("dmabuf nv12 bind"),
+            layout: &self.image_bind_layout_nv12,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view_y) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&view_uv) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.image_sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &yuv_buf,
+                        offset: 0,
+                        size: None,
+                    }),
+                },
+            ],
+        });
+
+        let bytes = (w as u64) * (h as u64)
+            + (uv_w as u64) * (uv_h as u64) * 2
+            + std::mem::size_of::<YuvTransformRaw>() as u64;
+
+        self.images.insert(
+            handle,
+            ImageTex::Nv12 {
+                tex_y,
+                view_y,
+                tex_uv,
+                view_uv,
+                bind,
+                yuv_buf,
+                w,
+                h,
+                color_info,
+                last_used_frame: self.frame_index,
+                bytes,
             },
         );
 

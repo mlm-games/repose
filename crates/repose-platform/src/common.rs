@@ -409,6 +409,22 @@ pub(crate) fn process_render_commands(
                 let refs: Vec<&[u8]> = planes.iter().map(|p| p.as_ref()).collect();
                 let _ = backend.set_image_planes(handle, w, h, pixel_format, &refs, color_info);
             }
+            #[cfg(target_os = "linux")]
+            RenderCommand::SetImageDmaBuf {
+                handle,
+                w,
+                h,
+                fds,
+                fourcc: _,
+                modifier,
+                strides,
+                offsets,
+                color_info,
+            } => {
+                if let Err(e) = backend.set_image_dmabuf(handle, w, h, fds, modifier, strides, offsets, color_info) {
+                    log::warn!("set_image_dmabuf failed: {e:?}");
+                }
+            }
             RenderCommand::RemoveImage { handle } => {
                 backend.remove_image(handle);
             }
