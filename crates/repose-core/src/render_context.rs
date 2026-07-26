@@ -165,7 +165,7 @@ mod imp {
 
         pub fn remove_image(&self, handle: ImageHandle) {
             let mut q = self.q.lock().unwrap();
-            q.removals.remove(&handle);
+            q.removals.insert(handle);
             q.updates.remove(&handle);
             request_present();
         }
