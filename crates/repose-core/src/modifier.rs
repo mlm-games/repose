@@ -1404,6 +1404,13 @@ impl Modifier {
         self.transform = Some(t);
         self
     }
+    pub fn transform_origin(mut self, x: f32, y: f32) -> Self {
+        let mut t = self.transform.unwrap_or_else(Transform::identity);
+        t.origin_x = x;
+        t.origin_y = y;
+        self.transform = Some(t);
+        self
+    }
     pub fn weight(mut self, w: f32) -> Self {
         let w = w.max(0.0);
         self.flex_grow = Some(w);

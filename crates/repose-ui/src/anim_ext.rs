@@ -238,7 +238,7 @@ fn apply_enter(
                 *spec,
             );
             let a = animate_f32_from(format!("{key}:v{version}:enter:fade"), 0.0, 1.0, *spec);
-            Box(Modifier::new().fill_max_size().scale(s).alpha(a)).child(view)
+            Box(Modifier::new().fill_max_size().transform_origin(0.5, 0.5).scale(s).alpha(a)).child(view)
         }
         EnterTransition::Composite(transitions) => {
             let mut v = view;
@@ -281,7 +281,7 @@ fn apply_enter_single(
                 1.0,
                 *spec,
             );
-            Box(Modifier::new().fill_max_size().scale(s)).child(view)
+            Box(Modifier::new().fill_max_size().transform_origin(0.5, 0.5).scale(s)).child(view)
         }
         EnterTransition::Composite(inner) => {
             let mut v = view;
@@ -320,7 +320,7 @@ fn apply_exit(
         ExitTransition::ScaleOut { target } => {
             let s = animate_f32_from(format!("{key}:v{version}:exit:scale"), 1.0, *target, *spec);
             let a = animate_f32_from(format!("{key}:v{version}:exit:fade"), 1.0, 0.0, *spec);
-            Box(Modifier::new().fill_max_size().scale(s).alpha(a)).child(view)
+            Box(Modifier::new().fill_max_size().transform_origin(0.5, 0.5).scale(s).alpha(a)).child(view)
         }
         ExitTransition::Composite(transitions) => {
             let mut v = view;
@@ -358,7 +358,7 @@ fn apply_exit_single(
         }
         ExitTransition::ScaleOut { target } => {
             let s = animate_f32_from(format!("{key}:v{version}:exit:scale"), 1.0, *target, *spec);
-            Box(Modifier::new().fill_max_size().scale(s)).child(view)
+            Box(Modifier::new().fill_max_size().transform_origin(0.5, 0.5).scale(s)).child(view)
         }
         ExitTransition::Composite(inner) => {
             let mut v = view;

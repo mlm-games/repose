@@ -65,6 +65,8 @@ pub struct Transform {
     pub scale_x: f32,
     pub scale_y: f32,
     pub rotate: f32, // radians
+    pub origin_x: f32,
+    pub origin_y: f32,
 }
 
 impl Transform {
@@ -75,6 +77,8 @@ impl Transform {
             scale_x: 1.0,
             scale_y: 1.0,
             rotate: 0.0,
+            origin_x: 0.5,
+            origin_y: 0.5,
         }
     }
 
@@ -85,6 +89,8 @@ impl Transform {
             scale_x: 1.0,
             scale_y: 1.0,
             rotate: 0.0,
+            origin_x: 0.5,
+            origin_y: 0.5,
         }
     }
 
@@ -167,6 +173,8 @@ impl Transform {
             scale_x: self.scale_x * other.scale_x,
             scale_y: self.scale_y * other.scale_y,
             rotate: self.rotate + other.rotate,
+            origin_x: self.origin_x,
+            origin_y: self.origin_y,
         }
     }
 }
