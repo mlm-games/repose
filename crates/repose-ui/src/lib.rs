@@ -47,7 +47,7 @@
 //! - Visuals: `background`, `background_brush`, `border`, `clip_rounded`, `alpha`, `transform`.
 //! - Flex / grid: `flex_grow`, `flex_shrink`, `flex_basis`, `align_self`,
 //!   `justify_content`, `align_items`, `grid`, `grid_span`.
-//! - Positioning: `absolute()`, `offset(..)` for overlay / Stack / FABs.
+//! - Positioning: `absolute()`, `offset(..)` for overlay / FABs.
 //! - Interaction: `clickable()`, pointer callbacks, `on_scroll`, `semantics`.
 //! - Custom paint: `painter` (used by `repose-canvas`).
 //!
@@ -96,7 +96,7 @@
 //!    - Build `HitRegion`s for input routing (clicks, pointer events, scroll).
 //!    - Build `SemNode`s for accessibility / semantics.
 //!
-//! `Row`, `Column`, `Stack`, `Grid`, `ScrollV` and `ScrollXY` are all special
+//! `Row`, `Column`, `Box`, `ZStack`, `Grid`, `ScrollV` and `ScrollXY` are all special
 //! `ViewKind`s that map into Taffy styles and additional paint/hit logic.
 //!
 //! Because layout + paint are separate from the platform runner, you can reuse
@@ -174,6 +174,13 @@ pub fn FlowRow(modifier: Modifier) -> View {
     Row(modifier.flex_wrap(FlexWrap::Wrap))
 }
 
+/// Flipped container (identical to `Column`).
+/// Deprecated: use `Column` directly.
+#[deprecated = "Use Column instead (identical behavior)"]
+pub fn Stack(modifier: Modifier) -> View {
+    Column(modifier)
+}
+
 /// A vertically-oriented flow layout that wraps children to new columns when
 /// they exceed the available height. Equivalent to `Column` with `flex_wrap(Wrap)`.
 pub fn FlowColumn(modifier: Modifier) -> View {
@@ -183,10 +190,6 @@ pub fn FlowColumn(modifier: Modifier) -> View {
 /// Align self-center shorthand.
 pub fn Center(modifier: Modifier) -> View {
     Box(modifier.align_self(AlignSelf::CENTER))
-}
-
-pub fn Stack(modifier: Modifier) -> View {
-    View::new(0, ViewKind::Stack).modifier(modifier)
 }
 
 pub fn ZStack(modifier: Modifier) -> View {
@@ -463,8 +466,9 @@ pub trait ViewExt: Sized {
 }
 
 impl ViewExt for View {
-    fn child(self, children: impl IntoChildren) -> Self {
-        self.with_children(children.into_children())
+    fn child(mut self, children: impl IntoChildren) -> Self {
+        self.children.extend(children.into_children());
+        self
     }
 }
 

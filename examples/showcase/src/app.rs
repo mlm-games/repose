@@ -11,7 +11,7 @@ use repose_navigation::{
 };
 use repose_ui::overlay::{OverlayHandle, SnackbarAction, SnackbarController, SnackbarRequest};
 use repose_ui::windowing::{WindowHost, WindowManagerState};
-use repose_ui::{Stack, ViewExt};
+use repose_ui::{Column, ViewExt};
 use serde::{Deserialize, Serialize};
 
 use crate::pages::{self, PageCtx};
@@ -377,7 +377,7 @@ pub fn app(_s: &mut Scheduler) -> View {
         }),
     );
 
-    Stack(Modifier::new().fill_max_size()).child((
+    Column(Modifier::new().fill_max_size()).child((
         overlay_root,
         ui::ShortcutHud(shortcut_note.get(), shortcut_fired.get()),
     ))

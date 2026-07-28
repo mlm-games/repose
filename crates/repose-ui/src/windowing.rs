@@ -6,7 +6,7 @@ use repose_core::{
     PointerEvent, PointerEventKind, Rect, Size, StateColors, Vec2, View, request_frame,
 };
 
-use crate::{Box, Column, Row, Spacer, Stack, Text, TextStyle, ViewExt, ZStack};
+use crate::{Box, Column, Row, Spacer, Text, TextStyle, ViewExt, ZStack};
 
 const TITLE_BAR_HEIGHT_DP: f32 = 32.0;
 const WINDOW_PADDING_DP: f32 = 8.0;
@@ -557,12 +557,12 @@ pub fn WindowHost(
         })
         .collect::<Vec<_>>();
 
-    Stack(host_mod).child((
+    Column(host_mod).child((
         content,
         Box(Modifier::new()
             .absolute()
             .offset(Some(0.0), Some(0.0), Some(0.0), Some(0.0)))
-        .child(Stack(Modifier::new().fill_max_size()).with_children(window_views)),
+        .child(Column(Modifier::new().fill_max_size()).with_children(window_views)),
     ))
 }
 
@@ -623,7 +623,7 @@ fn build_resize_handles(
         ),
     ];
 
-    Stack(Modifier::new().fill_max_size()).with_children(
+    Column(Modifier::new().fill_max_size()).with_children(
         handles
             .into_iter()
             .map(|(handle, modifier, cursor, key)| {

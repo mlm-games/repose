@@ -4,7 +4,7 @@ pub mod deeplink;
 use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc};
 
 use repose_core::*;
-use repose_ui::{Box as VBox, Stack, ViewExt, anim::animate_f32_from};
+use repose_ui::{Box as VBox, Column, ViewExt, anim::animate_f32_from};
 use serde::{Deserialize, Serialize};
 
 pub trait NavKey: Clone + Debug + 'static + Serialize + for<'de> Deserialize<'de> {}
@@ -343,7 +343,7 @@ pub fn NavDisplay<K: NavKey>(
     };
 
     let v = entry_scope.run(|| (make_view)(&scope));
-    let framed = Stack(Modifier::new().fill_max_size()).child(
+    let framed = Column(Modifier::new().fill_max_size()).child(
         VBox(
             Modifier::new()
                 .fill_max_size()

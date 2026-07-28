@@ -102,7 +102,6 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
         | ViewKind::Box
         | ViewKind::Row
         | ViewKind::Column
-        | ViewKind::Stack
         | ViewKind::ZStack => {
             // These are just containers, discriminant is enough
         }

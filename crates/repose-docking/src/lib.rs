@@ -310,7 +310,7 @@ pub fn DockArea(
         )
     };
 
-    Stack(modifier.fill_max_size()).child((
+    Column(modifier.fill_max_size()).child((
         Box(Modifier::new()
             .absolute()
             .offset(Some(0.0), Some(0.0), Some(0.0), Some(0.0)))
@@ -478,7 +478,7 @@ fn render_tabs(
                 let cb_pop = callbacks.on_popout.clone();
 
                 Some(
-                    Stack(
+                    Column(
                         Modifier::new()
                             .key(pid)
                             .height(32.0)
@@ -572,7 +572,7 @@ fn render_tabs(
 
     let tab_h = 40.0;
 
-    Stack(Modifier::new().fill_max_size().key(node_id)).child((
+    Column(Modifier::new().fill_max_size().key(node_id)).child((
         Column(Modifier::new().fill_max_size()).child((
             tab_bar,
             Box(Modifier::new().fill_max_size().background(th.background))
@@ -616,7 +616,7 @@ fn dock_drop_overlay(
         };
 
         let highlight = if hover.as_ref() == Some(&HoverHint { node_id, zone }) {
-            Stack(
+            Column(
                 Modifier::new()
                     .fill_max_size()
                     .background(th.primary.with_alpha(51))
@@ -624,7 +624,7 @@ fn dock_drop_overlay(
             )
             .child(Text(label).size(12.0).color(th.on_primary))
         } else {
-            Stack(
+            Column(
                 Modifier::new()
                     .fill_max_size()
                     .border(1.0, th.outline_variant, 0.0),
@@ -632,7 +632,7 @@ fn dock_drop_overlay(
             .child(Text(label).size(12.0).color(th.on_surface_variant))
         };
 
-        Stack(
+        Column(
             m.z_index(2000.0)
                 .key(hash_zone_key(node_id, zone))
                 .on_drag_enter({
@@ -714,7 +714,7 @@ fn dock_drop_overlay(
         ),
     );
 
-    Stack(
+    Column(
         Modifier::new()
             .fill_max_size()
             .key(hash_str_key(key_prefix, node_id)),
@@ -808,7 +808,7 @@ fn render_split(
         SplitDir::Vertical => Modifier::new().height(divider_thick).fill_max_width(),
     };
 
-    let divider = Stack(
+    let divider = Column(
         splitter_mod
             .background(hit_color)
             .on_pointer_enter({

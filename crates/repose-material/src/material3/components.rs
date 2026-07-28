@@ -1521,7 +1521,7 @@ impl Default for BadgedBoxConfig {
 /// M3 BadgedBox - wraps `content` and shows a `badge` anchored to the top-end corner.
 /// The badge is positioned at the top-end corner of the content.
 pub fn BadgedBox(badge: View, content: View, config: BadgedBoxConfig) -> View {
-    Stack(Modifier::new()).child((
+    Column(Modifier::new()).child((
         content,
         Box(Modifier::new().absolute().offset(
             None,
@@ -3267,7 +3267,7 @@ pub fn TextField(
 
     let (top_pad, bottom_pad) = if has_label { (8.0, 8.0) } else { (16.0, 16.0) };
 
-    Stack(
+    Column(
         modifier
             .min_height(TextFieldDefaults::MIN_HEIGHT)
             .min_width(TextFieldDefaults::MIN_WIDTH),
@@ -3279,7 +3279,7 @@ pub fn TextField(
             .clip_rounded(th.shapes.extra_small)
             .background(container_bg))
         .child(
-            Stack(Modifier::new().fill_max_size()).child((
+            Column(Modifier::new().fill_max_size()).child((
                 // Input row
                 Row(Modifier::new()
                     .fill_max_size()

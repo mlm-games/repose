@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
 
-use crate::{Box, Column, Row, Stack, Text, TextStyle, ViewExt};
+use crate::{Box, Column, Row, Text, TextStyle, ViewExt};
 
 fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
     let h = h % 360.0;
@@ -238,7 +238,7 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
             .color(th.on_surface),
     ));
 
-    let hue_slider = Stack(Modifier::new().width(slider_w).height(slider_h))
+    let hue_slider = Column(Modifier::new().width(slider_w).height(slider_h))
         .child((
             Box(Modifier::new().fill_max_size().painter(
                 move |s: &mut Scene, r: repose_core::Rect, a: f32| (hue_painter)(s, r, a),
@@ -265,7 +265,7 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
                 }),
         );
 
-    let sat_slider = Stack(Modifier::new().width(slider_w).height(slider_h))
+    let sat_slider = Column(Modifier::new().width(slider_w).height(slider_h))
         .child((
             Box(Modifier::new().fill_max_size().painter(
                 move |s: &mut Scene, r: repose_core::Rect, a: f32| (sat_painter)(s, r, a),
@@ -292,7 +292,7 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
                 }),
         );
 
-    let val_slider = Stack(Modifier::new().width(slider_w).height(slider_h))
+    let val_slider = Column(Modifier::new().width(slider_w).height(slider_h))
         .child((
             Box(Modifier::new().fill_max_size().painter(
                 move |s: &mut Scene, r: repose_core::Rect, a: f32| (val_painter)(s, r, a),

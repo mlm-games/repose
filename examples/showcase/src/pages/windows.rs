@@ -317,7 +317,7 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                 Spacer(),
                 Caption(format!("{} windows", window_count)),
             ]),
-            Stack(
+            Column(
                 Modifier::new()
                     .height(240.0)
                     .fill_max_width()

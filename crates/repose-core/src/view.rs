@@ -83,7 +83,6 @@ pub enum ViewKind {
     Box,
     Row,
     Column,
-    Stack,
     ZStack,
     OverlayHost,
     Text {
@@ -148,7 +147,6 @@ impl std::fmt::Debug for ViewKind {
             Self::Box => f.write_str("Box"),
             Self::Row => f.write_str("Row"),
             Self::Column => f.write_str("Column"),
-            Self::Stack => f.write_str("Stack"),
             Self::ZStack => f.write_str("ZStack"),
             Self::OverlayHost => f.write_str("OverlayHost"),
 
@@ -215,6 +213,10 @@ impl View {
     }
     pub fn with_children(mut self, kids: Vec<View>) -> Self {
         self.children = kids;
+        self
+    }
+    pub fn children(mut self, kids: impl Into<Vec<View>>) -> Self {
+        self.children = kids.into();
         self
     }
     pub fn semantics(mut self, s: crate::semantics::Semantics) -> Self {

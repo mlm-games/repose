@@ -1119,7 +1119,6 @@ impl LayoutEngine {
             ViewKind::Column | ViewKind::OverlayHost => {
                 s.flex_direction = FlexDirection::Column;
             }
-            ViewKind::Stack => s.flex_direction = FlexDirection::Column,
             ViewKind::ZStack => s.display = Display::Grid,
             _ => {}
         }
@@ -3851,7 +3850,7 @@ fn push_scrollbar(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Box as RBox, Column, Stack, Text, ViewExt};
+    use crate::{Box as RBox, Column, Text, ViewExt};
 
     fn font_px(dp: f32) -> f32 {
         dp // 1:1 for tests
@@ -3874,7 +3873,7 @@ mod tests {
                 .render_z_index(100.0),
         );
 
-        let root = Stack(Modifier::new().size(200.0, 200.0)).child((red_box, blue_box));
+        let root = Column(Modifier::new().size(200.0, 200.0)).child((red_box, blue_box));
 
         let mut engine = LayoutEngine::new();
         let (scene, _hits, _sems) = engine.layout_frame(
@@ -3951,7 +3950,7 @@ mod tests {
                 .render_z_index(5.0),
         );
 
-        let root = Stack(Modifier::new().size(200.0, 200.0)).child((box1, box2, box3));
+        let root = Column(Modifier::new().size(200.0, 200.0)).child((box1, box2, box3));
 
         let mut engine = LayoutEngine::new();
         let (scene, _hits, _sems) = engine.layout_frame(
@@ -4017,7 +4016,7 @@ mod tests {
                 .render_z_index(1000.0),
         );
 
-        let root = Stack(Modifier::new().size(200.0, 200.0)).child((content, overlay));
+        let root = Column(Modifier::new().size(200.0, 200.0)).child((content, overlay));
 
         let mut engine = LayoutEngine::new();
         let (scene, _hits, _sems) = engine.layout_frame(
@@ -4099,7 +4098,7 @@ mod tests {
                 .render_z_index(1000.0),
         );
 
-        let root = Stack(Modifier::new().size(200.0, 200.0)).child((scroll, overlay));
+        let root = Column(Modifier::new().size(200.0, 200.0)).child((scroll, overlay));
 
         let mut engine = LayoutEngine::new();
         let (scene, _hits, _sems) = engine.layout_frame(
@@ -4175,7 +4174,7 @@ mod tests {
         );
 
         // Final structure: Stack { OverlayHost, HintBox }
-        let root = Stack(Modifier::new().size(200.0, 200.0)).child((overlay_host, hint_box));
+        let root = Column(Modifier::new().size(200.0, 200.0)).child((overlay_host, hint_box));
 
         let mut engine = LayoutEngine::new();
         let (scene, _hits, _sems) = engine.layout_frame(
@@ -4346,7 +4345,7 @@ mod tests {
     #[test]
     fn test_intrinsic_size_text_max_content() {
         let mut eng = make_engine();
-        let v = Stack(Modifier::new()).child(Text("Hello"));
+        let v = Column(Modifier::new()).child(Text("Hello"));
         let (w, h) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
         assert!(
             w > 0.0 && h > 0.0,
@@ -4359,7 +4358,7 @@ mod tests {
     #[test]
     fn test_intrinsic_size_min_content_shrinks() {
         let mut eng = make_engine();
-        let v = Stack(Modifier::new()).child(Text("Hello"));
+        let v = Column(Modifier::new()).child(Text("Hello"));
         let (min_w, _) = eng.intrinsic_size(&v, IntrinsicSizeMode::MinContent);
         let (max_w, _) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
         assert!(
@@ -4379,7 +4378,7 @@ mod tests {
         let (max_w, _) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
         let single_w = eng
             .intrinsic_size(
-                &Stack(Modifier::new()).child(Text("Hello world")),
+                &Column(Modifier::new()).child(Text("Hello world")),
                 IntrinsicSizeMode::MaxContent,
             )
             .0;
@@ -4395,7 +4394,7 @@ mod tests {
 #[cfg(test)]
 mod layer_tests {
     use super::*;
-    use crate::{Stack, Text, ViewExt};
+    use crate::{Column, Text, ViewExt};
     use std::cell::RefCell;
     use std::collections::HashMap;
     use std::rc::Rc;
@@ -4410,7 +4409,7 @@ mod layer_tests {
 
     #[test]
     fn test_graphics_layer_emits_begin_end() {
-        let view = Stack(Modifier::new().graphics_layer(0.5)).child(Text("hello"));
+        let view = Column(Modifier::new().graphics_layer(0.5)).child(Text("hello"));
         let nodes = collect_nodes(&view, &|d| d);
         let begin_count = nodes
             .iter()
@@ -4434,7 +4433,7 @@ mod layer_tests {
 
     #[test]
     fn test_no_graphics_layer_means_no_begin_end() {
-        let view = Stack(Modifier::new()).child(Text("hello"));
+        let view = Column(Modifier::new()).child(Text("hello"));
         let nodes = collect_nodes(&view, &|d| d);
         let begin_count = nodes
             .iter()
@@ -4450,8 +4449,8 @@ mod layer_tests {
 
     #[test]
     fn test_nested_graphics_layers_emit_nested_pairs() {
-        let view = Stack(Modifier::new().graphics_layer(0.9))
-            .child(Stack(Modifier::new().graphics_layer(0.5)).child(Text("nested")));
+        let view = Column(Modifier::new().graphics_layer(0.9))
+            .child(Column(Modifier::new().graphics_layer(0.5)).child(Text("nested")));
         let nodes = collect_nodes(&view, &|d| d);
         let begin_count = nodes
             .iter()
@@ -4474,8 +4473,8 @@ mod layer_tests {
     #[test]
     fn test_begin_end_are_balanced() {
         // Walk through nodes; BeginLayer +1, EndLayer -1; final depth should be 0.
-        let view = Stack(Modifier::new().graphics_layer(0.7))
-            .child(Stack(Modifier::new()).child(Text("inner")));
+        let view = Column(Modifier::new().graphics_layer(0.7))
+            .child(Column(Modifier::new()).child(Text("inner")));
         let nodes = collect_nodes(&view, &|d| d);
         let mut depth: i32 = 0;
         for n in &nodes {
@@ -4490,7 +4489,7 @@ mod layer_tests {
 
     #[test]
     fn test_graphics_layer_passes_alpha_through() {
-        let view = Stack(Modifier::new().graphics_layer(0.42)).child(Text("x"));
+        let view = Column(Modifier::new().graphics_layer(0.42)).child(Text("x"));
         let nodes = collect_nodes(&view, &|d| d);
         let begin = nodes.iter().find_map(|n| match n {
             SceneNode::BeginLayer { alpha, .. } => Some(*alpha),
@@ -4523,7 +4522,7 @@ mod layer_tests {
 #[cfg(test)]
 mod shadow_tests {
     use super::*;
-    use crate::{Stack, Text, ViewExt};
+    use crate::{Column, Text, ViewExt};
     use std::cell::RefCell;
     use std::collections::HashMap;
     use std::rc::Rc;
@@ -4539,7 +4538,7 @@ mod shadow_tests {
     #[test]
     fn test_shadow_alone_does_not_emit_composite_shadow() {
         // Shadow without graphics_layer: nothing to composite.
-        let view = Stack(Modifier::new().shadow(8.0, 4.0)).child(Text("x"));
+        let view = Column(Modifier::new().shadow(8.0, 4.0)).child(Text("x"));
         let nodes = collect_nodes(&view);
         let count = nodes
             .iter()
@@ -4553,7 +4552,7 @@ mod shadow_tests {
 
     #[test]
     fn test_layer_with_shadow_emits_composite_shadow() {
-        let view = Stack(Modifier::new().graphics_layer(1.0).shadow(8.0, 4.0)).child(Text("x"));
+        let view = Column(Modifier::new().graphics_layer(1.0).shadow(8.0, 4.0)).child(Text("x"));
         let nodes = collect_nodes(&view);
         let count = nodes
             .iter()
@@ -4565,7 +4564,7 @@ mod shadow_tests {
     #[test]
     fn test_shadow_appears_after_end_layer() {
         // Order: BeginLayer, ...content..., EndLayer, CompositeShadow, (any)CompositeLayer.
-        let view = Stack(Modifier::new().graphics_layer(1.0).shadow(8.0, 4.0)).child(Text("x"));
+        let view = Column(Modifier::new().graphics_layer(1.0).shadow(8.0, 4.0)).child(Text("x"));
         let nodes = collect_nodes(&view);
         let end_idx = nodes
             .iter()
@@ -4585,7 +4584,7 @@ mod shadow_tests {
 
     #[test]
     fn test_shadow_passes_through_blur_and_offset() {
-        let view = Stack(Modifier::new().graphics_layer(1.0).shadow(10.0, 6.0)).child(Text("x"));
+        let view = Column(Modifier::new().graphics_layer(1.0).shadow(10.0, 6.0)).child(Text("x"));
         let nodes = collect_nodes(&view);
         let shadow = nodes
             .iter()

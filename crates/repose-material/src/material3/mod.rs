@@ -27,7 +27,7 @@ use repose_ui::LazyRowState;
 use repose_ui::lazy::LazyRow;
 use repose_ui::lazy_states::LazyRowConfig;
 use repose_ui::{
-    BasicSecureTextField, BasicTextField, Box, Column, Row, Spacer, Stack, Text, TextFieldState,
+    BasicSecureTextField, BasicTextField, Box, Column, Row, Spacer, Text, TextFieldState,
     TextStyle, ViewExt, ZStack,
     anim::{animate_color, animate_f32, animate_f32_from},
     overlay::OverlayHandle,
@@ -185,7 +185,7 @@ pub fn NavigationBar(
                         )
                         .child((
                             // Indicator pill behind icon
-                            Stack(
+                            Column(
                                 Modifier::new()
                                     .align_items(AlignItems::CENTER)
                                     .justify_content(JustifyContent::CENTER),
@@ -827,7 +827,7 @@ pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig)
         right: iright,
     };
 
-    Stack(
+    Column(
         config
             .modifier
             .fill_max_size()
@@ -951,7 +951,7 @@ pub fn TooltipBox(
     let tooltip_visible = state.is_visible() || alpha > 0.01;
     let scale = 0.92 + 0.08 * alpha;
 
-    Stack(config.modifier).child((
+    Column(config.modifier).child((
         Box(Modifier::new().fill_max_size()).child(content),
         if tooltip_visible {
             Box(Modifier::new()
@@ -1365,7 +1365,7 @@ pub fn DropdownMenu(
     let scale = 0.92 + 0.08 * progress;
     let alpha = progress;
 
-    Stack(modifier).child((
+    Column(modifier).child((
         trigger,
         if menu_visible {
             Box(Modifier::new()
@@ -1949,7 +1949,7 @@ pub fn SearchBarWithContent(
 
     let show_content = expanded || content_alpha > 0.01;
     if show_content || expanded {
-        Stack(modifier).child((
+        Column(modifier).child((
             bar,
             Box(Modifier::new()
                 .width(width)
@@ -3574,7 +3574,7 @@ pub fn NavigationRail(
 
         item_views.push(
             Column(item_m).child((
-                Stack(Modifier::new()).child((
+                Column(Modifier::new()).child((
                     Box(Modifier::new().size(24.0, 24.0))
                         .child(with_content_color(fg, move || item.icon)),
                     item.badge
@@ -3768,7 +3768,7 @@ pub fn SwipeToDismiss(
         m
     };
 
-    Stack(modifier.fill_max_width()).child((
+    Column(modifier.fill_max_width()).child((
         Box(Modifier::new().fill_max_size().absolute()).child(background),
         Box(content_modifier).child(content),
     ))

@@ -52,7 +52,7 @@ pub fn screen() -> View {
             "Graphics Layer (Modifier::graphics_layer)",
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
                 Hint("Render subtree to an offscreen texture, then composite with group alpha."),
-                Stack(Modifier::new().size(420.0, 160.0)).child((
+                Column(Modifier::new().size(420.0, 160.0)).child((
                     Box(Modifier::new()
                         .size(420.0, 160.0)
                         .background(theme().primary.with_alpha(96))
@@ -109,7 +109,7 @@ pub fn screen() -> View {
         ),
         Section(
             "Stack (absolute positioning)",
-            Stack(
+            Column(
                 Modifier::new()
                     .size(420.0, 180.0)
                     .background(theme().surface)
