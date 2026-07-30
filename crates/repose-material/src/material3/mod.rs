@@ -1383,29 +1383,32 @@ pub fn DropdownMenu(
 
                     let rect = *trigger_rect.borrow();
                     let win_h = get_window_container_height();
-                    let win_w = get_window_container_width();
-                    let vm = config.vertical_margin;
+                    let hm = config.vertical_margin;
 
-                    let space_below = (win_h - vm) - (rect.y + rect.h);
-                    let space_above = rect.y - vm;
+                    let space_below = (win_h - hm) - (rect.y + rect.h);
+                    let space_above = rect.y - hm;
                     let place_below = space_below >= space_above;
-                    let available = (if place_below { space_below } else { space_above }).max(48.0);
+                    let available_height = (if place_below { space_below } else { space_above }).max(48.0);
 
-                    let popup_x = (rect.x + config.offset_x)
-                        .clamp(config.vertical_margin, (win_w - config.vertical_margin).max(0.0));
+                    let popup_x = rect.x + config.offset_x;
+                    let constrained_width = config.max_width;
+
+                    let mut adjusted_config = config.clone();
+                    adjusted_config.max_width = constrained_width;
+
                     let popup_y = if place_below {
                         rect.y + rect.h + config.offset_y
                     } else {
-                        (rect.y - config.offset_y).max(vm)
+                        (rect.y - config.offset_y).max(hm)
                     };
 
                     let content = render_dropdown_menu_content(
                         &th,
                         &items,
                         state.clone(),
-                        &config,
+                        &adjusted_config,
                         scroll_state.clone(),
-                        available,
+                        available_height,
                     );
 
                     let transform_origin_y = if place_below { 0.0 } else { 1.0 };
@@ -1440,7 +1443,7 @@ pub fn DropdownMenu(
         }
     }
 
-    Column(modifier).child(trigger)
+    Box(modifier).child(trigger)
 }
 
 fn render_dropdown_menu_content(
@@ -1524,13 +1527,18 @@ fn render_dropdown_menu_content(
 
     let items_column = Box(
         Modifier::new()
+            .fill_max_width()
             .max_height((max_height - 2.0 * DDM_VERTICAL_PADDING).max(0.0))
             .vertical_scroll(axis_binding),
     )
-    .child(Column(Modifier::new()).with_children(children));
+    .child(Column(Modifier::new().fill_max_width()).with_children(children));
 
-    Box(Modifier::new()
-        .shadow(th.elevation.level2, 0.0)
+    let shadow_elevation = config
+        .shadow_elevation
+        .unwrap_or(th.elevation.level2);
+
+    let mut card_modifier = Modifier::new()
+        .shadow(shadow_elevation, 0.0)
         .min_width(config.min_width)
         .max_width(config.max_width)
         .padding_values(PaddingValues {
@@ -1540,8 +1548,15 @@ fn render_dropdown_menu_content(
             bottom: DDM_VERTICAL_PADDING,
         })
         .background(config.container_color)
-        .clip_rounded(config.shape_radius.unwrap_or(th.shapes.extra_small)))
-    .child(items_column)
+        .clip_rounded(config.shape_radius.unwrap_or(th.shapes.extra_small));
+
+    card_modifier = apply_tonal_elevation(card_modifier, config.tonal_elevation, config.container_color);
+
+    if let Some((border_width, border_color, border_radius)) = config.border {
+        card_modifier = card_modifier.border(border_width, border_color, border_radius);
+    }
+
+    Box(card_modifier).child(items_column)
 }
 
 /// Possible values of [`SearchBarState`].
