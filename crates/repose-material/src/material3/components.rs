@@ -5646,12 +5646,14 @@ pub struct DropdownMenuConfig {
     pub divider_color: Color,
     pub min_width: f32,
     pub item_height: f32,
+    pub max_width: f32,
     pub shadow_elevation: Option<f32>,
     pub tonal_elevation: f32,
     pub border: Option<(f32, Color, f32)>,
     pub shape_radius: Option<f32>,
     pub offset_x: f32,
     pub offset_y: f32,
+    pub vertical_margin: f32,
 }
 
 impl Default for DropdownMenuConfig {
@@ -5664,12 +5666,14 @@ impl Default for DropdownMenuConfig {
             divider_color: DropdownMenuDefaults::divider_color(),
             min_width: DropdownMenuDefaults::MIN_WIDTH,
             item_height: DropdownMenuDefaults::ITEM_HEIGHT,
+            max_width: DropdownMenuDefaults::MAX_WIDTH,
             shadow_elevation: None,
             tonal_elevation: 0.0,
             border: None,
             shape_radius: None,
             offset_x: 0.0,
             offset_y: 0.0,
+            vertical_margin: DropdownMenuDefaults::VERTICAL_MARGIN,
         }
     }
 }

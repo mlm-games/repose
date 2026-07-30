@@ -1008,7 +1008,10 @@ pub struct DropdownMenuDefaults;
 
 impl DropdownMenuDefaults {
     pub const MIN_WIDTH: f32 = 112.0;
-    pub const ITEM_HEIGHT: f32 = 40.0;
+    pub const ITEM_HEIGHT: f32 = 48.0;
+    pub const VERTICAL_MARGIN: f32 = 48.0;
+    pub const HORIZONTAL_MARGIN: f32 = 8.0;
+    pub const MAX_WIDTH: f32 = 280.0;
     pub fn container_color() -> Color {
         theme().surface_container
     }

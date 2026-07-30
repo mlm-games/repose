@@ -1303,12 +1303,23 @@ impl MenuState {
 
 static DROPDOWN_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+const DDM_SCALE_FROM: f32 = 0.8;
+const DDM_VERTICAL_PADDING: f32 = 8.0;
+const DDM_ITEM_H_PAD: f32 = 12.0;
+const DDM_ITEM_MIN_HEIGHT: f32 = 48.0;
+
+/// Either a menu item or a divider.
+#[derive(Clone)]
+pub enum DropdownMenuEntry {
+    Item(DropdownMenuItem),
+    Divider,
+}
+
 /// M3 Dropdown Menu anchored to a trigger element.
 ///
-/// Renders a full-screen scrim in the overlay (to dismiss taps outside the card)
-/// while keeping the menu positioned inline below the trigger for correct position.
-/// The menu card fades and scales in/out with a 120ms FastOutSlowIn animation.
-/// Items can be `DropdownMenuItem` or `MenuDivider`.
+/// Renders as a single overlay entry with a transparent full-screen scrim and
+/// positioned card, matching Compose's Popup behavior. The card is bounded in
+/// height so vertical_scroll activates when content overflows.
 pub fn DropdownMenu(
     state: Rc<MenuState>,
     overlay: OverlayHandle,
@@ -1319,13 +1330,23 @@ pub fn DropdownMenu(
 ) -> View {
     let th = theme();
     let ddm_id = remember(|| DROPDOWN_COUNTER.fetch_add(1, Ordering::Relaxed));
-    let overlay_id = remember_with_key(format!("ddm_oid_{}", ddm_id), || signal(0u64));
+    let overlay_id = remember_with_key(format!("ddm_oid_{ddm_id}"), || signal(0u64));
+    let trigger_rect = remember_state_with_key(format!("ddm_tr_{ddm_id}"), Rect::default);
+    let scroll_state: Rc<ScrollState> =
+        remember_with_key(format!("ddm_scroll_{ddm_id}"), ScrollState::new);
 
-    // Animated open/close progress
-    let anim = remember_state_with_key(format!("ddm_anim_{}", ddm_id), || {
+    let trigger = Box(Modifier::new().on_globally_positioned({
+        let tr = trigger_rect.clone();
+        move |rect| {
+            *tr.borrow_mut() = rect;
+        }
+    }))
+    .child(trigger);
+
+    let anim = remember_state_with_key(format!("ddm_anim_{ddm_id}"), || {
         AnimatedValue::new(0.0, theme().motion.overlay)
     });
-    let last_target = remember_state_with_key(format!("ddm_lt_{}", ddm_id), || f32::NAN);
+    let last_target = remember_state_with_key(format!("ddm_lt_{ddm_id}"), || f32::NAN);
     let anim_target = if state.is_open() { 1.0 } else { 0.0 };
 
     {
@@ -1344,14 +1365,71 @@ pub fn DropdownMenu(
     let progress = *anim.borrow().get();
     let menu_visible = state.is_open() || progress > 0.01;
 
-    // Scrim overlay - keep alive during exit animation
     if menu_visible {
         if overlay_id.get() == 0 {
-            let scrim = Box(Modifier::new().fill_max_size().absolute().on_pointer_down({
-                let s = state.clone();
-                move |_| s.dismiss()
-            }));
-            let id = overlay.show_with(scrim, 899.0, true);
+            let anim = anim.clone();
+            let th = th.clone();
+            let items = items.clone();
+            let state = state.clone();
+            let config = config.clone();
+            let trigger_rect = trigger_rect.clone();
+            let scroll_state = scroll_state.clone();
+
+            let id = overlay.show_entry(
+                Rc::new(move || {
+                    let p = *anim.borrow().get();
+                    let scale = DDM_SCALE_FROM + (1.0 - DDM_SCALE_FROM) * p;
+                    let alpha = p;
+
+                    let rect = *trigger_rect.borrow();
+                    let win_h = get_window_container_height();
+                    let win_w = get_window_container_width();
+                    let vm = config.vertical_margin;
+
+                    let space_below = (win_h - vm) - (rect.y + rect.h);
+                    let space_above = rect.y - vm;
+                    let place_below = space_below >= space_above;
+                    let available = (if place_below { space_below } else { space_above }).max(48.0);
+
+                    let popup_x = (rect.x + config.offset_x)
+                        .clamp(config.vertical_margin, (win_w - config.vertical_margin).max(0.0));
+                    let popup_y = if place_below {
+                        rect.y + rect.h + config.offset_y
+                    } else {
+                        (rect.y - config.offset_y).max(vm)
+                    };
+
+                    let content = render_dropdown_menu_content(
+                        &th,
+                        &items,
+                        state.clone(),
+                        &config,
+                        scroll_state.clone(),
+                        available,
+                    );
+
+                    let transform_origin_y = if place_below { 0.0 } else { 1.0 };
+
+                    let menu = Box(
+                        Modifier::new()
+                            .absolute()
+                            .offset(Some(popup_x), Some(popup_y), None, None)
+                            .scale(scale)
+                            .alpha(alpha)
+                            .transform_origin(0.0, transform_origin_y),
+                    )
+                    .child(content);
+
+                    let scrim = Box(Modifier::new().fill_max_size().on_pointer_down({
+                        let s = state.clone();
+                        move |_| s.dismiss()
+                    }));
+
+                    ZStack(Modifier::new().fill_max_size().absolute()).child((scrim, menu))
+                }),
+                901.0,
+                false,
+            );
             overlay_id.set(id);
         }
     } else {
@@ -1362,35 +1440,7 @@ pub fn DropdownMenu(
         }
     }
 
-    let scale = 0.92 + 0.08 * progress;
-    let alpha = progress;
-
-    Column(modifier).child((
-        trigger,
-        if menu_visible {
-            Box(Modifier::new()
-                .absolute()
-                .offset(None, Some(40.0), None, None)
-                .render_z_index(900.0)
-                .scale(scale)
-                .alpha(alpha))
-            .child(render_dropdown_menu_content(
-                &th,
-                &items,
-                state.clone(),
-                &config,
-            ))
-        } else {
-            Box(Modifier::new())
-        },
-    ))
-}
-
-/// Either a menu item or a divider.
-#[derive(Clone)]
-pub enum DropdownMenuEntry {
-    Item(DropdownMenuItem),
-    Divider,
+    Column(modifier).child(trigger)
 }
 
 fn render_dropdown_menu_content(
@@ -1398,6 +1448,8 @@ fn render_dropdown_menu_content(
     items: &[DropdownMenuEntry],
     state: Rc<MenuState>,
     config: &DropdownMenuConfig,
+    scroll_state: Rc<ScrollState>,
+    max_height: f32,
 ) -> View {
     let children: Vec<View> = items
         .iter()
@@ -1410,12 +1462,13 @@ fn render_dropdown_menu_content(
                 };
                 let on_click = item.on_click.clone();
                 let state = state.clone();
+
                 let mut modifier = Modifier::new()
                     .fill_max_width()
-                    .min_height(40.0)
+                    .min_height(config.item_height.max(DDM_ITEM_MIN_HEIGHT))
                     .padding_values(PaddingValues {
-                        left: 12.0,
-                        right: 12.0,
+                        left: DDM_ITEM_H_PAD,
+                        right: DDM_ITEM_H_PAD,
                         top: 0.0,
                         bottom: 0.0,
                     })
@@ -1436,19 +1489,24 @@ fn render_dropdown_menu_content(
                         });
                 }
 
-                Row(modifier).child((
-                    item.leading_icon
-                        .clone()
-                        .unwrap_or(Box(Modifier::new().width(24.0).height(24.0))),
-                    Box(Modifier::new().width(12.0).fill_max_height()),
+                let mut row_children: Vec<View> = Vec::new();
+                if let Some(icon) = item.leading_icon.clone() {
+                    row_children.push(icon);
+                    row_children.push(Box(Modifier::new().width(DDM_ITEM_H_PAD)));
+                }
+                row_children.push(
                     Box(Modifier::new().flex_grow(1.0)).child(
                         Text(item.text.clone())
                             .color(text_color)
-                            .size(th.typography.body_large)
+                            .size(th.typography.label_large)
                             .single_line(),
                     ),
-                    item.trailing_icon.clone().unwrap_or(Box(Modifier::new())),
-                ))
+                );
+                if let Some(icon) = item.trailing_icon.clone() {
+                    row_children.push(Box(Modifier::new().width(DDM_ITEM_H_PAD)));
+                    row_children.push(icon);
+                }
+                Row(modifier).child(row_children)
             }
             DropdownMenuEntry::Divider => Box(Modifier::new()
                 .fill_max_width()
@@ -1458,18 +1516,32 @@ fn render_dropdown_menu_content(
         })
         .collect();
 
+    let binding = scroll_state.to_binding();
+    let axis_binding = match &binding {
+        ScrollBinding::Vertical(a) => a.clone(),
+        _ => unreachable!(),
+    };
+
+    let items_column = Box(
+        Modifier::new()
+            .max_height((max_height - 2.0 * DDM_VERTICAL_PADDING).max(0.0))
+            .vertical_scroll(axis_binding),
+    )
+    .child(Column(Modifier::new()).with_children(children));
+
     Box(Modifier::new()
-        .state_elevation(StateElevation {
-            default: th.elevation.level2,
-            hovered: th.elevation.level3,
-            pressed: th.elevation.level3,
-            disabled: 0.0,
-        })
+        .shadow(th.elevation.level2, 0.0)
         .min_width(config.min_width)
-        .padding(4.0)
+        .max_width(config.max_width)
+        .padding_values(PaddingValues {
+            left: 0.0,
+            right: 0.0,
+            top: DDM_VERTICAL_PADDING,
+            bottom: DDM_VERTICAL_PADDING,
+        })
         .background(config.container_color)
-        .clip_rounded(config.shape_radius.unwrap_or(th.shapes.small)))
-    .child(Column(Modifier::new()).with_children(children))
+        .clip_rounded(config.shape_radius.unwrap_or(th.shapes.extra_small)))
+    .child(items_column)
 }
 
 /// Possible values of [`SearchBarState`].
@@ -2104,6 +2176,19 @@ pub fn set_window_container_height(h: f32) {
 
 fn get_window_container_height() -> f32 {
     WINDOW_CONTAINER_HEIGHT.lock().map(|v| *v).unwrap_or(800.0)
+}
+
+static WINDOW_CONTAINER_WIDTH: Mutex<f32> = Mutex::new(360.0);
+
+/// Set the window container width (in dp) used for dropdown constraints.
+pub fn set_window_container_width(w: f32) {
+    if let Ok(mut v) = WINDOW_CONTAINER_WIDTH.lock() {
+        *v = w;
+    }
+}
+
+fn get_window_container_width() -> f32 {
+    WINDOW_CONTAINER_WIDTH.lock().map(|v| *v).unwrap_or(360.0)
 }
 
 /// M3 Expanded Full‑Screen Search Bar -> rendered in an overlay covering the
