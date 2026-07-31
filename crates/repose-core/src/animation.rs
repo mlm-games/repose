@@ -708,7 +708,7 @@ pub fn set_clock(clock: Box<dyn Clock>) {
 }
 /// Ensure a system clock is installed on this thread (always present since thread_local initializes it).
 pub fn ensure_system_clock() {
-    // Already initialized by thread_local default — no-op.
+    // Already initialized by thread_local default - no-op.
 }
 
 /// A test clock you can drive deterministically.

@@ -679,7 +679,7 @@ pub fn run_desktop_app(
                     // Delegate pointer-move to the host runtime
                     let result = self.rt.handle_pointer_move(pos);
 
-                    // Inspector hover (platform-specific — devtools inspect)
+                    // Inspector hover (platform-specific - devtools inspect)
                     if self.inspector.hud.inspector_enabled
                         && let Some(f) = &self.rt.frame_cache
                     {
@@ -757,7 +757,7 @@ pub fn run_desktop_app(
                         }
                     }
 
-                    // Click outside — no focus result from runtime, drop IME
+                    // Click outside - no focus result from runtime, drop IME
                     if result.focused.is_none() && self.rt.ime_preedit {
                         if let Some(win) = &self.window {
                             rc_web::set_ime_for_textfield(win, false);

@@ -252,7 +252,7 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     (m.on_double_click.is_some()).hash(hasher);
     (m.on_long_click.is_some()).hash(hasher);
 
-    // Scroll (presence + axis only — closures intentionally not hashed)
+    // Scroll (presence + axis only - closures intentionally not hashed)
     match &m.scroll {
         None => 0u8.hash(hasher),
         Some(ScrollBinding::Vertical(_)) => 1u8.hash(hasher),

@@ -31,10 +31,10 @@
 //!
 //! Internally, a `View` has:
 //!
-//! - `id: ViewId` — assigned during composition / layout.
-//! - `kind: ViewKind` — which widget it is (Text, Button, etc.).
-//! - `modifier: Modifier` — layout/styling/interaction metadata.
-//! - `children: Vec<View>` — owned child views.
+//! - `id: ViewId` - assigned during composition / layout.
+//! - `kind: ViewKind` - which widget it is (Text, Button, etc.).
+//! - `modifier: Modifier` - layout/styling/interaction metadata.
+//! - `children: Vec<View>` - owned child views.
 //!
 //! Views are *pure data*: they do not hold state or platform handles.
 //! State lives in signals / `remember_*`; platform integration is in

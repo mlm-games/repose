@@ -28,7 +28,7 @@ pub struct PlatformOutput {
     pub ime_allowed: bool,
     /// IME cursor area in logical (DPI-scaled) coordinates: (x, y, width, height).
     pub ime_cursor_area: Option<(f64, f64, f64, f64)>,
-    /// Text to write to the clipboard (transient — set once per frame, cleared after read).
+    /// Text to write to the clipboard (transient - set once per frame, cleared after read).
     pub clipboard_text: Option<String>,
 }
 
@@ -151,15 +151,30 @@ impl ReposeRuntime {
         let size = self.sched.size;
         let rc = render_ctx.clone();
         let mut inner = |s: &mut Scheduler| (root_fn)(s, &rc);
-        compose_frame_inner(
-            &mut self.sched,
-            &mut inner,
-            self.scale,
-            size,
-            self.hover_id,
-            &self.pressed_ids,
-            &self.textfield_states,
-        )
+        // Root-level panic guard: a stray panic during compose must not kill the
+        // event loop / freeze the hosted demo.
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            compose_frame_inner(
+                &mut self.sched,
+                &mut inner,
+                self.scale,
+                size,
+                self.hover_id,
+                &self.pressed_ids,
+                &self.textfield_states,
+            )
+        })) {
+            Ok(frame) => frame,
+            Err(_) => {
+                log::error!("compose panicked; presenting last good frame");
+                self.frame_cache.clone().unwrap_or_else(|| Frame {
+                    scene: Default::default(),
+                    hit_regions: Vec::new(),
+                    semantics_nodes: Vec::new(),
+                    focus_chain: Vec::new(),
+                })
+            }
+        }
     }
 
     /// Compose a frame and return structured output for the host.

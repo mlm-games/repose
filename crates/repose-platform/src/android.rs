@@ -428,7 +428,7 @@ pub fn run_android_app_with_options(
                                     );
                                 }
                             } else {
-                                // Click outside — no focus, drop IME
+                                // Click outside - no focus, drop IME
                                 if let Some(win) = &self.window {
                                     win.set_ime_allowed(false);
                                 }

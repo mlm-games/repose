@@ -14,7 +14,17 @@ mod tests {
         clear_composer, new_observer, produce_state, remove_observer, run_observer_now,
         signal_changed,
     };
+    use crate::error::{throw_boundary, ErrorBoundary};
+    use crate::runtime::ComposeGuard;
+    use crate::{View, ViewKind};
     use web_time::{Duration, Instant};
+
+    const FALLBACK_ID: u64 = 0xF00;
+    const CONTENT_ID: u64 = 0xC0;
+
+    fn id_view(id: u64) -> View {
+        View::new(id, ViewKind::Box)
+    }
 
     #[test]
     fn test_signal_basic() {
@@ -318,5 +328,133 @@ mod tests {
         let cont = a.update();
         assert!(!cont);
         assert!((*a.get() - 10.0).abs() < 0.001);
+    }
+
+    fn build_boundary(
+        boom: Rc<RefCell<bool>>,
+        content_runs: Rc<RefCell<usize>>,
+        fallback_calls: Rc<RefCell<usize>>,
+        last_reset: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+        use_throw: bool,
+    ) -> View {
+        ErrorBoundary(
+            {
+                let fallback_calls = fallback_calls.clone();
+                move |_info, reset| {
+                    *fallback_calls.borrow_mut() += 1;
+                    *last_reset.borrow_mut() = Some(reset);
+                    id_view(FALLBACK_ID)
+                }
+            },
+            {
+                let content_runs = content_runs.clone();
+                move || {
+                    *content_runs.borrow_mut() += 1;
+                    if *boom.borrow() {
+                        if use_throw {
+                            throw_boundary("wasm-safe trip");
+                        } else {
+                            panic!("boom");
+                        }
+                    }
+                    id_view(CONTENT_ID)
+                }
+            },
+        )
+    }
+
+    #[test]
+    fn error_boundary_sticky_and_reset() {
+        clear_composer();
+        let boom = Rc::new(RefCell::new(true));
+        let content_runs = Rc::new(RefCell::new(0usize));
+        let fallback_calls = Rc::new(RefCell::new(0usize));
+        let last_reset = Rc::new(RefCell::new(None::<Rc<dyn Fn()>>));
+
+        // Frame 1: content panics -> fallback.
+        {
+            let _g = ComposeGuard::begin();
+            let v = build_boundary(
+                boom.clone(),
+                content_runs.clone(),
+                fallback_calls.clone(),
+                last_reset.clone(),
+                false,
+            );
+            assert_eq!(v.id, FALLBACK_ID);
+            assert_eq!(*fallback_calls.borrow(), 1);
+            assert_eq!(*content_runs.borrow(), 1);
+        }
+
+        // Frame 2: sticky fallback, content is NOT re-run (no repeat panic).
+        {
+            let _g = ComposeGuard::begin();
+            let v = build_boundary(
+                boom.clone(),
+                content_runs.clone(),
+                fallback_calls.clone(),
+                last_reset.clone(),
+                false,
+            );
+            assert_eq!(v.id, FALLBACK_ID);
+            assert_eq!(*fallback_calls.borrow(), 2);
+            assert_eq!(*content_runs.borrow(), 1);
+        }
+
+        // Recover and fire reset: content is re-entered.
+        *boom.borrow_mut() = false;
+        last_reset.borrow().as_ref().expect("reset captured")();
+
+        {
+            let _g = ComposeGuard::begin();
+            let v = build_boundary(
+                boom.clone(),
+                content_runs.clone(),
+                fallback_calls.clone(),
+                last_reset.clone(),
+                false,
+            );
+            assert_eq!(v.id, CONTENT_ID);
+            assert_eq!(*content_runs.borrow(), 2);
+        }
+    }
+
+    #[test]
+    fn error_boundary_throw_boundary_wasm_safe() {
+        clear_composer();
+        let boom = Rc::new(RefCell::new(true));
+        let content_runs = Rc::new(RefCell::new(0usize));
+        let fallback_calls = Rc::new(RefCell::new(0usize));
+        let last_reset = Rc::new(RefCell::new(None::<Rc<dyn Fn()>>));
+
+        {
+            let _g = ComposeGuard::begin();
+            let v = build_boundary(
+                boom.clone(),
+                content_runs.clone(),
+                fallback_calls.clone(),
+                last_reset.clone(),
+                true,
+            );
+            assert_eq!(v.id, FALLBACK_ID);
+            assert_eq!(*content_runs.borrow(), 1);
+        }
+
+        // Reset path works for throw_boundary too.
+        *boom.borrow_mut() = false;
+        last_reset.borrow().as_ref().expect("reset captured")();
+
+        {
+            let _g = ComposeGuard::begin();
+            let v = build_boundary(
+                boom.clone(),
+                content_runs.clone(),
+                fallback_calls.clone(),
+                last_reset.clone(),
+                true,
+            );
+            assert_eq!(v.id, CONTENT_ID);
+            assert_eq!(*content_runs.borrow(), 2);
+        }
     }
 }
