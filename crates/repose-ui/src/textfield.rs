@@ -229,7 +229,7 @@ impl TextUndoOp {
         if self.edit_type() != TextEditType::Delete {
             return TextDeleteType::NotByUser;
         }
-        if !self.post_selection.start == self.post_selection.end {
+        if self.post_selection.start != self.post_selection.end {
             return TextDeleteType::NotByUser;
         }
         if self.pre_selection.start == self.pre_selection.end {
