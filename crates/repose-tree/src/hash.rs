@@ -252,12 +252,21 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     (m.on_double_click.is_some()).hash(hasher);
     (m.on_long_click.is_some()).hash(hasher);
 
-    // Scroll (presence + axis only - closures intentionally not hashed)
+    // Scroll (presence + axis + show_scrollbar - closures intentionally not hashed)
     match &m.scroll {
         None => 0u8.hash(hasher),
-        Some(ScrollBinding::Vertical(_)) => 1u8.hash(hasher),
-        Some(ScrollBinding::Horizontal(_)) => 2u8.hash(hasher),
-        Some(ScrollBinding::Both(_)) => 3u8.hash(hasher),
+        Some(ScrollBinding::Vertical(b)) => {
+            1u8.hash(hasher);
+            b.show_scrollbar.hash(hasher);
+        }
+        Some(ScrollBinding::Horizontal(b)) => {
+            2u8.hash(hasher);
+            b.show_scrollbar.hash(hasher);
+        }
+        Some(ScrollBinding::Both(b)) => {
+            3u8.hash(hasher);
+            b.show_scrollbar.hash(hasher);
+        }
     }
     m.nested_scroll_connection.is_some().hash(hasher);
     m.on_scroll.is_some().hash(hasher);
@@ -281,9 +290,10 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     m.margin_right.map(|v| (v * 100.0) as i32).hash(hasher);
     m.margin_bottom.map(|v| (v * 100.0) as i32).hash(hasher);
 
-    // Layers / custom paint
+    // Layers / custom paint / custom layout
     m.graphics_layer.map(|a| (a * 255.0) as u8).hash(hasher);
     m.painter.is_some().hash(hasher);
+    m.layout.is_some().hash(hasher);
     if let Some(sh) = &m.shadow {
         ((sh.blur_radius * 100.0) as i32).hash(hasher);
         ((sh.offset_y * 100.0) as i32).hash(hasher);
