@@ -472,140 +472,19 @@ impl LayoutEngine {
                     height: AvailableSpace::Definite(size_px.1 as f32),
                 };
 
-                {
-                    let reverse_map = &self.reverse_map;
-                    let scope_root_map = &self.scope_root_map;
-                    let node_to_scope = &self.node_to_scope;
-                    let scope_trees = &mut self.scope_trees;
-                    let text_cache = &mut self.text_cache;
-                    let tree = &self.tree;
-
-                    let _ = self.taffy.compute_layout_with_measure(
-                        taffy_root,
-                        available,
-                        |known, avail, taffy_node, ctx, _style| {
-                            // Check if this is a scope root marker → return cached scope size
-                            if let Some(&node_id) = reverse_map.get(&taffy_node) {
-                                // Custom layout modifier: delegate measurement to user callback
-                                if let Some(node) = tree.get(node_id) {
-                                    if let Some(ref layout_cb) = node.modifier.layout {
-                                        let scale = dp_to_px(1.0);
-                                        let avail_w = match avail.width {
-                                            AvailableSpace::Definite(w) => w / scale,
-                                            _ => f32::INFINITY,
-                                        };
-                                        let avail_h = match avail.height {
-                                            AvailableSpace::Definite(h) => h / scale,
-                                            _ => f32::INFINITY,
-                                        };
-                                        let known_w =
-                                            known.width.map(|w| w / scale).unwrap_or(f32::INFINITY);
-                                        let known_h = known
-                                            .height
-                                            .map(|h| h / scale)
-                                            .unwrap_or(f32::INFINITY);
-                                        let constraints =
-                                            repose_core::modifier::LayoutConstraints {
-                                                min_width: 0.0,
-                                                max_width: avail_w.min(known_w),
-                                                min_height: 0.0,
-                                                max_height: avail_h.min(known_h),
-                                            };
-                                        let (w_dp, h_dp) = layout_cb(constraints);
-                                        return taffy::geometry::Size {
-                                            width: w_dp * scale,
-                                            height: h_dp * scale,
-                                        };
-                                    }
-                                }
-                                if scope_root_map.contains_key(&node_id) {
-                                    if let Some(key) = node_to_scope.get(&node_id) {
-                                        if let Some(st) = scope_trees.get_mut(key) {
-                                            // Compose-style constraint-equality skip:
-                                            // if content unchanged (valid) AND constraints match → skip scope compute
-                                            let constraints_changed = st
-                                                .last_constraints
-                                                .map(|(k, a)| k != known || a != avail)
-                                                .unwrap_or(true);
-                                            let can_skip = st.valid && !constraints_changed;
-                                            if can_skip {
-                                                if let Some(sz) = st.cached_size {
-                                                    return sz;
-                                                }
-                                            }
-                                            // Compute scope's internal layout on-demand
-                                            if let Some(root_tid) = st.root_taffy_id {
-                                                let scope_avail = taffy::geometry::Size {
-                                                    width: match known.width {
-                                                        Some(w) if w.is_finite() => {
-                                                            AvailableSpace::Definite(w)
-                                                        }
-                                                        _ => match avail.width {
-                                                            AvailableSpace::Definite(w) => {
-                                                                AvailableSpace::Definite(w)
-                                                            }
-                                                            _ => AvailableSpace::MaxContent,
-                                                        },
-                                                    },
-                                                    height: match known.height {
-                                                        Some(h) if h.is_finite() => {
-                                                            AvailableSpace::Definite(h)
-                                                        }
-                                                        _ => match avail.height {
-                                                            AvailableSpace::Definite(h) => {
-                                                                AvailableSpace::Definite(h)
-                                                            }
-                                                            _ => AvailableSpace::MaxContent,
-                                                        },
-                                                    },
-                                                };
-                                                let st_rev = &st.reverse_map;
-                                                let st_tc = &mut st.text_cache;
-                                                let _ = st.taffy.compute_layout_with_measure(
-                                                    root_tid,
-                                                    scope_avail,
-                                                    |known2, avail2, tn, ctx2, _style2| {
-                                                        Self::measure_node(
-                                                            known2,
-                                                            avail2,
-                                                            tn,
-                                                            ctx2.as_deref(),
-                                                            st_tc,
-                                                            st_rev,
-                                                            tree,
-                                                            &font_px,
-                                                            &px,
-                                                        )
-                                                    },
-                                                );
-                                                st.last_constraints = Some((known, avail));
-                                                if let Ok(layout) = st.taffy.layout(root_tid) {
-                                                    st.cached_size = Some(taffy::Size {
-                                                        width: layout.size.width,
-                                                        height: layout.size.height,
-                                                    });
-                                                    st.valid = true;
-                                                    return st.cached_size.unwrap();
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            Self::measure_node(
-                                known,
-                                avail,
-                                taffy_node,
-                                ctx.as_deref(),
-                                text_cache,
-                                reverse_map,
-                                tree,
-                                &font_px,
-                                &px,
-                            )
-                        },
-                    );
-                }
+                Self::run_measure_pass(
+                    &mut self.taffy,
+                    taffy_root,
+                    available,
+                    &self.tree,
+                    &mut self.text_cache,
+                    &self.reverse_map,
+                    &self.scope_root_map,
+                    &self.node_to_scope,
+                    &mut self.scope_trees,
+                    &font_px,
+                    &px,
+                );
 
                 // 4a. Store Taffy-computed sizes for non-scope + scope-root nodes
                 for (&node_id, &taffy_id) in &self.taffy_map {
@@ -696,22 +575,18 @@ impl LayoutEngine {
         let mut text_cache: FxHashMap<NodeId, TextLayout> = FxHashMap::default();
         let reverse_map: FxHashMap<taffy::NodeId, NodeId> = FxHashMap::default();
 
-        let _ = temp_taffy.compute_layout_with_measure(
+        Self::run_measure_pass(
+            &mut temp_taffy,
             root_tid,
             avail,
-            |known, avail, taffy_node, ctx, _style| {
-                Self::measure_node(
-                    known,
-                    avail,
-                    taffy_node,
-                    ctx.as_deref(),
-                    &mut text_cache,
-                    &reverse_map,
-                    &self.tree,
-                    &font_px_closure,
-                    &px_closure,
-                )
-            },
+            &self.tree,
+            &mut text_cache,
+            &reverse_map,
+            &self.scope_root_map,
+            &self.node_to_scope,
+            &mut self.scope_trees,
+            &font_px_closure,
+            &px_closure,
         );
 
         let layout = temp_taffy.layout(root_tid).ok();
@@ -754,6 +629,150 @@ impl LayoutEngine {
             Self::apply_scroll_content_styles(axis, &child_tids, taffy);
         }
         t
+    }
+
+    /// Run a layout + measure pass over a Taffy tree, sharing the measure closure
+    /// (custom layout callbacks, scope-tree on-demand compute, and `measure_node`)
+    /// between the main incremental path and the one-shot `intrinsic_size` path.
+    #[allow(clippy::too_many_arguments)]
+    fn run_measure_pass(
+        taffy: &mut TaffyTree<NodeContext>,
+        taffy_root: taffy::NodeId,
+        available: taffy::geometry::Size<taffy::style::AvailableSpace>,
+        tree: &ViewTree,
+        text_cache: &mut FxHashMap<NodeId, TextLayout>,
+        reverse_map: &FxHashMap<taffy::NodeId, NodeId>,
+        scope_root_map: &FxHashMap<NodeId, String>,
+        node_to_scope: &FxHashMap<NodeId, String>,
+        scope_trees: &mut HashMap<String, ScopeLayoutTree>,
+        font_px: &dyn Fn(f32) -> f32,
+        px: &dyn Fn(f32) -> f32,
+    ) {
+        let _ = taffy.compute_layout_with_measure(
+            taffy_root,
+            available,
+            |known, avail, taffy_node, ctx, _style| {
+                // Check if this is a scope root marker → return cached scope size
+                if let Some(&node_id) = reverse_map.get(&taffy_node) {
+                    // Custom layout modifier: delegate measurement to user callback
+                    if let Some(node) = tree.get(node_id) {
+                        if let Some(ref layout_cb) = node.modifier.layout {
+                            let scale = dp_to_px(1.0);
+                            let avail_w = match avail.width {
+                                AvailableSpace::Definite(w) => w / scale,
+                                _ => f32::INFINITY,
+                            };
+                            let avail_h = match avail.height {
+                                AvailableSpace::Definite(h) => h / scale,
+                                _ => f32::INFINITY,
+                            };
+                            let known_w =
+                                known.width.map(|w| w / scale).unwrap_or(f32::INFINITY);
+                            let known_h = known
+                                .height
+                                .map(|h| h / scale)
+                                .unwrap_or(f32::INFINITY);
+                            let constraints =
+                                repose_core::modifier::LayoutConstraints {
+                                    min_width: 0.0,
+                                    max_width: avail_w.min(known_w),
+                                    min_height: 0.0,
+                                    max_height: avail_h.min(known_h),
+                                };
+                            let (w_dp, h_dp) = layout_cb(constraints);
+                            return taffy::geometry::Size {
+                                width: w_dp * scale,
+                                height: h_dp * scale,
+                            };
+                        }
+                    }
+                    if scope_root_map.contains_key(&node_id) {
+                        if let Some(key) = node_to_scope.get(&node_id) {
+                            if let Some(st) = scope_trees.get_mut(key) {
+                                // Compose-style constraint-equality skip:
+                                // if content unchanged (valid) AND constraints match → skip scope compute
+                                let constraints_changed = st
+                                    .last_constraints
+                                    .map(|(k, a)| k != known || a != avail)
+                                    .unwrap_or(true);
+                                let can_skip = st.valid && !constraints_changed;
+                                if can_skip {
+                                    if let Some(sz) = st.cached_size {
+                                        return sz;
+                                    }
+                                }
+                                // Compute scope's internal layout on-demand
+                                if let Some(root_tid) = st.root_taffy_id {
+                                    let scope_avail = taffy::geometry::Size {
+                                        width: match known.width {
+                                            Some(w) if w.is_finite() => {
+                                                AvailableSpace::Definite(w)
+                                            }
+                                            _ => match avail.width {
+                                                AvailableSpace::Definite(w) => {
+                                                    AvailableSpace::Definite(w)
+                                                }
+                                                _ => AvailableSpace::MaxContent,
+                                            },
+                                        },
+                                        height: match known.height {
+                                            Some(h) if h.is_finite() => {
+                                                AvailableSpace::Definite(h)
+                                            }
+                                            _ => match avail.height {
+                                                AvailableSpace::Definite(h) => {
+                                                    AvailableSpace::Definite(h)
+                                                }
+                                                _ => AvailableSpace::MaxContent,
+                                            },
+                                        },
+                                    };
+                                    let st_rev = &st.reverse_map;
+                                    let st_tc = &mut st.text_cache;
+                                    let _ = st.taffy.compute_layout_with_measure(
+                                        root_tid,
+                                        scope_avail,
+                                        |known2, avail2, tn, ctx2, _style2| {
+                                            Self::measure_node(
+                                                known2,
+                                                avail2,
+                                                tn,
+                                                ctx2.as_deref(),
+                                                st_tc,
+                                                st_rev,
+                                                tree,
+                                                font_px,
+                                                px,
+                                            )
+                                        },
+                                    );
+                                    st.last_constraints = Some((known, avail));
+                                    if let Ok(layout) = st.taffy.layout(root_tid) {
+                                        st.cached_size = Some(taffy::Size {
+                                            width: layout.size.width,
+                                            height: layout.size.height,
+                                        });
+                                        st.valid = true;
+                                        return st.cached_size.unwrap();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Self::measure_node(
+                    known,
+                    avail,
+                    taffy_node,
+                    ctx.as_deref(),
+                    text_cache,
+                    reverse_map,
+                    tree,
+                    font_px,
+                    px,
+                )
+            },
+        );
     }
 
     /// Sync scope-internal TaffyTrees. Handles removed/dirty nodes within each scope.
