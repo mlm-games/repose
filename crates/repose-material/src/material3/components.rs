@@ -4108,7 +4108,7 @@ pub fn Slider(
     }
     let id = *remember(|| SLIDER_COUNTER.fetch_add(1, Ordering::Relaxed));
     let track_rect = remember_state_with_key(format!("ms_rect_{}", id), || Rect::default());
-    let drag_active = remember_state_with_key(format!("ms_da_{}", id), || false);
+    let drag_active = remember_mutable_with_key(format!("ms_da_{}", id), || false);
     let hovered = remember(|| Signal::new(false));
 
     let track_rect_p = track_rect.clone();
@@ -4240,7 +4240,7 @@ pub fn Slider(
                     })),
                 });
             }
-            let da = *drag_active_p.borrow();
+            let da = *drag_active_p.get();
             let hv = hovered_sig.get();
             let tw = if da { thumb_w * 0.5 } else { thumb_w };
             scene.nodes.push(SceneNode::Rect {
@@ -4286,7 +4286,7 @@ pub fn Slider(
             let track_rect = track_rect.clone();
             let drag_active = drag_active.clone();
             move |pe: PointerEvent| {
-                *drag_active.borrow_mut() = true;
+                drag_active.set(true);
                 let r = *track_rect.borrow();
                 (oc)(value_from_x(pe.position.x, r, min, max, step));
             }
@@ -4296,7 +4296,7 @@ pub fn Slider(
             let track_rect = track_rect.clone();
             let drag_active = drag_active.clone();
             move |pe: PointerEvent| {
-                if !*drag_active.borrow() {
+                if !*drag_active.get() {
                     return;
                 }
                 let r = *track_rect.borrow();
@@ -4306,7 +4306,7 @@ pub fn Slider(
         .on_pointer_up({
             let on_finished = config.on_value_change_finished.clone();
             move |_pe: PointerEvent| {
-                *drag_active.borrow_mut() = false;
+                drag_active.set(false);
                 if let Some(ref cb) = on_finished {
                     (cb)();
                 }
@@ -4359,8 +4359,8 @@ pub fn RangeSlider(
     }
     let id = *remember(|| SLIDER_COUNTER.fetch_add(1, Ordering::Relaxed));
     let track_rect = remember_state_with_key(format!("mrs_rect_{}", id), || Rect::default());
-    let drag_active = remember_state_with_key(format!("mrs_da_{}", id), || false);
-    let active_thumb = remember_state_with_key(format!("mrs_at_{}", id), || false);
+    let drag_active = remember_mutable_with_key(format!("mrs_da_{}", id), || false);
+    let active_thumb = remember_mutable_with_key(format!("mrs_at_{}", id), || false);
     let hovered = remember(|| Signal::new(false));
 
     let min = range.0;
@@ -4542,8 +4542,8 @@ pub fn RangeSlider(
                     brush: Brush::Solid(mul_c(if on_active { act_tick } else { inact_tick })),
                 });
             }
-            let da = *drag_active_p.borrow();
-            let at = *active_thumb_p.borrow();
+            let da = *drag_active_p.get();
+            let at = *active_thumb_p.get();
             let hv = hovered_sig.get();
             let thumbs = [k0, k1];
             for (idx, &kx) in thumbs.iter().enumerate() {
@@ -4605,11 +4605,11 @@ pub fn RangeSlider(
                 if !en {
                     return;
                 }
-                *drag_active.borrow_mut() = true;
+                drag_active.set(true);
                 let r = *track_rect.borrow();
                 let v = value_from_x(pe.position.x, r, min, max, step);
                 let use_end = (v - end).abs() < (v - start).abs();
-                *active_thumb.borrow_mut() = use_end;
+                active_thumb.set(use_end);
                 let (a, b) = if use_end {
                     (start, v.max(start))
                 } else {
@@ -4624,12 +4624,12 @@ pub fn RangeSlider(
             let drag_active = drag_active.clone();
             let active_thumb = active_thumb.clone();
             move |pe: PointerEvent| {
-                if !*drag_active.borrow() {
+                if !*drag_active.get() {
                     return;
                 }
                 let r = *track_rect.borrow();
                 let v = value_from_x(pe.position.x, r, min, max, step);
-                let use_end = *active_thumb.borrow();
+                let use_end = *active_thumb.get();
                 let (a, b) = if use_end {
                     (start, v.max(start))
                 } else {
@@ -4642,8 +4642,8 @@ pub fn RangeSlider(
             let drag_active = drag_active.clone();
             let active_thumb = active_thumb.clone();
             move |_pe: PointerEvent| {
-                *drag_active.borrow_mut() = false;
-                *active_thumb.borrow_mut() = false;
+                drag_active.set(false);
+                active_thumb.set(false);
             }
         })
         .on_scroll({
@@ -4665,7 +4665,7 @@ pub fn RangeSlider(
                     return d;
                 }
                 let step_val = step.unwrap_or(1.0).max(1e-6);
-                let use_end = *active_thumb.borrow();
+                let use_end = *active_thumb.get();
                 let (mut a, mut b) = (start, end);
                 if use_end {
                     b = snap_step(end + (dir as f32) * step_val, min, max, step).max(a);

@@ -106,8 +106,30 @@ impl<T: 'static> Mutable<T> {
         self.0.borrow()
     }
 
+    /// Read the current value without holding the borrow across the closure.
+    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        f(&*self.0.borrow())
+    }
+
     pub fn set(&self, v: T) {
         *self.0.borrow_mut() = v;
+        crate::signal_fired();
+        request_frame();
+    }
+
+    /// Like [`set`], but skips the frame request + signal when the value is
+    /// unchanged (`T: PartialEq`).
+    pub fn set_neq(&self, v: T)
+    where
+        T: PartialEq,
+    {
+        {
+            let mut b = self.0.borrow_mut();
+            if *b == v {
+                return;
+            }
+            *b = v;
+        }
         crate::signal_fired();
         request_frame();
     }
@@ -116,6 +138,24 @@ impl<T: 'static> Mutable<T> {
         f(&mut *self.0.borrow_mut());
         crate::signal_fired();
         request_frame();
+    }
+
+    /// Like [`update`], but only requests a frame + fires the signal when the
+    /// value actually changed (`T: PartialEq + Clone`).
+    pub fn update_neq(&self, f: impl FnOnce(&mut T))
+    where
+        T: PartialEq + Clone,
+    {
+        let changed = {
+            let mut b = self.0.borrow_mut();
+            let before = (*b).clone();
+            f(&mut *b);
+            *b != before
+        };
+        if changed {
+            crate::signal_fired();
+            request_frame();
+        }
     }
 
     /// Escape hatch when batching many writes; call [`request_frame`] yourself.
@@ -132,4 +172,13 @@ impl<T: 'static> Mutable<T> {
 #[track_caller]
 pub fn remember_mutable<T: 'static>(init: impl FnOnce() -> T) -> Mutable<T> {
     crate::remember(|| Mutable::new(init())).as_ref().clone()
+}
+
+/// Key-based variant of [`remember_mutable`]; stable across conditional branches.
+#[track_caller]
+pub fn remember_mutable_with_key<T: 'static>(
+    key: impl Into<String>,
+    init: impl FnOnce() -> T,
+) -> Mutable<T> {
+    remember_with_key(key, || Mutable::new(init())).as_ref().clone()
 }

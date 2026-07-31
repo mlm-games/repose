@@ -17,6 +17,7 @@ mod tests {
     use crate::error::{throw_boundary, ErrorBoundary};
     use crate::runtime::ComposeGuard;
     use crate::state::remember_mutable;
+    use crate::state::remember_mutable_with_key;
     use crate::{View, ViewKind};
     use web_time::{Duration, Instant};
 
@@ -408,6 +409,67 @@ mod tests {
         m.update(|v| *v += 1);
         assert!(crate::take_frame_request(), "update must request a frame");
         assert_eq!(*m.get(), 2);
+    }
+
+    #[test]
+    fn mutable_set_neq_skips_frame_when_unchanged() {
+        clear_composer();
+        let m = remember_mutable(|| 5);
+        crate::take_frame_request(); // clear any pending request
+
+        m.set_neq(5);
+        assert!(
+            !crate::take_frame_request(),
+            "set_neq with equal value must not request a frame"
+        );
+        assert_eq!(*m.get(), 5);
+
+        m.set_neq(7);
+        assert!(
+            crate::take_frame_request(),
+            "set_neq with different value must request a frame"
+        );
+        assert_eq!(*m.get(), 7);
+    }
+
+    #[test]
+    fn mutable_update_neq_skips_frame_when_unchanged() {
+        clear_composer();
+        let m = remember_mutable(|| 10);
+        crate::take_frame_request(); // clear any pending request
+
+        m.update_neq(|v| *v = 10);
+        assert!(
+            !crate::take_frame_request(),
+            "update_neq that leaves the value equal must not request a frame"
+        );
+
+        m.update_neq(|v| *v += 1);
+        assert!(
+            crate::take_frame_request(),
+            "update_neq that changes the value must request a frame"
+        );
+        assert_eq!(*m.get(), 11);
+    }
+
+    #[test]
+    fn mutable_with_reads_without_clone() {
+        clear_composer();
+        let m = remember_mutable(|| 3u64);
+        let doubled = m.with(|v| v * 2);
+        assert_eq!(doubled, 6);
+        assert_eq!(*m.get(), 3);
+    }
+
+    #[test]
+    fn mutable_keyed_is_stable_across_branches() {
+        clear_composer();
+        // Same key must return the same instance across calls (conditional
+        // branch stability): the second init closure must be ignored.
+        let a = remember_mutable_with_key("mv_keyed", || 42);
+        let b = remember_mutable_with_key("mv_keyed", || 0);
+        a.set(99);
+        assert_eq!(*b.get(), 99, "keyed Mutable must be stable across branches");
     }
 
     fn build_boundary(
