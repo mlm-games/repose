@@ -731,7 +731,9 @@ impl LayoutEngine {
         font_px: &dyn Fn(f32) -> f32,
     ) -> taffy::NodeId {
         let style = self.style_from_kind(&view.kind, &view.modifier, font_px);
-        let ctx = self.context_from_kind(&view.kind);
+        let ctx = Self::context_from_kind_or_modifier(&view.kind, &view.modifier);
+        let is_zstack = matches!(view.kind, ViewKind::ZStack);
+        let scroll_axis = view.modifier.scroll.as_ref().map(|s| s.axis());
 
         let child_tids: Vec<taffy::NodeId> = view
             .children
@@ -739,13 +741,19 @@ impl LayoutEngine {
             .map(|c| self.build_taffy_subtree(c, taffy, font_px))
             .collect();
 
-        if child_tids.is_empty() {
+        let t = if child_tids.is_empty() {
             taffy.new_leaf_with_context(style, ctx).unwrap()
         } else {
             let t = taffy.new_with_children(style, &child_tids).unwrap();
             let _ = taffy.set_node_context(t, Some(ctx));
             t
+        };
+
+        Self::make_children_absolute_on(is_zstack, &child_tids, taffy);
+        if let Some(axis) = scroll_axis {
+            Self::apply_scroll_content_styles(axis, &child_tids, taffy);
         }
+        t
     }
 
     /// Sync scope-internal TaffyTrees. Handles removed/dirty nodes within each scope.
@@ -834,7 +842,7 @@ impl LayoutEngine {
         let ctx = self.context_from_node(node);
         let children = node.children.clone();
         let is_zstack = matches!(node.kind, ViewKind::ZStack);
-        let is_scroll = node.modifier.scroll.is_some();
+        let scroll_axis = node.modifier.scroll.as_ref().map(|s| s.axis());
         drop(node);
 
         // Recurse into children but stop at nested scope boundaries
@@ -861,7 +869,9 @@ impl LayoutEngine {
             drop(st);
             let st = self.scope_trees.get_mut(scope_key).unwrap();
             Self::make_children_absolute_on(is_zstack, &child_tids, &mut st.taffy);
-            Self::make_scroll_child_on(is_scroll, &child_tids, &mut st.taffy);
+            if let Some(axis) = scroll_axis {
+                Self::apply_scroll_content_styles(axis, &child_tids, &mut st.taffy);
+            }
             t_id
         } else {
             let t_id = if child_tids.is_empty() {
@@ -879,7 +889,9 @@ impl LayoutEngine {
             drop(st);
             let st = self.scope_trees.get_mut(scope_key).unwrap();
             Self::make_children_absolute_on(is_zstack, &child_tids, &mut st.taffy);
-            Self::make_scroll_child_on(is_scroll, &child_tids, &mut st.taffy);
+            if let Some(axis) = scroll_axis {
+                Self::apply_scroll_content_styles(axis, &child_tids, &mut st.taffy);
+            }
             t_id
         }
     }
@@ -958,14 +970,14 @@ impl LayoutEngine {
             return t_id;
         }
 
-        let (style, ctx, children, is_zstack, is_scroll) = {
+        let (style, ctx, children, is_zstack, scroll_axis) = {
             let node = self.tree.get(node_id).expect("Node missing in update");
             (
                 self.style_from_node(node, font_px),
                 self.context_from_node(node),
                 node.children.clone(),
                 matches!(node.kind, ViewKind::ZStack),
-                node.modifier.scroll.is_some(),
+                node.modifier.scroll.as_ref().map(|s| s.axis()),
             )
         };
 
@@ -988,7 +1000,9 @@ impl LayoutEngine {
                 .unwrap();
             let _ = self.taffy.set_node_context(t, Some(ctx));
             self.make_children_absolute(is_zstack, &child_taffy_ids);
-            LayoutEngine::make_scroll_child_on(is_scroll, &child_taffy_ids, &mut self.taffy);
+            if let Some(axis) = scroll_axis {
+                LayoutEngine::apply_scroll_content_styles(axis, &child_taffy_ids, &mut self.taffy);
+            }
             t
         };
 
@@ -1007,14 +1021,14 @@ impl LayoutEngine {
         // Ensure this node has a stable view id
         let _ = self.ensure_view_id(node_id);
 
-        let (new_style, new_ctx, children, is_zstack, is_scroll) = {
+        let (new_style, new_ctx, children, is_zstack, scroll_axis) = {
             let node = self.tree.get(node_id).unwrap();
             (
                 self.style_from_node(node, font_px),
                 self.context_from_node(node),
                 node.children.clone(),
                 matches!(node.kind, ViewKind::ZStack),
-                node.modifier.scroll.is_some(),
+                node.modifier.scroll.as_ref().map(|s| s.axis()),
             )
         };
 
@@ -1046,7 +1060,9 @@ impl LayoutEngine {
         let _ = self.taffy.set_children(taffy_id, &child_taffy_ids);
 
         self.make_children_absolute(is_zstack, &child_taffy_ids);
-        LayoutEngine::make_scroll_child_on(is_scroll, &child_taffy_ids, &mut self.taffy);
+        if let Some(axis) = scroll_axis {
+            LayoutEngine::apply_scroll_content_styles(axis, &child_taffy_ids, &mut self.taffy);
+        }
 
         self.stats.taffy_reused += 1;
     }
@@ -1068,25 +1084,39 @@ impl LayoutEngine {
         }
     }
 
-    /// HACK: This assymetrical code block is needed for having ScrollArea's children also scroll!
-    /// Else the inner pages of a nav. page don't scroll (like in showcase)
-    fn make_scroll_child_on(
-        is_scroll: bool,
+    /// Apply scroll-content sizing to direct children of a scroll container.
+    ///
+    /// Scroll parents clip/overflow; children must:
+    /// - not flex-shrink (so content can overflow the viewport),
+    /// - size to content on the scroll axis (`auto`),
+    /// - be at least as large as the viewport on both axes (`min_size` 100%)
+    ///   so empty / short content still fills the viewport (nested scroll / nav pages).
+    fn apply_scroll_content_styles(
+        axis: ScrollAxis,
         child_taffy_ids: &[taffy::NodeId],
         taffy: &mut TaffyTree<NodeContext>,
     ) {
-        if !is_scroll {
-            return;
-        }
         for &child_tid in child_taffy_ids {
-            if let Ok(cs) = taffy.style(child_tid) {
-                let mut new_cs = cs.clone();
-                new_cs.size.height = Dimension::auto();
-                new_cs.min_size.height = percent(1.0);
-                new_cs.min_size.width = percent(1.0);
-                new_cs.flex_shrink = 0.0;
-                let _ = taffy.set_style(child_tid, new_cs);
+            let Ok(cs) = taffy.style(child_tid) else { continue };
+            let mut new_cs = cs.clone();
+            new_cs.flex_shrink = 0.0;
+            // Fill viewport at minimum so nested scroll / short pages still work.
+            new_cs.min_size.width = percent(1.0);
+            new_cs.min_size.height = percent(1.0);
+            match axis {
+                ScrollAxis::Vertical => {
+                    // Grow with content vertically; width already min 100%.
+                    new_cs.size.height = Dimension::auto();
+                }
+                ScrollAxis::Horizontal => {
+                    new_cs.size.width = Dimension::auto();
+                }
+                ScrollAxis::Both => {
+                    new_cs.size.width = Dimension::auto();
+                    new_cs.size.height = Dimension::auto();
+                }
             }
+            let _ = taffy.set_style(child_tid, new_cs);
         }
     }
 
@@ -1223,6 +1253,9 @@ impl LayoutEngine {
         }
 
         if m.scroll.is_some() {
+            // Clip on both axes: Taffy content-box / overflow behavior must match the
+            // paint clip (PushClip + offset applied in `walk_paint`). Axis-aware child
+            // sizing is handled separately via `apply_scroll_content_styles`.
             s.overflow = taffy::geometry::Point {
                 x: Overflow::Hidden,
                 y: Overflow::Hidden,
@@ -1384,18 +1417,25 @@ impl LayoutEngine {
     }
 
     fn context_from_node(&self, node: &TreeNode) -> NodeContext {
-        if node.modifier.scroll.is_some() {
+        Self::context_from_kind_or_modifier(&node.kind, &node.modifier)
+    }
+
+    /// Shared context derivation used by both the persistent tree path and the
+    /// measure-only `build_taffy_subtree` path so intrinsic sizing sees the same
+    /// `NodeContext` (scroll containers, text inputs, ...).
+    fn context_from_kind_or_modifier(kind: &ViewKind, m: &repose_core::Modifier) -> NodeContext {
+        if m.scroll.is_some() {
             return NodeContext::ScrollContainer;
         }
-        if let Some(ref ti) = node.modifier.text_input {
+        if let Some(ref ti) = m.text_input {
             return NodeContext::TextInput {
                 multiline: ti.multiline,
             };
         }
-        self.context_from_kind(&node.kind)
+        Self::context_from_kind(kind)
     }
 
-    fn context_from_kind(&self, kind: &ViewKind) -> NodeContext {
+    fn context_from_kind(kind: &ViewKind) -> NodeContext {
         match kind {
             ViewKind::Text {
                 text,
@@ -1801,41 +1841,6 @@ impl LayoutEngine {
             }
             current = parent_id;
         }
-    }
-
-    fn walk_paint_view(
-        &mut self,
-        view: &View,
-        scene: &mut Scene,
-        hits: &mut Vec<HitRegion>,
-        sems: &mut Vec<SemNode>,
-        textfield_states: &HashMap<u64, Rc<RefCell<TextFieldState>>>,
-        interactions: &Interactions,
-        focused: Option<u64>,
-        parent_offset_px: (f32, f32),
-        alpha_accum: f32,
-        sem_parent: Option<u64>,
-        font_px: &dyn Fn(f32) -> f32,
-    ) {
-        let root_id = self.tree.update(view);
-        self.sync_taffy_tree(root_id, font_px);
-        self.walk_paint(
-            root_id,
-            scene,
-            hits,
-            sems,
-            textfield_states,
-            interactions,
-            focused,
-            parent_offset_px,
-            alpha_accum,
-            sem_parent,
-            None, // interaction_source
-            font_px,
-            false,
-            &mut Vec::new(),
-            false,
-        );
     }
 
     fn walk_paint(
@@ -4094,7 +4099,6 @@ mod tests {
         //   Scroll(tall content)  // This will show a scrollbar
         //   Box with render_z_index(1000)  // This should paint LAST
         // }
-        use crate::Scroll;
 
         let content_color = Color::from_rgb(100, 100, 100);
         let overlay_color = Color::from_rgb(0, 0, 255);
@@ -4102,7 +4106,15 @@ mod tests {
         // Tall content inside scroll - 500px tall in 200px viewport
         let tall_content = RBox(Modifier::new().size(180.0, 500.0).background(content_color));
 
-        let scroll = Scroll(Modifier::new().size(200.0, 200.0)).child(tall_content);
+        let scroll = RBox(
+            Modifier::new()
+                .size(200.0, 200.0)
+                .vertical_scroll(ScrollAxisBinding {
+                    show_scrollbar: true,
+                    ..Default::default()
+                }),
+        )
+        .child(tall_content);
 
         let overlay = RBox(
             Modifier::new()
@@ -4164,7 +4176,6 @@ mod tests {
         //   OverlayHost { content with Scroll }
         //   Box with render_z_index(1000)  // Hint box
         // }
-        use crate::Scroll;
         use crate::overlay::OverlayHandle;
 
         let content_color = Color::from_rgb(100, 100, 100);
@@ -4172,7 +4183,15 @@ mod tests {
 
         // Tall content inside scroll - 500px tall in 200px viewport
         let tall_content = RBox(Modifier::new().size(180.0, 500.0).background(content_color));
-        let scroll = Scroll(Modifier::new().size(200.0, 200.0)).child(tall_content);
+        let scroll = RBox(
+            Modifier::new()
+                .size(200.0, 200.0)
+                .vertical_scroll(ScrollAxisBinding {
+                    show_scrollbar: true,
+                    ..Default::default()
+                }),
+        )
+        .child(tall_content);
 
         // Create an OverlayHost wrapping the scroll content
         let overlay_handle = OverlayHandle::new();
@@ -4353,6 +4372,103 @@ mod tests {
 
     fn make_engine() -> LayoutEngine {
         LayoutEngine::new()
+    }
+
+    #[test]
+    fn test_vertical_scroll_content_can_exceed_viewport() {
+        use crate::scroll::{ScrollArea, ScrollState};
+        use std::rc::Rc;
+
+        let state = ScrollState::new();
+        // Tall content inside fixed-height scroll
+        let root = ScrollArea(
+            Modifier::new().height(100.0).width(200.0),
+            Rc::new(state),
+            Column(Modifier::new())
+                .child(RBox(Modifier::new().height(80.0).background(Color::WHITE)))
+                .child(RBox(Modifier::new().height(80.0).background(Color::BLACK))),
+        );
+        let mut eng = LayoutEngine::new();
+        let (_scene, hits, _) = eng.layout_frame(
+            &root,
+            (200, 100),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        );
+        // Content is taller than the viewport -> a scroll hit region must exist.
+        assert!(
+            hits.iter().any(|h| h.on_scroll.is_some()),
+            "scroll container should emit a scroll hit region when content overflows"
+        );
+    }
+
+    #[test]
+    fn test_nested_scroll_nav_like() {
+        use crate::scroll::{ScrollArea, ScrollState};
+        use std::rc::Rc;
+
+        // Outer column fill + inner ScrollArea with tall page (showcase nav pattern).
+        // Inner content layout height must exceed the viewport while the outer
+        // container still lays out without panicking.
+        let white = Color::WHITE;
+        let state = ScrollState::new();
+        let inner = ScrollArea(
+            Modifier::new().height(100.0).fill_max_width(),
+            Rc::new(state),
+            Column(Modifier::new())
+                .child(RBox(Modifier::new().height(300.0).background(white))),
+        );
+        let root = Column(Modifier::new().size(200.0, 200.0)).child(inner);
+
+        let mut eng = LayoutEngine::new();
+        let (scene, hits, _) = eng.layout_frame(
+            &root,
+            (200, 200),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        );
+        assert!(
+            hits.iter().any(|h| h.on_scroll.is_some()),
+            "inner ScrollArea should emit a scroll hit region"
+        );
+        // The 300dp-tall page must still be laid out (taller than the 100dp viewport),
+        // proving scroll content styles let it grow on the scroll axis.
+        assert!(
+            scene.nodes.iter().any(|n| matches!(
+                n,
+                SceneNode::Rect {
+                    brush: Brush::Solid(c),
+                    rect,
+                    ..
+                } if *c == white && (rect.h - 300.0).abs() < 1.0
+            )),
+            "tall page should be laid out at its full height inside the scroller"
+        );
+    }
+
+    #[test]
+    fn test_intrinsic_size_scroll_content_height() {
+        use crate::scroll::{ScrollArea, ScrollState};
+        use std::rc::Rc;
+
+        let state = ScrollState::new();
+        let v = ScrollArea(
+            Modifier::new().width(200.0),
+            Rc::new(state),
+            Column(Modifier::new())
+                .child(RBox(Modifier::new().height(80.0)))
+                .child(RBox(Modifier::new().height(80.0))),
+        );
+        let mut eng = make_engine();
+        let (w, h) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
+        assert!(
+            h >= 160.0 - 1.0,
+            "scroll max-content height should reach child sum, got {}",
+            h
+        );
+        assert!(w > 0.0, "width should be positive, got {}", w);
     }
 
     #[test]

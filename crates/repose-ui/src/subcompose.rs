@@ -3,6 +3,10 @@
 //! These layouts compose their children during the *reconcile* pass using the
 //! current available size, so the inner content can adapt to the parent's
 //! constraints.
+//!
+//! Content closures are not hashed. Invalidated with a changing key
+//! (`subcompose_with_key`) or `invalidate_subcompose_cache` when captured
+//! signals change without a structural View change.
 
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;

@@ -3,16 +3,19 @@
 //!
 //! Repose UI is built around three core ideas:
 //!
-//! - `View`: an immutable description of a UI node.
+//! - `View`: an immutable description of a UI node (cheap to rebuild every frame).
 //! - `Modifier`: layout, styling, and interaction hints attached to a `View`.
-//! - Layout + paint: a separate pass (`layout_and_paint`) that turns the
-//!   `View` tree into a `Scene` + hit regions using the Taffy layout engine.
+//! - Incremental layout + paint via a persistent engine:
+//!   composition produces a new `View` tree each frame; `LayoutEngine`
+//!   reconciles it into a persistent `ViewTree` (`repose-tree`) and runs
+//!   incremental Taffy layout + paint (with scopes, dirty sets, and paint caches).
 //!
 //! ## Views
 //!
 //! A `View` is a lightweight value that describes *what* to show, not *how* it is
-//! rendered. It is cheap to create and you are expected to rebuild the entire
-//! view tree on each frame:
+//! rendered. It is cheap to create; you rebuild the description each frame
+//! (Compose-style). Identity and layout state live in the persistent tree, not
+//! in the `View` values themselves.
 //!
 //! ```rust,ignore
 //! use repose_core::*;
@@ -28,54 +31,35 @@
 //!
 //! Internally, a `View` has:
 //!
-//! - `id: ViewId` - assigned during composition/layout.
-//! - `kind: ViewKind` - which widget it is (Text, Button, ScrollV, etc.).
-//! - `modifier: Modifier` - layout/styling/interaction metadata.
-//! - `children: Vec<View>` - owned child views.
+//! - `id: ViewId` — assigned during composition / layout.
+//! - `kind: ViewKind` — which widget it is (Text, Button, etc.).
+//! - `modifier: Modifier` — layout/styling/interaction metadata.
+//! - `children: Vec<View>` — owned child views.
 //!
-//! Views are *pure data*: they do not hold state or references into platform
-//! APIs. State lives in signals / `remember_*` and platform integration happens
-//! in the runner (`repose-platform`).
+//! Views are *pure data*: they do not hold state or platform handles.
+//! State lives in signals / `remember_*`; platform integration is in
+//! `repose-platform` / `repose-app`.
 //!
 //! ## Modifiers
 //!
-//! `Modifier` describes *how* a view participates in layout and hit‑testing:
+//! `Modifier` describes *how* a view participates in layout and hit-testing:
 //!
-//! - Size hints: `size`, `width`, `height`, `min_size`, `max_size`,
-//!   `fill_max_size`, `fill_max_width`, `fill_max_height`.
-//! - Box model: `padding`, `padding_values`.
-//! - Visuals: `background`, `background_brush`, `border`, `clip_rounded`, `alpha`, `transform`.
-//! - Flex / grid: `flex_grow`, `flex_shrink`, `flex_basis`, `align_self`,
-//!   `justify_content`, `align_items`, `grid`, `grid_span`.
-//! - Positioning: `absolute()`, `offset(..)` for overlay / FABs.
-//! - Interaction: `clickable()`, pointer callbacks, `on_scroll`, `semantics`.
-//! - Custom paint: `painter` (used by `repose-canvas`).
+//! - Size: `size`, `width`, `height`, `min_*`, `max_*`, `fill_max_*`
+//! - Box model: `padding`, `padding_values`, margins
+//! - Visuals: `background`, `border`, `clip_rounded`, `alpha`, `transform`, layers
+//! - Flex / grid: `flex_*`, `align_*`, `justify_*`, `grid`, `grid_span`
+//! - Positioning: `absolute()`, `offset(..)`
+//! - Scroll: `vertical_scroll` / `horizontal_scroll` / `scrollable`, `nested_scroll_connection`
+//! - Interaction: `clickable()`, pointer callbacks, `semantics`
+//! - Custom paint: `painter` (used by `repose-canvas`)
+//! - Incremental helpers: `key`, `repaint_boundary`, `scope!` (core)
 //!
-//! Example:
+//! Modifiers are mapped to Taffy `Style` inside `LayoutEngine`. Values are in
+//! density-independent pixels (dp) and converted to physical px via `Density`.
 //!
-//! ```rust
-//! use repose_core::*;
-//! use repose_ui::*;
+//! ## Layout + paint
 //!
-//! fn CardExample() -> View {
-//!     Box(
-//!         Modifier::new()
-//!             .padding(16.0)
-//!             .background(theme().surface)
-//!             .border(1.0, theme().outline, 8.0)
-//!             .clip_rounded(8.0),
-//!     )
-//!     .child(Text("Hello, Repose!"))
-//! }
-//! ```
-//!
-//! Modifiers are merged into a Taffy `Style` inside `layout_and_paint`. Most
-//! values are specified in density‑independent pixels (dp) and converted to
-//! physical pixels (`px`) using the current `Density` local.
-//!
-//! ## Layout
-//!
-//! Layout is a pure function:
+//! Public entry:
 //!
 //! ```rust,ignore
 //! pub fn layout_and_paint(
@@ -87,20 +71,17 @@
 //! ) -> (Scene, Vec<HitRegion>, Vec<SemNode>);
 //! ```
 //!
-//! It:
+//! This is a thin thread-local wrapper around `LayoutEngine::layout_frame`, which:
 //!
-//! 1. Clones the root `View` and assigns stable `ViewId`s.
-//! 2. Builds a parallel Taffy tree and computes layout for the given window size.
-//! 3. Walks the tree to:
-//!    - Emit `SceneNode`s for visuals (rects, text, images, scrollbars, etc.).
-//!    - Build `HitRegion`s for input routing (clicks, pointer events, scroll).
-//!    - Build `SemNode`s for accessibility / semantics.
+//! 1. Reconciles `root` into the persistent `ViewTree` (stable `NodeId`s, content +
+//!    subtree hashes, dirty set, generation GC).
+//! 2. Syncs dual Taffy trees (root + per-`scope!` `ScopeLayoutTree`s).
+//! 3. Computes layout (measure callbacks, constraint equality skip for scopes).
+//! 4. Walks the tree to emit `SceneNode`s, `HitRegion`s, and `SemNode`s, with
+//!    paint-cache hits on `repaint_boundary` / scopes, culling, nested scroll, etc.
 //!
-//! `Row`, `Column`, `Box`, `ZStack`, `Grid`, `ScrollV` and `ScrollXY` are all special
-//! `ViewKind`s that map into Taffy styles and additional paint/hit logic.
-//!
-//! Because layout + paint are separate from the platform runner, you can reuse
-//! the same UI code on desktop, Android, and other platforms.
+//! Prefer `scope!`, stable keys, and `repaint_boundary` on expensive subtrees so
+//! the incremental engine can skip work.
 
 pub mod adaptive;
 pub mod anim;
@@ -516,7 +497,8 @@ impl_into_children_tuple!(0 A, 1 B, 2 C, 3 D, 4 E, 5 F);
 impl_into_children_tuple!(0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G);
 impl_into_children_tuple!(0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G, 7 H);
 
-/// Layout and paint with TextField state injection (Taffy 0.9 API)
+/// Reconcile `root` into the thread-local `LayoutEngine` and run incremental
+/// layout + paint for this frame.
 pub fn layout_and_paint(
     root: &View,
     size_px_u32: (u32, u32),

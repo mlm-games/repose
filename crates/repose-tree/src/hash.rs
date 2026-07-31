@@ -4,6 +4,7 @@ use rapidhash::fast::RapidHasher;
 use repose_core::{
     Brush, Color, Modifier, TextOverflow, View, ViewKind,
     animation::{AnimationSpec, Easing},
+    scroll::ScrollBinding,
 };
 use std::hash::{Hash, Hasher};
 
@@ -251,6 +252,66 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     (m.on_double_click.is_some()).hash(hasher);
     (m.on_long_click.is_some()).hash(hasher);
 
+    // Scroll (presence + axis only — closures intentionally not hashed)
+    match &m.scroll {
+        None => 0u8.hash(hasher),
+        Some(ScrollBinding::Vertical(_)) => 1u8.hash(hasher),
+        Some(ScrollBinding::Horizontal(_)) => 2u8.hash(hasher),
+        Some(ScrollBinding::Both(_)) => 3u8.hash(hasher),
+    }
+    m.nested_scroll_connection.is_some().hash(hasher);
+    m.on_scroll.is_some().hash(hasher);
+
+    // Overflow / clip_rect
+    m.overflow.map(|o| std::mem::discriminant(&o)).hash(hasher);
+    if let Some(cr) = &m.clip_rect {
+        ((cr.left * 100.0) as i32).hash(hasher);
+        ((cr.top * 100.0) as i32).hash(hasher);
+        ((cr.right * 100.0) as i32).hash(hasher);
+        ((cr.bottom * 100.0) as i32).hash(hasher);
+        std::mem::discriminant(&cr.op).hash(hasher);
+    }
+
+    // Gaps & margins
+    m.gap.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.row_gap.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.column_gap.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.margin_top.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.margin_left.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.margin_right.map(|v| (v * 100.0) as i32).hash(hasher);
+    m.margin_bottom.map(|v| (v * 100.0) as i32).hash(hasher);
+
+    // Layers / custom paint
+    m.graphics_layer.map(|a| (a * 255.0) as u8).hash(hasher);
+    m.painter.is_some().hash(hasher);
+    if let Some(sh) = &m.shadow {
+        ((sh.blur_radius * 100.0) as i32).hash(hasher);
+        ((sh.offset_y * 100.0) as i32).hash(hasher);
+        hash_color(&sh.color, hasher);
+    }
+
+    // Side effects / a11y / cursor (callbacks stay presence-only)
+    (m.on_globally_positioned.is_some()).hash(hasher);
+    (m.on_size_changed.is_some()).hash(hasher);
+    if let Some(sem) = &m.semantics {
+        std::mem::discriminant(&sem.role).hash(hasher);
+        sem.label.hash(hasher);
+        sem.focused.hash(hasher);
+        sem.enabled.hash(hasher);
+        sem.selectable_group.hash(hasher);
+    }
+    if let Some(c) = &m.cursor {
+        std::mem::discriminant(c).hash(hasher);
+    }
+
+    // Text input (presence + stable flags)
+    if let Some(ti) = &m.text_input {
+        true.hash(hasher);
+        ti.multiline.hash(hasher);
+    } else {
+        false.hash(hasher);
+    }
+
     (m.on_drag_start.is_some()).hash(hasher);
     (m.on_drag_end.is_some()).hash(hasher);
     (m.on_drag_enter.is_some()).hash(hasher);
@@ -355,6 +416,21 @@ mod tests {
         let v2 = View::new(0, ViewKind::Box).modifier(Modifier::new().width(100.0));
 
         assert_eq!(hash_view_content(&v1), hash_view_content(&v2));
+    }
+
+    #[test]
+    fn test_scroll_presence_changes_hash() {
+        use repose_core::scroll::ScrollAxisBinding;
+
+        let v1 = View::new(0, ViewKind::Box).modifier(Modifier::new());
+        let v2 = View::new(0, ViewKind::Box).modifier(
+            Modifier::new().vertical_scroll(ScrollAxisBinding {
+                show_scrollbar: true,
+                ..Default::default()
+            }),
+        );
+
+        assert_ne!(hash_view_content(&v1), hash_view_content(&v2));
     }
 
     #[test]
