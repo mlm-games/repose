@@ -30,6 +30,7 @@ pub use crate::runtime::{
     ComposeGuard, FocusDirection, FocusManager, FocusRequester, Frame, Scheduler, remember,
     remember_state, remember_state_with_key, remember_with_key, take_focus_request,
 };
+pub use crate::state::{Mutable, remember_mutable};
 pub use crate::scope::{Scope, current_scope, scope_memo, scoped_effect};
 pub use crate::semantics::{Role, Semantics};
 pub use crate::shortcuts;

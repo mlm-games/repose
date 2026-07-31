@@ -2175,4 +2175,64 @@ mod tests {
             let _ = &t[..b];
         }
     }
+
+    fn delete_op(
+        index: usize,
+        pre_text: &str,
+        pre_selection: Range<usize>,
+        post_selection: Range<usize>,
+    ) -> TextUndoOp {
+        TextUndoOp {
+            index,
+            pre_text: pre_text.to_string(),
+            post_text: String::new(),
+            pre_selection,
+            post_selection,
+            time: Instant::now(),
+            can_merge: true,
+        }
+    }
+
+    #[test]
+    fn deletion_type_collapsed_post_selection_is_backspace() {
+        // Backspace on "abc" with cursor at 3 deletes 'c', cursor moves to 2.
+        let op = delete_op(2, "c", 3..3, 2..2);
+        assert_eq!(op.deletion_type(), TextDeleteType::Start);
+    }
+
+    #[test]
+    fn deletion_type_collapsed_post_selection_is_delete_forward() {
+        // Delete-forward at cursor 3 removes 'c' but the cursor stays put.
+        let op = delete_op(3, "c", 3..3, 3..3);
+        assert_eq!(op.deletion_type(), TextDeleteType::End);
+    }
+
+    #[test]
+    fn deletion_type_range_post_selection_is_not_by_user() {
+        // A deletion that leaves an expanded post-selection is not a plain
+        // backspace/delete-forward and must never merge (regression for the
+        // old `!start == end` precedence bug which compared bitwise-not of start).
+        let op = delete_op(2, "de", 2..4, 3..5);
+        assert_eq!(op.deletion_type(), TextDeleteType::NotByUser);
+    }
+
+    #[test]
+    fn backspace_ops_merge() {
+        // "abc": cursor 3 -> 2 -> 1 via two backspaces merges into one "bc" delete.
+        let a = delete_op(2, "c", 3..3, 2..2);
+        let b = delete_op(1, "b", 2..2, 1..1);
+        let merged = a.try_merge(&b).expect("consecutive backspaces should merge");
+        assert_eq!(merged.index, 1);
+        assert_eq!(merged.pre_text, "bc");
+    }
+
+    #[test]
+    fn selection_delete_does_not_merge_with_backspace() {
+        // Selection-delete classifies as Inner, so it never merges with a
+        // Start/End backspace-merge even back-to-back.
+        let backspace = delete_op(2, "c", 3..3, 2..2);
+        let selection = delete_op(2, "de", 2..4, 2..2);
+        assert_eq!(selection.deletion_type(), TextDeleteType::Inner);
+        assert!(backspace.try_merge(&selection).is_none());
+    }
 }

@@ -65,13 +65,13 @@ use repose_core::prelude::*;
 use repose_ui::*;
 
 fn Counter() -> View {
-    let count = remember_state(|| 0);
-    
+    let count = remember_mutable(|| 0);
+
     Column(Modifier::new().padding(16.0)).child((
-        Text(format!("Count: {}", *count.borrow())),
+        Text(format!("Count: {}", *count.get())),
         Button("Increment", {
             let count = count.clone();
-            move || *count.borrow_mut() += 1
+            move || count.update(|c| *c += 1)
         }),
     ))
 }
@@ -87,8 +87,9 @@ fn main() -> anyhow::Result<()> {
 let theme = signal(Theme::default());
 theme.set(Theme::dark());
 
-// remember_state for component-local state
-let input = remember_state(|| String::new());
+// Mutable for component-local state that should always recompose
+// (auto-requests a frame on set/update)
+let input = remember_mutable(|| String::new());
 
 // Derived state
 let full_name = produce_state("full", {

@@ -32,21 +32,21 @@
 //! use repose_core::*;
 //!
 //! fn CounterView() -> View {
-//!     let count = remember_state(|| 0); // Rc<RefCell<i32>>
+//!     let count = remember_mutable(|| 0); // auto-requests a frame on set/update
 //!
 //!     let on_click = {
 //!         let count = count.clone();
-//!         move || *count.borrow_mut() += 1
+//!         move || count.update(|c| *c += 1)
 //!     };
 //!
 //!     repose_ui::Button(
-//!         format!("Count = {}", *count.borrow()),
+//!         format!("Count = {}", *count.get()),
 //!         on_click,
 //!     )
 //! }
 //! ```
 //!
-//! - `remember` and `remember_state` are order‑based: the Nth call in a
+//! - `remember` and `remember_mutable` are order‑based: the Nth call in a
 //!   composition slot always refers to the Nth stored value.
 //! - `remember_with_key` and `remember_state_with_key` are key‑based and more
 //!   stable across conditional branches.

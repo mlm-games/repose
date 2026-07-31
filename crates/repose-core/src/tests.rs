@@ -11,11 +11,12 @@ mod tests {
     use crate::scope::*;
     use crate::signal::*;
     use crate::{
-        clear_composer, new_observer, produce_state, remove_observer, run_observer_now,
-        signal_changed,
+        clear_composer, new_observer, produce_state, produce_state_eq, remove_observer,
+        run_observer_now, signal_changed,
     };
     use crate::error::{throw_boundary, ErrorBoundary};
     use crate::runtime::ComposeGuard;
+    use crate::state::remember_mutable;
     use crate::{View, ViewKind};
     use web_time::{Duration, Instant};
 
@@ -50,6 +51,31 @@ mod tests {
 
         sig.set(42);
         assert!(*called.borrow());
+    }
+
+    #[test]
+    fn signal_with_reads_without_clone() {
+        let sig = signal(String::from("hello"));
+        let len = sig.with(|s| s.len());
+        assert_eq!(len, 5);
+        let _ = sig.get(); // still Clone-able for get
+    }
+
+    #[test]
+    fn signal_set_neq_skips_notify() {
+        let sig = signal(0);
+        let count = Rc::new(RefCell::new(0usize));
+        let count_clone = count.clone();
+        sig.subscribe(move |_| *count_clone.borrow_mut() += 1);
+
+        sig.set_neq(0); // unchanged -> no notify
+        assert_eq!(*count.borrow(), 0);
+
+        sig.set_neq(1); // changed -> notify
+        assert_eq!(*count.borrow(), 1);
+
+        sig.set_neq(1); // unchanged again
+        assert_eq!(*count.borrow(), 1);
     }
 
     #[test]
@@ -239,6 +265,43 @@ mod tests {
     }
 
     #[test]
+    fn test_produce_state_eq_skips_writes() {
+        let a = signal(1);
+
+        // Subscriber count proves no write happens when the derived value
+        // is unchanged after a dependency change.
+        let writes = Rc::new(RefCell::new(0usize));
+        let eq = produce_state_eq("eq_skip", {
+            let a = a.clone();
+            move || a.get().min(10)
+        });
+        let writes_clone = writes.clone();
+        eq.subscribe(move |_| *writes_clone.borrow_mut() += 1);
+
+        assert_eq!(eq.get(), 1);
+
+        a.set(5); // min still 5 -> changed
+        assert_eq!(eq.get(), 5);
+        assert_eq!(*writes.borrow(), 1);
+
+        a.set(8); // min still 8 -> changed
+        assert_eq!(eq.get(), 8);
+        assert_eq!(*writes.borrow(), 2);
+
+        a.set(2); // min is 2, but current value 8 -> changed
+        assert_eq!(eq.get(), 2);
+        assert_eq!(*writes.borrow(), 3);
+
+        a.set(99); // min clamped to 10, current 2 -> changed
+        assert_eq!(eq.get(), 10);
+        assert_eq!(*writes.borrow(), 4);
+
+        a.set(120); // min still 10, no write
+        assert_eq!(eq.get(), 10);
+        assert_eq!(*writes.borrow(), 4);
+    }
+
+    #[test]
     fn test_scope_cleanup_on_drop() {
         let cleaned_up = std::rc::Rc::new(std::cell::RefCell::new(false));
 
@@ -328,6 +391,23 @@ mod tests {
         let cont = a.update();
         assert!(!cont);
         assert!((*a.get() - 10.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn mutable_requests_frame() {
+        clear_composer();
+        let m = remember_mutable(|| 0);
+        crate::take_frame_request(); // clear any pending request
+        assert_eq!(*m.get(), 0);
+        assert!(!crate::take_frame_request());
+
+        m.set(1);
+        assert!(crate::take_frame_request(), "set must request a frame");
+        assert_eq!(*m.get(), 1);
+
+        m.update(|v| *v += 1);
+        assert!(crate::take_frame_request(), "update must request a frame");
+        assert_eq!(*m.get(), 2);
     }
 
     fn build_boundary(

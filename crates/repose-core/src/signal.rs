@@ -45,6 +45,31 @@ impl<T> Signal<T> {
         inner.value.clone()
     }
 
+    /// Read the current value without cloning it, tracking the read in the
+    /// reactive graph. Prefer over `get` for large/expensive-to-clone types.
+    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        let inner = self.0.borrow();
+        reactive::register_signal_read(inner.id);
+        f(&inner.value)
+    }
+
+    /// Set the signal value only if it changed, skipping subscribers, the
+    /// reactive graph, and the frame request when the value is unchanged.
+    pub fn set_neq(&self, v: T)
+    where
+        T: PartialEq,
+    {
+        let id = {
+            let mut inner = self.0.borrow_mut();
+            if inner.value == v {
+                return;
+            }
+            inner.value = v;
+            inner.id
+        };
+        self.notify_and_request_frame(id);
+    }
+
     /// Set the signal value and notify subscribers + the reactive graph.
     pub fn set(&self, v: T) {
         let id = {

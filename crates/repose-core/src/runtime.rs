@@ -411,11 +411,14 @@ pub fn remember_with_key<T: 'static>(key: impl Into<String>, init: impl FnOnce()
     })
 }
 
+/// Raw slot state (`Rc<RefCell<T>>`). Writes via `borrow_mut()` don't request a
+/// frame - prefer [`remember_mutable`] if a write must always recompose.
 #[track_caller]
 pub fn remember_state<T: 'static>(init: impl FnOnce() -> T) -> Rc<RefCell<T>> {
     remember(|| RefCell::new(init()))
 }
 
+/// Key-based variant of [`remember_state`]; same no-frame-on-write caveat.
 pub fn remember_state_with_key<T: 'static>(
     key: impl Into<String>,
     init: impl FnOnce() -> T,

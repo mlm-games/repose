@@ -936,16 +936,37 @@ pub fn run_android_app_with_options(
 
                     let mut composed_root = move |s: &mut Scheduler| (root_fn)(s, &rc);
 
-                    let mut frame = compose_frame(
-                        &mut self.rt.sched,
-                        &mut composed_root,
-                        scale,
-                        size_px_u32,
-                        None, // hover_id (no mouse on Android usually)
-                        &self.rt.pressed_ids,
-                        &self.rt.textfield_states,
-                        focused,
-                    );
+                    let sched = &mut self.rt.sched;
+                    let pressed_ids = &self.rt.pressed_ids;
+                    let textfield_states = &self.rt.textfield_states;
+
+                    let mut frame = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                        move || {
+                            compose_frame(
+                                sched,
+                                &mut composed_root,
+                                scale,
+                                size_px_u32,
+                                None, // hover_id (no mouse on Android usually)
+                                pressed_ids,
+                                textfield_states,
+                                focused,
+                            )
+                        },
+                    )) {
+                        Ok(frame) => frame,
+                        Err(_) => {
+                            log::error!("compose panicked; presenting last good frame");
+                            if let (Some(backend), Some(cached)) = (
+                                self.backend.as_mut(),
+                                self.rt.frame_cache.as_ref(),
+                            ) {
+                                let mut scene = cached.scene.clone();
+                                backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
+                            }
+                            return;
+                        }
+                    };
 
                     // Drain upload commands queued during compose before presenting
                     self.process_render_commands();
