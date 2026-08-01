@@ -27,7 +27,6 @@ jobs:
       contents: write
     uses: mlm-games/ci/.github/workflows/crate-publish.yml@main
     with:
-      auto-bump: ${{ github.event_name == 'workflow_dispatch' && inputs.bump_type != 'none' }}
       bump-type: ${{ inputs.bump_type }}
       create-release: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_release) }}
       workspace-publish: true
