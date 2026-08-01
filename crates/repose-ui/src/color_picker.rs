@@ -127,10 +127,10 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
     let id = CP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let (hue, sat, val) = rgb_to_hsv(color.0, color.1, color.2);
 
-    let drag_active = remember_state_with_key(format!("cp_drag_{}", id), || false);
-    let drag_target = remember_state_with_key(format!("cp_tgt_{}", id), || 0u8);
-    let drag_start_x = remember_state_with_key(format!("cp_dsx_{}", id), || 0.0f32);
-    let drag_start_comp = remember_state_with_key(format!("cp_dsc_{}", id), || 0.0f32);
+    let drag_active = remember_mutable_with_key(format!("cp_drag_{}", id), || false);
+    let drag_target = remember_mutable_with_key(format!("cp_tgt_{}", id), || 0u8);
+    let drag_start_x = remember_mutable_with_key(format!("cp_dsx_{}", id), || 0.0f32);
+    let drag_start_comp = remember_mutable_with_key(format!("cp_dsc_{}", id), || 0.0f32);
 
     let oc = Rc::new(on_change);
 
@@ -184,10 +184,10 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
             let dsx = dsx.clone();
             let dsc = dsc.clone();
             move |pe: PointerEvent| {
-                *da.borrow_mut() = true;
-                *dt.borrow_mut() = target;
-                *dsx.borrow_mut() = pe.position.x;
-                *dsc.borrow_mut() = comp;
+                da.set(true);
+                dt.set(target);
+                dsx.set(pe.position.x);
+                dsc.set(comp);
             }
         }
     };
@@ -199,12 +199,12 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
         let dsc = drag_start_comp.clone();
         let oc = oc.clone();
         Rc::new(move |pe: PointerEvent| {
-            if !*da.borrow() {
+            if !da.with(|v| *v) {
                 return;
             }
-            let target = *dt.borrow();
-            let start_x = *dsx.borrow();
-            let start_comp = *dsc.borrow();
+            let target = dt.with(|v| *v);
+            let start_x = dsx.with(|v| *v);
+            let start_comp = dsc.with(|v| *v);
             let dx = pe.position.x - start_x;
             let new_comp = (start_comp + dx * 0.005).clamp(0.0, 1.0);
             let (mut h, mut s, mut v) = (hue, sat, val);
@@ -221,7 +221,7 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
     let make_drag_end: Rc<dyn Fn(PointerEvent)> = {
         let da = drag_active.clone();
         Rc::new(move |_pe: PointerEvent| {
-            *da.borrow_mut() = false;
+            da.set(false);
         })
     };
 

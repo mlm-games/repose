@@ -182,3 +182,43 @@ pub fn remember_mutable_with_key<T: 'static>(
 ) -> Mutable<T> {
     remember_with_key(key, || Mutable::new(init())).as_ref().clone()
 }
+
+/// Remember a reducer-backed local state. Returns a [`Mutable`] snapshot reader
+/// plus a dispatch closure that runs `H::reduce` and writes the result back.
+///
+/// Prefer this for multi-field widget state over many loose `Mutable`s; it keeps
+/// the state shape and all mutations in one place.
+#[track_caller]
+pub fn remember_reducer<H: StateHolder>() -> (Mutable<H::State>, impl Fn(H::Event) + Clone)
+where
+    H::State: 'static,
+    H::Event: 'static,
+{
+    let state = remember_mutable(|| H::initial_state());
+    let dispatch = {
+        let state = state.clone();
+        move |ev: H::Event| {
+            state.update(|s| *s = H::reduce(s, ev));
+        }
+    };
+    (state, dispatch)
+}
+
+/// Key-based variant of [`remember_reducer`]; stable across conditional branches.
+#[track_caller]
+pub fn remember_reducer_with_key<H: StateHolder>(
+    key: impl Into<String>,
+) -> (Mutable<H::State>, impl Fn(H::Event) + Clone)
+where
+    H::State: 'static,
+    H::Event: 'static,
+{
+    let state = remember_mutable_with_key(key, || H::initial_state());
+    let dispatch = {
+        let state = state.clone();
+        move |ev: H::Event| {
+            state.update(|s| *s = H::reduce(s, ev));
+        }
+    };
+    (state, dispatch)
+}

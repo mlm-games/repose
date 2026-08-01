@@ -316,9 +316,9 @@ pub fn DragValue(
     on_change: impl Fn(f32) + 'static,
 ) -> View {
     let id = DRAGVALUE_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let drag_start_x = remember_state_with_key(format!("dv_dsx_{}", id), || 0.0f32);
-    let drag_start_val = remember_state_with_key(format!("dv_dsv_{}", id), || 0.0f32);
-    let is_dragging = remember_state_with_key(format!("dv_drg_{}", id), || false);
+    let drag_start_x = remember_mutable_with_key(format!("dv_dsx_{}", id), || 0.0f32);
+    let drag_start_val = remember_mutable_with_key(format!("dv_dsv_{}", id), || 0.0f32);
+    let is_dragging = remember_mutable_with_key(format!("dv_drg_{}", id), || false);
 
     let oc = Rc::new(on_change);
     let min = range.0;
@@ -344,9 +344,9 @@ pub fn DragValue(
             let dsv = drag_start_val.clone();
             let drg = is_dragging.clone();
             move |pe: PointerEvent| {
-                *drg.borrow_mut() = true;
-                *dsx.borrow_mut() = pe.position.x;
-                *dsv.borrow_mut() = cur;
+                drg.set(true);
+                dsx.set(pe.position.x);
+                dsv.set(cur);
             }
         })
         .on_pointer_move({
@@ -355,18 +355,19 @@ pub fn DragValue(
             let drg = is_dragging.clone();
             let oc = oc.clone();
             move |pe: PointerEvent| {
-                if !*drg.borrow() {
+                if !drg.with(|v| *v) {
                     return;
                 }
-                let dx = pe.position.x - *dsx.borrow();
-                let new_val = (*dsv.borrow() + dx * speed).clamp(min, max);
+                let start_x = dsx.with(|v| *v);
+                let start_val = dsv.with(|v| *v);
+                let new_val = (start_val + (pe.position.x - start_x) * speed).clamp(min, max);
                 (oc)(new_val);
             }
         })
         .on_pointer_up({
             let drg = is_dragging.clone();
             move |_pe: PointerEvent| {
-                *drg.borrow_mut() = false;
+                drg.set(false);
             }
         })
         .cursor(CursorIcon::EwResize))
