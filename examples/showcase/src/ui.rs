@@ -167,6 +167,8 @@ pub fn AppShell(
 
     Box(Modifier::new()
         .fill_max_size()
+        .system_bars_padding()
+        .ime_padding()
         .background(theme().background))
     .child(shell)
 }

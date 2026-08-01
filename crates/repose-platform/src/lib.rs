@@ -9,7 +9,7 @@ use repose_ui::textfield::{
 };
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use web_time::Instant;
 
@@ -59,6 +59,66 @@ static ABOUT_TO_WAIT_CALLBACK: Mutex<Option<Box<dyn Fn() + Send>>> = Mutex::new(
 
 static DEEPLINK_CB: Mutex<Option<Box<dyn Fn(Vec<u8>) + Send>>> = Mutex::new(None);
 static PENDING_DEEPLINKS: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
+
+/// Coarse application lifecycle state, derived from the runner's
+/// `suspended` or `resumed` callbacks (eg. Android activity pause/resume).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AppLifecycle {
+    /// Surface available and the activity is interactive (after `resumed`).
+    Foreground,
+    /// Surface torn down / activity no longer interactive (after `suspended`).
+    Background,
+}
+
+// 0 = unknown, 1 = Foreground, 2 = Background
+static CURRENT_LIFECYCLE: AtomicU8 = AtomicU8::new(0);
+static LIFECYCLE_CB: Mutex<Option<Box<dyn Fn(AppLifecycle) + Send>>> = Mutex::new(None);
+static PENDING_LIFECYCLE: Mutex<Vec<AppLifecycle>> = Mutex::new(Vec::new());
+
+/// Register a callback for coarse app lifecycle (foreground/background).
+///
+/// Safe to call from any thread. Deliveries are coalesced to the latest state
+/// and dispatched on the UI loop via `about_to_wait` (same pattern as deeplinks).
+pub fn set_on_lifecycle(callback: Box<dyn Fn(AppLifecycle) + Send>) {
+    *LIFECYCLE_CB.lock().unwrap() = Some(callback);
+}
+
+/// Current lifecycle state, if the runner has reported one yet.
+pub fn current_lifecycle() -> Option<AppLifecycle> {
+    match CURRENT_LIFECYCLE.load(Ordering::Relaxed) {
+        1 => Some(AppLifecycle::Foreground),
+        2 => Some(AppLifecycle::Background),
+        _ => None,
+    }
+}
+
+/// Queue a lifecycle transition and wake the UI loop. Called by platform runners
+/// (e.g. from `suspended` / `resumed`), which already run on the UI thread.
+pub(crate) fn push_lifecycle(state: AppLifecycle) {
+    let code = match state {
+        AppLifecycle::Foreground => 1,
+        AppLifecycle::Background => 2,
+    };
+    CURRENT_LIFECYCLE.store(code, Ordering::Relaxed);
+    PENDING_LIFECYCLE.lock().unwrap().push(state);
+    #[cfg(not(target_arch = "wasm32"))]
+    wake_event_loop();
+}
+
+/// Drain queued lifecycle transitions and dispatch the latest to the callback.
+/// Called from each platform runner's `about_to_wait` handler.
+pub(crate) fn process_lifecycle() {
+    let batch = std::mem::take(&mut *PENDING_LIFECYCLE.lock().unwrap());
+    if batch.is_empty() {
+        return;
+    }
+    // Coalesce to the last state if multiple transitions fired in one pump.
+    if let Some(last) = batch.last().copied()
+        && let Some(cb) = LIFECYCLE_CB.lock().unwrap().as_ref()
+    {
+        cb(last);
+    }
+}
 
 /// Register a callback to receive deeplink payloads (raw bytes)
 pub fn set_on_deeplink(callback: Box<dyn Fn(Vec<u8>) + Send>) {

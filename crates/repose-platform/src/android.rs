@@ -11,6 +11,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use repose_app::ReposeRuntime;
 use repose_core::shortcuts::{Action, Gesture};
@@ -37,11 +38,25 @@ pub struct AndroidOptions {
 impl Default for AndroidOptions {
     fn default() -> Self {
         Self {
-            // Keep behavior close to your original runner: always ticking.
-            continuous_redraw: true,
+            // Reactive by default (egui-style): frames are only requested on
+            // demand (dirty, caret blink, running animations). Set this to true
+            // only for always-animating UIs that want to burn battery.
+            continuous_redraw: false,
             ime_height_px: None,
         }
     }
+}
+
+/// Runtime override for [`AndroidOptions::continuous_redraw`].
+///
+/// Useful for a settings toggle; takes precedence over the static option.
+#[cfg(target_os = "android")]
+static CONTINUOUS_REDRAW: AtomicBool = AtomicBool::new(false);
+
+/// Toggle continuous redraw at runtime (e.g. from a settings switch).
+#[cfg(target_os = "android")]
+pub fn set_continuous_redraw(enabled: bool) {
+    CONTINUOUS_REDRAW.store(enabled, Ordering::Relaxed);
 }
 
 pub fn run_android_app(
@@ -85,6 +100,11 @@ pub fn run_android_app_with_options(
         // redraw control
         dirty: bool,
 
+        /// True while the Activity surface is usable (between resumed and suspended).
+        surface_active: bool,
+        /// App-level foreground-ish flag (mirrors the last lifecycle transition).
+        in_foreground: bool,
+
         // clipboard
         clipboard: Option<clipawl::Clipboard>,
 
@@ -121,6 +141,8 @@ pub fn run_android_app_with_options(
 
                 ime_visible: false,
                 dirty: true,
+                surface_active: false,
+                in_foreground: false,
 
                 clipboard: None,
                 active_touches: HashMap::new(),
@@ -137,6 +159,16 @@ pub fn run_android_app_with_options(
         fn request_redraw(&self) {
             repose_core::request_frame();
             rc::request_redraw(&self.window);
+        }
+
+        /// Whether frames should be forced continuously (static option or a
+        /// runtime override from `set_continuous_redraw`).
+        fn continuous_redraw(&self) -> bool {
+            self.options.continuous_redraw || CONTINUOUS_REDRAW.load(Ordering::Relaxed)
+        }
+
+        fn notify_lifecycle(&self, state: AppLifecycle) {
+            crate::push_lifecycle(state);
         }
 
         fn scale(&self) -> f32 {
@@ -200,24 +232,33 @@ pub fn run_android_app_with_options(
             );
         }
 
-        // IME inset should be provided by the platform's OnApplyWindowInsetsListener
-        // via the nativeOnWindowInsets JNI callback, which gives the real
-        // keyboard height. This is just temporary, and should be replaced
+        // IME inset is normally supplied by the app itself, which forwards
+        // rlobkit-app-events' real system-bar + IME insets into
+        // repose_core::locals. This estimate is only a fallback for apps that
+        // have not wired an insets source yet.
         fn update_ime_inset(&self) {
-            let h = if self.ime_visible {
-                self.options.ime_height_px.unwrap_or_else(|| {
-                    // Estimate ~40% of window's shorter dimension as default IME height
-                    let size = self
-                        .window
-                        .as_ref()
-                        .map(|w| w.inner_size())
-                        .unwrap_or_default();
-                    (size.width.min(size.height) as f32 * 0.4).max(200.0)
-                })
-            } else {
-                0.0
-            };
-            set_ime_inset(h);
+            // Prefer live insets (filled by the app, check mlm-games/retorrent for eg). If the keyboard is
+            // closed, keep the authoritative 0 (or clear a stale estimate).
+            let current = repose_core::locals::window_insets();
+            if current.ime_bottom > 0.0 || !self.ime_visible {
+                if !self.ime_visible && current.ime_bottom != 0.0 {
+                    repose_core::locals::set_ime_inset(0.0);
+                }
+                return;
+            }
+
+            // Fallback only when the IME is visible but the app hasn't
+            // supplied real insets yet.
+            let h = self.options.ime_height_px.unwrap_or_else(|| {
+                // Estimate ~40% of window's shorter dimension as default IME height
+                let size = self
+                    .window
+                    .as_ref()
+                    .map(|w| w.inner_size())
+                    .unwrap_or_default();
+                (size.width.min(size.height) as f32 * 0.4).max(200.0)
+            });
+            repose_core::locals::set_ime_inset(h);
         }
 
         fn sync_window_size(&mut self, size: PhysicalSize<u32>, scale: f32) {
@@ -304,8 +345,12 @@ pub fn run_android_app_with_options(
 
     impl ApplicationHandler<()> for AppState {
         fn suspended(&mut self, _el: &winit::event_loop::ActiveEventLoop) {
+            self.surface_active = false;
+            self.in_foreground = false;
+            self.notify_lifecycle(AppLifecycle::Background);
             self.backend = None;
             self.window = None;
+            // Do NOT request a redraw here: the surface is gone.
         }
 
         fn resumed(&mut self, el: &winit::event_loop::ActiveEventLoop) {
@@ -333,8 +378,6 @@ pub fn run_android_app_with_options(
                                     let _ = pollster::block_on(cb.write(text));
                                 }
                             }));
-                            self.dirty = true;
-                            self.request_redraw();
                         }
                         Err(e) => {
                             log::error!("WGPU backend init failed: {e:?}");
@@ -346,6 +389,15 @@ pub fn run_android_app_with_options(
                     log::error!("Window create failed: {e:?}");
                     el.exit();
                 }
+            }
+
+            // After a successful backend init the surface is usable again.
+            if self.backend.is_some() {
+                self.surface_active = true;
+                self.in_foreground = true;
+                self.notify_lifecycle(AppLifecycle::Foreground);
+                self.dirty = true;
+                self.request_redraw();
             }
         }
 
@@ -827,6 +879,8 @@ pub fn run_android_app_with_options(
                                     self.rt.ime_preedit = false;
                                     if !self.ime_visible {
                                         self.ime_visible = true;
+                                        // Only estimates if rlobkit's real ime_bottom
+                                        // is still 0 (see update_ime_inset).
                                         self.update_ime_inset();
                                     }
                                 }
@@ -917,10 +971,15 @@ pub fn run_android_app_with_options(
                 }
 
                 WindowEvent::RedrawRequested => {
+                    if !self.surface_active {
+                        return; // surface gone; never touch the GPU
+                    }
+
                     rc::tick_snackbar(self.last_redraw);
 
-                    // Advance animations before composition (Compose pattern)
-                    repose_core::animation_driver::tick();
+                    // Advance animations before composition (Compose pattern).
+                    // `tick()` already calls `request_frame()` if any are running.
+                    let animating = repose_core::animation_driver::tick();
 
                     self.process_render_commands();
 
@@ -1018,7 +1077,7 @@ pub fn run_android_app_with_options(
 
                     self.dirty = false;
 
-                    if self.options.continuous_redraw {
+                    if self.continuous_redraw() || animating {
                         if let Some(win) = self.window.as_ref() {
                             win.request_redraw();
                         }
@@ -1030,17 +1089,35 @@ pub fn run_android_app_with_options(
 
         fn about_to_wait(&mut self, _el: &winit::event_loop::ActiveEventLoop) {
             crate::process_deeplinks();
-            if self.options.continuous_redraw || self.dirty || take_frame_request() {
-                self.request_redraw();
-            } else if take_present_request() && self.rt.frame_cache.is_some() {
-                self.request_redraw();
-            } else if crate::next_caret_blink_deadline(
-                &self.rt.sched,
-                &self.rt.frame_cache,
-                &self.rt.textfield_states,
-            )
-            .is_some_and(|d| d <= web_time::Instant::now())
-            {
+            crate::process_lifecycle();
+
+            if !self.surface_active {
+                return;
+            }
+
+            let frame_requested = take_frame_request();
+            let present_requested = take_present_request();
+
+            let needs = if !self.in_foreground {
+                // Surface active but app backgrounded: only honor explicit
+                // frame requests (e.g. a bg worker wanting a toast), not caret
+                // blink or animations.
+                self.dirty || frame_requested || present_requested
+            } else {
+                self.continuous_redraw()
+                    || self.dirty
+                    || frame_requested
+                    || (present_requested && self.rt.frame_cache.is_some())
+                    || crate::next_caret_blink_deadline(
+                        &self.rt.sched,
+                        &self.rt.frame_cache,
+                        &self.rt.textfield_states,
+                    )
+                    .is_some_and(|d| d <= web_time::Instant::now())
+                    || repose_core::animation_driver::is_active()
+            };
+
+            if needs {
                 self.request_redraw();
             }
         }

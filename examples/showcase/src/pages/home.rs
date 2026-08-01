@@ -19,7 +19,101 @@ pub fn screen(nav: Navigator<Route>) -> View {
                     .collect::<Vec<_>>(),
             ),
         ),
+        SectionWith("Platform status", None, platform_status()),
     ])
+}
+
+fn platform_status() -> View {
+    use repose_platform::AppLifecycle;
+
+    scoped_effect(|| {
+        repose_platform::set_on_lifecycle(Box::new(|state| {
+            log::info!("Lifecycle: {state:?}");
+            repose_core::request_frame();
+        }));
+        Dispose::new(|| {})
+    });
+
+    let lifecycle = match repose_platform::current_lifecycle() {
+        Some(AppLifecycle::Foreground) => "Foreground",
+        Some(AppLifecycle::Background) => "Background",
+        None => "Unknown",
+    };
+
+    let insets = window_insets();
+    let th = theme();
+
+    #[allow(unused_mut)]
+    let mut rows: Vec<View> = vec![
+        status_row("Lifecycle", lifecycle, th.primary),
+        status_row(
+            "Insets (px)",
+            &format!(
+                "top {}  bottom {}  left {}  right {}  ime {}",
+                insets.top as i32,
+                insets.bottom as i32,
+                insets.left as i32,
+                insets.right as i32,
+                insets.ime_bottom as i32
+            ),
+            th.on_surface,
+        ),
+        status_row(
+            "Redraw",
+            if cfg!(target_os = "android") {
+                "reactive (opt-in continuous)"
+            } else {
+                "reactive"
+            },
+            th.on_surface,
+        ),
+    ];
+
+    // Android-only: runtime toggle for `set_continuous_redraw`.
+    #[cfg(target_os = "android")]
+    {
+        use repose_material::material3::{Switch, SwitchConfig};
+
+        let continuous = remember(|| signal(false));
+        let is_on = continuous.get();
+        rows.push(
+            Row(Modifier::new()
+                .fill_max_width()
+                .align_items(AlignItems::CENTER)
+                .gap(sp::SM))
+            .child((
+                Text("Continuous redraw")
+                    .size(14.0)
+                    .color(th.on_surface_variant),
+                Spacer(),
+                Switch(
+                    is_on,
+                    {
+                        let continuous = continuous.clone();
+                        move |on| {
+                            continuous.set(on);
+                            repose_platform::android::set_continuous_redraw(on);
+                        }
+                    },
+                    SwitchConfig::default(),
+                ),
+            )),
+        );
+    }
+
+    Column(Modifier::new().gap(sp::SM)).with_children(rows)
+}
+
+fn status_row(label: &str, value: &str, value_color: Color) -> View {
+    Row(Modifier::new()
+        .fill_max_width()
+        .align_items(AlignItems::CENTER)
+        .gap(sp::SM))
+    .child((
+        Caption(label),
+        Spacer(),
+        Text(value).size(13.0).color(value_color).single_line(),
+    ))
 }
 
 fn hero(nav: Navigator<Route>) -> View {
