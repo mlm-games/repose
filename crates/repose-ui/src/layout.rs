@@ -1791,6 +1791,8 @@ impl LayoutEngine {
         alpha_q.hash(&mut h);
         interactions.hover.hash(&mut h);
         focused.hash(&mut h);
+
+        repose_core::animation_driver::live_epoch().hash(&mut h);
         if !interactions.pressed.is_empty() {
             let mut pressed: Vec<u64> = interactions.pressed.iter().copied().collect();
             pressed.sort_unstable();
@@ -1952,7 +1954,10 @@ impl LayoutEngine {
         let implicit_hovered = interactions.hover == Some(effective_interaction);
         let implicit_pressed = interactions.pressed.contains(&effective_interaction);
         let (state_hovered, state_pressed) = if let Some(ref src) = modifier.interaction_source {
-            (src.collect_is_hovered(), src.collect_is_pressed())
+            (
+                src.collect_is_hovered() || is_hovered,
+                src.collect_is_pressed() || is_pressed,
+            )
         } else {
             (implicit_hovered, implicit_pressed)
         };

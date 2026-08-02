@@ -721,10 +721,15 @@ fn button_impl(
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER);
 
-    // Interaction source + ripple indication (matching Compose's clickable + indication wiring)
-    let source: Rc<MutableInteractionSource> = interaction_source
-        .map(Rc::new)
-        .unwrap_or_else(|| remember(MutableInteractionSource::new));
+    // Interaction source + ripple indication
+    let source: Rc<MutableInteractionSource> = interaction_source.map(Rc::new).unwrap_or_else(|| {
+        match outer_modifier.key {
+            Some(k) => {
+                remember_with_key(format!("m3_btn_src:{k}"), MutableInteractionSource::new)
+            }
+            None => remember(MutableInteractionSource::new),
+        }
+    });
     m = m.interaction_source(&*source);
     m = m.indication(ripple(RippleConfig {
         color: Some(content_color),

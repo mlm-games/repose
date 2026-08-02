@@ -5,7 +5,7 @@
 //! Stale entries (from pages that were navigated away from) are swept
 //! at the beginning of each `tick()` call: only keys that were `touch`ed
 //! during the previous composition pass survive.
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::request_frame;
@@ -15,6 +15,7 @@ type TickFn = Rc<RefCell<dyn FnMut() -> bool>>;
 thread_local! {
     static REGISTRY: RefCell<Vec<(String, TickFn)>> = RefCell::new(Vec::new());
     static TOUCHED: RefCell<Vec<String>> = RefCell::new(Vec::new());
+    static LIVE_EPOCH: Cell<u64> = Cell::new(0);
 }
 
 /// Mark `key` as still active this frame. Called from `animate_f32_from` etc.
@@ -29,6 +30,7 @@ pub fn touch(key: &str) {
 /// `set_target` can reactivate it without re-registering).
 /// Re-registering with an existing key replaces the old callback.
 pub fn register(key: String, tick: TickFn) {
+    LIVE_EPOCH.with(|e| e.set(e.get() + 1));
     REGISTRY.with(|reg| {
         let mut list = reg.borrow_mut();
         list.retain(|(k, _)| k != &key);
@@ -64,6 +66,7 @@ pub fn tick() -> bool {
         }
     });
     if any_still {
+        LIVE_EPOCH.with(|e| e.set(e.get() + 1));
         request_frame();
     }
     any_still
@@ -72,4 +75,11 @@ pub fn tick() -> bool {
 /// Returns `true` if any animation is currently registered.
 pub fn is_active() -> bool {
     REGISTRY.with(|reg| !reg.borrow().is_empty())
+}
+
+/// When a repaint-boundary stamp hashes this, the boundary is
+/// repainted every frame for as long as any tween is live, then cache hits
+/// resume once animations settle.
+pub fn live_epoch() -> u64 {
+    LIVE_EPOCH.with(|e| e.get())
 }
