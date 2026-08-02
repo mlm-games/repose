@@ -196,7 +196,7 @@ checksum = "fc7eb209b1518d6bb87b283c20095f5228ecda460da70b44f0802523dea6da04"
 
 [[package]]
 name = "android_counter"
-version = "0.25.3"
+version = "0.25.4"
 dependencies = [
  "android_logger",
  "anyhow",
@@ -236,7 +236,7 @@ dependencies = [
 
 [[package]]
 name = "animation_demo"
-version = "0.25.3"
+version = "0.25.4"
 dependencies = [
  "anyhow",
  "env_logger",
@@ -2947,7 +2947,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "repose-app"
-version = "0.25.3"
+version = "0.25.4"
 dependencies = [
  "log",
  "repose-core",
@@ -2959,7 +2959,7 @@ dependencies = [
 
 [[package]]
 name = "repose-canvas"
-version = "0.25.3"
+version = "0.25.4"
 dependencies = [
  "repose-core",
  "repose-ui",
@@ -2967,7 +2967,7 @@ dependencies = [
 
 [[package]]
 name = "repose-core"
-version = "0.25.3"
+version = "0.25.4"
 dependencies = [
  "accesskit",
  "bitflags 2.13.0",
@@ -2984,7 +2984,7 @@ dependencies = [
 
 [[package]]
 name = "repose-devtools"
-version = "0.25.3"
+version = "0.25.4"
 dependencies = [
  "log",
  "repose-core",
@@ -2993,7 +2993,7 @@ dependencies = [
 
 [[package]]
 name = "repose-docking"
-version = "0.25.3"
+version = "0.25.4"
 dependencies = [
  "log",
  "repose-core",
@@ -3002,7 +3002,7 @@ dependencies = [
 
 [[package]]
 name = "repose-macros"
-version = "0.25.3"
+version = "0.25.4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3011,7 +3011,7 @@ dependencies = [
 
 [[package]]
 name = "repose-material"
-version = "0.25.3"
+version = "0.25.4"
 dependencies = [
  "repose-core",
  "repose-text",
@@ -3021,7 +3021,7 @@ dependencies = [
 
 [[package]]
 name = "repose-navigation"
-version = "0.25.3"
+version = "0.25.4"
 dependencies = [
  "log",
  "repose-core",
@@ -3032,7 +3032,7 @@ dependencies = [
 
 [[package]]
 name = "repose-platform"
-version = "0.25.3"
+version = "0.25.4"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -3060,7 +3060,7 @@ dependencies = [
 
 [[package]]
 name = "repose-render-wgpu"
-version = "0.25.3"
+version = "0.25.4"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -3077,7 +3077,7 @@ dependencies = [
 
 [[package]]
 name = "repose-text"
-version = "0.25.3"
+version = "0.25.4"
 dependencies = [
  "font-awl",
  "log",
@@ -3091,7 +3091,7 @@ dependencies = [
 
 [[package]]
 name = "repose-tree"
-version = "0.25.3"
+version = "0.25.4"
 dependencies = [
  "log",
  "rapidhash",
@@ -3103,7 +3103,7 @@ dependencies = [
 
 [[package]]
 name = "repose-ui"
-version = "0.25.3"
+version = "0.25.4"
 dependencies = [
  "log",
  "repose-core",
@@ -3360,7 +3360,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "showcase"
-version = "0.25.3"
+version = "0.25.4"
 dependencies = [
  "android_logger",
  "anyhow",
