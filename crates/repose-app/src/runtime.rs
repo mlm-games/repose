@@ -82,6 +82,8 @@ pub struct ReposeRuntime {
     // Input state
     pub modifiers: Modifiers,
     pub mouse_pos_px: (f32, f32),
+    /// Whether the pointer is currently inside the window.
+    pub pointer_inside: bool,
     pub hover_id: Option<u64>,
     pub capture_id: Option<u64>,
     pub pressed_ids: HashSet<u64>,
@@ -106,6 +108,7 @@ impl ReposeRuntime {
             scale: 1.0,
             modifiers: Modifiers::default(),
             mouse_pos_px: (0.0, 0.0),
+            pointer_inside: false,
             hover_id: None,
             capture_id: None,
             pressed_ids: HashSet::new(),
@@ -300,35 +303,13 @@ impl ReposeRuntime {
 
         // Enter / Leave
         if new_hover != self.hover_id {
-            if let Some(prev_id) = self.hover_id {
-                if let Some(prev) = f.hit_regions.iter().find(|h| h.id == prev_id) {
-                    if let Some(cb) = &prev.on_pointer_leave {
-                        let pe = PointerEvent::new(
-                            PointerId(0),
-                            PointerKind::Mouse,
-                            PointerEventKind::Leave,
-                            pos,
-                            1.0,
-                            self.modifiers,
-                        );
-                        cb(pe);
-                    }
-                }
-            }
-            if let Some(h) = top {
-                if let Some(cb) = &h.on_pointer_enter {
-                    let pe = PointerEvent::new(
-                        PointerId(0),
-                        PointerKind::Mouse,
-                        PointerEventKind::Enter,
-                        pos,
-                        1.0,
-                        self.modifiers,
-                    );
-                    cb(pe);
-                }
-            }
-            self.hover_id = new_hover;
+            dispatch_hover_change(
+                Some(f),
+                &mut self.hover_id,
+                new_hover,
+                pos,
+                self.modifiers,
+            );
             request_frame();
         }
 
@@ -524,9 +505,20 @@ impl ReposeRuntime {
         request_frame();
     }
 
-    /// Cancel pointer state (focus lost, etc.).
+    /// Cancel pointer state (focus lost, cursor left window, etc.).
     pub fn handle_pointer_cancel(&mut self) {
         dnd::handle_drag_action(&DragAction::Cancel);
+        let pos = Vec2 {
+            x: self.mouse_pos_px.0,
+            y: self.mouse_pos_px.1,
+        };
+        dispatch_hover_change(
+            self.frame_cache.as_ref(),
+            &mut self.hover_id,
+            None,
+            pos,
+            self.modifiers,
+        );
         // Emit Cancel for captured region
         if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
             if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
@@ -535,10 +527,7 @@ impl ReposeRuntime {
                         PointerId(0),
                         PointerKind::Mouse,
                         PointerEventKind::Cancel,
-                        Vec2 {
-                            x: self.mouse_pos_px.0,
-                            y: self.mouse_pos_px.1,
-                        },
+                        pos,
                         1.0,
                         self.modifiers,
                     );
@@ -547,6 +536,85 @@ impl ReposeRuntime {
             }
         }
         self.reset_pointer_state();
+    }
+
+    /// Clear hover state, emitting HoverLeave for the currently hovered region.
+    pub fn clear_hover(&mut self) {
+        if self.hover_id.is_none() {
+            return;
+        }
+        let pos = Vec2 {
+            x: self.mouse_pos_px.0,
+            y: self.mouse_pos_px.1,
+        };
+        dispatch_hover_change(
+            self.frame_cache.as_ref(),
+            &mut self.hover_id,
+            None,
+            pos,
+            self.modifiers,
+        );
+    }
+
+    /// Reconcile hover state when the composed frame changes.
+    pub fn reconcile_hover_from_mouse_pos(&mut self, new_frame: &Frame) {
+        let mut changed = false;
+
+        if let Some(prev_id) = self.hover_id {
+            if !new_frame.hit_regions.iter().any(|h| h.id == prev_id) {
+                if let Some(old_f) = &self.frame_cache
+                    && let Some(prev) = old_f.hit_regions.iter().find(|h| h.id == prev_id)
+                    && let Some(cb) = &prev.on_pointer_leave
+                {
+                    let pos = Vec2 {
+                        x: self.mouse_pos_px.0,
+                        y: self.mouse_pos_px.1,
+                    };
+                    let pe = PointerEvent::new(
+                        PointerId(0),
+                        PointerKind::Mouse,
+                        PointerEventKind::Leave,
+                        pos,
+                        1.0,
+                        self.modifiers,
+                    );
+                    cb(pe);
+                    changed = true;
+                }
+                self.hover_id = None;
+            }
+        }
+
+        if !self.pointer_inside {
+            return;
+        }
+
+        let pos = Vec2 {
+            x: self.mouse_pos_px.0,
+            y: self.mouse_pos_px.1,
+        };
+        let new_hover = new_frame
+            .hit_regions
+            .iter()
+            .rev()
+            .find(|h| h.rect.contains(pos))
+            .map(|h| h.id);
+
+        if new_hover == self.hover_id {
+            if changed {
+                request_frame();
+            }
+            return;
+        }
+
+        dispatch_hover_change(
+            Some(new_frame),
+            &mut self.hover_id,
+            new_hover,
+            pos,
+            self.modifiers,
+        );
+        request_frame();
     }
 
     fn reset_pointer_state(&mut self) {
@@ -1131,6 +1199,56 @@ where
     }
 
     frame
+}
+
+/// Fire enter/leave callbacks when the hovered region changes, updating
+/// `hover_id`. If the previous region is gone from the frame, no leave is
+/// fired (its callbacks were dropped with it); `hover_id` is still cleared.
+fn dispatch_hover_change(
+    frame: Option<&Frame>,
+    hover_id: &mut Option<u64>,
+    new_hover: Option<u64>,
+    pos: Vec2,
+    modifiers: Modifiers,
+) {
+    let Some(f) = frame else {
+        *hover_id = None;
+        return;
+    };
+    if new_hover == *hover_id {
+        return;
+    }
+    if let Some(prev_id) = *hover_id {
+        if let Some(prev) = f.hit_regions.iter().find(|h| h.id == prev_id) {
+            if let Some(cb) = &prev.on_pointer_leave {
+                let pe = PointerEvent::new(
+                    PointerId(0),
+                    PointerKind::Mouse,
+                    PointerEventKind::Leave,
+                    pos,
+                    1.0,
+                    modifiers,
+                );
+                cb(pe);
+            }
+        }
+    }
+    if let Some(hid) = new_hover {
+        if let Some(h) = f.hit_regions.iter().find(|h| h.id == hid) {
+            if let Some(cb) = &h.on_pointer_enter {
+                let pe = PointerEvent::new(
+                    PointerId(0),
+                    PointerKind::Mouse,
+                    PointerEventKind::Enter,
+                    pos,
+                    1.0,
+                    modifiers,
+                );
+                cb(pe);
+            }
+        }
+    }
+    *hover_id = new_hover;
 }
 
 fn is_textfield_in_frame(f: &Frame, id: u64) -> bool {

@@ -685,6 +685,14 @@ pub fn run_desktop_app_with_msaa(
                     self.request_redraw();
                 }
 
+                WindowEvent::CursorLeft { .. } => {
+                    self.rt.pointer_inside = false;
+                    self.rt.clear_hover();
+                    self.external_file_drag = false;
+                    self.hovered_files.clear();
+                    self.request_redraw();
+                }
+
                 WindowEvent::HoveredFile(path) => {
                     // Mark external drag active and keep a small bounded list
                     self.external_file_drag = true;
@@ -745,6 +753,8 @@ pub fn run_desktop_app_with_msaa(
                 }
 
                 WindowEvent::CursorMoved { position, .. } => {
+                    self.rt.pointer_inside = true;
+
                     if self.external_file_drag {
                         self.pending_drop_pos_px = Some((position.x as f32, position.y as f32));
                     }
@@ -1258,6 +1268,7 @@ pub fn run_desktop_app_with_msaa(
                         }
                     }
 
+                    self.rt.reconcile_hover_from_mouse_pos(&frame);
                     repose_core::dnd::set_dnd_frame(Some(frame.clone()));
                     self.rt.frame_cache = Some(frame);
                     repose_core::dnd::set_dnd_scale(scale);

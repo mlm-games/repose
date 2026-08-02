@@ -660,11 +660,18 @@ impl ApplicationHandler<()> for App {
             }
 
             WindowEvent::CursorMoved { position, .. } => {
+                self.rt.pointer_inside = true;
                 let pos = Vec2 {
                     x: position.x as f32,
                     y: position.y as f32,
                 };
                 self.rt.handle_pointer_move(pos);
+                self.request_redraw();
+            }
+
+            WindowEvent::CursorLeft { .. } => {
+                self.rt.pointer_inside = false;
+                self.rt.clear_hover();
                 self.request_redraw();
             }
 
@@ -1020,6 +1027,7 @@ impl ApplicationHandler<()> for App {
                     backend.frame(&frame.scene, GlyphRasterConfig { px: 18.0 * scale });
                 }
 
+                self.rt.reconcile_hover_from_mouse_pos(&frame);
                 repose_core::dnd::set_dnd_frame(Some(frame.clone()));
                 repose_core::dnd::set_dnd_scale(scale);
                 self.rt.cache_frame(frame);
