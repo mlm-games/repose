@@ -137,6 +137,7 @@ pub struct WgpuSceneRenderer {
     image_bind_layout_nv12: wgpu::BindGroupLayout,
     image_sampler: wgpu::Sampler,
     layer_sampler: wgpu::Sampler,
+    layer_sampler_linear: wgpu::Sampler,
 
     // Blur composite ring (for graphics-layer drop shadows)
     blur_ring: UploadRing,
@@ -225,6 +226,7 @@ struct LayerTarget {
     texture: wgpu::Texture,
     view: wgpu::TextureView,
     bind: wgpu::BindGroup,
+    bind_linear: wgpu::BindGroup,
     depth_stencil_tex: wgpu::Texture,
     depth_stencil_view: wgpu::TextureView,
     width: u32,
@@ -1322,6 +1324,18 @@ impl WgpuSceneRenderer {
             ..Default::default()
         });
 
+        // Linear taps for Gaussian blur/shadow passes; nearest is kept for
+        // the sharp 1:1 layer composite.
+        let layer_sampler_linear = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("layer linear sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            ..Default::default()
+        });
+
         // Layout for Text / RGBA Images (Texture + Sampler)
         let text_bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("text/rgba bind layout"),
@@ -1523,6 +1537,7 @@ impl WgpuSceneRenderer {
             image_bind_layout_nv12,
             image_sampler,
             layer_sampler,
+            layer_sampler_linear,
 
             blur_ring,
 
@@ -2723,6 +2738,20 @@ impl WgpuSceneRenderer {
                 },
             ],
         });
+        let bind_linear = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("layer bind linear"),
+            layout: &self.image_bind_layout_rgba,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.layer_sampler_linear),
+                },
+            ],
+        });
         let depth_stencil_tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("graphics layer depth-stencil"),
             size: wgpu::Extent3d {
@@ -2745,6 +2774,7 @@ impl WgpuSceneRenderer {
                 texture: tex,
                 view,
                 bind,
+                bind_linear,
                 depth_stencil_tex,
                 depth_stencil_view,
                 width,
@@ -4243,6 +4273,8 @@ impl WgpuSceneRenderer {
                             fb_w,
                             fb_h,
                         );
+                        let uv_u1 = layer.rect_px.2 / layer.width.max(1) as f32;
+                        let uv_v1 = layer.rect_px.3 / layer.height.max(1) as f32;
                         // Check if this layer needs content blur
                         let blur_px_val = layer_blurs
                             .iter()
@@ -4261,7 +4293,7 @@ impl WgpuSceneRenderer {
                                     ndc_tl[2],
                                     ndc_tl[3],
                                 ],
-                                uv: [0.0, 0.0, 1.0, 1.0],
+                                uv: [0.0, 0.0, uv_u1, uv_v1],
                                 color: [1.0, 1.0, 1.0, layer_alpha],
                                 blur_uv: [bw_uv, bh_uv],
                                 sin_cos: [1.0, 0.0],
@@ -4286,7 +4318,7 @@ impl WgpuSceneRenderer {
                                     ndc_tl[2],
                                     ndc_tl[3],
                                 ],
-                                uv: [0.0, 1.0, 1.0, 0.0],
+                                uv: [0.0, uv_v1, uv_u1, 0.0],
                                 color: [1.0, 1.0, 1.0, layer_alpha],
                                 sin_cos: [1.0, 0.0],
                             };
@@ -4320,6 +4352,8 @@ impl WgpuSceneRenderer {
                         // (the 1.5 matches the 3x3 Gaussian span).
                         let bw_uv = (blur_px * 1.5) / layer.width.max(1) as f32;
                         let bh_uv = (blur_px * 1.5) / layer.height.max(1) as f32;
+                        let shadow_u1 = layer.rect_px.2 / layer.width.max(1) as f32;
+                        let shadow_v1 = layer.rect_px.3 / layer.height.max(1) as f32;
                         let ndc_tl = to_ndc(sx, sy, sw, sh, fb_w, fb_h);
                         let inst = BlurInstance {
                             xywh: [
@@ -4328,7 +4362,7 @@ impl WgpuSceneRenderer {
                                 ndc_tl[2],
                                 ndc_tl[3],
                             ],
-                            uv: [0.0, 0.0, 1.0, 1.0],
+                            uv: [0.0, 0.0, shadow_u1, shadow_v1],
                             color: [
                                 color.0 as f32 / 255.0,
                                 color.1 as f32 / 255.0,
@@ -4656,7 +4690,7 @@ impl WgpuSceneRenderer {
                                 &pipes.blur,
                                 self.blur_ring,
                                 BlurInstance,
-                                &lt.bind,
+                                &lt.bind_linear,
                                 off,
                                 n
                             );
@@ -4672,7 +4706,7 @@ impl WgpuSceneRenderer {
                                 &pipes.blur_content,
                                 self.blur_ring,
                                 BlurInstance,
-                                &lt.bind,
+                                &lt.bind_linear,
                                 off,
                                 n
                             );
