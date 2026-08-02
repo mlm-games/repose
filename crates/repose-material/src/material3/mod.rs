@@ -1399,7 +1399,9 @@ pub fn DropdownMenu(
                     let popup_y = if place_below {
                         rect.y + rect.h + config.offset_y
                     } else {
-                        (rect.y - config.offset_y).max(hm)
+                        // Anchor bottom, so stays in the space above instead
+                        // of growing down off-screen.
+                        (rect.y - config.offset_y - available_height).max(hm)
                     };
 
                     let content = render_dropdown_menu_content(

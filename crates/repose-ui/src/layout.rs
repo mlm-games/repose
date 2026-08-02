@@ -2273,7 +2273,8 @@ impl LayoutEngine {
                 || modifier.click
                 || has_dnd
                 || modifier.on_action.is_some()
-                || modifier.focusable == Some(true));
+                || modifier.focusable == Some(true)
+                || (modifier.input_blocker && !modifier.hit_passthrough));
 
         if needs_hit && !kind_handles_hit && !modifier.hit_passthrough {
             let focusable = modifier.focusable.unwrap_or(true);

@@ -181,6 +181,8 @@ impl FocusManager {
                 } else {
                     sub_chain[0]
                 }
+            } else if reverse {
+                sub_chain[sub_chain.len() - 1]
             } else {
                 sub_chain[0]
             }
@@ -199,6 +201,8 @@ impl FocusManager {
                 } else {
                     self.chain[0]
                 }
+            } else if reverse {
+                self.chain[self.chain.len() - 1]
             } else {
                 self.chain[0]
             }
@@ -245,7 +249,10 @@ pub fn spatial_focus_next(
 
     let (cx, cy) = match current_rect {
         Some(r) => (r.x + r.w / 2.0, r.y + r.h / 2.0),
-        None => return chain.first().copied(),
+        None => {
+            // For games: Tab/Shift-Tab should establish initial focus, not arrows.
+            return None;
+        }
     };
 
     let mut best: Option<(u64, f32)> = None;

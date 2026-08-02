@@ -129,6 +129,7 @@ pub struct WgpuSceneRenderer {
     image_bind_layout_rgba: wgpu::BindGroupLayout,
     image_bind_layout_nv12: wgpu::BindGroupLayout,
     image_sampler: wgpu::Sampler,
+    layer_sampler: wgpu::Sampler,
 
     // Blur composite ring (for graphics-layer drop shadows)
     blur_ring: UploadRing,
@@ -1303,6 +1304,17 @@ impl WgpuSceneRenderer {
             ..Default::default()
         });
 
+        // linear filtering only blurs them; nearest keeps the blit crisp.
+        let layer_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("layer nearest sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+
         // Layout for Text / RGBA Images (Texture + Sampler)
         let text_bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("text/rgba bind layout"),
@@ -1503,6 +1515,7 @@ impl WgpuSceneRenderer {
             image_bind_layout_rgba,
             image_bind_layout_nv12,
             image_sampler,
+            layer_sampler,
 
             blur_ring,
 
@@ -2696,7 +2709,7 @@ impl WgpuSceneRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.image_sampler),
+                    resource: wgpu::BindingResource::Sampler(&self.layer_sampler),
                 },
             ],
         });
@@ -3627,10 +3640,18 @@ impl WgpuSceneRenderer {
                                 ];
                                 (ndc, [cos_a, sin_a])
                             } else {
+                                // Only safe at 1:1 scale (no zoom animations active).
+                                let (sx, sy) = if current_transform.scale_x == 1.0
+                                    && current_transform.scale_y == 1.0
+                                {
+                                    (gx.round(), gy.round())
+                                } else {
+                                    (gx, gy)
+                                };
                                 rect_to_instance_ndc(
                                     repose_core::Rect {
-                                        x: gx,
-                                        y: gy,
+                                        x: sx,
+                                        y: sy,
                                         w: gw,
                                         h: gh,
                                     },
@@ -4161,8 +4182,15 @@ impl WgpuSceneRenderer {
                     rectangle_edge: _,
                 } => {
                     flush_batch!();
-                    let w = (rect.w.max(1.0)).ceil() as u32;
-                    let h = (rect.h.max(1.0)).ceil() as u32;
+                    // Avoids fractional 1:1 sampling blur on text/graphics inside the layer.
+                    let snap = repose_core::Rect {
+                        x: rect.x.round(),
+                        y: rect.y.round(),
+                        w: rect.w.round().max(1.0),
+                        h: rect.h.round().max(1.0),
+                    };
+                    let w = snap.w as u32;
+                    let h = snap.h as u32;
                     // Close out the current pass, start a new one for the layer.
                     let prev_target = current_pass.target;
                     let prev_scissor = current_pass.initial_scissor;
@@ -4180,7 +4208,7 @@ impl WgpuSceneRenderer {
                     let _ = prev_scissor; // initial_scissor of resumed pass is restored at EndLayer
                     // Get or create the layer's offscreen texture now so that
                     // subsequent scissor ops / draws have a valid target.
-                    self.get_or_create_layer(*layer_id, w, h, *rect);
+                    self.get_or_create_layer(*layer_id, w, h, snap);
                     current_target_size = (w as f32, h as f32);
                     layer_alphas.push((*layer_id, *alpha, current_pass.initial_scissor));
                     // Store blur info for post-processing after EndLayer

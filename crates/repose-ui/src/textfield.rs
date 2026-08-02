@@ -38,7 +38,7 @@
 //! so your app can react to edits.
 
 use repose_core::*;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
@@ -1171,6 +1171,9 @@ pub struct TextFieldConfig {
     pub on_text_layout: Option<Rc<dyn Fn(&repose_core::TextLayoutResult)>>,
     /// Interaction source for tracking focus/press/hover state.
     pub interaction_source: Option<repose_core::MutableInteractionSource>,
+    /// Tracks focus state during layout. The cell is set to `true` while this
+    /// field is the focused text input, `false` otherwise.
+    pub focus_tracker: Option<Rc<Cell<bool>>>,
     /// Cursor brush (-> `cursorBrush`). `None` → theme default (`on_surface`).
     pub cursor_brush: Option<repose_core::Brush>,
     /// Output transformation (-> `outputTransformation`). Transforms text for display only.
@@ -1206,6 +1209,7 @@ impl Default for TextFieldConfig {
             },
             on_text_layout: None,
             interaction_source: None,
+            focus_tracker: None,
             cursor_brush: None,
             output_transformation: None,
             decorator: None,
@@ -1342,6 +1346,7 @@ pub fn BasicTextField(
         config.text_style,
         ka,
         config.interaction_source,
+        config.focus_tracker,
         Some(config.line_limits),
         config.input_transformation,
         config.output_transformation,
@@ -2121,6 +2126,7 @@ fn text_field_view(
     text_style: repose_core::TextStyle,
     keyboard_actions: repose_core::KeyboardActions,
     interaction_source: Option<repose_core::MutableInteractionSource>,
+    focus_tracker: Option<Rc<Cell<bool>>>,
     line_limits: Option<repose_core::TextFieldLineLimits>,
     _input_transformation: Option<Rc<dyn repose_core::InputTransformation>>,
     _output_transformation: Option<Rc<dyn repose_core::OutputTransformation>>,
@@ -2132,7 +2138,7 @@ fn text_field_view(
         multiline,
         on_change,
         on_submit,
-        focus_tracker: None,
+        focus_tracker,
         value,
         visual_transformation,
         keyboard_type,
