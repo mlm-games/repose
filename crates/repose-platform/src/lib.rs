@@ -346,6 +346,15 @@ fn map_cursor(c: repose_core::CursorIcon) -> winit::window::CursorIcon {
 pub fn run_desktop_app(
     root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
 ) -> anyhow::Result<()> {
+    run_desktop_app_with_msaa(root, 4)
+}
+
+/// Like [`run_desktop_app`], but lets the app choose the MSAA sample count
+/// (falling back to the largest supported count <= `msaa_samples`).
+pub fn run_desktop_app_with_msaa(
+    root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
+    msaa_samples: u32,
+) -> anyhow::Result<()> {
     use std::collections::{HashMap, HashSet};
     use winit::application::ApplicationHandler;
     use winit::dpi::{LogicalPosition, LogicalSize, PhysicalSize};
@@ -382,6 +391,7 @@ pub fn run_desktop_app(
         backend: Option<repose_render_wgpu::WgpuBackend>,
         rt: ReposeRuntime,
         inspector: repose_devtools::Inspector,
+        msaa_samples: u32,
 
         // Files
         pending_dropped_files: Vec<std::path::PathBuf>,
@@ -438,7 +448,10 @@ pub fn run_desktop_app(
             }
         }
 
-        fn new(root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>) -> Self {
+        fn new(
+            root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>,
+            msaa_samples: u32,
+        ) -> Self {
             Self {
                 root,
                 render: RenderContext::new(),
@@ -446,6 +459,7 @@ pub fn run_desktop_app(
                 backend: None,
                 rt: ReposeRuntime::new(),
                 inspector: repose_devtools::Inspector::new(),
+                msaa_samples,
                 pending_dropped_files: Vec::new(),
                 pending_drop_pos_px: None,
 
@@ -606,7 +620,10 @@ pub fn run_desktop_app(
                         let sf = w.scale_factor() as f32;
                         self.rt.set_viewport_and_scale(size.width, size.height, sf);
 
-                        match repose_render_wgpu::WgpuBackend::new(w.clone()) {
+                        match repose_render_wgpu::WgpuBackend::new_with_msaa(
+                            w.clone(),
+                            self.msaa_samples,
+                        ) {
                             Ok(b) => {
                                 self.backend = Some(b);
                                 set_app_window(w.clone());
@@ -1269,7 +1286,10 @@ pub fn run_desktop_app(
             if WINDOW_VISIBLE.load(Ordering::Relaxed) && self.backend.is_none() {
                 if let Some(w) = &self.window {
                     log::info!("about_to_wait: recreating GPU backend");
-                    match repose_render_wgpu::WgpuBackend::new(w.clone()) {
+                    match repose_render_wgpu::WgpuBackend::new_with_msaa(
+                        w.clone(),
+                        self.msaa_samples,
+                    ) {
                         Ok(b) => self.backend = Some(b),
                         Err(e) => log::error!("about_to_wait: failed to recreate backend: {e:?}"),
                     }
@@ -1566,7 +1586,7 @@ pub fn run_desktop_app(
 
     let event_loop = EventLoop::new()?;
     set_event_loop_proxy(event_loop.create_proxy());
-    let mut app = App::new(Box::new(root));
+    let mut app = App::new(Box::new(root), msaa_samples);
     // Install system clock once
     repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
     event_loop.run_app(&mut app)?;

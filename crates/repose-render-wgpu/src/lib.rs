@@ -1586,6 +1586,16 @@ impl WgpuSceneRenderer {
 impl WgpuSurfaceBackend {
     #[cfg(feature = "winit-surface")]
     pub async fn new_async(window: Arc<winit::window::Window>) -> anyhow::Result<WgpuSurfaceBackend> {
+        Self::new_async_with_msaa(window, 4).await
+    }
+
+    /// Create a windowed surface backend, honoring the requested MSAA sample
+    /// count (falling back to the largest supported count <= `msaa_samples`).
+    #[cfg(feature = "winit-surface")]
+    pub async fn new_async_with_msaa(
+        window: Arc<winit::window::Window>,
+        msaa_samples: u32,
+    ) -> anyhow::Result<WgpuSurfaceBackend> {
         let instance: Instance;
 
         if cfg!(target_arch = "wasm32") {
@@ -1655,17 +1665,10 @@ impl WgpuSurfaceBackend {
             .unwrap_or(wgpu::PresentMode::Immediate);
         let alpha_mode = caps.alpha_modes[0];
 
-        // Pick MSAA sample count
-        let fmt_features = adapter.get_texture_format_features(format);
-        let msaa_samples = if fmt_features.flags.sample_count_supported(4)
-            && fmt_features
-                .flags
-                .contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE)
-        {
-            4
-        } else {
-            1
-        };
+        // Pick MSAA sample count, honoring the requested value. The depth
+        // target is created at the same sample count and the MSAA color target
+        // resolves to the surface, so both must support the count.
+        let msaa_samples = pick_surface_msaa(&adapter, format, msaa_samples);
 
         let renderer = WgpuSceneRenderer::from_device(device, queue, format, msaa_samples);
 
@@ -1690,10 +1693,52 @@ impl WgpuSurfaceBackend {
         pollster::block_on(Self::new_async(window))
     }
 
+    #[cfg(all(feature = "winit-surface", not(target_arch = "wasm32")))]
+    pub fn new_with_msaa(
+        window: Arc<winit::window::Window>,
+        msaa_samples: u32,
+    ) -> anyhow::Result<WgpuSurfaceBackend> {
+        pollster::block_on(Self::new_async_with_msaa(window, msaa_samples))
+    }
+
     #[cfg(all(feature = "winit-surface", target_arch = "wasm32"))]
     pub fn new(_window: Arc<winit::window::Window>) -> anyhow::Result<WgpuSurfaceBackend> {
         anyhow::bail!("Use WgpuSurfaceBackend::new_async(window).await on wasm32")
     }
+
+    #[cfg(all(feature = "winit-surface", target_arch = "wasm32"))]
+    pub fn new_with_msaa(
+        _window: Arc<winit::window::Window>,
+        _msaa_samples: u32,
+    ) -> anyhow::Result<WgpuSurfaceBackend> {
+        anyhow::bail!("Use WgpuSurfaceBackend::new_async_with_msaa(window, msaa).await on wasm32")
+    }
+}
+
+/// Pick the MSAA sample count for the surface pass, honoring `requested` and
+/// falling back to the largest supported count <= it.
+fn pick_surface_msaa(adapter: &wgpu::Adapter, format: wgpu::TextureFormat, requested: u32) -> u32 {
+    let requested = requested.max(1);
+    let color_feat = adapter.get_texture_format_features(format);
+    let depth_feat = adapter.get_texture_format_features(wgpu::TextureFormat::Depth24PlusStencil8);
+    let supported = |n: u32| {
+        color_feat.flags.sample_count_supported(n)
+            && color_feat
+                .flags
+                .contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE)
+            && depth_feat.flags.sample_count_supported(n)
+    };
+    let mut candidates = vec![requested];
+    for n in [8, 4, 2, 1] {
+        if n < requested {
+            candidates.push(n);
+        }
+    }
+    let chosen = candidates.into_iter().find(|&n| supported(n)).unwrap_or(1);
+    if chosen != requested {
+        log::info!("requested MSAA x{requested}, using x{chosen}");
+    }
+    chosen
 }
 
 impl WgpuSceneRenderer {
