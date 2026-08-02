@@ -4182,15 +4182,9 @@ impl WgpuSceneRenderer {
                     rectangle_edge: _,
                 } => {
                     flush_batch!();
-                    // Avoids fractional 1:1 sampling blur on text/graphics inside the layer.
-                    let snap = repose_core::Rect {
-                        x: rect.x.round(),
-                        y: rect.y.round(),
-                        w: rect.w.round().max(1.0),
-                        h: rect.h.round().max(1.0),
-                    };
-                    let w = snap.w as u32;
-                    let h = snap.h as u32;
+                    // Avoids fractional sampling blur on layer content.
+                    let w = (rect.w.max(1.0)).ceil() as u32;
+                    let h = (rect.h.max(1.0)).ceil() as u32;
                     // Close out the current pass, start a new one for the layer.
                     let prev_target = current_pass.target;
                     let prev_scissor = current_pass.initial_scissor;
@@ -4208,7 +4202,7 @@ impl WgpuSceneRenderer {
                     let _ = prev_scissor; // initial_scissor of resumed pass is restored at EndLayer
                     // Get or create the layer's offscreen texture now so that
                     // subsequent scissor ops / draws have a valid target.
-                    self.get_or_create_layer(*layer_id, w, h, snap);
+                    self.get_or_create_layer(*layer_id, w, h, *rect);
                     current_target_size = (w as f32, h as f32);
                     layer_alphas.push((*layer_id, *alpha, current_pass.initial_scissor));
                     // Store blur info for post-processing after EndLayer

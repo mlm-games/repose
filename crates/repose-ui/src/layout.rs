@@ -418,6 +418,15 @@ impl LayoutEngine {
         if class != locals::window_size_class() {
             locals::set_window_size_class_default(class);
         }
+        let inv_density = if density_scale > 0.0 {
+            1.0 / density_scale
+        } else {
+            1.0
+        };
+        locals::set_window_container_size(
+            size_px.0 as f32 * inv_density,
+            size_px.1 as f32 * inv_density,
+        );
         let has_tree_mutation =
             !self.tree.dirty_nodes().is_empty() || !self.tree.removed_ids.is_empty();
         let need_layout = size_changed || !self.layout_valid || has_tree_mutation || locals_changed;
@@ -3187,8 +3196,18 @@ impl LayoutEngine {
             let blur_radius_x = dp_to_px(blur_style.radius_x);
             let blur_radius_y = dp_to_px(blur_style.radius_y);
             let alpha = modifier.graphics_layer.unwrap_or(1.0);
+            // Snap the layer rect to whole pixels so the composite quad exactly
+            // matches the offscreen texture (avoids fractional 1:1 sampling blur
+            // on text/graphics inside the layer). The content transform below
+            // must use the same snapped origin, or content shifts by <1px.
+            let layer_rect = repose_core::Rect {
+                x: rect.x.round(),
+                y: rect.y.round(),
+                w: rect.w.round().max(1.0),
+                h: rect.h.round().max(1.0),
+            };
             scene.nodes.push(SceneNode::BeginLayer {
-                rect,
+                rect: layer_rect,
                 layer_id: id,
                 alpha,
                 blur_radius_x,
@@ -3200,8 +3219,8 @@ impl LayoutEngine {
             });
             scene.nodes.push(SceneNode::PushTransform {
                 transform: Transform {
-                    translate_x: -rect.x,
-                    translate_y: -rect.y,
+                    translate_x: -layer_rect.x,
+                    translate_y: -layer_rect.y,
                     scale_x: 1.0,
                     scale_y: 1.0,
                     rotate: 0.0,

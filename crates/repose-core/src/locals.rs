@@ -47,12 +47,21 @@ struct Defaults {
     density: Density,
     window_insets: WindowInsets,
     window_size_class: WindowSizeClass,
+    /// Logical window container size in dp (defaults match a phone portrait).
+    container_width: f32,
+    container_height: f32,
 }
 
 static DEFAULTS: OnceLock<RwLock<Defaults>> = OnceLock::new();
 
 fn defaults() -> &'static RwLock<Defaults> {
-    DEFAULTS.get_or_init(|| RwLock::new(Defaults::default()))
+    DEFAULTS.get_or_init(|| {
+        RwLock::new(Defaults {
+            container_width: 360.0,
+            container_height: 800.0,
+            ..Default::default()
+        })
+    })
 }
 
 /// Set the global default theme used when no local Theme is active.
@@ -664,6 +673,36 @@ pub fn set_ime_inset(height_px: f32) {
 /// Query current window insets.
 pub fn window_insets() -> WindowInsets {
     get_local::<WindowInsets>().unwrap_or_else(|| defaults().read().window_insets)
+}
+
+/// Set the logical window container size (in dp). The `LayoutEngine` calls
+/// this on every layout from the physical viewport + density.
+pub fn set_window_container_size(width_dp: f32, height_dp: f32) {
+    let mut d = defaults().write();
+    d.container_width = width_dp;
+    d.container_height = height_dp;
+}
+
+/// Set just the logical window container width (in dp). Prefer
+/// [`set_window_container_size`]; kept for hosts that update one axis at a time.
+pub fn set_window_container_width(w_dp: f32) {
+    defaults().write().container_width = w_dp;
+}
+
+/// Set just the logical window container height (in dp). Prefer
+/// [`set_window_container_size`]; kept for hosts that update one axis at a time.
+pub fn set_window_container_height(h_dp: f32) {
+    defaults().write().container_height = h_dp;
+}
+
+/// The logical window container width in dp (used by Material dropdowns).
+pub fn get_window_container_width() -> f32 {
+    defaults().read().container_width
+}
+
+/// The logical window container height in dp (used by Material search bars).
+pub fn get_window_container_height() -> f32 {
+    defaults().read().container_height
 }
 
 /// Coarse width category for a window, computed from its current size.

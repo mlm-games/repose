@@ -2180,32 +2180,22 @@ pub fn DockedSearchBar(
 
 /// Platform-agnostic window container height. On Skiko this would read
 /// `LocalWindowInfo`, on Android `LocalConfiguration`. Defaults to 800 dp.
-/// Override via [`set_window_container_height`] if needed.
-use std::sync::Mutex;
-static WINDOW_CONTAINER_HEIGHT: Mutex<f32> = Mutex::new(800.0);
-
-/// Set the window container height (in dp) used for search bar constraints.
+/// The `LayoutEngine` keeps this current from the physical viewport + density.
 pub fn set_window_container_height(h: f32) {
-    if let Ok(mut v) = WINDOW_CONTAINER_HEIGHT.lock() {
-        *v = h;
-    }
+    repose_core::locals::set_window_container_height(h);
 }
 
 fn get_window_container_height() -> f32 {
-    WINDOW_CONTAINER_HEIGHT.lock().map(|v| *v).unwrap_or(800.0)
+    repose_core::locals::get_window_container_height()
 }
-
-static WINDOW_CONTAINER_WIDTH: Mutex<f32> = Mutex::new(360.0);
 
 /// Set the window container width (in dp) used for dropdown constraints.
 pub fn set_window_container_width(w: f32) {
-    if let Ok(mut v) = WINDOW_CONTAINER_WIDTH.lock() {
-        *v = w;
-    }
+    repose_core::locals::set_window_container_width(w);
 }
 
 fn get_window_container_width() -> f32 {
-    WINDOW_CONTAINER_WIDTH.lock().map(|v| *v).unwrap_or(360.0)
+    repose_core::locals::get_window_container_width()
 }
 
 /// M3 Expanded Full‑Screen Search Bar -> rendered in an overlay covering the
