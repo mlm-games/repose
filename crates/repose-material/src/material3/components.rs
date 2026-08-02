@@ -1542,7 +1542,6 @@ pub fn BadgedBox(badge: View, content: View, config: BadgedBoxConfig) -> View {
         Box(Modifier::new()
             .absolute()
             .offset(None, Some(top), Some(right), None)
-            .render_z_index(1.0)
             .flex_shrink(0.0)
             .hit_passthrough())
         .child(badge),
