@@ -1,5 +1,11 @@
+#![cfg_attr(
+    any(target_os = "android", target_arch = "wasm32"),
+    allow(dead_code, unused_imports)
+)]
+
 use repose_core::*;
 use repose_material::material3::{Button, ButtonConfig};
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 use repose_platform::{AppConfig, RenderContext, run_desktop_app_with_config};
 use repose_ui::TextStyle;
 use repose_ui::*;
@@ -140,8 +146,12 @@ fn app(s: &mut Scheduler, _rc: &RenderContext) -> View {
     )
 }
 
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 fn main() -> anyhow::Result<()> {
     env_logger::init();
     log::info!("Starting Animation Demo");
     run_desktop_app_with_config(app, AppConfig::default())
 }
+
+#[cfg(any(target_os = "android", target_arch = "wasm32"))]
+fn main() {}
