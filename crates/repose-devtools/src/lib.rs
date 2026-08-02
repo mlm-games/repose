@@ -109,6 +109,16 @@ impl Hud {
                 radius: [4.0; 4],
             });
 
+            Self::draw_fps_sparkline(
+                scene,
+                bar_x + 2.0,
+                bar_y + bar_h + 4.0,
+                bar_w - 4.0,
+                16.0,
+                &self.fps_history,
+                self.fps_history_idx,
+            );
+
             let fps_norm = (self.fps_smooth / 60.0).min(1.0);
             let bar_fill = bar_w * fps_norm;
             scene.nodes.push(SceneNode::Rect {
@@ -128,245 +138,83 @@ impl Hud {
                 radius: [2.0; 4],
             });
 
-            let mut text_y = bar_y + bar_h + 4.0;
-            let line = format!("{:.0} fps", self.fps_smooth);
-            scene.nodes.push(SceneNode::Text {
-                rect: Rect {
-                    x: bar_x,
-                    y: text_y,
-                    w: 80.0,
-                    h: 14.0,
-                },
-                text: Arc::<str>::from(line),
-                color: Color::from_hex("#AAAAAA"),
-                size: 12.0,
-                font_family: None,
-                text_align: TextAlign::Unspecified,
-                font_weight: FontWeight::NORMAL,
-                font_style: FontStyle::Normal,
-                text_decoration: TextDecoration::default(),
-                letter_spacing: 0.0,
-                line_height: 0.0,
-                extra_style: Default::default(),
-                url: None,
-                font_variation_settings: None,
-            });
+            let mut text_y = bar_y + bar_h + 24.0;
+            Self::push_text(scene, bar_x, text_y, 100.0, &format!("{:.0} fps", self.fps_smooth), "#AAAAAA", 12.0);
             text_y += 16.0;
 
-            let line = format!("frame: {}", self.frame_count);
-            scene.nodes.push(SceneNode::Text {
-                rect: Rect {
-                    x: bar_x,
-                    y: text_y,
-                    w: 80.0,
-                    h: 14.0,
-                },
-                text: Arc::<str>::from(line),
-                color: Color::from_hex("#888888"),
-                size: 11.0,
-                font_family: None,
-                text_align: TextAlign::Unspecified,
-                font_weight: FontWeight::NORMAL,
-                font_style: FontStyle::Normal,
-                text_decoration: TextDecoration::default(),
-                letter_spacing: 0.0,
-                line_height: 0.0,
-                extra_style: Default::default(),
-                url: None,
-                font_variation_settings: None,
-            });
+            Self::push_text(scene, bar_x, text_y, 100.0, &format!("frame: {}", self.frame_count), "#888888", 11.0);
             text_y += 14.0;
-
-            let line = format!("build: {:.1}ms", m.build_ms);
-            scene.nodes.push(SceneNode::Text {
-                rect: Rect {
-                    x: bar_x,
-                    y: text_y,
-                    w: 80.0,
-                    h: 14.0,
-                },
-                text: Arc::<str>::from(line),
-                color: Color::from_hex("#888888"),
-                size: 11.0,
-                font_family: None,
-                text_align: TextAlign::Unspecified,
-                font_weight: FontWeight::NORMAL,
-                font_style: FontStyle::Normal,
-                text_decoration: TextDecoration::default(),
-                letter_spacing: 0.0,
-                line_height: 0.0,
-                extra_style: Default::default(),
-                url: None,
-                font_variation_settings: None,
-            });
+            Self::push_text(scene, bar_x, text_y, 120.0, &format!("build: {:.1}ms", m.build_ms), "#888888", 11.0);
             text_y += 14.0;
-
-            let line = format!("layout: {:.1}ms", m.layout_ms);
-            scene.nodes.push(SceneNode::Text {
-                rect: Rect {
-                    x: bar_x,
-                    y: text_y,
-                    w: 80.0,
-                    h: 14.0,
-                },
-                text: Arc::<str>::from(line),
-                color: Color::from_hex("#888888"),
-                size: 11.0,
-                font_family: None,
-                text_align: TextAlign::Unspecified,
-                font_weight: FontWeight::NORMAL,
-                font_style: FontStyle::Normal,
-                text_decoration: TextDecoration::default(),
-                letter_spacing: 0.0,
-                line_height: 0.0,
-                extra_style: Default::default(),
-                url: None,
-                font_variation_settings: None,
-            });
+            Self::push_text(scene, bar_x, text_y, 120.0, &format!("layout: {:.1}ms", m.layout_ms), "#888888", 11.0);
             text_y += 14.0;
-
-            let line = format!("paint: {:.1}ms", m.paint_ms);
-            scene.nodes.push(SceneNode::Text {
-                rect: Rect {
-                    x: bar_x,
-                    y: text_y,
-                    w: 80.0,
-                    h: 14.0,
-                },
-                text: Arc::<str>::from(line),
-                color: Color::from_hex("#888888"),
-                size: 11.0,
-                font_family: None,
-                text_align: TextAlign::Unspecified,
-                font_weight: FontWeight::NORMAL,
-                font_style: FontStyle::Normal,
-                text_decoration: TextDecoration::default(),
-                letter_spacing: 0.0,
-                line_height: 0.0,
-                extra_style: Default::default(),
-                url: None,
-                font_variation_settings: None,
-            });
+            Self::push_text(scene, bar_x, text_y, 120.0, &format!("paint: {:.1}ms", m.paint_ms), "#888888", 11.0);
             text_y += 14.0;
-
-            let line = format!("widgets: {}", m.widget_count);
-            scene.nodes.push(SceneNode::Text {
-                rect: Rect {
-                    x: bar_x,
-                    y: text_y,
-                    w: 80.0,
-                    h: 14.0,
-                },
-                text: Arc::<str>::from(line),
-                color: Color::from_hex("#888888"),
-                size: 11.0,
-                font_family: None,
-                text_align: TextAlign::Unspecified,
-                font_weight: FontWeight::NORMAL,
-                font_style: FontStyle::Normal,
-                text_decoration: TextDecoration::default(),
-                letter_spacing: 0.0,
-                line_height: 0.0,
-                extra_style: Default::default(),
-                url: None,
-                font_variation_settings: None,
-            });
+            Self::push_text(scene, bar_x, text_y, 120.0, &format!("widgets: {}", m.widget_count), "#888888", 11.0);
             text_y += 14.0;
-
-            let line = format!("signals: {}", m.signal_count);
-            scene.nodes.push(SceneNode::Text {
-                rect: Rect {
-                    x: bar_x,
-                    y: text_y,
-                    w: 80.0,
-                    h: 14.0,
-                },
-                text: Arc::<str>::from(line),
-                color: Color::from_hex("#888888"),
-                size: 11.0,
-                font_family: None,
-                text_align: TextAlign::Unspecified,
-                font_weight: FontWeight::NORMAL,
-                font_style: FontStyle::Normal,
-                text_decoration: TextDecoration::default(),
-                letter_spacing: 0.0,
-                line_height: 0.0,
-                extra_style: Default::default(),
-                url: None,
-                font_variation_settings: None,
-            });
+            Self::push_text(scene, bar_x, text_y, 120.0, &format!("signals: {}", m.signal_count), "#888888", 11.0);
             text_y += 14.0;
-
-            let line = format!("scene nodes: {}", m.scene_nodes);
-            scene.nodes.push(SceneNode::Text {
-                rect: Rect {
-                    x: bar_x,
-                    y: text_y,
-                    w: 100.0,
-                    h: 14.0,
-                },
-                text: Arc::<str>::from(line),
-                color: Color::from_hex("#888888"),
-                size: 11.0,
-                font_family: None,
-                text_align: TextAlign::Unspecified,
-                font_weight: FontWeight::NORMAL,
-                font_style: FontStyle::Normal,
-                text_decoration: TextDecoration::default(),
-                letter_spacing: 0.0,
-                line_height: 0.0,
-                extra_style: Default::default(),
-                url: None,
-                font_variation_settings: None,
-            });
+            Self::push_text(scene, bar_x, text_y, 140.0, &format!("scene: {}", m.scene_nodes), "#888888", 11.0);
+            text_y += 14.0;
+            Self::push_text(
+                scene,
+                bar_x,
+                text_y,
+                200.0,
+                &format!(
+                    "taffy: {:+}/{:+}",
+                    m.taffy_created, m.taffy_reused
+                ),
+                "#888888",
+                11.0,
+            );
+            text_y += 14.0;
+            Self::push_text(
+                scene,
+                bar_x,
+                text_y,
+                200.0,
+                &format!("layout: {}h/{}m", m.layout_hits, m.layout_misses),
+                "#888888",
+                11.0,
+            );
+            text_y += 14.0;
+            Self::push_text(
+                scene,
+                bar_x,
+                text_y,
+                200.0,
+                &format!(
+                    "paint cache: {}h/{}m ({} culled)",
+                    m.paint_cache_hits, m.paint_cache_misses, m.paint_culled
+                ),
+                "#888888",
+                11.0,
+            );
+            text_y += 14.0;
 
             if let Some(hover) = &self.hovered_semantics {
-                text_y += 20.0;
-                let line = format!("↳ {}: {:?}", hover.id, hover.role);
-                scene.nodes.push(SceneNode::Text {
-                    rect: Rect {
-                        x: bar_x,
-                        y: text_y,
-                        w: 150.0,
-                        h: 14.0,
-                    },
-                    text: Arc::<str>::from(line),
-                    color: Color::from_hex("#44AAFF"),
-                    size: 11.0,
-                    font_family: None,
-                    text_align: TextAlign::Unspecified,
-                    font_weight: FontWeight::NORMAL,
-                    font_style: FontStyle::Normal,
-                    text_decoration: TextDecoration::default(),
-                    letter_spacing: 0.0,
-                    line_height: 0.0,
-                    extra_style: Default::default(),
-                    url: None,
-                    font_variation_settings: None,
-                });
+                text_y += 6.0;
+                Self::push_text(
+                    scene,
+                    bar_x,
+                    text_y,
+                    200.0,
+                    &format!("↳ {}: {:?}", hover.id, hover.role),
+                    "#44AAFF",
+                    11.0,
+                );
                 if let Some(lbl) = &hover.label {
                     text_y += 14.0;
-                    scene.nodes.push(SceneNode::Text {
-                        rect: Rect {
-                            x: bar_x,
-                            y: text_y,
-                            w: 150.0,
-                            h: 14.0,
-                        },
-                        text: Arc::<str>::from(format!("  \"{}\"", lbl)),
-                        color: Color::from_hex("#66CCFF"),
-                        size: 10.0,
-                        font_family: None,
-                        text_align: TextAlign::Unspecified,
-                        font_weight: FontWeight::NORMAL,
-                        font_style: FontStyle::Normal,
-                        text_decoration: TextDecoration::default(),
-                        letter_spacing: 0.0,
-                        line_height: 0.0,
-                        extra_style: Default::default(),
-                        url: None,
-                        font_variation_settings: None,
-                    });
+                    Self::push_text(
+                        scene,
+                        bar_x,
+                        text_y,
+                        200.0,
+                        &format!("  \"{}\"", lbl),
+                        "#66CCFF",
+                        10.0,
+                    );
                 }
             }
         }
@@ -386,6 +234,79 @@ impl Hud {
                 color: Color::from_hex("#FFAA00"),
                 width: 2.0,
                 radius: [2.0; 4],
+            });
+        }
+    }
+
+    /// Push a single HUD text line.
+    fn push_text(scene: &mut Scene, x: f32, y: f32, w: f32, txt: &str, color: &str, size: f32) {
+        scene.nodes.push(SceneNode::Text {
+            rect: Rect {
+                x,
+                y,
+                w,
+                h: 14.0,
+            },
+            text: Arc::<str>::from(txt.to_string()),
+            color: Color::from_hex(color),
+            size,
+            font_family: None,
+            text_align: TextAlign::Unspecified,
+            font_weight: FontWeight::NORMAL,
+            font_style: FontStyle::Normal,
+            text_decoration: TextDecoration::default(),
+            letter_spacing: 0.0,
+            line_height: 0.0,
+            extra_style: Default::default(),
+            url: None,
+            font_variation_settings: None,
+        });
+    }
+
+    /// Draw a horizontal bar-chart sparkline from a rolling FPS history.
+    ///
+    /// The newest sample is drawn at the right edge; older samples scroll left.
+    fn draw_fps_sparkline(
+        scene: &mut Scene,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        history: &[f32],
+        idx: usize,
+    ) {
+        let n = history.len();
+        if n == 0 || idx == 0 {
+            return;
+        }
+        scene.nodes.push(SceneNode::Rect {
+            rect: Rect { x, y, w, h },
+            brush: Brush::Solid(Color::from_hex("#1A1A1ACC")),
+            radius: [2.0; 4],
+        });
+        let bin_w = w / n as f32;
+        let max_fps = 60.0f32.max(history.iter().copied().fold(0.0f32, f32::max));
+        for i in 0..n {
+            // Walk oldest->newest: idx points one past the newest sample.
+            let sample = history[(i + idx) % n];
+            let frac = (sample / max_fps).min(1.0);
+            let bh = (h - 2.0) * frac;
+            let color = if frac >= 0.83 {
+                "#44FF44"
+            } else if frac >= 0.5 {
+                "#FFAA00"
+            } else {
+                "#FF4444"
+            };
+            scene.nodes.push(SceneNode::Rect {
+                rect: Rect {
+                    x: x + i as f32 * bin_w,
+                    y: y + (h - 2.0) - bh,
+                    w: (bin_w - 1.0).max(0.5),
+                    h: bh.max(1.0),
+                },
+                brush: Brush::Solid(Color::from_hex(color)),
+                radius: [0.0; 4],
             });
         }
     }

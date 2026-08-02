@@ -169,6 +169,8 @@ struct App {
     rt: ReposeRuntime,
     render: RenderContext,
 
+    inspector: Option<repose_devtools::Inspector>,
+
     // touch click-cancel after scroll
     touch_scrolled: bool,
     scroll_capture_id: Option<u64>,
@@ -209,6 +211,8 @@ impl App {
             rt: ReposeRuntime::new(),
 
             render: RenderContext::new(),
+
+            inspector: Some(repose_devtools::Inspector::new()),
 
             touch_scrolled: false,
             scroll_capture_id: None,
@@ -686,6 +690,25 @@ impl ApplicationHandler<()> for App {
                     y: position.y as f32,
                 };
                 self.rt.handle_pointer_move(pos);
+
+                // Inspector hover (web).
+                if let (Some(inspector), Some(f)) = (&mut self.inspector, &self.rt.frame_cache)
+                    && inspector.hud.inspector_enabled
+                {
+                    let hit = f.hit_regions.iter().find(|h| h.rect.contains(pos));
+                    let hover_rect = hit.map(|h| h.rect);
+                    let hover_info = hit.and_then(|h| {
+                        f.semantics_nodes.iter().find(|s| s.id == h.id).map(|s| {
+                            repose_devtools::HoveredInfo {
+                                id: s.id,
+                                role: format!("{:?}", s.role),
+                                label: s.label.clone(),
+                            }
+                        })
+                    });
+                    inspector.hud.set_hovered(hover_rect, hover_info);
+                }
+
                 self.request_redraw();
             }
 
@@ -956,6 +979,19 @@ impl ApplicationHandler<()> for App {
             WindowEvent::KeyboardInput {
                 event: key_event, ..
             } => {
+                // Toggle devtools inspector with Ctrl+Shift+I.
+                if key_event.state == ElementState::Pressed
+                    && !key_event.repeat
+                    && key_event.physical_key == PhysicalKey::Code(KeyCode::KeyI)
+                    && self.rt.modifiers.ctrl
+                    && self.rt.modifiers.shift
+                    && let Some(inspector) = &mut self.inspector
+                {
+                    inspector.hud.toggle_inspector();
+                    self.request_redraw();
+                    return;
+                }
+
                 // Convert to KeyEvent for runtime dispatch
                 let mapped_key = rc::map_key(key_event.physical_key);
                 let utf16 = match mapped_key {
@@ -1044,7 +1080,11 @@ impl ApplicationHandler<()> for App {
                 }
 
                 if let Some(backend) = self.backend.borrow_mut().as_mut() {
-                    backend.frame(&frame.scene, GlyphRasterConfig { px: 18.0 * scale });
+                    let mut scene = frame.scene.clone();
+                    if let Some(inspector) = &mut self.inspector {
+                        inspector.frame(&mut scene);
+                    }
+                    backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
                 }
 
                 self.rt.reconcile_hover_from_mouse_pos(&frame);

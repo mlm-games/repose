@@ -917,6 +917,32 @@ pub fn run_desktop_app_with_config(
                         self.announce_focus_change();
                     }
 
+                    // Inspector: click-to-select topmost widget under cursor.
+                    if let Some(inspector) = &mut self.inspector
+                        && inspector.hud.inspector_enabled
+                        && let Some(f) = &self.rt.frame_cache
+                        && let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos))
+                    {
+                        let info = f
+                            .semantics_nodes
+                            .iter()
+                            .find(|s| s.id == hit.id)
+                            .map(|s| repose_devtools::HoveredInfo {
+                                id: s.id,
+                                role: format!("{:?}", s.role),
+                                label: s.label.clone(),
+                            });
+                        inspector.hud.select_widget(repose_devtools::SelectedWidget {
+                            id: hit.id,
+                            role: info
+                                .as_ref()
+                                .map(|i| i.role.clone())
+                                .unwrap_or_default(),
+                            label: info.as_ref().and_then(|i| i.label.clone()),
+                            bounds: hit.rect,
+                        });
+                    }
+
                     self.request_redraw();
                 }
 
