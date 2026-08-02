@@ -104,6 +104,13 @@ struct Globals {
     _pad: [f32; 2],
 }
 
+fn make_globals(target_w: f32, target_h: f32) -> Globals {
+    Globals {
+        ndc_to_px: [target_w * 0.5, target_h * 0.5],
+        _pad: [0.0, 0.0],
+    }
+}
+
 pub struct WgpuSceneRenderer {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -4178,9 +4185,10 @@ impl WgpuSceneRenderer {
                     rectangle_edge: _,
                 } => {
                     flush_batch!();
-                    // Avoids fractional sampling blur on layer content.
-                    let w = (rect.w.max(1.0)).ceil() as u32;
-                    let h = (rect.h.max(1.0)).ceil() as u32;
+                    // Layer rect is already snapped to whole pixels in layout;
+                    // round() keeps any bypass of that snap consistent.
+                    let w = (rect.w.round().max(1.0)) as u32;
+                    let h = (rect.h.round().max(1.0)) as u32;
                     // Close out the current pass, start a new one for the layer.
                     let prev_target = current_pass.target;
                     let prev_scissor = current_pass.initial_scissor;
@@ -4350,11 +4358,36 @@ impl WgpuSceneRenderer {
         // Push the final pass.
         passes.push(current_pass);
 
+        let globals_bytes = std::mem::size_of::<Globals>() as u64;
+        let globals_staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("globals staging"),
+            size: (passes.len().max(1) as u64) * globals_bytes,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        for (i, pass) in passes.iter().enumerate() {
+            let (target_w, target_h) = match pass.target {
+                PassTarget::Surface => (fb_w, fb_h),
+                PassTarget::Layer(layer_id) => {
+                    let lt = self.layer_pool.get(&layer_id);
+                    (
+                        lt.map_or(fb_w, |l| l.width as f32),
+                        lt.map_or(fb_h, |l| l.height as f32),
+                    )
+                }
+            };
+            self.queue.write_buffer(
+                &globals_staging,
+                (i as u64) * globals_bytes,
+                bytemuck::bytes_of(&make_globals(target_w, target_h)),
+            );
+        }
+
         let bind_mask = self.atlas_bind_group_mask();
         let bind_color = self.atlas_bind_group_color();
         let mut clip_depth: u32 = 0;
 
-        for pass in std::mem::take(&mut passes) {
+        for (pass_index, pass) in std::mem::take(&mut passes).into_iter().enumerate() {
             let (color_view, resolve_target, depth_stencil_view, is_layer) = match pass.target {
                 PassTarget::Surface => {
                     let swap_view = target_view.clone();
@@ -4385,22 +4418,13 @@ impl WgpuSceneRenderer {
                 }
             };
 
-            let (target_w, target_h) = match pass.target {
-                PassTarget::Surface => (fb_w, fb_h),
-                PassTarget::Layer(layer_id) => {
-                    let lt = self.layer_pool.get(&layer_id);
-                    (
-                        lt.map_or(fb_w, |l| l.width as f32),
-                        lt.map_or(fb_h, |l| l.height as f32),
-                    )
-                }
-            };
-            let globals = Globals {
-                ndc_to_px: [target_w * 0.5, target_h * 0.5],
-                _pad: [0.0, 0.0],
-            };
-            self.queue
-                .write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&globals));
+            encoder.copy_buffer_to_buffer(
+                &globals_staging,
+                (pass_index as u64) * globals_bytes,
+                &self.globals_buf,
+                0,
+                globals_bytes,
+            );
 
             if is_layer {
                 clip_depth = 0;
