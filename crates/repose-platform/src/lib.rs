@@ -351,6 +351,7 @@ pub fn run_desktop_app(
 
 /// Like [`run_desktop_app`], but lets the app choose the MSAA sample count
 /// (falling back to the largest supported count <= `msaa_samples`).
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn run_desktop_app_with_msaa(
     root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
     msaa_samples: u32,
