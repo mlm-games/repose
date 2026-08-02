@@ -258,23 +258,32 @@ pub fn screen() -> View {
                     BadgedBox(
                         Badge(None, BadgeConfig::default()),
                         Icon(Symbols::info).size(24.0).color(th.on_surface),
-                        BadgedBoxConfig::default(),
+                        BadgedBoxConfig {
+                            has_content: false,
+                            ..Default::default()
+                        },
                     ),
                     BadgedBox(
                         Badge(
-                            Some(Text("3").size(10.0).color(th.surface)),
+                            Some(Text("3").size(10.0).color(th.on_error)),
                             BadgeConfig::default(),
                         ),
                         Icon(Symbols::settings).size(24.0).color(th.on_surface),
-                        BadgedBoxConfig::default(),
+                        BadgedBoxConfig {
+                            has_content: true,
+                            ..Default::default()
+                        },
                     ),
                     BadgedBox(
                         Badge(
-                            Some(Text("99+").size(9.0).color(th.surface)),
+                            Some(Text("99+").size(9.0).color(th.on_error)),
                             BadgeConfig::default(),
                         ),
                         Icon(Symbols::favorite).size(24.0).color(th.error),
-                        BadgedBoxConfig::default(),
+                        BadgedBoxConfig {
+                            has_content: true,
+                            ..Default::default()
+                        },
                     ),
                 )),
                 Hint("Badges appear at the top-right of the wrapped content."),
@@ -290,18 +299,7 @@ pub fn screen() -> View {
                         .padding(sp::MD)
                         .background(th.surface_container)
                         .border(1.0, th.outline_variant, 8.0)
-                        .clip_rounded(8.0)
-                        .clickable()
-                        .on_pointer_down({
-                            let t = tooltip_state_inner.clone();
-                            move |_| {
-                                if t.is_visible() {
-                                    t.dismiss()
-                                } else {
-                                    t.show()
-                                }
-                            }
-                        }))
+                        .clip_rounded(8.0))
                     .child(
                         Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
                             Icon(Symbols::info).size(18.0).color(th.primary),

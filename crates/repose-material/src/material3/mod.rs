@@ -56,6 +56,8 @@ pub(crate) fn alert_dialog_body(
 
 static BOTTOMSHEET_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+static TOOLTIP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 pub fn BottomSheet(
     visible: bool,
     on_dismiss: impl Fn() + 'static,
@@ -924,6 +926,9 @@ impl TooltipState {
 
 /// Wraps `content` with a tooltip label shown above it when `state` is visible.
 ///
+/// When [`TooltipConfig::enable_user_input`] is true (default), the tooltip is
+/// shown on pointer hover and dismissed on leave.
+///
 /// Usage:
 /// ```ignore
 /// let tip = TooltipState::new();
@@ -941,9 +946,10 @@ pub fn TooltipBox(
     let text: Rc<str> = Rc::from(text.into());
     let th = theme();
     let spec = th.motion.overlay;
+    let id = remember(|| TOOLTIP_COUNTER.fetch_add(1, Ordering::Relaxed));
 
     let alpha = animate_f32(
-        "tooltip_alpha",
+        format!("tooltip_alpha_{id}"),
         if state.is_visible() { 1.0 } else { 0.0 },
         spec,
     );
@@ -951,29 +957,65 @@ pub fn TooltipBox(
     let tooltip_visible = state.is_visible() || alpha > 0.01;
     let scale = 0.92 + 0.08 * alpha;
 
-    Column(config.modifier).child((
-        Box(Modifier::new().fill_max_size()).child(content),
+    let mut host = config
+        .modifier
+        .align_self(AlignSelf::FLEX_START)
+        .flex_shrink(0.0);
+
+    if config.enable_user_input {
+        let enter = state.clone();
+        let leave = state.clone();
+        host = host.hoverable(
+            move || enter.show(),
+            move || leave.dismiss(),
+        );
+    }
+
+    Box(host).child((
+        content,
         if tooltip_visible {
             Box(Modifier::new()
-                .background(config.container_color)
-                .clip_rounded(th.shapes.extra_small)
-                .padding_values(PaddingValues {
-                    left: config.horizontal_padding,
-                    right: config.horizontal_padding,
-                    top: config.vertical_padding,
-                    bottom: config.vertical_padding,
-                })
                 .absolute()
-                .offset(None, Some(config.offset_y), None, None)
-                .align_self(AlignSelf::CENTER)
-                .render_z_index(10000.0)
-                .alpha(alpha)
-                .scale(scale))
+                .offset(Some(0.0), Some(config.offset_y), Some(0.0), None)
+                .justify_content(JustifyContent::CENTER)
+                .align_items(AlignItems::CENTER)
+                .hit_passthrough()
+                .render_z_index(10_000.0)
+                .alpha(alpha))
             .child(
-                Text((*text).to_string())
-                    .color(config.content_color)
-                    .size(th.typography.label_medium)
-                    .single_line(),
+                Box(Modifier::new()
+                    .background(config.container_color)
+                    .clip_rounded(th.shapes.extra_small)
+                    .padding_values(PaddingValues {
+                        left: config.horizontal_padding,
+                        right: config.horizontal_padding,
+                        top: config.vertical_padding,
+                        bottom: config.vertical_padding,
+                    })
+                    .max_width(config.max_width)
+                    .flex_shrink(0.0)
+                    .scale(scale)
+                    .hit_passthrough()
+                    .then({
+                        let mut m = Modifier::new();
+                        if config.shadow_elevation > 0.0 {
+                            m = m.shadow(config.shadow_elevation, 0.0);
+                        }
+                        if config.tonal_elevation > 0.0 {
+                            m = m.state_elevation(StateElevation {
+                                default: config.tonal_elevation,
+                                hovered: config.tonal_elevation,
+                                pressed: config.tonal_elevation,
+                                disabled: 0.0,
+                            });
+                        }
+                        m
+                    }))
+                .child(
+                    Text((*text).to_string())
+                        .color(config.content_color)
+                        .size(th.typography.label_medium),
+                ),
             )
         } else {
             Box(Modifier::new())

@@ -1473,6 +1473,7 @@ pub fn Badge(content: Option<View>, config: BadgeConfig) -> View {
             .size(BadgeDefaults::DOT_SIZE, BadgeDefaults::DOT_SIZE)
             .background(config.container_color)
             .clip_rounded(BadgeDefaults::DOT_SIZE * 0.5)
+            .flex_shrink(0.0)
             .then(config.modifier)),
         Some(view) => Box(Modifier::new()
             .min_width(BadgeDefaults::LABEL_MIN_WIDTH)
@@ -1487,8 +1488,9 @@ pub fn Badge(content: Option<View>, config: BadgeConfig) -> View {
             })
             .align_items(AlignItems::CENTER)
             .justify_content(JustifyContent::CENTER)
+            .flex_shrink(0.0)
             .then(config.modifier))
-        .child(view),
+        .child(with_content_color(config.content_color, move || view)),
     }
 }
 
@@ -1504,6 +1506,8 @@ pub struct BadgedBoxConfig {
     pub content_offset_x: f32,
     /// Vertical offset for the badge when it has content.
     pub content_offset_y: f32,
+    /// When true, use `content_offset_*` (labeled badge). When false, use `dot_offset_*`.
+    pub has_content: bool,
 }
 
 impl Default for BadgedBoxConfig {
@@ -1514,21 +1518,33 @@ impl Default for BadgedBoxConfig {
             dot_offset_y: BadgeDefaults::DOT_OFFSET_Y,
             content_offset_x: BadgeDefaults::CONTENT_OFFSET_X,
             content_offset_y: BadgeDefaults::CONTENT_OFFSET_Y,
+            has_content: false,
         }
     }
 }
 
-/// M3 BadgedBox - wraps `content` and shows a `badge` anchored to the top-end corner.
-/// The badge is positioned at the top-end corner of the content.
+/// Wraps `content` and shows a `badge` anchored to the top-end corner.
 pub fn BadgedBox(badge: View, content: View, config: BadgedBoxConfig) -> View {
-    Column(Modifier::new()).child((
+    let (top, right) = if config.has_content {
+        (
+            config.content_offset_y - BadgeDefaults::LABEL_HEIGHT, // 14 - 16 = -2
+            config.content_offset_x - BadgeDefaults::LABEL_MIN_WIDTH, // 12 - 16 = -4
+        )
+    } else {
+        (
+            config.dot_offset_y - BadgeDefaults::DOT_SIZE, // 6 - 6 = 0
+            config.dot_offset_x - BadgeDefaults::DOT_SIZE, // 6 - 6 = 0
+        )
+    };
+
+    Box(config.modifier.flex_shrink(0.0)).child((
         content,
-        Box(Modifier::new().absolute().offset(
-            None,
-            Some(config.dot_offset_y),
-            Some(config.dot_offset_x),
-            None,
-        ))
+        Box(Modifier::new()
+            .absolute()
+            .offset(None, Some(top), Some(right), None)
+            .render_z_index(1.0)
+            .flex_shrink(0.0)
+            .hit_passthrough())
         .child(badge),
     ))
 }
