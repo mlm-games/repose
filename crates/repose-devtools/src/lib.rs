@@ -225,6 +225,30 @@ impl Hud {
             });
             text_y += 14.0;
 
+            let line = format!("paint: {:.1}ms", m.paint_ms);
+            scene.nodes.push(SceneNode::Text {
+                rect: Rect {
+                    x: bar_x,
+                    y: text_y,
+                    w: 80.0,
+                    h: 14.0,
+                },
+                text: Arc::<str>::from(line),
+                color: Color::from_hex("#888888"),
+                size: 11.0,
+                font_family: None,
+                text_align: TextAlign::Unspecified,
+                font_weight: FontWeight::NORMAL,
+                font_style: FontStyle::Normal,
+                text_decoration: TextDecoration::default(),
+                letter_spacing: 0.0,
+                line_height: 0.0,
+                extra_style: Default::default(),
+                url: None,
+                font_variation_settings: None,
+            });
+            text_y += 14.0;
+
             let line = format!("widgets: {}", m.widget_count);
             scene.nodes.push(SceneNode::Text {
                 rect: Rect {
@@ -371,9 +395,18 @@ impl Hud {
 pub struct Metrics {
     pub build_ms: f32,
     pub layout_ms: f32,
+    pub paint_ms: f32,
     pub scene_nodes: usize,
     pub widget_count: usize,
     pub signal_count: usize,
+    // Layout engine counters.
+    pub taffy_created: usize,
+    pub taffy_reused: usize,
+    pub layout_hits: usize,
+    pub layout_misses: usize,
+    pub paint_cache_hits: usize,
+    pub paint_cache_misses: usize,
+    pub paint_culled: usize,
 }
 
 pub struct Inspector {

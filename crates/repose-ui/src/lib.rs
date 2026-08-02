@@ -514,6 +514,15 @@ pub fn layout_and_paint(
     })
 }
 
+/// Return the [`LayoutStats`] from the most recent `layout_and_paint` call on
+/// this thread. Used by the inspector / HUD to report real layout+paint timing
+/// and cache counters instead of a hardcoded estimate.
+pub fn last_layout_stats() -> layout::LayoutStats {
+    LAYOUT_ENGINE.with(|engine| engine.borrow().stats.clone())
+}
+
+pub use layout::LayoutStats;
+
 /// Method styling
 pub trait TextStyle {
     fn color(self, c: Color) -> View;

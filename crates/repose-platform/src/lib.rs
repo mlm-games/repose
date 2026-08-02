@@ -1288,12 +1288,21 @@ pub fn run_desktop_app_with_config(
                     if let Some(inspector) = &mut self.inspector {
                         let widget_count = frame.semantics_nodes.len() + frame.hit_regions.len();
                         let signal_count = self.rt.sched.id_count() as usize;
+                        let ls = repose_ui::last_layout_stats();
                         inspector.hud.metrics = Some(repose_devtools::Metrics {
                             build_ms: build_layout_ms,
-                            layout_ms: build_layout_ms * 0.5,
+                            layout_ms: ls.layout_time_ms,
+                            paint_ms: ls.paint_time_ms,
                             scene_nodes: scene.nodes.len(),
                             widget_count,
                             signal_count,
+                            taffy_created: ls.taffy_created,
+                            taffy_reused: ls.taffy_reused,
+                            layout_hits: ls.layout_hits,
+                            layout_misses: ls.layout_misses,
+                            paint_cache_hits: ls.paint_cache_hits,
+                            paint_cache_misses: ls.paint_cache_misses,
+                            paint_culled: ls.paint_culled,
                         });
                         inspector.frame(&mut scene);
                     }
