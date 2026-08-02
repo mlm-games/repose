@@ -2682,6 +2682,9 @@ impl WgpuSceneRenderer {
             None => true,
         };
         if !needs_alloc {
+            if let Some(lt) = self.layer_pool.get_mut(&layer_id) {
+                lt.rect_px = (rect.x, rect.y, rect.w, rect.h);
+            }
             return;
         }
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
@@ -3266,13 +3269,6 @@ impl WgpuSceneRenderer {
 
         let fb_w = self.output_width as f32;
         let fb_h = self.output_height as f32;
-
-        let globals = Globals {
-            ndc_to_px: [fb_w * 0.5, fb_h * 0.5],
-            _pad: [0.0, 0.0],
-        };
-        self.queue
-            .write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&globals));
 
         let mut passes: Vec<Pass> = Vec::with_capacity(1);
         let clear_color = clear_color_override.unwrap_or_else(|| {
@@ -4388,6 +4384,23 @@ impl WgpuSceneRenderer {
                     }
                 }
             };
+
+            let (target_w, target_h) = match pass.target {
+                PassTarget::Surface => (fb_w, fb_h),
+                PassTarget::Layer(layer_id) => {
+                    let lt = self.layer_pool.get(&layer_id);
+                    (
+                        lt.map_or(fb_w, |l| l.width as f32),
+                        lt.map_or(fb_h, |l| l.height as f32),
+                    )
+                }
+            };
+            let globals = Globals {
+                ndc_to_px: [target_w * 0.5, target_h * 0.5],
+                _pad: [0.0, 0.0],
+            };
+            self.queue
+                .write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&globals));
 
             if is_layer {
                 clip_depth = 0;
