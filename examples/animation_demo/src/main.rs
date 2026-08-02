@@ -1,6 +1,6 @@
 use repose_core::*;
 use repose_material::material3::{Button, ButtonConfig};
-use repose_platform::{RenderContext, run_desktop_app};
+use repose_platform::{AppConfig, RenderContext, run_desktop_app_with_config};
 use repose_ui::TextStyle;
 use repose_ui::*;
 use std::cell::RefCell;
@@ -143,5 +143,5 @@ fn app(s: &mut Scheduler, _rc: &RenderContext) -> View {
 fn main() -> anyhow::Result<()> {
     env_logger::init();
     log::info!("Starting Animation Demo");
-    run_desktop_app(app)
+    run_desktop_app_with_config(app, AppConfig::default())
 }

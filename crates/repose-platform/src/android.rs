@@ -33,6 +33,9 @@ pub struct AndroidOptions {
     /// When the keyboard opens on Android, `set_ime_inset()` is called with this value.
     /// If `None`, the runner estimates ~40% of the window's shorter dimension.
     pub ime_height_px: Option<f32>,
+
+    /// Common options shared with other platforms.
+    pub common: ReposeOptions,
 }
 
 impl Default for AndroidOptions {
@@ -43,6 +46,7 @@ impl Default for AndroidOptions {
             // only for always-animating UIs that want to burn battery.
             continuous_redraw: false,
             ime_height_px: None,
+            common: ReposeOptions::default(),
         }
     }
 }
@@ -59,6 +63,13 @@ pub fn set_continuous_redraw(enabled: bool) {
     CONTINUOUS_REDRAW.store(enabled, Ordering::Relaxed);
 }
 
+/// Run an Android app with default [`AndroidOptions`].
+///
+/// Deprecated: use [`run_android_app_with_options`] with
+/// `AndroidOptions::default()` instead. This may be removed in a future release.
+#[deprecated(
+    note = "use run_android_app_with_options(app, root, AndroidOptions) instead; this may be removed in a future release"
+)]
 pub fn run_android_app(
     app: AndroidApp,
     root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
@@ -365,7 +376,10 @@ pub fn run_android_app_with_options(
                         let sf = w.scale_factor() as f32;
                         self.sync_window_size(sz, sf);
 
-                    match repose_render_wgpu::WgpuBackend::new(w.clone()) {
+                    match repose_render_wgpu::WgpuBackend::new_with_msaa(
+                        w.clone(),
+                        self.options.common.msaa_samples,
+                    ) {
                         Ok(b) => {
                             self.backend = Some(b);
                             self.window = Some(w);

@@ -17,7 +17,10 @@ pub fn wasm_start() -> Result<(), JsValue> {
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn desktop_main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    let _ = repose_platform::run_desktop_app(|s, _rc| app::app(s));
+    let _ = repose_platform::run_desktop_app_with_config(
+        |s, _rc| app::app(s),
+        repose_platform::AppConfig::default(),
+    );
 }
 
 #[cfg(target_os = "android")]
@@ -27,7 +30,7 @@ use log::LevelFilter;
 use repose_core::prelude::*;
 
 #[cfg(target_os = "android")]
-use repose_platform::android::run_android_app;
+use repose_platform::android::{AndroidOptions, run_android_app_with_options};
 
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
@@ -36,5 +39,5 @@ use winit::platform::android::activity::AndroidApp;
 #[unsafe(no_mangle)]
 pub extern "C" fn android_main(android_app: AndroidApp) {
     android_logger::init_once(android_logger::Config::default().with_max_level(LevelFilter::Info));
-    let _ = run_android_app(android_app, |s, _rc| app::app(s));
+    let _ = run_android_app_with_options(android_app, |s, _rc| app::app(s), AndroidOptions::default());
 }

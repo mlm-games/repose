@@ -3,7 +3,7 @@ use log::LevelFilter;
 use repose_core::prelude::*;
 use repose_material::material3::{Button, ButtonConfig};
 use repose_platform::RenderContext;
-use repose_platform::android::run_android_app;
+use repose_platform::android::{AndroidOptions, run_android_app_with_options};
 use repose_ui::*;
 use winit::platform::android::activity::AndroidApp;
 
@@ -42,5 +42,5 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
 #[unsafe(no_mangle)]
 pub extern "C" fn android_main(android_app: AndroidApp) {
     android_logger::init_once(android_logger::Config::default().with_max_level(LevelFilter::Trace));
-    let _ = run_android_app(android_app, app);
+    let _ = run_android_app_with_options(android_app, app, AndroidOptions::default());
 }

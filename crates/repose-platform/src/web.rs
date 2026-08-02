@@ -48,6 +48,9 @@ pub struct WebOptions {
 
     /// If true, request redraw continuously (needed for animations).
     continuous_redraw: bool,
+
+    /// Common options shared with other platforms.
+    common: ReposeOptions,
 }
 
 #[wasm_bindgen]
@@ -58,6 +61,7 @@ impl WebOptions {
             canvas_id,
             fullscreen: true,
             continuous_redraw: true,
+            common: ReposeOptions::default(),
         }
     }
 
@@ -84,6 +88,16 @@ impl WebOptions {
     #[wasm_bindgen(setter)]
     pub fn set_continuous_redraw(&mut self, v: bool) {
         self.continuous_redraw = v;
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn msaa_samples(&self) -> u32 {
+        self.common.msaa_samples
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_msaa_samples(&mut self, v: u32) {
+        self.common.msaa_samples = v;
     }
 }
 
@@ -602,8 +616,14 @@ impl ApplicationHandler<()> for App {
 
         let backend_cell = self.backend.clone();
         let window_for_async = window.clone();
+        let msaa_samples = self.options.common.msaa_samples;
         spawn_local(async move {
-            match repose_render_wgpu::WgpuBackend::new_async(window_for_async.clone()).await {
+            match repose_render_wgpu::WgpuBackend::new_async_with_msaa(
+                window_for_async.clone(),
+                msaa_samples,
+            )
+            .await
+            {
                 Ok(mut b) => {
                     let s = window_for_async.inner_size();
                     b.configure_surface(s.width, s.height);

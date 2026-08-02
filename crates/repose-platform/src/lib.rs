@@ -342,19 +342,67 @@ fn map_cursor(c: repose_core::CursorIcon) -> winit::window::CursorIcon {
     }
 }
 
+/// Options common to all platforms.
+#[derive(Clone, Copy, Debug)]
+pub struct ReposeOptions {
+    /// MSAA sample count for the UI surface pass. The renderer falls back to
+    /// the largest supported count <= this value.
+    pub msaa_samples: u32,
+}
+
+impl Default for ReposeOptions {
+    fn default() -> Self {
+        Self { msaa_samples: 4 }
+    }
+}
+
+/// Configuration for [`run_desktop_app`].
+///
+/// Uses [`Default`] so new options can be added without breaking existing
+/// callers. Configure via struct update syntax, e.g.
+/// `AppConfig { window_title: "My Game".into(), ..Default::default() }`.
+#[derive(Clone, Debug)]
+pub struct AppConfig {
+    /// Common options shared with other platforms.
+    pub common: ReposeOptions,
+    /// Window title.
+    pub window_title: String,
+    /// Initial window size in physical pixels.
+    pub window_size: (u32, u32),
+    /// Enable the devtools inspector (hover + HUD). Disable for release builds.
+    pub enable_inspector: bool,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            common: ReposeOptions::default(),
+            window_title: "Repose".to_string(),
+            window_size: (1280, 800),
+            enable_inspector: true,
+        }
+    }
+}
+
+/// Run a desktop app with default [`AppConfig`].
+///
+/// Deprecated: use [`run_desktop_app_with_config`] with
+/// `AppConfig::default()` instead. This may be removed in a future release.
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
+#[deprecated(
+    note = "use run_desktop_app_with_config(root, AppConfig) instead; this may be removed in a future release"
+)]
 pub fn run_desktop_app(
     root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
 ) -> anyhow::Result<()> {
-    run_desktop_app_with_msaa(root, 4)
+    run_desktop_app_with_config(root, AppConfig::default())
 }
 
-/// Like [`run_desktop_app`], but lets the app choose the MSAA sample count
-/// (falling back to the largest supported count <= `msaa_samples`).
+/// Run a desktop app with the given [`AppConfig`].
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
-pub fn run_desktop_app_with_msaa(
+pub fn run_desktop_app_with_config(
     root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
-    msaa_samples: u32,
+    config: AppConfig,
 ) -> anyhow::Result<()> {
     use std::collections::{HashMap, HashSet};
     use winit::application::ApplicationHandler;
@@ -391,8 +439,10 @@ pub fn run_desktop_app_with_msaa(
         window: Option<Arc<Window>>,
         backend: Option<repose_render_wgpu::WgpuBackend>,
         rt: ReposeRuntime,
-        inspector: repose_devtools::Inspector,
+        inspector: Option<repose_devtools::Inspector>,
         msaa_samples: u32,
+        window_title: String,
+        window_size: (u32, u32),
 
         // Files
         pending_dropped_files: Vec<std::path::PathBuf>,
@@ -451,7 +501,7 @@ pub fn run_desktop_app_with_msaa(
 
         fn new(
             root: Box<dyn FnMut(&mut Scheduler, &RenderContext) -> View>,
-            msaa_samples: u32,
+            config: AppConfig,
         ) -> Self {
             Self {
                 root,
@@ -459,8 +509,14 @@ pub fn run_desktop_app_with_msaa(
                 window: None,
                 backend: None,
                 rt: ReposeRuntime::new(),
-                inspector: repose_devtools::Inspector::new(),
-                msaa_samples,
+                inspector: if config.enable_inspector {
+                    Some(repose_devtools::Inspector::new())
+                } else {
+                    None
+                },
+                msaa_samples: config.common.msaa_samples,
+                window_title: config.window_title,
+                window_size: config.window_size,
                 pending_dropped_files: Vec::new(),
                 pending_drop_pos_px: None,
 
@@ -588,8 +644,11 @@ pub fn run_desktop_app_with_msaa(
             if self.window.is_none() {
                 match el.create_window(
                     WindowAttributes::default()
-                        .with_title("Repose")
-                        .with_inner_size(PhysicalSize::new(1280, 800))
+                        .with_title(self.window_title.clone())
+                        .with_inner_size(PhysicalSize::new(
+                            self.window_size.0,
+                            self.window_size.1,
+                        ))
                         .with_visible(false),
                 ) {
                     Ok(win) => {
@@ -768,8 +827,9 @@ pub fn run_desktop_app_with_msaa(
                     let result = self.rt.handle_pointer_move(pos);
 
                     // Inspector hover (platform-specific - devtools inspect)
-                    if self.inspector.hud.inspector_enabled
-                        && let Some(f) = &self.rt.frame_cache
+                    if let (Some(inspector), Some(f)) =
+                        (&mut self.inspector, &self.rt.frame_cache)
+                        && inspector.hud.inspector_enabled
                     {
                         let hit = f.hit_regions.iter().find(|h| {
                             h.rect.contains(pos)
@@ -784,7 +844,7 @@ pub fn run_desktop_app_with_msaa(
                                 }
                             })
                         });
-                        self.inspector.hud.set_hovered(hover_rect, hover_info);
+                        inspector.hud.set_hovered(hover_rect, hover_info);
                     }
 
                     // Cursor icon via winit window
@@ -1006,12 +1066,13 @@ pub fn run_desktop_app_with_msaa(
                     }
 
                     // Inspector hotkey: Ctrl+Shift+I
-                    if key_event.state == ElementState::Pressed
+                    if let Some(inspector) = &mut self.inspector
+                        && key_event.state == ElementState::Pressed
                         && self.rt.modifiers.ctrl
                         && self.rt.modifiers.shift
                         && key_event.physical_key == PhysicalKey::Code(KeyCode::KeyI)
                     {
-                        self.inspector.hud.toggle_inspector();
+                        inspector.hud.toggle_inspector();
                         self.request_redraw();
                         return;
                     }
@@ -1157,7 +1218,9 @@ pub fn run_desktop_app_with_msaa(
                         {
                             let scale = self.window.as_ref().map(|w| w.scale_factor() as f32).unwrap_or(1.0);
                             let mut scene = frame.scene.clone();
-                            self.inspector.frame(&mut scene);
+                            if let Some(inspector) = &mut self.inspector {
+                                inspector.frame(&mut scene);
+                            }
                             backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
                         }
                         log::trace!("RedrawRequested: no frame request, skipping compose");
@@ -1222,16 +1285,18 @@ pub fn run_desktop_app_with_msaa(
                     // Render
                     let mut scene = frame.scene.clone();
                     // Update HUD metrics before overlay draws
-                    let widget_count = frame.semantics_nodes.len() + frame.hit_regions.len();
-                    let signal_count = self.rt.sched.id_count() as usize;
-                    self.inspector.hud.metrics = Some(repose_devtools::Metrics {
-                        build_ms: build_layout_ms,
-                        layout_ms: build_layout_ms * 0.5,
-                        scene_nodes: scene.nodes.len(),
-                        widget_count,
-                        signal_count,
-                    });
-                    self.inspector.frame(&mut scene);
+                    if let Some(inspector) = &mut self.inspector {
+                        let widget_count = frame.semantics_nodes.len() + frame.hit_regions.len();
+                        let signal_count = self.rt.sched.id_count() as usize;
+                        inspector.hud.metrics = Some(repose_devtools::Metrics {
+                            build_ms: build_layout_ms,
+                            layout_ms: build_layout_ms * 0.5,
+                            scene_nodes: scene.nodes.len(),
+                            widget_count,
+                            signal_count,
+                        });
+                        inspector.frame(&mut scene);
+                    }
 
                     // Drag indicator overlay (internal + file drop)
                     repose_core::dnd::overlay_drag_indicator(
@@ -1598,7 +1663,7 @@ pub fn run_desktop_app_with_msaa(
 
     let event_loop = EventLoop::new()?;
     set_event_loop_proxy(event_loop.create_proxy());
-    let mut app = App::new(Box::new(root), msaa_samples);
+    let mut app = App::new(Box::new(root), config);
     // Install system clock once
     repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
     event_loop.run_app(&mut app)?;
