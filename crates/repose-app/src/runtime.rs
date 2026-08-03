@@ -86,6 +86,9 @@ pub struct ReposeRuntime {
     pub pointer_inside: bool,
     pub hover_id: Option<u64>,
     pub capture_id: Option<u64>,
+    /// Which scroll consumer currently owns the wheel gesture.
+    pub scroll_capture_id: Option<u64>,
+    last_scroll_at: Option<web_time::Instant>,
     pub pressed_ids: HashSet<u64>,
     pub ime_preedit: bool,
     pub key_pressed_active: Option<u64>,
@@ -111,6 +114,8 @@ impl ReposeRuntime {
             pointer_inside: false,
             hover_id: None,
             capture_id: None,
+            scroll_capture_id: None,
+            last_scroll_at: None,
             pressed_ids: HashSet::new(),
             ime_preedit: false,
             key_pressed_active: None,
@@ -629,11 +634,21 @@ impl ReposeRuntime {
         let Some(f) = &self.frame_cache else {
             return false;
         };
+
+        let now = web_time::Instant::now();
+        if let Some(last) = self.last_scroll_at {
+            if now.duration_since(last).as_millis() > 250 {
+                self.scroll_capture_id = None;
+            }
+        }
+        self.last_scroll_at = Some(now);
+
         let pos = Vec2 {
             x: self.mouse_pos_px.0,
             y: self.mouse_pos_px.1,
         };
-        let (consumed, _) = dispatch_scroll(f, pos, delta, None);
+        let (consumed, cap) = dispatch_scroll(f, pos, delta, self.scroll_capture_id);
+        self.scroll_capture_id = cap;
         if consumed {
             request_frame();
         }
@@ -1342,11 +1357,9 @@ fn index_for_xy_bytes_vt(
 fn dispatch_scroll(
     frame: &Frame,
     pos: Vec2,
-    mut delta: Vec2,
+    delta: Vec2,
     scroll_capture: Option<u64>,
 ) -> (bool, Option<u64>) {
-    let mut new_capture = scroll_capture;
-
     if let Some(cid) = scroll_capture {
         if let Some(cb) = frame
             .hit_regions
@@ -1354,22 +1367,13 @@ fn dispatch_scroll(
             .find(|h| h.id == cid)
             .and_then(|h| h.on_scroll.as_ref())
         {
-            let before = delta;
-            let leftover = cb(before);
-            let consumed_x = (before.x - leftover.x).abs() > 0.001;
-            let consumed_y = (before.y - leftover.y).abs() > 0.001;
-            if consumed_x || consumed_y {
-                delta = leftover;
-                if delta.x.abs() <= 0.001 && delta.y.abs() <= 0.001 {
-                    return (true, Some(cid));
-                }
-            } else {
-                new_capture = None;
-            }
+            cb(delta);
+            return (true, Some(cid));
         }
+        // Captured region vanished from the tree → fall through and re-pick.
     }
 
-    let mut any_consumed = false;
+    let mut remaining = delta;
     for hit in frame
         .hit_regions
         .iter()
@@ -1377,21 +1381,18 @@ fn dispatch_scroll(
         .filter(|h| h.rect.contains(pos))
     {
         if let Some(cb) = &hit.on_scroll {
-            let before = delta;
+            let before = remaining;
             let leftover = cb(before);
-            let consumed_x = (before.x - leftover.x).abs() > 0.001;
-            let consumed_y = (before.y - leftover.y).abs() > 0.001;
-            if consumed_x || consumed_y {
-                any_consumed = true;
-                if new_capture.is_none() {
-                    new_capture = Some(hit.id);
-                }
+            let consumed = (before.x - leftover.x).abs() > 0.001
+                || (before.y - leftover.y).abs() > 0.001;
+            if consumed {
+                return (true, Some(hit.id));
             }
-            delta = leftover;
-            if delta.x.abs() <= 0.001 && delta.y.abs() <= 0.001 {
+            remaining = leftover;
+            if remaining.x.abs() <= 0.001 && remaining.y.abs() <= 0.001 {
                 break;
             }
         }
     }
-    (any_consumed, new_capture)
+    (false, scroll_capture)
 }

@@ -2,7 +2,6 @@ use std::rc::Rc;
 
 use repose_core::prelude::*;
 use repose_material::material3::{PullToRefresh, PullToRefreshConfig, PullToRefreshState};
-use repose_core::NestedScrollConnection;
 use repose_ui::scroll::{ScrollArea, remember_scroll_state};
 use repose_ui::*;
 
@@ -175,7 +174,8 @@ fn pull_to_refresh_demo() -> View {
 fn nested_scroll_demo() -> View {
     let outer_state = remember_scroll_state("nested_outer");
     let inner_state = remember_scroll_state("nested_inner");
-    inner_state.set_nested_scroll_parent(NestedScrollConnection::new());
+
+    inner_state.set_nested_scroll_parent(outer_state.connection());
 
     let banner = |bg: Color, fg: Color, text: &'static str| {
         Box(Modifier::new()

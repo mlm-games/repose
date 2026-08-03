@@ -270,12 +270,9 @@ pub(crate) fn tf_place_caret_at_pointer(
 pub(crate) fn dispatch_scroll(
     frame: &Frame,
     pos: Vec2,
-    mut delta: Vec2,
+    delta: Vec2,
     scroll_capture: Option<u64>,
 ) -> (bool, Option<u64>) {
-    let mut new_capture = scroll_capture;
-
-    // If a scrollable has captured the gesture, try it first (position-independent).
     if let Some(cid) = scroll_capture {
         if let Some(cb) = frame
             .hit_regions
@@ -283,23 +280,15 @@ pub(crate) fn dispatch_scroll(
             .find(|h| h.id == cid)
             .and_then(|h| h.on_scroll.as_ref())
         {
-            let before = delta;
-            let leftover = cb(before);
-            let consumed_x = (before.x - leftover.x).abs() > 0.001;
-            let consumed_y = (before.y - leftover.y).abs() > 0.001;
-            if consumed_x || consumed_y {
-                delta = leftover;
-                if delta.x.abs() <= 0.001 && delta.y.abs() <= 0.001 {
-                    return (true, Some(cid));
-                }
-            } else {
-                new_capture = None; // captured region exhausted - fall through
-            }
+            cb(delta);
+            return (true, Some(cid));
         }
+        // Captured region is gone from the tree → release and re-pick below.
     }
 
-    // Normal position-based dispatch for remaining/uncaptured delta.
-    let mut any_consumed = false;
+    // No held capture: lock to the top-most consumer under the pointer. Capture
+    // it so the same scroller keeps controlling the whole gesture.
+    let mut remaining = delta;
     for hit in frame
         .hit_regions
         .iter()
@@ -307,23 +296,20 @@ pub(crate) fn dispatch_scroll(
         .filter(|h| h.rect.contains(pos))
     {
         if let Some(cb) = &hit.on_scroll {
-            let before = delta;
+            let before = remaining;
             let leftover = cb(before);
-            let consumed_x = (before.x - leftover.x).abs() > 0.001;
-            let consumed_y = (before.y - leftover.y).abs() > 0.001;
-            if consumed_x || consumed_y {
-                any_consumed = true;
-                if new_capture.is_none() {
-                    new_capture = Some(hit.id);
-                }
+            let consumed = (before.x - leftover.x).abs() > 0.001
+                || (before.y - leftover.y).abs() > 0.001;
+            if consumed {
+                return (true, Some(hit.id));
             }
-            delta = leftover;
-            if delta.x.abs() <= 0.001 && delta.y.abs() <= 0.001 {
+            remaining = leftover;
+            if remaining.x.abs() <= 0.001 && remaining.y.abs() <= 0.001 {
                 break;
             }
         }
     }
-    (any_consumed, new_capture)
+    (false, scroll_capture)
 }
 
 #[macro_export]

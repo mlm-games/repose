@@ -198,7 +198,7 @@ pub struct ScrollState {
     content_height: Signal<f32>,
     physics: RefCell<ScrollPhysics>,
     overscroll: Signal<f32>,
-    overscroll_enabled: bool,
+    overscroll_enabled: Cell<bool>,
     pub(crate) parent_connection: Rc<RefCell<Option<NestedScrollConnection>>>,
     show_scrollbar: Cell<bool>,
     prev_tick: Cell<Instant>,
@@ -218,15 +218,15 @@ impl ScrollState {
             content_height: signal(0.0),
             physics: RefCell::new(ScrollPhysics::new(0.90, 15.0, 50.0)),
             overscroll: signal(0.0),
-            overscroll_enabled: true,
+            overscroll_enabled: Cell::new(true),
             parent_connection: Rc::new(RefCell::new(None)),
             show_scrollbar: Cell::new(true),
             prev_tick: Cell::new(Instant::now()),
         }
     }
 
-    pub fn set_overscroll_enabled(&mut self, enabled: bool) {
-        self.overscroll_enabled = enabled;
+    pub fn set_overscroll_enabled(&self, enabled: bool) {
+        self.overscroll_enabled.set(enabled);
     }
 
     pub fn overscroll_offset(&self) -> f32 {
@@ -235,6 +235,32 @@ impl ScrollState {
 
     pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
         *self.parent_connection.borrow_mut() = Some(conn);
+    }
+
+    /// Use it to wire a child scrollable to a parent scroll container
+    /// explicitly: `child_state.set_nested_scroll_parent(parent_state.connection())`.
+    pub fn connection(&self) -> NestedScrollConnection {
+        let this = Rc::new(self.clone());
+        let pc = Rc::clone(&this.parent_connection);
+        NestedScrollConnection::new().on_post_scroll(
+            move |_consumed: Vec2, available: Vec2, _source: NestedScrollSource| -> Vec2 {
+                if available.x.abs() < 0.001 && available.y.abs() < 0.001 {
+                    return Vec2::ZERO;
+                }
+                let leftover_y = this.scroll_immediate(available.y);
+                let after = run_post_scroll(
+                    &pc,
+                    Vec2 {
+                        x: available.x,
+                        y: leftover_y,
+                    },
+                );
+                Vec2 {
+                    x: available.x - after.x,
+                    y: available.y - after.y,
+                }
+            },
+        )
     }
 
     pub fn set_show_scrollbar(&self, show: bool) {
@@ -292,48 +318,49 @@ impl ScrollState {
         let ch = self.content_height.get();
         let max_off = (ch - vh).max(0.0);
 
-        let os = self.overscroll.get();
-        if self.overscroll_enabled && os.abs() > 0.5 {
-            if os.signum() * dy < 0.0 {
-                let reduction = dy.abs().min(os.abs());
-                self.overscroll.set(os - os.signum() * reduction);
-                let remainder = dy - dy.signum() * reduction;
-                if remainder.abs() > 0.5 {
-                    let new_off = (before + remainder).clamp(0.0, max_off);
-                    self.scroll_offset.set(new_off);
-                    let consumed = new_off - before;
-                    let leftover = remainder - consumed;
-                    self.physics.borrow_mut().record_input(consumed);
-                    return leftover;
-                }
-                return 0.0;
-            } else {
-                let total = os + dy;
-                let bandied = Self::rubber_band(total, 150.0);
-                self.overscroll.set(bandied);
-                self.physics.borrow_mut().record_input(dy);
-                return 0.0;
-            }
-        }
-
-        let can_overscroll = self.overscroll_enabled && max_off > 5.0;
         let new_off = (before + dy).clamp(0.0, max_off);
         self.scroll_offset.set(new_off);
-
         let consumed = new_off - before;
-        let leftover = dy - consumed;
+        self.physics.borrow_mut().record_input(consumed);
+        dy - consumed
+    }
 
-        if can_overscroll
-            && leftover.abs() > 0.5
-            && ((before <= 0.0 && dy < 0.0) || (before >= max_off && dy > 0.0))
-        {
-            let bandied = Self::rubber_band(leftover, 150.0);
-            self.overscroll.set(os + bandied);
-            self.physics.borrow_mut().record_input(consumed);
+    /// Feed leftover (after the nested parent chain has had its chance via
+    /// post-scroll) into the rubber-band overscroll. Returns the amount still
+    /// unconsumed. Overscroll deliberately runs LAST so parents get first dibs.
+    pub fn apply_overscroll(&self, leftover: f32) -> f32 {
+        if !self.overscroll_enabled.get() || leftover.abs() < 0.001 {
+            return leftover;
+        }
+        let os = self.overscroll.get();
+        let vh = self.viewport_height.get();
+        let ch = self.content_height.get();
+        let max_off = (ch - vh).max(0.0);
+        let before = self.scroll_offset.get();
+
+        // Recovering from an active rubber band: absorb the reverse delta first.
+        if os.abs() > 0.5 && os.signum() * leftover < 0.0 {
+            let reduction = leftover.abs().min(os.abs());
+            self.overscroll.set(os - os.signum() * reduction);
+            let remainder = leftover - leftover.signum() * reduction;
+            if remainder.abs() > 0.5 {
+                let new_off = (before + remainder).clamp(0.0, max_off);
+                self.scroll_offset.set(new_off);
+                let consumed = new_off - before;
+                self.physics.borrow_mut().record_input(consumed);
+                return remainder - consumed;
+            }
             return 0.0;
         }
 
-        self.physics.borrow_mut().record_input(consumed);
+        // At the edge, pushing further: stretch the rubber band.
+        let at_edge = (before <= 0.0 && leftover < 0.0) || (before >= max_off && leftover > 0.0);
+        if max_off > 5.0 && at_edge && leftover.abs() > 0.5 {
+            let bandied = Self::rubber_band(leftover, 150.0);
+            self.overscroll.set(os + bandied);
+            self.physics.borrow_mut().record_input(0.0);
+            return 0.0;
+        }
         leftover
     }
 
@@ -351,7 +378,7 @@ impl ScrollState {
         let dt = (now - self.prev_tick.get()).as_secs_f32().min(0.1);
         self.prev_tick.set(now);
 
-        if self.overscroll_enabled {
+        if self.overscroll_enabled.get() {
             let os = self.overscroll.get();
             if os.abs() > 0.5 {
                 let decayed = os * OVERSHOOT_DECAY_PER_60HZ.powf(dt * 60.0);
@@ -393,12 +420,19 @@ impl ScrollState {
             let this = Rc::clone(&this);
             Rc::new(move |d: Vec2| -> Vec2 {
                 let d = run_pre_scroll(&*state, d);
+                // Clamp this scroller first; leftover goes to the nested parent
+                // chain (post-scroll) BEFORE rubber-band overscroll.
                 let leftover_y = this.scroll_immediate(d.y);
                 let result = Vec2 {
                     x: d.x,
                     y: leftover_y,
                 };
-                run_post_scroll(&*state, result)
+                let after_parent = run_post_scroll(&*state, result);
+                let final_y = this.apply_overscroll(after_parent.y);
+                Vec2 {
+                    x: after_parent.x,
+                    y: final_y,
+                }
             })
         } as Rc<dyn Fn(Vec2) -> Vec2>;
         let c_set_viewport = {
@@ -450,7 +484,7 @@ pub struct HorizontalScrollState {
     content_width: Signal<f32>,
     physics: RefCell<ScrollPhysics>,
     overscroll: Signal<f32>,
-    overscroll_enabled: bool,
+    overscroll_enabled: Cell<bool>,
     pub(crate) parent_connection: Rc<RefCell<Option<NestedScrollConnection>>>,
     show_scrollbar: Cell<bool>,
     prev_tick: Cell<Instant>,
@@ -470,15 +504,15 @@ impl HorizontalScrollState {
             content_width: signal(0.0),
             physics: RefCell::new(ScrollPhysics::new(0.90, 15.0, 50.0)),
             overscroll: signal(0.0),
-            overscroll_enabled: true,
+            overscroll_enabled: Cell::new(true),
             parent_connection: Rc::new(RefCell::new(None)),
             show_scrollbar: Cell::new(true),
             prev_tick: Cell::new(Instant::now()),
         }
     }
 
-    pub fn set_overscroll_enabled(&mut self, enabled: bool) {
-        self.overscroll_enabled = enabled;
+    pub fn set_overscroll_enabled(&self, enabled: bool) {
+        self.overscroll_enabled.set(enabled);
     }
 
     pub fn overscroll_offset(&self) -> f32 {
@@ -487,6 +521,33 @@ impl HorizontalScrollState {
 
     pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
         *self.parent_connection.borrow_mut() = Some(conn);
+    }
+
+    /// A `NestedScrollConnection` that consumes leftover scroll by scrolling
+    /// THIS container, then chains anything still unabsorbed up to this
+    /// container's own parent connection.
+    pub fn connection(&self) -> NestedScrollConnection {
+        let this = Rc::new(self.clone());
+        let pc = Rc::clone(&this.parent_connection);
+        NestedScrollConnection::new().on_post_scroll(
+            move |_consumed: Vec2, available: Vec2, _source: NestedScrollSource| -> Vec2 {
+                if available.x.abs() < 0.001 && available.y.abs() < 0.001 {
+                    return Vec2::ZERO;
+                }
+                let leftover_x = this.scroll_immediate(available.x);
+                let after = run_post_scroll(
+                    &pc,
+                    Vec2 {
+                        x: leftover_x,
+                        y: available.y,
+                    },
+                );
+                Vec2 {
+                    x: available.x - after.x,
+                    y: available.y - after.y,
+                }
+            },
+        )
     }
 
     pub fn set_show_scrollbar(&self, show: bool) {
@@ -533,48 +594,43 @@ impl HorizontalScrollState {
         let before = self.scroll_offset.get();
         let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
 
-        let os = self.overscroll.get();
-        if self.overscroll_enabled && os.abs() > 0.5 {
-            if os.signum() * dx < 0.0 {
-                let reduction = dx.abs().min(os.abs());
-                self.overscroll.set(os - os.signum() * reduction);
-                let remainder = dx - dx.signum() * reduction;
-                if remainder.abs() > 0.5 {
-                    let new_off = (before + remainder).clamp(0.0, max_off);
-                    self.scroll_offset.set(new_off);
-                    let consumed = new_off - before;
-                    let leftover = remainder - consumed;
-                    self.physics.borrow_mut().record_input(consumed);
-                    return leftover;
-                }
-                return 0.0;
-            } else {
-                let total = os + dx;
-                let bandied = ScrollState::rubber_band(total, 150.0);
-                self.overscroll.set(bandied);
-                self.physics.borrow_mut().record_input(dx);
-                return 0.0;
-            }
-        }
-
-        let can_overscroll = self.overscroll_enabled && max_off > 5.0;
         let new_off = (before + dx).clamp(0.0, max_off);
         self.scroll_offset.set(new_off);
-
         let consumed = new_off - before;
-        let leftover = dx - consumed;
+        self.physics.borrow_mut().record_input(consumed);
+        dx - consumed
+    }
 
-        if can_overscroll
-            && leftover.abs() > 0.5
-            && ((before <= 0.0 && dx < 0.0) || (before >= max_off && dx > 0.0))
-        {
-            let bandied = ScrollState::rubber_band(leftover, 150.0);
-            self.overscroll.set(os + bandied);
-            self.physics.borrow_mut().record_input(consumed);
+    /// Feed leftover (after the nested parent chain) into rubber-band overscroll.
+    pub fn apply_overscroll(&self, leftover: f32) -> f32 {
+        if !self.overscroll_enabled.get() || leftover.abs() < 0.001 {
+            return leftover;
+        }
+        let os = self.overscroll.get();
+        let max_off = (self.content_width.get() - self.viewport_width.get()).max(0.0);
+        let before = self.scroll_offset.get();
+
+        if os.abs() > 0.5 && os.signum() * leftover < 0.0 {
+            let reduction = leftover.abs().min(os.abs());
+            self.overscroll.set(os - os.signum() * reduction);
+            let remainder = leftover - leftover.signum() * reduction;
+            if remainder.abs() > 0.5 {
+                let new_off = (before + remainder).clamp(0.0, max_off);
+                self.scroll_offset.set(new_off);
+                let consumed = new_off - before;
+                self.physics.borrow_mut().record_input(consumed);
+                return remainder - consumed;
+            }
             return 0.0;
         }
 
-        self.physics.borrow_mut().record_input(consumed);
+        let at_edge = (before <= 0.0 && leftover < 0.0) || (before >= max_off && leftover > 0.0);
+        if max_off > 5.0 && at_edge && leftover.abs() > 0.5 {
+            let bandied = ScrollState::rubber_band(leftover, 150.0);
+            self.overscroll.set(os + bandied);
+            self.physics.borrow_mut().record_input(0.0);
+            return 0.0;
+        }
         leftover
     }
 
@@ -583,7 +639,7 @@ impl HorizontalScrollState {
         let dt = (now - self.prev_tick.get()).as_secs_f32().min(0.1);
         self.prev_tick.set(now);
 
-        if self.overscroll_enabled {
+        if self.overscroll_enabled.get() {
             let os = self.overscroll.get();
             if os.abs() > 0.5 {
                 let decayed = os * OVERSHOOT_DECAY_PER_60HZ.powf(dt * 60.0);
@@ -626,7 +682,12 @@ impl HorizontalScrollState {
                     x: leftover_x,
                     y: d.y,
                 };
-                run_post_scroll(&*state, result)
+                let after_parent = run_post_scroll(&*state, result);
+                let final_x = this.apply_overscroll(after_parent.x);
+                Vec2 {
+                    x: final_x,
+                    y: after_parent.y,
+                }
             })
         } as Rc<dyn Fn(Vec2) -> Vec2>;
         let c_set_vp = {
@@ -683,7 +744,7 @@ pub struct ScrollStateXY {
     physics_y: RefCell<ScrollPhysics>,
     os_x: Signal<f32>,
     os_y: Signal<f32>,
-    overscroll_enabled: bool,
+    overscroll_enabled: Cell<bool>,
     pub(crate) parent_connection: Rc<RefCell<Option<NestedScrollConnection>>>,
     show_scrollbar: Cell<bool>,
     prev_tick: Cell<Instant>,
@@ -708,15 +769,15 @@ impl ScrollStateXY {
             physics_y: RefCell::new(ScrollPhysics::new(0.90, 15.0, 50.0)),
             os_x: signal(0.0),
             os_y: signal(0.0),
-            overscroll_enabled: true,
+            overscroll_enabled: Cell::new(true),
             parent_connection: Rc::new(RefCell::new(None)),
             show_scrollbar: Cell::new(true),
             prev_tick: Cell::new(Instant::now()),
         }
     }
 
-    pub fn set_overscroll_enabled(&mut self, enabled: bool) {
-        self.overscroll_enabled = enabled;
+    pub fn set_overscroll_enabled(&self, enabled: bool) {
+        self.overscroll_enabled.set(enabled);
     }
 
     pub fn set_show_scrollbar(&self, show: bool) {
@@ -729,6 +790,27 @@ impl ScrollStateXY {
 
     pub fn set_nested_scroll_parent(&self, conn: NestedScrollConnection) {
         *self.parent_connection.borrow_mut() = Some(conn);
+    }
+
+    /// A `NestedScrollConnection` that consumes leftover scroll by scrolling
+    /// THIS container, then chains anything still unabsorbed up to this
+    /// container's own parent connection.
+    pub fn connection(&self) -> NestedScrollConnection {
+        let this = Rc::new(self.clone());
+        let pc = Rc::clone(&this.parent_connection);
+        NestedScrollConnection::new().on_post_scroll(
+            move |_consumed: Vec2, available: Vec2, _source: NestedScrollSource| -> Vec2 {
+                if available.x.abs() < 0.001 && available.y.abs() < 0.001 {
+                    return Vec2::ZERO;
+                }
+                let after = this.scroll_immediate(available);
+                let after2 = run_post_scroll(&pc, after);
+                Vec2 {
+                    x: available.x - after2.x,
+                    y: available.y - after2.y,
+                }
+            },
+        )
     }
 
     pub fn set_viewport(&self, w: f32, h: f32) {
@@ -781,63 +863,83 @@ impl ScrollStateXY {
         os: &Signal<f32>,
         overscroll_enabled: bool,
         max_off: f32,
-        dx: f32,
-        physics: &mut ScrollPhysics,
+        before: f32,
+        leftover: f32,
+        physics: &RefCell<ScrollPhysics>,
     ) -> f32 {
-        let before = off.get();
-        let os_val = os.get();
-        if overscroll_enabled && os_val.abs() > 0.5 {
-            if os_val.signum() * dx < 0.0 {
-                let reduction = dx.abs().min(os_val.abs());
-                os.set(os_val - os_val.signum() * reduction);
-                let remainder = dx - dx.signum() * reduction;
-                if remainder.abs() > 0.5 {
-                    let new_off = (before + remainder).clamp(0.0, max_off);
-                    let consumed = new_off - before;
-                    off.set(new_off);
-                    let leftover = remainder - consumed;
-                    physics.record_input(consumed);
-                    return leftover;
-                }
-                return 0.0;
-            } else {
-                let total = os_val + dx;
-                let bandied = Self::rubber_band(total, 150.0);
-                os.set(bandied);
-                physics.record_input(dx);
-                return 0.0;
-            }
+        if !overscroll_enabled || leftover.abs() < 0.001 {
+            return leftover;
         }
-
-        let can_os = overscroll_enabled && max_off > 5.0;
-        let new_off = (before + dx).clamp(0.0, max_off);
-        off.set(new_off);
-        let consumed = new_off - before;
-        let leftover = dx - consumed;
-
-        if can_os
-            && leftover.abs() > 0.5
-            && ((before <= 0.0 && dx < 0.0) || (before >= max_off && dx > 0.0))
-        {
-            let bandied = Self::rubber_band(leftover, 150.0);
-            os.set(os_val + bandied);
-            physics.record_input(consumed);
+        let os_val = os.get();
+        // Recovering from an active rubber band: absorb the reverse delta first.
+        if os_val.abs() > 0.5 && os_val.signum() * leftover < 0.0 {
+            let reduction = leftover.abs().min(os_val.abs());
+            os.set(os_val - os_val.signum() * reduction);
+            let remainder = leftover - leftover.signum() * reduction;
+            if remainder.abs() > 0.5 {
+                let new_off = (before + remainder).clamp(0.0, max_off);
+                off.set(new_off);
+                let consumed = new_off - before;
+                physics.borrow_mut().record_input(consumed);
+                return remainder - consumed;
+            }
             return 0.0;
         }
 
-        physics.record_input(consumed);
+        // At the edge, pushing further: stretch the rubber band.
+        let at_edge = (before <= 0.0 && leftover < 0.0) || (before >= max_off && leftover > 0.0);
+        if max_off > 5.0 && at_edge && leftover.abs() > 0.5 {
+            let bandied = Self::rubber_band(leftover, 150.0);
+            os.set(os_val + bandied);
+            physics.borrow_mut().record_input(0.0);
+            return 0.0;
+        }
         leftover
     }
     pub fn scroll_immediate(&self, d: Vec2) -> Vec2 {
         let max_x = (self.c_w.get() - self.vp_w.get()).max(0.0);
         let max_y = (self.c_h.get() - self.vp_h.get()).max(0.0);
+        let (bx, by) = (self.off_x.get(), self.off_y.get());
+
+        let nx = (bx + d.x).clamp(0.0, max_x);
+        let ny = (by + d.y).clamp(0.0, max_y);
+        self.off_x.set(nx);
+        self.off_y.set(ny);
+        let (cx, cy) = (nx - bx, ny - by);
 
         let mut px = self.physics_x.borrow_mut();
         let mut py = self.physics_y.borrow_mut();
-        let lx = Self::os_scroll_axis(&self.off_x, &self.os_x, self.overscroll_enabled, max_x, d.x, &mut px);
-        let ly = Self::os_scroll_axis(&self.off_y, &self.os_y, self.overscroll_enabled, max_y, d.y, &mut py);
+        px.record_input(cx);
+        py.record_input(cy);
         drop((px, py));
 
+        Vec2 { x: d.x - cx, y: d.y - cy }
+    }
+
+    /// Feed leftover (after the nested parent chain) into rubber-band overscroll.
+    pub fn apply_overscroll(&self, d: Vec2) -> Vec2 {
+        let max_x = (self.c_w.get() - self.vp_w.get()).max(0.0);
+        let max_y = (self.c_h.get() - self.vp_h.get()).max(0.0);
+        let (bx, by) = (self.off_x.get(), self.off_y.get());
+
+        let lx = Self::os_scroll_axis(
+            &self.off_x,
+            &self.os_x,
+            self.overscroll_enabled.get(),
+            max_x,
+            bx,
+            d.x,
+            &self.physics_x,
+        );
+        let ly = Self::os_scroll_axis(
+            &self.off_y,
+            &self.os_y,
+            self.overscroll_enabled.get(),
+            max_y,
+            by,
+            d.y,
+            &self.physics_y,
+        );
         Vec2 { x: lx, y: ly }
     }
     fn tick_os_axis(os: &Signal<f32>, enabled: bool, dt: f32) -> bool {
@@ -863,7 +965,7 @@ impl ScrollStateXY {
         let dt = (now - self.prev_tick.get()).as_secs_f32().min(0.1);
         self.prev_tick.set(now);
 
-        if self.overscroll_enabled {
+        if self.overscroll_enabled.get() {
             if Self::tick_os_axis(&self.os_x, true, dt) || Self::tick_os_axis(&self.os_y, true, dt)
             {
                 return true;
@@ -945,7 +1047,8 @@ impl ScrollStateXY {
             Rc::new(move |d: Vec2| -> Vec2 {
                 let d = run_pre_scroll(&*state, d);
                 let result = this.scroll_immediate(d);
-                run_post_scroll(&*state, result)
+                let after_parent = run_post_scroll(&*state, result);
+                this.apply_overscroll(after_parent)
             })
         } as Rc<dyn Fn(Vec2) -> Vec2>;
         let c_set_vw = {
