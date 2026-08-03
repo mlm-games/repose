@@ -376,9 +376,10 @@ pub fn run_android_app_with_options(
                         let sf = w.scale_factor() as f32;
                         self.sync_window_size(sz, sf);
 
-                    match repose_render_wgpu::WgpuBackend::new_with_msaa(
+                    match repose_render_wgpu::WgpuBackend::new_with_options(
                         w.clone(),
                         self.options.common.msaa_samples,
+                        self.options.common.present_mode,
                     ) {
                         Ok(b) => {
                             self.backend = Some(b);

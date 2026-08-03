@@ -9,7 +9,8 @@ use std::ops::{Deref, DerefMut};
 use repose_core::color::{ChromaSiting, ColorInfo, PixelFormat};
 use repose_core::request_frame;
 use repose_core::{
-    Brush, FontStyle, GlyphRasterConfig, RenderBackend, Scene, SceneNode, StrokeCap, Transform,
+    Brush, FontStyle, GlyphRasterConfig, PresentModePref, RenderBackend, Scene, SceneNode,
+    StrokeCap, Transform,
 };
 use wgpu::Instance;
 
@@ -1586,7 +1587,7 @@ impl WgpuSceneRenderer {
 impl WgpuSurfaceBackend {
     #[cfg(feature = "winit-surface")]
     pub async fn new_async(window: Arc<winit::window::Window>) -> anyhow::Result<WgpuSurfaceBackend> {
-        Self::new_async_with_msaa(window, 4).await
+        Self::new_async_with_options(window, 4, PresentModePref::Auto).await
     }
 
     /// Create a windowed surface backend, honoring the requested MSAA sample
@@ -1595,6 +1596,17 @@ impl WgpuSurfaceBackend {
     pub async fn new_async_with_msaa(
         window: Arc<winit::window::Window>,
         msaa_samples: u32,
+    ) -> anyhow::Result<WgpuSurfaceBackend> {
+        Self::new_async_with_options(window, msaa_samples, PresentModePref::Auto).await
+    }
+
+    /// Create a windowed surface backend, honoring the requested MSAA sample
+    /// count and present-mode preference.
+    #[cfg(feature = "winit-surface")]
+    pub async fn new_async_with_options(
+        window: Arc<winit::window::Window>,
+        msaa_samples: u32,
+        present_mode: PresentModePref,
     ) -> anyhow::Result<WgpuSurfaceBackend> {
         let instance: Instance;
 
@@ -1656,13 +1668,7 @@ impl WgpuSurfaceBackend {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(caps.formats[0]);
-        let present_mode = caps
-            .present_modes
-            .iter()
-            .copied()
-            .find(|m| *m == wgpu::PresentMode::Fifo)
-            .or_else(|| caps.present_modes.iter().copied().find(|m| *m == wgpu::PresentMode::Mailbox))
-            .unwrap_or(wgpu::PresentMode::Immediate);
+        let present_mode = pick_present_mode(&caps, present_mode);
         let alpha_mode = caps.alpha_modes[0];
 
         // Pick MSAA sample count, honoring the requested value. The depth
@@ -1701,6 +1707,19 @@ impl WgpuSurfaceBackend {
         pollster::block_on(Self::new_async_with_msaa(window, msaa_samples))
     }
 
+    #[cfg(all(feature = "winit-surface", not(target_arch = "wasm32")))]
+    pub fn new_with_options(
+        window: Arc<winit::window::Window>,
+        msaa_samples: u32,
+        present_mode: PresentModePref,
+    ) -> anyhow::Result<WgpuSurfaceBackend> {
+        pollster::block_on(Self::new_async_with_options(
+            window,
+            msaa_samples,
+            present_mode,
+        ))
+    }
+
     #[cfg(all(feature = "winit-surface", target_arch = "wasm32"))]
     pub fn new(_window: Arc<winit::window::Window>) -> anyhow::Result<WgpuSurfaceBackend> {
         anyhow::bail!("Use WgpuSurfaceBackend::new_async(window).await on wasm32")
@@ -1712,6 +1731,50 @@ impl WgpuSurfaceBackend {
         _msaa_samples: u32,
     ) -> anyhow::Result<WgpuSurfaceBackend> {
         anyhow::bail!("Use WgpuSurfaceBackend::new_async_with_msaa(window, msaa).await on wasm32")
+    }
+
+    #[cfg(all(feature = "winit-surface", target_arch = "wasm32"))]
+    pub fn new_with_options(
+        _window: Arc<winit::window::Window>,
+        _msaa_samples: u32,
+        _present_mode: PresentModePref,
+    ) -> anyhow::Result<WgpuSurfaceBackend> {
+        anyhow::bail!(
+            "Use WgpuSurfaceBackend::new_async_with_options(window, msaa, mode).await on wasm32"
+        )
+    }
+}
+
+/// Pick the swapchain present mode honoring `pref`, falling back to an "auto"
+/// Fifo-first selection when the preferred mode is unavailable.
+fn pick_present_mode(caps: &wgpu::SurfaceCapabilities, pref: PresentModePref) -> wgpu::PresentMode {
+    let auto = || {
+        caps.present_modes
+            .iter()
+            .copied()
+            .find(|m| *m == wgpu::PresentMode::Fifo)
+            .or_else(|| {
+                caps.present_modes
+                    .iter()
+                    .copied()
+                    .find(|m| *m == wgpu::PresentMode::Mailbox)
+            })
+            .unwrap_or(wgpu::PresentMode::Immediate)
+    };
+    match pref {
+        PresentModePref::Auto => auto(),
+        PresentModePref::Fifo if caps.present_modes.contains(&wgpu::PresentMode::Fifo) => {
+            wgpu::PresentMode::Fifo
+        }
+        PresentModePref::Mailbox if caps.present_modes.contains(&wgpu::PresentMode::Mailbox) => {
+            wgpu::PresentMode::Mailbox
+        }
+        PresentModePref::Immediate
+            if caps.present_modes.contains(&wgpu::PresentMode::Immediate) =>
+        {
+            wgpu::PresentMode::Immediate
+        }
+        _ => auto(),
     }
 }
 

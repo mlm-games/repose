@@ -621,10 +621,12 @@ impl ApplicationHandler<()> for App {
         let backend_cell = self.backend.clone();
         let window_for_async = window.clone();
         let msaa_samples = self.options.common.msaa_samples;
+        let present_mode = self.options.common.present_mode;
         spawn_local(async move {
-            match repose_render_wgpu::WgpuBackend::new_async_with_msaa(
+            match repose_render_wgpu::WgpuBackend::new_async_with_options(
                 window_for_async.clone(),
                 msaa_samples,
+                present_mode,
             )
             .await
             {

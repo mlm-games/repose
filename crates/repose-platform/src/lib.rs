@@ -348,11 +348,21 @@ pub struct ReposeOptions {
     /// MSAA sample count for the UI surface pass. The renderer falls back to
     /// the largest supported count <= this value.
     pub msaa_samples: u32,
+    /// CPU-side frame rate cap. `None` = uncapped: redraws are issued as fast
+    /// as the event loop allows (the GPU may still vsync via the present
+    /// mode). eg: `Some(60.0)`, `Some(30.0)`.
+    pub max_fps: Option<f32>,
+    /// Preferred GPU present mode for the swapchain.
+    pub present_mode: PresentModePref,
 }
 
 impl Default for ReposeOptions {
     fn default() -> Self {
-        Self { msaa_samples: 4 }
+        Self {
+            msaa_samples: 4,
+            max_fps: None,
+            present_mode: PresentModePref::Auto,
+        }
     }
 }
 
@@ -441,6 +451,8 @@ pub fn run_desktop_app_with_config(
         rt: ReposeRuntime,
         inspector: Option<repose_devtools::Inspector>,
         msaa_samples: u32,
+        max_fps: Option<f32>,
+        present_mode: PresentModePref,
         window_title: String,
         window_size: (u32, u32),
 
@@ -515,6 +527,8 @@ pub fn run_desktop_app_with_config(
                     None
                 },
                 msaa_samples: config.common.msaa_samples,
+                max_fps: config.common.max_fps,
+                present_mode: config.common.present_mode,
                 window_title: config.window_title,
                 window_size: config.window_size,
                 pending_dropped_files: Vec::new(),
@@ -549,6 +563,18 @@ pub fn run_desktop_app_with_config(
             self.redraw_requested.set(true);
             repose_core::request_frame();
             rc::request_redraw(&self.window);
+        }
+
+        /// Minimum time between CPU-side redraw requests derived from
+        /// `max_fps`. `Duration::ZERO` means uncapped (redraw immediately).
+        fn frame_interval(&self) -> web_time::Duration {
+            match self.max_fps.filter(|f| *f > 0.0) {
+                Some(fps) => {
+                    let secs = (1.0 / fps as f64).clamp(0.0, 1.0);
+                    web_time::Duration::from_secs_f64(secs)
+                }
+                None => web_time::Duration::ZERO,
+            }
         }
 
         // Ensure caret is visible after edits/moves (all units in px)
@@ -680,9 +706,10 @@ pub fn run_desktop_app_with_config(
                         let sf = w.scale_factor() as f32;
                         self.rt.set_viewport_and_scale(size.width, size.height, sf);
 
-                        match repose_render_wgpu::WgpuBackend::new_with_msaa(
+                        match repose_render_wgpu::WgpuBackend::new_with_options(
                             w.clone(),
                             self.msaa_samples,
+                            self.present_mode,
                         ) {
                             Ok(b) => {
                                 self.backend = Some(b);
@@ -1398,9 +1425,10 @@ pub fn run_desktop_app_with_config(
             if WINDOW_VISIBLE.load(Ordering::Relaxed) && self.backend.is_none() {
                 if let Some(w) = &self.window {
                     log::info!("about_to_wait: recreating GPU backend");
-                    match repose_render_wgpu::WgpuBackend::new_with_msaa(
+                    match repose_render_wgpu::WgpuBackend::new_with_options(
                         w.clone(),
                         self.msaa_samples,
+                        self.present_mode,
                     ) {
                         Ok(b) => self.backend = Some(b),
                         Err(e) => log::error!("about_to_wait: failed to recreate backend: {e:?}"),
@@ -1418,7 +1446,7 @@ pub fn run_desktop_app_with_config(
             // Present-only: texture was updated, redraw last cached scene without compose.
             if !self.pending_redraw && needs_present && self.rt.frame_cache.is_some() {
                 let now = Instant::now();
-                let interval = web_time::Duration::from_millis(16);
+                let interval = self.frame_interval();
                 if now.saturating_duration_since(self.last_redraw) >= interval {
                     rc::request_redraw(&self.window);
                     self.last_redraw = now;
@@ -1450,7 +1478,7 @@ pub fn run_desktop_app_with_config(
             }
 
             let now = Instant::now();
-            let interval = web_time::Duration::from_millis(16);
+            let interval = self.frame_interval();
 
             if now.saturating_duration_since(self.last_redraw) >= interval {
                 self.pending_redraw = false;
