@@ -690,7 +690,7 @@ fn button_impl(
     enabled: bool,
     interaction_source: Option<MutableInteractionSource>,
 ) -> View {
-    let mut m = Modifier::new().height(height).min_width(48.0);
+    let mut m = Modifier::new().min_height(height).min_width(48.0);
     if let Some(bg) = container_color {
         m = m.background(bg);
     }
@@ -715,8 +715,8 @@ fn button_impl(
         .padding_values(PaddingValues {
             left: padding_left,
             right: padding_right,
-            top: 0.0,
-            bottom: 0.0,
+            top: 8.0,
+            bottom: 8.0,
         })
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER);
@@ -1021,12 +1021,12 @@ fn toggle_button_impl(
         content_color
     };
     let mut m = Modifier::new()
-        .height(height)
+        .min_height(height)
         .padding_values(PaddingValues {
             left: pad_left,
             right: pad_right,
-            top: 0.0,
-            bottom: 0.0,
+            top: 8.0,
+            bottom: 8.0,
         })
         .background(bg)
         .clip_rounded(shape_radius)
