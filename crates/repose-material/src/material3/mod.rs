@@ -410,8 +410,8 @@ pub fn FilterChip(
     let mut m = Modifier::new()
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
-            pressed: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
         .padding_values(PaddingValues {
@@ -500,8 +500,8 @@ pub fn ElevatedFilterChip(
     let mut m = Modifier::new()
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
-            pressed: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
         .state_elevation(config.elevation.to_state_elevation())
@@ -715,8 +715,8 @@ pub fn InputChip(
     let mut m = Modifier::new()
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
-            pressed: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
+            hovered: th.on_surface.with_alpha_f32(0.08),
+            pressed: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
         .padding_values(PaddingValues {

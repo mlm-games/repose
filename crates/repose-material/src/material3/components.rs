@@ -690,7 +690,7 @@ fn button_impl(
     enabled: bool,
     interaction_source: Option<MutableInteractionSource>,
 ) -> View {
-    let mut m = Modifier::new().min_height(height).min_width(48.0);
+    let mut m = Modifier::new().min_height(height).min_width(48.0).flex_shrink(0.0);
     if let Some(bg) = container_color {
         m = m.background(bg);
     }
