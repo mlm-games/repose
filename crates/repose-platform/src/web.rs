@@ -1059,6 +1059,8 @@ impl ApplicationHandler<()> for App {
                 // Drain upload commands queued during compose before presenting
                 self.drain_render_commands();
 
+                self.rt.reconcile_hover_from_mouse_pos(&frame);
+
                 let output = repose_app::FrameOutput {
                     scene: frame.scene.clone(),
                     hit_regions: frame.hit_regions.clone(),
@@ -1087,10 +1089,9 @@ impl ApplicationHandler<()> for App {
                     backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
                 }
 
-                self.rt.reconcile_hover_from_mouse_pos(&frame);
-                repose_core::dnd::set_dnd_frame(Some(frame.clone()));
+                self.rt.cache_frame(frame.clone());
+                repose_core::dnd::set_dnd_frame(Some(frame));
                 repose_core::dnd::set_dnd_scale(scale);
-                self.rt.cache_frame(frame);
                 self.last_redraw = web_time::Instant::now();
 
                 if self.options.continuous_redraw {

@@ -605,6 +605,11 @@ impl ReposeRuntime {
             .find(|h| h.rect.contains(pos))
             .map(|h| h.id);
 
+        self.cursor = new_hover
+            .and_then(|id| new_frame.hit_regions.iter().find(|h| h.id == id))
+            .and_then(|h| h.cursor)
+            .or(Some(CursorIcon::Default));
+
         if new_hover == self.hover_id {
             if changed {
                 request_frame();
