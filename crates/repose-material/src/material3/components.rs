@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use web_time::Duration;
@@ -10,7 +10,8 @@ use repose_core::animation::{AnimationSpec, CubicBezier, Easing, KeyframesSpec, 
 use repose_core::*;
 use repose_ui::anim::{animate_color, animate_f32};
 use repose_ui::textfield::{TextMeasureConfig, measure_text};
-use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt};
+use repose_ui::TextFieldConfig as BasicTextFieldConfig;
+use repose_ui::{BasicTextField, Box, Column, Row, Text, TextFieldState, TextStyle, ViewExt};
 
 use super::*;
 
@@ -2909,6 +2910,10 @@ pub struct OutlinedTextFieldConfig {
     pub on_submit: Option<Rc<dyn Fn(String)>>,
     /// Colors for all text field UI elements.
     pub colors: Option<TextFieldColors>,
+    /// Optional external focus tracker. When `None`, an internal focus tracker
+    /// is created (keyed by label). Pass a tracker to synchronize focus state
+    /// (e.g. to avoid overriding external text while the user is editing).
+    pub focus_tracker: Option<Rc<Cell<bool>>>,
 }
 
 impl Default for OutlinedTextFieldConfig {
@@ -2923,6 +2928,7 @@ impl Default for OutlinedTextFieldConfig {
             enabled: true,
             on_submit: None,
             colors: None,
+            focus_tracker: None,
         }
     }
 }
@@ -2954,8 +2960,7 @@ pub fn OutlinedTextField(
     on_value_change: impl Fn(String) + 'static,
     config: OutlinedTextFieldConfig,
 ) -> View {
-    let th = theme();
-    let label_str: Option<Rc<str>> = config.label.map(Rc::from);
+    let label_str: Option<Rc<str>> = config.label.clone().map(Rc::from);
     let has_label = label_str.is_some();
 
     // Unique animation key per label to avoid conflicts when multiple fields exist
@@ -2966,12 +2971,154 @@ pub fn OutlinedTextField(
 
     // Persistent focus tracker - set by layout/paint when this field is focused,
     // read here on the next frame. This gives a one-frame delay on tap-to-float,
-    // which is negligible at 60fps.
-    let focus_tracker: Rc<Cell<bool>> =
-        remember_with_key(format!("otf_focus_{}", anim_key), || Cell::new(false));
+    // which is negligible at 60fps. An external tracker takes precedence.
+    let focus_tracker: Rc<Cell<bool>> = match config.focus_tracker.clone() {
+        Some(ft) => ft,
+        None => remember_with_key(format!("otf_focus_{}", anim_key), || Cell::new(false)),
+    };
     let is_focused = focus_tracker.get();
     let should_float = !value.is_empty() || is_focused;
 
+    let tf_placeholder = if has_label {
+        if should_float {
+            config.placeholder.clone().unwrap_or_default()
+        } else {
+            String::new()
+        }
+    } else {
+        config.placeholder.clone().unwrap_or_default()
+    };
+
+    let text_input = View::new(0, ViewKind::Box)
+        .modifier(
+            Modifier::new().flex_grow(1.0).text_input(TextInputConfig {
+                hint: tf_placeholder,
+                multiline: false,
+                on_change: Some(Rc::new(on_value_change) as _),
+                on_submit: config.on_submit.clone().map(|f| {
+                    let f = f.clone();
+                    Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
+                }),
+                focus_tracker: Some(focus_tracker),
+                value: value.clone(),
+                visual_transformation: None,
+                keyboard_type: Default::default(),
+                capitalization: Default::default(),
+                ime_action: Default::default(),
+                enabled: config.enabled,
+                read_only: false,
+                max_lines: None,
+                min_lines: 1,
+                cursor_color: config
+                    .colors
+                    .as_ref()
+                    .map(|c| c.cursor_color(config.is_error)),
+                on_text_layout: None,
+                text_style: None,
+                keyboard_actions: None,
+                interaction_source: None,
+                line_limits: None,
+            }),
+        )
+        .semantics(Semantics {
+            role: Role::TextField,
+            label: None,
+            focused: false,
+            enabled: true,
+            selectable_group: false,
+        });
+
+    outlined_field_decoration(
+        modifier,
+        anim_key,
+        label_str,
+        &config,
+        is_focused,
+        !value.is_empty(),
+        text_input,
+    )
+}
+
+/// State-based M3 Outlined Text Field.
+pub fn OutlinedTextFieldState(
+    modifier: Modifier,
+    state: Rc<RefCell<TextFieldState>>,
+    on_value_change: impl Fn(String) + 'static,
+    config: OutlinedTextFieldConfig,
+) -> View {
+    let label_str: Option<Rc<str>> = config.label.clone().map(Rc::from);
+    let has_label = label_str.is_some();
+
+    // Unique animation key per label to avoid conflicts when multiple fields exist
+    let anim_key = match &label_str {
+        Some(l) => format!("otf_{}", &l[..l.len().min(32)]),
+        None => "otf_nolabel".into(),
+    };
+
+    let focus_tracker: Rc<Cell<bool>> = match config.focus_tracker.clone() {
+        Some(ft) => ft,
+        None => remember_with_key(format!("otf_focus_{}", anim_key), || Cell::new(false)),
+    };
+    let is_focused = focus_tracker.get();
+    let has_content = !state.borrow().text.is_empty();
+    let should_float = has_content || is_focused;
+
+    // Placeholder shows when there's no label, or when label is floating (focused/has content)
+    let tf_placeholder = if has_label {
+        if should_float {
+            config.placeholder.clone().unwrap_or_default()
+        } else {
+            String::new()
+        }
+    } else {
+        config.placeholder.clone().unwrap_or_default()
+    };
+
+    let text_input = BasicTextField(
+        state,
+        Modifier::new().flex_grow(1.0),
+        tf_placeholder,
+        BasicTextFieldConfig {
+            line_limits: if config.single_line {
+                TextFieldLineLimits::SingleLine
+            } else {
+                TextFieldLineLimits::MultiLine {
+                    min_height_in_lines: 1,
+                    max_height_in_lines: usize::MAX,
+                }
+            },
+            on_change: Some(Rc::new(on_value_change)),
+            on_submit: config.on_submit.clone(),
+            focus_tracker: Some(focus_tracker),
+            enabled: config.enabled,
+            ..Default::default()
+        },
+    );
+
+    outlined_field_decoration(
+        modifier,
+        anim_key,
+        label_str,
+        &config,
+        is_focused,
+        has_content,
+        text_input,
+    )
+}
+
+fn outlined_field_decoration(
+    modifier: Modifier,
+    anim_key: String,
+    label_str: Option<Rc<str>>,
+    config: &OutlinedTextFieldConfig,
+    is_focused: bool,
+    has_content: bool,
+    text_input: View,
+) -> View {
+    let th = theme();
+    let has_label = label_str.is_some();
+
+    let should_float = has_content || is_focused;
     let float_t = animate_f32(
         anim_key.clone(),
         if should_float { 1.0 } else { 0.0 },
@@ -3031,17 +3178,6 @@ pub fn OutlinedTextField(
     let label_end_x = if has_label { 20.0 } else { 0.0 };
     let label_x = label_start_x - (label_start_x - label_end_x) * float_t;
 
-    // Placeholder shows when there's no label, or when label is floating (focused/has content)
-    let tf_placeholder = if has_label {
-        if should_float {
-            config.placeholder.unwrap_or_default()
-        } else {
-            String::new()
-        }
-    } else {
-        config.placeholder.unwrap_or_default()
-    };
-
     // Container padding matches reference: 8dp top/bottom with label, 16dp without
     let (top_pad, bottom_pad) = if has_label { (8.0, 8.0) } else { (16.0, 16.0) };
 
@@ -3100,46 +3236,9 @@ pub fn OutlinedTextField(
             })
             .align_items(AlignItems::CENTER))
         .child((
-            config.leading_icon.unwrap_or(Box(Modifier::new())),
-            View::new(0, ViewKind::Box)
-                .modifier(
-                    Modifier::new().flex_grow(1.0).text_input(TextInputConfig {
-                        hint: tf_placeholder,
-                        multiline: false,
-                        on_change: Some(Rc::new(on_value_change) as _),
-                        on_submit: config.on_submit.clone().map(|f| {
-                            let f = f.clone();
-                            Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
-                        }),
-                        focus_tracker: Some(focus_tracker.clone()),
-                        value: value.clone(),
-                        visual_transformation: None,
-                        keyboard_type: Default::default(),
-                        capitalization: Default::default(),
-                        ime_action: Default::default(),
-                        enabled: config.enabled,
-                        read_only: false,
-                        max_lines: None,
-                        min_lines: 1,
-                        cursor_color: config
-                            .colors
-                            .as_ref()
-                            .map(|c| c.cursor_color(config.is_error)),
-                        on_text_layout: None,
-                        text_style: None,
-                        keyboard_actions: None,
-                        interaction_source: None,
-                        line_limits: None,
-                    }),
-                )
-                .semantics(Semantics {
-                    role: Role::TextField,
-                    label: None,
-                    focused: false,
-                    enabled: true,
-                    selectable_group: false,
-                }),
-            config.trailing_icon.unwrap_or(Box(Modifier::new())),
+            config.leading_icon.clone().unwrap_or(Box(Modifier::new())),
+            text_input,
+            config.trailing_icon.clone().unwrap_or(Box(Modifier::new())),
         )),
         // Floating label -> plain text, no background chip (matches M3 reference)
         if let Some(lbl) = label_str {
