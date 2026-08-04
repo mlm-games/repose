@@ -1,6 +1,6 @@
 use crate::{
     BaselineShift, Brush, ClipOp, Color, DrawStyle, FontStyle, FontSynthesis, FontWeight, Modifier,
-    Rect, TextAlign, TextDecoration, TextDirection, TextSpan, Transform,
+    Rect, TextAlign, TextDecoration, TextDirection, TextSpan, Transform, Vec2,
 };
 use std::{fmt::Formatter, rc::Rc, sync::Arc};
 
@@ -356,6 +356,89 @@ pub enum SceneNode {
         color: Color,
         cap: StrokeCap,
     },
+    /// Pre-tessellated vector mesh (fill or stroke geometry produced by the
+    /// host, e.g. lyon tessellation). Vertices live in the mesh's own local
+    /// space; `transform` is a 2x3 affine that maps local -> world pixels and
+    /// is applied in the vertex shader. The current scene `PushTransform`
+    /// stack is folded in on top of `transform`.
+    VectorMesh {
+        mesh: Arc<VectorMeshData>,
+        transform: [f32; 6],
+        paint: PaintDesc,
+        /// Reserved for explicit clip assignment; clipping is otherwise
+        /// structural via `PushVectorClip`/`PopVectorClip`.
+        clip: Option<u32>,
+        blend: BlendMode,
+    },
+    /// Screen-space overlays (handles, rubber bands, playhead, …). Each mesh
+    /// is positioned in final device pixels and is *not* affected by the
+    /// world `PushTransform` stack — emit these outside the viewport's world
+    /// transform scope.
+    VectorOverlay {
+        meshes: Arc<[VectorMeshData]>,
+    },
+    /// Start a vector clip: the mesh is rendered into the stencil buffer
+    /// (increment) and subsequent content is masked to it. Mirrors the
+    /// rect-based `PushClip` but for arbitrary tessellated masks.
+    PushVectorClip {
+        mesh: Arc<VectorMeshData>,
+    },
+    /// End a vector clip opened by `PushVectorClip`.
+    PopVectorClip,
+}
+
+/// Shared vertex/index buffers for a tessellated vector mesh.
+#[derive(Clone, Debug, Default)]
+pub struct VectorMeshData {
+    pub vertices: Arc<[VectorVertex]>,
+    pub indices: Arc<[u32]>,
+}
+
+/// Pre-tessellated vertex: local position, premultiplied-linear color, and a
+/// free-form uv channel (unused for solid fills, reserved for texture/gradient
+/// sampling).
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(C)]
+pub struct VectorVertex {
+    pub pos: [f32; 2],
+    pub color: [f32; 4],
+    pub uv: [f32; 2],
+}
+
+/// How a `VectorMesh` is painted.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
+pub enum PaintDesc {
+    /// Use per-vertex color.
+    Solid,
+    /// Two-stop linear gradient in the mesh's local space.
+    Linear {
+        start: Vec2,
+        end: Vec2,
+        start_color: Color,
+        end_color: Color,
+    },
+}
+
+/// Blend mode for a `VectorMesh`. Only `Alpha` (premultiplied alpha) is wired
+/// into the renderer today; the remaining variants are reserved.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum BlendMode {
+    /// Standard premultiplied alpha blending.
+    Alpha,
+    /// Additive (screen-space light). Not yet implemented.
+    Add,
+    /// Multiply. Not yet implemented.
+    Multiply,
+    /// Overlay. Not yet implemented.
+    Overlay,
+}
+
+impl Default for BlendMode {
+    fn default() -> Self {
+        BlendMode::Alpha
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

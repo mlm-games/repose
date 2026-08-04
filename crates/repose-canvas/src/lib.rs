@@ -30,6 +30,25 @@ pub enum DrawCommand {
         color: Color,
         size: f32,
     },
+    /// Pre-tessellated vector mesh (fill or stroke) in mesh-local space.
+    /// `transform` is a 2x3 affine mapping local -> world pixels and is applied
+    /// in the vertex shader.
+    VectorMesh {
+        mesh: Arc<VectorMeshData>,
+        transform: [f32; 6],
+        paint: PaintDesc,
+        clip: Option<u32>,
+        blend: BlendMode,
+    },
+    /// Screen-space overlays drawn in final device pixels, unaffected by the
+    /// world transform.
+    VectorOverlay {
+        meshes: Arc<[VectorMeshData]>,
+    },
+    /// Begin a stencil clip from an arbitrary tessellated mask.
+    PushVectorClip { mesh: Arc<VectorMeshData> },
+    /// End a stencil clip opened by `PushVectorClip`.
+    PopVectorClip,
 }
 
 impl DrawScope {
@@ -87,6 +106,38 @@ impl DrawScope {
             color,
             size,
         });
+    }
+
+    /// Draw a pre-tessellated vector mesh. `transform` maps mesh-local
+    /// coordinates to world pixels as a 2x3 affine `[m00, m10, m01, m11, tx,
+    /// ty]` (i.e. `out = M * local + t`).
+    pub fn draw_vector_mesh(
+        &mut self,
+        mesh: Arc<VectorMeshData>,
+        transform: [f32; 6],
+        paint: PaintDesc,
+    ) {
+        self.commands.push(DrawCommand::VectorMesh {
+            mesh,
+            transform,
+            paint,
+            clip: None,
+            blend: BlendMode::Alpha,
+        });
+    }
+
+    /// Draw a screen-space overlay mesh in final device pixels.
+    pub fn draw_vector_overlay(&mut self, meshes: Arc<[VectorMeshData]>) {
+        self.commands.push(DrawCommand::VectorOverlay { meshes });
+    }
+
+    pub fn push_vector_clip(&mut self, mesh: Arc<VectorMeshData>) {
+        self.commands.push(DrawCommand::PushVectorClip { mesh });
+    }
+
+    /// Pop the most recent vector clip.
+    pub fn pop_vector_clip(&mut self) {
+        self.commands.push(DrawCommand::PopVectorClip);
     }
 }
 
@@ -184,6 +235,34 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                         url: None,
                         font_variation_settings: None,
                     });
+                }
+                DrawCommand::VectorMesh {
+                    mesh,
+                    transform,
+                    paint,
+                    clip,
+                    blend,
+                } => {
+                    scene.nodes.push(SceneNode::VectorMesh {
+                        mesh: mesh.clone(),
+                        transform: *transform,
+                        paint: *paint,
+                        clip: *clip,
+                        blend: *blend,
+                    });
+                }
+                DrawCommand::VectorOverlay { meshes } => {
+                    scene.nodes.push(SceneNode::VectorOverlay {
+                        meshes: meshes.clone(),
+                    });
+                }
+                DrawCommand::PushVectorClip { mesh } => {
+                    scene.nodes.push(SceneNode::PushVectorClip {
+                        mesh: mesh.clone(),
+                    });
+                }
+                DrawCommand::PopVectorClip => {
+                    scene.nodes.push(SceneNode::PopVectorClip);
                 }
             }
         }
