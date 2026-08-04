@@ -286,8 +286,28 @@ impl LayoutEngine {
         // Scope root nodes: use the root tree layout (has correct position + size after flexbox resolve).
         // Their children use the scope tree layout (positions relative to scope root).
         if self.scope_root_map.contains_key(&node_id) {
-            let tid = self.taffy_map[&node_id];
-            return self.taffy.layout(tid).unwrap().clone();
+            if let Some(&tid) = self.taffy_map.get(&node_id) {
+                return self.taffy.layout(tid).unwrap().clone();
+            }
+            // Nested scope root: the enclosing scope positions it via a leaf
+            // marker; inherit that layout so the subtree paints at the right
+            // spot instead of the nested scope's origin.
+            if let Some(parent_id) = self.tree.get(node_id).and_then(|n| n.parent) {
+                if let Some(outer_key) = self.node_to_scope.get(&parent_id) {
+                    if let Some(st) = self.scope_trees.get(outer_key) {
+                        if let Some(&tid) = st.taffy_map.get(&node_id) {
+                            return st.taffy.layout(tid).unwrap().clone();
+                        }
+                    }
+                }
+            }
+            if let Some(key) = self.node_to_scope.get(&node_id) {
+                if let Some(st) = self.scope_trees.get(key) {
+                    if let Some(&tid) = st.taffy_map.get(&node_id) {
+                        return st.taffy.layout(tid).unwrap().clone();
+                    }
+                }
+            }
         }
         if let Some(key) = self.node_to_scope.get(&node_id) {
             if let Some(st) = self.scope_trees.get(key) {

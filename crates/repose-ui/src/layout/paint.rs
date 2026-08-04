@@ -493,8 +493,7 @@ impl LayoutEngine {
             ) || modifier.animate_content_size.is_some())
             && !push_round_clip
             && modifier.clip_rect.is_none()
-            && rect.w > 0.5
-            && rect.h > 0.5;
+            && (rect.w > 0.0 || rect.h > 0.0);
         if push_bounds_clip {
             scene.nodes.push(SceneNode::PushClip {
                 rect,

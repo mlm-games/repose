@@ -145,16 +145,15 @@ impl LayoutEngine {
         let scroll_axis = node.modifier.scroll.as_ref().map(|s| s.axis());
         drop(node);
 
-        // Recurse into children but stop at nested scope boundaries
-        // Must collect entire result before holding scope_trees mutably
-        let non_scope_children: Vec<NodeId> = children
+        let child_tids: Vec<taffy::NodeId> = children
             .iter()
-            .filter(|&c| !self.scope_root_map.contains_key(c))
-            .copied()
-            .collect();
-        let child_tids: Vec<taffy::NodeId> = non_scope_children
-            .iter()
-            .map(|&c| self.update_scope_taffy_node(scope_key, c, font_px))
+            .map(|&c| {
+                if c != node_id && self.scope_root_map.contains_key(&c) {
+                    self.scope_leaf_marker(scope_key, c, font_px)
+                } else {
+                    self.update_scope_taffy_node(scope_key, c, font_px)
+                }
+            })
             .collect();
 
         let is_root = self.scope_root_map.contains_key(&node_id);
@@ -192,6 +191,31 @@ impl LayoutEngine {
             if let Some(axis) = scroll_axis {
                 Self::apply_scroll_content_styles(axis, &child_tids, &mut st.taffy);
             }
+            t_id
+        }
+    }
+
+    fn scope_leaf_marker(
+        &mut self,
+        scope_key: &str,
+        node_id: NodeId,
+        font_px: &dyn Fn(f32) -> f32,
+    ) -> taffy::NodeId {
+        let _ = self.ensure_view_id(node_id);
+        let node = self.tree.get(node_id).unwrap();
+        let style = self.style_from_node(node, font_px);
+        let ctx = self.context_from_node(node);
+        drop(node);
+        let st = self.scope_trees.get_mut(scope_key).unwrap();
+        if let Some(&t_id) = st.taffy_map.get(&node_id) {
+            let _ = st.taffy.set_style(t_id, style);
+            let _ = st.taffy.set_node_context(t_id, Some(ctx));
+            let _ = st.taffy.set_children(t_id, &[]);
+            t_id
+        } else {
+            let t_id = st.taffy.new_leaf_with_context(style, ctx).unwrap();
+            st.taffy_map.insert(node_id, t_id);
+            st.reverse_map.insert(t_id, node_id);
             t_id
         }
     }

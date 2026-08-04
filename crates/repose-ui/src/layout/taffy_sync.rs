@@ -75,6 +75,16 @@ impl LayoutEngine {
                 // Scope-internal, non-root → handled by sync_scope_trees
                 continue;
             }
+            if self.scope_root_map.contains_key(&node_id)
+                && self
+                    .tree
+                    .get(node_id)
+                    .and_then(|n| n.parent)
+                    .map(|p| self.node_to_scope.contains_key(&p))
+                    .unwrap_or(false)
+            {
+                continue;
+            }
             self.update_taffy_node(node_id, font_px);
         }
 
