@@ -24,6 +24,7 @@ pub mod scroll;
 pub mod scroll_features;
 pub mod staggered_grid;
 pub mod text;
+pub mod vector_mesh;
 pub mod widgets;
 pub mod windows;
 
@@ -55,5 +56,6 @@ pub fn render(ctx: &PageCtx, route: Route) -> View {
         Route::Windows => windows::screen(ctx.global_windows.clone()),
         Route::M3 => m3::screen(ctx.overlay.clone()),
         Route::Adaptive => adaptive::screen(),
+        Route::VectorMesh => vector_mesh::screen(),
     }
 }

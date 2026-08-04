@@ -45,8 +45,9 @@ pub use crate::text::{
     build_annotated_string,
 };
 pub use crate::view::{
-    BoxWithConstraintsScope, ImageFit, ImageHandle, Scene, SceneNode, SubcomposeScope,
-    TextExtraStyle, TextOverflow, View, ViewId, ViewKind,
+    BlendMode, PaintDesc, VectorMeshData, VectorVertex, BoxWithConstraintsScope, ImageFit,
+    ImageHandle, Scene, SceneNode, SubcomposeScope, TextExtraStyle, TextOverflow, View, ViewId,
+    ViewKind,
 };
 pub use taffy::{
     AlignContent, AlignItems, AlignSelf, FlexDirection, FlexWrap, JustifyContent, JustifyItems,

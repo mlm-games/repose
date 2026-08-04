@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::num::NonZero;
 #[cfg(feature = "winit-surface")]
 use std::sync::Arc;
 #[cfg(feature = "winit-surface")]
@@ -21,17 +22,23 @@ struct UploadRing {
     buf: wgpu::Buffer,
     cap: u64,
     head: u64,
+    usage: wgpu::BufferUsages,
 }
 
 impl UploadRing {
-    fn new(device: &wgpu::Device, label: &str, cap: u64) -> Self {
+    fn new(device: &wgpu::Device, label: &str, cap: u64, usage: wgpu::BufferUsages) -> Self {
         let buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(label),
             size: cap,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage,
             mapped_at_creation: false,
         });
-        Self { buf, cap, head: 0 }
+        Self {
+            buf,
+            cap,
+            head: 0,
+            usage,
+        }
     }
 
     fn reset(&mut self) {
@@ -47,7 +54,7 @@ impl UploadRing {
         self.buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("upload ring (grown)"),
             size: new_cap,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: self.usage,
             mapped_at_creation: false,
         });
         self.cap = new_cap;
@@ -274,8 +281,13 @@ struct Pipelines {
     clip_bin: wgpu::RenderPipeline,
     clip_dec: wgpu::RenderPipeline,
     slug: Option<wgpu::RenderPipeline>,
-    /// Tessellated vector mesh (fill/stroke).
+    /// Tessellated vector mesh (fill/stroke). Uses an `Equal` stencil compare
+    /// so world content is correctly masked to the active `PushVectorClip`
+    /// shape (outside any clip the stencil is 0 == ref 0, so it draws).
     mesh: wgpu::RenderPipeline,
+    /// Screen-space overlay meshes: `LessEqual` compare so they always draw
+    /// regardless of any active vector clip.
+    mesh_overlay: wgpu::RenderPipeline,
     /// Stencil increment for vector clips.
     mesh_clip_inc: wgpu::RenderPipeline,
     /// Stencil decrement for vector clips.
@@ -972,7 +984,11 @@ impl Pipelines {
             blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
             write_mask: wgpu::ColorWrites::ALL,
         };
-        let mesh = make_mesh_pipeline("mesh pipeline", stencil_for_content, &mesh_color_target);
+        let mut stencil_for_mesh = stencil_for_content.clone();
+        stencil_for_mesh.stencil.front.compare = wgpu::CompareFunction::Equal;
+        stencil_for_mesh.stencil.back.compare = wgpu::CompareFunction::Equal;
+        let mesh = make_mesh_pipeline("mesh pipeline", &stencil_for_mesh, &mesh_color_target);
+        let mesh_overlay = make_mesh_pipeline("mesh overlay pipeline", stencil_for_content, &mesh_color_target);
         let mesh_clip_inc = make_mesh_pipeline("mesh clip (inc) pipeline", stencil_for_clip_inc, clip_color_target);
         let mesh_clip_dec = make_mesh_pipeline("mesh clip (dec) pipeline", stencil_for_clip_dec, clip_color_target);
 
@@ -993,6 +1009,7 @@ impl Pipelines {
             clip_dec,
             slug,
             mesh,
+            mesh_overlay,
             mesh_clip_inc,
             mesh_clip_dec,
         }
@@ -1385,7 +1402,9 @@ fn combine_mesh_affine(current: &Transform, mesh: [f32; 6]) -> [f32; 6] {
     let r11 = cm10 * mm01 + cm11 * mm11;
     let tx = cm00 * mtx + cm01 * mty + current.translate_x;
     let ty = cm10 * mtx + cm11 * mty + current.translate_y;
-    [r00, r10, r01, r11, tx, ty]
+    // Canonical slot order consumed by `MeshUniform`/shader and `mesh_aabb`:
+    // [A, B, tx, C, D, ty] where world = [[A,B],[C,D]] * local + (tx, ty).
+    [r00, r01, tx, r10, r11, ty]
 }
 
 fn mesh_aabb(mesh: &repose_core::VectorMeshData, affine: [f32; 6]) -> repose_core::Rect {
@@ -1702,7 +1721,7 @@ impl WgpuSceneRenderer {
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: true,
-                    min_binding_size: None,
+                    min_binding_size: NonZero::new(MESH_UNIFORM_SLOT),
                 },
                 count: None,
             }],
@@ -1721,7 +1740,7 @@ impl WgpuSceneRenderer {
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                     buffer: &mesh_uniform_buf,
                     offset: 0,
-                    size: None,
+                    size: NonZero::new(MESH_UNIFORM_SLOT),
                 }),
             }],
         });
@@ -1763,25 +1782,25 @@ impl WgpuSceneRenderer {
         let slug_enabled = true;
 
         // Blur composite ring (for graphics-layer drop shadows)
-        let blur_ring = UploadRing::new(&device, "blur ring", 1024 * 1024);
+        let blur_ring = UploadRing::new(&device, "blur ring", 1024 * 1024, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
 
         // Atlases
         let atlas_mask = init_atlas_mask(&device);
         let atlas_color = init_atlas_color(&device);
 
         // Upload rings
-        let ring_rect = UploadRing::new(&device, "ring rect", 1 << 20);
-        let ring_border = UploadRing::new(&device, "ring border", 1 << 20);
-        let ring_ellipse = UploadRing::new(&device, "ring ellipse", 1 << 20);
-        let ring_ellipse_border = UploadRing::new(&device, "ring ellipse border", 1 << 20);
-        let ring_arc = UploadRing::new(&device, "ring arc", 1 << 20);
-        let ring_glyph_mask = UploadRing::new(&device, "ring glyph mask", 1 << 20);
-        let ring_glyph_color = UploadRing::new(&device, "ring glyph color", 1 << 20);
-        let ring_slug = UploadRing::new(&device, "ring slug", 1 << 22);
-        let ring_clip = UploadRing::new(&device, "ring clip", 1 << 16);
-        let ring_nv12 = UploadRing::new(&device, "ring nv12", 1 << 20);
-        let ring_mesh_verts = UploadRing::new(&device, "ring mesh verts", 1 << 22);
-        let ring_mesh_indices = UploadRing::new(&device, "ring mesh indices", 1 << 22);
+        let ring_rect = UploadRing::new(&device, "ring rect", 1 << 20, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
+        let ring_border = UploadRing::new(&device, "ring border", 1 << 20, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
+        let ring_ellipse = UploadRing::new(&device, "ring ellipse", 1 << 20, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
+        let ring_ellipse_border = UploadRing::new(&device, "ring ellipse border", 1 << 20, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
+        let ring_arc = UploadRing::new(&device, "ring arc", 1 << 20, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
+        let ring_glyph_mask = UploadRing::new(&device, "ring glyph mask", 1 << 20, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
+        let ring_glyph_color = UploadRing::new(&device, "ring glyph color", 1 << 20, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
+        let ring_slug = UploadRing::new(&device, "ring slug", 1 << 22, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
+        let ring_clip = UploadRing::new(&device, "ring clip", 1 << 16, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
+        let ring_nv12 = UploadRing::new(&device, "ring nv12", 1 << 20, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
+        let ring_mesh_verts = UploadRing::new(&device, "ring mesh verts", 1 << 22, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
+        let ring_mesh_indices = UploadRing::new(&device, "ring mesh indices", 1 << 22, wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST);
 
         // Placeholder textures
         let depth_stencil_tex = device.create_texture(&wgpu::TextureDescriptor {
@@ -3697,7 +3716,7 @@ impl WgpuSceneRenderer {
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                     buffer: &self.mesh_uniform_buf,
                     offset: 0,
-                    size: None,
+                    size: NonZero::new(MESH_UNIFORM_SLOT),
                 }),
             }],
         });
@@ -5310,7 +5329,7 @@ impl WgpuSceneRenderer {
                     }
 
                     Cmd::VectorOverlay { voff, vcnt, ioff, icnt, uoff } => {
-                        draw_indexed_mesh!(&pipes.mesh, uoff, voff, vcnt, ioff, icnt);
+                        draw_indexed_mesh!(&pipes.mesh_overlay, uoff, voff, vcnt, ioff, icnt);
                     }
 
                     Cmd::VectorClipPush { voff, vcnt, ioff, icnt, uoff, scissor } => {

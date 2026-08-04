@@ -69,6 +69,7 @@ pub enum Route {
     Scroll,
     ScrollFeatures,
     Canvas,
+    VectorMesh,
     Animation,
     Lists,
     Grid,
@@ -84,7 +85,7 @@ pub enum Route {
 
 impl Route {
     /// Single source of truth for display order.
-    pub const ALL: [Route; 18] = [
+    pub const ALL: [Route; 19] = [
         Route::Home,
         Route::M3,
         Route::Widgets,
@@ -92,6 +93,7 @@ impl Route {
         Route::Layout,
         Route::Text,
         Route::Canvas,
+        Route::VectorMesh,
         Route::Lists,
         Route::Grid,
         Route::StaggeredGrid,
@@ -123,6 +125,7 @@ impl Route {
             Route::Scroll => "Scroll",
             Route::ScrollFeatures => "Scroll Features",
             Route::Canvas => "Canvas",
+            Route::VectorMesh => "Vector Mesh",
             Route::Animation => "Animation",
             Route::Lists => "Lists",
             Route::Grid => "Grid",
@@ -146,6 +149,7 @@ impl Route {
             Route::Scroll => "Vertical and horizontal scroll.",
             Route::ScrollFeatures => "Overscroll, pull-to-refresh.",
             Route::Canvas => "Drawing primitives and scenes.",
+            Route::VectorMesh => "Tessellated meshes, gradients, vector clips.",
             Route::Animation => "Springs, tweens, crossfades.",
             Route::Lists => "Lazy columns, carousel, swipe.",
             Route::Grid => "Virtualized vertical grids.",
@@ -164,7 +168,9 @@ impl Route {
         match self {
             Route::Home => RouteGroup::Overview,
             Route::M3 | Route::Widgets => RouteGroup::Material,
-            Route::Adaptive | Route::Layout | Route::Text | Route::Canvas => RouteGroup::Foundation,
+            Route::Adaptive | Route::Layout | Route::Text | Route::Canvas | Route::VectorMesh => {
+                RouteGroup::Foundation
+            }
             Route::Lists
             | Route::Grid
             | Route::StaggeredGrid
@@ -185,6 +191,7 @@ impl Route {
             Route::Scroll => "Sc",
             Route::ScrollFeatures => "Fx",
             Route::Canvas => "Cv",
+            Route::VectorMesh => "Vm",
             Route::Animation => "Mo",
             Route::Lists => "Ls",
             Route::Grid => "Gr",

@@ -109,8 +109,9 @@ impl DrawScope {
     }
 
     /// Draw a pre-tessellated vector mesh. `transform` maps mesh-local
-    /// coordinates to world pixels as a 2x3 affine `[m00, m10, m01, m11, tx,
-    /// ty]` (i.e. `out = M * local + t`).
+    /// coordinates to world pixels as a 2x3 affine `[m00, m01, m10, m11, tx,
+    /// ty]` (a 2x2 row-major linear part, then translation; identity is
+    /// `[1.0, 0.0, 0.0, 1.0, 0.0, 0.0]`). `out = M * local + t`.
     pub fn draw_vector_mesh(
         &mut self,
         mesh: Arc<VectorMeshData>,
@@ -138,6 +139,21 @@ impl DrawScope {
     /// Pop the most recent vector clip.
     pub fn pop_vector_clip(&mut self) {
         self.commands.push(DrawCommand::PopVectorClip);
+    }
+}
+
+fn translate_mesh_data(m: &VectorMeshData, dx: f32, dy: f32) -> VectorMeshData {
+    let vertices: Arc<[VectorVertex]> = m
+        .vertices
+        .iter()
+        .map(|v| VectorVertex {
+            pos: [v.pos[0] + dx, v.pos[1] + dy],
+            ..*v
+        })
+        .collect();
+    VectorMeshData {
+        vertices,
+        indices: m.indices.clone(),
     }
 }
 
@@ -245,20 +261,31 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                 } => {
                     scene.nodes.push(SceneNode::VectorMesh {
                         mesh: mesh.clone(),
-                        transform: *transform,
+                        transform: [
+                            transform[0],
+                            transform[1],
+                            transform[2],
+                            transform[3],
+                            transform[4] + rect.x,
+                            transform[5] + rect.y,
+                        ],
                         paint: *paint,
                         clip: *clip,
                         blend: *blend,
                     });
                 }
                 DrawCommand::VectorOverlay { meshes } => {
+                    let translated: Vec<VectorMeshData> = meshes
+                        .iter()
+                        .map(|m| translate_mesh_data(m, rect.x, rect.y))
+                        .collect();
                     scene.nodes.push(SceneNode::VectorOverlay {
-                        meshes: meshes.clone(),
+                        meshes: translated.into(),
                     });
                 }
                 DrawCommand::PushVectorClip { mesh } => {
                     scene.nodes.push(SceneNode::PushVectorClip {
-                        mesh: mesh.clone(),
+                        mesh: Arc::new(translate_mesh_data(mesh, rect.x, rect.y)),
                     });
                 }
                 DrawCommand::PopVectorClip => {
