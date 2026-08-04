@@ -313,14 +313,6 @@ fn apply_size_fraction(
     let full_w = remember_mutable_with_key(format!("{measure_key}:w"), || 0.0f32);
     let full_h = remember_mutable_with_key(format!("{measure_key}:h"), || 0.0f32);
 
-    if measure_key.contains("online_advanced") {
-        eprintln!(
-            "[SIZE] key={measure_key} full_w={} full_h={}",
-            *full_w.get(),
-            *full_h.get()
-        );
-    }
-
     let have = match axis {
         SizeAxis::Vertical => *full_h.get() > 0.5,
         SizeAxis::Horizontal => *full_w.get() > 0.5,
