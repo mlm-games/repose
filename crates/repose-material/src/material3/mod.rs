@@ -1544,6 +1544,8 @@ fn render_dropdown_menu_content(
                 };
                 let on_click = item.on_click.clone();
                 let state = state.clone();
+                let item_source: Rc<MutableInteractionSource> =
+                    remember(MutableInteractionSource::new);
 
                 let mut modifier = Modifier::new()
                     .fill_max_width()
@@ -1564,6 +1566,7 @@ fn render_dropdown_menu_content(
                             pressed: th.on_surface.with_alpha_f32(0.12),
                             disabled: Color::TRANSPARENT,
                         })
+                        .interaction_source(&*item_source)
                         .clickable()
                         .on_click(move || {
                             on_click();

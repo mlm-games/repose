@@ -1375,6 +1375,12 @@ pub fn ExtendedFAB(
         th.on_surface.with_alpha_f32(0.38)
     };
 
+    let source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
+
     let mut m = Modifier::new()
         .height(56.0)
         .min_width(80.0)
@@ -1395,6 +1401,7 @@ pub fn ExtendedFAB(
         })
         .align_items(AlignItems::CENTER);
 
+    m = m.interaction_source(&*source);
     if is_enabled {
         m = m.clickable().on_click(move || on_click());
     }
