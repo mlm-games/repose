@@ -1183,13 +1183,6 @@ pub fn AnimatedVisibility(visible: bool, content: View, config: AnimatedVisibili
     let version = remember_with_key(format!("av_ver:{key}"), || RefCell::new(0u64));
     let prev = remember_with_key(format!("av_prev:{key}"), || RefCell::new(visible));
 
-    if key == "online_advanced" {
-        eprintln!(
-            "[AV] key={key} visible={visible} prev={:?}",
-            *prev.borrow()
-        );
-    }
-
     // Detect transition
     if *prev.borrow() != visible {
         if !visible {
