@@ -303,6 +303,39 @@ impl LayoutEngine {
 
         let is_hovered = interactions.hover == Some(view_id);
         let is_pressed = interactions.pressed.contains(&view_id);
+
+        let has_pointer = modifier.on_pointer_down.is_some()
+            || modifier.on_pointer_move.is_some()
+            || modifier.on_pointer_up.is_some()
+            || modifier.on_pointer_enter.is_some()
+            || modifier.on_pointer_leave.is_some()
+            || modifier.on_double_click.is_some()
+            || modifier.on_long_click.is_some();
+
+        let has_dnd = modifier.on_drag_start.is_some()
+            || modifier.on_drag_end.is_some()
+            || modifier.on_drag_enter.is_some()
+            || modifier.on_drag_over.is_some()
+            || modifier.on_drag_leave.is_some()
+            || modifier.on_drop.is_some();
+
+        let kind_handles_hit = modifier.text_input.is_some()
+            || modifier.scroll.is_some()
+            || matches!(kind, ViewKind::Expander { .. } | ViewKind::TreeRow { .. });
+
+        let needs_hit = !modifier.disabled
+            && (has_pointer
+                || modifier.click
+                || has_dnd
+                || modifier.on_action.is_some()
+                || modifier.focusable == Some(true)
+                || (modifier.input_blocker && !modifier.hit_passthrough));
+
+        // A node that creates its own hit region is its own interactive surface.
+        // Resolve hover/press from its own hit instead of inheriting the state of
+        // a clickable ancestor (e.g. a full-screen modal dimmer).
+        let owns_hit = needs_hit && !kind_handles_hit && !modifier.hit_passthrough;
+
         let effective_interaction = interaction_source.unwrap_or(view_id);
         let implicit_hovered = interactions.hover == Some(effective_interaction);
         let implicit_pressed = interactions.pressed.contains(&effective_interaction);
@@ -311,6 +344,8 @@ impl LayoutEngine {
                 src.collect_is_hovered() || is_hovered,
                 src.collect_is_pressed() || is_pressed,
             )
+        } else if owns_hit {
+            (is_hovered, is_pressed)
         } else {
             (implicit_hovered, implicit_pressed)
         };
@@ -631,34 +666,7 @@ impl LayoutEngine {
             }
         }
 
-        let has_pointer = modifier.on_pointer_down.is_some()
-            || modifier.on_pointer_move.is_some()
-            || modifier.on_pointer_up.is_some()
-            || modifier.on_pointer_enter.is_some()
-            || modifier.on_pointer_leave.is_some()
-            || modifier.on_double_click.is_some()
-            || modifier.on_long_click.is_some();
-
-        let has_dnd = modifier.on_drag_start.is_some()
-            || modifier.on_drag_end.is_some()
-            || modifier.on_drag_enter.is_some()
-            || modifier.on_drag_over.is_some()
-            || modifier.on_drag_leave.is_some()
-            || modifier.on_drop.is_some();
-
-        let kind_handles_hit = modifier.text_input.is_some()
-            || modifier.scroll.is_some()
-            || matches!(kind, ViewKind::Expander { .. } | ViewKind::TreeRow { .. });
-
-        let needs_hit = !modifier.disabled
-            && (has_pointer
-                || modifier.click
-                || has_dnd
-                || modifier.on_action.is_some()
-                || modifier.focusable == Some(true)
-                || (modifier.input_blocker && !modifier.hit_passthrough));
-
-        if needs_hit && !kind_handles_hit && !modifier.hit_passthrough {
+        if owns_hit {
             let focusable = modifier.focusable.unwrap_or(true);
             let mut hit = HitRegion {
                 id: view_id,
@@ -750,12 +758,11 @@ impl LayoutEngine {
             push_focus_ring(scene, rect, focus_radius(&modifier));
         }
 
-        let child_interaction_source =
-            if needs_hit && !kind_handles_hit && !modifier.hit_passthrough {
-                Some(view_id)
-            } else {
-                interaction_source
-            };
+        let child_interaction_source = if owns_hit {
+            Some(view_id)
+        } else {
+            interaction_source
+        };
 
         let mut next_sem_parent = sem_parent;
 

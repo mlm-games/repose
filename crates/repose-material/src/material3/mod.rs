@@ -407,6 +407,12 @@ pub fn FilterChip(
     };
     let shape = config.shape_radius;
 
+    let ch_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
+
     let mut m = Modifier::new()
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
@@ -422,6 +428,7 @@ pub fn FilterChip(
         })
         .background(bg)
         .clip_rounded(shape)
+        .interaction_source(&*ch_source)
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
@@ -497,6 +504,12 @@ pub fn ElevatedFilterChip(
     );
     let shape = config.shape_radius;
 
+    let ch_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
+
     let mut m = Modifier::new()
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
@@ -513,6 +526,7 @@ pub fn ElevatedFilterChip(
         })
         .background(bg)
         .clip_rounded(shape)
+        .interaction_source(&*ch_source)
         .then(config.modifier);
 
     if is_enabled {
@@ -567,6 +581,12 @@ pub fn SuggestionChip(
     };
     let shape = config.shape_radius;
 
+    let ch_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
+
     let mut m = Modifier::new()
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
@@ -582,6 +602,7 @@ pub fn SuggestionChip(
         })
         .background(bg)
         .clip_rounded(shape)
+        .interaction_source(&*ch_source)
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
@@ -623,6 +644,12 @@ pub fn ElevatedSuggestionChip(
     let leading_color = colors.leading_icon(is_enabled, false);
     let shape = config.shape_radius;
 
+    let ch_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
+
     let mut m = Modifier::new()
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
@@ -639,6 +666,7 @@ pub fn ElevatedSuggestionChip(
         })
         .background(bg)
         .clip_rounded(shape)
+        .interaction_source(&*ch_source)
         .then(config.modifier);
 
     if is_enabled {
@@ -712,6 +740,12 @@ pub fn InputChip(
     };
     let shape = config.shape_radius;
 
+    let ch_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
+
     let mut m = Modifier::new()
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
@@ -727,6 +761,7 @@ pub fn InputChip(
         })
         .background(bg)
         .clip_rounded(shape)
+        .interaction_source(&*ch_source)
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {

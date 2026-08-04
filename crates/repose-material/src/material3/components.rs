@@ -5299,6 +5299,11 @@ pub fn ElevatedAssistChip(
     let leading_color = colors.leading_icon(is_enabled, false);
     let trailing_color = colors.trailing_icon(is_enabled, false);
     let shape = config.shape_radius;
+    let ch_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
     let mut m = Modifier::new()
         .state_colors(StateColors {
@@ -5316,6 +5321,7 @@ pub fn ElevatedAssistChip(
         })
         .background(bg)
         .clip_rounded(shape)
+        .interaction_source(&*ch_source)
         .then(config.modifier);
 
     if is_enabled {
