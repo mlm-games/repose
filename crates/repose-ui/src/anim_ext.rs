@@ -8,32 +8,166 @@ use repose_core::*;
 use crate::anim::animate_f32_from;
 use crate::anim::animate_vec2_from;
 
+/// Vertical/horizontal alignment for expand/shrink transitions (0 = start, 1 = end).
+pub type ExpandFrom = f32;
+
 /// Describes how content enters the screen.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub enum EnterTransition {
     /// Fade from alpha 0 to 1.
-    #[default]
     FadeIn,
     /// Slide from the given offset (dx, dy in dp) to position (0,0).
     SlideIn { offset_x: f32, offset_y: f32 },
     /// Scale from initial to 1.0 combined with fade from 0 to 1.
     ScaleIn { initial: f32 },
-    /// Composite: multiple enter transitions applied together.
+    /// Animate layout height 0 -> full and clip (Compose `expandVertically`).
+    /// Participates in layout: siblings reflow as the height animates.
+    ExpandVertically {
+        /// Clip content to the animated bounds (Compose default: true).
+        clip: bool,
+        /// 0.0 = top, 0.5 = center, 1.0 = bottom.
+        expand_from: ExpandFrom,
+    },
+    /// Animate layout width 0 -> full and clip (Compose `expandHorizontally`).
+    ExpandHorizontally {
+        clip: bool,
+        /// 0.0 = start/left, 1.0 = end/right.
+        expand_from: ExpandFrom,
+    },
+    /// Expand both axes (Compose `expandIn`).
+    ExpandIn { clip: bool },
+    /// Multiple enter transitions applied together (Compose `+`).
     Composite(Vec<EnterTransition>),
 }
 
+impl Default for EnterTransition {
+    fn default() -> Self {
+        Self::fade_in().and(Self::expand_vertically())
+    }
+}
+
+impl EnterTransition {
+    pub fn fade_in() -> Self {
+        Self::FadeIn
+    }
+    pub fn expand_vertically() -> Self {
+        Self::ExpandVertically {
+            clip: true,
+            expand_from: 0.0,
+        }
+    }
+    pub fn expand_horizontally() -> Self {
+        Self::ExpandHorizontally {
+            clip: true,
+            expand_from: 0.0,
+        }
+    }
+    pub fn expand_in() -> Self {
+        Self::ExpandIn { clip: true }
+    }
+    pub fn slide_in(offset_x: f32, offset_y: f32) -> Self {
+        Self::SlideIn { offset_x, offset_y }
+    }
+    pub fn scale_in(initial: f32) -> Self {
+        Self::ScaleIn { initial }
+    }
+    /// Compose-style `this + other`.
+    pub fn and(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Composite(mut a), Self::Composite(b)) => {
+                a.extend(b);
+                Self::Composite(a)
+            }
+            (Self::Composite(mut a), b) => {
+                a.push(b);
+                Self::Composite(a)
+            }
+            (a, Self::Composite(mut b)) => {
+                let mut v = vec![a];
+                v.append(&mut b);
+                Self::Composite(v)
+            }
+            (a, b) => Self::Composite(vec![a, b]),
+        }
+    }
+}
+
 /// Describes how content exits the screen.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub enum ExitTransition {
     /// Fade from alpha 1 to 0.
-    #[default]
     FadeOut,
     /// Slide from position (0,0) to the given offset (dx, dy in dp).
     SlideOut { offset_x: f32, offset_y: f32 },
     /// Scale from 1.0 to target combined with fade from 1 to 0.
     ScaleOut { target: f32 },
-    /// Composite: multiple exit transitions applied together.
+    /// Animate layout height full -> 0 and clip (Compose `shrinkVertically`).
+    ShrinkVertically {
+        clip: bool,
+        /// 0.0 = toward top, 1.0 = toward bottom.
+        shrink_towards: ExpandFrom,
+    },
+    /// Animate layout width full -> 0 and clip (Compose `shrinkHorizontally`).
+    ShrinkHorizontally {
+        clip: bool,
+        shrink_towards: ExpandFrom,
+    },
+    /// Shrink both axes (Compose `shrinkOut`).
+    ShrinkOut { clip: bool },
+    /// Multiple exit transitions applied together (Compose `+`).
     Composite(Vec<ExitTransition>),
+}
+
+impl Default for ExitTransition {
+    fn default() -> Self {
+        Self::fade_out().and(Self::shrink_vertically())
+    }
+}
+
+impl ExitTransition {
+    pub fn fade_out() -> Self {
+        Self::FadeOut
+    }
+    pub fn shrink_vertically() -> Self {
+        Self::ShrinkVertically {
+            clip: true,
+            shrink_towards: 0.0,
+        }
+    }
+    pub fn shrink_horizontally() -> Self {
+        Self::ShrinkHorizontally {
+            clip: true,
+            shrink_towards: 0.0,
+        }
+    }
+    pub fn shrink_out() -> Self {
+        Self::ShrinkOut { clip: true }
+    }
+    pub fn slide_out(offset_x: f32, offset_y: f32) -> Self {
+        Self::SlideOut { offset_x, offset_y }
+    }
+    pub fn scale_out(target: f32) -> Self {
+        Self::ScaleOut { target }
+    }
+    /// Compose-style `this + other`.
+    pub fn and(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Composite(mut a), Self::Composite(b)) => {
+                a.extend(b);
+                Self::Composite(a)
+            }
+            (Self::Composite(mut a), b) => {
+                a.push(b);
+                Self::Composite(a)
+            }
+            (a, Self::Composite(mut b)) => {
+                let mut v = vec![a];
+                v.append(&mut b);
+                Self::Composite(v)
+            }
+            (a, b) => Self::Composite(vec![a, b]),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -142,6 +276,147 @@ fn transition_child_key(key: &str, version: u64, tag: &str) -> u64 {
     h.finish()
 }
 
+/// In-flow wrapper modifier for enter/exit transitions. Intentionally does NOT
+/// `fill_max_size()`: that would fight the parent `Column` (fill-max height on a
+/// flex child makes it grow to consume leftover space).
+fn flow_mod() -> Modifier {
+    Modifier::new().fill_max_width()
+}
+
+/// Which axis an expand/shrink transition animates.
+#[derive(Clone, Copy)]
+enum SizeAxis {
+    Vertical,
+    Horizontal,
+    Both,
+}
+
+/// Layout-true expand/shrink: the outer node reports an animated size (so
+/// siblings in the parent `Column` reflow smoothly) while the content keeps its
+/// natural measured size and is clipped to the animated bounds.
+///
+/// The natural size is measured via `on_size_changed` the first time the content
+/// is composed at full size; afterwards it is remembered (`measure_key`) and
+/// reused by both enter and exit animations.
+#[allow(clippy::too_many_arguments)]
+fn apply_size_fraction(
+    measure_key: &str,
+    anim_key: &str,
+    axis: SizeAxis,
+    from: f32,
+    to: f32,
+    clip: bool,
+    align: f32,
+    spec: AnimationSpec,
+    view: View,
+) -> View {
+    let full_w = remember_mutable_with_key(format!("{measure_key}:w"), || 0.0f32);
+    let full_h = remember_mutable_with_key(format!("{measure_key}:h"), || 0.0f32);
+
+    if measure_key.contains("online_advanced") {
+        eprintln!(
+            "[SIZE] key={measure_key} full_w={} full_h={}",
+            *full_w.get(),
+            *full_h.get()
+        );
+    }
+
+    let have = match axis {
+        SizeAxis::Vertical => *full_h.get() > 0.5,
+        SizeAxis::Horizontal => *full_w.get() > 0.5,
+        SizeAxis::Both => *full_w.get() > 0.5 && *full_h.get() > 0.5,
+    };
+
+    let progress = if have {
+        animate_f32_from(anim_key, from, to, spec)
+    } else {
+        from
+    };
+
+    let capture = {
+        let fw = full_w.clone();
+        let fh = full_h.clone();
+        move |sz: Vec2| {
+            if sz.x > 0.5 {
+                fw.set_neq(sz.x);
+            }
+            if sz.y > 0.5 {
+                fh.set_neq(sz.y);
+            }
+        }
+    };
+
+    let settled = from < to && progress >= 0.999;
+
+    let full_w = *full_w.get();
+    let full_h = *full_h.get();
+
+    let shown_w = match axis {
+        SizeAxis::Vertical => full_w,
+        SizeAxis::Horizontal | SizeAxis::Both => full_w * progress,
+    };
+    let shown_h = match axis {
+        SizeAxis::Horizontal => full_h,
+        SizeAxis::Vertical | SizeAxis::Both => full_h * progress,
+    };
+
+    let mut outer = Modifier::new().fill_max_width().flex_shrink(0.0);
+    if !have || settled {
+        // Not measured yet (first composition): lay out at natural size so
+        // `on_size_changed` can capture the true size, staying clipped. The
+        // companion fade keeps this frame invisible. When settled (enter done),
+        // release the fixed size and keep refreshing the measure while open.
+        outer = outer.on_size_changed(capture);
+    } else {
+        match axis {
+            SizeAxis::Vertical => {
+                outer = outer.height(shown_h.max(0.0));
+            }
+            SizeAxis::Horizontal => {
+                outer = outer.width(shown_w.max(0.0));
+            }
+            SizeAxis::Both => {
+                outer = outer.size(shown_w.max(0.0), shown_h.max(0.0));
+            }
+        }
+    }
+    if clip {
+        outer = outer.overflow(repose_core::Overflow::Clip);
+    }
+
+    // Inner keeps its full natural size and must not shrink into the animating
+    // window; the outer bounds clip hides the overflow. This is what makes the
+    // content get *clipped* (Compose `expandVertically`) instead of squashing.
+    let align = align.clamp(0.0, 1.0);
+    let ox = match axis {
+        SizeAxis::Vertical => 0.0,
+        SizeAxis::Horizontal | SizeAxis::Both => (shown_w - full_w) * align,
+    };
+    let oy = match axis {
+        SizeAxis::Horizontal => 0.0,
+        SizeAxis::Vertical | SizeAxis::Both => (shown_h - full_h) * align,
+    };
+    let mut inner = Modifier::new().fill_max_width().flex_shrink(0.0);
+    if have && !settled {
+        match axis {
+            SizeAxis::Vertical => {
+                inner = inner.height(full_h);
+            }
+            SizeAxis::Horizontal => {
+                inner = inner.width(full_w);
+            }
+            SizeAxis::Both => {
+                inner = inner.size(full_w, full_h);
+            }
+        }
+    }
+    if ox.abs() > 0.01 || oy.abs() > 0.01 {
+        inner = inner.translate(dp_to_px(ox), dp_to_px(oy));
+    }
+
+    Box(outer).child(Box(inner).child(view))
+}
+
 /// Animates between different content based on the `target_state`, with
 /// configurable enter and exit transitions.
 ///
@@ -240,6 +515,39 @@ fn apply_enter(
             let a = animate_f32_from(format!("{key}:v{version}:enter:fade"), 0.0, 1.0, *spec);
             Box(Modifier::new().fill_max_size().transform_origin(0.5, 0.5).scale(s).alpha(a)).child(view)
         }
+        EnterTransition::ExpandVertically { clip, expand_from } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:enter:expand_v"),
+            SizeAxis::Vertical,
+            0.0,
+            1.0,
+            *clip,
+            *expand_from,
+            *spec,
+            view,
+        ),
+        EnterTransition::ExpandHorizontally { clip, expand_from } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:enter:expand_h"),
+            SizeAxis::Horizontal,
+            0.0,
+            1.0,
+            *clip,
+            *expand_from,
+            *spec,
+            view,
+        ),
+        EnterTransition::ExpandIn { clip } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:enter:expand_in"),
+            SizeAxis::Both,
+            0.0,
+            1.0,
+            *clip,
+            0.0,
+            *spec,
+            view,
+        ),
         EnterTransition::Composite(transitions) => {
             let mut v = view;
             for t in transitions {
@@ -283,6 +591,39 @@ fn apply_enter_single(
             );
             Box(Modifier::new().fill_max_size().transform_origin(0.5, 0.5).scale(s)).child(view)
         }
+        EnterTransition::ExpandVertically { clip, expand_from } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:enter:expand_v"),
+            SizeAxis::Vertical,
+            0.0,
+            1.0,
+            *clip,
+            *expand_from,
+            *spec,
+            view,
+        ),
+        EnterTransition::ExpandHorizontally { clip, expand_from } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:enter:expand_h"),
+            SizeAxis::Horizontal,
+            0.0,
+            1.0,
+            *clip,
+            *expand_from,
+            *spec,
+            view,
+        ),
+        EnterTransition::ExpandIn { clip } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:enter:expand_in"),
+            SizeAxis::Both,
+            0.0,
+            1.0,
+            *clip,
+            0.0,
+            *spec,
+            view,
+        ),
         EnterTransition::Composite(inner) => {
             let mut v = view;
             for t in inner {
@@ -322,6 +663,39 @@ fn apply_exit(
             let a = animate_f32_from(format!("{key}:v{version}:exit:fade"), 1.0, 0.0, *spec);
             Box(Modifier::new().fill_max_size().transform_origin(0.5, 0.5).scale(s).alpha(a)).child(view)
         }
+        ExitTransition::ShrinkVertically { clip, shrink_towards } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:exit:expand_v"),
+            SizeAxis::Vertical,
+            1.0,
+            0.0,
+            *clip,
+            *shrink_towards,
+            *spec,
+            view,
+        ),
+        ExitTransition::ShrinkHorizontally { clip, shrink_towards } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:exit:expand_h"),
+            SizeAxis::Horizontal,
+            1.0,
+            0.0,
+            *clip,
+            *shrink_towards,
+            *spec,
+            view,
+        ),
+        ExitTransition::ShrinkOut { clip } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:exit:expand_in"),
+            SizeAxis::Both,
+            1.0,
+            0.0,
+            *clip,
+            0.0,
+            *spec,
+            view,
+        ),
         ExitTransition::Composite(transitions) => {
             let mut v = view;
             for t in transitions {
@@ -360,10 +734,342 @@ fn apply_exit_single(
             let s = animate_f32_from(format!("{key}:v{version}:exit:scale"), 1.0, *target, *spec);
             Box(Modifier::new().fill_max_size().transform_origin(0.5, 0.5).scale(s)).child(view)
         }
+        ExitTransition::ShrinkVertically { clip, shrink_towards } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:exit:expand_v"),
+            SizeAxis::Vertical,
+            1.0,
+            0.0,
+            *clip,
+            *shrink_towards,
+            *spec,
+            view,
+        ),
+        ExitTransition::ShrinkHorizontally { clip, shrink_towards } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:exit:expand_h"),
+            SizeAxis::Horizontal,
+            1.0,
+            0.0,
+            *clip,
+            *shrink_towards,
+            *spec,
+            view,
+        ),
+        ExitTransition::ShrinkOut { clip } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:exit:expand_in"),
+            SizeAxis::Both,
+            1.0,
+            0.0,
+            *clip,
+            0.0,
+            *spec,
+            view,
+        ),
         ExitTransition::Composite(inner) => {
             let mut v = view;
             for t in inner {
                 v = apply_exit_single(key, version, t, spec, v);
+            }
+            v
+        }
+    }
+}
+
+/// In-flow variant of `apply_enter`: fade/slide/scale wrappers use
+/// `fill_max_width` instead of `fill_max_size` so the entering view participates
+/// in its parent `Column`/`Row` instead of trying to fill it.
+fn apply_enter_inflow(
+    key: &str,
+    version: u64,
+    enter: &EnterTransition,
+    spec: &AnimationSpec,
+    view: View,
+) -> View {
+    match enter {
+        EnterTransition::FadeIn => {
+            let val = animate_f32_from(format!("{key}:v{version}:enter:fade"), 0.0, 1.0, *spec);
+            Box(flow_mod().alpha(val)).child(view)
+        }
+        EnterTransition::SlideIn { offset_x, offset_y } => {
+            let offset = animate_vec2_from(
+                format!("{key}:v{version}:enter:slide"),
+                Vec2 {
+                    x: dp_to_px(*offset_x),
+                    y: dp_to_px(*offset_y),
+                },
+                Vec2::default(),
+                *spec,
+            );
+            Box(flow_mod().translate_vec2(offset)).child(view)
+        }
+        EnterTransition::ScaleIn { initial } => {
+            let s = animate_f32_from(
+                format!("{key}:v{version}:enter:scale"),
+                *initial,
+                1.0,
+                *spec,
+            );
+            let a = animate_f32_from(format!("{key}:v{version}:enter:fade"), 0.0, 1.0, *spec);
+            Box(flow_mod().transform_origin(0.5, 0.5).scale(s).alpha(a)).child(view)
+        }
+        EnterTransition::ExpandVertically { clip, expand_from } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:enter:expand_v"),
+            SizeAxis::Vertical,
+            0.0,
+            1.0,
+            *clip,
+            *expand_from,
+            *spec,
+            view,
+        ),
+        EnterTransition::ExpandHorizontally { clip, expand_from } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:enter:expand_h"),
+            SizeAxis::Horizontal,
+            0.0,
+            1.0,
+            *clip,
+            *expand_from,
+            *spec,
+            view,
+        ),
+        EnterTransition::ExpandIn { clip } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:enter:expand_in"),
+            SizeAxis::Both,
+            0.0,
+            1.0,
+            *clip,
+            0.0,
+            *spec,
+            view,
+        ),
+        EnterTransition::Composite(transitions) => {
+            let mut v = view;
+            for t in transitions {
+                v = apply_enter_inflow_single(key, version, t, spec, v);
+            }
+            v
+        }
+    }
+}
+
+fn apply_enter_inflow_single(
+    key: &str,
+    version: u64,
+    enter: &EnterTransition,
+    spec: &AnimationSpec,
+    view: View,
+) -> View {
+    match enter {
+        EnterTransition::FadeIn => {
+            let val = animate_f32_from(format!("{key}:v{version}:enter:fade"), 0.0, 1.0, *spec);
+            Box(flow_mod().alpha(val)).child(view)
+        }
+        EnterTransition::SlideIn { offset_x, offset_y } => {
+            let offset = animate_vec2_from(
+                format!("{key}:v{version}:enter:slide"),
+                Vec2 {
+                    x: dp_to_px(*offset_x),
+                    y: dp_to_px(*offset_y),
+                },
+                Vec2::default(),
+                *spec,
+            );
+            Box(flow_mod().translate_vec2(offset)).child(view)
+        }
+        EnterTransition::ScaleIn { initial } => {
+            let s = animate_f32_from(
+                format!("{key}:v{version}:enter:scale"),
+                *initial,
+                1.0,
+                *spec,
+            );
+            Box(flow_mod().transform_origin(0.5, 0.5).scale(s)).child(view)
+        }
+        EnterTransition::ExpandVertically { clip, expand_from } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:enter:expand_v"),
+            SizeAxis::Vertical,
+            0.0,
+            1.0,
+            *clip,
+            *expand_from,
+            *spec,
+            view,
+        ),
+        EnterTransition::ExpandHorizontally { clip, expand_from } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:enter:expand_h"),
+            SizeAxis::Horizontal,
+            0.0,
+            1.0,
+            *clip,
+            *expand_from,
+            *spec,
+            view,
+        ),
+        EnterTransition::ExpandIn { clip } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:enter:expand_in"),
+            SizeAxis::Both,
+            0.0,
+            1.0,
+            *clip,
+            0.0,
+            *spec,
+            view,
+        ),
+        EnterTransition::Composite(inner) => {
+            let mut v = view;
+            for t in inner {
+                v = apply_enter_inflow_single(key, version, t, spec, v);
+            }
+            v
+        }
+    }
+}
+
+fn apply_exit_inflow(
+    key: &str,
+    version: u64,
+    exit: &ExitTransition,
+    spec: &AnimationSpec,
+    view: View,
+) -> View {
+    match exit {
+        ExitTransition::FadeOut => {
+            let val = animate_f32_from(format!("{key}:v{version}:exit:fade"), 1.0, 0.0, *spec);
+            Box(flow_mod().alpha(val)).child(view)
+        }
+        ExitTransition::SlideOut { offset_x, offset_y } => {
+            let offset = animate_vec2_from(
+                format!("{key}:v{version}:exit:slide"),
+                Vec2::default(),
+                Vec2 {
+                    x: dp_to_px(*offset_x),
+                    y: dp_to_px(*offset_y),
+                },
+                *spec,
+            );
+            Box(flow_mod().translate_vec2(offset)).child(view)
+        }
+        ExitTransition::ScaleOut { target } => {
+            let s = animate_f32_from(format!("{key}:v{version}:exit:scale"), 1.0, *target, *spec);
+            let a = animate_f32_from(format!("{key}:v{version}:exit:fade"), 1.0, 0.0, *spec);
+            Box(flow_mod().transform_origin(0.5, 0.5).scale(s).alpha(a)).child(view)
+        }
+        ExitTransition::ShrinkVertically { clip, shrink_towards } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:exit:expand_v"),
+            SizeAxis::Vertical,
+            1.0,
+            0.0,
+            *clip,
+            *shrink_towards,
+            *spec,
+            view,
+        ),
+        ExitTransition::ShrinkHorizontally { clip, shrink_towards } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:exit:expand_h"),
+            SizeAxis::Horizontal,
+            1.0,
+            0.0,
+            *clip,
+            *shrink_towards,
+            *spec,
+            view,
+        ),
+        ExitTransition::ShrinkOut { clip } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:exit:expand_in"),
+            SizeAxis::Both,
+            1.0,
+            0.0,
+            *clip,
+            0.0,
+            *spec,
+            view,
+        ),
+        ExitTransition::Composite(transitions) => {
+            let mut v = view;
+            for t in transitions {
+                v = apply_exit_inflow_single(key, version, t, spec, v);
+            }
+            v
+        }
+    }
+}
+
+fn apply_exit_inflow_single(
+    key: &str,
+    version: u64,
+    exit: &ExitTransition,
+    spec: &AnimationSpec,
+    view: View,
+) -> View {
+    match exit {
+        ExitTransition::FadeOut => {
+            let val = animate_f32_from(format!("{key}:v{version}:exit:fade"), 1.0, 0.0, *spec);
+            Box(flow_mod().alpha(val)).child(view)
+        }
+        ExitTransition::SlideOut { offset_x, offset_y } => {
+            let offset = animate_vec2_from(
+                format!("{key}:v{version}:exit:slide"),
+                Vec2::default(),
+                Vec2 {
+                    x: dp_to_px(*offset_x),
+                    y: dp_to_px(*offset_y),
+                },
+                *spec,
+            );
+            Box(flow_mod().translate_vec2(offset)).child(view)
+        }
+        ExitTransition::ScaleOut { target } => {
+            let s = animate_f32_from(format!("{key}:v{version}:exit:scale"), 1.0, *target, *spec);
+            Box(flow_mod().transform_origin(0.5, 0.5).scale(s)).child(view)
+        }
+        ExitTransition::ShrinkVertically { clip, shrink_towards } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:exit:expand_v"),
+            SizeAxis::Vertical,
+            1.0,
+            0.0,
+            *clip,
+            *shrink_towards,
+            *spec,
+            view,
+        ),
+        ExitTransition::ShrinkHorizontally { clip, shrink_towards } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:exit:expand_h"),
+            SizeAxis::Horizontal,
+            1.0,
+            0.0,
+            *clip,
+            *shrink_towards,
+            *spec,
+            view,
+        ),
+        ExitTransition::ShrinkOut { clip } => apply_size_fraction(
+            &format!("{key}:meas"),
+            &format!("{key}:v{version}:exit:expand_in"),
+            SizeAxis::Both,
+            1.0,
+            0.0,
+            *clip,
+            0.0,
+            *spec,
+            view,
+        ),
+        ExitTransition::Composite(inner) => {
+            let mut v = view;
+            for t in inner {
+                v = apply_exit_inflow_single(key, version, t, spec, v);
             }
             v
         }
@@ -420,6 +1126,24 @@ fn exit_animation_done(key: &str, version: u64, exit: &ExitTransition) -> bool {
                 .unwrap_or(false);
             done_scale && done_fade
         }
+        ExitTransition::ShrinkVertically { .. } => read_anim_value(
+            &format!("{key}:v{version}:exit:expand_v"),
+            1.0,
+        )
+        .map(|v| v < 0.005)
+        .unwrap_or(false),
+        ExitTransition::ShrinkHorizontally { .. } => read_anim_value(
+            &format!("{key}:v{version}:exit:expand_h"),
+            1.0,
+        )
+        .map(|v| v < 0.005)
+        .unwrap_or(false),
+        ExitTransition::ShrinkOut { .. } => read_anim_value(
+            &format!("{key}:v{version}:exit:expand_in"),
+            1.0,
+        )
+        .map(|v| v < 0.005)
+        .unwrap_or(false),
         ExitTransition::Composite(ts) => ts.iter().all(|t| exit_animation_done(key, version, t)),
     }
 }
@@ -437,8 +1161,17 @@ impl Default for AnimatedVisibilityConfig {
         Self {
             key: "anim_vis".into(),
             spec: AnimationSpec::default(),
-            enter: EnterTransition::FadeIn,
-            exit: ExitTransition::FadeOut,
+            enter: EnterTransition::default(),
+            exit: ExitTransition::default(),
+        }
+    }
+}
+
+impl AnimatedVisibilityConfig {
+    pub fn with_key(key: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            ..Default::default()
         }
     }
 }
@@ -458,6 +1191,13 @@ pub fn AnimatedVisibility(visible: bool, content: View, config: AnimatedVisibili
     let version = remember_with_key(format!("av_ver:{key}"), || RefCell::new(0u64));
     let prev = remember_with_key(format!("av_prev:{key}"), || RefCell::new(visible));
 
+    if key == "online_advanced" {
+        eprintln!(
+            "[AV] key={key} visible={visible} prev={:?}",
+            *prev.borrow()
+        );
+    }
+
     // Detect transition
     if *prev.borrow() != visible {
         if !visible {
@@ -466,6 +1206,9 @@ pub fn AnimatedVisibility(visible: bool, content: View, config: AnimatedVisibili
             captured.scope_key = Some(format!("av_{key}_old"));
             captured.modifier.repaint_boundary = true;
             old_content.borrow_mut().replace(captured);
+        } else {
+            // Re-opening: drop any pending exit snapshot so enter starts clean.
+            *old_content.borrow_mut() = None;
         }
         *version.borrow_mut() += 1;
         prev.borrow_mut().clone_from(&visible);
@@ -481,7 +1224,7 @@ pub fn AnimatedVisibility(visible: bool, content: View, config: AnimatedVisibili
                 *oc = None;
                 None
             } else {
-                let mut exit_view = apply_exit(&key, v, &exit, &spec, old.clone());
+                let mut exit_view = apply_exit_inflow(&key, v, &exit, &spec, old.clone());
                 exit_view.modifier.key = Some(transition_child_key(&key, v, "av_exit"));
                 Some(exit_view)
             }
@@ -495,16 +1238,13 @@ pub fn AnimatedVisibility(visible: bool, content: View, config: AnimatedVisibili
         content.scope_key = Some(format!("av_{key}_content"));
         content.modifier.repaint_boundary = true;
         let mut entering = if v > 0 {
-            apply_enter(&key, v, &enter, &spec, content)
+            apply_enter_inflow(&key, v, &enter, &spec, content)
         } else {
             content
         };
         entering.modifier.key = Some(transition_child_key(&key, v, "av_enter"));
-        match exiting {
-            Some(old) => ZStack(Modifier::new().fill_max_size()).child((old, entering)),
-            None => entering,
-        }
+        entering
     } else {
-        exiting.unwrap_or_else(|| Box(Modifier::new()))
+        exiting.unwrap_or_else(|| Box(Modifier::new().height(0.0)))
     }
 }

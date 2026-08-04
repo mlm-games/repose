@@ -23,9 +23,16 @@ impl LayoutEngine {
         let is_zstack = matches!(view.kind, ViewKind::ZStack);
         let scroll_axis = view.modifier.scroll.as_ref().map(|s| s.axis());
 
-        let child_tids: Vec<taffy::NodeId> = view
-            .children
-            .iter()
+        let visible_children: Vec<&View> = if matches!(
+            view.kind,
+            ViewKind::Expander { expanded: false, .. }
+        ) {
+            view.children.iter().take(1).collect()
+        } else {
+            view.children.iter().collect()
+        };
+        let child_tids: Vec<taffy::NodeId> = visible_children
+            .into_iter()
             .map(|c| self.build_taffy_subtree(c, taffy, font_px))
             .collect();
 
@@ -120,10 +127,16 @@ impl LayoutEngine {
 
         let (style, ctx, children, is_zstack, scroll_axis) = {
             let node = self.tree.get(node_id).expect("Node missing in update");
+            let collapsed = matches!(node.kind, ViewKind::Expander { expanded: false, .. });
+            let children: Vec<NodeId> = if collapsed {
+                node.children.iter().take(1).copied().collect()
+            } else {
+                node.children.to_vec()
+            };
             (
                 self.style_from_node(node, font_px),
                 self.context_from_node(node),
-                node.children.clone(),
+                children,
                 matches!(node.kind, ViewKind::ZStack),
                 node.modifier.scroll.as_ref().map(|s| s.axis()),
             )
@@ -171,10 +184,16 @@ impl LayoutEngine {
 
         let (new_style, new_ctx, children, is_zstack, scroll_axis) = {
             let node = self.tree.get(node_id).unwrap();
+            let collapsed = matches!(node.kind, ViewKind::Expander { expanded: false, .. });
+            let children: Vec<NodeId> = if collapsed {
+                node.children.iter().take(1).copied().collect()
+            } else {
+                node.children.to_vec()
+            };
             (
                 self.style_from_node(node, font_px),
                 self.context_from_node(node),
-                node.children.clone(),
+                children,
                 matches!(node.kind, ViewKind::ZStack),
                 node.modifier.scroll.as_ref().map(|s| s.axis()),
             )
@@ -287,7 +306,7 @@ impl LayoutEngine {
                     FlexDirection::Row
                 };
             }
-            ViewKind::Column | ViewKind::OverlayHost => {
+            ViewKind::Column | ViewKind::OverlayHost | ViewKind::Expander { .. } => {
                 s.flex_direction = FlexDirection::Column;
             }
             ViewKind::ZStack => s.display = Display::Grid,

@@ -486,6 +486,22 @@ impl LayoutEngine {
                 op: cr.op,
             });
         }
+        let push_bounds_clip = overflow_clip
+            && (matches!(
+                modifier.overflow,
+                Some(repose_core::Overflow::Clip)
+            ) || modifier.animate_content_size.is_some())
+            && !push_round_clip
+            && modifier.clip_rect.is_none()
+            && rect.w > 0.5
+            && rect.h > 0.5;
+        if push_bounds_clip {
+            scene.nodes.push(SceneNode::PushClip {
+                rect,
+                radius: [0.0; 4],
+                op: ClipOp::Intersect,
+            });
+        }
 
         // rendered behind the component
         if let Some(se) = &modifier.state_elevation {
@@ -1896,6 +1912,9 @@ impl LayoutEngine {
                 scene.nodes.push(SceneNode::EndLayer { layer_id: id });
             }
             // Pop clips and transforms pushed before the scroll branch
+            if push_bounds_clip {
+                scene.nodes.push(SceneNode::PopClip);
+            }
             if modifier.clip_rect.is_some() && overflow_clip {
                 scene.nodes.push(SceneNode::PopClip);
             }
@@ -2019,6 +2038,9 @@ impl LayoutEngine {
             }
         }
 
+        if push_bounds_clip {
+            scene.nodes.push(SceneNode::PopClip);
+        }
         if modifier.clip_rect.is_some() && overflow_clip {
             scene.nodes.push(SceneNode::PopClip);
         }
