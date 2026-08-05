@@ -2,7 +2,7 @@
 
 mod util;
 
-mod advbuttons;
+pub mod advbuttons;
 mod app_bar;
 mod badge;
 mod bottom_sheet;
@@ -11,8 +11,8 @@ mod card;
 mod carousel;
 mod chips;
 mod date_picker;
-mod defaults;
-mod dialog;
+pub mod defaults;
+pub mod dialog;
 mod divider;
 mod dropdown_menu;
 mod fab;
