@@ -799,6 +799,42 @@ impl std::fmt::Debug for Modifier {
 
 impl_option_fields!(Modifier);
 
+/// Content alignment for a container, applied as the flexbox cross-axis
+/// (`align_items`) and main-axis (`justify_content`) pair. Mirrors Compose's
+/// `Alignment` for `Box(contentAlignment = ...)`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Alignment {
+    TopStart,
+    TopCenter,
+    TopEnd,
+    CenterStart,
+    #[default]
+    Center,
+    CenterEnd,
+    BottomStart,
+    BottomCenter,
+    BottomEnd,
+}
+
+impl Alignment {
+    /// The corresponding (`align_items`, `justify_content`) pair for flexbox layout.
+    pub fn to_flex(self) -> (AlignItems, JustifyContent) {
+        use AlignItems as AI;
+        use JustifyContent as JC;
+        match self {
+            Self::TopStart => (AI::START, JC::START),
+            Self::TopCenter => (AI::START, JC::CENTER),
+            Self::TopEnd => (AI::START, JC::END),
+            Self::CenterStart => (AI::CENTER, JC::START),
+            Self::Center => (AI::CENTER, JC::CENTER),
+            Self::CenterEnd => (AI::CENTER, JC::END),
+            Self::BottomStart => (AI::END, JC::START),
+            Self::BottomCenter => (AI::END, JC::CENTER),
+            Self::BottomEnd => (AI::END, JC::END),
+        }
+    }
+}
+
 impl Modifier {
     pub fn new() -> Self {
         Self::default()
@@ -1045,6 +1081,12 @@ impl Modifier {
     pub fn align_items(mut self, a: AlignItems) -> Self {
         self.align_items_container = Some(a);
         self
+    }
+    /// Compose-like content alignment (sets both `align_items` and
+    /// `justify_content` in one call).
+    pub fn content_alignment(self, alignment: Alignment) -> Self {
+        let (ai, jc) = alignment.to_flex();
+        self.align_items(ai).justify_content(jc)
     }
     pub fn align_content(mut self, a: AlignContent) -> Self {
         self.align_content = Some(a);

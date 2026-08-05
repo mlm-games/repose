@@ -616,8 +616,7 @@ fn render_tabs(
                                     top: 0.0,
                                     bottom: 0.0,
                                 })
-                                .align_items(AlignItems::CENTER)
-                                .justify_content(JustifyContent::CENTER),
+                                .content_alignment(Alignment::Center),
                         )
                         .child(
                             Text(title)
@@ -698,8 +697,7 @@ fn dock_tab_icon_button(
         Box(
             Modifier::new()
                 .fill_max_size()
-                .align_items(AlignItems::CENTER)
-                .justify_content(JustifyContent::CENTER),
+                .content_alignment(Alignment::Center),
         )
         .child(Text(label).size(14.0).color(fg)),
     )
