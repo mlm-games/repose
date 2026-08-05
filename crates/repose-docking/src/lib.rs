@@ -1041,22 +1041,28 @@ fn render_split(
     let grabber = match dir {
         SplitDir::Horizontal => Box(
             Modifier::new()
-                .absolute()
-                .offset(Some(2.0), Some(24.0), None, Some(24.0))
+                .fill_max_size()
+                .content_alignment(Alignment::Center)
+                .clip_rounded(4.0),
+        )
+        .child(Box(
+            Modifier::new()
                 .width(4.0)
-                .fill_max_height()
-                .clip_rounded(4.0)
+                .offset(None, Some(24.0), None, Some(24.0))
                 .background(grabber_color),
-        ),
+        )),
         SplitDir::Vertical => Box(
             Modifier::new()
-                .absolute()
-                .offset(Some(24.0), Some(2.0), Some(24.0), None)
+                .fill_max_size()
+                .content_alignment(Alignment::Center)
+                .clip_rounded(4.0),
+        )
+        .child(Box(
+            Modifier::new()
                 .height(4.0)
-                .fill_max_width()
-                .clip_rounded(4.0)
+                .offset(Some(24.0), None, Some(24.0), None)
                 .background(grabber_color),
-        ),
+        )),
     };
 
     let divider = Box(
