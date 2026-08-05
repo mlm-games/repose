@@ -681,7 +681,7 @@ impl LayoutEngine {
             (indication_factory.as_ref(), indication_source.as_ref())
         {
             let draw_node = factory.create(interaction_source);
-            draw_node.draw(scene, rect, alpha_accum);
+            draw_node.draw(scene, rect, round_clip_px, alpha_accum);
         }
 
         if owns_hit {
@@ -771,16 +771,6 @@ impl LayoutEngine {
             }
 
             hits.push(hit);
-        }
-
-        // Focus ring for interactive views
-        if is_focused
-            && (has_pointer
-                || modifier.click
-                || modifier.on_action.is_some()
-                || modifier.focusable == Some(true))
-        {
-            push_focus_ring(scene, rect, focus_radius(&modifier));
         }
 
         let child_interaction_source = if owns_hit {
@@ -1955,6 +1945,14 @@ impl LayoutEngine {
             if modifier.transform.is_some() {
                 scene.nodes.push(SceneNode::PopTransform);
             }
+            if is_focused
+                && (has_pointer
+                    || modifier.click
+                    || modifier.on_action.is_some()
+                    || modifier.focusable == Some(true))
+            {
+                push_focus_ring(scene, rect, focus_radius(&modifier));
+            }
             // Wire up FocusRequester if present on the modifier
             set_focus_requester(&modifier, view_id);
             if let Some(cb) = &modifier.on_focus_changed {
@@ -2080,6 +2078,15 @@ impl LayoutEngine {
         }
         if modifier.transform.is_some() {
             scene.nodes.push(SceneNode::PopTransform);
+        }
+
+        if is_focused
+            && (has_pointer
+                || modifier.click
+                || modifier.on_action.is_some()
+                || modifier.focusable == Some(true))
+        {
+            push_focus_ring(scene, rect, focus_radius(&modifier));
         }
 
         // Wire up FocusRequester if present on the modifier

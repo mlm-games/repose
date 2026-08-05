@@ -27,6 +27,10 @@ const FADE_OUT_MS: u64 = 150;
 
 /// StateTokens.PressedStateLayerOpacity -> fixed press opacity multiplier matching Compose.
 const PRESS_ALPHA: f32 = 0.10;
+/// StateTokens.FocusStateLayerOpacity -> Material 3 focus state layer opacity.
+const FOCUS_ALPHA: f32 = 0.12;
+/// StateTokens.HoverStateLayerOpacity -> Material 3 hover state layer opacity.
+const HOVER_ALPHA: f32 = 0.08;
 
 #[derive(Clone, Debug)]
 pub struct RippleConfig {
@@ -34,6 +38,8 @@ pub struct RippleConfig {
     pub radius: Option<f32>,
     pub color: Option<Color>,
     pub enable_press: bool,
+    pub enable_focus: bool,
+    pub enable_hover: bool,
 }
 
 impl Default for RippleConfig {
@@ -43,6 +49,8 @@ impl Default for RippleConfig {
             radius: None,
             color: None,
             enable_press: true,
+            enable_focus: true,
+            enable_hover: true,
         }
     }
 }
@@ -94,7 +102,30 @@ impl RippleDrawNode {
 }
 
 impl IndicationDrawNode for RippleDrawNode {
-    fn draw(&self, scene: &mut Scene, rect: Rect, alpha: f32) {
+    fn draw(&self, scene: &mut Scene, rect: Rect, radius: [f32; 4], alpha: f32) {
+        let base_color = self.config.color.unwrap_or(Color(0, 0, 0, 255));
+
+        // M3 state layers (focus, hover) rendered as shape-matched overlays.
+        // Drawn before the press ripple so the ripple fades in on top.
+        let is_pressed = self.interaction_source.collect_is_pressed();
+        let is_hovered = self.interaction_source.collect_is_hovered();
+        let is_focused = self.interaction_source.collect_is_focused();
+
+        if self.config.enable_focus && is_focused && !is_pressed {
+            scene.nodes.push(SceneNode::Rect {
+                rect,
+                brush: base_color.with_alpha_f32(FOCUS_ALPHA * alpha).into(),
+                radius,
+            });
+        }
+        if self.config.enable_hover && is_hovered && !is_pressed {
+            scene.nodes.push(SceneNode::Rect {
+                rect,
+                brush: base_color.with_alpha_f32(HOVER_ALPHA * alpha).into(),
+                radius,
+            });
+        }
+
         if !self.config.enable_press {
             return;
         }
@@ -116,11 +147,8 @@ impl IndicationDrawNode for RippleDrawNode {
         });
         let start_radius = rect.w.max(rect.h) * 0.3;
 
-        let base_color = self.config.color.unwrap_or(Color(0, 0, 0, 255));
-
-        let is_pressed = self.interaction_source.collect_is_pressed();
-        let press_pos = self.interaction_source.collect_last_press_position();
         let current_pid = self.interaction_source.collect_last_press_id();
+        let press_pos = self.interaction_source.collect_last_press_position();
 
         let k_alpha = format!("{}:a", base);
         let k_rad = format!("{}:r", base);
@@ -302,7 +330,7 @@ impl IndicationDrawNode for RippleDrawNode {
         if bounded {
             scene.nodes.push(SceneNode::PushClip {
                 rect,
-                radius: [0.0; 4],
+                radius,
                 op: repose_core::ClipOp::Intersect,
             });
             scene.nodes.push(SceneNode::Ellipse {

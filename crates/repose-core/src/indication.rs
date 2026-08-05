@@ -12,8 +12,9 @@ pub trait IndicationNodeFactory: Indication {
 /// pass to emit scene nodes for visual feedback (ripple, overlay, focus ring).
 pub trait IndicationDrawNode {
     /// Draw the indication into `scene` at the given `rect` (in physical pixels).
+    /// `radius` is the component's corner radii (px) for shape-matched overlays.
     /// `alpha` is the accumulated compositing alpha from ancestor modifiers.
-    fn draw(&self, scene: &mut Scene, rect: Rect, alpha: f32);
+    fn draw(&self, scene: &mut Scene, rect: Rect, radius: [f32; 4], alpha: f32);
 }
 
 /// A debug indication that draws colored overlays for hover/press/focus.
@@ -56,11 +57,22 @@ struct DebugIndicationDrawNode {
 }
 
 impl IndicationDrawNode for DebugIndicationDrawNode {
-    fn draw(&self, scene: &mut Scene, rect: Rect, alpha: f32) {
+    fn draw(&self, scene: &mut Scene, rect: Rect, radius: [f32; 4], alpha: f32) {
         let pressed = self.interaction_source.collect_is_pressed();
         let hovered = self.interaction_source.collect_is_hovered();
-        let _focused = self.interaction_source.collect_is_focused();
+        let focused = self.interaction_source.collect_is_focused();
 
+        // Draw focus overlay
+        if focused && !pressed && self.focus_color.3 > 0 {
+            scene.nodes.push(crate::SceneNode::Rect {
+                rect,
+                brush: self
+                    .focus_color
+                    .with_alpha_f32(self.focus_color.3 as f32 / 255.0 * alpha)
+                    .into(),
+                radius,
+            });
+        }
         // Draw press overlay
         if pressed {
             scene.nodes.push(crate::SceneNode::Rect {
@@ -69,7 +81,7 @@ impl IndicationDrawNode for DebugIndicationDrawNode {
                     .press_color
                     .with_alpha_f32(self.press_color.3 as f32 / 255.0 * alpha)
                     .into(),
-                radius: [0.0; 4],
+                radius,
             });
         }
         // Draw hover overlay
@@ -80,7 +92,7 @@ impl IndicationDrawNode for DebugIndicationDrawNode {
                     .hover_color
                     .with_alpha_f32(self.hover_color.3 as f32 / 255.0 * alpha)
                     .into(),
-                radius: [0.0; 4],
+                radius,
             });
         }
     }

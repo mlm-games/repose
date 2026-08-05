@@ -10,17 +10,38 @@ pub(crate) fn open_url(url: &str) {
     let _ = webbrowser::open(url);
 }
 
-pub(crate) fn push_focus_ring(scene: &mut Scene, rect: repose_core::Rect, radius_dp: f32) {
+pub(crate) fn push_focus_ring(scene: &mut Scene, rect: repose_core::Rect, radius_dp: [f32; 4]) {
+    let width = dp_to_px(2.0);
+    let offset = dp_to_px(2.0);
+    let expand = offset + width;
+    let inflated = repose_core::Rect {
+        x: rect.x - expand,
+        y: rect.y - expand,
+        w: rect.w + 2.0 * expand,
+        h: rect.h + 2.0 * expand,
+    };
+    let radius = clamp_radii(
+        [
+            dp_to_px(radius_dp[0]) + expand,
+            dp_to_px(radius_dp[1]) + expand,
+            dp_to_px(radius_dp[2]) + expand,
+            dp_to_px(radius_dp[3]) + expand,
+        ],
+        inflated.w,
+        inflated.h,
+    );
     scene.nodes.push(SceneNode::Border {
-        rect,
+        rect: inflated,
         color: locals::theme().focus,
-        width: dp_to_px(2.0),
-        radius: [dp_to_px(radius_dp); 4],
+        width,
+        radius,
     });
 }
 
-pub(crate) fn focus_radius(modifier: &Modifier) -> f32 {
-    modifier.clip_rounded.map(|r| r[0]).unwrap_or(6.0)
+/// Focus ring radius (dp), taken from the full per-corner clip radius so the ring
+/// matches the component shape (including asymmetric corners).
+pub(crate) fn focus_radius(modifier: &Modifier) -> [f32; 4] {
+    modifier.clip_rounded.unwrap_or([6.0; 4])
 }
 
 /// Associate a `FocusRequester` (if present on the modifier) with the view.
