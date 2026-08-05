@@ -8,13 +8,13 @@ thread_local! {
     static CURRENT_SCOPE_KEY: RefCell<Option<String>> =
         const { RefCell::new(None) };
 
-    /// signal_id → set of scope keys that read it during composition.
+    /// signal_id -> set of scope keys that read it during composition.
     /// Cleaned up when a scope re-executes (old deps are replaced) or when
     /// the app disposes. Set semantics prevent duplicate keys per signal.
     static SCOPE_SIGNAL_DEPS: RefCell<FxHashMap<usize, FxHashSet<String>>> =
         RefCell::new(FxHashMap::default());
 
-    /// scope key → set of signal ids it read. Reverse map so clearing a
+    /// scope key -> set of signal ids it read. Reverse map so clearing a
     /// scope's deps is O(deps) instead of a full-map scan.
     static SCOPE_TO_SIGNALS: RefCell<FxHashMap<String, FxHashSet<usize>>> =
         RefCell::new(FxHashMap::default());
@@ -64,7 +64,7 @@ pub fn with_scope_key<R>(key: &str, f: impl FnOnce() -> R) -> R {
     })
 }
 
-/// Clear all signal→scope tracking for the given scope key.
+/// Clear all signal->scope tracking for the given scope key.
 /// Called after the scope body executes, so old deps from a previous run are
 /// replaced by the new deps registered during the just-completed run.
 pub fn clear_scope_deps(key: &str) {

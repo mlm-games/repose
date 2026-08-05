@@ -21,14 +21,14 @@ pub enum PointerButton {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PointerEventPass {
-    /// Top-down pass: ancestor → descendant. Allows ancestors to preview or
+    /// Top-down pass: ancestor -> descendant. Allows ancestors to preview or
     /// intercept events before descendants see them.
     Initial,
-    /// Bottom-up pass: descendant → ancestor. The primary pass where gesture
+    /// Bottom-up pass: descendant -> ancestor. The primary pass where gesture
     /// handlers react to and consume events. A child that consumes its event
     /// prevents the parent from reacting (Compose's requireUnconsumed).
     Main,
-    /// Top-down pass: ancestor → descendant. Allows descendants to learn
+    /// Top-down pass: ancestor -> descendant. Allows descendants to learn
     /// about events consumed by ancestors during the Main pass.
     Final,
 }

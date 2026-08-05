@@ -72,7 +72,7 @@ impl LayoutEngine {
             if self.node_to_scope.contains_key(&node_id)
                 && !self.scope_root_map.contains_key(&node_id)
             {
-                // Scope-internal, non-root → handled by sync_scope_trees
+                // Scope-internal, non-root -> handled by sync_scope_trees
                 continue;
             }
             if self.scope_root_map.contains_key(&node_id)
@@ -102,7 +102,7 @@ impl LayoutEngine {
         // Ensure this node has a stable view id
         let _ = self.ensure_view_id(node_id);
 
-        // Scope root → create leaf marker in root tree (no children in root tree).
+        // Scope root -> create leaf marker in root tree (no children in root tree).
         // Only margin + sizing constraints are kept; padding/gap/flex are handled by the scope tree.
         if self.scope_root_map.contains_key(&node_id) {
             if let Some(&t_id) = self.taffy_map.get(&node_id) {

@@ -1287,7 +1287,7 @@ struct BlurInstance {
     sin_cos: [f32; 2],
 }
 
-/// CPU-computed Y′CbCr → R′G′B′ transform uploaded as a uniform buffer.
+/// CPU-computed Y′CbCr -> R′G′B′ transform uploaded as a uniform buffer.
 /// Layout matches the WGSL `YuvTransform` struct (4 × vec4<f32>).
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -2308,7 +2308,7 @@ impl WgpuSceneRenderer {
             _ => true,
         };
 
-        // Compute the YUV→RGB transform on the CPU.
+        // Compute the YUV->RGB transform on the CPU.
         let yuv = color_info.to_yuv_transform();
         let yuv_raw = YuvTransformRaw {
             row0: [yuv.m[0][0], yuv.m[0][1], yuv.m[0][2], 0.0],
@@ -5477,7 +5477,7 @@ impl WgpuSceneRenderer {
             }
         }
 
-        // Display pass: linear working space → sRGB OETF → swapchain
+        // Display pass: linear working space -> sRGB OETF -> swapchain
         if self.working_space {
             if let (Some(_ws_view), Some(ws_bind), Some(display_pipeline)) =
                 (&self.ws_view, &self.ws_bind, &self.display_pipeline)

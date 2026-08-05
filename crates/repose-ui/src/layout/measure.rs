@@ -30,7 +30,7 @@ impl LayoutEngine {
             taffy_root,
             available,
             |known, avail, taffy_node, ctx, _style| {
-                // Check if this is a scope root marker → return cached scope size
+                // Check if this is a scope root marker -> return cached scope size
                 if let Some(&node_id) = reverse_map.get(&taffy_node) {
                     // Custom layout modifier: delegate measurement to user callback
                     if let Some(node) = tree.get(node_id) {

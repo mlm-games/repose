@@ -53,10 +53,10 @@ pub struct LayoutEngine {
     /// Per-scope TaffyTrees for scope! macro isolation.
     pub(crate) scope_trees: HashMap<String, ScopeLayoutTree>,
 
-    /// ViewTree NodeId → scope key for scope boundary root nodes.
+    /// ViewTree NodeId -> scope key for scope boundary root nodes.
     pub(crate) scope_root_map: FxHashMap<NodeId, String>,
 
-    /// ViewTree NodeId → scope key for ALL nodes belonging to a scope.
+    /// ViewTree NodeId -> scope key for ALL nodes belonging to a scope.
     pub(crate) node_to_scope: FxHashMap<NodeId, String>,
 
     /// Cached text layouts for non-scope nodes (persists across frames).

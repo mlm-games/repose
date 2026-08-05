@@ -339,16 +339,18 @@ impl LayoutEngine {
         let effective_interaction = interaction_source.unwrap_or(view_id);
         let implicit_hovered = interactions.hover == Some(effective_interaction);
         let implicit_pressed = interactions.pressed.contains(&effective_interaction);
-        let (state_hovered, state_pressed) = if let Some(ref src) = modifier.interaction_source {
-            (
-                src.collect_is_hovered() || is_hovered,
-                src.collect_is_pressed() || is_pressed,
-            )
-        } else if owns_hit {
-            (is_hovered, is_pressed)
-        } else {
-            (implicit_hovered, implicit_pressed)
-        };
+        let (state_hovered, state_pressed, state_dragged) =
+            if let Some(ref src) = modifier.interaction_source {
+                (
+                    src.collect_is_hovered() || is_hovered,
+                    src.collect_is_pressed() || is_pressed,
+                    src.collect_is_dragged(),
+                )
+            } else if owns_hit {
+                (is_hovered, is_pressed, false)
+            } else {
+                (implicit_hovered, implicit_pressed, false)
+            };
         let is_focused = focused == Some(view_id);
         let this_alpha = modifier.alpha.unwrap_or(1.0);
         let alpha_accum = (alpha_accum * this_alpha).clamp(0.0, 1.0);
@@ -541,6 +543,8 @@ impl LayoutEngine {
         if let Some(se) = &modifier.state_elevation {
             let target = if modifier.disabled {
                 se.disabled
+            } else if state_dragged {
+                se.dragged
             } else if state_pressed {
                 se.pressed
             } else if state_hovered {
@@ -582,6 +586,8 @@ impl LayoutEngine {
         if let Some(sc) = &modifier.state_colors {
             let target = if modifier.disabled {
                 sc.disabled
+            } else if state_dragged {
+                sc.dragged
             } else if state_pressed {
                 sc.pressed
             } else if state_hovered {

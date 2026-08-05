@@ -998,7 +998,7 @@ impl ReposeRuntime {
             }
         }
 
-        // Top-down preview: root → focused
+        // Top-down preview: root -> focused
         for &id in ancestors.iter().rev() {
             if let Some(hit) = hit_by_id.get(&id) {
                 if let Some(cb) = &hit.on_preview_key_event {
@@ -1009,7 +1009,7 @@ impl ReposeRuntime {
             }
         }
 
-        // Bottom-up normal: focused → root
+        // Bottom-up normal: focused -> root
         for &id in ancestors.iter() {
             if let Some(hit) = hit_by_id.get(&id) {
                 if let Some(cb) = &hit.on_key_event {
@@ -1375,7 +1375,7 @@ fn dispatch_scroll(
             cb(delta);
             return (true, Some(cid));
         }
-        // Captured region vanished from the tree → fall through and re-pick.
+        // Captured region vanished from the tree -> fall through and re-pick.
     }
 
     let mut remaining = delta;

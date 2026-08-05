@@ -181,7 +181,7 @@ fn feature_card(route: Route, nav: Navigator<Route>) -> View {
                     Caption(route.description()),
                 )),
             )),
-            Text("Open →").size(13.0).color(th.primary),
+            Text("Open ->").size(13.0).color(th.primary),
         )),
     )
 }

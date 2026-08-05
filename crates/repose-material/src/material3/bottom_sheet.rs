@@ -145,7 +145,7 @@ pub fn ModalBottomSheet(
     let offset_at_drag_start: Rc<RefCell<f32>> = remember_state_with_key("mbs_drag_base", || 0.0);
     let is_dragging: Rc<RefCell<bool>> = remember_state_with_key("mbs_drag", || false);
 
-    // Animated offset: anim_distance px (off-screen) → 0px (visible)
+    // Animated offset: anim_distance px (off-screen) -> 0px (visible)
     let anim = remember_state_with_key("mbs_anim", || {
         AnimatedValue::new(anim_distance, theme().motion.spring)
     });

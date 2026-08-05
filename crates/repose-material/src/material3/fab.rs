@@ -67,6 +67,7 @@ fn fab_impl(
             default: Color::TRANSPARENT,
             hovered: config.content_color.with_alpha_f32(0.08),
             pressed: config.content_color.with_alpha_f32(0.12),
+            dragged: config.content_color.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         })
         .state_elevation(config.state_elevation)
@@ -157,6 +158,7 @@ pub fn ExtendedFAB(
             default: Color::TRANSPARENT,
             hovered: config.content_color.with_alpha_f32(0.08),
             pressed: config.content_color.with_alpha_f32(0.12),
+            dragged: config.content_color.with_alpha_f32(0.12),
             disabled: theme().on_surface.with_alpha_f32(0.12),
         })
         .state_elevation(config.state_elevation)

@@ -346,6 +346,7 @@ fn render_dropdown_menu_content(
                             default: Color::TRANSPARENT,
                             hovered: th.on_surface.with_alpha_f32(0.08),
                             pressed: th.on_surface.with_alpha_f32(0.12),
+                            dragged: th.on_surface.with_alpha_f32(0.12),
                             disabled: Color::TRANSPARENT,
                         })
                         .interaction_source(&*item_source)

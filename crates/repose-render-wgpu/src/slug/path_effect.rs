@@ -104,8 +104,8 @@ fn apply_corner_effect(path: &Path, radius: f32, tolerance: f32) -> Path {
                 contour[i + 1]
             };
 
-            let d1 = Vector::new(p_curr.x - p_prev.x, p_curr.y - p_prev.y); // incoming: prev → curr
-            let d2 = Vector::new(p_next.x - p_curr.x, p_next.y - p_curr.y); // outgoing: curr → next
+            let d1 = Vector::new(p_curr.x - p_prev.x, p_curr.y - p_prev.y); // incoming: prev -> curr
+            let d2 = Vector::new(p_next.x - p_curr.x, p_next.y - p_curr.y); // outgoing: curr -> next
             let len1 = d1.length();
             let len2 = d2.length();
 

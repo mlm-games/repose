@@ -1,4 +1,4 @@
-// CPU-computed Y′CbCr → R′G′B′ affine transform.
+// CPU-computed Y′CbCr -> R′G′B′ affine transform.
 // Folds range expansion + matrix coefficients into a single M/b.
 struct YuvTransform {
     row0: vec4<f32>, // m[0][0], m[0][1], m[0][2], 0

@@ -760,7 +760,7 @@ pub fn run_android_app_with_options(
                                 event_type: ev_type,
                                 utf16_code_point: utf16,
                             };
-                            // Top-down preview: root → focused
+                            // Top-down preview: root -> focused
                             for &id in ancestors.iter().rev() {
                                 if let Some(hit) = hit_by_id.get(&id) {
                                     if let Some(cb) = &hit.on_preview_key_event {
@@ -770,7 +770,7 @@ pub fn run_android_app_with_options(
                                     }
                                 }
                             }
-                            // Bottom-up normal: focused → root
+                            // Bottom-up normal: focused -> root
                             for &id in ancestors.iter() {
                                 if let Some(hit) = hit_by_id.get(&id) {
                                     if let Some(cb) = &hit.on_key_event {

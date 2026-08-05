@@ -67,6 +67,7 @@ impl ToggleButtonDefaults {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
+            dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         }
     }
@@ -75,6 +76,7 @@ impl ToggleButtonDefaults {
             default: 0.0,
             hovered: 1.0,
             pressed: 0.0,
+            dragged: 0.0,
             disabled: 0.0,
         }
     }
@@ -84,6 +86,7 @@ impl ToggleButtonDefaults {
             default: th.elevation.level1,
             hovered: th.elevation.level2,
             pressed: th.elevation.level1,
+            dragged: th.elevation.level1,
             disabled: 0.0,
         }
     }
@@ -157,6 +160,7 @@ impl ButtonDefaults {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
+            dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         }
     }
@@ -165,6 +169,7 @@ impl ButtonDefaults {
             default: 0.0,
             hovered: 1.0,
             pressed: 0.0,
+            dragged: 0.0,
             disabled: 0.0,
         }
     }
@@ -174,6 +179,7 @@ impl ButtonDefaults {
             default: th.elevation.level1,
             hovered: th.elevation.level2,
             pressed: th.elevation.level1,
+            dragged: th.elevation.level1,
             disabled: 0.0,
         }
     }
@@ -279,6 +285,7 @@ impl IconButtonDefaults {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
+            dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         }
     }
@@ -317,6 +324,7 @@ impl CheckboxDefaults {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
+            dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         }
     }
@@ -348,6 +356,7 @@ impl RadioButtonDefaults {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
+            dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         }
     }
@@ -409,6 +418,7 @@ impl SwitchDefaults {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
+            dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         }
     }
@@ -456,6 +466,7 @@ impl SliderDefaults {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
+            dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         }
     }
@@ -577,6 +588,7 @@ impl ListItemDefaults {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
+            dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         }
     }
@@ -723,6 +735,7 @@ impl SegmentedButtonDefaults {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
+            dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         }
     }
@@ -746,9 +759,10 @@ impl FABDefaults {
     }
     pub fn state_elevation() -> StateElevation {
         StateElevation {
-            default: 6.0,
-            hovered: 8.0,
-            pressed: 12.0,
+            default: theme().elevation.level3,
+            hovered: theme().elevation.level4,
+            pressed: theme().elevation.level5,
+            dragged: theme().elevation.level5,
             disabled: 0.0,
         }
     }
@@ -861,7 +875,8 @@ impl ChipDefaults {
         theme().elevation.level1
     }
     pub fn elevated_elevation_dragged() -> f32 {
-        theme().elevation.level3
+        // M3 elevated chip dragged container elevation is Level 4 (8dp).
+        theme().elevation.level4
     }
     pub fn elevated_elevation_disabled() -> f32 {
         0.0
@@ -1258,7 +1273,7 @@ impl SplitButtonDefaults {
     pub const LARGE_CONTAINER_HEIGHT: f32 = 64.0; // estimate -> no LargeTokens in repo
     pub const XLARGE_CONTAINER_HEIGHT: f32 = 72.0; // estimate
 
-    /// Outer corners are fully rounded (50% → effectively full radius).
+    /// Outer corners are fully rounded (50% -> effectively full radius).
     pub const OUTER_CORNER_SIZE: f32 = f32::INFINITY; // ShapeDefaults.CornerFull equivalent
     /// Small inner corner size from `SplitButtonSmallTokens.InnerCornerCornerSize`.
     pub const SMALL_INNER_CORNER_SIZE: f32 = 4.0;

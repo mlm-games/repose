@@ -568,7 +568,7 @@ fn track_collapsed_layout(state: &Rc<SearchBarState>) -> Modifier {
 /// the provided `input_field`. Does NOT manage expanded content.
 ///
 /// Equivalent to CK's `SearchBar(state, inputField)` overload -> a passive
-/// Surface that does NOT handle clicks or ripple. The click/focus→expand
+/// Surface that does NOT handle clicks or ripple. The click/focus->expand
 /// behavior is managed by the `InputField` (via `SearchBarInputField`).
 ///
 /// Pressing <kbd>Escape</kbd> deactivates the search bar (cross-platform back).
@@ -593,6 +593,7 @@ pub fn SearchBar(
             default: config.tonal_elevation,
             hovered: th.elevation.level2,
             pressed: th.elevation.level3,
+            dragged: th.elevation.level3,
             disabled: 0.0,
         })
         .shadow(config.shadow_elevation, 0.0)
@@ -797,6 +798,7 @@ pub fn DockedSearchBar(
             },
             hovered: th.elevation.level2,
             pressed: th.elevation.level3,
+            dragged: th.elevation.level3,
             disabled: 0.0,
         })
         .shadow(config.shadow_elevation, 0.0)
@@ -845,6 +847,7 @@ pub fn DockedSearchBar(
                     default: th.elevation.level3,
                     hovered: th.elevation.level3,
                     pressed: th.elevation.level3,
+                    dragged: th.elevation.level3,
                     disabled: 0.0,
                 }))
             .child(
@@ -1054,6 +1057,7 @@ pub fn ExpandedDockedSearchBar(
                             default: th.elevation.level3,
                             hovered: th.elevation.level2,
                             pressed: th.elevation.level3,
+                            dragged: th.elevation.level3,
                             disabled: 0.0,
                         }))
                     .child(inp);
@@ -1068,6 +1072,7 @@ pub fn ExpandedDockedSearchBar(
                             default: th.elevation.level3,
                             hovered: th.elevation.level3,
                             pressed: th.elevation.level3,
+                            dragged: th.elevation.level3,
                             disabled: 0.0,
                         }))
                     .child(

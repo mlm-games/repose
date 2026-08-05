@@ -86,6 +86,7 @@ impl ChipElevation {
             default: self.default,
             hovered: self.hovered,
             pressed: self.pressed,
+            dragged: self.dragged,
             disabled: self.disabled,
         }
     }
@@ -187,6 +188,7 @@ pub fn AssistChip(
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
+            dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
         .padding_values(PaddingValues {
@@ -264,6 +266,7 @@ pub fn ElevatedAssistChip(
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
+            dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
         .state_elevation(config.elevation.to_state_elevation())
@@ -371,6 +374,7 @@ pub fn FilterChip(
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
+            dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
         .padding_values(PaddingValues {
@@ -468,6 +472,7 @@ pub fn ElevatedFilterChip(
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
+            dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
         .state_elevation(config.elevation.to_state_elevation())
@@ -545,6 +550,7 @@ pub fn SuggestionChip(
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
+            dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
         .padding_values(PaddingValues {
@@ -608,6 +614,7 @@ pub fn ElevatedSuggestionChip(
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
+            dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
         .state_elevation(config.elevation.to_state_elevation())
@@ -704,6 +711,7 @@ pub fn InputChip(
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
             pressed: th.on_surface.with_alpha_f32(0.12),
+            dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
         .padding_values(PaddingValues {

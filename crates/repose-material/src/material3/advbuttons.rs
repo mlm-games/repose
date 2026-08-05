@@ -92,6 +92,7 @@ fn split_button_impl(
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,
             pressed: Color::TRANSPARENT,
+            dragged: Color::TRANSPARENT,
             disabled: state_colors.disabled,
         }
     });
@@ -522,12 +523,14 @@ fn resolve_button_colors(
             default: Color::TRANSPARENT,
             hovered: colors.content_color.with_alpha_f32(0.08),
             pressed: colors.content_color.with_alpha_f32(0.12),
+            dragged: colors.content_color.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         };
         let se = config.elevation.map(|e| StateElevation {
             default: e.default,
             hovered: e.hovered,
             pressed: e.pressed,
+            dragged: e.pressed,
             disabled: e.disabled,
         });
         (cc, Some(bg), sc, se)
@@ -541,6 +544,7 @@ fn resolve_button_colors(
                 default: Color::TRANSPARENT,
                 hovered: Color::TRANSPARENT,
                 pressed: Color::TRANSPARENT,
+                dragged: Color::TRANSPARENT,
                 disabled: config.state_colors.disabled,
             }
         };

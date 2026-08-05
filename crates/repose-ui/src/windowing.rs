@@ -404,6 +404,7 @@ pub fn WindowHost(
                                 default: th.surface_variant,
                                 hovered: th.on_surface.with_alpha(16),
                                 pressed: th.on_surface.with_alpha(24),
+                                dragged: th.on_surface.with_alpha(24),
                                 disabled: Color::TRANSPARENT,
                             })
                             .clickable()
@@ -437,6 +438,7 @@ pub fn WindowHost(
                                 default: th.error.with_alpha(20),
                                 hovered: th.error.with_alpha(40),
                                 pressed: th.error.with_alpha(60),
+                                dragged: th.error.with_alpha(60),
                                 disabled: Color::TRANSPARENT,
                             })
                             .clickable()

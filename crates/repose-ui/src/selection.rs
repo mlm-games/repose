@@ -2,9 +2,9 @@
 //!
 //! Mirrors Compose-style selection for a single `Text`:
 //! - Drag to select (byte range, multi-line highlight)
-//! - Double-tap → select word under pointer
-//! - Triple-tap → select all
-//! - Shift+click / shift+drag → extend from previous anchor
+//! - Double-tap -> select word under pointer
+//! - Triple-tap -> select all
+//! - Shift+click / shift+drag -> extend from previous anchor
 //! - Primary selection (middle-click paste) + Ctrl/Cmd+C via `Action::Copy`
 
 use std::cell::RefCell;

@@ -469,7 +469,7 @@ pub struct HitRegion {
     pub tf_multiline: bool,
 
     /// Unclipped top-left of the TextField *content* box (padding-inset).
-    /// Used for pointer→grapheme mapping so parent scroll clipping of `rect`
+    /// Used for pointer->grapheme mapping so parent scroll clipping of `rect`
     /// does not shift selection into the top of the content.
     /// `None` for non-textfields.
     pub tf_content_origin: Option<(f32, f32)>,

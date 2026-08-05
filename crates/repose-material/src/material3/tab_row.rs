@@ -104,6 +104,7 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                             default: Color::TRANSPARENT,
                             hovered: th.on_surface.with_alpha_f32(0.08),
                             pressed: th.on_surface.with_alpha_f32(0.12),
+                            dragged: th.on_surface.with_alpha_f32(0.12),
                             disabled: Color::TRANSPARENT,
                         })
                         .semantics(Semantics::new(Role::Tab).with_label(&tab.label));

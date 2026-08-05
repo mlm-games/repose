@@ -157,6 +157,7 @@ pub fn TooltipBox(
                                 default: config.tonal_elevation,
                                 hovered: config.tonal_elevation,
                                 pressed: config.tonal_elevation,
+                                dragged: config.tonal_elevation,
                                 disabled: 0.0,
                             });
                         }

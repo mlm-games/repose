@@ -94,7 +94,7 @@ impl TopAppBarScrollBehavior {
             }
             let current = off.get();
             if d.y > 0.0 {
-                // Scrolling down → collapse bar
+                // Scrolling down -> collapse bar
                 if current <= max_collapse {
                     return Vec2::ZERO;
                 }
@@ -104,7 +104,7 @@ impl TopAppBarScrollBehavior {
                 repose_core::request_frame();
                 Vec2 { x: 0.0, y: consume }
             } else {
-                // Scrolling up → expand bar
+                // Scrolling up -> expand bar
                 if current >= 0.0 {
                     return Vec2::ZERO;
                 }

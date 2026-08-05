@@ -153,7 +153,7 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
     ];
     let hue_painter = gradient_painter(hue_stops);
 
-    // Saturation gradient: gray → full hue
+    // Saturation gradient: gray -> full hue
     let base_hue = color_from_hsv(hue, 1.0, 1.0);
     let gray = Color::from_rgb(
         lerp_u8(base_hue.0, 128, 0.5),
@@ -163,7 +163,7 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
     let sat_stops = vec![(0.0, gray), (1.0, base_hue)];
     let sat_painter = gradient_painter(sat_stops);
 
-    // Value gradient: black → color at current S and V=1
+    // Value gradient: black -> color at current S and V=1
     let col_at_sat = color_from_hsv(hue, sat, 1.0);
     let val_stops = vec![(0.0, Color::BLACK), (1.0, col_at_sat)];
     let val_painter = gradient_painter(val_stops);

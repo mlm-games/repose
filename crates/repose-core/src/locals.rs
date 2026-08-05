@@ -3,7 +3,7 @@
 //! Repose uses thread‑local “composition locals” for global UI parameters:
 //!
 //! - `Theme` - colors for surfaces, text, controls, etc.
-//! - `Density` - dp→px device scale factor (platform sets this).
+//! - `Density` - dp->px device scale factor (platform sets this).
 //! - `UiScale` - app-controlled UI scale multiplier (defaults to 1.0).
 //! - `TextScale` - user text scaling (defaults to 1.0).
 //! - `TextDirection` - LTR or RTL (defaults to LTR).
@@ -84,7 +84,7 @@ pub fn set_text_scale_default(s: TextScale) {
     defaults().write().text_scale = TextScale(s.0.max(0.0));
 }
 
-/// Set the global default device density (dp→px) used when no local Density is active.
+/// Set the global default device density (dp->px) used when no local Density is active.
 /// Platform runners should call this whenever the window scale factor changes.
 pub fn set_density_default(d: Density) {
     defaults().write().density = Density {
@@ -517,7 +517,7 @@ impl Theme {
     }
 }
 
-/// Platform/device scale (dp→px multiplier). Platform runner should set this.
+/// Platform/device scale (dp->px multiplier). Platform runner should set this.
 #[derive(Clone, Copy, Debug)]
 pub struct Density {
     pub scale: f32,
@@ -759,7 +759,7 @@ impl WindowSizeClass {
 }
 
 /// Compute a [`WindowSizeClass`] from a window size in physical pixels and
-/// the current dp→px density scale (`Density.scale * UiScale.0`).
+/// the current dp->px density scale (`Density.scale * UiScale.0`).
 pub fn calculate_window_size_class(
     width_px: u32,
     height_px: u32,

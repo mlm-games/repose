@@ -140,7 +140,7 @@ pub fn PullToRefresh(
     let linear_tension = overshoot_percent.min(2.0);
     let tension_percent = linear_tension - linear_tension.powi(2) / 4.0;
     let rotation_turns = (-0.25 + 0.4 * adjusted_percent + tension_percent) * 0.5;
-    // rotate by 360° to convert turns → degrees, then to radians for the modifier
+    // rotate by 360° to convert turns -> degrees, then to radians for the modifier
     let spinner_rotation_rad = rotation_turns * std::f32::consts::TAU;
 
     // Indicator at top (pushed into view by overscroll) + content below.

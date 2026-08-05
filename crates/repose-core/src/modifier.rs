@@ -17,6 +17,8 @@ pub struct StateColors {
     pub hovered: Color,
     pub pressed: Color,
     pub disabled: Color,
+    /// Applied while the component is being dragged (preferred over hovered/pressed).
+    pub dragged: Color,
 }
 
 /// State-driven elevation for interactive components.
@@ -26,6 +28,8 @@ pub struct StateElevation {
     pub hovered: f32,
     pub pressed: f32,
     pub disabled: f32,
+    /// Elevation while the component is being dragged (preferred over hovered/pressed).
+    pub dragged: f32,
 }
 
 macro_rules! merge_opts {

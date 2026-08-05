@@ -1174,7 +1174,7 @@ pub struct TextFieldConfig {
     /// Tracks focus state during layout. The cell is set to `true` while this
     /// field is the focused text input, `false` otherwise.
     pub focus_tracker: Option<Rc<Cell<bool>>>,
-    /// Cursor brush (-> `cursorBrush`). `None` → theme default (`on_surface`).
+    /// Cursor brush (-> `cursorBrush`). `None` -> theme default (`on_surface`).
     pub cursor_brush: Option<repose_core::Brush>,
     /// Output transformation (-> `outputTransformation`). Transforms text for display only.
     pub output_transformation: Option<Rc<dyn repose_core::OutputTransformation>>,
@@ -1568,7 +1568,7 @@ pub(crate) fn paint_text_field(
     let line_h = if ts.line_height != 0.0 {
         dp_to_px(ts.line_height) * locals::text_scale().0
     } else if text_input.multiline {
-        0.0 // sentinel → renderer uses Normal line height (font-metric-based)
+        0.0 // sentinel -> renderer uses Normal line height (font-metric-based)
     } else {
         font_val // single-line needs tp use font em-size for correct cursor–text alignment
     };

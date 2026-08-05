@@ -179,7 +179,7 @@ pub enum TriState {
     Indeterminate,
 }
 
-/// M3 Tri-State Checkbox - cycles through Checked → Indeterminate → Unchecked.
+/// M3 Tri-State Checkbox - cycles through Checked -> Indeterminate -> Unchecked.
 /// Indeterminate shows a dash instead of a checkmark.
 pub fn TriStateCheckbox(
     state: TriState,

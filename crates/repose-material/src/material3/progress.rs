@@ -49,7 +49,7 @@ pub fn CircularProgressIndicator(
     // Three concurrent animations matching Compose Material3 indeterminate spec:
     //   1. Global rotation -> 1080° linear over 6000ms
     //   2. Additional rotation -> 90° stepped jumps with EmphasizedDecelerate
-    //   3. Sweep -> oscillates 0.1 → 0.87 → 0.1 over 6000ms
+    //   3. Sweep -> oscillates 0.1 -> 0.87 -> 0.1 over 6000ms
     let (global_rotation, additional_rotation, sweep_val) = if value.is_none() {
         let shared = remember_state_with_key("circ_ind_shared", || {
             let mut a = AnimatedValue::new(

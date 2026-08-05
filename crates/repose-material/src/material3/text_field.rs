@@ -497,18 +497,18 @@ fn outlined_field_decoration(
         )
     };
 
-    // Label font size: 16dp (expanded, inside) → 12dp (minimized, at border)
+    // Label font size: 16dp (expanded, inside) -> 12dp (minimized, at border)
     let label_size = 16.0 - 4.0 * float_t;
 
     // Minimized label half-height matches bodySmall line height (~16dp) / 2
     let min_label_half_h: f32 = if has_label { 8.0 } else { 0.0 };
 
-    // Label Y: expanded centered within 56dp field → minimized overlapping top border (-labelHeight/2)
+    // Label Y: expanded centered within 56dp field -> minimized overlapping top border (-labelHeight/2)
     let label_start_y = (56.0 - 16.0) / 2.0;
     let label_end_y = -min_label_half_h;
     let label_y = label_start_y - (label_start_y - label_end_y) * float_t;
 
-    // Label X: expanded at text-input start (~24dp) → minimized at border-start (~20dp)
+    // Label X: expanded at text-input start (~24dp) -> minimized at border-start (~20dp)
     let label_start_x = if has_label { 24.0 } else { 0.0 };
     let label_end_x = if has_label { 20.0 } else { 0.0 };
     let label_x = label_start_x - (label_start_x - label_end_x) * float_t;

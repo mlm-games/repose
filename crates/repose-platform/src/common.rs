@@ -283,7 +283,7 @@ pub(crate) fn dispatch_scroll(
             cb(delta);
             return (true, Some(cid));
         }
-        // Captured region is gone from the tree → release and re-pick below.
+        // Captured region is gone from the tree -> release and re-pick below.
     }
 
     // No held capture: lock to the top-most consumer under the pointer. Capture

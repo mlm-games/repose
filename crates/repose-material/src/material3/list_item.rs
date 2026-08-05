@@ -152,9 +152,13 @@ pub struct ListItemConfig {
     /// When false, renders disabled colors and suppresses clicks.
     pub enabled: bool,
     pub selected: bool,
+    /// Renders the M3 dragged color/elevation roles (e.g. while reordering).
+    pub dragged: bool,
     pub colors: ListItemColors,
     pub state_colors: StateColors,
     pub tonal_elevation: f32,
+    /// Additional elevation applied while `dragged` (M3 drag lift, e.g. Level 4).
+    pub dragged_elevation: f32,
     pub shadow_elevation: f32,
     pub shape_radius: f32,
     /// Per-corner radii `[BL, BR, TR, TL]`. When set, overrides `shape_radius`.
@@ -173,9 +177,11 @@ impl Default for ListItemConfig {
             modifier: Modifier::new(),
             enabled: true,
             selected: false,
+            dragged: false,
             colors: ListItemColors::default(),
             state_colors: ListItemDefaults::state_colors_default(),
             tonal_elevation: 0.0,
+            dragged_elevation: 0.0,
             shadow_elevation: 0.0,
             shape_radius: 0.0,
             shape_radii: None,
@@ -206,38 +212,39 @@ pub fn ListItem(
     let th = theme();
     let is_enabled = config.enabled;
     let is_selected = config.selected;
+    let is_dragged = config.dragged;
     let c = &config.colors;
     let id = remember(|| LISTITEM_COUNTER.fetch_add(1, Ordering::Relaxed));
     let spec = th.motion.color;
 
     let hd_col = animate_color(
         format!("li_hd_{}", id),
-        c.headline(is_enabled, is_selected, false),
+        c.headline(is_enabled, is_selected, is_dragged),
         spec,
     );
     let sp_col = animate_color(
         format!("li_sp_{}", id),
-        c.supporting(is_enabled, is_selected, false),
+        c.supporting(is_enabled, is_selected, is_dragged),
         spec,
     );
     let ol_col = animate_color(
         format!("li_ol_{}", id),
-        c.overline(is_enabled, is_selected, false),
+        c.overline(is_enabled, is_selected, is_dragged),
         spec,
     );
     let ld_col = animate_color(
         format!("li_ld_{}", id),
-        c.leading_icon(is_enabled, is_selected, false),
+        c.leading_icon(is_enabled, is_selected, is_dragged),
         spec,
     );
     let tr_col = animate_color(
         format!("li_tr_{}", id),
-        c.trailing_icon(is_enabled, is_selected, false),
+        c.trailing_icon(is_enabled, is_selected, is_dragged),
         spec,
     );
     let bg = animate_color(
         format!("li_bg_{}", id),
-        c.container(is_enabled, is_selected, false),
+        c.container(is_enabled, is_selected, is_dragged),
         spec,
     );
 
@@ -288,11 +295,17 @@ pub fn ListItem(
         .interaction_source(&*li_source)
         .then(config.modifier);
 
-    if config.tonal_elevation > 0.0 {
+    if config.tonal_elevation > 0.0 || config.dragged_elevation > 0.0 {
+        let dragged_elev = if config.dragged_elevation > 0.0 {
+            config.dragged_elevation
+        } else {
+            config.tonal_elevation
+        };
         modifier = modifier.state_elevation(StateElevation {
             default: config.tonal_elevation,
             hovered: config.tonal_elevation,
             pressed: config.tonal_elevation,
+            dragged: dragged_elev,
             disabled: 0.0,
         });
     }
