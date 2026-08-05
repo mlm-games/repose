@@ -159,6 +159,10 @@ impl IndicationDrawNode for RippleDrawNode {
 
         let prev_pid = *last_pid.borrow();
 
+        animation_driver::touch(&format!("{}:drv:a", base));
+        animation_driver::touch(&format!("{}:drv:r", base));
+        animation_driver::touch(&format!("{}:drv:c", base));
+
         // Use last_press_id which persists after release (unlike is_pressed which is transient
         // because press+release can both happen before the next frame renders).
         let new_press = current_pid.is_some() && current_pid != prev_pid;

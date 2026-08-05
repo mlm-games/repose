@@ -658,12 +658,24 @@ impl LayoutEngine {
             (p)(scene, rect, alpha_accum);
         }
 
-        // Draw indication (ripple, etc.) on top of content but behind hit regions
-        if let Some(factory) = modifier.indication.clone().or_else(|| local_indication()) {
-            if let Some(ref interaction_source) = modifier.interaction_source {
-                let draw_node = factory.create(interaction_source);
-                draw_node.draw(scene, rect, alpha_accum);
-            }
+        // Draw indication (ripple, etc.) on top of content but behind hit regions.
+        let indication_factory = modifier.indication.clone().or_else(local_indication);
+        let indication_source = if let Some(ref src) = modifier.interaction_source {
+            Some(src.clone())
+        } else if indication_factory.is_some() && owns_hit {
+            let msrc = remember_state_with_key(
+                format!("rx:ixsrc:{view_id}"),
+                MutableInteractionSource::new,
+            );
+            Some(msrc.borrow().source())
+        } else {
+            None
+        };
+        if let (Some(ref factory), Some(ref interaction_source)) =
+            (indication_factory.as_ref(), indication_source.as_ref())
+        {
+            let draw_node = factory.create(interaction_source);
+            draw_node.draw(scene, rect, alpha_accum);
         }
 
         if owns_hit {
@@ -683,16 +695,23 @@ impl LayoutEngine {
 
             // Auto-wire InteractionSource to pointer/hover callbacks.
             // The source's state is OR'd with the implicit view-ID state in state resolution above.
-            if let Some(ref src) = modifier.interaction_source {
+            if let Some(ref src) = indication_source {
                 let msrc = src.to_mutable();
                 let last_press_id: Rc<Cell<Option<PressId>>> = Rc::new(Cell::new(None));
 
-                // Wrap on_pointer_down to emit Press with position + unique ID
+                // Wrap on_pointer_down to emit Press with position + unique ID.
+                // Pointer events arrive in window coordinates; the ripple origin
+                // is computed relative to the view rect, so convert to local.
                 let orig_down = hit.on_pointer_down.take();
                 let s_down = msrc.clone();
                 let lpid_down = last_press_id.clone();
+                let rect_origin = (rect.x, rect.y);
                 hit.on_pointer_down = Some(Rc::new(move |ev| {
-                    let press = Interaction::new_press(ev.position);
+                    let local = Vec2 {
+                        x: ev.position.x - rect_origin.0,
+                        y: ev.position.y - rect_origin.1,
+                    };
+                    let press = Interaction::new_press(local);
                     if let Interaction::Press(id, _) = press {
                         lpid_down.set(Some(id));
                     }
