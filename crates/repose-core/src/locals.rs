@@ -505,7 +505,7 @@ impl Default for Theme {
             scrollbar_thumb: colors.outline.with_alpha(179),
             button_bg: colors.primary,
             button_bg_hover: colors.primary_container,
-            button_bg_pressed: colors.on_primary_container,
+            button_bg_pressed: colors.secondary_container,
         }
     }
 }
