@@ -186,7 +186,7 @@ impl WindowManagerState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ResizeHandle {
+pub enum ResizeHandle {
     Left,
     Right,
     Top,
@@ -214,6 +214,186 @@ struct DragState {
     max_size: Option<Size>,
 }
 
+/// Ephemeral, reusable window behavior handle. Created inside [`WindowHost`] and
+/// passed to the [`WindowModifierExt`] helpers so custom chrome can reuse the
+/// exact same window behavior.
+#[derive(Clone)]
+pub struct WindowHostHandle {
+    pub(crate) state: Rc<RefCell<WindowManagerState>>,
+    pub(crate) bounds: Rc<RefCell<Rect>>,
+    pub(crate) drag_state: Rc<RefCell<Option<DragState>>>,
+}
+
+fn cursor_for_resize_handle(handle: ResizeHandle) -> CursorIcon {
+    match handle {
+        ResizeHandle::Top | ResizeHandle::Bottom => CursorIcon::NsResize,
+        _ => CursorIcon::EwResize,
+    }
+}
+
+/// Modular window behavior modifiers. Lets custom chrome reuse window behavior:
+///
+/// ```ignore
+/// use repose_ui::windowing::{WindowModifierExt, WindowHostHandle};
+/// Row(Modifier::new().window_drag_region(&host, window_id)).child(...)
+/// ```
+pub trait WindowModifierExt: Sized {
+    /// Bring this window to the front when the region is pressed.
+    fn window_focus_region(self, host: &WindowHostHandle, window_id: u64) -> Modifier;
+
+    /// Make this node a drag region that moves the window.
+    fn window_drag_region(self, host: &WindowHostHandle, window_id: u64) -> Modifier;
+
+    /// Make this node a resize handle for the given edge/corner.
+    fn window_resize_handle(
+        self,
+        host: &WindowHostHandle,
+        window_id: u64,
+        handle: ResizeHandle,
+    ) -> Modifier;
+
+    /// Shared "while dragging" continuation: move + end. Used by both the drag
+    /// region and resize handles.
+    fn window_drag_continuation(self, host: &WindowHostHandle, window_id: u64) -> Modifier;
+}
+
+impl WindowModifierExt for Modifier {
+    fn window_focus_region(self, host: &WindowHostHandle, window_id: u64) -> Modifier {
+        let state = host.state.clone();
+
+        self.on_pointer_down(move |pe: PointerEvent| {
+            if matches!(pe.event, PointerEventKind::Down(PointerButton::Primary)) {
+                state.borrow_mut().bring_to_front(window_id);
+                request_frame();
+            }
+        })
+    }
+
+    fn window_drag_region(self, host: &WindowHostHandle, window_id: u64) -> Modifier {
+        let drag_state_down = host.drag_state.clone();
+        let state_down = host.state.clone();
+
+        self.cursor(CursorIcon::Grab)
+            .on_pointer_down(move |pe: PointerEvent| {
+                if !matches!(pe.event, PointerEventKind::Down(PointerButton::Primary)) {
+                    return;
+                }
+
+                let (pos, size, min_size, max_size) = {
+                    let st = state_down.borrow();
+                    let Some(w) = st.windows.iter().find(|w| w.id == window_id) else {
+                        return;
+                    };
+                    (w.position, w.size, w.min_size, w.max_size)
+                };
+
+                *drag_state_down.borrow_mut() = Some(DragState {
+                    window_id,
+                    kind: DragKind::Move,
+                    start_pointer: px_vec_to_dp(pe.position),
+                    start_pos: pos,
+                    start_size: size,
+                    min_size,
+                    max_size,
+                });
+
+                state_down.borrow_mut().bring_to_front(window_id);
+                request_frame();
+            })
+            .window_drag_continuation(host, window_id)
+    }
+
+    fn window_resize_handle(
+        self,
+        host: &WindowHostHandle,
+        window_id: u64,
+        handle: ResizeHandle,
+    ) -> Modifier {
+        let drag_state_down = host.drag_state.clone();
+        let state_down = host.state.clone();
+
+        self.cursor(cursor_for_resize_handle(handle))
+            .on_pointer_down(move |pe: PointerEvent| {
+                if !matches!(pe.event, PointerEventKind::Down(PointerButton::Primary)) {
+                    return;
+                }
+
+                let (pos, size, min_size, max_size) = {
+                    let st = state_down.borrow();
+                    let Some(w) = st.windows.iter().find(|w| w.id == window_id) else {
+                        return;
+                    };
+                    (w.position, w.size, w.min_size, w.max_size)
+                };
+
+                *drag_state_down.borrow_mut() = Some(DragState {
+                    window_id,
+                    kind: DragKind::Resize(handle),
+                    start_pointer: px_vec_to_dp(pe.position),
+                    start_pos: pos,
+                    start_size: size,
+                    min_size,
+                    max_size,
+                });
+
+                state_down.borrow_mut().bring_to_front(window_id);
+                request_frame();
+            })
+            .window_drag_continuation(host, window_id)
+    }
+
+    fn window_drag_continuation(self, host: &WindowHostHandle, window_id: u64) -> Modifier {
+        let drag_state_move = host.drag_state.clone();
+        let state_move = host.state.clone();
+        let bounds_move = host.bounds.clone();
+
+        let drag_state_up = host.drag_state.clone();
+
+        self.on_pointer_move(move |pe: PointerEvent| {
+            let Some(ds) = *drag_state_move.borrow() else {
+                return;
+            };
+
+            if ds.window_id != window_id {
+                return;
+            }
+
+            let cur = px_vec_to_dp(pe.position);
+            let delta = Vec2 {
+                x: cur.x - ds.start_pointer.x,
+                y: cur.y - ds.start_pointer.y,
+            };
+
+            let bounds = *bounds_move.borrow();
+
+            let (mut pos, mut size) = match ds.kind {
+                DragKind::Move => (
+                    Vec2 {
+                        x: ds.start_pos.x + delta.x,
+                        y: ds.start_pos.y + delta.y,
+                    },
+                    ds.start_size,
+                ),
+                DragKind::Resize(handle) => resize_from_handle(ds, handle, delta),
+            };
+
+            let (clamped_pos, clamped_size) =
+                clamp_rect(pos, size, ds.min_size, ds.max_size, bounds);
+
+            pos = clamped_pos;
+            size = clamped_size;
+
+            let mut st = state_move.borrow_mut();
+            st.set_position(window_id, pos);
+            st.set_size(window_id, size);
+            request_frame();
+        })
+        .on_pointer_up(move |_pe: PointerEvent| {
+            *drag_state_up.borrow_mut() = None;
+        })
+    }
+}
+
 pub fn WindowHost(
     key: impl Into<String>,
     modifier: Modifier,
@@ -227,6 +407,12 @@ pub fn WindowHost(
     let drag_state = repose_core::remember_with_key(format!("window:drag:{key}"), || {
         RefCell::new(None::<DragState>)
     });
+
+    let host = WindowHostHandle {
+        state: state.clone(),
+        bounds: bounds.clone(),
+        drag_state: drag_state.clone(),
+    };
 
     let bounds_capture = bounds.clone();
     let host_mod = modifier.painter(move |_scene, rect_px, _alpha| {
@@ -276,37 +462,6 @@ pub fn WindowHost(
                 th.surface
             };
 
-            let start_drag = {
-                let drag_state = drag_state.clone();
-                let state = state.clone();
-                move |kind: DragKind, pe: PointerEvent| {
-                    if !matches!(pe.event, PointerEventKind::Down(PointerButton::Primary)) {
-                        return;
-                    }
-
-                    let (pos, size, min_size, max_size) = {
-                        let st = state.borrow();
-                        let Some(w) = st.windows.iter().find(|w| w.id == window_id) else {
-                            return;
-                        };
-                        (w.position, w.size, w.min_size, w.max_size)
-                    };
-
-                    let start = DragState {
-                        window_id,
-                        kind,
-                        start_pointer: px_vec_to_dp(pe.position),
-                        start_pos: pos,
-                        start_size: size,
-                        min_size,
-                        max_size,
-                    };
-                    *drag_state.borrow_mut() = Some(start);
-                    state.borrow_mut().bring_to_front(window_id);
-                    request_frame();
-                }
-            };
-
             let bring_to_front = {
                 let state = state.clone();
                 move || {
@@ -315,56 +470,8 @@ pub fn WindowHost(
                 }
             };
 
-            let move_drag = {
-                let drag_state = drag_state.clone();
-                let state = state.clone();
-                let bounds = bounds.clone();
-                move |pe: PointerEvent| {
-                    let Some(ds) = *drag_state.borrow() else {
-                        return;
-                    };
-                    if ds.window_id != window_id {
-                        return;
-                    }
-
-                    let cur = px_vec_to_dp(pe.position);
-                    let delta = Vec2 {
-                        x: cur.x - ds.start_pointer.x,
-                        y: cur.y - ds.start_pointer.y,
-                    };
-                    let bounds = *bounds.borrow();
-
-                    let (mut pos, mut size) = match ds.kind {
-                        DragKind::Move => (
-                            Vec2 {
-                                x: ds.start_pos.x + delta.x,
-                                y: ds.start_pos.y + delta.y,
-                            },
-                            ds.start_size,
-                        ),
-                        DragKind::Resize(handle) => resize_from_handle(ds, handle, delta),
-                    };
-
-                    let (clamped_pos, clamped_size) =
-                        clamp_rect(pos, size, ds.min_size, ds.max_size, bounds);
-                    pos = clamped_pos;
-                    size = clamped_size;
-
-                    let mut st = state.borrow_mut();
-                    st.set_position(window_id, pos);
-                    st.set_size(window_id, size);
-                    request_frame();
-                }
-            };
-
-            let end_drag = {
-                let drag_state = drag_state.clone();
-                move |_pe: PointerEvent| {
-                    *drag_state.borrow_mut() = None;
-                }
-            };
-
-            let is_dragging = drag_state
+            let is_dragging = host
+                .drag_state
                 .borrow()
                 .as_ref()
                 .is_some_and(|d| d.window_id == window_id && d.kind == DragKind::Move);
@@ -477,13 +584,8 @@ pub fn WindowHost(
 
                 if window_draggable {
                     bar_mod = bar_mod
-                        .cursor(title_cursor)
-                        .on_pointer_down({
-                            let start_drag = start_drag.clone();
-                            move |pe| start_drag(DragKind::Move, pe)
-                        })
-                        .on_pointer_move(move_drag.clone())
-                        .on_pointer_up(end_drag.clone());
+                        .window_drag_region(&host, window_id)
+                        .cursor(title_cursor);
                 } else {
                     bar_mod = bar_mod.on_pointer_down(move |_| bring_to_front());
                 }
@@ -520,28 +622,13 @@ pub fn WindowHost(
                 Box(Modifier::new().fill_max_size().padding(WINDOW_PADDING_DP)).child(content_view);
 
             let resize_handles = if window_resizable {
-                let handles = build_resize_handles(
-                    window_id,
-                    start_drag.clone(),
-                    move_drag.clone(),
-                    end_drag.clone(),
-                );
+                let handles = build_resize_handles(&host, window_id);
                 apply_z_offset(handles, chrome_z + 1.0)
             } else {
                 Box(Modifier::new())
             };
 
             let column = Column(Modifier::new().fill_max_size()).child((title_bar, content_shell));
-
-            let focus_on_pointer_down = {
-                let state = state.clone();
-                move |pe: PointerEvent| {
-                    if matches!(pe.event, PointerEventKind::Down(PointerButton::Primary)) {
-                        state.borrow_mut().bring_to_front(window_id);
-                        request_frame();
-                    }
-                }
-            };
 
             let mut window_view = Box(Modifier::new()
                 .key(key_for(window_id, 1))
@@ -552,7 +639,7 @@ pub fn WindowHost(
                 .border(1.0, border_color, th.shapes.medium)
                 .clip_rounded(th.shapes.medium)
                 .z_index(-1.0)
-                .on_pointer_down(focus_on_pointer_down))
+                .window_focus_region(&host, window_id))
             .child(ZStack(Modifier::new().fill_max_size()).child((column, resize_handles)));
             window_view = apply_z_offset(window_view, z_base);
             window_view
@@ -568,75 +655,24 @@ pub fn WindowHost(
     ))
 }
 
-fn build_resize_handles(
-    window_id: u64,
-    start_drag: impl Fn(DragKind, PointerEvent) + Clone + 'static,
-    move_drag: impl Fn(PointerEvent) + Clone + 'static,
-    end_drag: impl Fn(PointerEvent) + Clone + 'static,
-) -> View {
+fn build_resize_handles(host: &WindowHostHandle, window_id: u64) -> View {
     let handles = [
-        (
-            ResizeHandle::Left,
-            handle_mod_left(),
-            CursorIcon::EwResize,
-            20,
-        ),
-        (
-            ResizeHandle::Right,
-            handle_mod_right(),
-            CursorIcon::EwResize,
-            21,
-        ),
-        (
-            ResizeHandle::Top,
-            handle_mod_top(),
-            CursorIcon::NsResize,
-            22,
-        ),
-        (
-            ResizeHandle::Bottom,
-            handle_mod_bottom(),
-            CursorIcon::NsResize,
-            23,
-        ),
-        (
-            ResizeHandle::TopLeft,
-            handle_mod_corner(true, true),
-            CursorIcon::EwResize,
-            24,
-        ),
-        (
-            ResizeHandle::TopRight,
-            handle_mod_corner(false, true),
-            CursorIcon::EwResize,
-            25,
-        ),
-        (
-            ResizeHandle::BottomLeft,
-            handle_mod_corner(true, false),
-            CursorIcon::EwResize,
-            26,
-        ),
-        (
-            ResizeHandle::BottomRight,
-            handle_mod_corner(false, false),
-            CursorIcon::EwResize,
-            27,
-        ),
+        (ResizeHandle::Left, handle_mod_left(), 20),
+        (ResizeHandle::Right, handle_mod_right(), 21),
+        (ResizeHandle::Top, handle_mod_top(), 22),
+        (ResizeHandle::Bottom, handle_mod_bottom(), 23),
+        (ResizeHandle::TopLeft, handle_mod_corner(true, true), 24),
+        (ResizeHandle::TopRight, handle_mod_corner(false, true), 25),
+        (ResizeHandle::BottomLeft, handle_mod_corner(true, false), 26),
+        (ResizeHandle::BottomRight, handle_mod_corner(false, false), 27),
     ];
 
     Column(Modifier::new().fill_max_size()).with_children(
         handles
             .into_iter()
-            .map(|(handle, modifier, cursor, key)| {
+            .map(|(handle, modifier, key)| {
                 Box(modifier
-                    .cursor(cursor)
-                    .on_pointer_down({
-                        let start_drag = start_drag.clone();
-                        move |pe| start_drag(DragKind::Resize(handle), pe)
-                    })
-                    .on_pointer_move(move_drag.clone())
-                    .on_pointer_up(end_drag.clone())
+                    .window_resize_handle(host, window_id, handle)
                     .key(key_for(window_id, key)))
             })
             .collect::<Vec<_>>(),

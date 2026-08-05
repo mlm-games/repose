@@ -1,6 +1,5 @@
 #![allow(non_snake_case)]
 
-use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -248,6 +247,180 @@ struct SplitDrag {
     dir: SplitDir,
 }
 
+/// Ephemeral, reusable dock behavior handle. Created by [`remember_dock_handle`]
+/// and passed to the [`DockModifierExt`] helpers so custom chrome can reuse the
+/// exact same docking behavior.
+#[derive(Clone)]
+pub struct DockHandle {
+    pub(crate) key: String,
+    pub(crate) state: Rc<RefCell<DockState>>,
+    pub(crate) callbacks: DockCallbacks,
+    pub(crate) hover_sig: Signal<Option<HoverHint>>,
+    pub(crate) tab_hover: Signal<Option<PanelId>>,
+    pub(crate) drag_active: Signal<bool>,
+}
+
+/// Create a [`DockHandle`] bound to a dock state and callbacks. Remember this in
+/// your widget so it survives recompositions.
+pub fn remember_dock_handle(
+    key: impl Into<String>,
+    state: Rc<RefCell<DockState>>,
+    callbacks: DockCallbacks,
+) -> DockHandle {
+    let key = key.into();
+
+    let hover_sig = remember_with_key(format!("dock:hover:{key}"), || signal(None::<HoverHint>));
+    let tab_hover = remember_with_key(format!("dock:tab_hover:{key}"), || signal(None::<PanelId>));
+    let drag_active = remember_with_key(format!("dock:drag_active:{key}"), || signal(false));
+
+    DockHandle {
+        key,
+        state,
+        callbacks,
+        hover_sig: (*hover_sig).clone(),
+        tab_hover: (*tab_hover).clone(),
+        drag_active: (*drag_active).clone(),
+    }
+}
+
+/// Modular dock behavior modifiers. Lets custom chrome reuse docking behavior:
+///
+/// ```ignore
+/// use repose_docking::{DockModifierExt, DockHandle};
+/// Row(Modifier::new().dock_tab_source(&dock, panel_id)).child(...)
+/// ```
+pub trait DockModifierExt: Sized {
+    /// Make this node a draggable dock-tab source.
+    fn dock_tab_source(self, dock: &DockHandle, panel_id: PanelId) -> Modifier;
+
+    /// Make a tab strip accept dropped tabs for reorder/insert.
+    fn dock_tab_strip_drop_target(
+        self,
+        dock: &DockHandle,
+        node_id: u64,
+        tabbar_rect: Rc<RefCell<Rect>>,
+    ) -> Modifier;
+
+    /// Make this node one specific dock drop zone.
+    fn dock_drop_zone(self, dock: &DockHandle, node_id: u64, zone: DropZone) -> Modifier;
+
+    /// Make this node the outer "float/popout" target.
+    fn dock_float_target(self, dock: &DockHandle) -> Modifier;
+}
+
+impl DockModifierExt for Modifier {
+    fn dock_tab_source(self, dock: &DockHandle, panel_id: PanelId) -> Modifier {
+        let drag_active_start = dock.drag_active.clone();
+
+        let hover_end = dock.hover_sig.clone();
+        let drag_active_end = dock.drag_active.clone();
+
+        self.cursor(CursorIcon::Grab)
+            .drag_source::<DockTabPayload>(move |_start| {
+                drag_active_start.set(true);
+                Some(DockTabPayload { panel_id })
+            })
+            .on_drag_end(move |_end| {
+                drag_active_end.set(false);
+                hover_end.set(None);
+            })
+    }
+
+    fn dock_tab_strip_drop_target(
+        self,
+        dock: &DockHandle,
+        node_id: u64,
+        tabbar_rect: Rc<RefCell<Rect>>,
+    ) -> Modifier {
+        let state = dock.state.clone();
+        let hover_sig = dock.hover_sig.clone();
+        let drag_active = dock.drag_active.clone();
+
+        self.on_drop_typed::<DockTabPayload>(move |ev, p| {
+            let mut st = state.borrow_mut();
+
+            // Preserve current logic: remove without normalizing so node_id remains valid.
+            st.remove_panel_no_normalize(p.panel_id);
+
+            let r = *tabbar_rect.borrow();
+            let t = if r.w > 1.0 {
+                ((ev.position.x - r.x) / r.w).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+
+            if let Some(n) = find_node_mut(&mut st.root, node_id) {
+                if matches!(n.kind, DockKind::Empty) {
+                    n.kind = DockKind::Tabs {
+                        tabs: Vec::new(),
+                        active: None,
+                    };
+                }
+
+                if let DockKind::Tabs { tabs, active } = &mut n.kind {
+                    tabs.retain(|&x| x != p.panel_id);
+                    let idx = ((t * (tabs.len() as f32 + 1.0)).floor() as usize).min(tabs.len());
+                    tabs.insert(idx, p.panel_id);
+                    *active = Some(p.panel_id);
+                }
+            }
+
+            st.normalize();
+            hover_sig.set(None);
+            drag_active.set(false);
+            request_frame();
+            true
+        })
+    }
+
+    fn dock_drop_zone(self, dock: &DockHandle, node_id: u64, zone: DropZone) -> Modifier {
+        let hover_enter = dock.hover_sig.clone();
+        let hover_over = dock.hover_sig.clone();
+        let hover_leave = dock.hover_sig.clone();
+        let hover_drop = dock.hover_sig.clone();
+        let state = dock.state.clone();
+
+        self.z_index(3000.0)
+            .render_z_index(3000.0)
+            .key(hash_zone_key(node_id, zone))
+            .on_drag_enter_typed::<DockTabPayload>(move |_ev, _p| {
+                hover_enter.set(Some(HoverHint { node_id, zone }));
+            })
+            .on_drag_over_typed::<DockTabPayload>(move |_ev, _p| {
+                hover_over.set(Some(HoverHint { node_id, zone }));
+            })
+            .on_drag_leave_typed::<DockTabPayload>(move |_ev, _p| {
+                if hover_leave.get().as_ref() == Some(&HoverHint { node_id, zone }) {
+                    hover_leave.set(None);
+                }
+            })
+            .on_drop_typed::<DockTabPayload>(move |_ev, p| {
+                let ok = state.borrow_mut().dock_panel(node_id, zone, p.panel_id);
+                hover_drop.set(None);
+                request_frame();
+                ok
+            })
+    }
+
+    fn dock_float_target(self, dock: &DockHandle) -> Modifier {
+        let state = dock.state.clone();
+        let hover_sig = dock.hover_sig.clone();
+        let cb_pop = dock.callbacks.on_popout.clone();
+
+        self.on_drop_typed::<DockTabPayload>(move |_ev, p| {
+            let Some(pop) = cb_pop.as_ref() else {
+                return false;
+            };
+
+            state.borrow_mut().remove_panel(p.panel_id);
+            pop(p.panel_id);
+            hover_sig.set(None);
+            request_frame();
+            true
+        })
+    }
+}
+
 pub fn DockArea(
     key: impl Into<String>,
     modifier: Modifier,
@@ -258,10 +431,8 @@ pub fn DockArea(
     let key = key.into();
     let registry = Rc::new(build_registry(panels));
 
-    // Ephemeral UI state (per DockArea)
-    let hover_sig = remember_with_key(format!("dock:hover:{key}"), || signal(None::<HoverHint>));
-    let tab_hover = remember_with_key(format!("dock:tab_hover:{key}"), || signal(None::<PanelId>));
-    let drag_active = remember_with_key(format!("dock:drag_active:{key}"), || signal(false));
+    let dock = remember_dock_handle(key.clone(), state, callbacks);
+
     let split_hover = remember_with_key(format!("dock:split_hover:{key}"), || signal(None::<u64>));
     let split_drag = remember_with_key(format!("dock:split_drag:{key}"), || {
         RefCell::new(None::<SplitDrag>)
@@ -269,43 +440,20 @@ pub fn DockArea(
 
     // Outer "float" drop target: if you drop a tab anywhere not handled by inner targets.
     // We set z-index low so inner targets win.
-    let float_target = {
-        let state = state.clone();
-        let hover_sig = hover_sig.clone();
-        let cb_pop = callbacks.on_popout.clone();
-
-        Box(Modifier::new()
+    let float_target = Box(
+        Modifier::new()
             .fill_max_size()
             .z_index(-1000.0)
-            .on_drop(move |ev| {
-                // Only accept docking payloads
-                let Some(p) = ev.payload.as_ref().downcast_ref::<DockTabPayload>() else {
-                    return false;
-                };
-                let Some(pop) = cb_pop.as_ref() else {
-                    return false;
-                };
-
-                // Remove from dock tree, then pop out
-                state.borrow_mut().remove_panel(p.panel_id);
-                pop(p.panel_id);
-
-                hover_sig.set(None);
-                true
-            }))
-    };
+            .dock_float_target(&dock),
+    );
 
     // Actual docking UI
     let root_view = {
-        let st = state.borrow().clone();
+        let st = dock.state.borrow().clone();
         render_node(
             &st.root,
             &registry,
-            &state,
-            &callbacks,
-            &hover_sig,
-            &drag_active,
-            &tab_hover,
+            &dock,
             &split_hover,
             &split_drag,
             key.as_str(),
@@ -335,11 +483,7 @@ fn build_registry(panels: Vec<DockPanel>) -> HashMap<PanelId, DockPanel> {
 fn render_node(
     node: &DockNode,
     registry: &Rc<HashMap<PanelId, DockPanel>>,
-    state: &Rc<RefCell<DockState>>,
-    callbacks: &DockCallbacks,
-    hover_sig: &Signal<Option<HoverHint>>,
-    drag_active: &Signal<bool>,
-    tab_hover: &Signal<Option<PanelId>>,
+    dock: &DockHandle,
     split_hover: &Signal<Option<u64>>,
     split_drag: &Rc<RefCell<Option<SplitDrag>>>,
     key_prefix: &str,
@@ -371,11 +515,7 @@ fn render_node(
             tabs,
             *active,
             registry,
-            state,
-            callbacks,
-            hover_sig,
-            drag_active,
-            tab_hover,
+            dock,
             split_hover,
             key_prefix,
         ),
@@ -387,11 +527,7 @@ fn render_node(
             a,
             b,
             registry,
-            state,
-            callbacks,
-            hover_sig,
-            drag_active,
-            tab_hover,
+            dock,
             split_hover,
             split_drag,
             key_prefix,
@@ -404,11 +540,7 @@ fn render_tabs(
     tabs: &Vec<PanelId>,
     active: Option<PanelId>,
     registry: &Rc<HashMap<PanelId, DockPanel>>,
-    state: &Rc<RefCell<DockState>>,
-    callbacks: &DockCallbacks,
-    hover_sig: &Signal<Option<HoverHint>>,
-    drag_active: &Signal<bool>,
-    tab_hover: &Signal<Option<PanelId>>,
+    dock: &DockHandle,
     _split_hover: &Signal<Option<u64>>,
     key_prefix: &str,
 ) -> View {
@@ -448,55 +580,8 @@ fn render_tabs(
             move |_scene, r, _alpha| *tabbar_rect.borrow_mut() = r
         });
 
-    if drag_active.get() {
-        bar_mod = bar_mod.on_drop({
-            let state = state.clone();
-            let tabbar_rect = tabbar_rect.clone();
-            let hover_sig = hover_sig.clone();
-            let drag_active = drag_active.clone();
-
-            move |ev| {
-                let Some(p) = ev.payload.as_ref().downcast_ref::<DockTabPayload>() else {
-                    return false;
-                };
-
-                let mut st = state.borrow_mut();
-
-                // Always rm WITHOUT normalizing to preserve node_id validity
-                st.remove_panel_no_normalize(p.panel_id);
-
-                let r = *tabbar_rect.borrow();
-                let t = if r.w > 1.0 {
-                    ((ev.position.x - r.x) / r.w).clamp(0.0, 1.0)
-                } else {
-                    1.0
-                };
-
-                if let Some(n) = find_node_mut(&mut st.root, node_id) {
-                    if matches!(n.kind, DockKind::Empty) {
-                        n.kind = DockKind::Tabs {
-                            tabs: Vec::new(),
-                            active: None,
-                        };
-                    }
-
-                    if let DockKind::Tabs { tabs, active } = &mut n.kind {
-                        tabs.retain(|&x| x != p.panel_id);
-                        let idx =
-                            ((t * (tabs.len() as f32 + 1.0)).floor() as usize).min(tabs.len());
-                        tabs.insert(idx, p.panel_id);
-                        *active = Some(p.panel_id);
-                    }
-                }
-
-                st.normalize();
-
-                hover_sig.set(None);
-                drag_active.set(false);
-                request_frame();
-                true
-            }
-        });
+    if dock.drag_active.get() {
+        bar_mod = bar_mod.dock_tab_strip_drop_target(dock, node_id, tabbar_rect.clone());
     }
 
     let tab_bar = Row(bar_mod).with_children(
@@ -505,14 +590,14 @@ fn render_tabs(
             .filter_map(|pid| {
                 let panel = registry.get(&pid)?;
                 let is_active = Some(pid) == active_pid;
-                let is_hovered = tab_hover.get() == Some(pid);
+                let is_hovered = dock.tab_hover.get() == Some(pid);
 
-                let state_set = state.clone();
+                let state_set = dock.state.clone();
                 let title = panel.title.clone();
                 let drag_pid = pid;
 
-                let cb_close = callbacks.on_close.clone();
-                let cb_pop = callbacks.on_popout.clone();
+                let cb_close = dock.callbacks.on_close.clone();
+                let cb_pop = dock.callbacks.on_popout.clone();
 
                 let tab_bg = if is_active {
                     active_bg
@@ -525,12 +610,12 @@ fn render_tabs(
                 let tab_fg = if is_active { active_fg } else { inactive_fg };
 
                 let hover_in = {
-                    let tab_hover = tab_hover.clone();
+                    let tab_hover = dock.tab_hover.clone();
                     move |_| tab_hover.set(Some(pid))
                 };
 
                 let hover_out = {
-                    let tab_hover = tab_hover.clone();
+                    let tab_hover = dock.tab_hover.clone();
                     move |_| {
                         if tab_hover.get() == Some(pid) {
                             tab_hover.set(None);
@@ -539,7 +624,7 @@ fn render_tabs(
                 };
 
                 let pop_view = if let Some(pop) = cb_pop {
-                    let state_for_pop = state.clone();
+                    let state_for_pop = dock.state.clone();
                     dock_tab_icon_button("↗", tab_fg, move |_| {
                         state_for_pop.borrow_mut().remove_panel(pid);
                         pop(pid);
@@ -575,7 +660,6 @@ fn render_tabs(
                             })
                             .gap(4.0)
                             .clickable()
-                            .cursor(CursorIcon::Grab)
                             .on_pointer_enter(hover_in)
                             .on_pointer_leave(hover_out)
                             .on_pointer_down({
@@ -585,25 +669,7 @@ fn render_tabs(
                                     request_frame();
                                 }
                             })
-                            .on_drag_start({
-                                let drag_active = drag_active.clone();
-                                move |_start| {
-                                    drag_active.set(true);
-                                    Some(
-                                        Rc::new(DockTabPayload {
-                                            panel_id: drag_pid,
-                                        }) as Rc<dyn Any>,
-                                    )
-                                }
-                            })
-                            .on_drag_end({
-                                let hover_sig = hover_sig.clone();
-                                let drag_active = drag_active.clone();
-                                move |_end| {
-                                    drag_active.set(false);
-                                    hover_sig.set(None);
-                                }
-                            }),
+                            .dock_tab_source(dock, drag_pid),
                     )
                     .child((
                         Box(
@@ -645,7 +711,7 @@ fn render_tabs(
     };
 
     // Drop zones overlay (present only while dragging)
-    let overlay = dock_drop_overlay(node_id, state, hover_sig, drag_active, key_prefix);
+    let overlay = dock_drop_overlay(node_id, dock, key_prefix);
 
     ZStack(Modifier::new().fill_max_size().key(node_id)).child((
         Column(
@@ -703,21 +769,15 @@ fn dock_tab_icon_button(
     )
 }
 
-fn dock_drop_overlay(
-    node_id: u64,
-    state: &Rc<RefCell<DockState>>,
-    hover_sig: &Signal<Option<HoverHint>>,
-    drag_active: &Signal<bool>,
-    key_prefix: &str,
-) -> View {
+fn dock_drop_overlay(node_id: u64, dock: &DockHandle, key_prefix: &str) -> View {
     let th = theme();
 
-    if !drag_active.get() {
+    if !dock.drag_active.get() {
         return Box(Modifier::new().hit_passthrough());
     }
 
     let zone_dp = 72.0;
-    let hover = hover_sig.get();
+    let hover = dock.hover_sig.get();
 
     let preview = if let Some(h) = hover.as_ref() {
         if h.node_id == node_id {
@@ -729,46 +789,7 @@ fn dock_drop_overlay(
         Box(Modifier::new())
     };
 
-    let mk_zone = |zone: DropZone, m: Modifier| -> View {
-        let state2 = state.clone();
-        let hover2 = hover_sig.clone();
-
-        Box(
-            m.z_index(3000.0)
-                .render_z_index(3000.0)
-                .key(hash_zone_key(node_id, zone))
-                .on_drag_enter({
-                    let hover2 = hover2.clone();
-                    move |_ev| {
-                        hover2.set(Some(HoverHint { node_id, zone }));
-                    }
-                })
-                .on_drag_over({
-                    let hover2 = hover2.clone();
-                    move |_ev| {
-                        hover2.set(Some(HoverHint { node_id, zone }));
-                    }
-                })
-                .on_drag_leave({
-                    let hover2 = hover2.clone();
-                    move |_ev| {
-                        if hover2.get().as_ref() == Some(&HoverHint { node_id, zone }) {
-                            hover2.set(None);
-                        }
-                    }
-                })
-                .on_drop(move |ev| {
-                    let Some(p) = ev.payload.as_ref().downcast_ref::<DockTabPayload>() else {
-                        return false;
-                    };
-
-                    let ok = state2.borrow_mut().dock_panel(node_id, zone, p.panel_id);
-                    hover2.set(None);
-                    request_frame();
-                    ok
-                }),
-        )
-    };
+    let mk_zone = |zone: DropZone, m: Modifier| -> View { Box(m.dock_drop_zone(dock, node_id, zone)) };
 
     // Layout zones using absolute rects (no need for measured size):
     // left/right/top/bottom thickness = zone_dp; center = remainder.
@@ -919,11 +940,7 @@ fn render_split(
     a: &DockNode,
     b: &DockNode,
     registry: &Rc<HashMap<PanelId, DockPanel>>,
-    state: &Rc<RefCell<DockState>>,
-    callbacks: &DockCallbacks,
-    hover_sig: &Signal<Option<HoverHint>>,
-    drag_active: &Signal<bool>,
-    tab_hover: &Signal<Option<PanelId>>,
+    dock: &DockHandle,
     split_hover: &Signal<Option<u64>>,
     split_drag: &Rc<RefCell<Option<SplitDrag>>>,
     key_prefix: &str,
@@ -957,7 +974,7 @@ fn render_split(
     let move_drag = {
         let split_drag = split_drag.clone();
         let rect_rc = rect_rc.clone();
-        let state = state.clone();
+        let state = dock.state.clone();
         move |pe: PointerEvent| {
             let Some(sd) = split_drag.borrow().clone() else {
                 return;
@@ -1076,11 +1093,7 @@ fn render_split(
     let a_view = render_node(
         a,
         registry,
-        state,
-        callbacks,
-        hover_sig,
-        drag_active,
-        tab_hover,
+        dock,
         split_hover,
         split_drag,
         key_prefix,
@@ -1088,11 +1101,7 @@ fn render_split(
     let b_view = render_node(
         b,
         registry,
-        state,
-        callbacks,
-        hover_sig,
-        drag_active,
-        tab_hover,
+        dock,
         split_hover,
         split_drag,
         key_prefix,

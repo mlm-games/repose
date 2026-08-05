@@ -80,6 +80,136 @@ where
     modifier
 }
 
+/// Compose-like typed drag/drop modifier helpers.
+pub trait DragDropModifierExt: Sized {
+    /// Make this node a typed drag source.
+    fn drag_source<T>(
+        self,
+        make_payload: impl Fn(DragStart) -> Option<T> + 'static,
+    ) -> crate::Modifier
+    where
+        T: 'static;
+
+    /// Typed drag-enter.
+    fn on_drag_enter_typed<T>(
+        self,
+        f: impl Fn(&DragOver, &T) + 'static,
+    ) -> crate::Modifier
+    where
+        T: 'static;
+
+    /// Typed drag-over.
+    fn on_drag_over_typed<T>(
+        self,
+        f: impl Fn(&DragOver, &T) + 'static,
+    ) -> crate::Modifier
+    where
+        T: 'static;
+
+    /// Typed drag-leave.
+    fn on_drag_leave_typed<T>(
+        self,
+        f: impl Fn(&DragOver, &T) + 'static,
+    ) -> crate::Modifier
+    where
+        T: 'static;
+
+    /// Typed drop target.
+    fn on_drop_typed<T>(
+        self,
+        f: impl Fn(&DropEvent, &T) -> bool + 'static,
+    ) -> crate::Modifier
+    where
+        T: 'static;
+
+    /// Common case: typed drag-over + typed drop.
+    fn drop_target<T>(
+        self,
+        on_drop: impl Fn(&DropEvent, &T) -> bool + 'static,
+    ) -> crate::Modifier
+    where
+        T: 'static;
+}
+
+impl DragDropModifierExt for crate::Modifier {
+    fn drag_source<T>(
+        self,
+        make_payload: impl Fn(DragStart) -> Option<T> + 'static,
+    ) -> crate::Modifier
+    where
+        T: 'static,
+    {
+        self.on_drag_start(move |start| make_payload(start).map(drag_payload::<T>))
+    }
+
+    fn on_drag_enter_typed<T>(
+        self,
+        f: impl Fn(&DragOver, &T) + 'static,
+    ) -> crate::Modifier
+    where
+        T: 'static,
+    {
+        self.on_drag_enter(move |ev| {
+            if let Some(payload) = downcast_drag_payload::<T>(&ev.payload) {
+                f(&ev, payload);
+            }
+        })
+    }
+
+    fn on_drag_over_typed<T>(
+        self,
+        f: impl Fn(&DragOver, &T) + 'static,
+    ) -> crate::Modifier
+    where
+        T: 'static,
+    {
+        self.on_drag_over(move |ev| {
+            if let Some(payload) = downcast_drag_payload::<T>(&ev.payload) {
+                f(&ev, payload);
+            }
+        })
+    }
+
+    fn on_drag_leave_typed<T>(
+        self,
+        f: impl Fn(&DragOver, &T) + 'static,
+    ) -> crate::Modifier
+    where
+        T: 'static,
+    {
+        self.on_drag_leave(move |ev| {
+            if let Some(payload) = downcast_drag_payload::<T>(&ev.payload) {
+                f(&ev, payload);
+            }
+        })
+    }
+
+    fn on_drop_typed<T>(
+        self,
+        f: impl Fn(&DropEvent, &T) -> bool + 'static,
+    ) -> crate::Modifier
+    where
+        T: 'static,
+    {
+        self.on_drop(move |ev| {
+            let Some(payload) = downcast_drag_payload::<T>(&ev.payload) else {
+                return false;
+            };
+            f(&ev, payload)
+        })
+    }
+
+    fn drop_target<T>(
+        self,
+        on_drop: impl Fn(&DropEvent, &T) -> bool + 'static,
+    ) -> crate::Modifier
+    where
+        T: 'static,
+    {
+        self.on_drop_typed(on_drop)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct DragStart {
     pub source_id: u64,
