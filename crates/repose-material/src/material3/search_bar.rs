@@ -909,6 +909,7 @@ pub fn ExpandedFullScreenSearchBar(
     if visible {
         if overlay_id.get() == 0 {
             let input_fr = FocusRequester::new();
+            let focus_requested = Rc::new(Cell::new(false));
             let builder: Rc<dyn Fn() -> View> = Rc::new({
                 let state = state.clone();
                 let modifier = modifier.clone();
@@ -916,6 +917,7 @@ pub fn ExpandedFullScreenSearchBar(
                 let current_content = current_content.clone();
                 let config = config.clone();
                 let input_fr = input_fr.clone();
+                let focus_requested = focus_requested.clone();
                 move || {
                     let progress = state.progress();
                     let content_alpha = state.content_progress();
@@ -924,10 +926,13 @@ pub fn ExpandedFullScreenSearchBar(
                     let th = theme();
                     let content = current_content.borrow().clone();
 
-                    // Wrap input with focus requester and request focus (CK parity: auto-focus on expand)
+                    // Wrap input with focus requester and request focus.
                     let inp = Box(Modifier::new().focus_requester(input_fr.clone()))
                         .child(input_field.clone());
-                    input_fr.request_focus();
+                    if !focus_requested.get() {
+                        focus_requested.set(true);
+                        input_fr.request_focus();
+                    }
 
                     let header = Box(modifier
                         .clone()
@@ -1013,6 +1018,7 @@ pub fn ExpandedDockedSearchBar(
     if visible {
         if overlay_id.get() == 0 {
             let input_fr = FocusRequester::new();
+            let focus_requested = Rc::new(Cell::new(false));
             let builder: Rc<dyn Fn() -> View> = Rc::new({
                 let state = state.clone();
                 let modifier = modifier.clone();
@@ -1020,6 +1026,7 @@ pub fn ExpandedDockedSearchBar(
                 let current_content = current_content.clone();
                 let config = config.clone();
                 let input_fr = input_fr.clone();
+                let focus_requested = focus_requested.clone();
                 move || {
                     let progress = state.progress();
                     let content_alpha = state.content_progress();
@@ -1031,7 +1038,10 @@ pub fn ExpandedDockedSearchBar(
 
                     let inp = Box(Modifier::new().focus_requester(input_fr.clone()))
                         .child(input_field.clone());
-                    input_fr.request_focus();
+                    if !focus_requested.get() {
+                        focus_requested.set(true);
+                        input_fr.request_focus();
+                    }
 
                     let header = Box(modifier
                         .clone()
@@ -1070,15 +1080,17 @@ pub fn ExpandedDockedSearchBar(
                         )),
                     );
 
-                    let col = Column(Modifier::new().fill_max_width().padding_values(
-                        PaddingValues {
-                            left: _cx.max(16.0),
-                            right: 16.0,
-                            top: _cy + _ch + config.dropdown_gap_size,
-                            bottom: 0.0,
-                        },
-                    ))
-                    .child((header, dropdown));
+                    let docked_width = _cw.max(SearchBarDefaults::MIN_WIDTH);
+                    let popup_left = _cx;
+                    let popup_top = _cy + _ch + config.dropdown_gap_size;
+
+                    let col = Column(Modifier::new().fill_max_width()).child((header, dropdown));
+
+                    let positioned = Box(Modifier::new()
+                        .absolute()
+                        .offset(Some(popup_left), Some(popup_top), None, None)
+                        .width(docked_width))
+                    .child(col);
 
                     let scrim = Box(Modifier::new()
                         .fill_max_size()
@@ -1088,7 +1100,7 @@ pub fn ExpandedDockedSearchBar(
                             move || s.collapse()
                         }));
 
-                    ZStack(Modifier::new().fill_max_size().absolute()).child((scrim, col))
+                    ZStack(Modifier::new().fill_max_size().absolute()).child((scrim, positioned))
                 }
             });
 

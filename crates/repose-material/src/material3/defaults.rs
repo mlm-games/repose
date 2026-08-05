@@ -954,7 +954,7 @@ impl SearchBarDefaults {
     pub const DOCKED_SHAPE_RADIUS: f32 = 28.0;
     pub const DROPDOWN_SHAPE_RADIUS: f32 = 12.0;
     pub const DROPDOWN_GAP_SIZE: f32 = 2.0;
-    pub const MIN_WIDTH: f32 = 360.0;
+    pub const MIN_WIDTH: f32 = Self::COLLAPSED_WIDTH;
     pub const MAX_WIDTH: f32 = 720.0;
     pub const VERTICAL_PADDING: f32 = 8.0;
 
