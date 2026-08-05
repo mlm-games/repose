@@ -260,6 +260,7 @@ pub fn DockArea(
 
     // Ephemeral UI state (per DockArea)
     let hover_sig = remember_with_key(format!("dock:hover:{key}"), || signal(None::<HoverHint>));
+    let tab_hover = remember_with_key(format!("dock:tab_hover:{key}"), || signal(None::<PanelId>));
     let drag_active = remember_with_key(format!("dock:drag_active:{key}"), || signal(false));
     let split_hover = remember_with_key(format!("dock:split_hover:{key}"), || signal(None::<u64>));
     let split_drag = remember_with_key(format!("dock:split_drag:{key}"), || {
@@ -304,13 +305,14 @@ pub fn DockArea(
             &callbacks,
             &hover_sig,
             &drag_active,
+            &tab_hover,
             &split_hover,
             &split_drag,
             key.as_str(),
         )
     };
 
-    Column(modifier.fill_max_size()).child((
+    ZStack(modifier.fill_max_size()).child((
         Box(Modifier::new()
             .absolute()
             .offset(Some(0.0), Some(0.0), Some(0.0), Some(0.0)))
@@ -337,16 +339,32 @@ fn render_node(
     callbacks: &DockCallbacks,
     hover_sig: &Signal<Option<HoverHint>>,
     drag_active: &Signal<bool>,
+    tab_hover: &Signal<Option<PanelId>>,
     split_hover: &Signal<Option<u64>>,
     split_drag: &Rc<RefCell<Option<SplitDrag>>>,
     key_prefix: &str,
 ) -> View {
     match &node.kind {
-        DockKind::Empty => Box(Modifier::new()
-            .fill_max_size()
-            .background(theme().surface)
-            .key(node.id))
-        .child(Box(Modifier::new().fill_max_size()).child(Text("Empty").color(theme().on_surface))),
+        DockKind::Empty => Box(
+            Modifier::new()
+                .fill_max_size()
+                .padding(6.0)
+                .background(theme().surface_container_lowest)
+                .clip_rounded(theme().shapes.medium)
+                .border(
+                    1.0,
+                    theme().outline_variant.with_alpha(80),
+                    theme().shapes.medium,
+                )
+                .key(node.id),
+        )
+        .child(
+            Box(Modifier::new().fill_max_size().padding(16.0)).child(
+                Text("Drop panel here")
+                    .size(theme().typography.label_medium)
+                    .color(theme().on_surface_variant),
+            ),
+        ),
 
         DockKind::Tabs { tabs, active } => render_tabs(
             node.id,
@@ -357,6 +375,7 @@ fn render_node(
             callbacks,
             hover_sig,
             drag_active,
+            tab_hover,
             split_hover,
             key_prefix,
         ),
@@ -372,6 +391,7 @@ fn render_node(
             callbacks,
             hover_sig,
             drag_active,
+            tab_hover,
             split_hover,
             split_drag,
             key_prefix,
@@ -388,10 +408,16 @@ fn render_tabs(
     callbacks: &DockCallbacks,
     hover_sig: &Signal<Option<HoverHint>>,
     drag_active: &Signal<bool>,
+    tab_hover: &Signal<Option<PanelId>>,
     _split_hover: &Signal<Option<u64>>,
     key_prefix: &str,
 ) -> View {
     let th = theme();
+
+    const PANEL_PAD: f32 = 5.0;
+    const TAB_BAR_H: f32 = 44.0;
+    const TAB_H: f32 = 32.0;
+    const TAB_RADIUS: f32 = 16.0;
 
     // Ensure active is valid
     let active_pid = active.or_else(|| tabs.first().copied());
@@ -400,12 +426,23 @@ fn render_tabs(
         RefCell::new(Rect::default())
     });
 
+    let strip_bg = th.surface_container_low;
+    let active_bg = th.secondary_container;
+    let active_fg = th.on_secondary_container;
+    let inactive_fg = th.on_surface_variant;
+    let hover_bg = th.surface_container_high;
+
     let mut bar_mod = Modifier::new()
         .fill_max_width()
-        .height(40.0)
-        .background(th.surface)
-        .border(1.0, th.outline, 0.0)
-        .padding(6.0)
+        .height(TAB_BAR_H)
+        .background(strip_bg)
+        .padding_values(PaddingValues {
+            left: 8.0,
+            right: 8.0,
+            top: 6.0,
+            bottom: 6.0,
+        })
+        .gap(6.0)
         .painter({
             let tabbar_rect = tabbar_rect.clone();
             move |_scene, r, _alpha| *tabbar_rect.borrow_mut() = r
@@ -468,35 +505,79 @@ fn render_tabs(
             .filter_map(|pid| {
                 let panel = registry.get(&pid)?;
                 let is_active = Some(pid) == active_pid;
+                let is_hovered = tab_hover.get() == Some(pid);
 
                 let state_set = state.clone();
                 let title = panel.title.clone();
-
                 let drag_pid = pid;
 
                 let cb_close = callbacks.on_close.clone();
                 let cb_pop = callbacks.on_popout.clone();
 
+                let tab_bg = if is_active {
+                    active_bg
+                } else if is_hovered {
+                    hover_bg
+                } else {
+                    Color::TRANSPARENT
+                };
+
+                let tab_fg = if is_active { active_fg } else { inactive_fg };
+
+                let hover_in = {
+                    let tab_hover = tab_hover.clone();
+                    move |_| tab_hover.set(Some(pid))
+                };
+
+                let hover_out = {
+                    let tab_hover = tab_hover.clone();
+                    move |_| {
+                        if tab_hover.get() == Some(pid) {
+                            tab_hover.set(None);
+                        }
+                    }
+                };
+
+                let pop_view = if let Some(pop) = cb_pop {
+                    let state_for_pop = state.clone();
+                    dock_tab_icon_button("↗", tab_fg, move |_| {
+                        state_for_pop.borrow_mut().remove_panel(pid);
+                        pop(pid);
+                        request_frame();
+                    })
+                } else {
+                    Box(Modifier::new())
+                };
+
+                let close_view = if let Some(close) = cb_close {
+                    dock_tab_icon_button("×", tab_fg, move |_| {
+                        close(pid);
+                        request_frame();
+                    })
+                } else {
+                    Box(Modifier::new())
+                };
+
                 Some(
-                    Column(
+                    Row(
                         Modifier::new()
                             .key(pid)
-                            .height(32.0)
-                            .padding(4.0)
-                            .clip_rounded(th.shapes.small)
-                            .background(if is_active {
-                                th.primary.with_alpha(80)
-                            } else {
-                                th.surface
+                            .height(TAB_H)
+                            .min_width(108.0)
+                            .max_width(240.0)
+                            .clip_rounded(TAB_RADIUS)
+                            .background(tab_bg)
+                            .padding_values(PaddingValues {
+                                left: 12.0,
+                                right: 4.0,
+                                top: 0.0,
+                                bottom: 0.0,
                             })
-                            .border(1.0, th.outline, th.shapes.small),
-                    )
-                    .child((
-                        Box(Modifier::new()
-                            .height(24.0)
-                            .offset(None, Some(4.0), None, None)
+                            .gap(4.0)
                             .clickable()
                             .cursor(CursorIcon::Grab)
+                            .on_pointer_enter(hover_in)
+                            .on_pointer_leave(hover_out)
                             .on_pointer_down({
                                 let state_set = state_set.clone();
                                 move |_| {
@@ -508,8 +589,11 @@ fn render_tabs(
                                 let drag_active = drag_active.clone();
                                 move |_start| {
                                     drag_active.set(true);
-                                    Some(Rc::new(DockTabPayload { panel_id: drag_pid })
-                                        as Rc<dyn Any>)
+                                    Some(
+                                        Rc::new(DockTabPayload {
+                                            panel_id: drag_pid,
+                                        }) as Rc<dyn Any>,
+                                    )
                                 }
                             })
                             .on_drag_end({
@@ -519,37 +603,29 @@ fn render_tabs(
                                     drag_active.set(false);
                                     hover_sig.set(None);
                                 }
-                            }))
+                            }),
+                    )
+                    .child((
+                        Box(
+                            Modifier::new()
+                                .height(TAB_H)
+                                .weight(1.0)
+                                .padding_values(PaddingValues {
+                                    left: 0.0,
+                                    right: 4.0,
+                                    top: 7.0,
+                                    bottom: 0.0,
+                                }),
+                        )
                         .child(
-                            Row(Modifier::new().height(24.0))
-                                .child((Text(title).color(th.on_surface),)),
+                            Text(title)
+                                .size(th.typography.label_large)
+                                .single_line()
+                                .overflow_ellipsize()
+                                .color(tab_fg),
                         ),
-                        Row(Modifier::new().absolute().height(24.0).offset(
-                            None,
-                            Some(4.0),
-                            Some(2.0),
-                            None,
-                        ))
-                        .child((
-                            if let Some(pop) = cb_pop {
-                                Box(Modifier::new()
-                                    .clickable()
-                                    .on_pointer_down(move |_| pop(pid))
-                                    .padding(2.0))
-                                .child(Text("↗").size(12.0))
-                            } else {
-                                Box(Modifier::new())
-                            },
-                            if let Some(close) = cb_close {
-                                Box(Modifier::new()
-                                    .clickable()
-                                    .on_pointer_down(move |_| close(pid))
-                                    .padding(2.0))
-                                .child(Text("×").size(12.0))
-                            } else {
-                                Box(Modifier::new())
-                            },
-                        )),
+                        pop_view,
+                        close_view,
                     )),
                 )
             })
@@ -564,25 +640,71 @@ fn render_tabs(
             Text("Missing panel").color(th.error)
         }
     } else {
-        Text("No tabs").color(th.on_surface)
+        Text("No tabs").color(th.on_surface_variant)
     };
 
-    // Drop zones overlay (always present; highlight only when hovered)
+    // Drop zones overlay (present only while dragging)
     let overlay = dock_drop_overlay(node_id, state, hover_sig, drag_active, key_prefix);
 
-    let tab_h = 40.0;
-
-    Column(Modifier::new().fill_max_size().key(node_id)).child((
-        Column(Modifier::new().fill_max_size()).child((
+    ZStack(Modifier::new().fill_max_size().key(node_id)).child((
+        Column(
+            Modifier::new()
+                .fill_max_size()
+                .padding(PANEL_PAD)
+                .clip_rounded(th.shapes.medium)
+                .background(th.surface_container_lowest)
+                .border(1.0, th.outline_variant.with_alpha(70), th.shapes.medium),
+        )
+        .child((
             tab_bar,
-            Box(Modifier::new().fill_max_size().background(th.background))
-                .child(Box(Modifier::new().fill_max_size().padding(8.0)).child(content)),
+            Box(
+                Modifier::new()
+                    .fill_max_size()
+                    .background(th.surface_container_lowest),
+            )
+            .child(Box(Modifier::new().fill_max_size().padding(8.0)).child(content)),
         )),
         Box(Modifier::new()
             .absolute()
-            .offset(Some(0.0), Some(tab_h), Some(0.0), Some(0.0)))
+            .offset(
+                Some(PANEL_PAD),
+                Some(PANEL_PAD + TAB_BAR_H),
+                Some(PANEL_PAD),
+                Some(PANEL_PAD),
+            )
+            .render_z_index(2000.0))
         .child(overlay),
     ))
+}
+
+fn dock_tab_icon_button(
+    label: &'static str,
+    fg: Color,
+    on_click: impl Fn(PointerEvent) + 'static,
+) -> View {
+    Box(
+        Modifier::new()
+            .size(26.0, 26.0)
+            .padding(2.0)
+            .clip_rounded(13.0)
+            .background(fg.with_alpha(18))
+            .clickable()
+            .cursor(CursorIcon::Pointer)
+            .on_pointer_down(on_click),
+    )
+    .child(
+        Box(
+            Modifier::new()
+                .fill_max_size()
+                .padding_values(PaddingValues {
+                    left: 5.0,
+                    right: 0.0,
+                    top: 1.0,
+                    bottom: 0.0,
+                }),
+        )
+        .child(Text(label).size(14.0).color(fg)),
+    )
 }
 
 fn dock_drop_overlay(
@@ -593,47 +715,31 @@ fn dock_drop_overlay(
     key_prefix: &str,
 ) -> View {
     let th = theme();
+
     if !drag_active.get() {
-        return Box(Modifier::new());
+        return Box(Modifier::new().hit_passthrough());
     }
 
-    let zone_dp = 48.0;
-
+    let zone_dp = 72.0;
     let hover = hover_sig.get();
+
+    let preview = if let Some(h) = hover.as_ref() {
+        if h.node_id == node_id {
+            dock_drop_preview(h.zone)
+        } else {
+            Box(Modifier::new())
+        }
+    } else {
+        Box(Modifier::new())
+    };
 
     let mk_zone = |zone: DropZone, m: Modifier| -> View {
         let state2 = state.clone();
         let hover2 = hover_sig.clone();
 
-        let label = match zone {
-            // Maybe have icons here later?
-            DropZone::Center => " ",
-            DropZone::Left => " ",
-            DropZone::Right => " ",
-            DropZone::Top => " ",
-            DropZone::Bottom => " ",
-            DropZone::Float => " ",
-        };
-
-        let highlight = if hover.as_ref() == Some(&HoverHint { node_id, zone }) {
-            Column(
-                Modifier::new()
-                    .fill_max_size()
-                    .background(th.primary.with_alpha(51))
-                    .border(2.0, th.primary, 0.0),
-            )
-            .child(Text(label).size(12.0).color(th.on_primary))
-        } else {
-            Column(
-                Modifier::new()
-                    .fill_max_size()
-                    .border(1.0, th.outline_variant, 0.0),
-            )
-            .child(Text(label).size(12.0).color(th.on_surface_variant))
-        };
-
-        Column(
-            m.z_index(2000.0)
+        Box(
+            m.z_index(3000.0)
+                .render_z_index(3000.0)
                 .key(hash_zone_key(node_id, zone))
                 .on_drag_enter({
                     let hover2 = hover2.clone();
@@ -650,7 +756,6 @@ fn dock_drop_overlay(
                 .on_drag_leave({
                     let hover2 = hover2.clone();
                     move |_ev| {
-                        // Only clear if we were hovering this
                         if hover2.get().as_ref() == Some(&HoverHint { node_id, zone }) {
                             hover2.set(None);
                         }
@@ -667,7 +772,6 @@ fn dock_drop_overlay(
                     ok
                 }),
         )
-        .child(highlight)
     };
 
     // Layout zones using absolute rects (no need for measured size):
@@ -714,12 +818,102 @@ fn dock_drop_overlay(
         ),
     );
 
-    Column(
+    ZStack(
         Modifier::new()
             .fill_max_size()
             .key(hash_str_key(key_prefix, node_id)),
     )
-    .child((left, right, top, bottom, center))
+    .child((
+        // Subtle drag-mode scrim.
+        Box(
+            Modifier::new()
+                .fill_max_size()
+                .background(th.scrim.with_alpha(18))
+                .hit_passthrough()
+                .render_z_index(1000.0),
+        ),
+        Box(Modifier::new()
+            .fill_max_size()
+            .hit_passthrough()
+            .render_z_index(2000.0))
+        .child(preview),
+        left,
+        right,
+        top,
+        bottom,
+        center,
+    ))
+}
+
+fn dock_drop_preview(zone: DropZone) -> View {
+    let th = theme();
+
+    let fill = th
+        .primary
+        .with_alpha(38)
+        .composite_over(th.surface_container_lowest);
+    let border = th.primary.with_alpha(210);
+    let radius = th.shapes.large;
+
+    let card = |label: &'static str, modifier: Modifier| -> View {
+        Box(
+            modifier
+                .clip_rounded(radius)
+                .background(fill)
+                .border(2.0, border, radius),
+        )
+        .child(
+            Box(Modifier::new().padding(12.0)).child(
+                Text(label)
+                    .size(th.typography.label_medium)
+                    .single_line()
+                    .color(th.primary),
+            ),
+        )
+    };
+
+    match zone {
+        DropZone::Center => card(
+            "Add as tab",
+            Modifier::new()
+                .absolute()
+                .offset(Some(14.0), Some(14.0), Some(14.0), Some(14.0)),
+        ),
+
+        DropZone::Left => Row(Modifier::new().fill_max_size().padding(14.0).gap(10.0)).child((
+            card("Split left", Modifier::new().weight(0.44).fill_max_height()),
+            Box(Modifier::new().weight(0.56)),
+        )),
+
+        DropZone::Right => Row(Modifier::new().fill_max_size().padding(14.0).gap(10.0)).child((
+            Box(Modifier::new().weight(0.56)),
+            card("Split right", Modifier::new().weight(0.44).fill_max_height()),
+        )),
+
+        DropZone::Top => Column(
+            Modifier::new()
+                .fill_max_size()
+                .padding(14.0)
+                .gap(10.0),
+        )
+        .child((
+            card("Split top", Modifier::new().weight(0.44).fill_max_width()),
+            Box(Modifier::new().weight(0.56)),
+        )),
+
+        DropZone::Bottom => Column(
+            Modifier::new()
+                .fill_max_size()
+                .padding(14.0)
+                .gap(10.0),
+        )
+        .child((
+            Box(Modifier::new().weight(0.56)),
+            card("Split bottom", Modifier::new().weight(0.44).fill_max_width()),
+        )),
+
+        DropZone::Float => Box(Modifier::new()),
+    }
 }
 
 fn render_split(
@@ -733,6 +927,7 @@ fn render_split(
     callbacks: &DockCallbacks,
     hover_sig: &Signal<Option<HoverHint>>,
     drag_active: &Signal<bool>,
+    tab_hover: &Signal<Option<PanelId>>,
     split_hover: &Signal<Option<u64>>,
     split_drag: &Rc<RefCell<Option<SplitDrag>>>,
     key_prefix: &str,
@@ -759,6 +954,7 @@ fn render_split(
         let split_drag = split_drag.clone();
         move |_pe: PointerEvent| {
             *split_drag.borrow_mut() = Some(SplitDrag { node_id, dir });
+            request_frame();
         }
     };
 
@@ -777,10 +973,16 @@ fn render_split(
             if r.w <= 1.0 || r.h <= 1.0 {
                 return;
             }
-            let t = match dir {
+            let mut t = match dir {
                 SplitDir::Horizontal => (pe.position.x - r.x) / r.w,
                 SplitDir::Vertical => (pe.position.y - r.y) / r.h,
             };
+            for snap in [0.25_f32, 0.5, 0.75] {
+                if (t - snap).abs() < 0.018 {
+                    t = snap;
+                    break;
+                }
+            }
             state.borrow_mut().set_split_ratio(node_id, t);
             request_frame();
         }
@@ -791,16 +993,31 @@ fn render_split(
         move |_pe: PointerEvent| {
             // end any split drag
             *split_drag.borrow_mut() = None;
+            request_frame();
         }
     };
 
-    // Visible splitter: thin line + thicker hit target (egui-ish)
+    // M3-ish splitter: big invisible hit target, subtle tonal gutter,
+    // rounded grabber only on hover/drag.
     let hovered = split_hover.get() == Some(node_id);
-    let line_color = if hovered { th.focus } else { th.outline };
-    let hit_color = if hovered {
-        line_color.with_alpha(40)
+    let dragging = split_drag
+        .borrow()
+        .as_ref()
+        .map(|sd| sd.node_id == node_id)
+        .unwrap_or(false);
+
+    let active = hovered || dragging;
+
+    let gutter_color = if active {
+        th.primary.with_alpha(24)
     } else {
-        line_color.with_alpha(20)
+        Color::TRANSPARENT
+    };
+
+    let grabber_color = if active {
+        th.primary
+    } else {
+        th.outline_variant.with_alpha(0)
     };
 
     let splitter_mod = match dir {
@@ -808,18 +1025,43 @@ fn render_split(
         SplitDir::Vertical => Modifier::new().height(divider_thick).fill_max_width(),
     };
 
-    let divider = Column(
+    let grabber = match dir {
+        SplitDir::Horizontal => Box(
+            Modifier::new()
+                .absolute()
+                .offset(Some(2.0), Some(24.0), None, Some(24.0))
+                .width(4.0)
+                .fill_max_height()
+                .clip_rounded(4.0)
+                .background(grabber_color),
+        ),
+        SplitDir::Vertical => Box(
+            Modifier::new()
+                .absolute()
+                .offset(Some(24.0), Some(2.0), Some(24.0), None)
+                .height(4.0)
+                .fill_max_width()
+                .clip_rounded(4.0)
+                .background(grabber_color),
+        ),
+    };
+
+    let divider = Box(
         splitter_mod
-            .background(hit_color)
+            .background(gutter_color)
             .on_pointer_enter({
                 let split_hover = split_hover.clone();
-                move |_| split_hover.set(Some(node_id))
+                move |_| {
+                    split_hover.set(Some(node_id));
+                    request_frame();
+                }
             })
             .on_pointer_leave({
                 let split_hover = split_hover.clone();
                 move |_| {
                     if split_hover.get() == Some(node_id) {
                         split_hover.set(None);
+                        request_frame();
                     }
                 }
             })
@@ -830,35 +1072,10 @@ fn render_split(
                 SplitDir::Horizontal => CursorIcon::EwResize,
                 SplitDir::Vertical => CursorIcon::NsResize,
             })
-            .z_index(1500.0),
+            .z_index(1500.0)
+            .render_z_index(1500.0),
     )
-    .child((
-        // Center line
-        match dir {
-            SplitDir::Horizontal => Box(Modifier::new()
-                .absolute()
-                .offset(
-                    Some((divider_thick - 1.0) * 0.5),
-                    Some(0.0),
-                    None,
-                    Some(0.0),
-                )
-                .width(1.0)
-                .fill_max_height()
-                .background(line_color)),
-            SplitDir::Vertical => Box(Modifier::new()
-                .absolute()
-                .offset(
-                    Some(0.0),
-                    Some((divider_thick - 1.0) * 0.5),
-                    Some(0.0),
-                    None,
-                )
-                .height(1.0)
-                .fill_max_width()
-                .background(line_color)),
-        },
-    ));
+    .child(grabber);
 
     let a_view = render_node(
         a,
@@ -867,6 +1084,7 @@ fn render_split(
         callbacks,
         hover_sig,
         drag_active,
+        tab_hover,
         split_hover,
         split_drag,
         key_prefix,
@@ -878,6 +1096,7 @@ fn render_split(
         callbacks,
         hover_sig,
         drag_active,
+        tab_hover,
         split_hover,
         split_drag,
         key_prefix,
