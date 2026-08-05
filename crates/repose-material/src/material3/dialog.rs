@@ -5,10 +5,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
 use repose_ui::overlay::OverlayHandle;
-use repose_ui::{Box, Column, Row, Spacer, Text, ViewExt, ZStack};
+use repose_ui::{Box, Column, ViewExt, ZStack};
 use web_time::Duration;
 
-use super::{AlertDialogDefaults, Button, ButtonConfig, TextButton};
+use super::AlertDialogDefaults;
 use super::{DatePicker, DatePickerConfig, DatePickerState};
 use super::{TimePicker, TimePickerConfig, TimePickerState};
 
@@ -144,7 +144,7 @@ pub fn Dialog(
                     let alpha = progress.min(1.0);
                     let th = theme();
                     let content = current_content.borrow().clone();
-                    let p = props.borrow().clone();
+                    let _p = props.borrow().clone();
 
                     // Dialog surface with focus group for tab isolation
                     let dialog = Box(Modifier::new()

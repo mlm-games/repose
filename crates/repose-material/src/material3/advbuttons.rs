@@ -2,7 +2,7 @@
 
 use std::rc::Rc;
 
-use super::{ButtonGroupDefaults, SplitButtonDefaults};
+use super::SplitButtonDefaults;
 use repose_core::{locals::with_content_color, *};
 use repose_ui::{Box, Row, Text, TextStyle, ViewExt};
 
@@ -200,7 +200,7 @@ pub fn SplitButtonTrailingToggleButton(
     config: super::ToggleButtonConfig,
     content: impl FnOnce(bool) -> View,
 ) -> View {
-    let th = theme();
+    let _th = theme();
     let cc = config
         .content_color
         .unwrap_or_else(super::ToggleButtonDefaults::content_color);
@@ -304,7 +304,7 @@ pub fn SplitButtonTonalTrailingToggleButton(
     config: super::ToggleButtonConfig,
     content: impl FnOnce(bool) -> View,
 ) -> View {
-    let th = theme();
+    let _th = theme();
     let cc = config
         .content_color
         .unwrap_or_else(super::ToggleButtonDefaults::tonal_content_color);
