@@ -1088,6 +1088,11 @@ impl ApplicationHandler<()> for App {
                     if let Some(inspector) = &mut self.inspector {
                         inspector.frame(&mut scene);
                     }
+                    repose_core::dnd::overlay_drag_indicator(
+                        &mut scene,
+                        self.rt.mouse_pos_px,
+                        false,
+                    );
                     backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
                 }
 

@@ -669,6 +669,7 @@ fn render_tabs(
                                     request_frame();
                                 }
                             })
+                            .drag_preview_chip(title.clone(), th.primary)
                             .dock_tab_source(dock, drag_pid),
                     )
                     .child((

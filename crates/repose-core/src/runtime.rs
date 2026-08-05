@@ -481,6 +481,8 @@ pub struct HitRegion {
     pub on_drag_over: Option<Rc<dyn Fn(crate::dnd::DragOver)>>,
     pub on_drag_leave: Option<Rc<dyn Fn(crate::dnd::DragOver)>>,
     pub on_drop: Option<Rc<dyn Fn(crate::dnd::DropEvent) -> bool>>,
+    /// Copied onto the drag session when a drag starts from this region.
+    pub drag_preview: Option<crate::dnd::DragPreview>,
 
     pub on_action: Option<Rc<dyn Fn(crate::shortcuts::Action) -> bool>>,
 
@@ -527,6 +529,7 @@ impl HitRegion {
             on_drag_leave: m.on_drag_leave.clone(),
             on_scroll: m.on_scroll.clone(),
             on_drop: m.on_drop.clone(),
+            drag_preview: m.drag_preview.clone(),
             ..Default::default()
         }
     }

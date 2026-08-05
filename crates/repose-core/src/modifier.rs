@@ -81,6 +81,7 @@ macro_rules! impl_option_fields {
                     aspect_ratio, intrinsic_width, intrinsic_height,
                     painter,
                     on_drag_start, on_drag_end, on_drag_enter, on_drag_over, on_drag_leave, on_drop,
+                    drag_preview,
                     on_action, cursor, animate_content_size, focus_requester, on_focus_changed,
                     interaction_source, text_input,
                 );
@@ -625,6 +626,8 @@ pub struct Modifier {
     pub on_drag_over: Option<Rc<dyn Fn(crate::dnd::DragOver)>>,
     pub on_drag_leave: Option<Rc<dyn Fn(crate::dnd::DragOver)>>,
     pub on_drop: Option<Rc<dyn Fn(crate::dnd::DropEvent) -> bool>>,
+    /// Compose-like `drawDragDecoration`: paints the floating preview while dragging.
+    pub drag_preview: Option<crate::dnd::DragPreview>,
 
     pub on_action: Option<Rc<dyn Fn(crate::shortcuts::Action) -> bool>>,
 
@@ -764,6 +767,7 @@ impl std::fmt::Debug for Modifier {
             on_drag_over,
             on_drag_leave,
             on_drop,
+            drag_preview,
             on_action,
             on_focus_changed,
             interaction_source,
@@ -1515,6 +1519,34 @@ impl Modifier {
     pub fn on_drop(mut self, f: impl Fn(crate::dnd::DropEvent) -> bool + 'static) -> Self {
         self.on_drop = Some(Rc::new(f));
         self
+    }
+
+    /// Custom drag preview decoration (Compose `drawDragDecoration`).
+    ///
+    /// Called every frame while this node is the active drag source.
+    /// Coordinates are screen px; see [`crate::dnd::DragPreviewCtx`].
+    pub fn draw_drag_decoration(
+        mut self,
+        f: impl Fn(&mut crate::Scene, &crate::dnd::DragPreviewCtx) + 'static,
+    ) -> Self {
+        self.drag_preview = Some(Rc::new(f));
+        self
+    }
+
+    /// Same as [`Self::draw_drag_decoration`] but takes an existing [`crate::dnd::DragPreview`] Rc.
+    pub fn draw_drag_decoration_rc(mut self, preview: crate::dnd::DragPreview) -> Self {
+        self.drag_preview = Some(preview);
+        self
+    }
+
+    /// Convenience: floating label chip as the drag preview.
+    pub fn drag_preview_label(self, label: impl Into<String>, accent: crate::Color) -> Self {
+        self.draw_drag_decoration_rc(crate::dnd::drag_preview_label(label, accent))
+    }
+
+    /// Convenience: elevated chip preview.
+    pub fn drag_preview_chip(self, label: impl Into<String>, accent: crate::Color) -> Self {
+        self.draw_drag_decoration_rc(crate::dnd::drag_preview_chip(label, accent))
     }
 
     /// Set the cursor icon hint for desktop/web runners.
