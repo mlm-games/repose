@@ -613,9 +613,11 @@ fn render_tabs(
                                 .padding_values(PaddingValues {
                                     left: 0.0,
                                     right: 4.0,
-                                    top: 7.0,
+                                    top: 0.0,
                                     bottom: 0.0,
-                                }),
+                                })
+                                .align_items(AlignItems::CENTER)
+                                .justify_content(JustifyContent::CENTER),
                         )
                         .child(
                             Text(title)
@@ -696,12 +698,8 @@ fn dock_tab_icon_button(
         Box(
             Modifier::new()
                 .fill_max_size()
-                .padding_values(PaddingValues {
-                    left: 5.0,
-                    right: 0.0,
-                    top: 1.0,
-                    bottom: 0.0,
-                }),
+                .align_items(AlignItems::CENTER)
+                .justify_content(JustifyContent::CENTER),
         )
         .child(Text(label).size(14.0).color(fg)),
     )
