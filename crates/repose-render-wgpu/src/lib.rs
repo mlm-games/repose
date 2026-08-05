@@ -196,6 +196,7 @@ pub struct WgpuSceneRenderer {
     // Image management
     next_image_handle: u64,
     images: HashMap<u64, ImageTex>,
+    retained: HashMap<u64, RetainedImage>,
 
     // Eviction stats
     frame_index: u64,
@@ -1169,6 +1170,14 @@ enum ImageTex {
     },
 }
 
+#[derive(Clone)]
+struct RetainedImage {
+    w: u32,
+    h: u32,
+    format: wgpu::TextureFormat,
+    rgba: Vec<u8>,
+}
+
 struct AtlasA8 {
     tex: wgpu::Texture,
     view: wgpu::TextureView,
@@ -1878,6 +1887,7 @@ impl WgpuSceneRenderer {
 
             next_image_handle: 1,
             images: HashMap::new(),
+            retained: HashMap::new(),
 
             frame_index: 0,
             image_bytes_total: 0,
@@ -2170,37 +2180,7 @@ impl WgpuSceneRenderer {
             // Remove old to track budget correctly
             self.remove_image(handle);
 
-            let tex = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("user image rgba"),
-                size: wgpu::Extent3d {
-                    width: w,
-                    height: h,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            });
-            let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-
-            let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("image bind rgba"),
-                layout: &self.image_bind_layout_rgba,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&self.image_sampler),
-                    },
-                ],
-            });
-
+            let (tex, view, bind) = self.create_rgba_tex(w, h, format);
             let bytes = (w as u64) * (h as u64) * 4;
             self.image_bytes_total += bytes;
 
@@ -2218,6 +2198,16 @@ impl WgpuSceneRenderer {
                 },
             );
         }
+
+        self.retained.insert(
+            handle,
+            RetainedImage {
+                w,
+                h,
+                format,
+                rgba: rgba[..expected].to_vec(),
+            },
+        );
 
         let tex = match self.images.get(&handle) {
             Some(ImageTex::Rgba { tex, .. }) => tex,
@@ -2248,6 +2238,48 @@ impl WgpuSceneRenderer {
         self.evict_budget_excess();
 
         Ok(())
+    }
+
+    /// Create (but do not populate) the GPU texture, view and bind group for an
+    /// RGBA image. Pixels are written separately via `write_texture`.
+    fn create_rgba_tex(
+        &self,
+        w: u32,
+        h: u32,
+        format: wgpu::TextureFormat,
+    ) -> (wgpu::Texture, wgpu::TextureView, wgpu::BindGroup) {
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("user image rgba"),
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("image bind rgba"),
+            layout: &self.image_bind_layout_rgba,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.image_sampler),
+                },
+            ],
+        });
+
+        (tex, view, bind)
     }
 
     pub fn set_image_nv12(
@@ -2841,6 +2873,104 @@ impl WgpuSceneRenderer {
             };
             self.image_bytes_total = self.image_bytes_total.saturating_sub(b);
         }
+        self.retained.remove(&handle);
+    }
+
+    fn evict_image_gpu(&mut self, handle: u64) -> u64 {
+        let Some(img) = self.images.remove(&handle) else {
+            return 0;
+        };
+        let b = match &img {
+            ImageTex::Rgba { bytes, .. } => *bytes,
+            ImageTex::Nv12 { bytes, .. } => *bytes,
+        };
+        self.image_bytes_total = self.image_bytes_total.saturating_sub(b);
+        b
+    }
+
+    fn revive_retained_image(&mut self, handle: u64) -> bool {
+        if self.images.contains_key(&handle) {
+            return true;
+        }
+        let Some(r) = self.retained.get(&handle).cloned() else {
+            return false;
+        };
+        let (tex, view, bind) = self.create_rgba_tex(r.w, r.h, r.format);
+
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &r.rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * r.w),
+                rows_per_image: Some(r.h),
+            },
+            wgpu::Extent3d {
+                width: r.w,
+                height: r.h,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        let bytes = (r.w as u64) * (r.h as u64) * 4;
+        self.image_bytes_total += bytes;
+        self.images.insert(
+            handle,
+            ImageTex::Rgba {
+                tex,
+                view,
+                bind,
+                w: r.w,
+                h: r.h,
+                format: r.format,
+                last_used_frame: self.frame_index,
+                bytes,
+            },
+        );
+        true
+    }
+
+    fn resolve_image_for_draw(&mut self, handle: u64) -> Option<(u32, u32, bool)> {
+        if let Some(t) = self.images.get_mut(&handle) {
+            return match t {
+                ImageTex::Rgba {
+                    w,
+                    h,
+                    last_used_frame,
+                    ..
+                } => {
+                    *last_used_frame = self.frame_index;
+                    Some((*w, *h, false))
+                }
+                ImageTex::Nv12 {
+                    w,
+                    h,
+                    last_used_frame,
+                    ..
+                } => {
+                    *last_used_frame = self.frame_index;
+                    Some((*w, *h, true))
+                }
+            };
+        }
+        if self.revive_retained_image(handle) {
+            if let Some(ImageTex::Rgba {
+                w,
+                h,
+                last_used_frame,
+                ..
+            }) = self.images.get_mut(&handle)
+            {
+                *last_used_frame = self.frame_index;
+                return Some((*w, *h, false));
+            }
+        }
+        None
     }
 
     // Legacy support from Step 1 instructions (temporary until platform render logic is fully swapped)
@@ -2857,8 +2987,9 @@ impl WgpuSceneRenderer {
         let now = self.frame_index;
         let evict_after = self.image_evict_after_frames;
 
-        // Time based eviction
-        let mut to_remove = Vec::new();
+        // Time based eviction. Eviction only frees GPU memory: retained RGBA
+        // sources stay so the image can be lazily re-uploaded when drawn again.
+        let mut to_evict = Vec::new();
         for (h, t) in self.images.iter() {
             let last = match t {
                 ImageTex::Rgba {
@@ -2869,11 +3000,15 @@ impl WgpuSceneRenderer {
                 } => *last_used_frame,
             };
             if now.saturating_sub(last) > evict_after {
-                to_remove.push(*h);
+                to_evict.push(*h);
             }
         }
-        for h in to_remove {
-            self.remove_image(h);
+        for h in to_evict {
+            if self.retained.contains_key(&h) {
+                self.evict_image_gpu(h);
+            } else {
+                self.remove_image(h);
+            }
         }
 
         self.evict_budget_excess();
@@ -2916,7 +3051,11 @@ impl WgpuSceneRenderer {
             if last == now {
                 continue;
             }
-            self.remove_image(h);
+            if self.retained.contains_key(&h) {
+                self.evict_image_gpu(h);
+            } else {
+                self.remove_image(h);
+            }
         }
     }
 
@@ -4442,32 +4581,16 @@ impl WgpuSceneRenderer {
                 } => {
                     flush_batch!();
 
-                    // Update usage timestamp for eviction
-                    let (img_w, img_h, is_nv12) = if let Some(t) = self.images.get_mut(handle) {
-                        match t {
-                            ImageTex::Rgba {
-                                w,
-                                h,
-                                last_used_frame,
-                                ..
-                            } => {
-                                *last_used_frame = self.frame_index;
-                                (*w, *h, false)
+                    // Update usage timestamp for eviction, lazily re-uploading
+                    // evicted RGBA images from their retained source.
+                    let (img_w, img_h, is_nv12) =
+                        match self.resolve_image_for_draw(*handle) {
+                            Some(wh) => wh,
+                            None => {
+                                log::warn!("Image handle {} not found", handle);
+                                continue;
                             }
-                            ImageTex::Nv12 {
-                                w,
-                                h,
-                                last_used_frame,
-                                ..
-                            } => {
-                                *last_used_frame = self.frame_index;
-                                (*w, *h, true)
-                            }
-                        }
-                    } else {
-                        log::warn!("Image handle {} not found", handle);
-                        continue;
-                    };
+                        };
 
                     let src_w = img_w as f32;
                     let src_h = img_h as f32;
