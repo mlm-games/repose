@@ -177,16 +177,28 @@ impl IndicationDrawNode for RippleDrawNode {
                 AnimationSpec::tween(Duration::from_millis(RADIUS_MS), Easing::FastOutSlowIn);
             let spec_ctr = AnimationSpec::tween(Duration::from_millis(RADIUS_MS), Easing::Linear);
 
-            alpha_anim.borrow_mut().set_target(1.0);
-            alpha_anim.borrow_mut().set_spec(spec_in);
+            {
+                let mut a = alpha_anim.borrow_mut();
+                a.snap_to(0.0);
+                a.set_spec(spec_in);
+                a.set_target(1.0);
+            }
             Self::register_driver(&format!("{}:drv:a", base), alpha_anim.clone());
 
-            rad_anim.borrow_mut().set_target(1.0);
-            rad_anim.borrow_mut().set_spec(spec_rad);
+            {
+                let mut r = rad_anim.borrow_mut();
+                r.snap_to(0.0);
+                r.set_spec(spec_rad);
+                r.set_target(1.0);
+            }
             Self::register_driver(&format!("{}:drv:r", base), rad_anim.clone());
 
-            ctr_anim.borrow_mut().set_target(1.0);
-            ctr_anim.borrow_mut().set_spec(spec_ctr);
+            {
+                let mut c = ctr_anim.borrow_mut();
+                c.snap_to(0.0);
+                c.set_spec(spec_ctr);
+                c.set_target(1.0);
+            }
             Self::register_driver(&format!("{}:drv:c", base), ctr_anim.clone());
         }
 
@@ -231,20 +243,23 @@ impl IndicationDrawNode for RippleDrawNode {
             // Keep last_pid = current_pid so the stale press ID doesn't
             // retrigger new_press as a false positive on the next frame.
             *last_pid.borrow_mut() = current_pid;
+            alpha_anim.borrow_mut().snap_to(0.0);
+            rad_anim.borrow_mut().snap_to(0.0);
+            ctr_anim.borrow_mut().snap_to(0.0);
             return;
         }
 
-        if fade_pct <= 0.01 || *phase.borrow() == 0 {
+        if *phase.borrow() == 0 {
+            return;
+        }
+        let snap_finish = *release_pending.borrow() && *phase.borrow() == 1;
+        if fade_pct <= 0.01 && !snap_finish {
             return;
         }
 
         // Compose RippleAnimation.draw() snaps alpha to 1.0 when finish() is called
         // during fade-in: `if (finishRequested && !finishedFadingIn) alpha = 1f`.
-        let draw_alpha = if *release_pending.borrow() && *phase.borrow() == 1 {
-            1.0f32
-        } else {
-            fade_pct
-        };
+        let draw_alpha = if snap_finish { 1.0f32 } else { fade_pct };
 
         let rad_pct = *rad_anim.borrow().get();
         let ctr_pct = *ctr_anim.borrow().get();
