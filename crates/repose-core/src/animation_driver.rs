@@ -45,6 +45,11 @@ pub fn unregister(key: &str) {
     });
 }
 
+/// Returns `true` if an animation tick callback is currently registered for `key`.
+pub fn is_registered(key: &str) -> bool {
+    REGISTRY.with(|reg| reg.borrow().iter().any(|(k, _)| k == key))
+}
+
 /// Advance all registered animations. Returns `true` if any is still running.
 /// If any animation is still running, calls `request_frame()`.
 pub fn tick() -> bool {

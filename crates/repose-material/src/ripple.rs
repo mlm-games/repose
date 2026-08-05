@@ -1,10 +1,10 @@
 //! Material 3 Ripple indication.
 //!
 //! Animation specs matching Compose `RippleAnimation`:
-//!   - Fade in:  alpha 0→1, 75ms, LinearEasing
-//!   - Expand:   radius 0.3·maxDim → targetRadius, 225ms, FastOutSlowInEasing
-//!   - Center:   pressPos → layoutCenter, 225ms, LinearEasing (bounded only)
-//!   - Fade out: alpha 1→0, 150ms, LinearEasing (after fade-in completes)
+//!   - Fade in:  alpha 0->1, 75ms, LinearEasing
+//!   - Expand:   radius 0.3·maxDim -> targetRadius, 225ms, FastOutSlowInEasing
+//!   - Center:   pressPos -> layoutCenter, 225ms, LinearEasing (bounded only)
+//!   - Fade out: alpha 1->0, 150ms, LinearEasing (after fade-in completes)
 //!
 //! Compose's RippleAnimation.always completes fade-in to 1.0 before fading out,
 //! even if the press was released before fade-in finished.
@@ -212,10 +212,20 @@ impl IndicationDrawNode for RippleDrawNode {
             *release_pending.borrow_mut() = true;
         }
 
+        if *phase.borrow() != 0 && !animation_driver::is_registered(&format!("{}:drv:a", base)) {
+            *phase.borrow_mut() = 0;
+            *last_pid.borrow_mut() = current_pid;
+            *release_pending.borrow_mut() = false;
+            alpha_anim.borrow_mut().snap_to(0.0);
+            rad_anim.borrow_mut().snap_to(0.0);
+            ctr_anim.borrow_mut().snap_to(0.0);
+            return;
+        }
+
         let fade_pct = *alpha_anim.borrow().get();
 
         if *phase.borrow() == 1 && fade_pct >= 1.0 {
-            // Fade-in complete → move to visible or start fade-out
+            // Fade-in complete -> move to visible or start fade-out
             if *release_pending.borrow() {
                 *phase.borrow_mut() = 3;
                 let spec_out =
@@ -229,7 +239,7 @@ impl IndicationDrawNode for RippleDrawNode {
         }
 
         if *phase.borrow() == 2 && *release_pending.borrow() {
-            // Release happened while visible → start fade-out
+            // Release happened while visible -> start fade-out
             *phase.borrow_mut() = 3;
             let spec_out = AnimationSpec::tween(Duration::from_millis(FADE_OUT_MS), Easing::Linear);
             alpha_anim.borrow_mut().set_target(0.0);
@@ -238,7 +248,7 @@ impl IndicationDrawNode for RippleDrawNode {
         }
 
         if *phase.borrow() == 3 && fade_pct <= 0.01 {
-            // Fade-out complete → reset
+            // Fade-out complete -> reset
             *phase.borrow_mut() = 0;
             // Keep last_pid = current_pid so the stale press ID doesn't
             // retrigger new_press as a false positive on the next frame.
