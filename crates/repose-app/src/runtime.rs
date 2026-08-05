@@ -261,7 +261,11 @@ impl ReposeRuntime {
         }) {
             request_frame();
             return PointerMoveResult {
-                cursor: self.cursor,
+                cursor: if dnd::is_dragging() {
+                    Some(CursorIcon::Grabbing)
+                } else {
+                    self.cursor
+                },
                 hover_id: self.hover_id,
             };
         }
@@ -605,10 +609,14 @@ impl ReposeRuntime {
             .find(|h| h.rect.contains(pos))
             .map(|h| h.id);
 
-        self.cursor = new_hover
-            .and_then(|id| new_frame.hit_regions.iter().find(|h| h.id == id))
-            .and_then(|h| h.cursor)
-            .or(Some(CursorIcon::Default));
+        self.cursor = if dnd::is_dragging() {
+            Some(CursorIcon::Grabbing)
+        } else {
+            new_hover
+                .and_then(|id| new_frame.hit_regions.iter().find(|h| h.id == id))
+                .and_then(|h| h.cursor)
+                .or(Some(CursorIcon::Default))
+        };
 
         if new_hover == self.hover_id {
             if changed {
