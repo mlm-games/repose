@@ -139,6 +139,7 @@ const DDM_SCALE_FROM: f32 = 0.8;
 const DDM_VERTICAL_PADDING: f32 = 8.0;
 const DDM_ITEM_H_PAD: f32 = 12.0;
 const DDM_ITEM_MIN_HEIGHT: f32 = 48.0;
+const DDM_MIN_OPEN_HEIGHT: f32 = 48.0;
 
 /// Either a menu item or a divider.
 #[derive(Clone)]
@@ -219,22 +220,20 @@ pub fn DropdownMenu(
 
                     let space_below = (win_h - hm) - (rect.y + rect.h);
                     let space_above = rect.y - hm;
-                    let place_below = space_below >= space_above;
-                    let available_height = (if place_below { space_below } else { space_above }).max(48.0);
+
+                    let estimated_h = estimate_dropdown_height(&items, &config)
+                        .min(space_below.max(space_above))
+                        .max(DDM_MIN_OPEN_HEIGHT);
+                    let place_below = space_below >= estimated_h
+                        || (space_above < estimated_h && space_below >= space_above);
+                    let available_height =
+                        (if place_below { space_below } else { space_above }).max(48.0);
 
                     let popup_x = rect.x + config.offset_x;
                     let constrained_width = config.max_width;
 
                     let mut adjusted_config = config.clone();
                     adjusted_config.max_width = constrained_width;
-
-                    let popup_y = if place_below {
-                        rect.y + rect.h + config.offset_y
-                    } else {
-                        // Anchor bottom, so stays in the space above instead
-                        // of growing down off-screen.
-                        (rect.y - config.offset_y - available_height).max(hm)
-                    };
 
                     let content = render_dropdown_menu_content(
                         &th,
@@ -247,10 +246,24 @@ pub fn DropdownMenu(
 
                     let transform_origin_y = if place_below { 0.0 } else { 1.0 };
 
+                    let mut offset_modifier = Modifier::new();
+                    if place_below {
+                        offset_modifier = offset_modifier.offset(
+                            Some(popup_x),
+                            Some(rect.y + rect.h + config.offset_y),
+                            None,
+                            None,
+                        );
+                    } else {
+                        let menu_bottom_y = rect.y + config.offset_y;
+                        let offset_bottom = (win_h - menu_bottom_y).max(0.0);
+                        offset_modifier = offset_modifier
+                            .offset(Some(popup_x), None, None, Some(offset_bottom));
+                    }
+
                     let menu = Box(
-                        Modifier::new()
+                        offset_modifier
                             .absolute()
-                            .offset(Some(popup_x), Some(popup_y), None, None)
                             .scale(scale)
                             .alpha(alpha)
                             .transform_origin(0.0, transform_origin_y),
@@ -278,6 +291,20 @@ pub fn DropdownMenu(
     }
 
     Box(modifier).child(trigger)
+}
+
+fn estimate_dropdown_height(items: &[DropdownMenuEntry], config: &DropdownMenuConfig) -> f32 {
+    let mut h = 2.0 * DDM_VERTICAL_PADDING;
+    for entry in items {
+        match entry {
+            DropdownMenuEntry::Item(_) => {
+                h += config.item_height.max(DDM_ITEM_MIN_HEIGHT);
+            }
+            // Divider: 1px line + 12px horizontal margins (also vertical here).
+            DropdownMenuEntry::Divider => h += 1.0 + 2.0 * 12.0,
+        }
+    }
+    h
 }
 
 fn render_dropdown_menu_content(
