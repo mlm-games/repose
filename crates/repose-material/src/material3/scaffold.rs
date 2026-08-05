@@ -59,12 +59,12 @@ pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig)
 
     let content_padding = PaddingValues {
         top: if config.top_bar.is_some() {
-            64.0
+            ScaffoldDefaults::TOP_BAR_HEIGHT
         } else {
             itop
         },
         bottom: if config.bottom_bar.is_some() {
-            80.0 + ibottom + iime
+            ScaffoldDefaults::BOTTOM_BAR_HEIGHT + ibottom + iime
         } else {
             ibottom + iime
         },
@@ -83,12 +83,12 @@ pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig)
             .fill_max_size()
             .padding_values(PaddingValues {
                 top: if config.top_bar.is_some() {
-                    64.0 + itop
+                    ScaffoldDefaults::TOP_BAR_HEIGHT + itop
                 } else {
                     0.0
                 },
                 bottom: if config.bottom_bar.is_some() {
-                    80.0 + ibottom + iime
+                    ScaffoldDefaults::BOTTOM_BAR_HEIGHT + ibottom + iime
                 } else {
                     ibottom + iime
                 },
