@@ -1038,7 +1038,11 @@ enum Cmd {
         rounded: bool,
     },
     ClipPop {
+        off: u64,
+        cnt: u32,
         scissor: (u32, u32, u32, u32),
+        difference: bool,
+        rounded: bool,
     },
     Rect {
         off: u64,
@@ -4077,6 +4081,10 @@ impl WgpuSceneRenderer {
         let mut slug_verts_local: Vec<slug::TessVertex> = Vec::new();
         let mut transform_stack: Vec<Transform> = vec![Transform::identity()];
         let mut scissor_stack: Vec<repose_core::Rect> = Vec::with_capacity(8);
+        // NOTE: Records the clip instance range + flags of each active rounded-rect clip
+        // so PopClip can re-stamp the stencil with a decrement pass (mirroring
+        // VectorClipPop). Keys: (off, cnt, difference, rounded).
+        let mut clip_cmd_stack: Vec<(u64, u32, bool, bool)> = Vec::with_capacity(8);
         let root_clip_rect = repose_core::Rect {
             x: 0.0,
             y: 0.0,
@@ -4780,6 +4788,7 @@ impl WgpuSceneRenderer {
                         difference: is_diff,
                         rounded,
                     });
+                    clip_cmd_stack.push((off, 1, is_diff, rounded));
                 }
                 SceneNode::PopClip => {
                     flush_batch!();
@@ -4796,7 +4805,16 @@ impl WgpuSceneRenderer {
                         current_target_size.0 as u32,
                         current_target_size.1 as u32,
                     );
-                    current_pass.cmds.push(Cmd::ClipPop { scissor });
+                    let (off, cnt, difference, rounded) = clip_cmd_stack
+                        .pop()
+                        .unwrap_or((0, 0, false, false));
+                    current_pass.cmds.push(Cmd::ClipPop {
+                        off,
+                        cnt,
+                        scissor,
+                        difference,
+                        rounded,
+                    });
                 }
                 SceneNode::Shadow {
                     rect,
@@ -5298,10 +5316,27 @@ impl WgpuSceneRenderer {
                         }
                     }
 
-                    Cmd::ClipPop { scissor } => {
-                        clip_depth = clip_depth.saturating_sub(1);
-                        rpass.set_stencil_reference(clip_depth);
+                    Cmd::ClipPop {
+                        off,
+                        cnt: n,
+                        scissor,
+                        difference,
+                        rounded: _,
+                    } => {
                         rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
+
+                        if !difference && n > 0 {
+                            rpass.set_stencil_reference(clip_depth);
+                            rpass.set_pipeline(&pipes.clip_dec);
+                            let bytes =
+                                (n as u64) * std::mem::size_of::<ClipInstance>() as u64;
+                            rpass.set_vertex_buffer(0, self.clip_ring.buf.slice(off..off + bytes));
+                            rpass.draw(0..6, 0..n);
+                            clip_depth = clip_depth.saturating_sub(1);
+                        } else if !difference {
+                            clip_depth = clip_depth.saturating_sub(1);
+                        }
+                        rpass.set_stencil_reference(clip_depth);
                     }
 
                     Cmd::Rect { off, cnt: n } => {
