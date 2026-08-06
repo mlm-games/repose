@@ -1090,6 +1090,7 @@ impl ApplicationHandler<()> for App {
                         ime_auto_correct: true,
                         ime_capitalization: Default::default(),
                         keyboard_type: Default::default(),
+                        window_theme_dark: None,
                     },
                     wants_pointer: !frame.hit_regions.is_empty() || self.rt.hover_id.is_some() || self.rt.capture_id.is_some(),
                     wants_keyboard: !self.rt.textfield_states.is_empty() || self.rt.ime_preedit,

@@ -37,6 +37,10 @@ pub struct PlatformOutput {
     pub ime_auto_correct: bool,
     pub ime_capitalization: repose_core::KeyboardCapitalization,
     pub keyboard_type: repose_core::KeyboardType,
+
+    /// Whether the app theme is dark, so the host can sync OS window chrome
+    /// (titlebar, caption buttons). `None` = don't touch the OS chrome.
+    pub window_theme_dark: Option<bool>,
 }
 
 /// Output of a single frame: the rendered scene plus metadata for the host.
@@ -261,6 +265,7 @@ impl ReposeRuntime {
             ime_auto_correct,
             ime_capitalization,
             keyboard_type,
+            window_theme_dark: Some(repose_core::locals::theme().is_dark()),
         };
         FrameOutput {
             scene: f.scene,

@@ -1064,6 +1064,7 @@ pub fn run_android_app_with_options(
                             ime_auto_correct: true,
                             ime_capitalization: Default::default(),
                             keyboard_type: Default::default(),
+                            window_theme_dark: None,
                         },
                         wants_pointer: !frame.hit_regions.is_empty() || self.rt.capture_id.is_some(),
                         wants_keyboard: !self.rt.textfield_states.is_empty() || self.rt.ime_preedit,

@@ -1217,6 +1217,297 @@ fn hash_str_key(prefix: &str, node_id: u64) -> u64 {
     h ^ node_id.wrapping_mul(0x9E3779B97F4A7C15)
 }
 
+/// Which edge of the window a [`CollapsibleSidePanel`] is docked to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DockSide {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+/// Anchor captured at the start of an edge drag.
+#[derive(Clone, Copy, Debug)]
+struct EdgeDragAnchor {
+    start_pointer: f32,
+    start_size: f32,
+}
+
+/// State for a single side-docked, collapsible panel.
+///
+/// Wrapped in `Rc<RefCell<_>>` and remembered by the caller; the slide
+/// animation is advanced inside [`CollapsibleSidePanel`] each frame.
+pub struct CollapsiblePanelState {
+    pub side: DockSide,
+    /// Logical open/closed flag (drives the animation target).
+    pub open: bool,
+    /// Animated openness, 0..1 (1 = fully open). Follows the pointer while
+    /// an edge drag is in progress.
+    pub open_t: f32,
+    /// Width (Left/Right) or height (Top/Bottom) of the open panel body, in dp.
+    pub size_px: f32,
+    pub min_size_px: f32,
+    pub max_size_px: f32,
+    /// Thickness of the draggable separator edge, in dp.
+    pub separator_px: f32,
+    drag_anchor: Option<EdgeDragAnchor>,
+    /// Live body size while dragging (overrides `size_px * open_t`).
+    drag_size_px: Option<f32>,
+    last_tick: Option<web_time::Instant>,
+}
+
+impl CollapsiblePanelState {
+    pub fn new(side: DockSide, size_px: f32) -> Self {
+        Self {
+            side,
+            open: true,
+            open_t: 1.0,
+            size_px,
+            min_size_px: 120.0,
+            max_size_px: 800.0,
+            separator_px: 4.0,
+            drag_anchor: None,
+            drag_size_px: None,
+            last_tick: None,
+        }
+    }
+
+    pub fn toggle(&mut self) {
+        self.open = !self.open;
+        self.last_tick = None;
+    }
+
+    /// Visible body size (excluding the separator), honoring an active drag.
+    pub fn visible_body_size(&self) -> f32 {
+        self.drag_size_px
+            .unwrap_or_else(|| self.size_px * self.open_t)
+            .max(0.0)
+    }
+
+    /// Total extent of the panel slot, including the separator hit strip.
+    pub fn visible_total(&self) -> f32 {
+        let body = self.visible_body_size();
+        if body > 0.5 {
+            body + self.separator_px
+        } else {
+            // Collapsed: keep a thin hit target for drag-to-reopen.
+            self.separator_px.max(6.0)
+        }
+    }
+
+    /// Advance the slide animation toward the logical `open` target.
+    /// Returns `true` if still animating (caller should `request_frame`).
+    pub fn advance(&mut self) -> bool {
+        if self.drag_anchor.is_some() {
+            return false;
+        }
+        let target = if self.open { 1.0 } else { 0.0 };
+        if (self.open_t - target).abs() < 0.001 {
+            self.open_t = target;
+            return false;
+        }
+        let now = web_time::Instant::now();
+        let dt = self
+            .last_tick
+            .map(|t| now.duration_since(t).as_secs_f32())
+            .unwrap_or(0.0);
+        self.last_tick = Some(now);
+        let speed = 1.0 / 0.2; // full slide in ~200ms
+        let dir = (target - self.open_t).signum();
+        self.open_t = (self.open_t + dir * speed * dt).clamp(0.0, 1.0);
+        if (self.open_t - target).abs() < 0.001 {
+            self.open_t = target;
+            return false;
+        }
+        true
+    }
+
+    pub fn begin_edge_drag(&mut self, pointer_along_axis: f32) {
+        // Anchor from the current *visible* size so dragging a collapsed strip
+        // back open starts from ~0 rather than jumping to the nominal size_px.
+        let start_size = self.visible_body_size();
+        self.drag_anchor = Some(EdgeDragAnchor {
+            start_pointer: pointer_along_axis,
+            start_size,
+        });
+        self.drag_size_px = Some(start_size);
+        self.last_tick = None;
+    }
+
+    /// Update the drag from the current pointer position along the panel axis.
+    pub fn edge_drag(&mut self, pointer_along_axis: f32) {
+        let Some(a) = self.drag_anchor else {
+            return;
+        };
+        let delta = match self.side {
+            DockSide::Left | DockSide::Top => pointer_along_axis - a.start_pointer,
+            DockSide::Right | DockSide::Bottom => a.start_pointer - pointer_along_axis,
+        };
+        let size = (a.start_size + delta).max(0.0);
+        self.drag_size_px = Some(size);
+        if size < self.min_size_px * 0.5 {
+            self.open = false;
+            // Reflect the collapse progress so the panel visibly folds shut.
+            self.open_t = (size / self.size_px).clamp(0.0, 1.0);
+        } else {
+            self.open = true;
+            self.open_t = 1.0;
+        }
+    }
+
+    /// End the drag: snap open/closed. A partially-open pull snaps to the
+    /// nearest state and animates there on subsequent frames.
+    pub fn end_edge_drag(&mut self) {
+        let Some(size) = self.drag_size_px.take() else {
+            self.drag_anchor = None;
+            return;
+        };
+        self.drag_anchor = None;
+        if self.open && size >= self.min_size_px * 0.5 {
+            self.size_px = size.clamp(self.min_size_px, self.max_size_px);
+            self.open_t = 1.0;
+            self.open = true;
+        } else {
+            self.open = false;
+            self.size_px = size.max(self.min_size_px);
+        }
+        self.last_tick = None;
+    }
+}
+
+/// A side-docked panel with a draggable edge: drag inward to collapse, drag
+/// the collapsed strip outward to reopen, double-click the edge to toggle.
+///
+/// ```ignore
+/// let left = remember(|| Rc::new(RefCell::new(
+///     CollapsiblePanelState::new(DockSide::Left, 280.0),
+/// )));
+/// Row(Modifier::new().fill_max_size()).child((
+///     CollapsibleSidePanel("nav", left.clone(), || Column(Modifier::new()).child(Text("Sidebar"))),
+///     Box(Modifier::new().flex_grow(1.0)).child(main),
+/// ))
+/// ```
+pub fn CollapsibleSidePanel(
+    key: impl Into<String>,
+    state: Rc<RefCell<CollapsiblePanelState>>,
+    content: impl Fn() -> View + 'static,
+) -> View {
+    let key = key.into();
+
+    // Advance the slide animation; keep frames coming while it is in motion.
+    {
+        let mut s = state.borrow_mut();
+        if s.advance() {
+            request_frame();
+        }
+    }
+
+    let th = theme();
+    let (side, body_size, sep) = {
+        let s = state.borrow();
+        (s.side, s.visible_body_size(), s.separator_px.max(4.0))
+    };
+    let handle_size = if body_size < 1.0 { sep.max(6.0) } else { sep };
+    let collapsed = body_size < 1.0;
+
+    let handle = {
+        let state = state.clone();
+        let last_click = remember_with_key(format!("dock:edge_click:{key}"), || {
+            RefCell::new(None::<web_time::Instant>)
+        });
+
+        Box(
+            Modifier::new()
+                .width(match side {
+                    DockSide::Left | DockSide::Right => handle_size,
+                    DockSide::Top | DockSide::Bottom => 0.0,
+                })
+                .height(match side {
+                    DockSide::Top | DockSide::Bottom => handle_size,
+                    DockSide::Left | DockSide::Right => 0.0,
+                })
+                .fill_max_height()
+                .fill_max_width()
+                .background(th.outline.with_alpha(if collapsed { 140 } else { 80 }))
+                .cursor(match side {
+                    DockSide::Left | DockSide::Right => CursorIcon::EwResize,
+                    DockSide::Top | DockSide::Bottom => CursorIcon::NsResize,
+                })
+                .on_pointer_down({
+                    let state = state.clone();
+                    let last_click = last_click.clone();
+                    move |ev| {
+                        let now = web_time::Instant::now();
+                        let mut lc = last_click.borrow_mut();
+                        if let Some(t0) = *lc {
+                            if now.duration_since(t0) < web_time::Duration::from_millis(350) {
+                                state.borrow_mut().toggle();
+                                *lc = None;
+                                request_frame();
+                                return;
+                            }
+                        }
+                        *lc = Some(now);
+                        let axis = match state.borrow().side {
+                            DockSide::Left | DockSide::Right => ev.position.x,
+                            DockSide::Top | DockSide::Bottom => ev.position.y,
+                        };
+                        state.borrow_mut().begin_edge_drag(axis);
+                        request_frame();
+                    }
+                })
+                .on_pointer_move({
+                    let state = state.clone();
+                    move |ev| {
+                        if state.borrow().drag_anchor.is_some() {
+                            let axis = match state.borrow().side {
+                                DockSide::Left | DockSide::Right => ev.position.x,
+                                DockSide::Top | DockSide::Bottom => ev.position.y,
+                            };
+                            state.borrow_mut().edge_drag(axis);
+                            request_frame();
+                        }
+                    }
+                })
+                .on_pointer_up({
+                    let state = state.clone();
+                    move |_ev| {
+                        state.borrow_mut().end_edge_drag();
+                        request_frame();
+                    }
+                }),
+        )
+    };
+
+    let body = Box(
+        Modifier::new()
+            .width(match side {
+                DockSide::Left | DockSide::Right => body_size,
+                DockSide::Top | DockSide::Bottom => 0.0,
+            })
+            .height(match side {
+                DockSide::Top | DockSide::Bottom => body_size,
+                DockSide::Left | DockSide::Right => 0.0,
+            })
+            .fill_max_height()
+            .fill_max_width()
+            .clip_rounded(0.0)
+            .background(th.surface),
+    )
+    .child(if body_size > 0.5 {
+        Box(Modifier::new().fill_max_size().padding(8.0)).child(content())
+    } else {
+        Box(Modifier::new())
+    });
+
+    match side {
+        DockSide::Left => Row(Modifier::new().fill_max_height()).child((body, handle)),
+        DockSide::Right => Row(Modifier::new().fill_max_height()).child((handle, body)),
+        DockSide::Top => Column(Modifier::new().fill_max_width()).child((body, handle)),
+        DockSide::Bottom => Column(Modifier::new().fill_max_width()).child((handle, body)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1246,5 +1537,42 @@ mod tests {
             }
         }
         assert_eq!(count_tabs(&st.root), 1);
+    }
+
+    #[test]
+    fn drag_to_close_and_reopen() {
+        let mut p = CollapsiblePanelState::new(DockSide::Left, 200.0);
+
+        // Drag the right edge inward to collapse.
+        p.begin_edge_drag(200.0);
+        p.edge_drag(20.0);
+        assert!(!p.open);
+        p.end_edge_drag();
+        assert!(!p.open);
+        assert!(p.open_t < 1.0); // folding shut
+        while p.advance() {}
+        assert_eq!(p.open_t, 0.0);
+        assert_eq!(p.visible_body_size(), 0.0);
+
+        // Drag the collapsed strip outward to reopen.
+        p.begin_edge_drag(0.0);
+        p.edge_drag(150.0);
+        assert!(p.open);
+        assert_eq!(p.visible_body_size(), 150.0);
+        p.end_edge_drag();
+        assert!(p.open);
+        assert_eq!(p.open_t, 1.0);
+        assert_eq!(p.size_px, 150.0);
+    }
+
+    #[test]
+    fn advance_animates_toward_target() {
+        let mut p = CollapsiblePanelState::new(DockSide::Left, 200.0);
+        p.open_t = 0.0;
+        assert!(p.advance()); // starts moving toward open
+        while p.advance() {
+            // bounded loop: advance() returns false once it settles
+        }
+        assert_eq!(p.open_t, 1.0);
     }
 }

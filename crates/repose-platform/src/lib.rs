@@ -474,6 +474,9 @@ pub fn run_desktop_app_with_config(
         last_redraw: Instant,
         pending_redraw: bool,
 
+        // Last applied OS window theme (dark/light) to avoid spamming set_theme.
+        last_window_theme: Option<bool>,
+
         // Tracks whether a redraw was requested by app code
         redraw_requested: Cell<bool>,
     }
@@ -555,6 +558,7 @@ pub fn run_desktop_app_with_config(
 
                 last_redraw: Instant::now(),
                 pending_redraw: false,
+                last_window_theme: None,
                 redraw_requested: Cell::new(false),
             }
         }
@@ -1312,6 +1316,18 @@ pub fn run_desktop_app_with_config(
                     // Apply cursor from platform output
                     if let Some(cursor) = &output.platform.cursor {
                         win.set_cursor(winit::window::Cursor::Icon(map_cursor(*cursor)));
+                    }
+
+                    // Sync OS window chrome (titlebar) to the app theme, deduped.
+                    if let Some(dark) = output.platform.window_theme_dark {
+                        if self.last_window_theme != Some(dark) {
+                            win.set_theme(Some(if dark {
+                                winit::window::Theme::Dark
+                            } else {
+                                winit::window::Theme::Light
+                            }));
+                            self.last_window_theme = Some(dark);
+                        }
                     }
 
                     // Apply IME keyboard hints

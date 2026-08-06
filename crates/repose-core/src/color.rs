@@ -290,6 +290,17 @@ impl Color {
         let a = self.3 as f32 / 255.0;
         [r, g, b, a]
     }
+
+    /// Relative luminance in linear sRGB (Rec. 709 weights).
+    pub fn relative_luminance(self) -> f32 {
+        let lin = self.to_linear();
+        0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+    }
+
+    /// Whether this color reads as dark (useful for syncing OS window chrome).
+    pub fn is_dark(self) -> bool {
+        self.relative_luminance() < 0.5
+    }
 }
 
 /// Brush for filling shapes.

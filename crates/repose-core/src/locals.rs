@@ -515,6 +515,32 @@ impl Theme {
         self.colors = colors;
         self
     }
+
+    /// A dark theme around the default dark color scheme.
+    pub fn dark() -> Self {
+        Self::default().with_colors(ColorScheme::dark())
+    }
+
+    /// A light theme: default colors swapped for the light scheme plus light
+    /// chrome/button derivatives.
+    pub fn light() -> Self {
+        let colors = ColorScheme::light();
+        Self {
+            focus: colors.focus,
+            scrollbar_thumb: colors.outline.with_alpha(179),
+            button_bg: colors.primary,
+            button_bg_hover: colors.primary_container,
+            button_bg_pressed: colors.secondary_container,
+            colors,
+            ..Self::default()
+        }
+    }
+
+    /// Whether the theme's background reads as dark, for syncing OS window
+    /// chrome (titlebar / caption buttons) to the app theme.
+    pub fn is_dark(&self) -> bool {
+        self.colors.background.is_dark()
+    }
 }
 
 /// Platform/device scale (dp->px multiplier). Platform runner should set this.
