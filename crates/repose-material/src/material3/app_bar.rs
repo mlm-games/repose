@@ -261,7 +261,7 @@ fn top_app_bar_layout(
     let colors = config.colors;
 
     let root_m = Modifier::new()
-        .min_width(200.0)
+        .fill_max_width()
         .height(config.height + insets.top)
         .background(bg)
         .translate(0.0, scroll_offset)
