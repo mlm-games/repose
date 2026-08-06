@@ -656,8 +656,9 @@ pub enum PathEffect {
 }
 
 /// Draw style for text (fill or stroke).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub enum DrawStyle {
+    #[default]
     Fill,
     Stroke {
         /// Stroke width in em-units (fraction of font size). 0.05 = 5% of em.
@@ -683,12 +684,6 @@ impl DrawStyle {
             miter: 4.0,
             path_effect: None,
         }
-    }
-}
-
-impl Default for DrawStyle {
-    fn default() -> Self {
-        Self::Fill
     }
 }
 
@@ -862,7 +857,7 @@ pub trait KeyboardActionScope {
 
 /// Callbacks for IME action button presses on the soft keyboard.
 /// Corresponds to Compose's legacy `KeyboardActions`.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct KeyboardActions {
     pub on_done: Option<Rc<dyn Fn(&dyn KeyboardActionScope)>>,
     pub on_go: Option<Rc<dyn Fn(&dyn KeyboardActionScope)>>,
@@ -896,20 +891,7 @@ impl KeyboardActions {
                 let f = f.clone();
                 Rc::new(move |scope| f(ImeAction::Search, scope))
             }),
-            on_send: Some({ Rc::new(move |scope| f(ImeAction::Send, scope)) }),
-        }
-    }
-}
-
-impl Default for KeyboardActions {
-    fn default() -> Self {
-        KeyboardActions {
-            on_done: None,
-            on_go: None,
-            on_next: None,
-            on_previous: None,
-            on_search: None,
-            on_send: None,
+            on_send: Some(Rc::new(move |scope| f(ImeAction::Send, scope))),
         }
     }
 }
@@ -1351,7 +1333,7 @@ impl AnnotatedStringBuilder {
 }
 
 /// Horizontal text alignment.
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Default)]
 pub enum TextAlign {
     Left,
     Right,
@@ -1359,13 +1341,8 @@ pub enum TextAlign {
     Justify,
     Start,
     End,
+    #[default]
     Unspecified,
-}
-
-impl Default for TextAlign {
-    fn default() -> Self {
-        TextAlign::Unspecified
-    }
 }
 
 /// Font weight as a numeric value 100-900, matching CSS `font-weight`.
@@ -1391,20 +1368,15 @@ impl Default for FontWeight {
 }
 
 /// Font style: normal or italic.
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Default)]
 pub enum FontStyle {
+    #[default]
     Normal,
     Italic,
 }
 
-impl Default for FontStyle {
-    fn default() -> Self {
-        FontStyle::Normal
-    }
-}
-
 /// Text decoration state.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct TextDecoration {
     pub underline: bool,
     pub strikethrough: bool,
@@ -1422,16 +1394,6 @@ impl TextDecoration {
         strikethrough: true,
         color: None,
     };
-}
-
-impl Default for TextDecoration {
-    fn default() -> Self {
-        Self {
-            underline: false,
-            strikethrough: false,
-            color: None,
-        }
-    }
 }
 
 /// Convenience function to build an `AnnotatedString`.

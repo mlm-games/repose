@@ -131,7 +131,7 @@ pub fn NavigationBar(
 
                     let mut item_m = Modifier::new()
                         .flex_grow(1.0)
-                        .interaction_source(&*nb_source)
+                        .interaction_source(&nb_source)
                         .semantics(Semantics::new(Role::Tab).with_label(&item.label));
 
                     if is_enabled {

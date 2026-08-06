@@ -82,7 +82,7 @@ impl SwipeToDismissState {
         let swipeable = repose_core::SwipeableState::new(
             anchors,
             repose_core::SwipeableConfig {
-                animation_spec: config.animation_spec.clone(),
+                animation_spec: config.animation_spec,
                 positional_threshold,
                 ..Default::default()
             },
@@ -138,10 +138,10 @@ impl SwipeToDismissState {
     ) {
         if !self.swipeable.is_animating() {
             let val = self.swipeable.current_value();
-            if val != DismissValue::Default {
-                if let Some(cb) = on_dismiss {
-                    cb();
-                }
+            if val != DismissValue::Default
+                && let Some(cb) = on_dismiss
+            {
+                cb();
             }
         }
     }

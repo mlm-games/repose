@@ -246,7 +246,7 @@ pub(crate) fn tf_place_caret_at_pointer(
     content_origin: Option<(f32, f32)>,
     is_multiline: bool,
     pos_px: (f32, f32),
-    scale: f32,
+    _scale: f32,
     shift: bool,
 ) {
     let (ox, oy) = content_origin.unwrap_or((hit_rect.x, hit_rect.y));
@@ -274,18 +274,17 @@ pub(crate) fn dispatch_scroll(
     delta: Vec2,
     scroll_capture: Option<u64>,
 ) -> (bool, Option<u64>) {
-    if let Some(cid) = scroll_capture {
-        if let Some(cb) = frame
+    if let Some(cid) = scroll_capture
+        && let Some(cb) = frame
             .hit_regions
             .iter()
             .find(|h| h.id == cid)
             .and_then(|h| h.on_scroll.as_ref())
-        {
-            cb(delta);
-            return (true, Some(cid));
-        }
-        // Captured region is gone from the tree -> release and re-pick below.
+    {
+        cb(delta);
+        return (true, Some(cid));
     }
+    // Captured region is gone from the tree -> release and re-pick below.
 
     // No held capture: lock to the top-most consumer under the pointer. Capture
     // it so the same scroller keeps controlling the whole gesture.

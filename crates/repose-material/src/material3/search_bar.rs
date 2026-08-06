@@ -451,7 +451,7 @@ pub fn SearchBarInputField(
         .padding(4.0)
         .required_width_in(SearchBarDefaults::MIN_WIDTH, SearchBarDefaults::MAX_WIDTH)
         .required_height_in(SearchBarDefaults::HEIGHT, SearchBarDefaults::HEIGHT)
-        .interaction_source(&*source)
+        .interaction_source(&source)
         .semantics(Semantics {
             role: Role::TextField,
             label: Some("Search".into()),
@@ -463,17 +463,17 @@ pub fn SearchBarInputField(
             let s = state.clone();
             move |ev| {
                 if ev.key == Key::Escape {
-                    if let Some(ref s) = s {
-                        if s.is_active() {
-                            s.deactivate();
-                        }
+                    if let Some(ref s) = s
+                        && s.is_active()
+                    {
+                        s.deactivate();
                     }
                     true
                 } else if ev.key == Key::ArrowDown || ev.key == Key::ArrowUp {
-                    if let Some(ref s) = s {
-                        if !s.is_expanded() {
-                            s.activate();
-                        }
+                    if let Some(ref s) = s
+                        && !s.is_expanded()
+                    {
+                        s.activate();
                     }
                     true
                 } else {

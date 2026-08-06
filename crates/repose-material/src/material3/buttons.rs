@@ -194,7 +194,7 @@ fn button_impl(
                 }
                 None => remember(MutableInteractionSource::new),
             });
-    m = m.interaction_source(&*source);
+    m = m.interaction_source(&source);
     m = m.indication(ripple(RippleConfig {
         color: Some(content_color),
         bounded: true,
@@ -202,7 +202,7 @@ fn button_impl(
     }));
 
     if enabled {
-        m = m.clickable().on_click(move || on_click());
+        m = m.clickable().on_click(on_click);
     }
     m = m.then(outer_modifier);
     let effective = if enabled {
@@ -501,7 +501,7 @@ fn toggle_button_impl(
     let tg_source: Rc<MutableInteractionSource> = interaction_source
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    m = m.interaction_source(&*tg_source);
+    m = m.interaction_source(&tg_source);
     if let Some((w, c, r)) = border {
         m = m.border(w, c, r);
     }

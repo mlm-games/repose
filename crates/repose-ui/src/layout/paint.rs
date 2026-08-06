@@ -217,9 +217,7 @@ impl LayoutEngine {
         let mut current = node_id;
         loop {
             let node = self.tree.get(current)?;
-            if node.parent.is_none() {
-                return None;
-            }
+            node.parent?;
             let parent_id = node.parent?;
             let parent = self.tree.get(parent_id)?;
             if let Some(ref conn) = parent.modifier.nested_scroll_connection {
@@ -473,7 +471,7 @@ impl LayoutEngine {
                 drop(lt);
             }
 
-            let s = anim.borrow().get().clone();
+            let s = *anim.borrow().get();
             let animated = repose_core::Size {
                 width: s.width.max(1.0),
                 height: s.height.max(1.0),
@@ -506,7 +504,7 @@ impl LayoutEngine {
         }
         let overflow_clip = modifier
             .overflow
-            .map_or(true, |o| o == repose_core::Overflow::Clip);
+            .is_none_or(|o| o == repose_core::Overflow::Clip);
         if push_round_clip && overflow_clip {
             scene.nodes.push(SceneNode::PushClip {
                 rect,
@@ -641,11 +639,11 @@ impl LayoutEngine {
                 st.set_inner_width(content_rect.w);
                 st.set_inner_height(content_rect.h);
                 st.tick_scroll_animation();
-                if let Some(ref vt) = ti.visual_transformation.as_ref() {
+                if let Some(vt) = ti.visual_transformation.as_ref() {
                     let empty = repose_core::AnnotatedString::new(String::new(), vec![]);
                     let tfmd = vt.filter(&empty);
                     st.offset_map = Some(tfmd.offset_mapping.clone_box());
-                    st.visual_transformation = Some((*vt).clone());
+                    st.visual_transformation = Some(vt.clone());
                 } else {
                     st.offset_map = None;
                     st.visual_transformation = None;
@@ -680,7 +678,7 @@ impl LayoutEngine {
         } else {
             None
         };
-        if let (Some(ref factory), Some(ref interaction_source)) =
+        if let (Some(factory), Some(interaction_source)) =
             (indication_factory.as_ref(), indication_source.as_ref())
         {
             let draw_node = factory.create(interaction_source);
@@ -1389,20 +1387,15 @@ impl LayoutEngine {
                                         handled = true;
                                     }
                                 }
-                                Action::Redo => {
-                                    if s.can_redo() {
-                                        s.redo();
-                                        crate::textfield::ensure_caret_visible(
-                                            &mut s,
-                                            is_multiline,
-                                        );
-                                        let text = s.text.clone();
-                                        drop(s);
-                                        if let Some(cb) = &change_cb {
-                                            cb(text);
-                                        }
-                                        handled = true;
+                                Action::Redo if s.can_redo() => {
+                                    s.redo();
+                                    crate::textfield::ensure_caret_visible(&mut s, is_multiline);
+                                    let text = s.text.clone();
+                                    drop(s);
+                                    if let Some(cb) = &change_cb {
+                                        cb(text);
                                     }
+                                    handled = true;
                                 }
                                 _ => {}
                             }
@@ -1636,7 +1629,7 @@ impl LayoutEngine {
         let child_offset_px = base_px;
         let has_blur = modifier
             .blur
-            .map_or(false, |b| b.radius_x > 0.0 || b.radius_y > 0.0);
+            .is_some_and(|b| b.radius_x > 0.0 || b.radius_y > 0.0);
         let layer_id = if modifier.graphics_layer.is_some() || has_blur {
             let id = self.layer_id_counter;
             self.layer_id_counter = self.layer_id_counter.wrapping_add(1);
@@ -1689,10 +1682,10 @@ impl LayoutEngine {
         if let Some(scroll) = &modifier.scroll {
             match scroll {
                 ScrollBinding::Vertical(b) => {
-                    if let Some(set_parent) = &b.set_nested_scroll_parent {
-                        if let Some(conn) = self.find_ancestor_nested_scroll(node_id) {
-                            set_parent(conn);
-                        }
+                    if let Some(set_parent) = &b.set_nested_scroll_parent
+                        && let Some(conn) = self.find_ancestor_nested_scroll(node_id)
+                    {
+                        set_parent(conn);
                     }
                     hits.push(HitRegion {
                         id: view_id,
@@ -1776,10 +1769,10 @@ impl LayoutEngine {
                     scene.nodes.push(SceneNode::PopClip);
                 }
                 ScrollBinding::Horizontal(b) => {
-                    if let Some(set_parent) = &b.set_nested_scroll_parent {
-                        if let Some(conn) = self.find_ancestor_nested_scroll(node_id) {
-                            set_parent(conn);
-                        }
+                    if let Some(set_parent) = &b.set_nested_scroll_parent
+                        && let Some(conn) = self.find_ancestor_nested_scroll(node_id)
+                    {
+                        set_parent(conn);
                     }
                     hits.push(HitRegion {
                         id: view_id,
@@ -1863,10 +1856,10 @@ impl LayoutEngine {
                     scene.nodes.push(SceneNode::PopClip);
                 }
                 ScrollBinding::Both(b) => {
-                    if let Some(set_parent) = &b.set_nested_scroll_parent {
-                        if let Some(conn) = self.find_ancestor_nested_scroll(node_id) {
-                            set_parent(conn);
-                        }
+                    if let Some(set_parent) = &b.set_nested_scroll_parent
+                        && let Some(conn) = self.find_ancestor_nested_scroll(node_id)
+                    {
+                        set_parent(conn);
                     }
                     hits.push(HitRegion {
                         id: view_id,

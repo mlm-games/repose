@@ -105,18 +105,13 @@ macro_rules! impl_option_fields {
     };
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ClipOp {
     /// Keep content inside the clip rect (default).
+    #[default]
     Intersect,
     /// Remove content inside the clip rect (cutout).
     Difference,
-}
-
-impl Default for ClipOp {
-    fn default() -> Self {
-        Self::Intersect
-    }
 }
 
 /// Controls whether child content is clipped to the parent bounds.
@@ -124,16 +119,11 @@ impl Default for ClipOp {
 /// Analogous to CSS `overflow`:
 /// - `Clip` (default): content extending beyond the parent is hidden.
 /// - `Visible`: content is allowed to overflow the parent bounds.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Overflow {
+    #[default]
     Clip,
     Visible,
-}
-
-impl Default for Overflow {
-    fn default() -> Self {
-        Self::Clip
-    }
 }
 
 /// Rectangular clip with a clipping operation.

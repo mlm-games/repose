@@ -632,14 +632,8 @@ pub fn content_color() -> Color {
 /// Composition-local default indication (ripple/highlight) factory.
 /// Components like `Button` read this to get the default press feedback.
 /// Mirrors Compose's `LocalIndication`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct LocalIndication(pub Option<Rc<dyn IndicationNodeFactory>>);
-
-impl Default for LocalIndication {
-    fn default() -> Self {
-        Self(None)
-    }
-}
 
 pub fn with_local_indication<R>(
     indication: Option<Rc<dyn IndicationNodeFactory>>,
@@ -656,7 +650,8 @@ pub fn with_local_indication<R>(
 
 pub fn local_indication() -> Option<Rc<dyn IndicationNodeFactory>> {
     // Manual stack walk (get_local requires Copy, which LocalIndication is not).
-    let result = LOCALS_STACK.with(|st| {
+
+    LOCALS_STACK.with(|st| {
         for frame in st.borrow().iter().rev() {
             if let Some(v) = frame.get(&TypeId::of::<LocalIndication>())
                 && let Some(li) = v.downcast_ref::<LocalIndication>()
@@ -665,8 +660,7 @@ pub fn local_indication() -> Option<Rc<dyn IndicationNodeFactory>> {
             }
         }
         None::<Rc<dyn IndicationNodeFactory>>
-    });
-    result
+    })
 }
 
 /// System window insets (status bar, navigation bar, IME keyboard, etc.)

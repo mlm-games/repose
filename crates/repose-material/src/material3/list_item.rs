@@ -288,7 +288,7 @@ pub fn ListItem(
             bottom: top_bottom_padding,
         })
         .align_items(vert_align)
-        .interaction_source(&*li_source)
+        .interaction_source(&li_source)
         .then(config.modifier);
 
     if config.tonal_elevation > 0.0 || config.dragged_elevation > 0.0 {

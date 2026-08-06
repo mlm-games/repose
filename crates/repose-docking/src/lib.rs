@@ -1235,7 +1235,7 @@ impl CollapsiblePanelState {
     /// Visible body size (excluding the separator), honoring an active drag.
     pub fn visible_body_size(&self) -> f32 {
         self.drag_size_px
-            .unwrap_or_else(|| self.size_px * self.open_t)
+            .unwrap_or(self.size_px * self.open_t)
             .max(0.0)
     }
 
@@ -1393,13 +1393,13 @@ pub fn CollapsibleSidePanel(
                 move |ev| {
                     let now = web_time::Instant::now();
                     let mut lc = last_click.borrow_mut();
-                    if let Some(t0) = *lc {
-                        if now.duration_since(t0) < web_time::Duration::from_millis(350) {
-                            state.borrow_mut().toggle();
-                            *lc = None;
-                            request_frame();
-                            return;
-                        }
+                    if let Some(t0) = *lc
+                        && now.duration_since(t0) < web_time::Duration::from_millis(350)
+                    {
+                        state.borrow_mut().toggle();
+                        *lc = None;
+                        request_frame();
+                        return;
                     }
                     *lc = Some(now);
                     let axis = match state.borrow().side {

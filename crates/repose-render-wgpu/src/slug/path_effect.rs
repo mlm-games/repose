@@ -166,7 +166,7 @@ fn apply_dash_effect(path: &Path, intervals: &[f32], phase: f32, tolerance: f32)
         return path.clone();
     }
     debug_assert!(
-        intervals.len() >= 2 && intervals.len() % 2 == 0,
+        intervals.len() >= 2 && intervals.len().is_multiple_of(2),
         "Dash intervals must have even length (>=2), got {}",
         intervals.len()
     );
@@ -258,13 +258,11 @@ fn apply_dash_effect(path: &Path, intervals: &[f32], phase: f32, tolerance: f32)
                 last: _,
                 first: _,
                 close,
-            } => {
-                if in_subpath {
-                    if *close {
-                        builder.close();
-                    }
-                    in_subpath = false;
+            } if in_subpath => {
+                if *close {
+                    builder.close();
                 }
+                in_subpath = false;
             }
             _ => {}
         }

@@ -105,14 +105,14 @@ fn split_button_impl(
     let source: Rc<MutableInteractionSource> = interaction_source
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    m = m.interaction_source(&*source);
+    m = m.interaction_source(&source);
     m = m.indication(crate::ripple::ripple(crate::ripple::RippleConfig {
         color: Some(content_color),
         bounded: true,
         ..Default::default()
     }));
     if enabled {
-        m = m.clickable().on_click(move || on_click());
+        m = m.clickable().on_click(on_click);
     }
     m = m.then(outer_modifier);
     let effective = if enabled {
@@ -246,7 +246,7 @@ pub fn SplitButtonTrailingToggleButton(
         .clone()
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    m = m.interaction_source(&*tg_source);
+    m = m.interaction_source(&tg_source);
     if let Some((w, c, r)) = config.border {
         m = m.border(w, c, r);
     }
@@ -349,7 +349,7 @@ pub fn SplitButtonTonalTrailingToggleButton(
         .clone()
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    m = m.interaction_source(&*tg_source);
+    m = m.interaction_source(&tg_source);
     if let Some((w, c, r)) = config.border {
         m = m.border(w, c, r);
     }

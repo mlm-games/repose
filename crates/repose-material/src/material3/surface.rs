@@ -48,7 +48,7 @@ pub fn Surface(config: SurfaceConfig, content: impl FnOnce() -> View) -> View {
     let mut m = Modifier::new()
         .background(config.color)
         .clip_rounded(config.shape_radius)
-        .interaction_source(&*sf_source)
+        .interaction_source(&sf_source)
         .then(config.modifier);
     if config.tonal_elevation > 0.0 {
         m = m.state_elevation(StateElevation {

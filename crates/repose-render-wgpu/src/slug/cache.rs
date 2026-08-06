@@ -217,7 +217,9 @@ impl GlyphSlugCache {
             Entry::Occupied(mut e) => {
                 let glyph = e.get_mut();
                 glyph.last_used = self.frame;
-                if !glyph.stroke_variants.contains_key(&tess_key) {
+                if let std::collections::hash_map::Entry::Vacant(e) =
+                    glyph.stroke_variants.entry(tess_key)
+                {
                     let path = build_path(font_size)?;
                     let mut tess = StrokeTessellator::new();
                     let tolerance = (0.5 / font_size).max(0.001);
@@ -242,7 +244,7 @@ impl GlyphSlugCache {
                         let v = &buffers.vertices[i as usize];
                         vertices.push([v.x, v.y]);
                     }
-                    glyph.stroke_variants.insert(tess_key, vertices);
+                    e.insert(vertices);
                 }
                 Some(e.into_mut())
             }

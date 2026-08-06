@@ -58,7 +58,7 @@ impl LayoutEngine {
     }
 
     pub(crate) fn sync_scope_trees(&mut self, font_px: &dyn Fn(f32) -> f32) {
-        let removed_ids: Vec<NodeId> = self.tree.removed_ids.iter().copied().collect();
+        let removed_ids: Vec<NodeId> = self.tree.removed_ids.to_vec();
         let dirty_nodes: Vec<NodeId> = self.tree.dirty_nodes().iter().copied().collect();
         let scope_keys: Vec<String> = self.scope_trees.keys().cloned().collect();
         let node_to_scope: FxHashMap<NodeId, String> = self
@@ -80,13 +80,13 @@ impl LayoutEngine {
                 if node_to_scope.get(&node_id).map(|k| k.as_str()) != Some(key) {
                     continue;
                 }
-                if let Some(st) = self.scope_trees.get_mut(key) {
-                    if let Some(tid) = st.taffy_map.remove(&node_id) {
-                        let _ = st.taffy.remove(tid);
-                        st.reverse_map.remove(&tid);
-                        st.text_cache.remove(&node_id);
-                        changed = true;
-                    }
+                if let Some(st) = self.scope_trees.get_mut(key)
+                    && let Some(tid) = st.taffy_map.remove(&node_id)
+                {
+                    let _ = st.taffy.remove(tid);
+                    st.reverse_map.remove(&tid);
+                    st.text_cache.remove(&node_id);
+                    changed = true;
                 }
             }
 
@@ -118,10 +118,8 @@ impl LayoutEngine {
             }
 
             // Invalidate scope tree layout when content changed
-            if changed {
-                if let Some(st) = self.scope_trees.get_mut(key) {
-                    st.valid = false;
-                }
+            if changed && let Some(st) = self.scope_trees.get_mut(key) {
+                st.valid = false;
             }
         }
     }

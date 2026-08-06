@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::num::NonZero;
-use std::ops::{Deref, DerefMut};
 #[cfg(feature = "winit-surface")]
 use std::panic::{AssertUnwindSafe, catch_unwind};
 #[cfg(feature = "winit-surface")]
@@ -2887,26 +2886,20 @@ impl WgpuSceneRenderer {
         };
 
         let (tex_y, view_y, tex_uv, view_uv) = unsafe {
-            let mut hal_guard =
-                self.device
-                    .as_hal::<wgpu::hal::vulkan::Api>()
-                    .ok_or_else(|| {
-                        log::warn!("as_hal::<vulkan::Api> returned None");
-                        anyhow::anyhow!("Device is not Vulkan")
-                    })?;
+            let hal_guard = self
+                .device
+                .as_hal::<wgpu::hal::vulkan::Api>()
+                .ok_or_else(|| {
+                    log::warn!("as_hal::<vulkan::Api> returned None");
+                    anyhow::anyhow!("Device is not Vulkan")
+                })?;
 
             let mut fds = fds;
             let uv_fd = fds.remove(1);
             let y_fd = fds.remove(0);
 
             let yt = hal_guard
-                .texture_from_dmabuf_fd(
-                    y_fd,
-                    &hal_y_desc,
-                    modifier,
-                    strides[0] as u64,
-                    offsets[0] as u64,
-                )
+                .texture_from_dmabuf_fd(y_fd, &hal_y_desc, modifier, strides[0] as u64, offsets[0])
                 .map_err(|e| anyhow::anyhow!("import Y dmabuf: {e:?}"))?;
             log::info!("imported Y dmabuf OK");
 
@@ -2916,7 +2909,7 @@ impl WgpuSceneRenderer {
                     &hal_uv_desc,
                     modifier,
                     strides[1] as u64,
-                    offsets[1] as u64,
+                    offsets[1],
                 )
                 .map_err(|e| anyhow::anyhow!("import UV dmabuf: {e:?}"))?;
             log::info!("imported UV dmabuf OK");
@@ -3098,17 +3091,16 @@ impl WgpuSceneRenderer {
                 }
             };
         }
-        if self.revive_retained_image(handle) {
-            if let Some(ImageTex::Rgba {
+        if self.revive_retained_image(handle)
+            && let Some(ImageTex::Rgba {
                 w,
                 h,
                 last_used_frame,
                 ..
             }) = self.images.get_mut(&handle)
-            {
-                *last_used_frame = self.frame_index;
-                return Some((*w, *h, false));
-            }
+        {
+            *last_used_frame = self.frame_index;
+            return Some((*w, *h, false));
         }
         None
     }
@@ -4544,7 +4536,7 @@ impl WgpuSceneRenderer {
                             let ck = repose_text::lookup_cache_key(sg.key, sg.px);
                             if let Some(ref ck) = ck {
                                 // Check if cached.
-                                let need_tessellate = self.slug_cache.get(ck).map_or(true, |g| {
+                                let need_tessellate = self.slug_cache.get(ck).is_none_or(|g| {
                                     if is_stroke {
                                         let key = stroke_tess_key.as_ref().unwrap();
                                         !g.stroke_variants.contains_key(key)
@@ -5514,7 +5506,7 @@ impl WgpuSceneRenderer {
                     }
 
                     Cmd::GlyphsVector { off, cnt: n } => {
-                        if let Some(ref slug_pipe) = pipes.slug.as_ref() {
+                        if let Some(slug_pipe) = pipes.slug.as_ref() {
                             rpass.set_pipeline(slug_pipe);
                             let bytes = (n as u64) * std::mem::size_of::<slug::TessVertex>() as u64;
                             rpass.set_vertex_buffer(0, self.slug_ring.buf.slice(off..off + bytes));
@@ -5683,31 +5675,30 @@ impl WgpuSceneRenderer {
         }
 
         // Display pass: linear working space -> sRGB OETF -> swapchain
-        if self.working_space {
-            if let (Some(_ws_view), Some(ws_bind), Some(display_pipeline)) =
+        if self.working_space
+            && let (Some(_ws_view), Some(ws_bind), Some(display_pipeline)) =
                 (&self.ws_view, &self.ws_bind, &self.display_pipeline)
-            {
-                let swap_view = target_view.clone();
-                let mut display_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("display transform"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &swap_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                        depth_slice: None,
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                });
-                display_pass.set_pipeline(display_pipeline);
-                display_pass.set_bind_group(1, ws_bind, &[]);
-                display_pass.draw(0..3, 0..1);
-            }
+        {
+            let swap_view = target_view.clone();
+            let mut display_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("display transform"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &swap_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            display_pass.set_pipeline(display_pipeline);
+            display_pass.set_bind_group(1, ws_bind, &[]);
+            display_pass.draw(0..3, 0..1);
         }
 
         // Frame end maintenance: Evict unused images

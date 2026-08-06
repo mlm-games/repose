@@ -327,7 +327,7 @@ fn SettingsPanel(vm: SettingsVm) -> View {
 }
 
 pub fn NavRail(current: Route, nav: Navigator<Route>) -> View {
-    let th = theme();
+    let _th = theme();
     let scroll = remember_scroll_state("shell:nav-rail");
     scroll.set_show_scrollbar(false);
 

@@ -33,48 +33,47 @@ impl LayoutEngine {
                 // Check if this is a scope root marker -> return cached scope size
                 if let Some(&node_id) = reverse_map.get(&taffy_node) {
                     // Custom layout modifier: delegate measurement to user callback
-                    if let Some(node) = tree.get(node_id) {
-                        if let Some(ref layout_cb) = node.modifier.layout {
-                            let scale = dp_to_px(1.0);
-                            let avail_w = match avail.width {
-                                AvailableSpace::Definite(w) => w / scale,
-                                _ => f32::INFINITY,
-                            };
-                            let avail_h = match avail.height {
-                                AvailableSpace::Definite(h) => h / scale,
-                                _ => f32::INFINITY,
-                            };
-                            let known_w = known.width.map(|w| w / scale).unwrap_or(f32::INFINITY);
-                            let known_h = known.height.map(|h| h / scale).unwrap_or(f32::INFINITY);
-                            let constraints = repose_core::modifier::LayoutConstraints {
-                                min_width: 0.0,
-                                max_width: avail_w.min(known_w),
-                                min_height: 0.0,
-                                max_height: avail_h.min(known_h),
-                            };
-                            let (w_dp, h_dp) = layout_cb(constraints);
-                            return taffy::geometry::Size {
-                                width: w_dp * scale,
-                                height: h_dp * scale,
-                            };
-                        }
+                    if let Some(node) = tree.get(node_id)
+                        && let Some(ref layout_cb) = node.modifier.layout
+                    {
+                        let scale = dp_to_px(1.0);
+                        let avail_w = match avail.width {
+                            AvailableSpace::Definite(w) => w / scale,
+                            _ => f32::INFINITY,
+                        };
+                        let avail_h = match avail.height {
+                            AvailableSpace::Definite(h) => h / scale,
+                            _ => f32::INFINITY,
+                        };
+                        let known_w = known.width.map(|w| w / scale).unwrap_or(f32::INFINITY);
+                        let known_h = known.height.map(|h| h / scale).unwrap_or(f32::INFINITY);
+                        let constraints = repose_core::modifier::LayoutConstraints {
+                            min_width: 0.0,
+                            max_width: avail_w.min(known_w),
+                            min_height: 0.0,
+                            max_height: avail_h.min(known_h),
+                        };
+                        let (w_dp, h_dp) = layout_cb(constraints);
+                        return taffy::geometry::Size {
+                            width: w_dp * scale,
+                            height: h_dp * scale,
+                        };
                     }
-                    if scope_root_map.contains_key(&node_id) {
-                        if let Some(key) = node_to_scope.get(&node_id) {
-                            if let Some(sz) = Self::compute_scope_layout(
-                                scope_trees,
-                                scope_root_map,
-                                node_to_scope,
-                                tree,
-                                font_px,
-                                px,
-                                key,
-                                known,
-                                avail,
-                            ) {
-                                return sz;
-                            }
-                        }
+                    if scope_root_map.contains_key(&node_id)
+                        && let Some(key) = node_to_scope.get(&node_id)
+                        && let Some(sz) = Self::compute_scope_layout(
+                            scope_trees,
+                            scope_root_map,
+                            node_to_scope,
+                            tree,
+                            font_px,
+                            px,
+                            key,
+                            known,
+                            avail,
+                        )
+                    {
+                        return sz;
                     }
                 }
                 Self::measure_node(
@@ -134,31 +133,29 @@ impl LayoutEngine {
         };
 
         let mut st_taffy = std::mem::replace(&mut st.taffy, taffy::TaffyTree::new());
-        let mut st_rev = std::mem::take(&mut st.reverse_map);
+        let st_rev = std::mem::take(&mut st.reverse_map);
         let mut st_tc = std::mem::take(&mut st.text_cache);
 
         let _ = st_taffy.compute_layout_with_measure(
             root_tid,
             scope_avail,
             |known2, avail2, tn, ctx2, _style2| {
-                if let Some(&nid) = st_rev.get(&tn) {
-                    if scope_root_map.contains_key(&nid) {
-                        if let Some(nested_key) = node_to_scope.get(&nid) {
-                            if let Some(sz) = Self::compute_scope_layout(
-                                scope_trees,
-                                scope_root_map,
-                                node_to_scope,
-                                tree,
-                                font_px,
-                                px,
-                                nested_key,
-                                known2,
-                                avail2,
-                            ) {
-                                return sz;
-                            }
-                        }
-                    }
+                if let Some(&nid) = st_rev.get(&tn)
+                    && scope_root_map.contains_key(&nid)
+                    && let Some(nested_key) = node_to_scope.get(&nid)
+                    && let Some(sz) = Self::compute_scope_layout(
+                        scope_trees,
+                        scope_root_map,
+                        node_to_scope,
+                        tree,
+                        font_px,
+                        px,
+                        nested_key,
+                        known2,
+                        avail2,
+                    )
+                {
+                    return sz;
                 }
                 Self::measure_node(
                     known2,
@@ -302,19 +299,20 @@ impl LayoutEngine {
                         .iter()
                         .map(|&(s, e)| text[s..e].to_string())
                         .collect();
-                    if truncated && matches!(overflow, TextOverflow::Ellipsis) {
-                        if let Some(last) = lns.last_mut() {
-                            let with_tail = format!("{}…", last);
-                            *last = repose_text::ellipsize_line(
-                                &with_tail,
-                                size_px_val,
-                                wrap_w_px,
-                                fw,
-                                fs,
-                                *letter_spacing,
-                                fvs,
-                            );
-                        }
+                    if truncated
+                        && matches!(overflow, TextOverflow::Ellipsis)
+                        && let Some(last) = lns.last_mut()
+                    {
+                        let with_tail = format!("{}…", last);
+                        *last = repose_text::ellipsize_line(
+                            &with_tail,
+                            size_px_val,
+                            wrap_w_px,
+                            fw,
+                            fs,
+                            *letter_spacing,
+                            fvs,
+                        );
                     }
                     (lns, ranges)
                 } else if matches!(overflow, TextOverflow::Ellipsis) {

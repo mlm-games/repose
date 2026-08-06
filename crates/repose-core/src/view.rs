@@ -424,8 +424,10 @@ pub enum PaintDesc {
 /// into the renderer today; the remaining variants are reserved.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+#[derive(Default)]
 pub enum BlendMode {
     /// Standard premultiplied alpha blending.
+    #[default]
     Alpha,
     /// Additive (screen-space light). Not yet implemented.
     Add,
@@ -433,12 +435,6 @@ pub enum BlendMode {
     Multiply,
     /// Overlay. Not yet implemented.
     Overlay,
-}
-
-impl Default for BlendMode {
-    fn default() -> Self {
-        BlendMode::Alpha
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

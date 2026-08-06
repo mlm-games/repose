@@ -5,8 +5,7 @@ use accesskit_winit::Adapter;
 use repose_core::locals::dp_to_px;
 use repose_core::*;
 use repose_ui::textfield::{
-    self, TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, TextMeasureConfig, caret_xy_for_byte,
-    measure_text,
+    TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, TextMeasureConfig, measure_text,
 };
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -273,10 +272,10 @@ where
         },
     );
 
-    if let Some(fid) = sched.focused {
-        if !frame.focus_chain.contains(&fid) {
-            sched.focused = None;
-        }
+    if let Some(fid) = sched.focused
+        && !frame.focus_chain.contains(&fid)
+    {
+        sched.focused = None;
     }
 
     frame
@@ -415,7 +414,6 @@ pub fn run_desktop_app_with_config(
     root: impl FnMut(&mut Scheduler, &RenderContext) -> View + 'static,
     config: AppConfig,
 ) -> anyhow::Result<()> {
-    use std::collections::{HashMap, HashSet};
     use winit::application::ApplicationHandler;
     use winit::dpi::{LogicalPosition, LogicalSize, PhysicalSize};
     use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
@@ -878,10 +876,10 @@ pub fn run_desktop_app_with_config(
                     }
 
                     // Cursor icon via winit window
-                    if let Some(win) = &self.window {
-                        if let Some(c) = result.cursor {
-                            win.set_cursor(winit::window::Cursor::Icon(map_cursor(c)));
-                        }
+                    if let Some(win) = &self.window
+                        && let Some(c) = result.cursor
+                    {
+                        win.set_cursor(winit::window::Cursor::Icon(map_cursor(c)));
                     }
 
                     self.request_redraw();
@@ -915,27 +913,23 @@ pub fn run_desktop_app_with_config(
                     let result = self.rt.handle_pointer_press(pos, PointerButton::Primary);
 
                     // Platform-specific IME setup for focused textfields
-                    if let Some(fid) = result.focused {
-                        if let Some(win) = &self.window
-                            && let Some(f) = &self.rt.frame_cache
-                            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
-                        {
-                            let sf = win.scale_factor();
-                            rc_web::set_ime_for_textfield_ex(
-                                win,
-                                true,
-                                hit.keyboard_type.ime_purpose_hint(),
-                                hit.auto_correct.unwrap_or(true),
-                                hit.capitalization,
-                            );
-                            win.set_ime_cursor_area(
-                                LogicalPosition::new(
-                                    hit.rect.x as f64 / sf,
-                                    hit.rect.y as f64 / sf,
-                                ),
-                                LogicalSize::new(hit.rect.w as f64 / sf, hit.rect.h as f64 / sf),
-                            );
-                        }
+                    if let Some(fid) = result.focused
+                        && let Some(win) = &self.window
+                        && let Some(f) = &self.rt.frame_cache
+                        && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
+                    {
+                        let sf = win.scale_factor();
+                        rc_web::set_ime_for_textfield_ex(
+                            win,
+                            true,
+                            hit.keyboard_type.ime_purpose_hint(),
+                            hit.auto_correct.unwrap_or(true),
+                            hit.capitalization,
+                        );
+                        win.set_ime_cursor_area(
+                            LogicalPosition::new(hit.rect.x as f64 / sf, hit.rect.y as f64 / sf),
+                            LogicalSize::new(hit.rect.w as f64 / sf, hit.rect.h as f64 / sf),
+                        );
                     }
 
                     // Click outside - no focus result from runtime, drop IME
@@ -1003,17 +997,16 @@ pub fn run_desktop_app_with_config(
                         // Paste primary selection into textfield
                         if self.is_textfield(hit.id) {
                             let key = self.tf_key_of(hit.id);
-                            if let Some(state_rc) = self.rt.textfield_states.get(&key) {
-                                if let Some(txt) = self.paste_from_primary() {
-                                    let mut st = state_rc.borrow_mut();
-                                    st.insert_text_atomic(&txt);
-                                    self.notify_text_change(hit.id, st.text.clone());
-                                    if let Some(f) = &self.rt.frame_cache
-                                        && let Some(h) =
-                                            f.hit_regions.iter().find(|h| h.id == hit.id)
-                                    {
-                                        App::tf_ensure_caret_visible(&mut st, h.tf_multiline);
-                                    }
+                            if let Some(state_rc) = self.rt.textfield_states.get(&key)
+                                && let Some(txt) = self.paste_from_primary()
+                            {
+                                let mut st = state_rc.borrow_mut();
+                                st.insert_text_atomic(&txt);
+                                self.notify_text_change(hit.id, st.text.clone());
+                                if let Some(f) = &self.rt.frame_cache
+                                    && let Some(h) = f.hit_regions.iter().find(|h| h.id == hit.id)
+                                {
+                                    App::tf_ensure_caret_visible(&mut st, h.tf_multiline);
                                 }
                             }
                         }
@@ -1034,15 +1027,14 @@ pub fn run_desktop_app_with_config(
                     self.rt.handle_pointer_release(pos, PointerButton::Primary);
 
                     // A11y: announce activation when a click fires on release
-                    if let (Some(f), Some(cid)) = (&self.rt.frame_cache, self.rt.capture_id) {
-                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
-                            && hit.rect.contains(pos)
-                            && hit.on_click.is_some()
-                            && let Some(node) = f.semantics_nodes.iter().find(|n| n.id == cid)
-                        {
-                            let label = node.label.as_deref().unwrap_or("");
-                            self.a11y.announce(&format!("Activated {}", label));
-                        }
+                    if let (Some(f), Some(cid)) = (&self.rt.frame_cache, self.rt.capture_id)
+                        && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
+                        && hit.rect.contains(pos)
+                        && hit.on_click.is_some()
+                        && let Some(node) = f.semantics_nodes.iter().find(|n| n.id == cid)
+                    {
+                        let label = node.label.as_deref().unwrap_or("");
+                        self.a11y.announce(&format!("Activated {}", label));
                     }
 
                     repose_core::request_frame();
@@ -1059,17 +1051,16 @@ pub fn run_desktop_app_with_config(
                             y: self.rt.mouse_pos_px.1,
                         };
                         if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos))
+                            && let Some(cb) = &hit.on_pointer_up
                         {
-                            if let Some(cb) = &hit.on_pointer_up {
-                                cb(PointerEvent::new(
-                                    PointerId(0),
-                                    PointerKind::Mouse,
-                                    PointerEventKind::Up(PointerButton::Tertiary),
-                                    pos,
-                                    1.0,
-                                    self.rt.modifiers,
-                                ));
-                            }
+                            cb(PointerEvent::new(
+                                PointerId(0),
+                                PointerKind::Mouse,
+                                PointerEventKind::Up(PointerButton::Tertiary),
+                                pos,
+                                1.0,
+                                self.rt.modifiers,
+                            ));
                         }
                     }
                 }
@@ -1316,15 +1307,15 @@ pub fn run_desktop_app_with_config(
                     }
 
                     // Sync OS window chrome (titlebar) to the app theme, deduped.
-                    if let Some(dark) = output.platform.window_theme_dark {
-                        if self.last_window_theme != Some(dark) {
-                            win.set_theme(Some(if dark {
-                                winit::window::Theme::Dark
-                            } else {
-                                winit::window::Theme::Light
-                            }));
-                            self.last_window_theme = Some(dark);
-                        }
+                    if let Some(dark) = output.platform.window_theme_dark
+                        && self.last_window_theme != Some(dark)
+                    {
+                        win.set_theme(Some(if dark {
+                            winit::window::Theme::Dark
+                        } else {
+                            winit::window::Theme::Light
+                        }));
+                        self.last_window_theme = Some(dark);
                     }
 
                     // Apply IME keyboard hints
@@ -1430,20 +1421,19 @@ pub fn run_desktop_app_with_config(
 
                     // Initialize TextFieldState for any focused TextField that
                     // doesn't have one yet (e.g. after FocusRequester::request_focus)
-                    if let Some(fid) = self.rt.sched.focused {
-                        if let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid)
-                            && let Some(key) = hit.tf_state_key
-                            && !self.rt.textfield_states.contains_key(&key)
-                        {
-                            self.rt
-                                .textfield_states
-                                .entry(key)
-                                .or_insert_with(|| {
-                                    Rc::new(RefCell::new(repose_ui::TextFieldState::new()))
-                                })
-                                .borrow_mut()
-                                .reset_caret_blink();
-                        }
+                    if let Some(fid) = self.rt.sched.focused
+                        && let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid)
+                        && let Some(key) = hit.tf_state_key
+                        && !self.rt.textfield_states.contains_key(&key)
+                    {
+                        self.rt
+                            .textfield_states
+                            .entry(key)
+                            .or_insert_with(|| {
+                                Rc::new(RefCell::new(repose_ui::TextFieldState::new()))
+                            })
+                            .borrow_mut()
+                            .reset_caret_blink();
                     }
 
                     self.rt.reconcile_hover_from_mouse_pos(&frame);
@@ -1473,17 +1463,18 @@ pub fn run_desktop_app_with_config(
             // On Wayland, wgpu creates an xdg_surface from the winit window and it shouldn't be recreated with a new id?
             // It doesn't take a lot of resources anyway, so let the backend be present.
             #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
-            if WINDOW_VISIBLE.load(Ordering::Relaxed) && self.backend.is_none() {
-                if let Some(w) = &self.window {
-                    log::info!("about_to_wait: recreating GPU backend");
-                    match repose_render_wgpu::WgpuBackend::new_with_options(
-                        w.clone(),
-                        self.msaa_samples,
-                        self.present_mode,
-                    ) {
-                        Ok(b) => self.backend = Some(b),
-                        Err(e) => log::error!("about_to_wait: failed to recreate backend: {e:?}"),
-                    }
+            if WINDOW_VISIBLE.load(Ordering::Relaxed)
+                && self.backend.is_none()
+                && let Some(w) = &self.window
+            {
+                log::info!("about_to_wait: recreating GPU backend");
+                match repose_render_wgpu::WgpuBackend::new_with_options(
+                    w.clone(),
+                    self.msaa_samples,
+                    self.present_mode,
+                ) {
+                    Ok(b) => self.backend = Some(b),
+                    Err(e) => log::error!("about_to_wait: failed to recreate backend: {e:?}"),
                 }
             }
 
@@ -1614,22 +1605,20 @@ pub fn run_desktop_app_with_config(
             };
             // Top-down preview: root -> focused
             for &id in ancestors.iter().rev() {
-                if let Some(hit) = hit_by_id.get(&id) {
-                    if let Some(cb) = &hit.on_preview_key_event {
-                        if cb(make_ke()) {
-                            return true;
-                        }
-                    }
+                if let Some(hit) = hit_by_id.get(&id)
+                    && let Some(cb) = &hit.on_preview_key_event
+                    && cb(make_ke())
+                {
+                    return true;
                 }
             }
             // Bottom-up normal: focused -> root
             for &id in ancestors.iter() {
-                if let Some(hit) = hit_by_id.get(&id) {
-                    if let Some(cb) = &hit.on_key_event {
-                        if cb(make_ke()) {
-                            return true;
-                        }
-                    }
+                if let Some(hit) = hit_by_id.get(&id)
+                    && let Some(cb) = &hit.on_key_event
+                    && cb(make_ke())
+                {
+                    return true;
                 }
             }
             false
@@ -1685,35 +1674,35 @@ pub fn run_desktop_app_with_config(
             }
 
             // Focus navigation (Tab/arrows)
-            if let Some(f) = &self.rt.frame_cache {
-                if let Some(new_id) =
+            if let Some(f) = &self.rt.frame_cache
+                && let Some(new_id) =
                     repose_core::focus::handle_action(&action, &mut self.rt.sched, f)
-                {
-                    if let Some(active) = self.rt.key_pressed_active.take() {
-                        self.rt.pressed_ids.remove(&active);
-                    }
-                    let tf_state_key = f
-                        .hit_regions
-                        .iter()
-                        .find(|h| h.id == new_id)
-                        .and_then(|h| h.tf_state_key);
-                    if let Some(key) = tf_state_key {
-                        self.rt.textfield_states.entry(key).or_insert_with(|| {
-                            Rc::new(RefCell::new(repose_ui::TextFieldState::new()))
-                        });
-                        if let Some(state_rc) = self.rt.textfield_states.get(&key) {
-                            state_rc.borrow_mut().reset_caret_blink();
-                        }
-                    }
-                    if let Some(win) = &self.window {
-                        let is_textfield = f.semantics_nodes.iter().any(|n| {
-                            n.id == new_id && n.role == repose_core::semantics::Role::TextField
-                        });
-                        rc_web::set_ime_for_textfield(win, is_textfield);
-                    }
-                    self.announce_focus_change();
-                    return true;
+            {
+                if let Some(active) = self.rt.key_pressed_active.take() {
+                    self.rt.pressed_ids.remove(&active);
                 }
+                let tf_state_key = f
+                    .hit_regions
+                    .iter()
+                    .find(|h| h.id == new_id)
+                    .and_then(|h| h.tf_state_key);
+                if let Some(key) = tf_state_key {
+                    self.rt
+                        .textfield_states
+                        .entry(key)
+                        .or_insert_with(|| Rc::new(RefCell::new(repose_ui::TextFieldState::new())));
+                    if let Some(state_rc) = self.rt.textfield_states.get(&key) {
+                        state_rc.borrow_mut().reset_caret_blink();
+                    }
+                }
+                if let Some(win) = &self.window {
+                    let is_textfield = f.semantics_nodes.iter().any(|n| {
+                        n.id == new_id && n.role == repose_core::semantics::Role::TextField
+                    });
+                    rc_web::set_ime_for_textfield(win, is_textfield);
+                }
+                self.announce_focus_change();
+                return true;
             }
 
             false

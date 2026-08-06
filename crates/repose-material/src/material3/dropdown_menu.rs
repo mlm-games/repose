@@ -197,7 +197,7 @@ pub fn DropdownMenu(
     if menu_visible {
         if overlay_id.get() == 0 {
             let anim = anim.clone();
-            let th = th.clone();
+            let th = th;
             let items = items.clone();
             let state = state.clone();
             let config = config.clone();
@@ -347,7 +347,7 @@ fn render_dropdown_menu_content(
                             dragged: th.on_surface.with_alpha_f32(0.12),
                             disabled: Color::TRANSPARENT,
                         })
-                        .interaction_source(&*item_source)
+                        .interaction_source(&item_source)
                         .clickable()
                         .on_click(move || {
                             on_click();

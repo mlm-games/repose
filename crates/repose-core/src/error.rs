@@ -75,7 +75,7 @@ pub fn ErrorBoundary(
 
     BOUNDARY_THROW.with(|t| *t.borrow_mut() = None);
 
-    let result = catch_unwind(AssertUnwindSafe(|| content()));
+    let result = catch_unwind(AssertUnwindSafe(content));
 
     // Prefer explicit throw_boundary over panic.
     if let Some(info) = take_throw() {

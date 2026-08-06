@@ -6,16 +6,11 @@ use repose_ui::{Box, Column, ViewExt};
 use super::*;
 
 /// Position of the floating action button within a Scaffold.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum FabPosition {
+    #[default]
     End,
     Center,
-}
-
-impl Default for FabPosition {
-    fn default() -> Self {
-        Self::End
-    }
 }
 
 #[derive(Clone)]

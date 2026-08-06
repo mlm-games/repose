@@ -58,7 +58,7 @@ impl DeeplinkUri {
         let path: Vec<String> = path_str
             .split('/')
             .filter(|s| !s.is_empty())
-            .map(|s| url_decode(s))
+            .map(url_decode)
             .collect();
 
         let mut query = HashMap::new();

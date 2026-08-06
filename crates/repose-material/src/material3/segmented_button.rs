@@ -137,7 +137,7 @@ pub fn SegmentedButton(
                     .clip_rounded_radii(radii)
                     .background(bg)
                     .state_colors(state_colors)
-                    .interaction_source(&*seg_source)
+                    .interaction_source(&seg_source)
                     .align_items(AlignItems::CENTER)
                     .justify_content(JustifyContent::CENTER)
                     .padding_values(config.content_padding);

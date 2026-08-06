@@ -495,49 +495,46 @@ fn dnd_update_over(frame: &Frame, session: &mut DragSession, modifiers: Modifier
     let new_over = dnd_target_id_at(frame, pos);
 
     if new_over != session.over_id {
-        if let Some(prev) = session.over_id {
-            if let Some(i) = hit_index_by_id(frame, prev) {
-                if let Some(cb) = &frame.hit_regions[i].on_drag_leave {
-                    cb(DragOver {
-                        source_id: session.source_id,
-                        target_id: prev,
-                        position: pos,
-                        modifiers,
-                        payload: session.payload.clone(),
-                    });
-                }
-            }
+        if let Some(prev) = session.over_id
+            && let Some(i) = hit_index_by_id(frame, prev)
+            && let Some(cb) = &frame.hit_regions[i].on_drag_leave
+        {
+            cb(DragOver {
+                source_id: session.source_id,
+                target_id: prev,
+                position: pos,
+                modifiers,
+                payload: session.payload.clone(),
+            });
         }
 
-        if let Some(now) = new_over {
-            if let Some(i) = hit_index_by_id(frame, now) {
-                if let Some(cb) = &frame.hit_regions[i].on_drag_enter {
-                    cb(DragOver {
-                        source_id: session.source_id,
-                        target_id: now,
-                        position: pos,
-                        modifiers,
-                        payload: session.payload.clone(),
-                    });
-                }
-            }
+        if let Some(now) = new_over
+            && let Some(i) = hit_index_by_id(frame, now)
+            && let Some(cb) = &frame.hit_regions[i].on_drag_enter
+        {
+            cb(DragOver {
+                source_id: session.source_id,
+                target_id: now,
+                position: pos,
+                modifiers,
+                payload: session.payload.clone(),
+            });
         }
 
         session.over_id = new_over;
     }
 
-    if let Some(over) = session.over_id {
-        if let Some(i) = hit_index_by_id(frame, over) {
-            if let Some(cb) = &frame.hit_regions[i].on_drag_over {
-                cb(DragOver {
-                    source_id: session.source_id,
-                    target_id: over,
-                    position: pos,
-                    modifiers,
-                    payload: session.payload.clone(),
-                });
-            }
-        }
+    if let Some(over) = session.over_id
+        && let Some(i) = hit_index_by_id(frame, over)
+        && let Some(cb) = &frame.hit_regions[i].on_drag_over
+    {
+        cb(DragOver {
+            source_id: session.source_id,
+            target_id: over,
+            position: pos,
+            modifiers,
+            payload: session.payload.clone(),
+        });
     }
 }
 
@@ -552,25 +549,24 @@ fn dnd_finish(
     let mut accepted = false;
     if accept_if_possible {
         let drop_target = dnd_target_id_at(frame, pos);
-        if let Some(tid) = drop_target {
-            if let Some(i) = hit_index_by_id(frame, tid) {
-                if let Some(cb) = &frame.hit_regions[i].on_drop {
-                    accepted = cb(DropEvent {
-                        source_id: session.source_id,
-                        target_id: tid,
-                        position: pos,
-                        modifiers,
-                        payload: session.payload.clone(),
-                    });
-                }
-            }
+        if let Some(tid) = drop_target
+            && let Some(i) = hit_index_by_id(frame, tid)
+            && let Some(cb) = &frame.hit_regions[i].on_drop
+        {
+            accepted = cb(DropEvent {
+                source_id: session.source_id,
+                target_id: tid,
+                position: pos,
+                modifiers,
+                payload: session.payload.clone(),
+            });
         }
     }
 
-    if let Some(i) = hit_index_by_id(frame, session.source_id) {
-        if let Some(cb) = &frame.hit_regions[i].on_drag_end {
-            cb(DragEnd { accepted });
-        }
+    if let Some(i) = hit_index_by_id(frame, session.source_id)
+        && let Some(cb) = &frame.hit_regions[i].on_drag_end
+    {
+        cb(DragEnd { accepted });
     }
 
     accepted
@@ -684,23 +680,23 @@ pub fn handle_drag_action(action: &DragAction) -> bool {
                 let dy = position.y - down.position.y;
                 let dist = (dx * dx + dy * dy).sqrt();
                 if dist >= slop {
-                    if let Some(frame) = DND_FRAME.with(|f| f.borrow().clone()) {
-                        if initiate_drag(
+                    if let Some(frame) = DND_FRAME.with(|f| f.borrow().clone())
+                        && initiate_drag(
                             &frame,
                             down.capture_id,
                             down.position,
                             position,
                             modifiers,
-                        ) {
-                            // Update over immediately
-                            DND_SESSION.with(|s| {
-                                if let Some(ref mut session) = *s.borrow_mut() {
-                                    dnd_update_over(&frame, session, modifiers, position);
-                                }
-                            });
-                            DND_MOUSE_DOWN.with(|m| *m.borrow_mut() = None);
-                            return true;
-                        }
+                        )
+                    {
+                        // Update over immediately
+                        DND_SESSION.with(|s| {
+                            if let Some(ref mut session) = *s.borrow_mut() {
+                                dnd_update_over(&frame, session, modifiers, position);
+                            }
+                        });
+                        DND_MOUSE_DOWN.with(|m| *m.borrow_mut() = None);
+                        return true;
                     }
                     // Widget doesn't support drag - try mouse down again next time
                     // (actually, clear it so we don't retry on every move)
@@ -712,35 +708,36 @@ pub fn handle_drag_action(action: &DragAction) -> bool {
             // Touch: try long-press initiation
             if let Some(touch) = DND_TOUCH_DOWN.with(|t| t.borrow().clone()) {
                 if touch.long_press_pending {
-                    let elapsed_ms = (Instant::now() - touch.time).as_millis() as u128;
+                    let elapsed_ms = (Instant::now() - touch.time).as_millis();
                     let dx = position.x - touch.position.x;
                     let dy = position.y - touch.position.y;
                     let dist = (dx * dx + dy * dy).sqrt();
 
-                    if elapsed_ms >= LONG_PRESS_MS && dist <= slop {
-                        if let Some(frame) = DND_FRAME.with(|f| f.borrow().clone()) {
-                            if initiate_drag(
-                                &frame,
-                                touch.capture_id,
-                                touch.position,
-                                position,
-                                modifiers,
-                            ) {
-                                DND_SESSION.with(|s| {
-                                    if let Some(ref mut session) = *s.borrow_mut() {
-                                        dnd_update_over(&frame, session, modifiers, position);
-                                    }
-                                });
-                                DND_TOUCH_DOWN.with(|t| *t.borrow_mut() = None);
-                                return true;
-                            }
-                            // Widget doesn't support drag - cancel long press
-                            DND_TOUCH_DOWN.with(|t| {
-                                if let Some(ref mut td) = *t.borrow_mut() {
-                                    td.long_press_pending = false;
+                    if elapsed_ms >= LONG_PRESS_MS
+                        && dist <= slop
+                        && let Some(frame) = DND_FRAME.with(|f| f.borrow().clone())
+                    {
+                        if initiate_drag(
+                            &frame,
+                            touch.capture_id,
+                            touch.position,
+                            position,
+                            modifiers,
+                        ) {
+                            DND_SESSION.with(|s| {
+                                if let Some(ref mut session) = *s.borrow_mut() {
+                                    dnd_update_over(&frame, session, modifiers, position);
                                 }
                             });
+                            DND_TOUCH_DOWN.with(|t| *t.borrow_mut() = None);
+                            return true;
                         }
+                        // Widget doesn't support drag - cancel long press
+                        DND_TOUCH_DOWN.with(|t| {
+                            if let Some(ref mut td) = *t.borrow_mut() {
+                                td.long_press_pending = false;
+                            }
+                        });
                     }
                     if dist > slop {
                         DND_TOUCH_DOWN.with(|t| {

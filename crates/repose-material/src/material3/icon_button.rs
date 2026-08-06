@@ -93,9 +93,9 @@ fn icon_button_render(
         .clone()
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    m = m.interaction_source(&*source);
+    m = m.interaction_source(&source);
     if is_enabled {
-        m = m.clickable().on_click(move || on_click());
+        m = m.clickable().on_click(on_click);
     }
 
     Box(m).child(icon)

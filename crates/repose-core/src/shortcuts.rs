@@ -236,7 +236,7 @@ pub fn default_chord_for(action: &Action) -> Option<KeyChord> {
 
 pub fn default_map() -> ShortcutMap {
     let mut map = ShortcutMap::new();
-    let mut actions = vec![
+    let actions = vec![
         Action::Copy,
         Action::Cut,
         Action::Paste,

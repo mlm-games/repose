@@ -94,7 +94,7 @@ impl LayoutEngine {
             }
             self.text_cache.clear();
             // Scope tree text caches
-            for (_, st) in &mut self.scope_trees {
+            for st in self.scope_trees.values_mut() {
                 for &node_id in st.text_cache.keys() {
                     if let Some(&tid) = st.taffy_map.get(&node_id) {
                         let _ = st.taffy.mark_dirty(tid);
@@ -104,7 +104,7 @@ impl LayoutEngine {
             }
         }
         if locals_changed {
-            for (_, st) in &mut self.scope_trees {
+            for st in self.scope_trees.values_mut() {
                 st.text_cache.clear();
             }
         }
@@ -287,44 +287,41 @@ impl LayoutEngine {
         // Their children use the scope tree layout (positions relative to scope root).
         if self.scope_root_map.contains_key(&node_id) {
             if let Some(&tid) = self.taffy_map.get(&node_id) {
-                return self.taffy.layout(tid).unwrap().clone();
+                return *self.taffy.layout(tid).unwrap();
             }
             // Nested scope root: the enclosing scope positions it via a leaf
             // marker; inherit that layout so the subtree paints at the right
             // spot instead of the nested scope's origin.
-            if let Some(parent_id) = self.tree.get(node_id).and_then(|n| n.parent) {
-                if let Some(outer_key) = self.node_to_scope.get(&parent_id) {
-                    if let Some(st) = self.scope_trees.get(outer_key) {
-                        if let Some(&tid) = st.taffy_map.get(&node_id) {
-                            return st.taffy.layout(tid).unwrap().clone();
-                        }
-                    }
-                }
+            if let Some(parent_id) = self.tree.get(node_id).and_then(|n| n.parent)
+                && let Some(outer_key) = self.node_to_scope.get(&parent_id)
+                && let Some(st) = self.scope_trees.get(outer_key)
+                && let Some(&tid) = st.taffy_map.get(&node_id)
+            {
+                return *st.taffy.layout(tid).unwrap();
             }
-            if let Some(key) = self.node_to_scope.get(&node_id) {
-                if let Some(st) = self.scope_trees.get(key) {
-                    if let Some(&tid) = st.taffy_map.get(&node_id) {
-                        return st.taffy.layout(tid).unwrap().clone();
-                    }
-                }
+            if let Some(key) = self.node_to_scope.get(&node_id)
+                && let Some(st) = self.scope_trees.get(key)
+                && let Some(&tid) = st.taffy_map.get(&node_id)
+            {
+                return *st.taffy.layout(tid).unwrap();
             }
         }
-        if let Some(key) = self.node_to_scope.get(&node_id) {
-            if let Some(st) = self.scope_trees.get(key) {
-                let tid = st.taffy_map[&node_id];
-                return st.taffy.layout(tid).unwrap().clone();
-            }
+        if let Some(key) = self.node_to_scope.get(&node_id)
+            && let Some(st) = self.scope_trees.get(key)
+        {
+            let tid = st.taffy_map[&node_id];
+            return *st.taffy.layout(tid).unwrap();
         }
         let tid = self.taffy_map[&node_id];
-        self.taffy.layout(tid).unwrap().clone()
+        *self.taffy.layout(tid).unwrap()
     }
 
     pub(crate) fn taffy_children_for_node(&self, node_id: NodeId) -> Vec<taffy::NodeId> {
-        if let Some(key) = self.node_to_scope.get(&node_id) {
-            if let Some(st) = self.scope_trees.get(key) {
-                let tid = st.taffy_map[&node_id];
-                return st.taffy.children(tid).unwrap_or_default();
-            }
+        if let Some(key) = self.node_to_scope.get(&node_id)
+            && let Some(st) = self.scope_trees.get(key)
+        {
+            let tid = st.taffy_map[&node_id];
+            return st.taffy.children(tid).unwrap_or_default();
         }
         let tid = self.taffy_map[&node_id];
         self.taffy.children(tid).unwrap_or_default()

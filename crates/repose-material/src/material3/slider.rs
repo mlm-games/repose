@@ -123,7 +123,7 @@ pub fn Slider(
         assert!(s > 0.0, "Slider step must be positive");
     }
     let id = *remember(|| SLIDER_COUNTER.fetch_add(1, Ordering::Relaxed));
-    let track_rect = remember_state_with_key(format!("ms_rect_{}", id), || Rect::default());
+    let track_rect = remember_state_with_key(format!("ms_rect_{}", id), Rect::default);
     let drag_active = remember_mutable_with_key(format!("ms_da_{}", id), || false);
     let hovered = remember(|| Signal::new(false));
 
@@ -153,7 +153,7 @@ pub fn Slider(
     Box(Modifier::new()
         .min_width(200.0)
         .height(44.0)
-        .interaction_source(&*sl_source)
+        .interaction_source(&sl_source)
         .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
             let mul_c = |c: Color| {
                 Color(
@@ -374,7 +374,7 @@ pub fn RangeSlider(
         assert!(s > 0.0, "Slider step must be positive");
     }
     let id = *remember(|| SLIDER_COUNTER.fetch_add(1, Ordering::Relaxed));
-    let track_rect = remember_state_with_key(format!("mrs_rect_{}", id), || Rect::default());
+    let track_rect = remember_state_with_key(format!("mrs_rect_{}", id), Rect::default);
     let drag_active = remember_mutable_with_key(format!("mrs_da_{}", id), || false);
     let active_thumb = remember_mutable_with_key(format!("mrs_at_{}", id), || false);
     let hovered = remember(|| Signal::new(false));

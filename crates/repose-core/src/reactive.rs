@@ -8,7 +8,7 @@ pub type ObserverId = usize;
 thread_local! {
     static CURRENT_OBSERVER: RefCell<Option<ObserverId>> = const { RefCell::new(None) };
     static GRAPH: RefCell<DepGraph> = RefCell::new(DepGraph::default());
-    static SIGNAL_DEPTH: Cell<u32> = Cell::new(0);
+    static SIGNAL_DEPTH: Cell<u32> = const { Cell::new(0) };
     static PENDING_OBSERVERS: RefCell<VecDeque<ObserverId>> = const { RefCell::new(VecDeque::new()) };
 }
 
@@ -38,7 +38,7 @@ impl DepGraph {
         self.observers.remove(&obs);
         self.remove_all_edges_for(obs);
         // scrub forward maps just in case
-        for (_sig, set) in self.edges.iter_mut() {
+        for set in self.edges.values_mut() {
             set.remove(&obs);
         }
         self.running.remove(&obs);

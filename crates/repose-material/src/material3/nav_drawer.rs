@@ -256,11 +256,11 @@ pub fn NavigationDrawerItem(
             disabled: Color::TRANSPARENT,
         })
         .clip_rounded(config.shape_radius)
-        .interaction_source(&*nd_source)
+        .interaction_source(&nd_source)
         .then(config.modifier);
 
     if config.enabled {
-        m = m.clickable().on_click(move || on_click());
+        m = m.clickable().on_click(on_click);
     }
 
     Box(m).child(with_content_color(fg, || {

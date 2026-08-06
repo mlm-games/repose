@@ -56,10 +56,10 @@ impl Scope {
     /// (i.e., until the scope key is no longer composed or the root is replaced).
     pub fn memo<T: 'static>(&self, key: &str, init: impl FnOnce() -> T) -> Rc<T> {
         let mut cache = self.inner.memo_cache.borrow_mut();
-        if let Some(existing) = cache.get(key) {
-            if let Some(v) = existing.downcast_ref::<Rc<T>>() {
-                return v.clone();
-            }
+        if let Some(existing) = cache.get(key)
+            && let Some(v) = existing.downcast_ref::<Rc<T>>()
+        {
+            return v.clone();
         }
         let val: Rc<T> = Rc::new(init());
         cache.insert(key.to_string(), Box::new(val.clone()));

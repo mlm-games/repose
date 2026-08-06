@@ -14,8 +14,8 @@ type TickFn = Rc<RefCell<dyn FnMut() -> bool>>;
 
 thread_local! {
     static REGISTRY: RefCell<Vec<(String, TickFn)>> = RefCell::new(Vec::new());
-    static TOUCHED: RefCell<Vec<String>> = RefCell::new(Vec::new());
-    static LIVE_EPOCH: Cell<u64> = Cell::new(0);
+    static TOUCHED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    static LIVE_EPOCH: Cell<u64> = const { Cell::new(0) };
 }
 
 /// Mark `key` as still active this frame. Called from `animate_f32_from` etc.

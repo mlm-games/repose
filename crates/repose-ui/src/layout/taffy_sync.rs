@@ -579,15 +579,15 @@ impl LayoutEngine {
             // Store flags so the constraint-pass can check them.
             // Taffy style doesn't have a direct "default min" concept, so we defer
             // to the layout engine's constraint override logic.
-            if let Some(v) = m.default_min_width {
-                if s.min_size.width.is_auto() || s.min_size.width == length(0.0_f32) {
-                    s.min_size.width = length(px(v.max(0.0)));
-                }
+            if let Some(v) = m.default_min_width
+                && (s.min_size.width.is_auto() || s.min_size.width == length(0.0_f32))
+            {
+                s.min_size.width = length(px(v.max(0.0)));
             }
-            if let Some(v) = m.default_min_height {
-                if s.min_size.height.is_auto() || s.min_size.height == length(0.0_f32) {
-                    s.min_size.height = length(px(v.max(0.0)));
-                }
+            if let Some(v) = m.default_min_height
+                && (s.min_size.height.is_auto() || s.min_size.height == length(0.0_f32))
+            {
+                s.min_size.height = length(px(v.max(0.0)));
             }
         }
         if let Some(r) = m.aspect_ratio {

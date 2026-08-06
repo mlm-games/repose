@@ -47,7 +47,7 @@ pub fn screen() -> View {
     let filter_selected = remember(|| signal(false));
     let tab_index = remember(|| signal(0usize));
     let search_state = remember(SearchBarState::new);
-    let tooltip_state = remember(|| TooltipState::new());
+    let tooltip_state = remember(TooltipState::new);
     let tooltip_state_inner: Rc<TooltipState> = tooltip_state.as_ref().clone();
 
     let th = theme();

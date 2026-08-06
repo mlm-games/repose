@@ -144,7 +144,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         .clip_rounded(20.0)
         .background(Color::TRANSPARENT)
         .state_colors(config.state_colors)
-        .interaction_source(&*cb_source)
+        .interaction_source(&cb_source)
         .clickable()
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER)
@@ -391,7 +391,7 @@ pub fn RadioButton(
         .clip_rounded(20.0)
         .background(Color::TRANSPARENT)
         .state_colors(config.state_colors)
-        .interaction_source(&*rb_source)
+        .interaction_source(&rb_source)
         .clickable()
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER)
@@ -590,7 +590,7 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         .clip_rounded(track_h * 0.5)
         .background(track_bg)
         .border(track_border, border_color, track_h * 0.5)
-        .interaction_source(&*sw_source)
+        .interaction_source(&sw_source)
         .clickable()
         .on_pointer_enter({
             let h = hovered.clone();

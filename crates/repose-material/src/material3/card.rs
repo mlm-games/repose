@@ -62,7 +62,7 @@ pub fn Card(config: CardConfig, content: impl FnOnce() -> View) -> View {
     let mut m = Modifier::new()
         .background(bg)
         .clip_rounded(config.shape_radius)
-        .interaction_source(&*source)
+        .interaction_source(&source)
         .then(config.modifier);
     if let Some((w, c)) = config.border {
         m = m.border(w, c, config.shape_radius);

@@ -210,7 +210,7 @@ impl ReposeRuntime {
             !f.hit_regions.is_empty() || self.hover_id.is_some() || self.capture_id.is_some();
         let wants_keyboard = !self.textfield_states.is_empty() || self.ime_preedit;
 
-        let ime_allowed = self.sched.focused.map_or(false, |fid| {
+        let ime_allowed = self.sched.focused.is_some_and(|fid| {
             f.semantics_nodes
                 .iter()
                 .any(|n| n.id == fid && n.role == repose_core::semantics::Role::TextField)
@@ -306,25 +306,24 @@ impl ReposeRuntime {
         };
 
         // TextField/TextArea drag selection (if captured)
-        if let Some(cid) = self.capture_id {
-            if is_textfield_in_frame(f, cid) {
-                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
-                    let key = tf_key_of(f, cid);
-                    if let Some(st_rc) = self.textfield_states.get(&key) {
-                        let mut st = st_rc.borrow_mut();
-                        let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
-                        let content_x = (pos.x - ox + st.scroll_offset).max(0.0);
-                        let content_y = (pos.y - oy + st.scroll_offset_y).max(0.0);
-                        let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-                        let wrap_w = st.inner_width.max(1.0);
-                        let idx = if hit.tf_multiline {
-                            index_for_xy_bytes_vt(&st, font_px, wrap_w, content_x, content_y)
-                        } else {
-                            index_for_x_bytes_vt(&st, font_px, content_x)
-                        };
-                        st.drag_to(idx);
-                    }
-                }
+        if let Some(cid) = self.capture_id
+            && is_textfield_in_frame(f, cid)
+            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
+        {
+            let key = tf_key_of(f, cid);
+            if let Some(st_rc) = self.textfield_states.get(&key) {
+                let mut st = st_rc.borrow_mut();
+                let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
+                let content_x = (pos.x - ox + st.scroll_offset).max(0.0);
+                let content_y = (pos.y - oy + st.scroll_offset_y).max(0.0);
+                let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+                let wrap_w = st.inner_width.max(1.0);
+                let idx = if hit.tf_multiline {
+                    index_for_xy_bytes_vt(&st, font_px, wrap_w, content_x, content_y)
+                } else {
+                    index_for_x_bytes_vt(&st, font_px, content_x)
+                };
+                st.drag_to(idx);
             }
         }
 
@@ -353,15 +352,15 @@ impl ReposeRuntime {
         );
 
         if let Some(cid) = self.capture_id {
-            if let Some(h) = f.hit_regions.iter().find(|h| h.id == cid) {
-                if let Some(cb) = &h.on_pointer_move {
-                    cb(pe);
-                }
-            }
-        } else if let Some(h) = top {
-            if let Some(cb) = &h.on_pointer_move {
+            if let Some(h) = f.hit_regions.iter().find(|h| h.id == cid)
+                && let Some(cb) = &h.on_pointer_move
+            {
                 cb(pe);
             }
+        } else if let Some(h) = top
+            && let Some(cb) = &h.on_pointer_move
+        {
+            cb(pe);
         }
 
         PointerMoveResult {
@@ -493,40 +492,37 @@ impl ReposeRuntime {
         };
 
         // PointerUp callback
-        if let Some(cid) = self.capture_id {
-            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
-                if let Some(cb) = &hit.on_pointer_up {
-                    let pe = PointerEvent::new(
-                        PointerId(0),
-                        PointerKind::Mouse,
-                        PointerEventKind::Up(_button),
-                        pos,
-                        1.0,
-                        self.modifiers,
-                    );
-                    cb(pe);
-                }
-            }
+        if let Some(cid) = self.capture_id
+            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
+            && let Some(cb) = &hit.on_pointer_up
+        {
+            let pe = PointerEvent::new(
+                PointerId(0),
+                PointerKind::Mouse,
+                PointerEventKind::Up(_button),
+                pos,
+                1.0,
+                self.modifiers,
+            );
+            cb(pe);
         }
 
         // Click detection
-        if let Some(cid) = self.capture_id {
-            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
-                if hit.rect.contains(pos) {
-                    if let Some(cb) = &hit.on_click {
-                        cb();
-                    }
-                }
-            }
+        if let Some(cid) = self.capture_id
+            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
+            && hit.rect.contains(pos)
+            && let Some(cb) = &hit.on_click
+        {
+            cb();
         }
 
         // TextField drag end
-        if let Some(cid) = self.capture_id {
-            if is_semantics_textfield(f, cid) {
-                let key = tf_key_of(f, cid);
-                if let Some(state_rc) = self.textfield_states.get(&key) {
-                    state_rc.borrow_mut().end_drag();
-                }
+        if let Some(cid) = self.capture_id
+            && is_semantics_textfield(f, cid)
+        {
+            let key = tf_key_of(f, cid);
+            if let Some(state_rc) = self.textfield_states.get(&key) {
+                state_rc.borrow_mut().end_drag();
             }
         }
 
@@ -549,20 +545,19 @@ impl ReposeRuntime {
             self.modifiers,
         );
         // Emit Cancel for captured region
-        if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id) {
-            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid) {
-                if let Some(cb) = &hit.on_pointer_cancel {
-                    let pe = PointerEvent::new(
-                        PointerId(0),
-                        PointerKind::Mouse,
-                        PointerEventKind::Cancel,
-                        pos,
-                        1.0,
-                        self.modifiers,
-                    );
-                    cb(pe);
-                }
-            }
+        if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id)
+            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
+            && let Some(cb) = &hit.on_pointer_cancel
+        {
+            let pe = PointerEvent::new(
+                PointerId(0),
+                PointerKind::Mouse,
+                PointerEventKind::Cancel,
+                pos,
+                1.0,
+                self.modifiers,
+            );
+            cb(pe);
         }
         self.reset_pointer_state();
     }
@@ -589,29 +584,29 @@ impl ReposeRuntime {
     pub fn reconcile_hover_from_mouse_pos(&mut self, new_frame: &Frame) {
         let mut changed = false;
 
-        if let Some(prev_id) = self.hover_id {
-            if !new_frame.hit_regions.iter().any(|h| h.id == prev_id) {
-                if let Some(old_f) = &self.frame_cache
-                    && let Some(prev) = old_f.hit_regions.iter().find(|h| h.id == prev_id)
-                    && let Some(cb) = &prev.on_pointer_leave
-                {
-                    let pos = Vec2 {
-                        x: self.mouse_pos_px.0,
-                        y: self.mouse_pos_px.1,
-                    };
-                    let pe = PointerEvent::new(
-                        PointerId(0),
-                        PointerKind::Mouse,
-                        PointerEventKind::Leave,
-                        pos,
-                        1.0,
-                        self.modifiers,
-                    );
-                    cb(pe);
-                    changed = true;
-                }
-                self.hover_id = None;
+        if let Some(prev_id) = self.hover_id
+            && !new_frame.hit_regions.iter().any(|h| h.id == prev_id)
+        {
+            if let Some(old_f) = &self.frame_cache
+                && let Some(prev) = old_f.hit_regions.iter().find(|h| h.id == prev_id)
+                && let Some(cb) = &prev.on_pointer_leave
+            {
+                let pos = Vec2 {
+                    x: self.mouse_pos_px.0,
+                    y: self.mouse_pos_px.1,
+                };
+                let pe = PointerEvent::new(
+                    PointerId(0),
+                    PointerKind::Mouse,
+                    PointerEventKind::Leave,
+                    pos,
+                    1.0,
+                    self.modifiers,
+                );
+                cb(pe);
+                changed = true;
             }
+            self.hover_id = None;
         }
 
         if !self.pointer_inside {
@@ -668,10 +663,10 @@ impl ReposeRuntime {
         };
 
         let now = web_time::Instant::now();
-        if let Some(last) = self.last_scroll_at {
-            if now.duration_since(last).as_millis() > 250 {
-                self.scroll_capture_id = None;
-            }
+        if let Some(last) = self.last_scroll_at
+            && now.duration_since(last).as_millis() > 250
+        {
+            self.scroll_capture_id = None;
         }
         self.last_scroll_at = Some(now);
 
@@ -694,19 +689,17 @@ impl ReposeRuntime {
         };
 
         // Escape / BrowserBack: cancel DnD first, then try focus key dispatch
-        if event.event_type == KeyEventType::Down && !event.is_repeat {
-            if event.key == Key::Escape {
-                if dnd::handle_drag_action(&DragAction::Cancel) {
-                    request_frame();
-                    return true;
-                }
-                // Try dispatch through focus chain
-                if self.dispatch_focus_key_event(f, event) {
-                    request_frame();
-                    return true;
-                }
+        if event.event_type == KeyEventType::Down && !event.is_repeat && event.key == Key::Escape {
+            if dnd::handle_drag_action(&DragAction::Cancel) {
+                request_frame();
                 return true;
             }
+            // Try dispatch through focus chain
+            if self.dispatch_focus_key_event(f, event) {
+                request_frame();
+                return true;
+            }
+            return true;
         }
 
         // Dispatch through focus ancestor chain
@@ -717,28 +710,28 @@ impl ReposeRuntime {
         }
 
         // Action dispatch (shortcuts like Ctrl+C, Tab, etc.)
-        if event.event_type == KeyEventType::Down && !event.is_repeat {
-            if let Some(action) = repose_core::shortcuts::resolve_action(
+        if event.event_type == KeyEventType::Down
+            && !event.is_repeat
+            && let Some(action) = repose_core::shortcuts::resolve_action(
                 repose_core::shortcuts::KeyChord::new(event.key.clone(), self.modifiers),
-            ) {
-                if self.dispatch_action(f, action.clone()) {
-                    request_frame();
-                    return true;
-                }
-                // Focus navigation
-                if let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.sched, f)
+            )
+        {
+            if self.dispatch_action(f, action.clone()) {
+                request_frame();
+                return true;
+            }
+            // Focus navigation
+            if let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.sched, f) {
+                // Lazy-init textfield state for newly focused element
+                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == new_id)
+                    && let Some(key) = hit.tf_state_key
                 {
-                    // Lazy-init textfield state for newly focused element
-                    if let Some(hit) = f.hit_regions.iter().find(|h| h.id == new_id) {
-                        if let Some(key) = hit.tf_state_key {
-                            self.textfield_states
-                                .entry(key)
-                                .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
-                        }
-                    }
-                    request_frame();
-                    return true;
+                    self.textfield_states
+                        .entry(key)
+                        .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
                 }
+                request_frame();
+                return true;
             }
         }
 
@@ -756,67 +749,67 @@ impl ReposeRuntime {
                         request_frame();
                         return true;
                     }
-                } else if event.event_type == KeyEventType::Up {
-                    if let Some(active_id) = self.key_pressed_active {
-                        if event.key == Key::Space || event.key == Key::Enter {
-                            self.pressed_ids.remove(&active_id);
-                            self.key_pressed_active = None;
-                            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == active_id) {
-                                if let Some(cb) = &hit.on_click {
-                                    cb();
-                                } else if let Some(cb) = &hit.on_pointer_down {
-                                    let pe = PointerEvent::new(
-                                        PointerId(0),
-                                        PointerKind::Mouse,
-                                        PointerEventKind::Down(PointerButton::Primary),
-                                        Vec2 { x: 0.0, y: 0.0 },
-                                        1.0,
-                                        self.modifiers,
-                                    );
-                                    cb(pe);
-                                }
-                            }
-                            request_frame();
-                            return true;
+                } else if event.event_type == KeyEventType::Up
+                    && let Some(active_id) = self.key_pressed_active
+                    && (event.key == Key::Space || event.key == Key::Enter)
+                {
+                    self.pressed_ids.remove(&active_id);
+                    self.key_pressed_active = None;
+                    if let Some(hit) = f.hit_regions.iter().find(|h| h.id == active_id) {
+                        if let Some(cb) = &hit.on_click {
+                            cb();
+                        } else if let Some(cb) = &hit.on_pointer_down {
+                            let pe = PointerEvent::new(
+                                PointerId(0),
+                                PointerKind::Mouse,
+                                PointerEventKind::Down(PointerButton::Primary),
+                                Vec2 { x: 0.0, y: 0.0 },
+                                1.0,
+                                self.modifiers,
+                            );
+                            cb(pe);
                         }
                     }
+                    request_frame();
+                    return true;
                 }
             }
         }
 
         // Enter submission for focused TextField
-        if event.event_type == KeyEventType::Down && !event.is_repeat && event.key == Key::Enter {
-            if let Some(fid) = self.sched.focused {
-                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
-                    let is_multiline = hit.tf_multiline;
-                    let should_submit = if is_multiline {
-                        self.modifiers.ctrl || self.modifiers.meta
-                    } else {
-                        true
-                    };
-                    if should_submit {
-                        if let Some(on_submit) = &hit.on_text_submit {
-                            let key = tf_key_of(f, fid);
-                            if let Some(state_rc) = self.textfield_states.get(&key) {
-                                let text = state_rc.borrow().text.clone();
-                                on_submit(text);
-                                request_frame();
-                                return true;
-                            }
-                        }
-                    } else {
-                        // Multiline plain Enter: insert newline
-                        let key = tf_key_of(f, fid);
-                        if let Some(state_rc) = self.textfield_states.get(&key) {
-                            let mut st = state_rc.borrow_mut();
-                            st.insert_text("\n");
-                            let new_text = st.text.clone();
-                            notify_text_change(f, fid, new_text);
-                            tf_ensure_caret_visible(&mut st, hit.tf_multiline);
-                            request_frame();
-                            return true;
-                        }
+        if event.event_type == KeyEventType::Down
+            && !event.is_repeat
+            && event.key == Key::Enter
+            && let Some(fid) = self.sched.focused
+            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
+        {
+            let is_multiline = hit.tf_multiline;
+            let should_submit = if is_multiline {
+                self.modifiers.ctrl || self.modifiers.meta
+            } else {
+                true
+            };
+            if should_submit {
+                if let Some(on_submit) = &hit.on_text_submit {
+                    let key = tf_key_of(f, fid);
+                    if let Some(state_rc) = self.textfield_states.get(&key) {
+                        let text = state_rc.borrow().text.clone();
+                        on_submit(text);
+                        request_frame();
+                        return true;
                     }
+                }
+            } else {
+                // Multiline plain Enter: insert newline
+                let key = tf_key_of(f, fid);
+                if let Some(state_rc) = self.textfield_states.get(&key) {
+                    let mut st = state_rc.borrow_mut();
+                    st.insert_text("\n");
+                    let new_text = st.text.clone();
+                    notify_text_change(f, fid, new_text);
+                    tf_ensure_caret_visible(&mut st, hit.tf_multiline);
+                    request_frame();
+                    return true;
                 }
             }
         }
@@ -859,69 +852,69 @@ impl ReposeRuntime {
                             return true;
                         }
                         Key::ArrowUp => {
-                            if is_multiline_id(f, fid) {
-                                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
-                                    let font_px = dp_to_px(TF_FONT_DP);
-                                    let cur = state.caret_index();
-                                    let (new_pos, px) = repose_ui::textfield::move_caret_vertical(
-                                        &state.text,
-                                        font_px,
-                                        hit.rect.w,
-                                        cur,
-                                        -1,
-                                        state.preferred_x_px,
-                                    );
-                                    if self.modifiers.shift {
-                                        state.selection.end = new_pos;
-                                    } else {
-                                        state.selection = new_pos..new_pos;
-                                    }
-                                    state.preferred_x_px = Some(px);
-                                    let (cx, cy, _) = caret_xy_for_byte(
-                                        &state.text,
-                                        font_px,
-                                        hit.rect.w,
-                                        state.caret_index(),
-                                    );
-                                    let iw = state.inner_width;
-                                    let ih = state.inner_height;
-                                    state.ensure_caret_visible_xy(cx, cy, iw, ih, dp_to_px(2.0));
-                                    request_frame();
-                                    return true;
+                            if is_multiline_id(f, fid)
+                                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
+                            {
+                                let font_px = dp_to_px(TF_FONT_DP);
+                                let cur = state.caret_index();
+                                let (new_pos, px) = repose_ui::textfield::move_caret_vertical(
+                                    &state.text,
+                                    font_px,
+                                    hit.rect.w,
+                                    cur,
+                                    -1,
+                                    state.preferred_x_px,
+                                );
+                                if self.modifiers.shift {
+                                    state.selection.end = new_pos;
+                                } else {
+                                    state.selection = new_pos..new_pos;
                                 }
+                                state.preferred_x_px = Some(px);
+                                let (cx, cy, _) = caret_xy_for_byte(
+                                    &state.text,
+                                    font_px,
+                                    hit.rect.w,
+                                    state.caret_index(),
+                                );
+                                let iw = state.inner_width;
+                                let ih = state.inner_height;
+                                state.ensure_caret_visible_xy(cx, cy, iw, ih, dp_to_px(2.0));
+                                request_frame();
+                                return true;
                             }
                         }
                         Key::ArrowDown => {
-                            if is_multiline_id(f, fid) {
-                                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
-                                    let font_px = dp_to_px(TF_FONT_DP);
-                                    let cur = state.caret_index();
-                                    let (new_pos, px) = repose_ui::textfield::move_caret_vertical(
-                                        &state.text,
-                                        font_px,
-                                        hit.rect.w,
-                                        cur,
-                                        1,
-                                        state.preferred_x_px,
-                                    );
-                                    if self.modifiers.shift {
-                                        state.selection.end = new_pos;
-                                    } else {
-                                        state.selection = new_pos..new_pos;
-                                    }
-                                    state.preferred_x_px = Some(px);
-                                    let (cx, cy, _) = caret_xy_for_byte(
-                                        &state.text,
-                                        font_px,
-                                        hit.rect.w,
-                                        state.caret_index(),
-                                    );
-                                    let iw = state.inner_width;
-                                    let ih = state.inner_height;
-                                    state.ensure_caret_visible_xy(cx, cy, iw, ih, dp_to_px(2.0));
-                                    request_frame();
-                                    return true;
+                            if is_multiline_id(f, fid)
+                                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
+                            {
+                                let font_px = dp_to_px(TF_FONT_DP);
+                                let cur = state.caret_index();
+                                let (new_pos, px) = repose_ui::textfield::move_caret_vertical(
+                                    &state.text,
+                                    font_px,
+                                    hit.rect.w,
+                                    cur,
+                                    1,
+                                    state.preferred_x_px,
+                                );
+                                if self.modifiers.shift {
+                                    state.selection.end = new_pos;
+                                } else {
+                                    state.selection = new_pos..new_pos;
                                 }
+                                state.preferred_x_px = Some(px);
+                                let (cx, cy, _) = caret_xy_for_byte(
+                                    &state.text,
+                                    font_px,
+                                    hit.rect.w,
+                                    state.caret_index(),
+                                );
+                                let iw = state.inner_width;
+                                let ih = state.inner_height;
+                                state.ensure_caret_visible_xy(cx, cy, iw, ih, dp_to_px(2.0));
+                                request_frame();
+                                return true;
                             }
                         }
                         Key::Home => {
@@ -947,43 +940,41 @@ impl ReposeRuntime {
                 && !self.modifiers.ctrl
                 && !self.modifiers.alt
                 && !self.modifiers.meta
+                && let Key::Character(c) = event.key
+                && !c.is_control()
+                && c != '\n'
+                && c != '\r'
+                && let Some(fid) = self.sched.focused
             {
-                if let Key::Character(c) = event.key {
-                    if !c.is_control() && c != '\n' && c != '\r' {
-                        if let Some(fid) = self.sched.focused {
-                            let key = tf_key_of(f, fid);
-                            if let Some(state_rc) = self.textfield_states.get(&key) {
-                                let mut st = state_rc.borrow_mut();
-                                let text = c.to_string();
-                                st.insert_text(&text);
-                                notify_text_change(f, fid, st.text.clone());
-                                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
-                                    tf_ensure_caret_visible(&mut st, hit.tf_multiline);
-                                }
-                                request_frame();
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Key release: finish keyboard activation
-        if event.event_type == KeyEventType::Up {
-            if let Some(active_id) = self.key_pressed_active {
-                if event.key == Key::Space || event.key == Key::Enter {
-                    self.pressed_ids.remove(&active_id);
-                    self.key_pressed_active = None;
-                    if let Some(hit) = f.hit_regions.iter().find(|h| h.id == active_id) {
-                        if let Some(cb) = &hit.on_click {
-                            cb();
-                        }
+                let key = tf_key_of(f, fid);
+                if let Some(state_rc) = self.textfield_states.get(&key) {
+                    let mut st = state_rc.borrow_mut();
+                    let text = c.to_string();
+                    st.insert_text(&text);
+                    notify_text_change(f, fid, st.text.clone());
+                    if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
+                        tf_ensure_caret_visible(&mut st, hit.tf_multiline);
                     }
                     request_frame();
                     return true;
                 }
             }
+        }
+
+        // Key release: finish keyboard activation
+        if event.event_type == KeyEventType::Up
+            && let Some(active_id) = self.key_pressed_active
+            && (event.key == Key::Space || event.key == Key::Enter)
+        {
+            self.pressed_ids.remove(&active_id);
+            self.key_pressed_active = None;
+            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == active_id)
+                && let Some(cb) = &hit.on_click
+            {
+                cb();
+            }
+            request_frame();
+            return true;
         }
 
         false
@@ -1016,23 +1007,21 @@ impl ReposeRuntime {
 
         // Top-down preview: root -> focused
         for &id in ancestors.iter().rev() {
-            if let Some(hit) = hit_by_id.get(&id) {
-                if let Some(cb) = &hit.on_preview_key_event {
-                    if cb(event.clone()) {
-                        return true;
-                    }
-                }
+            if let Some(hit) = hit_by_id.get(&id)
+                && let Some(cb) = &hit.on_preview_key_event
+                && cb(event.clone())
+            {
+                return true;
             }
         }
 
         // Bottom-up normal: focused -> root
         for &id in ancestors.iter() {
-            if let Some(hit) = hit_by_id.get(&id) {
-                if let Some(cb) = &hit.on_key_event {
-                    if cb(event.clone()) {
-                        return true;
-                    }
-                }
+            if let Some(hit) = hit_by_id.get(&id)
+                && let Some(cb) = &hit.on_key_event
+                && cb(event.clone())
+            {
+                return true;
             }
         }
 
@@ -1041,14 +1030,12 @@ impl ReposeRuntime {
 
     /// Dispatch a shortcut action to the focused element.
     fn dispatch_action(&self, f: &Frame, action: repose_core::shortcuts::Action) -> bool {
-        if let Some(fid) = self.sched.focused {
-            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
-                if let Some(cb) = &hit.on_action {
-                    if cb(action.clone()) {
-                        return true;
-                    }
-                }
-            }
+        if let Some(fid) = self.sched.focused
+            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
+            && let Some(cb) = &hit.on_action
+            && cb(action.clone())
+        {
+            return true;
         }
 
         if repose_core::shortcuts::handle(action.clone()) {
@@ -1255,10 +1242,10 @@ where
         },
     );
 
-    if let Some(fid) = sched.focused {
-        if !frame.focus_chain.contains(&fid) {
-            sched.focused = None;
-        }
+    if let Some(fid) = sched.focused
+        && !frame.focus_chain.contains(&fid)
+    {
+        sched.focused = None;
     }
 
     frame
@@ -1281,35 +1268,33 @@ fn dispatch_hover_change(
     if new_hover == *hover_id {
         return;
     }
-    if let Some(prev_id) = *hover_id {
-        if let Some(prev) = f.hit_regions.iter().find(|h| h.id == prev_id) {
-            if let Some(cb) = &prev.on_pointer_leave {
-                let pe = PointerEvent::new(
-                    PointerId(0),
-                    PointerKind::Mouse,
-                    PointerEventKind::Leave,
-                    pos,
-                    1.0,
-                    modifiers,
-                );
-                cb(pe);
-            }
-        }
+    if let Some(prev_id) = *hover_id
+        && let Some(prev) = f.hit_regions.iter().find(|h| h.id == prev_id)
+        && let Some(cb) = &prev.on_pointer_leave
+    {
+        let pe = PointerEvent::new(
+            PointerId(0),
+            PointerKind::Mouse,
+            PointerEventKind::Leave,
+            pos,
+            1.0,
+            modifiers,
+        );
+        cb(pe);
     }
-    if let Some(hid) = new_hover {
-        if let Some(h) = f.hit_regions.iter().find(|h| h.id == hid) {
-            if let Some(cb) = &h.on_pointer_enter {
-                let pe = PointerEvent::new(
-                    PointerId(0),
-                    PointerKind::Mouse,
-                    PointerEventKind::Enter,
-                    pos,
-                    1.0,
-                    modifiers,
-                );
-                cb(pe);
-            }
-        }
+    if let Some(hid) = new_hover
+        && let Some(h) = f.hit_regions.iter().find(|h| h.id == hid)
+        && let Some(cb) = &h.on_pointer_enter
+    {
+        let pe = PointerEvent::new(
+            PointerId(0),
+            PointerKind::Mouse,
+            PointerEventKind::Enter,
+            pos,
+            1.0,
+            modifiers,
+        );
+        cb(pe);
     }
     *hover_id = new_hover;
 }
@@ -1343,10 +1328,10 @@ fn tf_key_of(frame: &Frame, visual_id: u64) -> u64 {
 }
 
 fn notify_text_change(f: &Frame, id: u64, text: String) {
-    if let Some(h) = f.hit_regions.iter().find(|h| h.id == id) {
-        if let Some(cb) = &h.on_text_change {
-            cb(text);
-        }
+    if let Some(h) = f.hit_regions.iter().find(|h| h.id == id)
+        && let Some(cb) = &h.on_text_change
+    {
+        cb(text);
     }
 }
 
@@ -1416,18 +1401,17 @@ fn dispatch_scroll(
     delta: Vec2,
     scroll_capture: Option<u64>,
 ) -> (bool, Option<u64>) {
-    if let Some(cid) = scroll_capture {
-        if let Some(cb) = frame
+    if let Some(cid) = scroll_capture
+        && let Some(cb) = frame
             .hit_regions
             .iter()
             .find(|h| h.id == cid)
             .and_then(|h| h.on_scroll.as_ref())
-        {
-            cb(delta);
-            return (true, Some(cid));
-        }
-        // Captured region vanished from the tree -> fall through and re-pick.
+    {
+        cb(delta);
+        return (true, Some(cid));
     }
+    // Captured region vanished from the tree -> fall through and re-pick.
 
     let mut remaining = delta;
     for hit in frame

@@ -1196,7 +1196,7 @@ impl Default for TextFieldConfig {
             read_only: false,
             input_transformation: None,
             text_style: Default::default(),
-            keyboard_options: repose_core::KeyboardOptions::DEFAULT.clone(),
+            keyboard_options: repose_core::KeyboardOptions::DEFAULT,
             on_keyboard_action: None,
             line_limits: repose_core::TextFieldLineLimits::MultiLine {
                 min_height_in_lines: 1,
@@ -1550,11 +1550,7 @@ pub(crate) fn paint_text_field(
     clip_rounded: Option<[f32; 4]>,
     alpha_accum: f32,
 ) {
-    let ts = text_input
-        .text_style
-        .as_ref()
-        .map(|s| s.clone())
-        .unwrap_or_default();
+    let ts = text_input.text_style.clone().unwrap_or_default();
     let font_size_dp = if ts.font_size != 0.0 {
         ts.font_size
     } else {

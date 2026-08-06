@@ -173,7 +173,7 @@ pub fn NavigationRail(
                 disabled: Color::TRANSPARENT,
             })
             .clip_rounded(config.item_radius)
-            .interaction_source(&*nr_source)
+            .interaction_source(&nr_source)
             .semantics(Semantics::new(Role::Tab).with_label(&item.label));
 
         if is_enabled {

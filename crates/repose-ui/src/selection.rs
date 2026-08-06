@@ -134,7 +134,7 @@ fn make_selectable(
                 *anchor.borrow_mut() = 0;
                 set_sel(sel);
                 *dragging.borrow_mut() = false;
-                if text.len() > 0 {
+                if !text.is_empty() {
                     repose_core::clipboard::set_primary_selection(&text);
                 }
                 let _ = is_multi;
@@ -275,7 +275,7 @@ fn make_selectable(
                         w: (rect.w - sx).max(2.0),
                         h: line_h,
                     },
-                    brush: brush,
+                    brush,
                     radius: [0.0; 4],
                 });
                 // Full middle lines
@@ -287,7 +287,7 @@ fn make_selectable(
                             w: rect.w,
                             h: (eli as f32 - sli as f32 - 1.0) * line_h,
                         },
-                        brush: brush,
+                        brush,
                         radius: [0.0; 4],
                     });
                 }

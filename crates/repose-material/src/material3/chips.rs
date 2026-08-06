@@ -195,7 +195,7 @@ pub fn AssistChip(
         })
         .background(bg)
         .clip_rounded(shape)
-        .interaction_source(&*ch_source)
+        .interaction_source(&ch_source)
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
@@ -203,7 +203,7 @@ pub fn AssistChip(
     }
 
     if is_enabled {
-        m = m.clickable().on_click(move || on_click());
+        m = m.clickable().on_click(on_click);
     }
 
     Box(m).child(
@@ -274,11 +274,11 @@ pub fn ElevatedAssistChip(
         })
         .background(bg)
         .clip_rounded(shape)
-        .interaction_source(&*ch_source)
+        .interaction_source(&ch_source)
         .then(config.modifier);
 
     if is_enabled {
-        m = m.clickable().on_click(move || on_click());
+        m = m.clickable().on_click(on_click);
     }
 
     Box(m).child(
@@ -381,14 +381,14 @@ pub fn FilterChip(
         })
         .background(bg)
         .clip_rounded(shape)
-        .interaction_source(&*ch_source)
+        .interaction_source(&ch_source)
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
         m = m.border(config.border_width, border, shape);
     }
     if is_enabled {
-        m = m.clickable().on_click(move || on_click());
+        m = m.clickable().on_click(on_click);
     }
 
     Box(m).child(
@@ -480,11 +480,11 @@ pub fn ElevatedFilterChip(
         })
         .background(bg)
         .clip_rounded(shape)
-        .interaction_source(&*ch_source)
+        .interaction_source(&ch_source)
         .then(config.modifier);
 
     if is_enabled {
-        m = m.clickable().on_click(move || on_click());
+        m = m.clickable().on_click(on_click);
     }
 
     Box(m).child(
@@ -557,14 +557,14 @@ pub fn SuggestionChip(
         })
         .background(bg)
         .clip_rounded(shape)
-        .interaction_source(&*ch_source)
+        .interaction_source(&ch_source)
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
         m = m.border(config.border_width, border, shape);
     }
     if is_enabled {
-        m = m.clickable().on_click(move || on_click());
+        m = m.clickable().on_click(on_click);
     }
 
     Box(m).child(
@@ -622,11 +622,11 @@ pub fn ElevatedSuggestionChip(
         })
         .background(bg)
         .clip_rounded(shape)
-        .interaction_source(&*ch_source)
+        .interaction_source(&ch_source)
         .then(config.modifier);
 
     if is_enabled {
-        m = m.clickable().on_click(move || on_click());
+        m = m.clickable().on_click(on_click);
     }
 
     Box(m).child(
@@ -718,14 +718,14 @@ pub fn InputChip(
         })
         .background(bg)
         .clip_rounded(shape)
-        .interaction_source(&*ch_source)
+        .interaction_source(&ch_source)
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
         m = m.border(config.border_width, border, shape);
     }
     if is_enabled {
-        m = m.clickable().on_click(move || on_click());
+        m = m.clickable().on_click(on_click);
     }
 
     Box(m).child(

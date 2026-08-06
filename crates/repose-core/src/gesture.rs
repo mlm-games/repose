@@ -1,4 +1,3 @@
-use crate::Vec2;
 use crate::animation::{AnimatedValue, AnimationSpec};
 use crate::frame_clock::request_frame;
 use std::cell::{Cell, RefCell};
@@ -89,7 +88,7 @@ impl<T: Clone + PartialEq + 'static> SwipeableState<T> {
         Self {
             anim: Rc::new(RefCell::new(AnimatedValue::new(
                 initial_offset,
-                config.animation_spec.clone(),
+                config.animation_spec,
             ))),
             anchors: Rc::new(anchors),
             config: Rc::new(config),

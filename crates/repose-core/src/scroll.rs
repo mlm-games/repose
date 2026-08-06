@@ -419,7 +419,7 @@ impl ScrollState {
             let state = Rc::clone(&pc);
             let this = Rc::clone(&this);
             Rc::new(move |d: Vec2| -> Vec2 {
-                let d = run_pre_scroll(&*state, d);
+                let d = run_pre_scroll(&state, d);
                 // Clamp this scroller first; leftover goes to the nested parent
                 // chain (post-scroll) BEFORE rubber-band overscroll.
                 let leftover_y = this.scroll_immediate(d.y);
@@ -427,7 +427,7 @@ impl ScrollState {
                     x: d.x,
                     y: leftover_y,
                 };
-                let after_parent = run_post_scroll(&*state, result);
+                let after_parent = run_post_scroll(&state, result);
                 let final_y = this.apply_overscroll(after_parent.y);
                 Vec2 {
                     x: after_parent.x,
@@ -676,13 +676,13 @@ impl HorizontalScrollState {
             let state = Rc::clone(&pc);
             let this = Rc::clone(&this);
             Rc::new(move |d: Vec2| -> Vec2 {
-                let d = run_pre_scroll(&*state, d);
+                let d = run_pre_scroll(&state, d);
                 let leftover_x = this.scroll_immediate(d.x);
                 let result = Vec2 {
                     x: leftover_x,
                     y: d.y,
                 };
-                let after_parent = run_post_scroll(&*state, result);
+                let after_parent = run_post_scroll(&state, result);
                 let final_x = this.apply_overscroll(after_parent.x);
                 Vec2 {
                     x: final_x,
@@ -968,11 +968,11 @@ impl ScrollStateXY {
         let dt = (now - self.prev_tick.get()).as_secs_f32().min(0.1);
         self.prev_tick.set(now);
 
-        if self.overscroll_enabled.get() {
-            if Self::tick_os_axis(&self.os_x, true, dt) || Self::tick_os_axis(&self.os_y, true, dt)
-            {
-                return true;
-            }
+        if self.overscroll_enabled.get()
+            && (Self::tick_os_axis(&self.os_x, true, dt)
+                || Self::tick_os_axis(&self.os_y, true, dt))
+        {
+            return true;
         }
 
         let max_x = (self.c_w.get() - self.vp_w.get()).max(0.0);
@@ -1048,9 +1048,9 @@ impl ScrollStateXY {
             let state = Rc::clone(&pc);
             let this = Rc::clone(&this);
             Rc::new(move |d: Vec2| -> Vec2 {
-                let d = run_pre_scroll(&*state, d);
+                let d = run_pre_scroll(&state, d);
                 let result = this.scroll_immediate(d);
-                let after_parent = run_post_scroll(&*state, result);
+                let after_parent = run_post_scroll(&state, result);
                 this.apply_overscroll(after_parent)
             })
         } as Rc<dyn Fn(Vec2) -> Vec2>;

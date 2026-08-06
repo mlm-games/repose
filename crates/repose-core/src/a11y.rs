@@ -14,6 +14,12 @@ pub struct ReposeActionHandler {
     pub pending_actions: Arc<Mutex<Vec<ActionRequest>>>,
 }
 
+impl Default for ReposeActionHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ReposeActionHandler {
     pub fn new() -> Self {
         Self {

@@ -1,12 +1,8 @@
-use super::{IntrinsicSizeMode, LayoutEngine, LayoutStats, NodeContext};
+use super::{IntrinsicSizeMode, LayoutEngine};
 use crate::Interactions;
-use crate::textfield::TextFieldState;
 use crate::{Box as RBox, Column, Text, ViewExt};
 use repose_core::*;
-use repose_tree::ViewTree;
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 fn font_px(dp: f32) -> f32 {
     dp // 1:1 for tests
@@ -46,7 +42,7 @@ fn test_render_z_index_paints_last() {
         .iter()
         .filter_map(|n| {
             if let SceneNode::Rect { brush, .. } = n {
-                Some(brush.clone())
+                Some(*brush)
             } else {
                 None
             }
@@ -122,7 +118,7 @@ fn test_render_z_index_order_by_value() {
         .iter()
         .filter_map(|n| {
             if let SceneNode::Rect { brush, .. } = n {
-                Some(brush.clone())
+                Some(*brush)
             } else {
                 None
             }
@@ -188,7 +184,7 @@ fn test_render_z_index_with_nested_children() {
         .iter()
         .filter_map(|n| {
             if let SceneNode::Rect { brush, .. } = n {
-                Some(brush.clone())
+                Some(*brush)
             } else {
                 None
             }
@@ -207,7 +203,7 @@ fn test_render_z_index_with_nested_children() {
     assert!(
         matches!(&rects[len - 1], Brush::Solid(c) if *c == blue),
         "Expected BLUE (z=1000) to be painted last, but got {:?}",
-        &rects[len - 1]
+        rects[len - 1]
     );
 
     // Red and Green should be before blue
@@ -278,7 +274,7 @@ fn test_render_z_index_paints_over_scrollbars() {
         .iter()
         .filter_map(|n| {
             if let SceneNode::Rect { brush, .. } = n {
-                Some(brush.clone())
+                Some(*brush)
             } else {
                 None
             }
@@ -361,7 +357,7 @@ fn test_render_z_index_with_overlay_host() {
         .iter()
         .filter_map(|n| {
             if let SceneNode::Rect { brush, .. } = n {
-                Some(brush.clone())
+                Some(*brush)
             } else {
                 None
             }
@@ -658,7 +654,7 @@ fn test_intrinsic_size_column_uses_max_child_width() {
 #[cfg(test)]
 mod layer_tests {
     use super::*;
-    use super::*;
+
     use crate::{Column, Text, ViewExt};
     use std::cell::RefCell;
     use std::collections::HashMap;
@@ -787,7 +783,7 @@ mod layer_tests {
 #[cfg(test)]
 mod shadow_tests {
     use super::*;
-    use super::*;
+
     use crate::{Column, Text, ViewExt};
     use std::cell::RefCell;
     use std::collections::HashMap;

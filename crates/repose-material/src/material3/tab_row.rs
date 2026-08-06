@@ -96,7 +96,7 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                     let mut tab_m = Modifier::new()
                         .flex_grow(1.0)
                         .fill_max_height()
-                        .interaction_source(&*tab_source)
+                        .interaction_source(&tab_source)
                         .align_items(AlignItems::CENTER)
                         .justify_content(JustifyContent::CENTER)
                         .state_colors(StateColors {

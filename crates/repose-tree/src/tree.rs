@@ -404,17 +404,17 @@ impl ViewTree {
         let mut new_seen_keys: FxHashSet<u64> = FxHashSet::default();
 
         for (i, new_child) in new_children.iter().enumerate() {
-            if let Some(key) = new_child.modifier.key {
-                if !new_seen_keys.insert(key) {
-                    panic!(
-                        "reconcile_children: duplicate modifier.key={} in children of node {:?}.\n\
+            if let Some(key) = new_child.modifier.key
+                && !new_seen_keys.insert(key)
+            {
+                panic!(
+                    "reconcile_children: duplicate modifier.key={} in children of node {:?}.\n\
                          Two sibling views share the same key. Each view passed to a layout \
                          must have a unique modifier.key. For lazy layouts (LazyColumn, LazyRow, \
                          etc.), ensure `get_key` returns a unique key for each item by hashing \
                          the full item identity.",
-                        key, parent_id,
-                    );
-                }
+                    key, parent_id,
+                );
             }
             let idx = i as u32;
             let child_id = if let Some(key) = new_child.modifier.key {
@@ -844,7 +844,7 @@ mod tests {
         tree.update(&root1);
 
         // Get B's NodeId
-        let b_view_id = tree
+        let _b_view_id = tree
             .root()
             .and_then(|r| tree.children(r))
             .and_then(|c| c.get(1).copied())

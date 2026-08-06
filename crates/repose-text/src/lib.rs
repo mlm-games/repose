@@ -46,11 +46,11 @@ impl<K: std::hash::Hash + Eq + Clone, V> Lru<K, V> {
         }
     }
     fn get(&mut self, k: &K) -> Option<&V> {
-        if self.map.contains_key(k) {
-            if let Some(pos) = self.order.iter().position(|x| x == k) {
-                let key = self.order.remove(pos).unwrap();
-                self.order.push_back(key);
-            }
+        if self.map.contains_key(k)
+            && let Some(pos) = self.order.iter().position(|x| x == k)
+        {
+            let key = self.order.remove(pos).unwrap();
+            self.order.push_back(key);
         }
         self.map.get(k)
     }
@@ -902,10 +902,10 @@ pub fn wrap_lines(
                     break;
                 }
             }
-            if cut == line_start {
-                if let Some((ofs, grapheme)) = tok.grapheme_indices(true).next() {
-                    cut = tok_start + ofs + grapheme.len();
-                }
+            if cut == line_start
+                && let Some((ofs, grapheme)) = tok.grapheme_indices(true).next()
+            {
+                cut = tok_start + ofs + grapheme.len();
             }
             out.push(text[line_start..cut].to_string());
             line_start = cut;
@@ -921,10 +921,8 @@ pub fn wrap_lines(
 
         best_break = line_start;
 
-        if line_start < tok_end {
-            if width_of(line_start, tok_end) <= max_width + 0.5 {
-                best_break = tok_end;
-            }
+        if line_start < tok_end && width_of(line_start, tok_end) <= max_width + 0.5 {
+            best_break = tok_end;
         }
     }
 
