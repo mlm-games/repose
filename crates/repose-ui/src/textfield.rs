@@ -1337,6 +1337,7 @@ pub fn BasicTextField(
         config.keyboard_options.keyboard_type,
         config.keyboard_options.capitalization,
         config.keyboard_options.ime_action,
+        config.keyboard_options.auto_correct_enabled,
         config.enabled,
         config.read_only,
         Some(max_lines),
@@ -1656,6 +1657,43 @@ pub(crate) fn paint_text_field(
                 });
             }
 
+            // IME composition underline (visual feedback for an active preedit).
+            if let Some(comp) = st.composition.clone() {
+                let cs = if has_vt {
+                    original_offset_to_display(&st.text, &measure_for, comp.start)
+                } else {
+                    comp.start
+                };
+                let ce = if has_vt {
+                    original_offset_to_display(&st.text, &measure_for, comp.end)
+                } else {
+                    comp.end
+                };
+                let sx = m
+                    .positions
+                    .get(byte_to_char_index(&m, cs))
+                    .copied()
+                    .unwrap_or(0.0)
+                    - st.scroll_offset;
+                let ex = m
+                    .positions
+                    .get(byte_to_char_index(&m, ce))
+                    .copied()
+                    .unwrap_or(sx)
+                    - st.scroll_offset;
+                let y = rect.y + text_off_y + line_h.max(font_val) - dp_to_px(2.0);
+                scene.nodes.push(SceneNode::Rect {
+                    rect: repose_core::Rect {
+                        x: rect.x + sx.max(0.0),
+                        y,
+                        w: (ex - sx).max(dp_to_px(2.0)),
+                        h: dp_to_px(2.0),
+                    },
+                    brush: Brush::Solid(th.focus),
+                    radius: [0.0; 4],
+                });
+            }
+
             // Text
             let txt_col = if st.text.is_empty() {
                 ts.color.unwrap_or(th.on_surface_variant)
@@ -1864,6 +1902,67 @@ pub(crate) fn paint_text_field(
                             h: lh,
                         },
                         brush: Brush::Solid(selection),
+                        radius: [0.0; 4],
+                    });
+                }
+            }
+
+            // IME composition underline (multi-line): intersect the preedit
+            // range with each visible line and underline the overlapping span.
+            if let Some(comp) = st.composition.clone() {
+                let has_vt = text_input.visual_transformation.is_some();
+                let comp_a = if has_vt {
+                    original_offset_to_display(&st.text, &render_text, comp.start)
+                } else {
+                    comp.start
+                };
+                let comp_b = if has_vt {
+                    original_offset_to_display(&st.text, &render_text, comp.end)
+                } else {
+                    comp.end
+                };
+                for (i, (s, e)) in layout.ranges.iter().copied().enumerate() {
+                    if i >= max_line_count {
+                        break;
+                    }
+                    let os = comp_a.max(s);
+                    let oe = comp_b.min(e);
+                    if os >= oe {
+                        continue;
+                    }
+                    let ln = &render_text[s..e];
+                    let m = measure_text(
+                        ln,
+                        font_val,
+                        TextMeasureConfig {
+                            font_family: ts.font_family,
+                            font_weight: ts.font_weight.unwrap_or(400),
+                            font_style: ts.font_style.unwrap_or(0),
+                            letter_spacing: ts.letter_spacing,
+                            font_variation_settings: None,
+                        },
+                    );
+                    let ls = os - s;
+                    let le = oe - s;
+                    let sx = m
+                        .positions
+                        .get(byte_to_char_index(&m, ls))
+                        .copied()
+                        .unwrap_or(0.0);
+                    let ex = m
+                        .positions
+                        .get(byte_to_char_index(&m, le))
+                        .copied()
+                        .unwrap_or(sx);
+                    let draw_y = rect.y + (i as f32) * lh - st.scroll_offset_y;
+                    scene.nodes.push(SceneNode::Rect {
+                        rect: repose_core::Rect {
+                            x: rect.x + sx,
+                            y: draw_y + lh - dp_to_px(2.0),
+                            w: (ex - sx).max(dp_to_px(2.0)),
+                            h: dp_to_px(2.0),
+                        },
+                        brush: Brush::Solid(th.focus),
                         radius: [0.0; 4],
                     });
                 }
@@ -2117,6 +2216,7 @@ fn text_field_view(
     keyboard_type: repose_core::KeyboardType,
     capitalization: repose_core::KeyboardCapitalization,
     ime_action: repose_core::ImeAction,
+    auto_correct_enabled: Option<bool>,
     enabled: bool,
     read_only: bool,
     max_lines: Option<usize>,
@@ -2144,6 +2244,7 @@ fn text_field_view(
         keyboard_type,
         capitalization,
         ime_action,
+        auto_correct_enabled,
         enabled,
         read_only,
         max_lines,

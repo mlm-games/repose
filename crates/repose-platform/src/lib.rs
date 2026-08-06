@@ -918,7 +918,13 @@ pub fn run_desktop_app_with_config(
                             && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
                         {
                             let sf = win.scale_factor();
-                            rc_web::set_ime_for_textfield(win, true);
+                            rc_web::set_ime_for_textfield_ex(
+                                win,
+                                true,
+                                hit.keyboard_type.ime_purpose_hint(),
+                                hit.auto_correct.unwrap_or(true),
+                                hit.capitalization,
+                            );
                             win.set_ime_cursor_area(
                                 LogicalPosition::new(
                                     hit.rect.x as f64 / sf,
@@ -1306,6 +1312,32 @@ pub fn run_desktop_app_with_config(
                     // Apply cursor from platform output
                     if let Some(cursor) = &output.platform.cursor {
                         win.set_cursor(winit::window::Cursor::Icon(map_cursor(*cursor)));
+                    }
+
+                    // Apply IME keyboard hints
+                    if output.platform.ime_allowed {
+                        rc_web::set_ime_for_textfield_ex(
+                            win,
+                            true,
+                            output.platform.ime_purpose,
+                            output.platform.ime_auto_correct,
+                            output.platform.ime_capitalization,
+                        );
+                        if let Some((x, y, w, h)) = output.platform.ime_cursor_area {
+                            win.set_ime_cursor_area(
+                                LogicalPosition::new(x, y),
+                                LogicalSize::new(w, h),
+                            );
+                        }
+                    } else if self.rt.ime_preedit {
+                        rc_web::set_ime_for_textfield_ex(
+                            win,
+                            false,
+                            repose_core::ImePurposeHint::Normal,
+                            true,
+                            repose_core::KeyboardCapitalization::Unspecified,
+                        );
+                        self.rt.ime_preedit = false;
                     }
 
                     // Apply IME state based on wants_keyboard

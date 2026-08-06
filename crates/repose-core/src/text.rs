@@ -818,6 +818,42 @@ pub enum ImeAction {
     Done,
 }
 
+/// High-level IME purpose for the platform's soft keyboard.
+///
+/// Unlike [`KeyboardType`], which enumerates the many Compose-style keyboard
+/// layouts, this is the small set of intents platforms can actually react (for NativeA) to
+/// (password fields, e-mail addresses, URLs, phone numbers, plain text).
+/// On the web it also selects the `inputmode` attribute for mobile browsers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ImePurposeHint {
+    #[default]
+    Normal,
+    Password,
+    Email,
+    Url,
+    Phone,
+    Number,
+}
+
+impl KeyboardType {
+    /// Map this keyboard type to the coarser platform IME purpose.
+    pub fn ime_purpose_hint(self) -> ImePurposeHint {
+        use KeyboardType::*;
+        match self {
+            Password
+            | NumberPassword
+            | DecimalPassword
+            | NumberPasswordSigned
+            | DecimalPasswordSigned => ImePurposeHint::Password,
+            Email | EmailSubject => ImePurposeHint::Email,
+            Uri => ImePurposeHint::Url,
+            Phone => ImePurposeHint::Phone,
+            Number | NumberSigned | Decimal | DecimalSigned => ImePurposeHint::Number,
+            _ => ImePurposeHint::Normal,
+        }
+    }
+}
+
 /// Scope provided to `KeyboardActions` callbacks, allowing fallback to the
 /// platform's default IME action behavior. Corresponds to Compose's `KeyboardActionScope`.
 pub trait KeyboardActionScope {

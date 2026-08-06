@@ -1388,6 +1388,18 @@ impl LayoutEngine {
                         tf_content_origin: Some((content_rect.x, content_rect.y)),
                         on_action: combined,
                         cursor: Some(crate::CursorIcon::Text),
+                        keyboard_type: ti.keyboard_type,
+                        capitalization: ti.capitalization,
+                        ime_action: ti.ime_action,
+                        auto_correct: ti.auto_correct_enabled.or_else(|| {
+                            use repose_core::text::KeyboardType::*;
+                            matches!(
+                                ti.keyboard_type,
+                                Password | NumberPassword | DecimalPassword
+                                    | NumberPasswordSigned | DecimalPasswordSigned
+                            )
+                            .then_some(false)
+                        }),
                         focus_group_id: if modifier.focus_group {
                             Some(view_id)
                         } else {

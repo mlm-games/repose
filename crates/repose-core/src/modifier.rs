@@ -237,6 +237,9 @@ pub struct TextInputConfig {
     pub keyboard_type: crate::text::KeyboardType,
     pub capitalization: crate::text::KeyboardCapitalization,
     pub ime_action: crate::text::ImeAction,
+    /// Platform keyboard auto-correct hint. `None` = follow platform default
+    /// (except password keyboards, which never auto-correct).
+    pub auto_correct_enabled: Option<bool>,
     /// When false, the text field is not editable, not focusable, and input is not selectable.
     pub enabled: bool,
     /// When true, the text field can be focused and text can be selected/copied, but not modified.
@@ -283,6 +286,7 @@ impl std::fmt::Debug for TextInputConfig {
         s.field("keyboard_type", &self.keyboard_type);
         s.field("capitalization", &self.capitalization);
         s.field("ime_action", &self.ime_action);
+        s.field("auto_correct_enabled", &self.auto_correct_enabled);
         s.field("enabled", &self.enabled);
         s.field("read_only", &self.read_only);
         s.field("max_lines", &self.max_lines);

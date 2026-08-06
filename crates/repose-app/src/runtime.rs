@@ -30,6 +30,13 @@ pub struct PlatformOutput {
     pub ime_cursor_area: Option<(f64, f64, f64, f64)>,
     /// Text to write to the clipboard (transient - set once per frame, cleared after read).
     pub clipboard_text: Option<String>,
+
+    /// IME / soft-keyboard hints for the focused text field. The host should
+    /// apply these to the OS keyboard and to `set_ime_purpose` / web attrs.
+    pub ime_purpose: repose_core::ImePurposeHint,
+    pub ime_auto_correct: bool,
+    pub ime_capitalization: repose_core::KeyboardCapitalization,
+    pub keyboard_type: repose_core::KeyboardType,
 }
 
 /// Output of a single frame: the rendered scene plus metadata for the host.
@@ -211,27 +218,49 @@ impl ReposeRuntime {
                 .any(|n| n.id == fid && n.role == repose_core::semantics::Role::TextField)
         });
 
+        let focused_hit = self.sched.focused.and_then(|fid| {
+            f.hit_regions.iter().find(|h| h.id == fid)
+        });
+
         let ime_cursor_area = if ime_allowed {
-            self.sched.focused.and_then(|fid| {
-                f.hit_regions.iter().find(|h| h.id == fid).map(|hit| {
-                    let sf = self.scale as f64;
-                    (
-                        hit.rect.x as f64 / sf,
-                        hit.rect.y as f64 / sf,
-                        hit.rect.w as f64 / sf,
-                        hit.rect.h as f64 / sf,
-                    )
-                })
+            focused_hit.map(|hit| {
+                let sf = self.scale as f64;
+                (
+                    hit.rect.x as f64 / sf,
+                    hit.rect.y as f64 / sf,
+                    hit.rect.w as f64 / sf,
+                    hit.rect.h as f64 / sf,
+                )
             })
         } else {
             None
         };
+
+        let (ime_purpose, ime_auto_correct, ime_capitalization, keyboard_type) =
+            match (ime_allowed, focused_hit) {
+                (true, Some(hit)) => (
+                    hit.keyboard_type.ime_purpose_hint(),
+                    hit.auto_correct.unwrap_or(true),
+                    hit.capitalization,
+                    hit.keyboard_type,
+                ),
+                _ => (
+                    repose_core::ImePurposeHint::Normal,
+                    true,
+                    repose_core::KeyboardCapitalization::Unspecified,
+                    repose_core::KeyboardType::Unspecified,
+                ),
+            };
 
         let platform = PlatformOutput {
             cursor: self.take_cursor_suggestion(),
             ime_allowed,
             ime_cursor_area,
             clipboard_text,
+            ime_purpose,
+            ime_auto_correct,
+            ime_capitalization,
+            keyboard_type,
         };
         FrameOutput {
             scene: f.scene,
@@ -1134,6 +1163,34 @@ impl ReposeRuntime {
             .as_ref()
             .map(|f| is_multiline_id(f, id))
             .unwrap_or(false)
+    }
+
+    /// Keyboard hints of the currently focused text field, or defaults if none.
+    /// Returns `(purpose, auto_correct, capitalization)` for the platform runner.
+    pub fn focused_keyboard_hints(
+        &self,
+    ) -> (repose_core::ImePurposeHint, bool, repose_core::KeyboardCapitalization) {
+        let defaults = || {
+            (
+                repose_core::ImePurposeHint::Normal,
+                true,
+                repose_core::KeyboardCapitalization::Unspecified,
+            )
+        };
+        let Some(fid) = self.sched.focused else {
+            return defaults();
+        };
+        let Some(f) = &self.frame_cache else {
+            return defaults();
+        };
+        match f.hit_regions.iter().find(|h| h.id == fid) {
+            Some(hit) => (
+                hit.keyboard_type.ime_purpose_hint(),
+                hit.auto_correct.unwrap_or(true),
+                hit.capitalization,
+            ),
+            None => defaults(),
+        }
     }
 
 

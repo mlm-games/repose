@@ -22,7 +22,7 @@ use winit::event_loop::EventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::android::EventLoopBuilderExtAndroid;
 use winit::platform::android::activity::AndroidApp;
-use winit::window::{ImePurpose, Window, WindowAttributes};
+use winit::window::{Window, WindowAttributes};
 
 #[derive(Clone, Copy, Debug)]
 pub struct AndroidOptions {
@@ -214,11 +214,11 @@ pub fn run_android_app_with_options(
             let Some(win) = &self.window else { return };
 
             let allow = self.rt.sched.focused.map_or(false, |id| self.rt.is_textfield(id));
+            let (purpose, auto_correct, capitalization) = self.rt.focused_keyboard_hints();
 
-            win.set_ime_allowed(allow);
+            rc_web::set_ime_for_textfield_ex(win, allow, purpose, auto_correct, capitalization);
 
             if allow {
-                win.set_ime_purpose(ImePurpose::Normal);
                 self.update_ime_cursor_area(win);
             } else {
                 self.rt.ime_preedit = false;
@@ -481,8 +481,13 @@ pub fn run_android_app_with_options(
                                     && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
                                 {
                                     let sf = win.scale_factor() as f32;
-                                    win.set_ime_allowed(true);
-                                    win.set_ime_purpose(ImePurpose::Normal);
+                                    rc_web::set_ime_for_textfield_ex(
+                                        win,
+                                        true,
+                                        hit.keyboard_type.ime_purpose_hint(),
+                                        hit.auto_correct.unwrap_or(true),
+                                        hit.capitalization,
+                                    );
                                     win.set_ime_cursor_area(
                                         PhysicalPosition::new(
                                             (hit.rect.x * sf) as i32,
@@ -1055,6 +1060,10 @@ pub fn run_android_app_with_options(
                             ime_allowed: false,
                             ime_cursor_area: None,
                             clipboard_text: None,
+                            ime_purpose: Default::default(),
+                            ime_auto_correct: true,
+                            ime_capitalization: Default::default(),
+                            keyboard_type: Default::default(),
                         },
                         wants_pointer: !frame.hit_regions.is_empty() || self.rt.capture_id.is_some(),
                         wants_keyboard: !self.rt.textfield_states.is_empty() || self.rt.ime_preedit,

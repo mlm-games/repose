@@ -500,6 +500,15 @@ pub struct HitRegion {
     /// to elements outside it. Set automatically by the layout engine when the
     /// element is a descendant of a node with `focus_group: true`.
     pub focus_group_id: Option<u64>,
+
+    /// IME keyboard hints, populated for text-field hit regions so the
+    /// platform runner can configure the OS keyboard / IME on focus.
+    pub keyboard_type: crate::text::KeyboardType,
+    pub capitalization: crate::text::KeyboardCapitalization,
+    pub ime_action: crate::text::ImeAction,
+    /// Whether auto-correct is enabled. `None` = follow platform default;
+    /// password keyboards always resolve to `false` in the layout engine.
+    pub auto_correct: Option<bool>,
 }
 
 impl HitRegion {

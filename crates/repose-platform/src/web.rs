@@ -752,7 +752,13 @@ impl ApplicationHandler<()> for App {
                             if let Some(f) = &self.rt.frame_cache
                                 && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
                             {
-                                rc_web::set_ime_for_textfield(&window, self.is_textfield(fid));
+                                rc_web::set_ime_for_textfield_ex(
+                                    &window,
+                                    self.is_textfield(fid),
+                                    hit.keyboard_type.ime_purpose_hint(),
+                                    hit.auto_correct.unwrap_or(true),
+                                    hit.capitalization,
+                                );
                             }
                         } else {
                             rc_web::set_ime_for_textfield(&window, false);
@@ -850,7 +856,14 @@ impl ApplicationHandler<()> for App {
                         if let Some(fid) = self.rt.sched.focused
                             && self.is_textfield(fid)
                         {
-                            rc_web::set_ime_for_textfield(&window, true);
+                            let (purpose, ac, cap) = self.rt.focused_keyboard_hints();
+                            rc_web::set_ime_for_textfield_ex(
+                                &window,
+                                true,
+                                purpose,
+                                ac,
+                                cap,
+                            );
                         } else {
                             rc_web::set_ime_for_textfield(&window, false);
                         }
@@ -1073,6 +1086,10 @@ impl ApplicationHandler<()> for App {
                         ime_allowed: false,
                         ime_cursor_area: None,
                         clipboard_text: None,
+                        ime_purpose: Default::default(),
+                        ime_auto_correct: true,
+                        ime_capitalization: Default::default(),
+                        keyboard_type: Default::default(),
                     },
                     wants_pointer: !frame.hit_regions.is_empty() || self.rt.hover_id.is_some() || self.rt.capture_id.is_some(),
                     wants_keyboard: !self.rt.textfield_states.is_empty() || self.rt.ime_preedit,
