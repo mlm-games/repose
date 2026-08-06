@@ -44,19 +44,14 @@ impl LayoutEngine {
                                 AvailableSpace::Definite(h) => h / scale,
                                 _ => f32::INFINITY,
                             };
-                            let known_w =
-                                known.width.map(|w| w / scale).unwrap_or(f32::INFINITY);
-                            let known_h = known
-                                .height
-                                .map(|h| h / scale)
-                                .unwrap_or(f32::INFINITY);
-                            let constraints =
-                                repose_core::modifier::LayoutConstraints {
-                                    min_width: 0.0,
-                                    max_width: avail_w.min(known_w),
-                                    min_height: 0.0,
-                                    max_height: avail_h.min(known_h),
-                                };
+                            let known_w = known.width.map(|w| w / scale).unwrap_or(f32::INFINITY);
+                            let known_h = known.height.map(|h| h / scale).unwrap_or(f32::INFINITY);
+                            let constraints = repose_core::modifier::LayoutConstraints {
+                                min_width: 0.0,
+                                max_width: avail_w.min(known_w),
+                                min_height: 0.0,
+                                max_height: avail_h.min(known_h),
+                            };
                             let (w_dp, h_dp) = layout_cb(constraints);
                             return taffy::geometry::Size {
                                 width: w_dp * scale,
@@ -239,20 +234,40 @@ impl LayoutEngine {
                 } else {
                     0
                 };
-                let max_content_w = measure_text(text, size_px_val, TextMeasureConfig { font_family: *font_family, font_weight: fw, font_style: fs, letter_spacing: *letter_spacing, ..Default::default() })
-                    .positions
-                    .last()
-                    .copied()
-                    .unwrap_or(0.0)
-                    .max(0.0);
+                let max_content_w = measure_text(
+                    text,
+                    size_px_val,
+                    TextMeasureConfig {
+                        font_family: *font_family,
+                        font_weight: fw,
+                        font_style: fs,
+                        letter_spacing: *letter_spacing,
+                        ..Default::default()
+                    },
+                )
+                .positions
+                .last()
+                .copied()
+                .unwrap_or(0.0)
+                .max(0.0);
 
                 let mut min_content_w = 0.0f32;
                 for w in text.split_whitespace() {
-                    let ww = measure_text(w, size_px_val, TextMeasureConfig { font_family: *font_family, font_weight: fw, font_style: fs, letter_spacing: *letter_spacing, ..Default::default() })
-                        .positions
-                        .last()
-                        .copied()
-                        .unwrap_or(0.0);
+                    let ww = measure_text(
+                        w,
+                        size_px_val,
+                        TextMeasureConfig {
+                            font_family: *font_family,
+                            font_weight: fw,
+                            font_style: fs,
+                            letter_spacing: *letter_spacing,
+                            ..Default::default()
+                        },
+                    )
+                    .positions
+                    .last()
+                    .copied()
+                    .unwrap_or(0.0);
                     min_content_w = min_content_w.max(ww);
                 }
                 if min_content_w <= 0.0 {
@@ -290,13 +305,28 @@ impl LayoutEngine {
                     if truncated && matches!(overflow, TextOverflow::Ellipsis) {
                         if let Some(last) = lns.last_mut() {
                             let with_tail = format!("{}…", last);
-                            *last =
-                                repose_text::ellipsize_line(&with_tail, size_px_val, wrap_w_px, fw, fs, *letter_spacing, fvs);
+                            *last = repose_text::ellipsize_line(
+                                &with_tail,
+                                size_px_val,
+                                wrap_w_px,
+                                fw,
+                                fs,
+                                *letter_spacing,
+                                fvs,
+                            );
                         }
                     }
                     (lns, ranges)
                 } else if matches!(overflow, TextOverflow::Ellipsis) {
-                    let elided = repose_text::ellipsize_line(text, size_px_val, wrap_w_px, fw, fs, *letter_spacing, fvs);
+                    let elided = repose_text::ellipsize_line(
+                        text,
+                        size_px_val,
+                        wrap_w_px,
+                        fw,
+                        fs,
+                        *letter_spacing,
+                        fvs,
+                    );
                     let elided_len = elided.len();
                     (vec![elided], vec![(0, elided_len)])
                 } else {
@@ -307,11 +337,21 @@ impl LayoutEngine {
                 let line_widths: Vec<f32> = lines
                     .iter()
                     .map(|line| {
-                        measure_text(line, size_px_val, TextMeasureConfig { font_family: *font_family, font_weight: fw, font_style: fs, letter_spacing: *letter_spacing, ..Default::default() })
-                            .positions
-                            .last()
-                            .copied()
-                            .unwrap_or(0.0)
+                        measure_text(
+                            line,
+                            size_px_val,
+                            TextMeasureConfig {
+                                font_family: *font_family,
+                                font_weight: fw,
+                                font_style: fs,
+                                letter_spacing: *letter_spacing,
+                                ..Default::default()
+                            },
+                        )
+                        .positions
+                        .last()
+                        .copied()
+                        .unwrap_or(0.0)
                     })
                     .collect();
                 let max_line_w = line_widths.iter().copied().fold(0.0f32, f32::max);

@@ -6,8 +6,6 @@ use repose_core::*;
 
 use crate::Interactions;
 
-
-
 #[derive(Clone, Copy)]
 pub(crate) enum ScrollbarAxis {
     V,

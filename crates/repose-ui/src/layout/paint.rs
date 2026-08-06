@@ -210,7 +210,10 @@ impl LayoutEngine {
         h.finish()
     }
 
-    pub(crate) fn find_ancestor_nested_scroll(&self, node_id: NodeId) -> Option<NestedScrollConnection> {
+    pub(crate) fn find_ancestor_nested_scroll(
+        &self,
+        node_id: NodeId,
+    ) -> Option<NestedScrollConnection> {
         let mut current = node_id;
         loop {
             let node = self.tree.get(current)?;
@@ -497,7 +500,9 @@ impl LayoutEngine {
             adjusted.translate_y += pivot_y - (sp_x * sin_a + sp_y * cos_a);
             adjusted.origin_x = 0.0;
             adjusted.origin_y = 0.0;
-            scene.nodes.push(SceneNode::PushTransform { transform: adjusted });
+            scene.nodes.push(SceneNode::PushTransform {
+                transform: adjusted,
+            });
         }
         let overflow_clip = modifier
             .overflow
@@ -524,10 +529,8 @@ impl LayoutEngine {
             });
         }
         let push_bounds_clip = overflow_clip
-            && (matches!(
-                modifier.overflow,
-                Some(repose_core::Overflow::Clip)
-            ) || modifier.animate_content_size.is_some())
+            && (matches!(modifier.overflow, Some(repose_core::Overflow::Clip))
+                || modifier.animate_content_size.is_some())
             && !push_round_clip
             && modifier.clip_rect.is_none()
             && (rect.w > 0.0 || rect.h > 0.0);
@@ -876,7 +879,11 @@ impl LayoutEngine {
                             font_variation_settings: Option<Arc<str>>,
                         }
                         fn style_to_fs(style: &FontStyle) -> u8 {
-                            if matches!(style, FontStyle::Italic) { 1 } else { 0 }
+                            if matches!(style, FontStyle::Italic) {
+                                1
+                            } else {
+                                0
+                            }
                         }
                         // Build segments from spans
                         let mut segments: Vec<SegInfo> = Vec::new();
@@ -923,23 +930,32 @@ impl LayoutEngine {
 
                             let span_color = span.style.color.unwrap_or(*color);
                             let span_size = span.style.font_size.unwrap_or(*font_size);
-                            let span_decoration = span.style.text_decoration.unwrap_or(*text_decoration);
+                            let span_decoration =
+                                span.style.text_decoration.unwrap_or(*text_decoration);
                             let span_weight = span.style.font_weight.unwrap_or(font_weight.0);
                             let span_family = span.style.font_family.or(*font_family);
-                            let span_style = span.style.font_style.unwrap_or(style_to_fs(font_style));
+                            let span_style =
+                                span.style.font_style.unwrap_or(style_to_fs(font_style));
                             let span_ls = span.style.letter_spacing.unwrap_or(*letter_spacing);
                             let span_lh = span.style.line_height.unwrap_or(*line_height);
                             let span_bg = span.style.background;
                             let span_alpha = span.style.alpha;
                             let span_td = span.style.text_direction.unwrap_or(text_direction());
-                            let span_fs = span.style.font_synthesis.unwrap_or(FontSynthesis::Unspecified);
-                            let span_bs = span.style.baseline_shift.unwrap_or(BaselineShift::Unspecified);
+                            let span_fs = span
+                                .style
+                                .font_synthesis
+                                .unwrap_or(FontSynthesis::Unspecified);
+                            let span_bs = span
+                                .style
+                                .baseline_shift
+                                .unwrap_or(BaselineShift::Unspecified);
                             let span_h = span.style.hyphens.unwrap_or(Hyphens::Unspecified);
                             let span_lb = span.style.line_break.unwrap_or(LineBreak::Unspecified);
                             let span_ti = span.style.text_indent;
                             let span_ds = span.style.draw_style.clone().unwrap_or(DrawStyle::Fill);
                             let span_url = span.url.clone();
-                            let span_fvs = span.style.font_variation_settings.clone().map(Arc::from);
+                            let span_fvs =
+                                span.style.font_variation_settings.clone().map(Arc::from);
                             segments.push(SegInfo {
                                 start: seg_start,
                                 end: seg_end,
@@ -1007,21 +1023,28 @@ impl LayoutEngine {
                                 continue;
                             }
                             info.px = seg_font_px(info.font_dp);
-                            info.w =
-                                measure_text(seg_text, info.px, TextMeasureConfig { font_family: info.font_family, font_weight: info.font_weight, font_style: info.font_style, letter_spacing: info.letter_spacing, ..Default::default() })
-                                    .positions
-                                    .last()
-                                    .copied()
-                                    .unwrap_or(0.0);
+                            info.w = measure_text(
+                                seg_text,
+                                info.px,
+                                TextMeasureConfig {
+                                    font_family: info.font_family,
+                                    font_weight: info.font_weight,
+                                    font_style: info.font_style,
+                                    letter_spacing: info.letter_spacing,
+                                    ..Default::default()
+                                },
+                            )
+                            .positions
+                            .last()
+                            .copied()
+                            .unwrap_or(0.0);
                             total_w += info.w;
                         }
                         let align_x_offset: f32 = match text_align {
                             TextAlign::End | TextAlign::Right => {
                                 (content_rect.w - total_w).max(0.0)
                             }
-                            TextAlign::Center => {
-                                (content_rect.w - total_w).max(0.0) * 0.5
-                            }
+                            TextAlign::Center => (content_rect.w - total_w).max(0.0) * 0.5,
                             _ => 0.0,
                         };
                         let mut seg_x = content_rect.x + align_x_offset;
@@ -1062,7 +1085,11 @@ impl LayoutEngine {
                                 font_family: info.font_family,
                                 text_align: *text_align,
                                 font_weight: FontWeight(info.font_weight),
-                                font_style: if info.font_style == 1 { FontStyle::Italic } else { FontStyle::Normal },
+                                font_style: if info.font_style == 1 {
+                                    FontStyle::Italic
+                                } else {
+                                    FontStyle::Normal
+                                },
                                 text_decoration: info.decoration,
                                 letter_spacing: info.letter_spacing,
                                 line_height: info.line_height,
@@ -1101,11 +1128,21 @@ impl LayoutEngine {
                         0
                     };
                     for (i, ln) in lines.iter().enumerate() {
-                        let line_w = measure_text(ln, size_px, TextMeasureConfig { font_family: *font_family, font_weight: fw_val, font_style: fs_val, letter_spacing: *letter_spacing, ..Default::default() })
-                            .positions
-                            .last()
-                            .copied()
-                            .unwrap_or(0.0);
+                        let line_w = measure_text(
+                            ln,
+                            size_px,
+                            TextMeasureConfig {
+                                font_family: *font_family,
+                                font_weight: fw_val,
+                                font_style: fs_val,
+                                letter_spacing: *letter_spacing,
+                                ..Default::default()
+                            },
+                        )
+                        .positions
+                        .last()
+                        .copied()
+                        .unwrap_or(0.0);
                         let align_x = |line_w: f32| -> f32 {
                             match text_align {
                                 TextAlign::End | TextAlign::Right => {
@@ -1223,8 +1260,9 @@ impl LayoutEngine {
                         };
                         let mut st = st_rc.borrow_mut();
                         st.set_inner_height(h);
-                        let layout =
-                            crate::textfield::layout_text_area(&st.text, font_val, wrap_w, 400, 0, 0.0, None);
+                        let layout = crate::textfield::layout_text_area(
+                            &st.text, font_val, wrap_w, 400, 0, 0.0, None,
+                        );
                         let content_h = layout.ranges.len().max(1) as f32 * layout.line_h_px;
                         let max_y = (content_h - st.inner_height).max(0.0);
 
@@ -1250,7 +1288,11 @@ impl LayoutEngine {
                         };
                         let mut st = st_rc.borrow_mut();
                         st.set_inner_width(inner_w);
-                        let m = crate::textfield::measure_text(&st.text, font_val, TextMeasureConfig::default());
+                        let m = crate::textfield::measure_text(
+                            &st.text,
+                            font_val,
+                            TextMeasureConfig::default(),
+                        );
                         let content_w = m.positions.last().copied().unwrap_or(0.0);
                         let max_x = (content_w - st.inner_width).max(0.0);
 
@@ -1395,8 +1437,11 @@ impl LayoutEngine {
                             use repose_core::text::KeyboardType::*;
                             matches!(
                                 ti.keyboard_type,
-                                Password | NumberPassword | DecimalPassword
-                                    | NumberPasswordSigned | DecimalPasswordSigned
+                                Password
+                                    | NumberPassword
+                                    | DecimalPassword
+                                    | NumberPasswordSigned
+                                    | DecimalPasswordSigned
                             )
                             .then_some(false)
                         }),

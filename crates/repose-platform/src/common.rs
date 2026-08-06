@@ -6,7 +6,8 @@ use repose_core::locals::dp_to_px;
 use repose_core::runtime::Frame;
 use repose_ui::TextFieldState;
 use repose_ui::textfield::{
-    TF_FONT_DP, TextMeasureConfig, caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes, measure_text,
+    TF_FONT_DP, TextMeasureConfig, caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes,
+    measure_text,
 };
 
 pub(crate) fn tick_snackbar(last_redraw: web_time::Instant) {
@@ -298,8 +299,8 @@ pub(crate) fn dispatch_scroll(
         if let Some(cb) = &hit.on_scroll {
             let before = remaining;
             let leftover = cb(before);
-            let consumed = (before.x - leftover.x).abs() > 0.001
-                || (before.y - leftover.y).abs() > 0.001;
+            let consumed =
+                (before.x - leftover.x).abs() > 0.001 || (before.y - leftover.y).abs() > 0.001;
             if consumed {
                 return (true, Some(hit.id));
             }
@@ -407,7 +408,9 @@ pub(crate) fn process_render_commands(
                 offsets,
                 color_info,
             } => {
-                if let Err(e) = backend.set_image_dmabuf(handle, w, h, fds, modifier, strides, offsets, color_info) {
+                if let Err(e) = backend
+                    .set_image_dmabuf(handle, w, h, fds, modifier, strides, offsets, color_info)
+                {
                     log::warn!("set_image_dmabuf failed: {e:?}");
                 }
             }

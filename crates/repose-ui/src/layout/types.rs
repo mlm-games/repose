@@ -15,7 +15,8 @@ pub(crate) struct ScopeLayoutTree {
     pub(crate) taffy_map: FxHashMap<NodeId, taffy::NodeId>,
     pub(crate) reverse_map: FxHashMap<taffy::NodeId, NodeId>,
     pub(crate) root_taffy_id: Option<taffy::NodeId>,
-    pub(crate) last_constraints: Option<(taffy::Size<Option<f32>>, taffy::Size<taffy::AvailableSpace>)>,
+    pub(crate) last_constraints:
+        Option<(taffy::Size<Option<f32>>, taffy::Size<taffy::AvailableSpace>)>,
     pub(crate) cached_size: Option<taffy::Size<f32>>,
     pub(crate) text_cache: FxHashMap<NodeId, TextLayout>,
     pub(crate) valid: bool,
@@ -98,7 +99,6 @@ pub struct LayoutEngine {
     /// when a node with `modifier.focus_group == true` is traversed.
     pub(crate) focus_group_stack: Vec<u64>,
 }
-
 
 /// Statistics about layout performance.
 #[derive(Clone, Debug, Default)]

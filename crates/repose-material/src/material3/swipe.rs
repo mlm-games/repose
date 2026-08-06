@@ -4,10 +4,7 @@ use std::rc::Rc;
 
 use repose_core::animation::AnimationSpec;
 use repose_core::*;
-use repose_ui::{
-    Box, Column,
-    ViewExt,
-};
+use repose_ui::{Box, Column, ViewExt};
 
 use super::*;
 
@@ -134,7 +131,11 @@ impl SwipeToDismissState {
     }
 
     /// Fire the dismiss callback once when the spring settles past a given threshold.
-    fn try_handle_dismiss_with_threshold(&self, on_dismiss: &Option<Rc<dyn Fn()>>, _threshold: f32) {
+    fn try_handle_dismiss_with_threshold(
+        &self,
+        on_dismiss: &Option<Rc<dyn Fn()>>,
+        _threshold: f32,
+    ) {
         if !self.swipeable.is_animating() {
             let val = self.swipeable.current_value();
             if val != DismissValue::Default {

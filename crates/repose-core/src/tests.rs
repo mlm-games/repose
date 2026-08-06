@@ -7,18 +7,18 @@ mod tests {
     use crate::Rect;
     use crate::Vec2;
     use crate::animation::*;
+    use crate::error::{ErrorBoundary, throw_boundary};
     use crate::remember_with_key;
+    use crate::runtime::ComposeGuard;
     use crate::scope::*;
     use crate::signal::*;
+    use crate::state::remember_mutable;
+    use crate::state::remember_mutable_with_key;
+    use crate::{View, ViewKind};
     use crate::{
         clear_composer, new_observer, produce_state, produce_state_eq, remove_observer,
         run_observer_now, signal_changed,
     };
-    use crate::error::{throw_boundary, ErrorBoundary};
-    use crate::runtime::ComposeGuard;
-    use crate::state::remember_mutable;
-    use crate::state::remember_mutable_with_key;
-    use crate::{View, ViewKind};
     use web_time::{Duration, Instant};
 
     const FALLBACK_ID: u64 = 0xF00;

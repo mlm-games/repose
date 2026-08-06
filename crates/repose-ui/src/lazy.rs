@@ -392,21 +392,18 @@ where
         let st = state.clone();
         Rc::new(move |conn| st.set_nested_scroll_parent(conn))
     };
-    repose_core::View::new(
-        0,
-        repose_core::ViewKind::Box,
-    )
-    .modifier(modifier.vertical_scroll(ScrollAxisBinding {
-        on_scroll,
-        set_viewport_main: Some(set_viewport),
-        set_content_main: Some(Rc::new(move |h| measured_h_px(h))),
-        get_offset_main: Some(get_scroll),
-        set_offset_main: Some(set_scroll),
-        show_scrollbar: true,
-        tick: tick_scroll,
-        set_nested_scroll_parent: Some(set_nested_scroll_parent),
-    }))
-    .with_children(vec![content])
+    repose_core::View::new(0, repose_core::ViewKind::Box)
+        .modifier(modifier.vertical_scroll(ScrollAxisBinding {
+            on_scroll,
+            set_viewport_main: Some(set_viewport),
+            set_content_main: Some(Rc::new(move |h| measured_h_px(h))),
+            get_offset_main: Some(get_scroll),
+            set_offset_main: Some(set_scroll),
+            show_scrollbar: true,
+            tick: tick_scroll,
+            set_nested_scroll_parent: Some(set_nested_scroll_parent),
+        }))
+        .with_children(vec![content])
 }
 
 /// List without virtualization (for small lists)
@@ -625,21 +622,18 @@ where
         let st = state.clone();
         Rc::new(move |conn| st.set_nested_scroll_parent(conn))
     };
-    View::new(
-        0,
-        ViewKind::Box,
-    )
-    .modifier(modifier.vertical_scroll(ScrollAxisBinding {
-        on_scroll,
-        set_viewport_main: Some(set_viewport),
-        set_content_main: Some(Rc::new(move |h| measured_h(h))),
-        get_offset_main: Some(get_scroll),
-        set_offset_main: Some(set_scroll),
-        show_scrollbar: true,
-        tick: tick_scroll,
-        set_nested_scroll_parent: Some(set_nested_scroll_parent),
-    }))
-    .with_children(vec![content])
+    View::new(0, ViewKind::Box)
+        .modifier(modifier.vertical_scroll(ScrollAxisBinding {
+            on_scroll,
+            set_viewport_main: Some(set_viewport),
+            set_content_main: Some(Rc::new(move |h| measured_h(h))),
+            get_offset_main: Some(get_scroll),
+            set_offset_main: Some(set_scroll),
+            show_scrollbar: true,
+            tick: tick_scroll,
+            set_nested_scroll_parent: Some(set_nested_scroll_parent),
+        }))
+        .with_children(vec![content])
 }
 
 /// Virtualized horizontally-scrolling grid with a fixed number of rows.
@@ -865,23 +859,20 @@ where
         let st = state.clone();
         Rc::new(move |conn| st.set_nested_scroll_parent(conn))
     };
-    View::new(
-        0,
-        ViewKind::Box,
-    )
-    .modifier(modifier.scrollable(ScrollBothBinding {
-        on_scroll,
-        set_viewport_width: Some(set_viewport_w),
-        set_viewport_height: None,
-        set_content_width: Some(set_content_w),
-        set_content_height: None,
-        get_offset_xy: Some(get_scroll),
-        set_offset_xy: Some(set_scroll),
-        show_scrollbar: true,
-        tick: tick_scroll,
-        set_nested_scroll_parent: Some(set_nested_scroll_parent),
-    }))
-    .with_children(vec![content])
+    View::new(0, ViewKind::Box)
+        .modifier(modifier.scrollable(ScrollBothBinding {
+            on_scroll,
+            set_viewport_width: Some(set_viewport_w),
+            set_viewport_height: None,
+            set_content_width: Some(set_content_w),
+            set_content_height: None,
+            get_offset_xy: Some(get_scroll),
+            set_offset_xy: Some(set_scroll),
+            show_scrollbar: true,
+            tick: tick_scroll,
+            set_nested_scroll_parent: Some(set_nested_scroll_parent),
+        }))
+        .with_children(vec![content])
 }
 
 /// Virtualized horizontal list - only renders visible items.
@@ -1061,23 +1052,20 @@ where
         let st = state.clone();
         Rc::new(move |conn| st.set_nested_scroll_parent(conn))
     };
-    View::new(
-        0,
-        ViewKind::Box,
-    )
-    .modifier(modifier.scrollable(ScrollBothBinding {
-        on_scroll,
-        set_viewport_width: Some(set_viewport_w),
-        set_viewport_height: None,
-        set_content_width: Some(set_content_w),
-        set_content_height: None,
-        get_offset_xy: Some(get_scroll),
-        set_offset_xy: Some(set_scroll),
-        show_scrollbar: true,
-        tick: tick_scroll,
-        set_nested_scroll_parent: Some(set_nested_scroll_parent),
-    }))
-    .with_children(vec![content])
+    View::new(0, ViewKind::Box)
+        .modifier(modifier.scrollable(ScrollBothBinding {
+            on_scroll,
+            set_viewport_width: Some(set_viewport_w),
+            set_viewport_height: None,
+            set_content_width: Some(set_content_w),
+            set_content_height: None,
+            get_offset_xy: Some(get_scroll),
+            set_offset_xy: Some(set_scroll),
+            show_scrollbar: true,
+            tick: tick_scroll,
+            set_nested_scroll_parent: Some(set_nested_scroll_parent),
+        }))
+        .with_children(vec![content])
 }
 
 struct StaggeredPlacement {
@@ -1348,21 +1336,18 @@ where
         let st = state.clone();
         Rc::new(move |conn| st.set_nested_scroll_parent(conn))
     };
-    View::new(
-        0,
-        ViewKind::Box,
-    )
-    .modifier(modifier.vertical_scroll(ScrollAxisBinding {
-        on_scroll,
-        set_viewport_main: Some(set_viewport),
-        set_content_main: Some(Rc::new(move |h| measured_h(h))),
-        get_offset_main: Some(get_scroll),
-        set_offset_main: Some(set_scroll),
-        show_scrollbar: true,
-        tick: tick_scroll,
-        set_nested_scroll_parent: Some(set_nested_scroll_parent),
-    }))
-    .with_children(vec![content])
+    View::new(0, ViewKind::Box)
+        .modifier(modifier.vertical_scroll(ScrollAxisBinding {
+            on_scroll,
+            set_viewport_main: Some(set_viewport),
+            set_content_main: Some(Rc::new(move |h| measured_h(h))),
+            get_offset_main: Some(get_scroll),
+            set_offset_main: Some(set_scroll),
+            show_scrollbar: true,
+            tick: tick_scroll,
+            set_nested_scroll_parent: Some(set_nested_scroll_parent),
+        }))
+        .with_children(vec![content])
 }
 
 fn builder(_item: i32, _idx: usize) -> View {

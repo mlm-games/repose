@@ -1,455 +1,467 @@
-use super::{LayoutEngine, LayoutStats, IntrinsicSizeMode, NodeContext};
-use std::collections::HashMap;
-use std::rc::Rc;
-use std::cell::RefCell;
+use super::{IntrinsicSizeMode, LayoutEngine, LayoutStats, NodeContext};
+use crate::Interactions;
+use crate::textfield::TextFieldState;
+use crate::{Box as RBox, Column, Text, ViewExt};
 use repose_core::*;
 use repose_tree::ViewTree;
-use crate::{Box as RBox, Column, Text, ViewExt};
-use crate::textfield::TextFieldState;
-use crate::Interactions;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
-    fn font_px(dp: f32) -> f32 {
-        dp // 1:1 for tests
-    }
+fn font_px(dp: f32) -> f32 {
+    dp // 1:1 for tests
+}
 
-    #[test]
-    fn test_render_z_index_paints_last() {
-        // Create a Stack with two children:
-        // 1. A red box (painted first, no render_z_index)
-        // 2. A blue box with render_z_index(100.0) (should be painted last)
+#[test]
+fn test_render_z_index_paints_last() {
+    // Create a Stack with two children:
+    // 1. A red box (painted first, no render_z_index)
+    // 2. A blue box with render_z_index(100.0) (should be painted last)
 
-        let red = Color::from_rgb(255, 0, 0);
-        let blue = Color::from_rgb(0, 0, 255);
+    let red = Color::from_rgb(255, 0, 0);
+    let blue = Color::from_rgb(0, 0, 255);
 
-        let red_box = RBox(Modifier::new().size(100.0, 100.0).background(red));
-        let blue_box = RBox(
-            Modifier::new()
-                .size(100.0, 100.0)
-                .background(blue)
-                .render_z_index(100.0),
-        );
+    let red_box = RBox(Modifier::new().size(100.0, 100.0).background(red));
+    let blue_box = RBox(
+        Modifier::new()
+            .size(100.0, 100.0)
+            .background(blue)
+            .render_z_index(100.0),
+    );
 
-        let root = Column(Modifier::new().size(200.0, 200.0)).child((red_box, blue_box));
+    let root = Column(Modifier::new().size(200.0, 200.0)).child((red_box, blue_box));
 
-        let mut engine = LayoutEngine::new();
-        let (scene, _hits, _sems) = engine.layout_frame(
-            &root,
-            (200, 200),
-            &HashMap::new(),
-            &Interactions::default(),
-            None,
-        );
+    let mut engine = LayoutEngine::new();
+    let (scene, _hits, _sems) = engine.layout_frame(
+        &root,
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
 
-        // Find the rect nodes - there should be two (red and blue backgrounds)
-        let rects: Vec<_> = scene
-            .nodes
-            .iter()
-            .filter_map(|n| {
-                if let SceneNode::Rect { brush, .. } = n {
-                    Some(brush.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
+    // Find the rect nodes - there should be two (red and blue backgrounds)
+    let rects: Vec<_> = scene
+        .nodes
+        .iter()
+        .filter_map(|n| {
+            if let SceneNode::Rect { brush, .. } = n {
+                Some(brush.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
 
-        assert!(
-            rects.len() >= 2,
-            "Expected at least 2 rect nodes, got {}",
-            rects.len()
-        );
+    assert!(
+        rects.len() >= 2,
+        "Expected at least 2 rect nodes, got {}",
+        rects.len()
+    );
 
-        // The blue box (with render_z_index) should be painted LAST
-        // So its brush should be the last rect in the scene
-        let last_rect_brush = rects.last().unwrap();
-        assert!(
-            matches!(last_rect_brush, Brush::Solid(c) if *c == blue),
-            "Expected blue box to be painted last, but got {:?}",
-            last_rect_brush
-        );
+    // The blue box (with render_z_index) should be painted LAST
+    // So its brush should be the last rect in the scene
+    let last_rect_brush = rects.last().unwrap();
+    assert!(
+        matches!(last_rect_brush, Brush::Solid(c) if *c == blue),
+        "Expected blue box to be painted last, but got {:?}",
+        last_rect_brush
+    );
 
-        // And the red box should be painted before the blue
-        let second_to_last = rects.get(rects.len() - 2);
-        assert!(second_to_last.is_some(), "Expected at least 2 rect nodes");
-        let second_brush = second_to_last.unwrap();
-        assert!(
-            matches!(second_brush, Brush::Solid(c) if *c == red),
-            "Expected red box to be painted before blue, but got {:?}",
-            second_brush
-        );
-    }
+    // And the red box should be painted before the blue
+    let second_to_last = rects.get(rects.len() - 2);
+    assert!(second_to_last.is_some(), "Expected at least 2 rect nodes");
+    let second_brush = second_to_last.unwrap();
+    assert!(
+        matches!(second_brush, Brush::Solid(c) if *c == red),
+        "Expected red box to be painted before blue, but got {:?}",
+        second_brush
+    );
+}
 
-    #[test]
-    fn test_render_z_index_order_by_value() {
-        // Test that higher render_z_index values are painted later
+#[test]
+fn test_render_z_index_order_by_value() {
+    // Test that higher render_z_index values are painted later
 
-        let red = Color::from_rgb(255, 0, 0);
-        let green = Color::from_rgb(0, 255, 0);
-        let blue = Color::from_rgb(0, 0, 255);
+    let red = Color::from_rgb(255, 0, 0);
+    let green = Color::from_rgb(0, 255, 0);
+    let blue = Color::from_rgb(0, 0, 255);
 
-        let box1 = RBox(
-            Modifier::new()
-                .size(50.0, 50.0)
-                .background(red)
-                .render_z_index(10.0),
-        );
-        let box2 = RBox(
-            Modifier::new()
-                .size(50.0, 50.0)
-                .background(green)
-                .render_z_index(20.0),
-        );
-        let box3 = RBox(
-            Modifier::new()
-                .size(50.0, 50.0)
-                .background(blue)
-                .render_z_index(5.0),
-        );
+    let box1 = RBox(
+        Modifier::new()
+            .size(50.0, 50.0)
+            .background(red)
+            .render_z_index(10.0),
+    );
+    let box2 = RBox(
+        Modifier::new()
+            .size(50.0, 50.0)
+            .background(green)
+            .render_z_index(20.0),
+    );
+    let box3 = RBox(
+        Modifier::new()
+            .size(50.0, 50.0)
+            .background(blue)
+            .render_z_index(5.0),
+    );
 
-        let root = Column(Modifier::new().size(200.0, 200.0)).child((box1, box2, box3));
+    let root = Column(Modifier::new().size(200.0, 200.0)).child((box1, box2, box3));
 
-        let mut engine = LayoutEngine::new();
-        let (scene, _hits, _sems) = engine.layout_frame(
-            &root,
-            (200, 200),
-            &HashMap::new(),
-            &Interactions::default(),
-            None,
-        );
+    let mut engine = LayoutEngine::new();
+    let (scene, _hits, _sems) = engine.layout_frame(
+        &root,
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
 
-        let rects: Vec<_> = scene
-            .nodes
-            .iter()
-            .filter_map(|n| {
-                if let SceneNode::Rect { brush, .. } = n {
-                    Some(brush.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
+    let rects: Vec<_> = scene
+        .nodes
+        .iter()
+        .filter_map(|n| {
+            if let SceneNode::Rect { brush, .. } = n {
+                Some(brush.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
 
-        // Order should be: BLUE (z=5), RED (z=10), GREEN (z=20)
-        assert!(rects.len() >= 3, "Expected at least 3 rects");
+    // Order should be: BLUE (z=5), RED (z=10), GREEN (z=20)
+    assert!(rects.len() >= 3, "Expected at least 3 rects");
 
-        let len = rects.len();
-        assert!(
-            matches!(&rects[len - 3], Brush::Solid(c) if *c == blue),
-            "Expected BLUE (z=5) third from last"
-        );
-        assert!(
-            matches!(&rects[len - 2], Brush::Solid(c) if *c == red),
-            "Expected RED (z=10) second from last"
-        );
-        assert!(
-            matches!(&rects[len - 1], Brush::Solid(c) if *c == green),
-            "Expected GREEN (z=20) last"
-        );
-    }
+    let len = rects.len();
+    assert!(
+        matches!(&rects[len - 3], Brush::Solid(c) if *c == blue),
+        "Expected BLUE (z=5) third from last"
+    );
+    assert!(
+        matches!(&rects[len - 2], Brush::Solid(c) if *c == red),
+        "Expected RED (z=10) second from last"
+    );
+    assert!(
+        matches!(&rects[len - 1], Brush::Solid(c) if *c == green),
+        "Expected GREEN (z=20) last"
+    );
+}
 
-    #[test]
-    fn test_render_z_index_with_nested_children() {
-        // This test mimics the showcase scenario:
-        // Stack {
-        //   Column { red_box, green_box }  // This is like the main content
-        //   blue_box with render_z_index(1000)  // This is like the hint overlay
-        // }
-        // The blue_box should be painted AFTER all contents of Column
+#[test]
+fn test_render_z_index_with_nested_children() {
+    // This test mimics the showcase scenario:
+    // Stack {
+    //   Column { red_box, green_box }  // This is like the main content
+    //   blue_box with render_z_index(1000)  // This is like the hint overlay
+    // }
+    // The blue_box should be painted AFTER all contents of Column
 
-        let red = Color::from_rgb(255, 0, 0);
-        let green = Color::from_rgb(0, 255, 0);
-        let blue = Color::from_rgb(0, 0, 255);
+    let red = Color::from_rgb(255, 0, 0);
+    let green = Color::from_rgb(0, 255, 0);
+    let blue = Color::from_rgb(0, 0, 255);
 
-        let red_box = RBox(Modifier::new().size(50.0, 50.0).background(red));
-        let green_box = RBox(Modifier::new().size(50.0, 50.0).background(green));
+    let red_box = RBox(Modifier::new().size(50.0, 50.0).background(red));
+    let green_box = RBox(Modifier::new().size(50.0, 50.0).background(green));
 
-        let content = Column(Modifier::new()).child((red_box, green_box));
+    let content = Column(Modifier::new()).child((red_box, green_box));
 
-        let overlay = RBox(
-            Modifier::new()
-                .size(30.0, 30.0)
-                .background(blue)
-                .render_z_index(1000.0),
-        );
+    let overlay = RBox(
+        Modifier::new()
+            .size(30.0, 30.0)
+            .background(blue)
+            .render_z_index(1000.0),
+    );
 
-        let root = Column(Modifier::new().size(200.0, 200.0)).child((content, overlay));
+    let root = Column(Modifier::new().size(200.0, 200.0)).child((content, overlay));
 
-        let mut engine = LayoutEngine::new();
-        let (scene, _hits, _sems) = engine.layout_frame(
-            &root,
-            (200, 200),
-            &HashMap::new(),
-            &Interactions::default(),
-            None,
-        );
+    let mut engine = LayoutEngine::new();
+    let (scene, _hits, _sems) = engine.layout_frame(
+        &root,
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
 
-        let rects: Vec<_> = scene
-            .nodes
-            .iter()
-            .filter_map(|n| {
-                if let SceneNode::Rect { brush, .. } = n {
-                    Some(brush.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
+    let rects: Vec<_> = scene
+        .nodes
+        .iter()
+        .filter_map(|n| {
+            if let SceneNode::Rect { brush, .. } = n {
+                Some(brush.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
 
-        // Order should be: RED, GREEN, then BLUE (because blue has render_z_index)
-        assert!(
-            rects.len() >= 3,
-            "Expected at least 3 rects, got {}",
-            rects.len()
-        );
+    // Order should be: RED, GREEN, then BLUE (because blue has render_z_index)
+    assert!(
+        rects.len() >= 3,
+        "Expected at least 3 rects, got {}",
+        rects.len()
+    );
 
-        let len = rects.len();
-        // Blue should be LAST
-        assert!(
-            matches!(&rects[len - 1], Brush::Solid(c) if *c == blue),
-            "Expected BLUE (z=1000) to be painted last, but got {:?}",
-            &rects[len - 1]
-        );
+    let len = rects.len();
+    // Blue should be LAST
+    assert!(
+        matches!(&rects[len - 1], Brush::Solid(c) if *c == blue),
+        "Expected BLUE (z=1000) to be painted last, but got {:?}",
+        &rects[len - 1]
+    );
 
-        // Red and Green should be before blue
-        // Find their positions
-        let blue_pos = rects
-            .iter()
-            .position(|b| matches!(b, Brush::Solid(c) if *c == blue))
-            .unwrap();
-        let red_pos = rects
-            .iter()
-            .position(|b| matches!(b, Brush::Solid(c) if *c == red))
-            .unwrap();
-        let green_pos = rects
-            .iter()
-            .position(|b| matches!(b, Brush::Solid(c) if *c == green))
-            .unwrap();
+    // Red and Green should be before blue
+    // Find their positions
+    let blue_pos = rects
+        .iter()
+        .position(|b| matches!(b, Brush::Solid(c) if *c == blue))
+        .unwrap();
+    let red_pos = rects
+        .iter()
+        .position(|b| matches!(b, Brush::Solid(c) if *c == red))
+        .unwrap();
+    let green_pos = rects
+        .iter()
+        .position(|b| matches!(b, Brush::Solid(c) if *c == green))
+        .unwrap();
 
-        assert!(red_pos < blue_pos, "Red should be painted before blue");
-        assert!(green_pos < blue_pos, "Green should be painted before blue");
-    }
+    assert!(red_pos < blue_pos, "Red should be painted before blue");
+    assert!(green_pos < blue_pos, "Green should be painted before blue");
+}
 
-    #[test]
-    fn test_render_z_index_paints_over_scrollbars() {
-        // This test verifies that a node with render_z_index paints AFTER scrollbars
-        // Structure:
-        // Stack {
-        //   Scroll(tall content)  // This will show a scrollbar
-        //   Box with render_z_index(1000)  // This should paint LAST
-        // }
+#[test]
+fn test_render_z_index_paints_over_scrollbars() {
+    // This test verifies that a node with render_z_index paints AFTER scrollbars
+    // Structure:
+    // Stack {
+    //   Scroll(tall content)  // This will show a scrollbar
+    //   Box with render_z_index(1000)  // This should paint LAST
+    // }
 
-        let content_color = Color::from_rgb(100, 100, 100);
-        let overlay_color = Color::from_rgb(0, 0, 255);
+    let content_color = Color::from_rgb(100, 100, 100);
+    let overlay_color = Color::from_rgb(0, 0, 255);
 
-        // Tall content inside scroll - 500px tall in 200px viewport
-        let tall_content = RBox(Modifier::new().size(180.0, 500.0).background(content_color));
+    // Tall content inside scroll - 500px tall in 200px viewport
+    let tall_content = RBox(Modifier::new().size(180.0, 500.0).background(content_color));
 
-        let scroll = RBox(
-            Modifier::new()
-                .size(200.0, 200.0)
-                .vertical_scroll(ScrollAxisBinding {
-                    show_scrollbar: true,
-                    ..Default::default()
-                }),
-        )
-        .child(tall_content);
+    let scroll = RBox(
+        Modifier::new()
+            .size(200.0, 200.0)
+            .vertical_scroll(ScrollAxisBinding {
+                show_scrollbar: true,
+                ..Default::default()
+            }),
+    )
+    .child(tall_content);
 
-        let overlay = RBox(
-            Modifier::new()
-                .size(50.0, 50.0)
-                .background(overlay_color)
-                .render_z_index(1000.0),
-        );
+    let overlay = RBox(
+        Modifier::new()
+            .size(50.0, 50.0)
+            .background(overlay_color)
+            .render_z_index(1000.0),
+    );
 
-        let root = Column(Modifier::new().size(200.0, 200.0)).child((scroll, overlay));
+    let root = Column(Modifier::new().size(200.0, 200.0)).child((scroll, overlay));
 
-        let mut engine = LayoutEngine::new();
-        let (scene, _hits, _sems) = engine.layout_frame(
-            &root,
-            (200, 200),
-            &HashMap::new(),
-            &Interactions::default(),
-            None,
-        );
+    let mut engine = LayoutEngine::new();
+    let (scene, _hits, _sems) = engine.layout_frame(
+        &root,
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
 
-        // Collect all rect nodes (this includes content, scrollbar track, scrollbar thumb, and overlay)
-        let rects: Vec<_> = scene
-            .nodes
-            .iter()
-            .filter_map(|n| {
-                if let SceneNode::Rect { brush, .. } = n {
-                    Some(brush.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
+    // Collect all rect nodes (this includes content, scrollbar track, scrollbar thumb, and overlay)
+    let rects: Vec<_> = scene
+        .nodes
+        .iter()
+        .filter_map(|n| {
+            if let SceneNode::Rect { brush, .. } = n {
+                Some(brush.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
 
-        // The overlay (blue) should be painted LAST
-        let overlay_pos = rects
-            .iter()
-            .position(|b| matches!(b, Brush::Solid(c) if *c == overlay_color));
-        assert!(
-            overlay_pos.is_some(),
-            "Overlay should be present in scene, rects: {:?}",
-            rects
-        );
-        let overlay_pos = overlay_pos.unwrap();
+    // The overlay (blue) should be painted LAST
+    let overlay_pos = rects
+        .iter()
+        .position(|b| matches!(b, Brush::Solid(c) if *c == overlay_color));
+    assert!(
+        overlay_pos.is_some(),
+        "Overlay should be present in scene, rects: {:?}",
+        rects
+    );
+    let overlay_pos = overlay_pos.unwrap();
 
-        // Check that overlay is painted last (after scrollbar)
-        assert_eq!(
-            overlay_pos,
-            rects.len() - 1,
-            "Overlay should be the last rect, but it's at position {} of {}. Rects: {:?}",
-            overlay_pos,
-            rects.len(),
-            rects
-        );
-    }
+    // Check that overlay is painted last (after scrollbar)
+    assert_eq!(
+        overlay_pos,
+        rects.len() - 1,
+        "Overlay should be the last rect, but it's at position {} of {}. Rects: {:?}",
+        overlay_pos,
+        rects.len(),
+        rects
+    );
+}
 
-    #[test]
-    fn test_render_z_index_with_overlay_host() {
-        // This test mimics the showcase app structure more closely:
-        // Stack {
-        //   OverlayHost { content with Scroll }
-        //   Box with render_z_index(1000)  // Hint box
-        // }
-        use crate::overlay::OverlayHandle;
+#[test]
+fn test_render_z_index_with_overlay_host() {
+    // This test mimics the showcase app structure more closely:
+    // Stack {
+    //   OverlayHost { content with Scroll }
+    //   Box with render_z_index(1000)  // Hint box
+    // }
+    use crate::overlay::OverlayHandle;
 
-        let content_color = Color::from_rgb(100, 100, 100);
-        let overlay_color = Color::from_rgb(0, 0, 255);
+    let content_color = Color::from_rgb(100, 100, 100);
+    let overlay_color = Color::from_rgb(0, 0, 255);
 
-        // Tall content inside scroll - 500px tall in 200px viewport
-        let tall_content = RBox(Modifier::new().size(180.0, 500.0).background(content_color));
-        let scroll = RBox(
-            Modifier::new()
-                .size(200.0, 200.0)
-                .vertical_scroll(ScrollAxisBinding {
-                    show_scrollbar: true,
-                    ..Default::default()
-                }),
-        )
-        .child(tall_content);
+    // Tall content inside scroll - 500px tall in 200px viewport
+    let tall_content = RBox(Modifier::new().size(180.0, 500.0).background(content_color));
+    let scroll = RBox(
+        Modifier::new()
+            .size(200.0, 200.0)
+            .vertical_scroll(ScrollAxisBinding {
+                show_scrollbar: true,
+                ..Default::default()
+            }),
+    )
+    .child(tall_content);
 
-        // Create an OverlayHost wrapping the scroll content
-        let overlay_handle = OverlayHandle::new();
-        let overlay_host = overlay_handle.host(Modifier::new().fill_max_size(), scroll);
+    // Create an OverlayHost wrapping the scroll content
+    let overlay_handle = OverlayHandle::new();
+    let overlay_host = overlay_handle.host(Modifier::new().fill_max_size(), scroll);
 
-        // The hint box with render_z_index should paint on top
-        let hint_box = RBox(
-            Modifier::new()
-                .size(50.0, 50.0)
-                .background(overlay_color)
-                .render_z_index(1000.0),
-        );
+    // The hint box with render_z_index should paint on top
+    let hint_box = RBox(
+        Modifier::new()
+            .size(50.0, 50.0)
+            .background(overlay_color)
+            .render_z_index(1000.0),
+    );
 
-        // Final structure: Stack { OverlayHost, HintBox }
-        let root = Column(Modifier::new().size(200.0, 200.0)).child((overlay_host, hint_box));
+    // Final structure: Stack { OverlayHost, HintBox }
+    let root = Column(Modifier::new().size(200.0, 200.0)).child((overlay_host, hint_box));
 
-        let mut engine = LayoutEngine::new();
-        let (scene, _hits, _sems) = engine.layout_frame(
-            &root,
-            (200, 200),
-            &HashMap::new(),
-            &Interactions::default(),
-            None,
-        );
+    let mut engine = LayoutEngine::new();
+    let (scene, _hits, _sems) = engine.layout_frame(
+        &root,
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
 
-        // Collect all rect nodes
-        let rects: Vec<_> = scene
-            .nodes
-            .iter()
-            .filter_map(|n| {
-                if let SceneNode::Rect { brush, .. } = n {
-                    Some(brush.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
+    // Collect all rect nodes
+    let rects: Vec<_> = scene
+        .nodes
+        .iter()
+        .filter_map(|n| {
+            if let SceneNode::Rect { brush, .. } = n {
+                Some(brush.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
 
-        // The hint box (blue) should be painted LAST
-        let overlay_pos = rects
-            .iter()
-            .position(|b| matches!(b, Brush::Solid(c) if *c == overlay_color));
-        assert!(
-            overlay_pos.is_some(),
-            "Hint box should be present in scene, rects: {:?}",
-            rects
-        );
-        let overlay_pos = overlay_pos.unwrap();
+    // The hint box (blue) should be painted LAST
+    let overlay_pos = rects
+        .iter()
+        .position(|b| matches!(b, Brush::Solid(c) if *c == overlay_color));
+    assert!(
+        overlay_pos.is_some(),
+        "Hint box should be present in scene, rects: {:?}",
+        rects
+    );
+    let overlay_pos = overlay_pos.unwrap();
 
-        // Check that hint box is painted last (after scrollbar)
-        assert_eq!(
-            overlay_pos,
-            rects.len() - 1,
-            "Hint box should be the last rect, but it's at position {} of {}. Rects: {:?}",
-            overlay_pos,
-            rects.len(),
-            rects
-        );
-    }
+    // Check that hint box is painted last (after scrollbar)
+    assert_eq!(
+        overlay_pos,
+        rects.len() - 1,
+        "Hint box should be the last rect, but it's at position {} of {}. Rects: {:?}",
+        overlay_pos,
+        rects.len(),
+        rects
+    );
+}
 
-    #[test]
-    fn test_subcompose_layout_runs_closure_and_lays_out() {
-        use crate::subcompose::SubcomposeLayout;
-        use std::sync::Arc;
-        use std::sync::atomic::{AtomicUsize, Ordering};
+#[test]
+fn test_subcompose_layout_runs_closure_and_lays_out() {
+    use crate::subcompose::SubcomposeLayout;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
-        let red = Color::from_rgb(255, 0, 0);
-        let call_count = Arc::new(AtomicUsize::new(0));
-        let count_clone = call_count.clone();
+    let red = Color::from_rgb(255, 0, 0);
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let count_clone = call_count.clone();
 
-        let sub = SubcomposeLayout(Modifier::new().size(200.0, 100.0), move |scope| {
-            count_clone.fetch_add(1, Ordering::SeqCst);
-            assert!(scope.max_width > 0.0, "scope.max_width should be positive");
-            RBox(Modifier::new().size(100.0, 50.0).background(red))
-        });
+    let sub = SubcomposeLayout(Modifier::new().size(200.0, 100.0), move |scope| {
+        count_clone.fetch_add(1, Ordering::SeqCst);
+        assert!(scope.max_width > 0.0, "scope.max_width should be positive");
+        RBox(Modifier::new().size(100.0, 50.0).background(red))
+    });
 
-        let root = Column(Modifier::new()).child(sub);
+    let root = Column(Modifier::new()).child(sub);
 
-        let mut engine = LayoutEngine::new();
-        let (scene, _hits, _sems) = engine.layout_frame(
-            &root,
-            (400, 400),
-            &HashMap::new(),
-            &Interactions::default(),
-            None,
-        );
+    let mut engine = LayoutEngine::new();
+    let (scene, _hits, _sems) = engine.layout_frame(
+        &root,
+        (400, 400),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
 
-        assert!(
-            call_count.load(Ordering::SeqCst) >= 1,
-            "SubcomposeLayout closure should have been invoked"
-        );
+    assert!(
+        call_count.load(Ordering::SeqCst) >= 1,
+        "SubcomposeLayout closure should have been invoked"
+    );
 
-        let has_red_rect = scene
-            .nodes
-            .iter()
-            .any(|n| matches!(n, SceneNode::Rect { brush: Brush::Solid(c), .. } if *c == red));
-        assert!(
-            has_red_rect,
-            "Subcomposed child (red box) should produce a Rect scene node"
-        );
-    }
+    let has_red_rect = scene
+        .nodes
+        .iter()
+        .any(|n| matches!(n, SceneNode::Rect { brush: Brush::Solid(c), .. } if *c == red));
+    assert!(
+        has_red_rect,
+        "Subcomposed child (red box) should produce a Rect scene node"
+    );
+}
 
-    #[test]
-    fn test_subcompose_layout_caches_closure_across_frames() {
-        use crate::subcompose::SubcomposeLayout;
-        use std::sync::Arc;
-        use std::sync::atomic::{AtomicUsize, Ordering};
+#[test]
+fn test_subcompose_layout_caches_closure_across_frames() {
+    use crate::subcompose::SubcomposeLayout;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
-        let call_count = Arc::new(AtomicUsize::new(0));
-        let count_clone = call_count.clone();
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let count_clone = call_count.clone();
 
-        let sub = SubcomposeLayout(Modifier::new().size(200.0, 100.0), move |_scope| {
-            count_clone.fetch_add(1, Ordering::SeqCst);
-            RBox(Modifier::new().size(50.0, 50.0))
-        });
+    let sub = SubcomposeLayout(Modifier::new().size(200.0, 100.0), move |_scope| {
+        count_clone.fetch_add(1, Ordering::SeqCst);
+        RBox(Modifier::new().size(50.0, 50.0))
+    });
 
-        let root = Column(Modifier::new()).child(sub);
-        let mut engine = LayoutEngine::new();
+    let root = Column(Modifier::new()).child(sub);
+    let mut engine = LayoutEngine::new();
 
-        // First frame - closure runs.
+    // First frame - closure runs.
+    let _ = engine.layout_frame(
+        &root,
+        (400, 400),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let after_first = call_count.load(Ordering::SeqCst);
+    assert_eq!(after_first, 1, "closure should run once on first frame");
+
+    // Subsequent frames with no changes - closure stays cached.
+    for _ in 0..10 {
         let _ = engine.layout_frame(
             &root,
             (400, 400),
@@ -457,205 +469,191 @@ use crate::Interactions;
             &Interactions::default(),
             None,
         );
-        let after_first = call_count.load(Ordering::SeqCst);
-        assert_eq!(after_first, 1, "closure should run once on first frame");
-
-        // Subsequent frames with no changes - closure stays cached.
-        for _ in 0..10 {
-            let _ = engine.layout_frame(
-                &root,
-                (400, 400),
-                &HashMap::new(),
-                &Interactions::default(),
-                None,
-            );
-        }
-        assert_eq!(
-            call_count.load(Ordering::SeqCst),
-            1,
-            "closure should NOT re-run when content and scope are stable"
-        );
     }
+    assert_eq!(
+        call_count.load(Ordering::SeqCst),
+        1,
+        "closure should NOT re-run when content and scope are stable"
+    );
+}
 
-    #[test]
-    fn test_subcompose_layout_ancestor_modifier_narrows_scope_through_engine() {
-        use crate::subcompose::SubcomposeLayout;
-        use std::sync::Arc;
-        use std::sync::atomic::{AtomicU32, Ordering};
+#[test]
+fn test_subcompose_layout_ancestor_modifier_narrows_scope_through_engine() {
+    use crate::subcompose::SubcomposeLayout;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
-        let captured_max_w = Arc::new(AtomicU32::new(0));
-        let cap = captured_max_w.clone();
+    let captured_max_w = Arc::new(AtomicU32::new(0));
+    let cap = captured_max_w.clone();
 
-        // Box(width=320) -> SubcomposeLayout(closure) - closure should see
-        // max_width == 320.0, not the window's 800.0.
-        let sub = SubcomposeLayout(Modifier::new(), move |scope| {
-            cap.store(scope.max_width.to_bits(), Ordering::SeqCst);
-            RBox(Modifier::new().size(100.0, 50.0))
-        });
-        let root =
-            Column(Modifier::new()).child(crate::Box(Modifier::new().width(320.0)).child(sub));
+    // Box(width=320) -> SubcomposeLayout(closure) - closure should see
+    // max_width == 320.0, not the window's 800.0.
+    let sub = SubcomposeLayout(Modifier::new(), move |scope| {
+        cap.store(scope.max_width.to_bits(), Ordering::SeqCst);
+        RBox(Modifier::new().size(100.0, 50.0))
+    });
+    let root = Column(Modifier::new()).child(crate::Box(Modifier::new().width(320.0)).child(sub));
 
-        let mut engine = LayoutEngine::new();
-        let _ = engine.layout_frame(
-            &root,
-            (800, 600),
-            &HashMap::new(),
-            &Interactions::default(),
-            None,
-        );
+    let mut engine = LayoutEngine::new();
+    let _ = engine.layout_frame(
+        &root,
+        (800, 600),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
 
-        let observed = f32::from_bits(captured_max_w.load(Ordering::SeqCst));
-        assert_eq!(observed, 320.0, "ancestor width should propagate to scope");
-    }
+    let observed = f32::from_bits(captured_max_w.load(Ordering::SeqCst));
+    assert_eq!(observed, 320.0, "ancestor width should propagate to scope");
+}
 
-    fn make_engine() -> LayoutEngine {
-        LayoutEngine::new()
-    }
+fn make_engine() -> LayoutEngine {
+    LayoutEngine::new()
+}
 
-    #[test]
-    fn test_vertical_scroll_content_can_exceed_viewport() {
-        use crate::scroll::{ScrollArea, ScrollState};
-        use std::rc::Rc;
+#[test]
+fn test_vertical_scroll_content_can_exceed_viewport() {
+    use crate::scroll::{ScrollArea, ScrollState};
+    use std::rc::Rc;
 
-        let state = ScrollState::new();
-        // Tall content inside fixed-height scroll
-        let root = ScrollArea(
-            Modifier::new().height(100.0).width(200.0),
-            Rc::new(state),
-            Column(Modifier::new())
-                .child(RBox(Modifier::new().height(80.0).background(Color::WHITE)))
-                .child(RBox(Modifier::new().height(80.0).background(Color::BLACK))),
-        );
-        let mut eng = LayoutEngine::new();
-        let (_scene, hits, _) = eng.layout_frame(
-            &root,
-            (200, 100),
-            &HashMap::new(),
-            &Interactions::default(),
-            None,
-        );
-        // Content is taller than the viewport -> a scroll hit region must exist.
-        assert!(
-            hits.iter().any(|h| h.on_scroll.is_some()),
-            "scroll container should emit a scroll hit region when content overflows"
-        );
-    }
+    let state = ScrollState::new();
+    // Tall content inside fixed-height scroll
+    let root = ScrollArea(
+        Modifier::new().height(100.0).width(200.0),
+        Rc::new(state),
+        Column(Modifier::new())
+            .child(RBox(Modifier::new().height(80.0).background(Color::WHITE)))
+            .child(RBox(Modifier::new().height(80.0).background(Color::BLACK))),
+    );
+    let mut eng = LayoutEngine::new();
+    let (_scene, hits, _) = eng.layout_frame(
+        &root,
+        (200, 100),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    // Content is taller than the viewport -> a scroll hit region must exist.
+    assert!(
+        hits.iter().any(|h| h.on_scroll.is_some()),
+        "scroll container should emit a scroll hit region when content overflows"
+    );
+}
 
-    #[test]
-    fn test_nested_scroll_nav_like() {
-        use crate::scroll::{ScrollArea, ScrollState};
-        use std::rc::Rc;
+#[test]
+fn test_nested_scroll_nav_like() {
+    use crate::scroll::{ScrollArea, ScrollState};
+    use std::rc::Rc;
 
-        // Outer column fill + inner ScrollArea with tall page (showcase nav pattern).
-        // Inner content layout height must exceed the viewport while the outer
-        // container still lays out without panicking.
-        let white = Color::WHITE;
-        let state = ScrollState::new();
-        let inner = ScrollArea(
-            Modifier::new().height(100.0).fill_max_width(),
-            Rc::new(state),
-            Column(Modifier::new())
-                .child(RBox(Modifier::new().height(300.0).background(white))),
-        );
-        let root = Column(Modifier::new().size(200.0, 200.0)).child(inner);
+    // Outer column fill + inner ScrollArea with tall page (showcase nav pattern).
+    // Inner content layout height must exceed the viewport while the outer
+    // container still lays out without panicking.
+    let white = Color::WHITE;
+    let state = ScrollState::new();
+    let inner = ScrollArea(
+        Modifier::new().height(100.0).fill_max_width(),
+        Rc::new(state),
+        Column(Modifier::new()).child(RBox(Modifier::new().height(300.0).background(white))),
+    );
+    let root = Column(Modifier::new().size(200.0, 200.0)).child(inner);
 
-        let mut eng = LayoutEngine::new();
-        let (scene, hits, _) = eng.layout_frame(
-            &root,
-            (200, 200),
-            &HashMap::new(),
-            &Interactions::default(),
-            None,
-        );
-        assert!(
-            hits.iter().any(|h| h.on_scroll.is_some()),
-            "inner ScrollArea should emit a scroll hit region"
-        );
-        // The 300dp-tall page must still be laid out (taller than the 100dp viewport),
-        // proving scroll content styles let it grow on the scroll axis.
-        assert!(
-            scene.nodes.iter().any(|n| matches!(
-                n,
-                SceneNode::Rect {
-                    brush: Brush::Solid(c),
-                    rect,
-                    ..
-                } if *c == white && (rect.h - 300.0).abs() < 1.0
-            )),
-            "tall page should be laid out at its full height inside the scroller"
-        );
-    }
+    let mut eng = LayoutEngine::new();
+    let (scene, hits, _) = eng.layout_frame(
+        &root,
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    assert!(
+        hits.iter().any(|h| h.on_scroll.is_some()),
+        "inner ScrollArea should emit a scroll hit region"
+    );
+    // The 300dp-tall page must still be laid out (taller than the 100dp viewport),
+    // proving scroll content styles let it grow on the scroll axis.
+    assert!(
+        scene.nodes.iter().any(|n| matches!(
+            n,
+            SceneNode::Rect {
+                brush: Brush::Solid(c),
+                rect,
+                ..
+            } if *c == white && (rect.h - 300.0).abs() < 1.0
+        )),
+        "tall page should be laid out at its full height inside the scroller"
+    );
+}
 
-    #[test]
-    fn test_intrinsic_size_scroll_content_height() {
-        use crate::scroll::{ScrollArea, ScrollState};
-        use std::rc::Rc;
+#[test]
+fn test_intrinsic_size_scroll_content_height() {
+    use crate::scroll::{ScrollArea, ScrollState};
+    use std::rc::Rc;
 
-        let state = ScrollState::new();
-        let v = ScrollArea(
-            Modifier::new().width(200.0),
-            Rc::new(state),
-            Column(Modifier::new())
-                .child(RBox(Modifier::new().height(80.0)))
-                .child(RBox(Modifier::new().height(80.0))),
-        );
-        let mut eng = make_engine();
-        let (w, h) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
-        assert!(
-            h >= 160.0 - 1.0,
-            "scroll max-content height should reach child sum, got {}",
-            h
-        );
-        assert!(w > 0.0, "width should be positive, got {}", w);
-    }
+    let state = ScrollState::new();
+    let v = ScrollArea(
+        Modifier::new().width(200.0),
+        Rc::new(state),
+        Column(Modifier::new())
+            .child(RBox(Modifier::new().height(80.0)))
+            .child(RBox(Modifier::new().height(80.0))),
+    );
+    let mut eng = make_engine();
+    let (w, h) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
+    assert!(
+        h >= 160.0 - 1.0,
+        "scroll max-content height should reach child sum, got {}",
+        h
+    );
+    assert!(w > 0.0, "width should be positive, got {}", w);
+}
 
-    #[test]
-    fn test_intrinsic_size_text_max_content() {
-        let mut eng = make_engine();
-        let v = Column(Modifier::new()).child(Text("Hello"));
-        let (w, h) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
-        assert!(
-            w > 0.0 && h > 0.0,
-            "text must have positive size, got ({}, {})",
-            w,
-            h
-        );
-    }
+#[test]
+fn test_intrinsic_size_text_max_content() {
+    let mut eng = make_engine();
+    let v = Column(Modifier::new()).child(Text("Hello"));
+    let (w, h) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
+    assert!(
+        w > 0.0 && h > 0.0,
+        "text must have positive size, got ({}, {})",
+        w,
+        h
+    );
+}
 
-    #[test]
-    fn test_intrinsic_size_min_content_shrinks() {
-        let mut eng = make_engine();
-        let v = Column(Modifier::new()).child(Text("Hello"));
-        let (min_w, _) = eng.intrinsic_size(&v, IntrinsicSizeMode::MinContent);
-        let (max_w, _) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
-        assert!(
-            min_w <= max_w,
-            "min-content width should be <= max-content width (min={}, max={})",
-            min_w,
-            max_w
-        );
-    }
+#[test]
+fn test_intrinsic_size_min_content_shrinks() {
+    let mut eng = make_engine();
+    let v = Column(Modifier::new()).child(Text("Hello"));
+    let (min_w, _) = eng.intrinsic_size(&v, IntrinsicSizeMode::MinContent);
+    let (max_w, _) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
+    assert!(
+        min_w <= max_w,
+        "min-content width should be <= max-content width (min={}, max={})",
+        min_w,
+        max_w
+    );
+}
 
-    #[test]
-    fn test_intrinsic_size_column_uses_max_child_width() {
-        let mut eng = make_engine();
-        let v = Column(Modifier::new())
-            .child(Text("Hi"))
-            .child(Text("Hello world"));
-        let (max_w, _) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
-        let single_w = eng
-            .intrinsic_size(
-                &Column(Modifier::new()).child(Text("Hello world")),
-                IntrinsicSizeMode::MaxContent,
-            )
-            .0;
-        assert!(
-            (max_w - single_w).abs() < 1.0,
-            "column max-content width should match widest child (col={}, single={})",
-            max_w,
-            single_w
-        );
-    }
+#[test]
+fn test_intrinsic_size_column_uses_max_child_width() {
+    let mut eng = make_engine();
+    let v = Column(Modifier::new())
+        .child(Text("Hi"))
+        .child(Text("Hello world"));
+    let (max_w, _) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
+    let single_w = eng
+        .intrinsic_size(
+            &Column(Modifier::new()).child(Text("Hello world")),
+            IntrinsicSizeMode::MaxContent,
+        )
+        .0;
+    assert!(
+        (max_w - single_w).abs() < 1.0,
+        "column max-content width should match widest child (col={}, single={})",
+        max_w,
+        single_w
+    );
+}
 
 #[cfg(test)]
 mod layer_tests {

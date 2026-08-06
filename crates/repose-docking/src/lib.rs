@@ -440,12 +440,10 @@ pub fn DockArea(
 
     // Outer "float" drop target: if you drop a tab anywhere not handled by inner targets.
     // We set z-index low so inner targets win.
-    let float_target = Box(
-        Modifier::new()
-            .fill_max_size()
-            .z_index(-1000.0)
-            .dock_float_target(&dock),
-    );
+    let float_target = Box(Modifier::new()
+        .fill_max_size()
+        .z_index(-1000.0)
+        .dock_float_target(&dock));
 
     // Actual docking UI
     let root_view = {
@@ -489,19 +487,17 @@ fn render_node(
     key_prefix: &str,
 ) -> View {
     match &node.kind {
-        DockKind::Empty => Box(
-            Modifier::new()
-                .fill_max_size()
-                .padding(6.0)
-                .background(theme().surface_container_lowest)
-                .clip_rounded(theme().shapes.medium)
-                .border(
-                    1.0,
-                    theme().outline_variant.with_alpha(80),
-                    theme().shapes.medium,
-                )
-                .key(node.id),
-        )
+        DockKind::Empty => Box(Modifier::new()
+            .fill_max_size()
+            .padding(6.0)
+            .background(theme().surface_container_lowest)
+            .clip_rounded(theme().shapes.medium)
+            .border(
+                1.0,
+                theme().outline_variant.with_alpha(80),
+                theme().shapes.medium,
+            )
+            .key(node.id))
         .child(
             Box(Modifier::new().fill_max_size().padding(16.0)).child(
                 Text("Drop panel here")
@@ -644,47 +640,43 @@ fn render_tabs(
                 };
 
                 Some(
-                    Row(
-                        Modifier::new()
-                            .key(pid)
+                    Row(Modifier::new()
+                        .key(pid)
+                        .height(TAB_H)
+                        .min_width(108.0)
+                        .max_width(240.0)
+                        .clip_rounded(TAB_RADIUS)
+                        .background(tab_bg)
+                        .padding_values(PaddingValues {
+                            left: 12.0,
+                            right: 4.0,
+                            top: 0.0,
+                            bottom: 0.0,
+                        })
+                        .gap(4.0)
+                        .clickable()
+                        .on_pointer_enter(hover_in)
+                        .on_pointer_leave(hover_out)
+                        .on_pointer_down({
+                            let state_set = state_set.clone();
+                            move |_| {
+                                state_set.borrow_mut().set_active(node_id, pid);
+                                request_frame();
+                            }
+                        })
+                        .drag_preview_chip(title.clone(), th.primary)
+                        .dock_tab_source(dock, drag_pid))
+                    .child((
+                        Box(Modifier::new()
                             .height(TAB_H)
-                            .min_width(108.0)
-                            .max_width(240.0)
-                            .clip_rounded(TAB_RADIUS)
-                            .background(tab_bg)
+                            .weight(1.0)
                             .padding_values(PaddingValues {
-                                left: 12.0,
+                                left: 0.0,
                                 right: 4.0,
                                 top: 0.0,
                                 bottom: 0.0,
                             })
-                            .gap(4.0)
-                            .clickable()
-                            .on_pointer_enter(hover_in)
-                            .on_pointer_leave(hover_out)
-                            .on_pointer_down({
-                                let state_set = state_set.clone();
-                                move |_| {
-                                    state_set.borrow_mut().set_active(node_id, pid);
-                                    request_frame();
-                                }
-                            })
-                            .drag_preview_chip(title.clone(), th.primary)
-                            .dock_tab_source(dock, drag_pid),
-                    )
-                    .child((
-                        Box(
-                            Modifier::new()
-                                .height(TAB_H)
-                                .weight(1.0)
-                                .padding_values(PaddingValues {
-                                    left: 0.0,
-                                    right: 4.0,
-                                    top: 0.0,
-                                    bottom: 0.0,
-                                })
-                                .content_alignment(Alignment::Center),
-                        )
+                            .content_alignment(Alignment::Center))
                         .child(
                             Text(title)
                                 .size(th.typography.label_large)
@@ -725,11 +717,9 @@ fn render_tabs(
         )
         .child((
             tab_bar,
-            Box(
-                Modifier::new()
-                    .fill_max_size()
-                    .background(th.surface_container_lowest),
-            )
+            Box(Modifier::new()
+                .fill_max_size()
+                .background(th.surface_container_lowest))
             .child(Box(Modifier::new().fill_max_size().padding(8.0)).child(content)),
         )),
         Box(Modifier::new()
@@ -750,22 +740,18 @@ fn dock_tab_icon_button(
     fg: Color,
     on_click: impl Fn(PointerEvent) + 'static,
 ) -> View {
-    Box(
-        Modifier::new()
-            .size(26.0, 26.0)
-            .padding(2.0)
-            .clip_rounded(13.0)
-            .background(fg.with_alpha(18))
-            .clickable()
-            .cursor(CursorIcon::Pointer)
-            .on_pointer_down(on_click),
-    )
+    Box(Modifier::new()
+        .size(26.0, 26.0)
+        .padding(2.0)
+        .clip_rounded(13.0)
+        .background(fg.with_alpha(18))
+        .clickable()
+        .cursor(CursorIcon::Pointer)
+        .on_pointer_down(on_click))
     .child(
-        Box(
-            Modifier::new()
-                .fill_max_size()
-                .content_alignment(Alignment::Center),
-        )
+        Box(Modifier::new()
+            .fill_max_size()
+            .content_alignment(Alignment::Center))
         .child(Text(label).size(14.0).color(fg)),
     )
 }
@@ -790,7 +776,8 @@ fn dock_drop_overlay(node_id: u64, dock: &DockHandle, key_prefix: &str) -> View 
         Box(Modifier::new())
     };
 
-    let mk_zone = |zone: DropZone, m: Modifier| -> View { Box(m.dock_drop_zone(dock, node_id, zone)) };
+    let mk_zone =
+        |zone: DropZone, m: Modifier| -> View { Box(m.dock_drop_zone(dock, node_id, zone)) };
 
     // Layout zones using absolute rects (no need for measured size):
     // left/right/top/bottom thickness = zone_dp; center = remainder.
@@ -843,13 +830,11 @@ fn dock_drop_overlay(node_id: u64, dock: &DockHandle, key_prefix: &str) -> View 
     )
     .child((
         // Subtle drag-mode scrim.
-        Box(
-            Modifier::new()
-                .fill_max_size()
-                .background(th.scrim.with_alpha(18))
-                .hit_passthrough()
-                .render_z_index(1000.0),
-        ),
+        Box(Modifier::new()
+            .fill_max_size()
+            .background(th.scrim.with_alpha(18))
+            .hit_passthrough()
+            .render_z_index(1000.0)),
         Box(Modifier::new()
             .fill_max_size()
             .hit_passthrough()
@@ -874,12 +859,10 @@ fn dock_drop_preview(zone: DropZone) -> View {
     let radius = th.shapes.large;
 
     let card = |label: &'static str, modifier: Modifier| -> View {
-        Box(
-            modifier
-                .clip_rounded(radius)
-                .background(fill)
-                .border(2.0, border, radius),
-        )
+        Box(modifier
+            .clip_rounded(radius)
+            .background(fill)
+            .border(2.0, border, radius))
         .child(
             Box(Modifier::new().padding(12.0)).child(
                 Text(label)
@@ -905,30 +888,26 @@ fn dock_drop_preview(zone: DropZone) -> View {
 
         DropZone::Right => Row(Modifier::new().fill_max_size().padding(14.0).gap(10.0)).child((
             Box(Modifier::new().weight(0.56)),
-            card("Split right", Modifier::new().weight(0.44).fill_max_height()),
+            card(
+                "Split right",
+                Modifier::new().weight(0.44).fill_max_height(),
+            ),
         )),
 
-        DropZone::Top => Column(
-            Modifier::new()
-                .fill_max_size()
-                .padding(14.0)
-                .gap(10.0),
-        )
-        .child((
+        DropZone::Top => Column(Modifier::new().fill_max_size().padding(14.0).gap(10.0)).child((
             card("Split top", Modifier::new().weight(0.44).fill_max_width()),
             Box(Modifier::new().weight(0.56)),
         )),
 
-        DropZone::Bottom => Column(
-            Modifier::new()
-                .fill_max_size()
-                .padding(14.0)
-                .gap(10.0),
-        )
-        .child((
-            Box(Modifier::new().weight(0.56)),
-            card("Split bottom", Modifier::new().weight(0.44).fill_max_width()),
-        )),
+        DropZone::Bottom => {
+            Column(Modifier::new().fill_max_size().padding(14.0).gap(10.0)).child((
+                Box(Modifier::new().weight(0.56)),
+                card(
+                    "Split bottom",
+                    Modifier::new().weight(0.44).fill_max_width(),
+                ),
+            ))
+        }
 
         DropZone::Float => Box(Modifier::new()),
     }
@@ -1040,79 +1019,55 @@ fn render_split(
     };
 
     let grabber = match dir {
-        SplitDir::Horizontal => Box(
-            Modifier::new()
-                .fill_max_size()
-                .content_alignment(Alignment::Center)
-                .clip_rounded(4.0),
-        )
-        .child(Box(
-            Modifier::new()
-                .width(4.0)
-                .offset(None, Some(24.0), None, Some(24.0))
-                .background(grabber_color),
-        )),
-        SplitDir::Vertical => Box(
-            Modifier::new()
-                .fill_max_size()
-                .content_alignment(Alignment::Center)
-                .clip_rounded(4.0),
-        )
-        .child(Box(
-            Modifier::new()
-                .height(4.0)
-                .offset(Some(24.0), None, Some(24.0), None)
-                .background(grabber_color),
-        )),
+        SplitDir::Horizontal => Box(Modifier::new()
+            .fill_max_size()
+            .content_alignment(Alignment::Center)
+            .clip_rounded(4.0))
+        .child(Box(Modifier::new()
+            .width(4.0)
+            .offset(None, Some(24.0), None, Some(24.0))
+            .background(grabber_color))),
+        SplitDir::Vertical => Box(Modifier::new()
+            .fill_max_size()
+            .content_alignment(Alignment::Center)
+            .clip_rounded(4.0))
+        .child(Box(Modifier::new()
+            .height(4.0)
+            .offset(Some(24.0), None, Some(24.0), None)
+            .background(grabber_color))),
     };
 
-    let divider = Box(
-        splitter_mod
-            .background(gutter_color)
-            .on_pointer_enter({
-                let split_hover = split_hover.clone();
-                move |_| {
-                    split_hover.set(Some(node_id));
+    let divider = Box(splitter_mod
+        .background(gutter_color)
+        .on_pointer_enter({
+            let split_hover = split_hover.clone();
+            move |_| {
+                split_hover.set(Some(node_id));
+                request_frame();
+            }
+        })
+        .on_pointer_leave({
+            let split_hover = split_hover.clone();
+            move |_| {
+                if split_hover.get() == Some(node_id) {
+                    split_hover.set(None);
                     request_frame();
                 }
-            })
-            .on_pointer_leave({
-                let split_hover = split_hover.clone();
-                move |_| {
-                    if split_hover.get() == Some(node_id) {
-                        split_hover.set(None);
-                        request_frame();
-                    }
-                }
-            })
-            .on_pointer_down(start_drag)
-            .on_pointer_move(move_drag)
-            .on_pointer_up(end_drag)
-            .cursor(match dir {
-                SplitDir::Horizontal => CursorIcon::EwResize,
-                SplitDir::Vertical => CursorIcon::NsResize,
-            })
-            .z_index(1500.0)
-            .render_z_index(1500.0),
-    )
+            }
+        })
+        .on_pointer_down(start_drag)
+        .on_pointer_move(move_drag)
+        .on_pointer_up(end_drag)
+        .cursor(match dir {
+            SplitDir::Horizontal => CursorIcon::EwResize,
+            SplitDir::Vertical => CursorIcon::NsResize,
+        })
+        .z_index(1500.0)
+        .render_z_index(1500.0))
     .child(grabber);
 
-    let a_view = render_node(
-        a,
-        registry,
-        dock,
-        split_hover,
-        split_drag,
-        key_prefix,
-    );
-    let b_view = render_node(
-        b,
-        registry,
-        dock,
-        split_hover,
-        split_drag,
-        key_prefix,
-    );
+    let a_view = render_node(a, registry, dock, split_hover, split_drag, key_prefix);
+    let b_view = render_node(b, registry, dock, split_hover, split_drag, key_prefix);
 
     match dir {
         SplitDir::Horizontal => Row(track.fill_max_size().key(node_id)).child((
@@ -1416,84 +1371,80 @@ pub fn CollapsibleSidePanel(
             RefCell::new(None::<web_time::Instant>)
         });
 
-        Box(
-            Modifier::new()
-                .width(match side {
-                    DockSide::Left | DockSide::Right => handle_size,
-                    DockSide::Top | DockSide::Bottom => 0.0,
-                })
-                .height(match side {
-                    DockSide::Top | DockSide::Bottom => handle_size,
-                    DockSide::Left | DockSide::Right => 0.0,
-                })
-                .fill_max_height()
-                .fill_max_width()
-                .background(th.outline.with_alpha(if collapsed { 140 } else { 80 }))
-                .cursor(match side {
-                    DockSide::Left | DockSide::Right => CursorIcon::EwResize,
-                    DockSide::Top | DockSide::Bottom => CursorIcon::NsResize,
-                })
-                .on_pointer_down({
-                    let state = state.clone();
-                    let last_click = last_click.clone();
-                    move |ev| {
-                        let now = web_time::Instant::now();
-                        let mut lc = last_click.borrow_mut();
-                        if let Some(t0) = *lc {
-                            if now.duration_since(t0) < web_time::Duration::from_millis(350) {
-                                state.borrow_mut().toggle();
-                                *lc = None;
-                                request_frame();
-                                return;
-                            }
-                        }
-                        *lc = Some(now);
-                        let axis = match state.borrow().side {
-                            DockSide::Left | DockSide::Right => ev.position.x,
-                            DockSide::Top | DockSide::Bottom => ev.position.y,
-                        };
-                        state.borrow_mut().begin_edge_drag(axis);
-                        request_frame();
-                    }
-                })
-                .on_pointer_move({
-                    let state = state.clone();
-                    move |ev| {
-                        if state.borrow().drag_anchor.is_some() {
-                            let axis = match state.borrow().side {
-                                DockSide::Left | DockSide::Right => ev.position.x,
-                                DockSide::Top | DockSide::Bottom => ev.position.y,
-                            };
-                            state.borrow_mut().edge_drag(axis);
-                            request_frame();
-                        }
-                    }
-                })
-                .on_pointer_up({
-                    let state = state.clone();
-                    move |_ev| {
-                        state.borrow_mut().end_edge_drag();
-                        request_frame();
-                    }
-                }),
-        )
-    };
-
-    let body = Box(
-        Modifier::new()
+        Box(Modifier::new()
             .width(match side {
-                DockSide::Left | DockSide::Right => body_size,
+                DockSide::Left | DockSide::Right => handle_size,
                 DockSide::Top | DockSide::Bottom => 0.0,
             })
             .height(match side {
-                DockSide::Top | DockSide::Bottom => body_size,
+                DockSide::Top | DockSide::Bottom => handle_size,
                 DockSide::Left | DockSide::Right => 0.0,
             })
             .fill_max_height()
             .fill_max_width()
-            .clip_rounded(0.0)
-            .background(th.surface),
-    )
+            .background(th.outline.with_alpha(if collapsed { 140 } else { 80 }))
+            .cursor(match side {
+                DockSide::Left | DockSide::Right => CursorIcon::EwResize,
+                DockSide::Top | DockSide::Bottom => CursorIcon::NsResize,
+            })
+            .on_pointer_down({
+                let state = state.clone();
+                let last_click = last_click.clone();
+                move |ev| {
+                    let now = web_time::Instant::now();
+                    let mut lc = last_click.borrow_mut();
+                    if let Some(t0) = *lc {
+                        if now.duration_since(t0) < web_time::Duration::from_millis(350) {
+                            state.borrow_mut().toggle();
+                            *lc = None;
+                            request_frame();
+                            return;
+                        }
+                    }
+                    *lc = Some(now);
+                    let axis = match state.borrow().side {
+                        DockSide::Left | DockSide::Right => ev.position.x,
+                        DockSide::Top | DockSide::Bottom => ev.position.y,
+                    };
+                    state.borrow_mut().begin_edge_drag(axis);
+                    request_frame();
+                }
+            })
+            .on_pointer_move({
+                let state = state.clone();
+                move |ev| {
+                    if state.borrow().drag_anchor.is_some() {
+                        let axis = match state.borrow().side {
+                            DockSide::Left | DockSide::Right => ev.position.x,
+                            DockSide::Top | DockSide::Bottom => ev.position.y,
+                        };
+                        state.borrow_mut().edge_drag(axis);
+                        request_frame();
+                    }
+                }
+            })
+            .on_pointer_up({
+                let state = state.clone();
+                move |_ev| {
+                    state.borrow_mut().end_edge_drag();
+                    request_frame();
+                }
+            }))
+    };
+
+    let body = Box(Modifier::new()
+        .width(match side {
+            DockSide::Left | DockSide::Right => body_size,
+            DockSide::Top | DockSide::Bottom => 0.0,
+        })
+        .height(match side {
+            DockSide::Top | DockSide::Bottom => body_size,
+            DockSide::Left | DockSide::Right => 0.0,
+        })
+        .fill_max_height()
+        .fill_max_width()
+        .clip_rounded(0.0)
+        .background(th.surface))
     .child(if body_size > 0.5 {
         Box(Modifier::new().fill_max_size().padding(8.0)).child(content())
     } else {

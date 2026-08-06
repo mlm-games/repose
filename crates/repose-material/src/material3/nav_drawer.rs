@@ -5,13 +5,12 @@ use std::sync::atomic::Ordering;
 
 use repose_core::*;
 use repose_ui::{
-    Box, Row, TextStyle,
-    ViewExt, ZStack,
+    Box, Row, TextStyle, ViewExt, ZStack,
     anim::{animate_color, animate_f32},
 };
 
-use super::*;
 use super::util::FILTERCHIP_COUNTER;
+use super::*;
 
 /// Configuration for [`NavigationDrawer`].
 #[derive(Clone, Debug)]

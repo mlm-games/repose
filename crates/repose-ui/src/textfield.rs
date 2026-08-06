@@ -429,10 +429,10 @@ pub struct TextFieldState {
     pub(crate) last_tap_pos: Option<(f32, f32)>,
     pub(crate) tap_count: u8,
 
-    pub blink_start: Instant,              // caret blink timer
-    pub inner_width: f32,                  // px
-    pub inner_height: f32,                 // px
-    pub preferred_x_px: Option<f32>,       // for Up/Down caret movement in multiline
+    pub blink_start: Instant,        // caret blink timer
+    pub inner_width: f32,            // px
+    pub inner_height: f32,           // px
+    pub preferred_x_px: Option<f32>, // for Up/Down caret movement in multiline
     /// When a visual transformation is active, this maps offsets in the
     /// display text back to offsets in the original text.
     pub offset_map: Option<Box<dyn OffsetMapping>>,
@@ -914,12 +914,7 @@ impl TextFieldState {
         }
     }
 
-    pub fn handle_pointer_down(
-        &mut self,
-        idx_byte: usize,
-        pos_px: (f32, f32),
-        shift: bool,
-    ) {
+    pub fn handle_pointer_down(&mut self, idx_byte: usize, pos_px: (f32, f32), shift: bool) {
         const DOUBLE_TAP_MS: u64 = 300;
         const TAP_SLOP_PX: f32 = 12.0;
 
@@ -2328,7 +2323,9 @@ mod tests {
         // "abc": cursor 3 -> 2 -> 1 via two backspaces merges into one "bc" delete.
         let a = delete_op(2, "c", 3..3, 2..2);
         let b = delete_op(1, "b", 2..2, 1..1);
-        let merged = a.try_merge(&b).expect("consecutive backspaces should merge");
+        let merged = a
+            .try_merge(&b)
+            .expect("consecutive backspaces should merge");
         assert_eq!(merged.index, 1);
         assert_eq!(merged.pre_text, "bc");
     }

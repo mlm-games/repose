@@ -3,10 +3,7 @@
 use std::rc::Rc;
 
 use repose_core::*;
-use repose_ui::{
-    Box, TextStyle,
-    ViewExt,
-};
+use repose_ui::{Box, TextStyle, ViewExt};
 
 use super::*;
 

@@ -4,10 +4,7 @@ use std::rc::Rc;
 
 use crate::ripple::{RippleConfig, ripple};
 use repose_core::*;
-use repose_ui::{
-    Box,
-    ViewExt,
-};
+use repose_ui::{Box, ViewExt};
 
 use super::*;
 
@@ -152,7 +149,10 @@ fn button_impl(
     enabled: bool,
     interaction_source: Option<MutableInteractionSource>,
 ) -> View {
-    let mut m = Modifier::new().min_height(height).min_width(48.0).flex_shrink(0.0);
+    let mut m = Modifier::new()
+        .min_height(height)
+        .min_width(48.0)
+        .flex_shrink(0.0);
     if let Some(bg) = container_color {
         m = m.background(bg);
     }
@@ -185,14 +185,15 @@ fn button_impl(
         .justify_content(JustifyContent::CENTER);
 
     // Interaction source + ripple indication
-    let source: Rc<MutableInteractionSource> = interaction_source.map(Rc::new).unwrap_or_else(|| {
-        match outer_modifier.key {
-            Some(k) => {
-                remember_with_key(format!("m3_btn_src:{k}"), MutableInteractionSource::new)
-            }
-            None => remember(MutableInteractionSource::new),
-        }
-    });
+    let source: Rc<MutableInteractionSource> =
+        interaction_source
+            .map(Rc::new)
+            .unwrap_or_else(|| match outer_modifier.key {
+                Some(k) => {
+                    remember_with_key(format!("m3_btn_src:{k}"), MutableInteractionSource::new)
+                }
+                None => remember(MutableInteractionSource::new),
+            });
     m = m.interaction_source(&*source);
     m = m.indication(ripple(RippleConfig {
         color: Some(content_color),

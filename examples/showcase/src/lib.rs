@@ -39,5 +39,6 @@ use winit::platform::android::activity::AndroidApp;
 #[unsafe(no_mangle)]
 pub extern "C" fn android_main(android_app: AndroidApp) {
     android_logger::init_once(android_logger::Config::default().with_max_level(LevelFilter::Info));
-    let _ = run_android_app_with_options(android_app, |s, _rc| app::app(s), AndroidOptions::default());
+    let _ =
+        run_android_app_with_options(android_app, |s, _rc| app::app(s), AndroidOptions::default());
 }

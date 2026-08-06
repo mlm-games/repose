@@ -107,42 +107,27 @@ pub trait DragDropModifierExt: Sized {
         T: 'static;
 
     /// Typed drag-enter.
-    fn on_drag_enter_typed<T>(
-        self,
-        f: impl Fn(&DragOver, &T) + 'static,
-    ) -> crate::Modifier
+    fn on_drag_enter_typed<T>(self, f: impl Fn(&DragOver, &T) + 'static) -> crate::Modifier
     where
         T: 'static;
 
     /// Typed drag-over.
-    fn on_drag_over_typed<T>(
-        self,
-        f: impl Fn(&DragOver, &T) + 'static,
-    ) -> crate::Modifier
+    fn on_drag_over_typed<T>(self, f: impl Fn(&DragOver, &T) + 'static) -> crate::Modifier
     where
         T: 'static;
 
     /// Typed drag-leave.
-    fn on_drag_leave_typed<T>(
-        self,
-        f: impl Fn(&DragOver, &T) + 'static,
-    ) -> crate::Modifier
+    fn on_drag_leave_typed<T>(self, f: impl Fn(&DragOver, &T) + 'static) -> crate::Modifier
     where
         T: 'static;
 
     /// Typed drop target.
-    fn on_drop_typed<T>(
-        self,
-        f: impl Fn(&DropEvent, &T) -> bool + 'static,
-    ) -> crate::Modifier
+    fn on_drop_typed<T>(self, f: impl Fn(&DropEvent, &T) -> bool + 'static) -> crate::Modifier
     where
         T: 'static;
 
     /// Common case: typed drag-over + typed drop.
-    fn drop_target<T>(
-        self,
-        on_drop: impl Fn(&DropEvent, &T) -> bool + 'static,
-    ) -> crate::Modifier
+    fn drop_target<T>(self, on_drop: impl Fn(&DropEvent, &T) -> bool + 'static) -> crate::Modifier
     where
         T: 'static;
 }
@@ -158,10 +143,7 @@ impl DragDropModifierExt for crate::Modifier {
         self.on_drag_start(move |start| make_payload(start).map(drag_payload::<T>))
     }
 
-    fn on_drag_enter_typed<T>(
-        self,
-        f: impl Fn(&DragOver, &T) + 'static,
-    ) -> crate::Modifier
+    fn on_drag_enter_typed<T>(self, f: impl Fn(&DragOver, &T) + 'static) -> crate::Modifier
     where
         T: 'static,
     {
@@ -172,10 +154,7 @@ impl DragDropModifierExt for crate::Modifier {
         })
     }
 
-    fn on_drag_over_typed<T>(
-        self,
-        f: impl Fn(&DragOver, &T) + 'static,
-    ) -> crate::Modifier
+    fn on_drag_over_typed<T>(self, f: impl Fn(&DragOver, &T) + 'static) -> crate::Modifier
     where
         T: 'static,
     {
@@ -186,10 +165,7 @@ impl DragDropModifierExt for crate::Modifier {
         })
     }
 
-    fn on_drag_leave_typed<T>(
-        self,
-        f: impl Fn(&DragOver, &T) + 'static,
-    ) -> crate::Modifier
+    fn on_drag_leave_typed<T>(self, f: impl Fn(&DragOver, &T) + 'static) -> crate::Modifier
     where
         T: 'static,
     {
@@ -200,10 +176,7 @@ impl DragDropModifierExt for crate::Modifier {
         })
     }
 
-    fn on_drop_typed<T>(
-        self,
-        f: impl Fn(&DropEvent, &T) -> bool + 'static,
-    ) -> crate::Modifier
+    fn on_drop_typed<T>(self, f: impl Fn(&DropEvent, &T) -> bool + 'static) -> crate::Modifier
     where
         T: 'static,
     {
@@ -215,10 +188,7 @@ impl DragDropModifierExt for crate::Modifier {
         })
     }
 
-    fn drop_target<T>(
-        self,
-        on_drop: impl Fn(&DropEvent, &T) -> bool + 'static,
-    ) -> crate::Modifier
+    fn drop_target<T>(self, on_drop: impl Fn(&DropEvent, &T) -> bool + 'static) -> crate::Modifier
     where
         T: 'static,
     {
@@ -313,20 +283,13 @@ pub fn drag_preview_chip(label: impl Into<String>, accent: Color) -> DragPreview
     })
 }
 
-fn draw_label_chip(
-    scene: &mut Scene,
-    pointer: Vec2,
-    label: &str,
-    accent: Color,
-    elevated: bool,
-) {
+fn draw_label_chip(scene: &mut Scene, pointer: Vec2, label: &str, accent: Color, elevated: bool) {
     let ts = crate::locals::text_scale().0;
     let pad_x = crate::locals::dp_to_px(10.0);
     let pad_y = crate::locals::dp_to_px(6.0);
     let font_px = crate::locals::dp_to_px(13.0) * ts;
     // Approximate width: ~0.55em per char (good enough without measuring).
-    let text_w = (label.chars().count() as f32 * font_px * 0.55)
-        .max(crate::locals::dp_to_px(24.0));
+    let text_w = (label.chars().count() as f32 * font_px * 0.55).max(crate::locals::dp_to_px(24.0));
     let w = text_w + pad_x * 2.0;
     let h = font_px + pad_y * 2.0;
     let r = crate::locals::dp_to_px(8.0);
@@ -790,7 +753,10 @@ pub fn handle_drag_action(action: &DragAction) -> bool {
                 // Only consume if still waiting for long-press (within slop, timer not yet expired).
                 // If long-press was cancelled (moved past slop), let scroll handle the event.
                 let still_pending = DND_TOUCH_DOWN.with(|t| {
-                    t.borrow().as_ref().map(|td| td.long_press_pending).unwrap_or(false)
+                    t.borrow()
+                        .as_ref()
+                        .map(|td| td.long_press_pending)
+                        .unwrap_or(false)
                 });
                 if still_pending {
                     return true;

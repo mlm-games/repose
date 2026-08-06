@@ -38,29 +38,29 @@ fn task_card(task: Task) -> View {
             let t = task.clone();
             move |_| Some(Rc::new(t.clone()) as Rc<dyn Any>)
         }))
-    .child(Column(Modifier::new().gap(sp::SM)).child((
-        Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
-            Icon(Symbols::drag_indicator)
-                .size(16.0)
-                .color(th.on_surface_variant),
-            Text(task.title).size(14.0).color(th.on_surface),
+    .child(
+        Column(Modifier::new().gap(sp::SM)).child((
+            Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
+                Icon(Symbols::drag_indicator)
+                    .size(16.0)
+                    .color(th.on_surface_variant),
+                Text(task.title).size(14.0).color(th.on_surface),
+            )),
+            Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
+                Box(Modifier::new()
+                    .padding(4.0)
+                    .background(accent.with_alpha(36))
+                    .clip_rounded(999.0))
+                .child(Text(task.tag).size(10.0).color(accent)),
+                Spacer(),
+                Caption(format!("#{}", task.id)),
+            )),
         )),
-        Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
-            Box(Modifier::new()
-                .padding(4.0)
-                .background(accent.with_alpha(36))
-                .clip_rounded(999.0))
-            .child(Text(task.tag).size(10.0).color(accent)),
-            Spacer(),
-            Caption(format!("#{}", task.id)),
-        )),
-    )))
+    )
 }
 
 pub fn screen() -> View {
-    let dropped = remember_with_key("dnd:dropped", || {
-        signal("Nothing dropped yet.".to_string())
-    });
+    let dropped = remember_with_key("dnd:dropped", || signal("Nothing dropped yet.".to_string()));
 
     let drop_zone = {
         let th = theme();
@@ -97,20 +97,20 @@ pub fn screen() -> View {
                 }
                 false
             }))
-        .child(Column(
-            Modifier::new()
-                .fill_max_size()
-                .align_items(AlignItems::CENTER)
-                .justify_content(JustifyContent::CENTER)
-                .gap(sp::SM),
+        .child(
+            Column(
+                Modifier::new()
+                    .fill_max_size()
+                    .align_items(AlignItems::CENTER)
+                    .justify_content(JustifyContent::CENTER)
+                    .gap(sp::SM),
+            )
+            .child((
+                Icon(Symbols::inbox).size(28.0).color(th.primary),
+                Text("Drop here").size(16.0).color(th.on_surface),
+                Caption("Drop a task card or an OS file"),
+            )),
         )
-        .child((
-            Icon(Symbols::inbox).size(28.0).color(th.primary),
-            Text("Drop here")
-                .size(16.0)
-                .color(th.on_surface),
-            Caption("Drop a task card or an OS file"),
-        )))
     };
 
     let status = {
@@ -121,10 +121,12 @@ pub fn screen() -> View {
             .background(th.surface_container)
             .border(1.0, th.outline_variant, sp::MD)
             .clip_rounded(sp::MD))
-        .child(Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
-            Icon(Symbols::task_alt).size(16.0).color(th.primary),
-            Text(dropped.get()).size(13.0).color(th.on_surface),
-        )))
+        .child(
+            Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
+                Icon(Symbols::task_alt).size(16.0).color(th.primary),
+                Text(dropped.get()).size(13.0).color(th.on_surface),
+            )),
+        )
     };
 
     Page(vec![

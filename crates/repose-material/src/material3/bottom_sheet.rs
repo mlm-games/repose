@@ -7,10 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use repose_core::animation::AnimationSpec;
 use repose_core::*;
 use repose_ui::{
-    Box, Column, Row,
-    ViewExt, ZStack,
-    anim::animate_f32_from,
-    overlay::OverlayHandle,
+    Box, Column, Row, ViewExt, ZStack, anim::animate_f32_from, overlay::OverlayHandle,
 };
 
 use super::*;
@@ -88,7 +85,6 @@ pub fn BottomSheet(
         Box(Modifier::new())
     }
 }
-
 
 /// State for `ModalBottomSheet` - manages visibility and drag offset.
 pub struct SheetState {

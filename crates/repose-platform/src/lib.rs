@@ -5,7 +5,8 @@ use accesskit_winit::Adapter;
 use repose_core::locals::dp_to_px;
 use repose_core::*;
 use repose_ui::textfield::{
-    self, TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, TextMeasureConfig, caret_xy_for_byte, measure_text,
+    self, TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, TextMeasureConfig, caret_xy_for_byte,
+    measure_text,
 };
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -675,10 +676,7 @@ pub fn run_desktop_app_with_config(
                 match el.create_window(
                     WindowAttributes::default()
                         .with_title(self.window_title.clone())
-                        .with_inner_size(PhysicalSize::new(
-                            self.window_size.0,
-                            self.window_size.1,
-                        ))
+                        .with_inner_size(PhysicalSize::new(self.window_size.0, self.window_size.1))
                         .with_visible(false),
                 ) {
                     Ok(win) => {
@@ -821,7 +819,11 @@ pub fn run_desktop_app_with_config(
                 }
 
                 WindowEvent::Resized(size) => {
-                    let sf = self.window.as_ref().map(|w| w.scale_factor() as f32).unwrap_or(1.0);
+                    let sf = self
+                        .window
+                        .as_ref()
+                        .map(|w| w.scale_factor() as f32)
+                        .unwrap_or(1.0);
                     self.rt.set_viewport_and_scale(size.width, size.height, sf);
                     if let Some(b) = self.backend.as_mut() {
                         b.configure_surface(size.width, size.height);
@@ -858,13 +860,10 @@ pub fn run_desktop_app_with_config(
                     let result = self.rt.handle_pointer_move(pos);
 
                     // Inspector hover (platform-specific - devtools inspect)
-                    if let (Some(inspector), Some(f)) =
-                        (&mut self.inspector, &self.rt.frame_cache)
+                    if let (Some(inspector), Some(f)) = (&mut self.inspector, &self.rt.frame_cache)
                         && inspector.hud.inspector_enabled
                     {
-                        let hit = f.hit_regions.iter().find(|h| {
-                            h.rect.contains(pos)
-                        });
+                        let hit = f.hit_regions.iter().find(|h| h.rect.contains(pos));
                         let hover_rect = hit.map(|h| h.rect);
                         let hover_info = hit.and_then(|h| {
                             f.semantics_nodes.iter().find(|s| s.id == h.id).map(|s| {
@@ -934,10 +933,7 @@ pub fn run_desktop_app_with_config(
                                     hit.rect.x as f64 / sf,
                                     hit.rect.y as f64 / sf,
                                 ),
-                                LogicalSize::new(
-                                    hit.rect.w as f64 / sf,
-                                    hit.rect.h as f64 / sf,
-                                ),
+                                LogicalSize::new(hit.rect.w as f64 / sf, hit.rect.h as f64 / sf),
                             );
                         }
                     }
@@ -960,24 +956,21 @@ pub fn run_desktop_app_with_config(
                         && let Some(f) = &self.rt.frame_cache
                         && let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos))
                     {
-                        let info = f
-                            .semantics_nodes
-                            .iter()
-                            .find(|s| s.id == hit.id)
-                            .map(|s| repose_devtools::HoveredInfo {
+                        let info = f.semantics_nodes.iter().find(|s| s.id == hit.id).map(|s| {
+                            repose_devtools::HoveredInfo {
                                 id: s.id,
                                 role: format!("{:?}", s.role),
                                 label: s.label.clone(),
-                            });
-                        inspector.hud.select_widget(repose_devtools::SelectedWidget {
-                            id: hit.id,
-                            role: info
-                                .as_ref()
-                                .map(|i| i.role.clone())
-                                .unwrap_or_default(),
-                            label: info.as_ref().and_then(|i| i.label.clone()),
-                            bounds: hit.rect,
+                            }
                         });
+                        inspector
+                            .hud
+                            .select_widget(repose_devtools::SelectedWidget {
+                                id: hit.id,
+                                role: info.as_ref().map(|i| i.role.clone()).unwrap_or_default(),
+                                label: info.as_ref().and_then(|i| i.label.clone()),
+                                bounds: hit.rect,
+                            });
                     }
 
                     self.request_redraw();
@@ -1213,8 +1206,7 @@ pub fn run_desktop_app_with_config(
                                 st.insert_text(&text);
                                 self.notify_text_change(fid, st.text.clone());
                                 if let Some(f) = &self.rt.frame_cache
-                                    && let Some(hit) =
-                                        f.hit_regions.iter().find(|h| h.id == fid)
+                                    && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
                                 {
                                     App::tf_ensure_caret_visible(&mut st, hit.tf_multiline);
                                 }
@@ -1249,7 +1241,8 @@ pub fn run_desktop_app_with_config(
                         let key = self.tf_key_of(focused_id);
                         if let Some(state_rc) = self.rt.textfield_states.get(&key) {
                             let mut state = state_rc.borrow_mut();
-                            let on_text_change = self.rt
+                            let on_text_change = self
+                                .rt
                                 .frame_cache
                                 .as_ref()
                                 .and_then(|f| f.hit_regions.iter().find(|h| h.id == focused_id))
@@ -1279,7 +1272,11 @@ pub fn run_desktop_app_with_config(
                         if let (Some(backend), Some(frame)) =
                             (self.backend.as_mut(), self.rt.frame_cache.as_ref())
                         {
-                            let scale = self.window.as_ref().map(|w| w.scale_factor() as f32).unwrap_or(1.0);
+                            let scale = self
+                                .window
+                                .as_ref()
+                                .map(|w| w.scale_factor() as f32)
+                                .unwrap_or(1.0);
                             let mut scene = frame.scene.clone();
                             if let Some(inspector) = &mut self.inspector {
                                 inspector.frame(&mut scene);
@@ -1357,7 +1354,11 @@ pub fn run_desktop_app_with_config(
                     }
 
                     // Apply IME state based on wants_keyboard
-                    if !output.wants_keyboard && focused.is_some() && self.rt.sched.focused.is_none() && self.rt.ime_preedit {
+                    if !output.wants_keyboard
+                        && focused.is_some()
+                        && self.rt.sched.focused.is_none()
+                        && self.rt.ime_preedit
+                    {
                         rc_web::set_ime_for_textfield(win, false);
                         self.rt.ime_preedit = false;
                     }
@@ -1375,10 +1376,11 @@ pub fn run_desktop_app_with_config(
                     if let Some(adapter) = &mut self.accesskit_adapter {
                         let win = self.window.as_ref().unwrap();
                         let scale = win.scale_factor();
-                        if let Some(update) =
-                            self.a11y_tree
-                                .update(&frame.semantics_nodes, scale, self.rt.sched.focused)
-                        {
+                        if let Some(update) = self.a11y_tree.update(
+                            &frame.semantics_nodes,
+                            scale,
+                            self.rt.sched.focused,
+                        ) {
                             adapter.update_if_active(|| update);
                         }
                     }
@@ -1433,7 +1435,8 @@ pub fn run_desktop_app_with_config(
                             && let Some(key) = hit.tf_state_key
                             && !self.rt.textfield_states.contains_key(&key)
                         {
-                            self.rt.textfield_states
+                            self.rt
+                                .textfield_states
                                 .entry(key)
                                 .or_insert_with(|| {
                                     Rc::new(RefCell::new(repose_ui::TextFieldState::new()))
@@ -1509,9 +1512,7 @@ pub fn run_desktop_app_with_config(
             if !self.pending_redraw {
                 let now = Instant::now();
                 let idle_cap = web_time::Duration::from_millis(1000);
-                let deadline = self
-                    .next_caret_blink_deadline()
-                    .unwrap_or(now + idle_cap);
+                let deadline = self.next_caret_blink_deadline().unwrap_or(now + idle_cap);
 
                 if now.saturating_duration_since(self.last_redraw) >= idle_cap || now >= deadline {
                     self.redraw_requested.set(true);
@@ -1519,9 +1520,10 @@ pub fn run_desktop_app_with_config(
                     rc::request_redraw(&self.window);
                     self.last_redraw = now;
                 }
-                el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
-                    Ord::min(deadline, now + idle_cap),
-                ));
+                el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(Ord::min(
+                    deadline,
+                    now + idle_cap,
+                )));
                 return;
             }
 
@@ -1635,7 +1637,8 @@ pub fn run_desktop_app_with_config(
 
         fn announce_focus_change(&mut self) {
             if let Some(f) = &self.rt.frame_cache {
-                let focused_node = self.rt
+                let focused_node = self
+                    .rt
                     .sched
                     .focused
                     .and_then(|id| f.semantics_nodes.iter().find(|n| n.id == id));
@@ -1659,7 +1662,11 @@ pub fn run_desktop_app_with_config(
         /// If a text field is focused with a collapsed selection (caret blinking),
         /// return the [`Instant`] of the next 500 ms blink edge.
         fn next_caret_blink_deadline(&self) -> Option<Instant> {
-            next_caret_blink_deadline(&self.rt.sched, &self.rt.frame_cache, &self.rt.textfield_states)
+            next_caret_blink_deadline(
+                &self.rt.sched,
+                &self.rt.frame_cache,
+                &self.rt.textfield_states,
+            )
         }
 
         fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
@@ -1679,7 +1686,8 @@ pub fn run_desktop_app_with_config(
 
             // Focus navigation (Tab/arrows)
             if let Some(f) = &self.rt.frame_cache {
-                if let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.rt.sched, f)
+                if let Some(new_id) =
+                    repose_core::focus::handle_action(&action, &mut self.rt.sched, f)
                 {
                     if let Some(active) = self.rt.key_pressed_active.take() {
                         self.rt.pressed_ids.remove(&active);

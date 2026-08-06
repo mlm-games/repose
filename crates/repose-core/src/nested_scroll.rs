@@ -145,21 +145,21 @@ impl NestedScrollConnection {
             (None, Some(far)) => Some(far.clone()),
             (None, None) => None,
         };
-        let on_post_fling: Option<PostScrollFn> = match (&self.on_post_fling, &further.on_post_fling)
-        {
-            (Some(close), Some(far)) => {
-                let close = close.clone();
-                let far = far.clone();
-                Some(Rc::new(move |consumed, available, s| {
-                    let cc = close(consumed, available, s);
-                    let fc = far(consumed + cc, available - cc, s);
-                    cc + fc
-                }))
-            }
-            (Some(close), None) => Some(close.clone()),
-            (None, Some(far)) => Some(far.clone()),
-            (None, None) => None,
-        };
+        let on_post_fling: Option<PostScrollFn> =
+            match (&self.on_post_fling, &further.on_post_fling) {
+                (Some(close), Some(far)) => {
+                    let close = close.clone();
+                    let far = far.clone();
+                    Some(Rc::new(move |consumed, available, s| {
+                        let cc = close(consumed, available, s);
+                        let fc = far(consumed + cc, available - cc, s);
+                        cc + fc
+                    }))
+                }
+                (Some(close), None) => Some(close.clone()),
+                (None, Some(far)) => Some(far.clone()),
+                (None, None) => None,
+            };
         Self {
             on_pre_scroll,
             on_post_scroll,

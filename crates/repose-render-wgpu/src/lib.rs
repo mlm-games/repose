@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::num::NonZero;
-#[cfg(feature = "winit-surface")]
-use std::sync::Arc;
+use std::ops::{Deref, DerefMut};
 #[cfg(feature = "winit-surface")]
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::ops::{Deref, DerefMut};
+#[cfg(feature = "winit-surface")]
+use std::sync::Arc;
 
 use repose_core::color::{ChromaSiting, ColorInfo, PixelFormat};
 use repose_core::request_frame;
@@ -227,10 +227,14 @@ pub struct WgpuSurfaceBackend {
 
 impl std::ops::Deref for WgpuSurfaceBackend {
     type Target = WgpuSceneRenderer;
-    fn deref(&self) -> &Self::Target { &self.renderer }
+    fn deref(&self) -> &Self::Target {
+        &self.renderer
+    }
 }
 impl std::ops::DerefMut for WgpuSurfaceBackend {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.renderer }
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.renderer
+    }
 }
 
 #[cfg(feature = "winit-surface")]
@@ -954,32 +958,33 @@ impl Pipelines {
                 },
             ],
         };
-        let make_mesh_pipeline = |label: &str, depth: &wgpu::DepthStencilState, color: &wgpu::ColorTargetState| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(&mesh_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &mesh_shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[Some(mesh_vertex_layout.clone())],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &mesh_shader,
-                    entry_point: Some("fs_main"),
-                    targets: &[Some(color.clone())],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    ..Default::default()
-                },
-                depth_stencil: Some(depth.clone()),
-                multisample: msaa_state,
-                multiview_mask: None,
-                cache: None,
-            })
-        };
+        let make_mesh_pipeline =
+            |label: &str, depth: &wgpu::DepthStencilState, color: &wgpu::ColorTargetState| {
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some(label),
+                    layout: Some(&mesh_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &mesh_shader,
+                        entry_point: Some("vs_main"),
+                        buffers: &[Some(mesh_vertex_layout.clone())],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &mesh_shader,
+                        entry_point: Some("fs_main"),
+                        targets: &[Some(color.clone())],
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        ..Default::default()
+                    },
+                    depth_stencil: Some(depth.clone()),
+                    multisample: msaa_state,
+                    multiview_mask: None,
+                    cache: None,
+                })
+            };
         let mesh_color_target = wgpu::ColorTargetState {
             format,
             blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
@@ -989,9 +994,21 @@ impl Pipelines {
         stencil_for_mesh.stencil.front.compare = wgpu::CompareFunction::Equal;
         stencil_for_mesh.stencil.back.compare = wgpu::CompareFunction::Equal;
         let mesh = make_mesh_pipeline("mesh pipeline", &stencil_for_mesh, &mesh_color_target);
-        let mesh_overlay = make_mesh_pipeline("mesh overlay pipeline", stencil_for_content, &mesh_color_target);
-        let mesh_clip_inc = make_mesh_pipeline("mesh clip (inc) pipeline", stencil_for_clip_inc, clip_color_target);
-        let mesh_clip_dec = make_mesh_pipeline("mesh clip (dec) pipeline", stencil_for_clip_dec, clip_color_target);
+        let mesh_overlay = make_mesh_pipeline(
+            "mesh overlay pipeline",
+            stencil_for_content,
+            &mesh_color_target,
+        );
+        let mesh_clip_inc = make_mesh_pipeline(
+            "mesh clip (inc) pipeline",
+            stencil_for_clip_inc,
+            clip_color_target,
+        );
+        let mesh_clip_dec = make_mesh_pipeline(
+            "mesh clip (dec) pipeline",
+            stencil_for_clip_dec,
+            clip_color_target,
+        );
 
         Self {
             rects,
@@ -1505,7 +1522,6 @@ impl WgpuSceneRenderer {
             }],
         });
 
-
         let ds_format = wgpu::TextureFormat::Depth24PlusStencil8;
 
         let stencil_for_content = wgpu::DepthStencilState {
@@ -1795,25 +1811,90 @@ impl WgpuSceneRenderer {
         let slug_enabled = true;
 
         // Blur composite ring (for graphics-layer drop shadows)
-        let blur_ring = UploadRing::new(&device, "blur ring", 1024 * 1024, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
+        let blur_ring = UploadRing::new(
+            &device,
+            "blur ring",
+            1024 * 1024,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        );
 
         // Atlases
         let atlas_mask = init_atlas_mask(&device);
         let atlas_color = init_atlas_color(&device);
 
         // Upload rings
-        let ring_rect = UploadRing::new(&device, "ring rect", 1 << 20, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
-        let ring_border = UploadRing::new(&device, "ring border", 1 << 20, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
-        let ring_ellipse = UploadRing::new(&device, "ring ellipse", 1 << 20, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
-        let ring_ellipse_border = UploadRing::new(&device, "ring ellipse border", 1 << 20, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
-        let ring_arc = UploadRing::new(&device, "ring arc", 1 << 20, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
-        let ring_glyph_mask = UploadRing::new(&device, "ring glyph mask", 1 << 20, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
-        let ring_glyph_color = UploadRing::new(&device, "ring glyph color", 1 << 20, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
-        let ring_slug = UploadRing::new(&device, "ring slug", 1 << 22, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
-        let ring_clip = UploadRing::new(&device, "ring clip", 1 << 16, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
-        let ring_nv12 = UploadRing::new(&device, "ring nv12", 1 << 20, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
-        let ring_mesh_verts = UploadRing::new(&device, "ring mesh verts", 1 << 22, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST);
-        let ring_mesh_indices = UploadRing::new(&device, "ring mesh indices", 1 << 22, wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST);
+        let ring_rect = UploadRing::new(
+            &device,
+            "ring rect",
+            1 << 20,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        );
+        let ring_border = UploadRing::new(
+            &device,
+            "ring border",
+            1 << 20,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        );
+        let ring_ellipse = UploadRing::new(
+            &device,
+            "ring ellipse",
+            1 << 20,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        );
+        let ring_ellipse_border = UploadRing::new(
+            &device,
+            "ring ellipse border",
+            1 << 20,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        );
+        let ring_arc = UploadRing::new(
+            &device,
+            "ring arc",
+            1 << 20,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        );
+        let ring_glyph_mask = UploadRing::new(
+            &device,
+            "ring glyph mask",
+            1 << 20,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        );
+        let ring_glyph_color = UploadRing::new(
+            &device,
+            "ring glyph color",
+            1 << 20,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        );
+        let ring_slug = UploadRing::new(
+            &device,
+            "ring slug",
+            1 << 22,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        );
+        let ring_clip = UploadRing::new(
+            &device,
+            "ring clip",
+            1 << 16,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        );
+        let ring_nv12 = UploadRing::new(
+            &device,
+            "ring nv12",
+            1 << 20,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        );
+        let ring_mesh_verts = UploadRing::new(
+            &device,
+            "ring mesh verts",
+            1 << 22,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        );
+        let ring_mesh_indices = UploadRing::new(
+            &device,
+            "ring mesh indices",
+            1 << 22,
+            wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        );
 
         // Placeholder textures
         let depth_stencil_tex = device.create_texture(&wgpu::TextureDescriptor {
@@ -1914,7 +1995,9 @@ impl WgpuSceneRenderer {
 
 impl WgpuSurfaceBackend {
     #[cfg(feature = "winit-surface")]
-    pub async fn new_async(window: Arc<winit::window::Window>) -> anyhow::Result<WgpuSurfaceBackend> {
+    pub async fn new_async(
+        window: Arc<winit::window::Window>,
+    ) -> anyhow::Result<WgpuSurfaceBackend> {
         Self::new_async_with_options(window, 4, PresentModePref::Auto).await
     }
 
@@ -2019,7 +2102,11 @@ impl WgpuSurfaceBackend {
         };
         surface.configure(&renderer.device, &config);
 
-        Ok(WgpuSurfaceBackend { surface: Some(surface), surface_config: Some(config), renderer })
+        Ok(WgpuSurfaceBackend {
+            surface: Some(surface),
+            surface_config: Some(config),
+            renderer,
+        })
     }
 
     #[cfg(all(feature = "winit-surface", not(target_arch = "wasm32")))]
@@ -2712,7 +2799,12 @@ impl WgpuSceneRenderer {
         offsets: Vec<u64>,
         color_info: ColorInfo,
     ) -> anyhow::Result<()> {
-        log::info!("set_image_dmabuf handle={handle} {}x{} fds={} modifier=0x{modifier:x}", w, h, fds.len());
+        log::info!(
+            "set_image_dmabuf handle={handle} {}x{} fds={} modifier=0x{modifier:x}",
+            w,
+            h,
+            fds.len()
+        );
 
         self.remove_image(handle);
 
@@ -2736,7 +2828,11 @@ impl WgpuSceneRenderer {
 
         let hal_y_desc = wgpu::hal::TextureDescriptor {
             label: Some("dmabuf y"),
-            size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -2747,7 +2843,11 @@ impl WgpuSceneRenderer {
         };
         let hal_uv_desc = wgpu::hal::TextureDescriptor {
             label: Some("dmabuf uv"),
-            size: wgpu::Extent3d { width: uv_w, height: uv_h, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: uv_w,
+                height: uv_h,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -2759,7 +2859,11 @@ impl WgpuSceneRenderer {
 
         let wgpu_y_desc = wgpu::TextureDescriptor {
             label: Some("dmabuf y"),
-            size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -2769,7 +2873,11 @@ impl WgpuSceneRenderer {
         };
         let wgpu_uv_desc = wgpu::TextureDescriptor {
             label: Some("dmabuf uv"),
-            size: wgpu::Extent3d { width: uv_w, height: uv_h, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: uv_w,
+                height: uv_h,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -2779,40 +2887,58 @@ impl WgpuSceneRenderer {
         };
 
         let (tex_y, view_y, tex_uv, view_uv) = unsafe {
-            let mut hal_guard = self.device.as_hal::<wgpu::hal::vulkan::Api>()
-                .ok_or_else(|| {
-                    log::warn!("as_hal::<vulkan::Api> returned None");
-                    anyhow::anyhow!("Device is not Vulkan")
-                })?;
+            let mut hal_guard =
+                self.device
+                    .as_hal::<wgpu::hal::vulkan::Api>()
+                    .ok_or_else(|| {
+                        log::warn!("as_hal::<vulkan::Api> returned None");
+                        anyhow::anyhow!("Device is not Vulkan")
+                    })?;
 
             let mut fds = fds;
             let uv_fd = fds.remove(1);
             let y_fd = fds.remove(0);
 
             let yt = hal_guard
-                .texture_from_dmabuf_fd(y_fd, &hal_y_desc, modifier, strides[0] as u64, offsets[0] as u64)
+                .texture_from_dmabuf_fd(
+                    y_fd,
+                    &hal_y_desc,
+                    modifier,
+                    strides[0] as u64,
+                    offsets[0] as u64,
+                )
                 .map_err(|e| anyhow::anyhow!("import Y dmabuf: {e:?}"))?;
             log::info!("imported Y dmabuf OK");
 
             let uvt = hal_guard
-                .texture_from_dmabuf_fd(uv_fd, &hal_uv_desc, modifier, strides[1] as u64, offsets[1] as u64)
+                .texture_from_dmabuf_fd(
+                    uv_fd,
+                    &hal_uv_desc,
+                    modifier,
+                    strides[1] as u64,
+                    offsets[1] as u64,
+                )
                 .map_err(|e| anyhow::anyhow!("import UV dmabuf: {e:?}"))?;
             log::info!("imported UV dmabuf OK");
 
             drop(hal_guard);
 
-            let tex_y = self.device.create_texture_from_hal::<wgpu::hal::vulkan::Api>(
-                yt,
-                &wgpu_y_desc,
-                wgpu::wgt::TextureUses::UNINITIALIZED,
-            );
+            let tex_y = self
+                .device
+                .create_texture_from_hal::<wgpu::hal::vulkan::Api>(
+                    yt,
+                    &wgpu_y_desc,
+                    wgpu::wgt::TextureUses::UNINITIALIZED,
+                );
             let view_y = tex_y.create_view(&wgpu::TextureViewDescriptor::default());
 
-            let tex_uv = self.device.create_texture_from_hal::<wgpu::hal::vulkan::Api>(
-                uvt,
-                &wgpu_uv_desc,
-                wgpu::wgt::TextureUses::UNINITIALIZED,
-            );
+            let tex_uv = self
+                .device
+                .create_texture_from_hal::<wgpu::hal::vulkan::Api>(
+                    uvt,
+                    &wgpu_uv_desc,
+                    wgpu::wgt::TextureUses::UNINITIALIZED,
+                );
             let view_uv = tex_uv.create_view(&wgpu::TextureViewDescriptor::default());
 
             (tex_y, view_y, tex_uv, view_uv)
@@ -2824,15 +2950,25 @@ impl WgpuSceneRenderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        self.queue.write_buffer(&yuv_buf, 0, bytemuck::bytes_of(&yuv_raw));
+        self.queue
+            .write_buffer(&yuv_buf, 0, bytemuck::bytes_of(&yuv_raw));
 
         let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("dmabuf nv12 bind"),
             layout: &self.image_bind_layout_nv12,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view_y) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&view_uv) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.image_sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view_y),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&view_uv),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.image_sampler),
+                },
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
@@ -3254,8 +3390,6 @@ impl WgpuSceneRenderer {
             .depth_stencil_tex
             .create_view(&wgpu::TextureViewDescriptor::default());
     }
-
-
 
     fn get_or_create_layer(
         &mut self,
@@ -3725,7 +3859,8 @@ impl RenderBackend for WgpuSurfaceBackend {
             config.width = width;
             config.height = height;
         }
-        if let (Some(surface), Some(config)) = (self.surface.as_ref(), self.surface_config.as_ref()) {
+        if let (Some(surface), Some(config)) = (self.surface.as_ref(), self.surface_config.as_ref())
+        {
             surface.configure(&self.renderer.device, config);
         }
         self.renderer.recreate_msaa_and_depth_stencil();
@@ -3734,7 +3869,10 @@ impl RenderBackend for WgpuSurfaceBackend {
 
     fn frame(&mut self, scene: &Scene, _glyph_cfg: GlyphRasterConfig) {
         let surface = self.surface.as_ref().expect("WgpuSurfaceBackend::frame() requires a surface (use from_device + render_to_view instead)");
-        let surface_config = self.surface_config.as_ref().expect("surface_config required for frame()");
+        let surface_config = self
+            .surface_config
+            .as_ref()
+            .expect("surface_config required for frame()");
 
         self.renderer.frame_index = self.renderer.frame_index.wrapping_add(1);
         self.renderer.slug_cache.next_frame();
@@ -3756,7 +3894,9 @@ impl RenderBackend for WgpuSurfaceBackend {
                 wgpu::CurrentSurfaceTexture::Outdated => {
                     retries += 1;
                     if retries >= MAX_RETRIES {
-                        log::warn!("surface outdated persisted after {MAX_RETRIES} retries; skipping frame");
+                        log::warn!(
+                            "surface outdated persisted after {MAX_RETRIES} retries; skipping frame"
+                        );
                         return;
                     }
                     log::warn!("surface outdated; reconfiguring");
@@ -3765,7 +3905,9 @@ impl RenderBackend for WgpuSurfaceBackend {
                 wgpu::CurrentSurfaceTexture::Lost => {
                     retries += 1;
                     if retries >= MAX_RETRIES {
-                        log::warn!("surface lost persisted after {MAX_RETRIES} retries; skipping frame");
+                        log::warn!(
+                            "surface lost persisted after {MAX_RETRIES} retries; skipping frame"
+                        );
                         return;
                     }
                     log::warn!("surface lost; reconfiguring");
@@ -3778,7 +3920,9 @@ impl RenderBackend for WgpuSurfaceBackend {
                 wgpu::CurrentSurfaceTexture::Validation => {
                     retries += 1;
                     if retries >= MAX_RETRIES {
-                        log::warn!("surface validation persisted after {MAX_RETRIES} retries; skipping frame");
+                        log::warn!(
+                            "surface validation persisted after {MAX_RETRIES} retries; skipping frame"
+                        );
                         return;
                     }
                     surface.configure(&self.renderer.device, surface_config);
@@ -3786,10 +3930,15 @@ impl RenderBackend for WgpuSurfaceBackend {
             }
         };
 
-        let swap_view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self.renderer.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("frame encoder"),
-        });
+        let swap_view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder =
+            self.renderer
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("frame encoder"),
+                });
 
         let clear_color = Some([
             scene.clear_color.0 as f64 / 255.0,
@@ -3798,9 +3947,12 @@ impl RenderBackend for WgpuSurfaceBackend {
             scene.clear_color.3 as f64 / 255.0,
         ]);
 
-        self.renderer.render_scene_to_encoder(scene, &mut encoder, &swap_view, clear_color);
+        self.renderer
+            .render_scene_to_encoder(scene, &mut encoder, &swap_view, clear_color);
 
-        self.renderer.queue.submit(std::iter::once(encoder.finish()));
+        self.renderer
+            .queue
+            .submit(std::iter::once(encoder.finish()));
         if let Err(e) = catch_unwind(AssertUnwindSafe(|| self.renderer.queue.present(frame))) {
             log::warn!("queue.present panicked: {:?}", e);
         }
@@ -3808,10 +3960,7 @@ impl RenderBackend for WgpuSurfaceBackend {
 }
 
 impl WgpuSceneRenderer {
-    fn upload_mesh_geometry(
-        &mut self,
-        mesh: &repose_core::VectorMeshData,
-    ) -> (u64, u32, u64, u32) {
+    fn upload_mesh_geometry(&mut self, mesh: &repose_core::VectorMeshData) -> (u64, u32, u64, u32) {
         let verts: Vec<MeshVertex> = mesh
             .vertices
             .iter()
@@ -3822,7 +3971,8 @@ impl WgpuSceneRenderer {
             })
             .collect();
         let vbytes = bytemuck::cast_slice(&verts);
-        self.mesh_verts.grow_to_fit(&self.device, vbytes.len() as u64);
+        self.mesh_verts
+            .grow_to_fit(&self.device, vbytes.len() as u64);
         let (voff, _) = self.mesh_verts.alloc_write(&self.queue, vbytes);
         let ibytes = bytemuck::cast_slice(&mesh.indices);
         self.mesh_indices
@@ -4591,14 +4741,13 @@ impl WgpuSceneRenderer {
 
                     // Update usage timestamp for eviction, lazily re-uploading
                     // evicted RGBA images from their retained source.
-                    let (img_w, img_h, is_nv12) =
-                        match self.resolve_image_for_draw(*handle) {
-                            Some(wh) => wh,
-                            None => {
-                                log::warn!("Image handle {} not found", handle);
-                                continue;
-                            }
-                        };
+                    let (img_w, img_h, is_nv12) = match self.resolve_image_for_draw(*handle) {
+                        Some(wh) => wh,
+                        None => {
+                            log::warn!("Image handle {} not found", handle);
+                            continue;
+                        }
+                    };
 
                     let src_w = img_w as f32;
                     let src_h = img_h as f32;
@@ -4805,9 +4954,8 @@ impl WgpuSceneRenderer {
                         current_target_size.0 as u32,
                         current_target_size.1 as u32,
                     );
-                    let (off, cnt, difference, rounded) = clip_cmd_stack
-                        .pop()
-                        .unwrap_or((0, 0, false, false));
+                    let (off, cnt, difference, rounded) =
+                        clip_cmd_stack.pop().unwrap_or((0, 0, false, false));
                     current_pass.cmds.push(Cmd::ClipPop {
                         off,
                         cnt,
@@ -5273,10 +5421,7 @@ impl WgpuSceneRenderer {
                     rpass.set_pipeline($pipeline);
                     rpass.set_bind_group(1, &self.mesh_bind, &[$uoff as u32]);
                     let vbytes = ($vcnt as u64) * std::mem::size_of::<MeshVertex>() as u64;
-                    rpass.set_vertex_buffer(
-                        0,
-                        self.mesh_verts.buf.slice($voff..$voff + vbytes),
-                    );
+                    rpass.set_vertex_buffer(0, self.mesh_verts.buf.slice($voff..$voff + vbytes));
                     let ibytes = ($icnt as u64) * std::mem::size_of::<u32>() as u64;
                     rpass.set_index_buffer(
                         self.mesh_indices.buf.slice($ioff..$ioff + ibytes),
@@ -5328,8 +5473,7 @@ impl WgpuSceneRenderer {
                         if !difference && n > 0 {
                             rpass.set_stencil_reference(clip_depth);
                             rpass.set_pipeline(&pipes.clip_dec);
-                            let bytes =
-                                (n as u64) * std::mem::size_of::<ClipInstance>() as u64;
+                            let bytes = (n as u64) * std::mem::size_of::<ClipInstance>() as u64;
                             rpass.set_vertex_buffer(0, self.clip_ring.buf.slice(off..off + bytes));
                             rpass.draw(0..6, 0..n);
                             clip_depth = clip_depth.saturating_sub(1);
@@ -5482,15 +5626,34 @@ impl WgpuSceneRenderer {
                         }
                     }
 
-                    Cmd::VectorMesh { voff, vcnt, ioff, icnt, uoff } => {
+                    Cmd::VectorMesh {
+                        voff,
+                        vcnt,
+                        ioff,
+                        icnt,
+                        uoff,
+                    } => {
                         draw_indexed_mesh!(&pipes.mesh, uoff, voff, vcnt, ioff, icnt);
                     }
 
-                    Cmd::VectorOverlay { voff, vcnt, ioff, icnt, uoff } => {
+                    Cmd::VectorOverlay {
+                        voff,
+                        vcnt,
+                        ioff,
+                        icnt,
+                        uoff,
+                    } => {
                         draw_indexed_mesh!(&pipes.mesh_overlay, uoff, voff, vcnt, ioff, icnt);
                     }
 
-                    Cmd::VectorClipPush { voff, vcnt, ioff, icnt, uoff, scissor } => {
+                    Cmd::VectorClipPush {
+                        voff,
+                        vcnt,
+                        ioff,
+                        icnt,
+                        uoff,
+                        scissor,
+                    } => {
                         rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                         rpass.set_stencil_reference(clip_depth);
                         draw_indexed_mesh!(&pipes.mesh_clip_inc, uoff, voff, vcnt, ioff, icnt);
@@ -5498,7 +5661,14 @@ impl WgpuSceneRenderer {
                         rpass.set_stencil_reference(clip_depth);
                     }
 
-                    Cmd::VectorClipPop { voff, vcnt, ioff, icnt, uoff, scissor } => {
+                    Cmd::VectorClipPop {
+                        voff,
+                        vcnt,
+                        ioff,
+                        icnt,
+                        uoff,
+                        scissor,
+                    } => {
                         // Decrement the mask while the stencil reference is
                         // still at the depth it was incremented to, so the
                         // equal-compare fires; then step the clip depth down.
@@ -5540,7 +5710,6 @@ impl WgpuSceneRenderer {
             }
         }
 
-
         // Frame end maintenance: Evict unused images
         self.evict_unused_images();
     }
@@ -5569,7 +5738,6 @@ impl WgpuSceneRenderer {
         self.render_scene_to_encoder(scene, encoder, target_view, clear_color);
     }
 }
-
 
 fn intersect(a: repose_core::Rect, b: repose_core::Rect) -> repose_core::Rect {
     let x0 = a.x.max(b.x);

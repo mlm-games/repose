@@ -27,10 +27,34 @@ pub fn screen() -> View {
                         .border(1.0, theme().outline, 16.0)
                         .clip_rounded(16.0),
                     |ds| {
-                        ds.draw_rect(Rect { x: 20.0, y: 24.0, w: 150.0, h: 96.0 }, theme().primary, 16.0);
-                        ds.draw_rect_stroke(Rect { x: 200.0, y: 24.0, w: 130.0, h: 130.0 }, theme().outline, 18.0, 2.0);
+                        ds.draw_rect(
+                            Rect {
+                                x: 20.0,
+                                y: 24.0,
+                                w: 150.0,
+                                h: 96.0,
+                            },
+                            theme().primary,
+                            16.0,
+                        );
+                        ds.draw_rect_stroke(
+                            Rect {
+                                x: 200.0,
+                                y: 24.0,
+                                w: 130.0,
+                                h: 130.0,
+                            },
+                            theme().outline,
+                            18.0,
+                            2.0,
+                        );
                         ds.draw_circle(Vec2 { x: 430.0, y: 88.0 }, 44.0, theme().tertiary);
-                        ds.draw_text("Fill · Stroke · Circle", Vec2 { x: 22.0, y: 160.0 }, theme().on_surface, 18.0);
+                        ds.draw_text(
+                            "Fill · Stroke · Circle",
+                            Vec2 { x: 22.0, y: 160.0 },
+                            theme().on_surface,
+                            18.0,
+                        );
                     },
                 ),
             )),
@@ -38,7 +62,9 @@ pub fn screen() -> View {
         Section(
             "Animated bar chart",
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
-                Hint("The animation system feeds values straight into the draw closure each frame."),
+                Hint(
+                    "The animation system feeds values straight into the draw closure each frame.",
+                ),
                 Canvas(
                     Modifier::new()
                         .size(560.0, 220.0)
@@ -55,12 +81,22 @@ pub fn screen() -> View {
                             let h = 30.0 + t * 130.0;
                             let x = 24.0 + i as f32 * 64.0;
                             ds.draw_rect(
-                                Rect { x, y: base_y - h, w: 44.0, h },
+                                Rect {
+                                    x,
+                                    y: base_y - h,
+                                    w: 44.0,
+                                    h,
+                                },
                                 colors[i % colors.len()],
                                 8.0,
                             );
                         }
-                        ds.draw_text("live values", Vec2 { x: 24.0, y: 208.0 }, th.on_surface_variant, 12.0);
+                        ds.draw_text(
+                            "live values",
+                            Vec2 { x: 24.0, y: 208.0 },
+                            th.on_surface_variant,
+                            12.0,
+                        );
                     },
                 ),
             )),

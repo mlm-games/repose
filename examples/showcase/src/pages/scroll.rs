@@ -55,8 +55,13 @@ pub fn screen() -> View {
                         (0..30)
                             .map(|i| {
                                 let (bg, fg) = colors(i);
-                                Box(Modifier::new().key(i as u64).width(130.0))
-                                    .child(DemoTile(format!("Tile {i}"), "\u{2192}", bg, fg, 110.0))
+                                Box(Modifier::new().key(i as u64).width(130.0)).child(DemoTile(
+                                    format!("Tile {i}"),
+                                    "\u{2192}",
+                                    bg,
+                                    fg,
+                                    110.0,
+                                ))
                             })
                             .collect::<Vec<_>>(),
                     ),

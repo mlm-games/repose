@@ -133,7 +133,11 @@ fn hero(nav: Navigator<Route>) -> View {
             Text("Adaptive M3 components across desktop, web, and Android.")
                 .size(16.0)
                 .color(th.on_primary_container.with_alpha(210)),
-            Row(Modifier::new().fill_max_width().justify_content(JustifyContent::CENTER).gap(sp::MD)).child((
+            Row(Modifier::new()
+                .fill_max_width()
+                .justify_content(JustifyContent::CENTER)
+                .gap(sp::MD))
+            .child((
                 cta_button("M3 Components", {
                     let nav = nav.clone();
                     move || nav.push(Route::M3)
@@ -172,18 +176,16 @@ fn feature_card(route: Route, nav: Navigator<Route>) -> View {
         .clip_rounded(24.0)
         .clickable()
         .on_pointer_down(move |_| nav.push(route)))
-    .child(
-        Column(Modifier::new().gap(sp::SM)).child((
-            Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::MD)).child((
-                badge(route),
-                Column(Modifier::new().gap(1.0)).child((
-                    Text(route.title()).size(17.0).color(th.on_surface),
-                    Caption(route.description()),
-                )),
+    .child(Column(Modifier::new().gap(sp::SM)).child((
+        Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::MD)).child((
+            badge(route),
+            Column(Modifier::new().gap(1.0)).child((
+                Text(route.title()).size(17.0).color(th.on_surface),
+                Caption(route.description()),
             )),
-            Text("Open ->").size(13.0).color(th.primary),
         )),
-    )
+        Text("Open ->").size(13.0).color(th.primary),
+    )))
 }
 
 fn badge(route: Route) -> View {

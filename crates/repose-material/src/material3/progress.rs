@@ -4,9 +4,7 @@ use web_time::Duration;
 
 use repose_core::animation::{AnimationSpec, CubicBezier, Easing, KeyframesSpec, RepeatableSpec};
 use repose_core::*;
-use repose_ui::{
-    Box,
-};
+use repose_ui::Box;
 
 use super::*;
 

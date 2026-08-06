@@ -26,8 +26,7 @@ use winit::window::{ImePurpose, Window};
 use repose_app::ReposeRuntime;
 use repose_ui::TextFieldState;
 use repose_ui::textfield::{
-    TF_FONT_DP, caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes,
-    move_caret_vertical,
+    TF_FONT_DP, caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes, move_caret_vertical,
 };
 
 enum ClipboardAction {
@@ -371,10 +370,13 @@ impl App {
             match a {
                 ClipboardAction::PasteText(mut txt) => {
                     let multiline = if let Some(fid) = self.rt.sched.focused {
-                        self.rt.frame_cache
+                        self.rt
+                            .frame_cache
                             .as_ref()
                             .and_then(|f| rc::hit_index_by_id(f, fid))
-                            .map(|i| self.rt.frame_cache.as_ref().unwrap().hit_regions[i].tf_multiline)
+                            .map(|i| {
+                                self.rt.frame_cache.as_ref().unwrap().hit_regions[i].tf_multiline
+                            })
                             .unwrap_or(false)
                     } else {
                         false
@@ -425,14 +427,16 @@ impl App {
 
         // Focus navigation (Tab/arrows)
         if let Some(f) = &self.rt.frame_cache {
-            if let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.rt.sched, f) {
+            if let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.rt.sched, f)
+            {
                 let tf_state_key = f
                     .hit_regions
                     .iter()
                     .find(|h| h.id == new_id)
                     .and_then(|h| h.tf_state_key);
                 if let Some(key) = tf_state_key {
-                    self.rt.textfield_states
+                    self.rt
+                        .textfield_states
                         .entry(key)
                         .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
                     if let Some(state_rc) = self.rt.textfield_states.get(&key) {
@@ -746,7 +750,8 @@ impl ApplicationHandler<()> for App {
 
                 match state {
                     ElementState::Pressed => {
-                        let press_result = self.rt.handle_pointer_press(pos, PointerButton::Primary);
+                        let press_result =
+                            self.rt.handle_pointer_press(pos, PointerButton::Primary);
                         // Platform-specific IME setup for focused textfields
                         if let Some(fid) = press_result.focused {
                             if let Some(f) = &self.rt.frame_cache
@@ -857,13 +862,7 @@ impl ApplicationHandler<()> for App {
                             && self.is_textfield(fid)
                         {
                             let (purpose, ac, cap) = self.rt.focused_keyboard_hints();
-                            rc_web::set_ime_for_textfield_ex(
-                                &window,
-                                true,
-                                purpose,
-                                ac,
-                                cap,
-                            );
+                            rc_web::set_ime_for_textfield_ex(&window, true, purpose, ac, cap);
                         } else {
                             rc_web::set_ime_for_textfield(&window, false);
                         }
@@ -1036,12 +1035,10 @@ impl ApplicationHandler<()> for App {
             WindowEvent::Ime(ime) => {
                 let ime_event = match &ime {
                     Ime::Enabled => repose_core::input::ImeEvent::Start,
-                    Ime::Preedit(text, cursor) => {
-                        repose_core::input::ImeEvent::Update {
-                            text: text.clone(),
-                            cursor: cursor.map(|(a, b)| (a as usize, b as usize)),
-                        }
-                    }
+                    Ime::Preedit(text, cursor) => repose_core::input::ImeEvent::Update {
+                        text: text.clone(),
+                        cursor: cursor.map(|(a, b)| (a as usize, b as usize)),
+                    },
                     Ime::Commit(text) => repose_core::input::ImeEvent::Commit(text.clone()),
                     Ime::Disabled => repose_core::input::ImeEvent::Cancel,
                 };
@@ -1092,11 +1089,14 @@ impl ApplicationHandler<()> for App {
                         keyboard_type: Default::default(),
                         window_theme_dark: None,
                     },
-                    wants_pointer: !frame.hit_regions.is_empty() || self.rt.hover_id.is_some() || self.rt.capture_id.is_some(),
+                    wants_pointer: !frame.hit_regions.is_empty()
+                        || self.rt.hover_id.is_some()
+                        || self.rt.capture_id.is_some(),
                     wants_keyboard: !self.rt.textfield_states.is_empty() || self.rt.ime_preedit,
                 };
 
-                if !output.wants_keyboard && self.rt.sched.focused.is_some() && self.rt.ime_preedit {
+                if !output.wants_keyboard && self.rt.sched.focused.is_some() && self.rt.ime_preedit
+                {
                     rc_web::set_ime_for_textfield(&window, false);
                     self.rt.ime_preedit = false;
                 }

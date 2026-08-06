@@ -1,11 +1,7 @@
 #![allow(non_snake_case)]
 
-
 use repose_core::*;
-use repose_ui::{
-    Box,
-    ViewExt,
-};
+use repose_ui::{Box, ViewExt};
 
 use super::*;
 

@@ -2,12 +2,15 @@ use std::any::Any;
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 
-use crate::{Signal, on_unmount, reactive, remember_with_key, request_frame, scoped_effect, signal};
+use crate::{
+    Signal, on_unmount, reactive, remember_with_key, request_frame, scoped_effect, signal,
+};
 
 pub struct MutableState<T: Clone + 'static> {
     inner: Signal<T>,
     saver: Option<Box<dyn StateSaver<T>>>,
-}pub trait StateSaver<T>: 'static {
+}
+pub trait StateSaver<T>: 'static {
     fn save(&self, value: &T) -> Box<dyn Any>;
     fn restore(&self, saved: &dyn Any) -> Option<T>;
 }
@@ -180,7 +183,9 @@ pub fn remember_mutable_with_key<T: 'static>(
     key: impl Into<String>,
     init: impl FnOnce() -> T,
 ) -> Mutable<T> {
-    remember_with_key(key, || Mutable::new(init())).as_ref().clone()
+    remember_with_key(key, || Mutable::new(init()))
+        .as_ref()
+        .clone()
 }
 
 /// Remember a reducer-backed local state. Returns a [`Mutable`] snapshot reader

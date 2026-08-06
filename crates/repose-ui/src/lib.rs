@@ -183,11 +183,10 @@ pub fn OverlayHost(modifier: Modifier) -> View {
 
 #[deprecated = "Use Modifier::vertical_scroll instead"]
 pub fn Scroll(modifier: Modifier) -> View {
-    View::new(0, ViewKind::Box)
-        .modifier(modifier.vertical_scroll(ScrollAxisBinding {
-            show_scrollbar: true,
-            ..Default::default()
-        }))
+    View::new(0, ViewKind::Box).modifier(modifier.vertical_scroll(ScrollAxisBinding {
+        show_scrollbar: true,
+        ..Default::default()
+    }))
 }
 
 pub fn Text(text: impl Into<String>) -> View {

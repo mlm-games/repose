@@ -105,9 +105,7 @@ pub fn Section(title: &str, body: View) -> View {
 pub fn SectionWith(title: &str, subtitle: Option<&str>, body: View) -> View {
     let th = theme();
 
-    let mut header: Vec<View> = vec![
-        Text(title).size(18.0).color(th.on_surface),
-    ];
+    let mut header: Vec<View> = vec![Text(title).size(18.0).color(th.on_surface)];
 
     if let Some(s) = subtitle {
         header.push(Hint(s));
@@ -117,9 +115,7 @@ pub fn SectionWith(title: &str, subtitle: Option<&str>, body: View) -> View {
         Column(Modifier::new().gap(2.0).padding(sp::XS)).with_children(header),
         ElevatedCard(
             CardConfig {
-                modifier: Modifier::new()
-                    .fill_max_width()
-                    .padding(sp::LG),
+                modifier: Modifier::new().fill_max_width().padding(sp::LG),
                 ..Default::default()
             },
             || Column(Modifier::new().fill_max_size()).child(body),
@@ -158,10 +154,8 @@ pub fn AppShell(
     } else {
         Column(Modifier::new().fill_max_size()).child((
             TopBar(current, overlay, settings, false),
-            Row(Modifier::new().fill_max_size()).child((
-                NavRail(current, nav),
-                PageViewport(current, content, false),
-            )),
+            Row(Modifier::new().fill_max_size())
+                .child((NavRail(current, nav), PageViewport(current, content, false))),
         ))
     };
 
@@ -190,10 +184,12 @@ fn PageViewport(current: Route, content: View, compact: bool) -> View {
             .fill_max_size()
             .padding(if compact { sp::MD } else { sp::XL }),
         scroll,
-        Column(Modifier::new()
-            .fill_max_width()
-            .max_width(1180.0)
-            .gap(if compact { sp::MD } else { sp::XL }))
+        Column(
+            Modifier::new()
+                .fill_max_width()
+                .max_width(1180.0)
+                .gap(if compact { sp::MD } else { sp::XL }),
+        )
         .with_children(children),
     )
 }
@@ -204,11 +200,7 @@ fn PageHero(route: Route, compact: bool) -> View {
     let title_block = Column(Modifier::new().gap(sp::SM)).child((
         Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
             RouteBadge(route, true),
-            Pill(
-                route.group().title(),
-                th.primary.with_alpha(24),
-                th.primary,
-            ),
+            Pill(route.group().title(), th.primary.with_alpha(24), th.primary),
         )),
         Text(route.title())
             .size(if compact { 28.0 } else { 36.0 })
@@ -227,12 +219,7 @@ fn PageHero(route: Route, compact: bool) -> View {
     .child(title_block)
 }
 
-pub fn TopBar(
-    current: Route,
-    overlay: OverlayHandle,
-    vm: SettingsVm,
-    compact: bool,
-) -> View {
+pub fn TopBar(current: Route, overlay: OverlayHandle, vm: SettingsVm, compact: bool) -> View {
     let settings_state = remember(DialogState::new);
     let th = theme();
 
@@ -309,11 +296,13 @@ fn BrandBlock(current: Route, compact: bool) -> View {
 fn SettingsPanel(vm: SettingsVm) -> View {
     let th = theme();
 
-    Column(Modifier::new()
-        .padding(sp::XL)
-        .min_width(340.0)
-        .max_width(440.0)
-        .gap(sp::LG))
+    Column(
+        Modifier::new()
+            .padding(sp::XL)
+            .min_width(340.0)
+            .max_width(440.0)
+            .gap(sp::LG),
+    )
     .child((
         Text("Settings").size(22.0).color(th.on_surface),
         Column(Modifier::new().gap(sp::MD)).child((
@@ -375,14 +364,8 @@ pub fn NavRail(current: Route, nav: Navigator<Route>) -> View {
 fn NavGroupLabel(group: RouteGroup) -> View {
     let th = theme();
 
-    Column(Modifier::new()
-        .fill_max_width()
-        .padding(sp::MD)
-        .gap(1.0))
-    .child((
-        Text(group.title())
-            .size(12.0)
-            .color(th.primary),
+    Column(Modifier::new().fill_max_width().padding(sp::MD).gap(1.0)).child((
+        Text(group.title()).size(12.0).color(th.primary),
         Text(group.subtitle())
             .size(11.0)
             .color(th.on_surface_variant),
@@ -418,10 +401,7 @@ fn NavItem(route: Route, selected: bool, on_click: impl Fn() + 'static) -> View 
         .clickable()
         .on_pointer_down(move |_| on_click()))
     .child(
-        Row(Modifier::new()
-            .align_items(AlignItems::CENTER)
-            .gap(sp::MD))
-        .child((
+        Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::MD)).child((
             RouteBadge(route, selected),
             Column(Modifier::new().gap(2.0).flex_grow(1.0)).child((
                 Text(route.title())
@@ -466,9 +446,7 @@ fn CompactNav(current: Route, nav: Navigator<Route>) -> View {
     let scroll = remember_horizontal_scroll_state("shell:compact-nav");
 
     HorizontalScrollArea(
-        Modifier::new()
-            .fill_max_width()
-            .height(64.0),
+        Modifier::new().fill_max_width().height(64.0),
         scroll,
         Row(Modifier::new()
             .align_items(AlignItems::CENTER)
@@ -509,10 +487,7 @@ fn CompactNavChip(route: Route, selected: bool, on_click: impl Fn() + 'static) -
         .clickable()
         .on_pointer_down(move |_| on_click()))
     .child(
-        Row(Modifier::new()
-            .align_items(AlignItems::CENTER)
-            .gap(sp::SM))
-        .child((
+        Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
             Text(route.badge()).size(12.0).color(fg),
             Text(route.title()).size(13.0).color(fg).single_line(),
         )),
@@ -540,9 +515,7 @@ pub fn LabeledSlider(
 ) -> View {
     Column(Modifier::new().align_items(AlignItems::STRETCH).gap(6.0)).child((
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
-            Text(label)
-                .size(14.0)
-                .color(theme().on_surface_variant),
+            Text(label).size(14.0).color(theme().on_surface_variant),
             Spacer(),
             Text(format!("{value:.2}"))
                 .size(13.0)
@@ -554,10 +527,8 @@ pub fn LabeledSlider(
 
 /// Control + trailing label row.
 pub fn Labeled(control: View, label: &str) -> View {
-    Row(Modifier::new().align_items(AlignItems::CENTER).gap(10.0)).child((
-        control,
-        Text(label).size(14.0).color(theme().on_surface),
-    ))
+    Row(Modifier::new().align_items(AlignItems::CENTER).gap(10.0))
+        .child((control, Text(label).size(14.0).color(theme().on_surface)))
 }
 
 pub fn ShortcutHud(note: String, fired: bool) -> View {

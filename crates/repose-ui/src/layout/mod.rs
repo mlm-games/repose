@@ -23,6 +23,6 @@ pub use types::{IntrinsicSizeMode, LayoutStats};
 pub(crate) use helpers::mul_alpha_color;
 
 // Make shared internals visible to sibling submodules via `use super::*`.
-pub(crate) use types::*;
 pub(crate) use helpers::*;
 pub(crate) use scrollbars::*;
+pub(crate) use types::*;

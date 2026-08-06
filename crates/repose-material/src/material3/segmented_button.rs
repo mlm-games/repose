@@ -4,11 +4,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
-use repose_ui::{
-    Box, Row, Text, TextStyle,
-    ViewExt,
-    anim::animate_color,
-};
+use repose_ui::{Box, Row, Text, TextStyle, ViewExt, anim::animate_color};
 
 use super::*;
 

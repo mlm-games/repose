@@ -5,11 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::animation::AnimationSpec;
 use repose_core::*;
-use repose_ui::{
-    Box, Column, Text, TextStyle,
-    ViewExt,
-    anim::animate_color,
-};
+use repose_ui::{Box, Column, Text, TextStyle, ViewExt, anim::animate_color};
 
 use super::*;
 
@@ -50,7 +46,6 @@ impl Default for NavigationRailConfig {
         }
     }
 }
-
 
 /// A destination entry inside a NavigationRail.
 pub struct NavRailItem {

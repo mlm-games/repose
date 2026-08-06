@@ -6,8 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use repose_core::animation::AnimationSpec;
 use repose_core::*;
 use repose_ui::{
-    Box, Column, Row, Text, TextStyle,
-    ViewExt,
+    Box, Column, Row, Text, TextStyle, ViewExt,
     anim::{animate_color, animate_f32},
 };
 

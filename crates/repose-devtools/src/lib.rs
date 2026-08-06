@@ -139,32 +139,93 @@ impl Hud {
             });
 
             let mut text_y = bar_y + bar_h + 24.0;
-            Self::push_text(scene, bar_x, text_y, 100.0, &format!("{:.0} fps", self.fps_smooth), "#AAAAAA", 12.0);
+            Self::push_text(
+                scene,
+                bar_x,
+                text_y,
+                100.0,
+                &format!("{:.0} fps", self.fps_smooth),
+                "#AAAAAA",
+                12.0,
+            );
             text_y += 16.0;
 
-            Self::push_text(scene, bar_x, text_y, 100.0, &format!("frame: {}", self.frame_count), "#888888", 11.0);
+            Self::push_text(
+                scene,
+                bar_x,
+                text_y,
+                100.0,
+                &format!("frame: {}", self.frame_count),
+                "#888888",
+                11.0,
+            );
             text_y += 14.0;
-            Self::push_text(scene, bar_x, text_y, 120.0, &format!("build: {:.1}ms", m.build_ms), "#888888", 11.0);
+            Self::push_text(
+                scene,
+                bar_x,
+                text_y,
+                120.0,
+                &format!("build: {:.1}ms", m.build_ms),
+                "#888888",
+                11.0,
+            );
             text_y += 14.0;
-            Self::push_text(scene, bar_x, text_y, 120.0, &format!("layout: {:.1}ms", m.layout_ms), "#888888", 11.0);
+            Self::push_text(
+                scene,
+                bar_x,
+                text_y,
+                120.0,
+                &format!("layout: {:.1}ms", m.layout_ms),
+                "#888888",
+                11.0,
+            );
             text_y += 14.0;
-            Self::push_text(scene, bar_x, text_y, 120.0, &format!("paint: {:.1}ms", m.paint_ms), "#888888", 11.0);
+            Self::push_text(
+                scene,
+                bar_x,
+                text_y,
+                120.0,
+                &format!("paint: {:.1}ms", m.paint_ms),
+                "#888888",
+                11.0,
+            );
             text_y += 14.0;
-            Self::push_text(scene, bar_x, text_y, 120.0, &format!("widgets: {}", m.widget_count), "#888888", 11.0);
+            Self::push_text(
+                scene,
+                bar_x,
+                text_y,
+                120.0,
+                &format!("widgets: {}", m.widget_count),
+                "#888888",
+                11.0,
+            );
             text_y += 14.0;
-            Self::push_text(scene, bar_x, text_y, 120.0, &format!("signals: {}", m.signal_count), "#888888", 11.0);
+            Self::push_text(
+                scene,
+                bar_x,
+                text_y,
+                120.0,
+                &format!("signals: {}", m.signal_count),
+                "#888888",
+                11.0,
+            );
             text_y += 14.0;
-            Self::push_text(scene, bar_x, text_y, 140.0, &format!("scene: {}", m.scene_nodes), "#888888", 11.0);
+            Self::push_text(
+                scene,
+                bar_x,
+                text_y,
+                140.0,
+                &format!("scene: {}", m.scene_nodes),
+                "#888888",
+                11.0,
+            );
             text_y += 14.0;
             Self::push_text(
                 scene,
                 bar_x,
                 text_y,
                 200.0,
-                &format!(
-                    "taffy: {:+}/{:+}",
-                    m.taffy_created, m.taffy_reused
-                ),
+                &format!("taffy: {:+}/{:+}", m.taffy_created, m.taffy_reused),
                 "#888888",
                 11.0,
             );
@@ -241,12 +302,7 @@ impl Hud {
     /// Push a single HUD text line.
     fn push_text(scene: &mut Scene, x: f32, y: f32, w: f32, txt: &str, color: &str, size: f32) {
         scene.nodes.push(SceneNode::Text {
-            rect: Rect {
-                x,
-                y,
-                w,
-                h: 14.0,
-            },
+            rect: Rect { x, y, w, h: 14.0 },
             text: Arc::<str>::from(txt.to_string()),
             color: Color::from_hex(color),
             size,

@@ -505,7 +505,12 @@ fn apply_enter(
                 *spec,
             );
             let a = animate_f32_from(format!("{key}:v{version}:enter:fade"), 0.0, 1.0, *spec);
-            Box(Modifier::new().fill_max_size().transform_origin(0.5, 0.5).scale(s).alpha(a)).child(view)
+            Box(Modifier::new()
+                .fill_max_size()
+                .transform_origin(0.5, 0.5)
+                .scale(s)
+                .alpha(a))
+            .child(view)
         }
         EnterTransition::ExpandVertically { clip, expand_from } => apply_size_fraction(
             &format!("{key}:meas"),
@@ -581,7 +586,11 @@ fn apply_enter_single(
                 1.0,
                 *spec,
             );
-            Box(Modifier::new().fill_max_size().transform_origin(0.5, 0.5).scale(s)).child(view)
+            Box(Modifier::new()
+                .fill_max_size()
+                .transform_origin(0.5, 0.5)
+                .scale(s))
+            .child(view)
         }
         EnterTransition::ExpandVertically { clip, expand_from } => apply_size_fraction(
             &format!("{key}:meas"),
@@ -653,9 +662,17 @@ fn apply_exit(
         ExitTransition::ScaleOut { target } => {
             let s = animate_f32_from(format!("{key}:v{version}:exit:scale"), 1.0, *target, *spec);
             let a = animate_f32_from(format!("{key}:v{version}:exit:fade"), 1.0, 0.0, *spec);
-            Box(Modifier::new().fill_max_size().transform_origin(0.5, 0.5).scale(s).alpha(a)).child(view)
+            Box(Modifier::new()
+                .fill_max_size()
+                .transform_origin(0.5, 0.5)
+                .scale(s)
+                .alpha(a))
+            .child(view)
         }
-        ExitTransition::ShrinkVertically { clip, shrink_towards } => apply_size_fraction(
+        ExitTransition::ShrinkVertically {
+            clip,
+            shrink_towards,
+        } => apply_size_fraction(
             &format!("{key}:meas"),
             &format!("{key}:v{version}:exit:expand_v"),
             SizeAxis::Vertical,
@@ -666,7 +683,10 @@ fn apply_exit(
             *spec,
             view,
         ),
-        ExitTransition::ShrinkHorizontally { clip, shrink_towards } => apply_size_fraction(
+        ExitTransition::ShrinkHorizontally {
+            clip,
+            shrink_towards,
+        } => apply_size_fraction(
             &format!("{key}:meas"),
             &format!("{key}:v{version}:exit:expand_h"),
             SizeAxis::Horizontal,
@@ -724,9 +744,16 @@ fn apply_exit_single(
         }
         ExitTransition::ScaleOut { target } => {
             let s = animate_f32_from(format!("{key}:v{version}:exit:scale"), 1.0, *target, *spec);
-            Box(Modifier::new().fill_max_size().transform_origin(0.5, 0.5).scale(s)).child(view)
+            Box(Modifier::new()
+                .fill_max_size()
+                .transform_origin(0.5, 0.5)
+                .scale(s))
+            .child(view)
         }
-        ExitTransition::ShrinkVertically { clip, shrink_towards } => apply_size_fraction(
+        ExitTransition::ShrinkVertically {
+            clip,
+            shrink_towards,
+        } => apply_size_fraction(
             &format!("{key}:meas"),
             &format!("{key}:v{version}:exit:expand_v"),
             SizeAxis::Vertical,
@@ -737,7 +764,10 @@ fn apply_exit_single(
             *spec,
             view,
         ),
-        ExitTransition::ShrinkHorizontally { clip, shrink_towards } => apply_size_fraction(
+        ExitTransition::ShrinkHorizontally {
+            clip,
+            shrink_towards,
+        } => apply_size_fraction(
             &format!("{key}:meas"),
             &format!("{key}:v{version}:exit:expand_h"),
             SizeAxis::Horizontal,
@@ -954,7 +984,10 @@ fn apply_exit_inflow(
             let a = animate_f32_from(format!("{key}:v{version}:exit:fade"), 1.0, 0.0, *spec);
             Box(flow_mod().transform_origin(0.5, 0.5).scale(s).alpha(a)).child(view)
         }
-        ExitTransition::ShrinkVertically { clip, shrink_towards } => apply_size_fraction(
+        ExitTransition::ShrinkVertically {
+            clip,
+            shrink_towards,
+        } => apply_size_fraction(
             &format!("{key}:meas"),
             &format!("{key}:v{version}:exit:expand_v"),
             SizeAxis::Vertical,
@@ -965,7 +998,10 @@ fn apply_exit_inflow(
             *spec,
             view,
         ),
-        ExitTransition::ShrinkHorizontally { clip, shrink_towards } => apply_size_fraction(
+        ExitTransition::ShrinkHorizontally {
+            clip,
+            shrink_towards,
+        } => apply_size_fraction(
             &format!("{key}:meas"),
             &format!("{key}:v{version}:exit:expand_h"),
             SizeAxis::Horizontal,
@@ -1025,7 +1061,10 @@ fn apply_exit_inflow_single(
             let s = animate_f32_from(format!("{key}:v{version}:exit:scale"), 1.0, *target, *spec);
             Box(flow_mod().transform_origin(0.5, 0.5).scale(s)).child(view)
         }
-        ExitTransition::ShrinkVertically { clip, shrink_towards } => apply_size_fraction(
+        ExitTransition::ShrinkVertically {
+            clip,
+            shrink_towards,
+        } => apply_size_fraction(
             &format!("{key}:meas"),
             &format!("{key}:v{version}:exit:expand_v"),
             SizeAxis::Vertical,
@@ -1036,7 +1075,10 @@ fn apply_exit_inflow_single(
             *spec,
             view,
         ),
-        ExitTransition::ShrinkHorizontally { clip, shrink_towards } => apply_size_fraction(
+        ExitTransition::ShrinkHorizontally {
+            clip,
+            shrink_towards,
+        } => apply_size_fraction(
             &format!("{key}:meas"),
             &format!("{key}:v{version}:exit:expand_h"),
             SizeAxis::Horizontal,
@@ -1118,24 +1160,21 @@ fn exit_animation_done(key: &str, version: u64, exit: &ExitTransition) -> bool {
                 .unwrap_or(false);
             done_scale && done_fade
         }
-        ExitTransition::ShrinkVertically { .. } => read_anim_value(
-            &format!("{key}:v{version}:exit:expand_v"),
-            1.0,
-        )
-        .map(|v| v < 0.005)
-        .unwrap_or(false),
-        ExitTransition::ShrinkHorizontally { .. } => read_anim_value(
-            &format!("{key}:v{version}:exit:expand_h"),
-            1.0,
-        )
-        .map(|v| v < 0.005)
-        .unwrap_or(false),
-        ExitTransition::ShrinkOut { .. } => read_anim_value(
-            &format!("{key}:v{version}:exit:expand_in"),
-            1.0,
-        )
-        .map(|v| v < 0.005)
-        .unwrap_or(false),
+        ExitTransition::ShrinkVertically { .. } => {
+            read_anim_value(&format!("{key}:v{version}:exit:expand_v"), 1.0)
+                .map(|v| v < 0.005)
+                .unwrap_or(false)
+        }
+        ExitTransition::ShrinkHorizontally { .. } => {
+            read_anim_value(&format!("{key}:v{version}:exit:expand_h"), 1.0)
+                .map(|v| v < 0.005)
+                .unwrap_or(false)
+        }
+        ExitTransition::ShrinkOut { .. } => {
+            read_anim_value(&format!("{key}:v{version}:exit:expand_in"), 1.0)
+                .map(|v| v < 0.005)
+                .unwrap_or(false)
+        }
         ExitTransition::Composite(ts) => ts.iter().all(|t| exit_animation_done(key, version, t)),
     }
 }

@@ -1,11 +1,7 @@
 #![allow(non_snake_case)]
 
-
 use repose_core::*;
-use repose_ui::{
-    Box, Column,
-    ViewExt,
-};
+use repose_ui::{Box, Column, ViewExt};
 
 use super::*;
 
@@ -104,12 +100,9 @@ pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig)
             Box(Modifier::new())
         },
         if let Some(bar) = config.bottom_bar {
-            Box(Modifier::new().absolute().offset(
-                Some(0.0),
-                None,
-                Some(ibottom + iime),
-                Some(0.0),
-            ))
+            Box(Modifier::new()
+                .absolute()
+                .offset(Some(0.0), None, Some(ibottom + iime), Some(0.0)))
             .child(bar)
         } else {
             Box(Modifier::new())
@@ -118,12 +111,7 @@ pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig)
             let mut fab_m = Modifier::new().absolute();
             match config.fab_position {
                 FabPosition::End => {
-                    fab_m = fab_m.offset(
-                        None,
-                        None,
-                        Some(16.0 + ibottom + iime),
-                        Some(16.0),
-                    );
+                    fab_m = fab_m.offset(None, None, Some(16.0 + ibottom + iime), Some(16.0));
                 }
                 FabPosition::Center => {
                     fab_m = fab_m.fill_max_width().align_self(AlignSelf::CENTER).offset(

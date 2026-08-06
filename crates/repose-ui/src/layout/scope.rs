@@ -1,10 +1,8 @@
 #![allow(non_snake_case)]
 
-
 use repose_core::*;
 use repose_tree::NodeId;
 use rustc_hash::FxHashMap;
-
 
 use super::*;
 

@@ -5,11 +5,10 @@ use std::rc::Rc;
 
 use repose_core::*;
 use repose_ui::{
-    BasicTextField, Box, Column, Row, Text, TextFieldState, TextStyle,
-    ViewExt, ZStack,
+    BasicTextField, Box, Column, Row, Text, TextFieldConfig as BasicTextFieldConfig,
+    TextFieldState, TextStyle, ViewExt, ZStack,
     anim::animate_f32,
     textfield::{TextMeasureConfig, measure_text},
-    TextFieldConfig as BasicTextFieldConfig,
 };
 
 use super::*;

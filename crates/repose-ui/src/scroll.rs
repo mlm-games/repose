@@ -8,8 +8,8 @@
 //! Velocities are expressed in px/sec and integrated with dt,
 //! so behavior is frame-rate independent.
 
-pub use repose_core::scroll::{HorizontalScrollState, ScrollPhysics, ScrollState, ScrollStateXY};
 use crate::ViewExt;
+pub use repose_core::scroll::{HorizontalScrollState, ScrollPhysics, ScrollState, ScrollStateXY};
 use repose_core::*;
 use std::rc::Rc;
 

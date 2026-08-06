@@ -664,7 +664,11 @@ fn build_resize_handles(host: &WindowHostHandle, window_id: u64) -> View {
         (ResizeHandle::TopLeft, handle_mod_corner(true, true), 24),
         (ResizeHandle::TopRight, handle_mod_corner(false, true), 25),
         (ResizeHandle::BottomLeft, handle_mod_corner(true, false), 26),
-        (ResizeHandle::BottomRight, handle_mod_corner(false, false), 27),
+        (
+            ResizeHandle::BottomRight,
+            handle_mod_corner(false, false),
+            27,
+        ),
     ];
 
     Column(Modifier::new().fill_max_size()).with_children(

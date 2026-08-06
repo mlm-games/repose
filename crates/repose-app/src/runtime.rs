@@ -3,21 +3,20 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use repose_core::dnd;
-use repose_core::shortcuts::DragAction;
 use repose_core::input::{
     ImeEvent, Key, KeyEvent, KeyEventType, Modifiers, PointerButton, PointerEvent,
     PointerEventKind, PointerId, PointerKind,
 };
-use repose_core::locals::{dp_to_px, set_density_default, with_density, Density};
+use repose_core::locals::{Density, dp_to_px, set_density_default, with_density};
 use repose_core::runtime::{Frame, Scheduler};
+use repose_core::shortcuts::DragAction;
 use repose_core::{
-    take_focus_request, CursorIcon, HitRegion, RenderContext, Scene, Vec2, View,
-    request_frame,
+    CursorIcon, HitRegion, RenderContext, Scene, Vec2, View, request_frame, take_focus_request,
 };
 use repose_ui::textfield::{
-    caret_xy_for_byte, measure_text, TextFieldState, TF_FONT_DP, TextMeasureConfig,
+    TF_FONT_DP, TextFieldState, TextMeasureConfig, caret_xy_for_byte, measure_text,
 };
-use repose_ui::{layout_and_paint, Interactions};
+use repose_ui::{Interactions, layout_and_paint};
 
 /// Platform-directed side effects requested by the UI.
 #[derive(Clone, Default)]
@@ -137,7 +136,6 @@ impl ReposeRuntime {
         }
     }
 
-
     /// Set the logical viewport size (in device pixels).
     pub fn set_viewport(&mut self, width_px: u32, height_px: u32) {
         self.sched.size = (width_px, height_px);
@@ -154,16 +152,11 @@ impl ReposeRuntime {
         repose_core::animation_driver::tick();
     }
 
-
     /// Compose and layout a frame, returning the output for rendering.
     ///
     /// Call `tick_animations` before this and `cache_frame` after (once you
     /// have applied any host-specific overlays like the devtools inspector).
-    pub fn compose<F>(
-        &mut self,
-        root_fn: &mut F,
-        render_ctx: &RenderContext,
-    ) -> Frame
+    pub fn compose<F>(&mut self, root_fn: &mut F, render_ctx: &RenderContext) -> Frame
     where
         F: FnMut(&mut Scheduler, &RenderContext) -> View,
     {
@@ -213,7 +206,8 @@ impl ReposeRuntime {
         repose_core::clipboard::clear_clipboard_observer();
         let clipboard_text = captured.borrow_mut().take();
 
-        let wants_pointer = !f.hit_regions.is_empty() || self.hover_id.is_some() || self.capture_id.is_some();
+        let wants_pointer =
+            !f.hit_regions.is_empty() || self.hover_id.is_some() || self.capture_id.is_some();
         let wants_keyboard = !self.textfield_states.is_empty() || self.ime_preedit;
 
         let ime_allowed = self.sched.focused.map_or(false, |fid| {
@@ -222,9 +216,10 @@ impl ReposeRuntime {
                 .any(|n| n.id == fid && n.role == repose_core::semantics::Role::TextField)
         });
 
-        let focused_hit = self.sched.focused.and_then(|fid| {
-            f.hit_regions.iter().find(|h| h.id == fid)
-        });
+        let focused_hit = self
+            .sched
+            .focused
+            .and_then(|fid| f.hit_regions.iter().find(|h| h.id == fid));
 
         let ime_cursor_area = if ime_allowed {
             focused_hit.map(|hit| {
@@ -283,7 +278,6 @@ impl ReposeRuntime {
         self.frame_cache = Some(frame);
     }
 
-
     /// Process a pointer-move event. Returns cursor suggestion.
     pub fn handle_pointer_move(&mut self, pos: Vec2) -> PointerMoveResult {
         self.mouse_pos_px = (pos.x, pos.y);
@@ -338,21 +332,13 @@ impl ReposeRuntime {
         let top = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos));
 
         // Update cursor
-        self.cursor = top
-            .and_then(|h| h.cursor)
-            .or(Some(CursorIcon::Default));
+        self.cursor = top.and_then(|h| h.cursor).or(Some(CursorIcon::Default));
 
         let new_hover = top.map(|h| h.id);
 
         // Enter / Leave
         if new_hover != self.hover_id {
-            dispatch_hover_change(
-                Some(f),
-                &mut self.hover_id,
-                new_hover,
-                pos,
-                self.modifiers,
-            );
+            dispatch_hover_change(Some(f), &mut self.hover_id, new_hover, pos, self.modifiers);
             request_frame();
         }
 
@@ -452,9 +438,9 @@ impl ReposeRuntime {
                 self.sched.focused = Some(hit.id);
                 result.focused = Some(hit.id);
                 let key = tf_key_of(f, hit.id);
-                self.textfield_states.entry(key).or_insert_with(|| {
-                    Rc::new(RefCell::new(TextFieldState::new()))
-                });
+                self.textfield_states
+                    .entry(key)
+                    .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
             }
 
             // PointerDown callback
@@ -675,7 +661,6 @@ impl ReposeRuntime {
         self.hover_id = None;
     }
 
-
     /// Process a scroll event. Returns true if consumed.
     pub fn handle_scroll(&mut self, delta: Vec2) -> bool {
         let Some(f) = &self.frame_cache else {
@@ -701,7 +686,6 @@ impl ReposeRuntime {
         }
         consumed
     }
-
 
     /// Process a keyboard key event. Returns true if consumed.
     pub fn handle_key(&mut self, event: &KeyEvent) -> bool {
@@ -747,9 +731,9 @@ impl ReposeRuntime {
                     // Lazy-init textfield state for newly focused element
                     if let Some(hit) = f.hit_regions.iter().find(|h| h.id == new_id) {
                         if let Some(key) = hit.tf_state_key {
-                            self.textfield_states.entry(key).or_insert_with(|| {
-                                Rc::new(RefCell::new(TextFieldState::new()))
-                            });
+                            self.textfield_states
+                                .entry(key)
+                                .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
                         }
                     }
                     request_frame();
@@ -760,7 +744,10 @@ impl ReposeRuntime {
 
         // Keyboard activation (Space/Enter on focused non-textfield)
         if let Some(fid) = self.sched.focused {
-            let is_tf = f.semantics_nodes.iter().any(|n| n.id == fid && n.role == repose_core::semantics::Role::TextField);
+            let is_tf = f
+                .semantics_nodes
+                .iter()
+                .any(|n| n.id == fid && n.role == repose_core::semantics::Role::TextField);
             if !is_tf {
                 if event.event_type == KeyEventType::Down && !event.is_repeat {
                     if event.key == Key::Space || event.key == Key::Enter {
@@ -876,15 +863,14 @@ impl ReposeRuntime {
                                 if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
                                     let font_px = dp_to_px(TF_FONT_DP);
                                     let cur = state.caret_index();
-                                    let (new_pos, px) =
-                                        repose_ui::textfield::move_caret_vertical(
-                                            &state.text,
-                                            font_px,
-                                            hit.rect.w,
-                                            cur,
-                                            -1,
-                                            state.preferred_x_px,
-                                        );
+                                    let (new_pos, px) = repose_ui::textfield::move_caret_vertical(
+                                        &state.text,
+                                        font_px,
+                                        hit.rect.w,
+                                        cur,
+                                        -1,
+                                        state.preferred_x_px,
+                                    );
                                     if self.modifiers.shift {
                                         state.selection.end = new_pos;
                                     } else {
@@ -899,12 +885,7 @@ impl ReposeRuntime {
                                     );
                                     let iw = state.inner_width;
                                     let ih = state.inner_height;
-                                    state.ensure_caret_visible_xy(
-                                        cx, cy,
-                                        iw,
-                                        ih,
-                                        dp_to_px(2.0),
-                                    );
+                                    state.ensure_caret_visible_xy(cx, cy, iw, ih, dp_to_px(2.0));
                                     request_frame();
                                     return true;
                                 }
@@ -915,15 +896,14 @@ impl ReposeRuntime {
                                 if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
                                     let font_px = dp_to_px(TF_FONT_DP);
                                     let cur = state.caret_index();
-                                    let (new_pos, px) =
-                                        repose_ui::textfield::move_caret_vertical(
-                                            &state.text,
-                                            font_px,
-                                            hit.rect.w,
-                                            cur,
-                                            1,
-                                            state.preferred_x_px,
-                                        );
+                                    let (new_pos, px) = repose_ui::textfield::move_caret_vertical(
+                                        &state.text,
+                                        font_px,
+                                        hit.rect.w,
+                                        cur,
+                                        1,
+                                        state.preferred_x_px,
+                                    );
                                     if self.modifiers.shift {
                                         state.selection.end = new_pos;
                                     } else {
@@ -938,12 +918,7 @@ impl ReposeRuntime {
                                     );
                                     let iw = state.inner_width;
                                     let ih = state.inner_height;
-                                    state.ensure_caret_visible_xy(
-                                        cx, cy,
-                                        iw,
-                                        ih,
-                                        dp_to_px(2.0),
-                                    );
+                                    state.ensure_caret_visible_xy(cx, cy, iw, ih, dp_to_px(2.0));
                                     request_frame();
                                     return true;
                                 }
@@ -1020,8 +995,7 @@ impl ReposeRuntime {
             return false;
         };
 
-        let hit_by_id: HashMap<u64, &HitRegion> =
-            f.hit_regions.iter().map(|h| (h.id, h)).collect();
+        let hit_by_id: HashMap<u64, &HitRegion> = f.hit_regions.iter().map(|h| (h.id, h)).collect();
         let sem_parent_of: HashMap<u64, u64> = f
             .semantics_nodes
             .iter()
@@ -1084,7 +1058,6 @@ impl ReposeRuntime {
         false
     }
 
-
     /// Process an IME event.
     pub fn handle_ime(&mut self, event: &ImeEvent) {
         let Some(fid) = self.sched.focused else {
@@ -1129,14 +1102,12 @@ impl ReposeRuntime {
         request_frame();
     }
 
-
     /// Handle focus lost (window unfocused, etc.).
     pub fn handle_focus_lost(&mut self) {
         dnd::handle_drag_action(&DragAction::Cancel);
         self.handle_pointer_cancel();
         self.ime_preedit = false;
     }
-
 
     /// Get or create a text field state by its key.
     pub fn ensure_textfield_state(&mut self, key: u64) -> Rc<RefCell<TextFieldState>> {
@@ -1174,7 +1145,11 @@ impl ReposeRuntime {
     /// Returns `(purpose, auto_correct, capitalization)` for the platform runner.
     pub fn focused_keyboard_hints(
         &self,
-    ) -> (repose_core::ImePurposeHint, bool, repose_core::KeyboardCapitalization) {
+    ) -> (
+        repose_core::ImePurposeHint,
+        bool,
+        repose_core::KeyboardCapitalization,
+    ) {
         let defaults = || {
             (
                 repose_core::ImePurposeHint::Normal,
@@ -1197,7 +1172,6 @@ impl ReposeRuntime {
             None => defaults(),
         }
     }
-
 
     /// Insert text into a focused text field (used for paste).
     pub fn paste_into_focused(&mut self, text: &str) {
@@ -1235,7 +1209,6 @@ impl Default for ReposeRuntime {
         Self::new()
     }
 }
-
 
 /// Inner compose frame logic (no dependency on repose-platform).
 pub fn compose_frame_inner<F>(
@@ -1389,7 +1362,8 @@ fn tf_ensure_caret_visible(state: &mut TextFieldState, is_multiline: bool) {
         let (display, caret_display_off) = if let Some(vt) = &state.visual_transformation {
             let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
             let tfmd = vt.filter(&annotated);
-            let off = repose_core::original_offset_to_display(&state.text, tfmd.text.as_str(), caret_idx);
+            let off =
+                repose_core::original_offset_to_display(&state.text, tfmd.text.as_str(), caret_idx);
             (tfmd.text.text, off)
         } else {
             (state.text.clone(), caret_idx)
@@ -1404,7 +1378,8 @@ fn index_for_x_bytes_vt(state: &TextFieldState, font_px: f32, x_px: f32) -> usiz
     if let Some(vt) = &state.visual_transformation {
         let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
         let tfmd = vt.filter(&annotated);
-        let display_idx = repose_ui::textfield::index_for_x_bytes(tfmd.text.as_str(), font_px, x_px, 400, 0);
+        let display_idx =
+            repose_ui::textfield::index_for_x_bytes(tfmd.text.as_str(), font_px, x_px, 400, 0);
         tfmd.offset_mapping.transformed_to_original(display_idx)
     } else {
         repose_ui::textfield::index_for_x_bytes(&state.text, font_px, x_px, 400, 0)
@@ -1421,7 +1396,13 @@ fn index_for_xy_bytes_vt(
     if let Some(vt) = &state.visual_transformation {
         let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
         let tfmd = vt.filter(&annotated);
-        let display_idx = repose_ui::textfield::index_for_xy_bytes(tfmd.text.as_str(), font_px, wrap_w, x_px, y_px);
+        let display_idx = repose_ui::textfield::index_for_xy_bytes(
+            tfmd.text.as_str(),
+            font_px,
+            wrap_w,
+            x_px,
+            y_px,
+        );
         tfmd.offset_mapping.transformed_to_original(display_idx)
     } else {
         repose_ui::textfield::index_for_xy_bytes(&state.text, font_px, wrap_w, x_px, y_px)
@@ -1458,8 +1439,8 @@ fn dispatch_scroll(
         if let Some(cb) = &hit.on_scroll {
             let before = remaining;
             let leftover = cb(before);
-            let consumed = (before.x - leftover.x).abs() > 0.001
-                || (before.y - leftover.y).abs() > 0.001;
+            let consumed =
+                (before.x - leftover.x).abs() > 0.001 || (before.y - leftover.y).abs() > 0.001;
             if consumed {
                 return (true, Some(hit.id));
             }

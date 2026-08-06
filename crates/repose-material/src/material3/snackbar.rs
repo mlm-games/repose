@@ -1,13 +1,9 @@
 #![allow(non_snake_case)]
 
-
 use repose_core::*;
 use repose_ui::{
-    Box, Column, Row, Spacer, Text, TextStyle,
-    ViewExt,
-    anim::animate_f32_from,
-    overlay::SnackbarAction,
-    overlay::snackbar_is_dismissing,
+    Box, Column, Row, Spacer, Text, TextStyle, ViewExt, anim::animate_f32_from,
+    overlay::SnackbarAction, overlay::snackbar_is_dismissing,
 };
 
 use super::*;

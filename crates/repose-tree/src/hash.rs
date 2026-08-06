@@ -433,12 +433,12 @@ mod tests {
         use repose_core::scroll::ScrollAxisBinding;
 
         let v1 = View::new(0, ViewKind::Box).modifier(Modifier::new());
-        let v2 = View::new(0, ViewKind::Box).modifier(
-            Modifier::new().vertical_scroll(ScrollAxisBinding {
+        let v2 = View::new(0, ViewKind::Box).modifier(Modifier::new().vertical_scroll(
+            ScrollAxisBinding {
                 show_scrollbar: true,
                 ..Default::default()
-            }),
-        );
+            },
+        ));
 
         assert_ne!(hash_view_content(&v1), hash_view_content(&v2));
     }
@@ -471,7 +471,7 @@ mod tests {
                 letter_spacing: 0.0,
                 line_height: 0.0,
                 url: None,
-            font_variation_settings: None,
+                font_variation_settings: None,
             },
         );
         let v2 = View::new(
@@ -492,7 +492,7 @@ mod tests {
                 letter_spacing: 0.0,
                 line_height: 0.0,
                 url: None,
-            font_variation_settings: None,
+                font_variation_settings: None,
             },
         );
         let v3 = View::new(
@@ -513,7 +513,7 @@ mod tests {
                 letter_spacing: 0.0,
                 line_height: 0.0,
                 url: None,
-            font_variation_settings: None,
+                font_variation_settings: None,
             },
         );
 

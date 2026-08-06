@@ -123,7 +123,6 @@ fn split_button_impl(
     with_content_color(effective, || Box(m).child(content()))
 }
 
-
 pub fn SplitButtonLeadingButton(
     modifier: Modifier,
     on_click: impl Fn() + 'static,
@@ -260,7 +259,6 @@ pub fn SplitButtonTrailingToggleButton(
     m = m.then(modifier.clip_rounded_radii(split_trailing_shape_radii()));
     with_content_color(fg, || Box(m).child(content(checked)))
 }
-
 
 pub fn SplitButtonTonalLeadingButton(
     modifier: Modifier,

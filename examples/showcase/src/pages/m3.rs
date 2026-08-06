@@ -529,9 +529,9 @@ pub fn screen(overlay: OverlayHandle) -> View {
                     Button(
                         Modifier::new(),
                         {
-                                let fn2 = font_name.clone();
-                                let ff2 = font_family.clone();
-                                move || {
+                            let fn2 = font_name.clone();
+                            let ff2 = font_family.clone();
+                            move || {
                                 let fn2 = fn2.clone();
                                 let ff2 = ff2.clone();
                                 let future = async move {
@@ -539,10 +539,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                                     use rlobkit_dialogs::{RlobKit, RlobKitMode, RlobKitType};
                                     match RlobKit::open_file_picker(OpenFileOptions {
                                         file_type: RlobKitType::Custom {
-                                            extensions: vec![
-                                                "ttf".to_string(),
-                                                "otf".to_string(),
-                                            ],
+                                            extensions: vec!["ttf".to_string(), "otf".to_string()],
                                             mime_types: vec![
                                                 "font/ttf".to_string(),
                                                 "font/otf".to_string(),
@@ -558,10 +555,11 @@ pub fn screen(overlay: OverlayHandle) -> View {
                                             if let Some(file) = files.pop() {
                                                 match file.read_bytes() {
                                                     Ok(bytes) => {
-                                                        let family = repose_text::font_family_name(
-                                                            &bytes,
-                                                        )
-                                                        .unwrap_or_else(|| file.name().to_string());
+                                                        let family =
+                                                            repose_text::font_family_name(&bytes)
+                                                                .unwrap_or_else(|| {
+                                                                    file.name().to_string()
+                                                                });
                                                         repose_text::register_font_data(&bytes);
                                                         let family: &'static str =
                                                             Box::leak(family.into_boxed_str());

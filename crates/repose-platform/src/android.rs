@@ -213,7 +213,11 @@ pub fn run_android_app_with_options(
         fn update_ime_state(&mut self) {
             let Some(win) = &self.window else { return };
 
-            let allow = self.rt.sched.focused.map_or(false, |id| self.rt.is_textfield(id));
+            let allow = self
+                .rt
+                .sched
+                .focused
+                .map_or(false, |id| self.rt.is_textfield(id));
             let (purpose, auto_correct, capitalization) = self.rt.focused_keyboard_hints();
 
             rc_web::set_ime_for_textfield_ex(win, allow, purpose, auto_correct, capitalization);
@@ -229,7 +233,9 @@ pub fn run_android_app_with_options(
             let Some(fid) = self.rt.sched.focused else {
                 return;
             };
-            let Some(f) = &self.rt.frame_cache else { return };
+            let Some(f) = &self.rt.frame_cache else {
+                return;
+            };
             let Some(i) = rc::hit_index_by_id(f, fid) else {
                 return;
             };
@@ -273,7 +279,8 @@ pub fn run_android_app_with_options(
         }
 
         fn sync_window_size(&mut self, size: PhysicalSize<u32>, scale: f32) {
-            self.rt.set_viewport_and_scale(size.width, size.height, scale);
+            self.rt
+                .set_viewport_and_scale(size.width, size.height, scale);
             if let Some(b) = &mut self.backend {
                 b.configure_surface(size.width, size.height);
             }
@@ -321,7 +328,8 @@ pub fn run_android_app_with_options(
 
             // Focus navigation (Tab/arrows)
             if let Some(f) = &self.rt.frame_cache {
-                if let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.rt.sched, f)
+                if let Some(new_id) =
+                    repose_core::focus::handle_action(&action, &mut self.rt.sched, f)
                 {
                     let tf_state_key = f
                         .hit_regions
@@ -329,7 +337,8 @@ pub fn run_android_app_with_options(
                         .find(|h| h.id == new_id)
                         .and_then(|h| h.tf_state_key);
                     if let Some(key) = tf_state_key {
-                        self.rt.textfield_states
+                        self.rt
+                            .textfield_states
                             .entry(key)
                             .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
                         if let Some(state_rc) = self.rt.textfield_states.get(&key) {
@@ -346,11 +355,7 @@ pub fn run_android_app_with_options(
             false
         }
         fn overlay_drag_indicator(&self, scene: &mut Scene) {
-            repose_core::dnd::overlay_drag_indicator(
-                scene,
-                self.rt.mouse_pos_px,
-                false,
-            );
+            repose_core::dnd::overlay_drag_indicator(scene, self.rt.mouse_pos_px, false);
         }
     }
 
@@ -369,12 +374,12 @@ pub fn run_android_app_with_options(
                 return;
             }
 
-                match el.create_window(WindowAttributes::default().with_title("Repose Android")) {
-                    Ok(win) => {
-                        let w = Arc::new(win);
-                        let sz = w.inner_size();
-                        let sf = w.scale_factor() as f32;
-                        self.sync_window_size(sz, sf);
+            match el.create_window(WindowAttributes::default().with_title("Repose Android")) {
+                Ok(win) => {
+                    let w = Arc::new(win);
+                    let sz = w.inner_size();
+                    let sf = w.scale_factor() as f32;
+                    self.sync_window_size(sz, sf);
 
                     match repose_render_wgpu::WgpuBackend::new_with_options(
                         w.clone(),
@@ -470,7 +475,8 @@ pub fn run_android_app_with_options(
                             }
 
                             // Delegate common pointer-press logic to the runtime
-                            let press_result = self.rt.handle_pointer_press(pos, PointerButton::Primary);
+                            let press_result =
+                                self.rt.handle_pointer_press(pos, PointerButton::Primary);
 
                             // Platform-specific IME setup for focused textfields
                             if let Some(fid) = press_result.focused
@@ -550,7 +556,10 @@ pub fn run_android_app_with_options(
                                         let (consumed, cap) = rc::dispatch_scroll(
                                             f,
                                             pos,
-                                            Vec2 { x: -dx_px, y: -dy_px },
+                                            Vec2 {
+                                                x: -dx_px,
+                                                y: -dy_px,
+                                            },
                                             self.scroll_capture_id,
                                         );
                                         self.scroll_capture_id = cap;
@@ -731,7 +740,8 @@ pub fn run_android_app_with_options(
                     } else {
                         repose_core::input::KeyEventType::Up
                     };
-                    let consumed = self.rt
+                    let consumed = self
+                        .rt
                         .frame_cache
                         .as_ref()
                         .and_then(|f| {
@@ -1004,7 +1014,9 @@ pub fn run_android_app_with_options(
                     self.process_render_commands();
 
                     let scale = {
-                        let Some(win) = self.window.as_ref() else { return; };
+                        let Some(win) = self.window.as_ref() else {
+                            return;
+                        };
                         win.scale_factor() as f32
                     };
                     let size_px_u32 = self.rt.sched.size;
@@ -1019,8 +1031,8 @@ pub fn run_android_app_with_options(
                     let pressed_ids = &self.rt.pressed_ids;
                     let textfield_states = &self.rt.textfield_states;
 
-                    let mut frame = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-                        move || {
+                    let mut frame =
+                        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
                             compose_frame(
                                 sched,
                                 &mut composed_root,
@@ -1031,21 +1043,19 @@ pub fn run_android_app_with_options(
                                 textfield_states,
                                 focused,
                             )
-                        },
-                    )) {
-                        Ok(frame) => frame,
-                        Err(_) => {
-                            log::error!("compose panicked; presenting last good frame");
-                            if let (Some(backend), Some(cached)) = (
-                                self.backend.as_mut(),
-                                self.rt.frame_cache.as_ref(),
-                            ) {
-                                let mut scene = cached.scene.clone();
-                                backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
+                        })) {
+                            Ok(frame) => frame,
+                            Err(_) => {
+                                log::error!("compose panicked; presenting last good frame");
+                                if let (Some(backend), Some(cached)) =
+                                    (self.backend.as_mut(), self.rt.frame_cache.as_ref())
+                                {
+                                    let mut scene = cached.scene.clone();
+                                    backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
+                                }
+                                return;
                             }
-                            return;
-                        }
-                    };
+                        };
 
                     // Drain upload commands queued during compose before presenting
                     self.process_render_commands();
@@ -1066,11 +1076,16 @@ pub fn run_android_app_with_options(
                             keyboard_type: Default::default(),
                             window_theme_dark: None,
                         },
-                        wants_pointer: !frame.hit_regions.is_empty() || self.rt.capture_id.is_some(),
+                        wants_pointer: !frame.hit_regions.is_empty()
+                            || self.rt.capture_id.is_some(),
                         wants_keyboard: !self.rt.textfield_states.is_empty() || self.rt.ime_preedit,
                     };
 
-                    if !output.wants_keyboard && focused.is_some() && self.rt.sched.focused.is_none() && self.rt.ime_preedit {
+                    if !output.wants_keyboard
+                        && focused.is_some()
+                        && self.rt.sched.focused.is_none()
+                        && self.rt.ime_preedit
+                    {
                         self.rt.ime_preedit = false;
                         if let Some(win) = self.window.as_ref() {
                             win.set_ime_allowed(false);
@@ -1081,7 +1096,9 @@ pub fn run_android_app_with_options(
                     repose_core::dnd::set_dnd_scale(scale);
                     self.overlay_drag_indicator(&mut frame.scene);
 
-                    let Some(backend) = self.backend.as_mut() else { return; };
+                    let Some(backend) = self.backend.as_mut() else {
+                        return;
+                    };
                     backend.frame(&frame.scene, GlyphRasterConfig { px: 18.0 * scale });
 
                     if let Some(fid) = self.rt.sched.focused {
@@ -1089,7 +1106,8 @@ pub fn run_android_app_with_options(
                             && let Some(key) = hit.tf_state_key
                             && !self.rt.textfield_states.contains_key(&key)
                         {
-                            self.rt.textfield_states
+                            self.rt
+                                .textfield_states
                                 .entry(key)
                                 .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())))
                                 .borrow_mut()

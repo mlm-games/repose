@@ -60,16 +60,43 @@ fn inspector_panel() -> View {
 
 fn assets_panel() -> View {
     let th = theme();
-    struct Asset { name: &'static str, glyph: Symbol }
+    struct Asset {
+        name: &'static str,
+        glyph: Symbol,
+    }
     const ASSETS: &[Asset] = &[
-        Asset { name: "hero.png", glyph: Symbols::image },
-        Asset { name: "logo.svg", glyph: Symbols::image },
-        Asset { name: "intro.mp4", glyph: Symbols::videocam },
-        Asset { name: "theme.mp3", glyph: Symbols::music_note },
-        Asset { name: "bg-01.png", glyph: Symbols::image },
-        Asset { name: "bg-02.png", glyph: Symbols::image },
-        Asset { name: "outro.mp4", glyph: Symbols::videocam },
-        Asset { name: "pad.wav", glyph: Symbols::music_note },
+        Asset {
+            name: "hero.png",
+            glyph: Symbols::image,
+        },
+        Asset {
+            name: "logo.svg",
+            glyph: Symbols::image,
+        },
+        Asset {
+            name: "intro.mp4",
+            glyph: Symbols::videocam,
+        },
+        Asset {
+            name: "theme.mp3",
+            glyph: Symbols::music_note,
+        },
+        Asset {
+            name: "bg-01.png",
+            glyph: Symbols::image,
+        },
+        Asset {
+            name: "bg-02.png",
+            glyph: Symbols::image,
+        },
+        Asset {
+            name: "outro.mp4",
+            glyph: Symbols::videocam,
+        },
+        Asset {
+            name: "pad.wav",
+            glyph: Symbols::music_note,
+        },
     ];
 
     ScrollArea(
@@ -107,34 +134,40 @@ fn scene_panel() -> View {
     Box(Modifier::new()
         .fill_max_size()
         .background(th.surface_container_lowest))
-    .child(Column(Modifier::new().fill_max_size()).child((
-        Row(Modifier::new()
-            .fill_max_width()
-            .padding(sp::SM)
-            .background(th.surface_container)
-            .align_items(AlignItems::CENTER)
-            .gap(sp::SM))
-        .child((
-            Icon(Symbols::folder).size(14.0).color(th.on_surface_variant),
-            Text("scene / main").size(12.0).color(th.on_surface_variant),
-            Spacer(),
-            Text("1920 × 1080").size(11.0).color(th.on_surface_variant),
-        )),
-        Box(Modifier::new()
-            .fill_max_size()
-            .align_items(AlignItems::CENTER)
-            .justify_content(JustifyContent::CENTER))
-        .child(Column(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
+    .child(
+        Column(Modifier::new().fill_max_size()).child((
+            Row(Modifier::new()
+                .fill_max_width()
+                .padding(sp::SM)
+                .background(th.surface_container)
+                .align_items(AlignItems::CENTER)
+                .gap(sp::SM))
+            .child((
+                Icon(Symbols::folder)
+                    .size(14.0)
+                    .color(th.on_surface_variant),
+                Text("scene / main").size(12.0).color(th.on_surface_variant),
+                Spacer(),
+                Text("1920 × 1080").size(11.0).color(th.on_surface_variant),
+            )),
             Box(Modifier::new()
-                .size(120.0, 68.0)
-                .background(th.primary.with_alpha(40))
-                .border(1.0, th.primary, sp::SM)
-                .clip_rounded(sp::SM)),
-            Text("Scene viewport")
-                .size(12.0)
-                .color(th.on_surface_variant),
-        ))),
-    )))
+                .fill_max_size()
+                .align_items(AlignItems::CENTER)
+                .justify_content(JustifyContent::CENTER))
+            .child(
+                Column(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
+                    Box(Modifier::new()
+                        .size(120.0, 68.0)
+                        .background(th.primary.with_alpha(40))
+                        .border(1.0, th.primary, sp::SM)
+                        .clip_rounded(sp::SM)),
+                    Text("Scene viewport")
+                        .size(12.0)
+                        .color(th.on_surface_variant),
+                )),
+            ),
+        )),
+    )
 }
 
 fn panel(id: u64, title: &str, body: Rc<dyn Fn() -> View>) -> DockPanel {

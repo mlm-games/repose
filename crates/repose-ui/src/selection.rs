@@ -25,22 +25,14 @@ const TAP_SLOP_PX: f32 = 12.0;
 ///
 /// Call after styling: `Text(...).size(16.0).selectable(|sel| ...)`.
 pub trait SelectableTextExt {
-    fn selectable(
-        self,
-        on_selection_change: impl Fn(Option<(usize, usize)>) + 'static,
-    ) -> View;
+    fn selectable(self, on_selection_change: impl Fn(Option<(usize, usize)>) + 'static) -> View;
 }
 
 impl SelectableTextExt for View {
-    fn selectable(
-        self,
-        on_selection_change: impl Fn(Option<(usize, usize)>) + 'static,
-    ) -> View {
+    fn selectable(self, on_selection_change: impl Fn(Option<(usize, usize)>) + 'static) -> View {
         let (text, font_size_dp) = match &self.kind {
             ViewKind::Text {
-                text,
-                font_size,
-                ..
+                text, font_size, ..
             } => (text.clone(), *font_size),
             _ => return self,
         };
@@ -68,8 +60,7 @@ fn make_selectable(
     let text_for_handlers = text.clone();
     let text_for_paint = text.clone();
 
-    let selection: Rc<RefCell<Option<(usize, usize)>>> =
-        remember(|| RefCell::new(None));
+    let selection: Rc<RefCell<Option<(usize, usize)>>> = remember(|| RefCell::new(None));
     let anchor: Rc<RefCell<usize>> = remember(|| RefCell::new(0));
     let dragging: Rc<RefCell<bool>> = remember(|| RefCell::new(false));
     let last_rect: Rc<RefCell<Rect>> = remember(|| RefCell::new(Rect::default()));

@@ -5,10 +5,7 @@ use std::rc::Rc;
 
 use repose_core::NestedScrollConnection;
 use repose_core::*;
-use repose_ui::{
-    Box, Column, Row, ZStack,
-    ViewExt,
-};
+use repose_ui::{Box, Column, Row, ViewExt, ZStack};
 
 use super::*;
 
@@ -147,23 +144,21 @@ impl TopAppBarScrollBehavior {
                         consumed
                     }
                 })
-                .on_post_scroll(
-                    move |_consumed: Vec2, available: Vec2, _source| -> Vec2 {
-                        // Upward scroll leftover means the content is at the top,
-                        // so the bar may expand.
-                        let mut expanded = Vec2::ZERO;
-                        if available.y < 0.0 {
-                            let current = off.get();
-                            if current < 0.0 {
-                                let consume = (-available.y).min(-current);
-                                off.set(current + consume);
-                                expanded.y = consume;
-                                repose_core::request_frame();
-                            }
+                .on_post_scroll(move |_consumed: Vec2, available: Vec2, _source| -> Vec2 {
+                    // Upward scroll leftover means the content is at the top,
+                    // so the bar may expand.
+                    let mut expanded = Vec2::ZERO;
+                    if available.y < 0.0 {
+                        let current = off.get();
+                        if current < 0.0 {
+                            let consume = (-available.y).min(-current);
+                            off.set(current + consume);
+                            expanded.y = consume;
+                            repose_core::request_frame();
                         }
-                        expanded
-                    },
-                ),
+                    }
+                    expanded
+                }),
         }
     }
 
@@ -277,23 +272,15 @@ fn top_app_bar_layout(
     .child(
         actions
             .into_iter()
-            .map(|a| {
-                with_content_color(colors.action_icon_content_color, move || a.clone())
-            })
+            .map(|a| with_content_color(colors.action_icon_content_color, move || a.clone()))
             .collect::<Vec<_>>(),
     );
 
     let title_column = Column(Modifier::new().justify_content(JustifyContent::CENTER)).child((
-        Box(Modifier::new()).child(with_content_color(
-            colors.title_content_color,
-            || title,
-        )),
+        Box(Modifier::new()).child(with_content_color(colors.title_content_color, || title)),
         subtitle
             .map(|s| {
-                Box(Modifier::new()).child(with_content_color(
-                    colors.subtitle_content_color,
-                    || s,
-                ))
+                Box(Modifier::new()).child(with_content_color(colors.subtitle_content_color, || s))
             })
             .unwrap_or(Box(Modifier::new())),
     ));
@@ -314,11 +301,7 @@ fn top_app_bar_layout(
                 .fill_max_width()
                 .align_items(AlignItems::CENTER)
                 .padding_values(content_padding))
-            .child((
-                nav,
-                Box(Modifier::new().flex_grow(1.0)),
-                actions_row,
-            )),
+            .child((nav, Box(Modifier::new().flex_grow(1.0)), actions_row)),
             Box(Modifier::new()
                 .absolute()
                 .offset(Some(0.0), Some(0.0), Some(0.0), None)
@@ -328,10 +311,7 @@ fn top_app_bar_layout(
             .child(title_column),
         ))
     } else {
-        Row(root_m
-            .padding_values(content_padding)
-            .then(config.modifier))
-        .child((
+        Row(root_m.padding_values(content_padding).then(config.modifier)).child((
             nav,
             Box(Modifier::new()
                 .padding_values(PaddingValues {

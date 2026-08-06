@@ -7,11 +7,7 @@ use web_time::Duration;
 use crate::{Icon, Symbol};
 use repose_core::animation::{AnimationSpec, Easing, RepeatableSpec};
 use repose_core::*;
-use repose_ui::{
-    Box, Column, TextStyle,
-    ViewExt,
-    anim::animate_f32_from,
-};
+use repose_ui::{Box, Column, TextStyle, ViewExt, anim::animate_f32_from};
 
 use super::*;
 

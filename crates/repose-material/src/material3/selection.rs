@@ -6,8 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use crate::{Icon, Symbol};
 use repose_core::*;
 use repose_ui::{
-    Box, TextStyle,
-    ViewExt,
+    Box, TextStyle, ViewExt,
     anim::{animate_color, animate_f32},
 };
 

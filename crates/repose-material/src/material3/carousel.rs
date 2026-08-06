@@ -7,7 +7,6 @@ use repose_ui::LazyRowState;
 use repose_ui::lazy::LazyRow;
 use repose_ui::lazy_states::LazyRowConfig;
 
-
 /// M3 Carousel - a horizontally scrolling container with peek edges.
 ///
 /// Uses a `LazyRow` internally. The first and last items are partially visible

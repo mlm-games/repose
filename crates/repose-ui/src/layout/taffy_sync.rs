@@ -1,13 +1,11 @@
 #![allow(non_snake_case)]
 
-
 use repose_core::*;
 use repose_tree::{NodeId, TreeNode};
 use taffy::TaffyTree;
 use taffy::prelude::*;
 use taffy::style::FlexDirection;
 use taffy::style::Overflow;
-
 
 use super::*;
 
@@ -25,7 +23,10 @@ impl LayoutEngine {
 
         let visible_children: Vec<&View> = if matches!(
             view.kind,
-            ViewKind::Expander { expanded: false, .. }
+            ViewKind::Expander {
+                expanded: false,
+                ..
+            }
         ) {
             view.children.iter().take(1).collect()
         } else {
@@ -137,7 +138,13 @@ impl LayoutEngine {
 
         let (style, ctx, children, is_zstack, scroll_axis) = {
             let node = self.tree.get(node_id).expect("Node missing in update");
-            let collapsed = matches!(node.kind, ViewKind::Expander { expanded: false, .. });
+            let collapsed = matches!(
+                node.kind,
+                ViewKind::Expander {
+                    expanded: false,
+                    ..
+                }
+            );
             let children: Vec<NodeId> = if collapsed {
                 node.children.iter().take(1).copied().collect()
             } else {
@@ -194,7 +201,13 @@ impl LayoutEngine {
 
         let (new_style, new_ctx, children, is_zstack, scroll_axis) = {
             let node = self.tree.get(node_id).unwrap();
-            let collapsed = matches!(node.kind, ViewKind::Expander { expanded: false, .. });
+            let collapsed = matches!(
+                node.kind,
+                ViewKind::Expander {
+                    expanded: false,
+                    ..
+                }
+            );
             let children: Vec<NodeId> = if collapsed {
                 node.children.iter().take(1).copied().collect()
             } else {
@@ -267,7 +280,9 @@ impl LayoutEngine {
         taffy: &mut TaffyTree<NodeContext>,
     ) {
         for &child_tid in child_taffy_ids {
-            let Ok(cs) = taffy.style(child_tid) else { continue };
+            let Ok(cs) = taffy.style(child_tid) else {
+                continue;
+            };
             let mut new_cs = cs.clone();
             new_cs.flex_shrink = 0.0;
             // Fill viewport at minimum so nested scroll / short pages still work.
@@ -290,11 +305,19 @@ impl LayoutEngine {
         }
     }
 
-    pub(crate) fn make_children_absolute(&mut self, is_zstack: bool, child_taffy_ids: &[taffy::NodeId]) {
+    pub(crate) fn make_children_absolute(
+        &mut self,
+        is_zstack: bool,
+        child_taffy_ids: &[taffy::NodeId],
+    ) {
         Self::make_children_absolute_on(is_zstack, child_taffy_ids, &mut self.taffy);
     }
 
-    pub(crate) fn style_from_node(&self, node: &TreeNode, font_px: &dyn Fn(f32) -> f32) -> taffy::Style {
+    pub(crate) fn style_from_node(
+        &self,
+        node: &TreeNode,
+        font_px: &dyn Fn(f32) -> f32,
+    ) -> taffy::Style {
         self.style_from_kind(&node.kind, &node.modifier, font_px)
     }
 
@@ -590,7 +613,10 @@ impl LayoutEngine {
         Self::context_from_kind_or_modifier(&node.kind, &node.modifier)
     }
 
-    pub(crate) fn context_from_kind_or_modifier(kind: &ViewKind, m: &repose_core::Modifier) -> NodeContext {
+    pub(crate) fn context_from_kind_or_modifier(
+        kind: &ViewKind,
+        m: &repose_core::Modifier,
+    ) -> NodeContext {
         if m.scroll.is_some() {
             return NodeContext::ScrollContainer;
         }

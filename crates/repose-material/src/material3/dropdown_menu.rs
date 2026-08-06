@@ -4,14 +4,10 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
-use repose_ui::{
-    Box, Column, Row, Text, TextStyle,
-    ViewExt, ZStack,
-    overlay::OverlayHandle,
-};
+use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt, ZStack, overlay::OverlayHandle};
 
-use super::*;
 use super::util::apply_tonal_elevation;
+use super::*;
 
 /// Configuration for [`DropdownMenu`].
 #[derive(Clone, Debug)]
@@ -226,8 +222,12 @@ pub fn DropdownMenu(
                         .max(DDM_MIN_OPEN_HEIGHT);
                     let place_below = space_below >= estimated_h
                         || (space_above < estimated_h && space_below >= space_above);
-                    let available_height =
-                        (if place_below { space_below } else { space_above }).max(48.0);
+                    let available_height = (if place_below {
+                        space_below
+                    } else {
+                        space_above
+                    })
+                    .max(48.0);
 
                     let popup_x = rect.x + config.offset_x;
                     let constrained_width = config.max_width;
@@ -257,17 +257,15 @@ pub fn DropdownMenu(
                     } else {
                         let menu_bottom_y = rect.y + config.offset_y;
                         let offset_bottom = (win_h - menu_bottom_y).max(0.0);
-                        offset_modifier = offset_modifier
-                            .offset(Some(popup_x), None, None, Some(offset_bottom));
+                        offset_modifier =
+                            offset_modifier.offset(Some(popup_x), None, None, Some(offset_bottom));
                     }
 
-                    let menu = Box(
-                        offset_modifier
-                            .absolute()
-                            .scale(scale)
-                            .alpha(alpha)
-                            .transform_origin(0.0, transform_origin_y),
-                    )
+                    let menu = Box(offset_modifier
+                        .absolute()
+                        .scale(scale)
+                        .alpha(alpha)
+                        .transform_origin(0.0, transform_origin_y))
                     .child(content);
 
                     let scrim = Box(Modifier::new().fill_max_size().on_pointer_down({
@@ -390,17 +388,13 @@ fn render_dropdown_menu_content(
         _ => unreachable!(),
     };
 
-    let items_column = Box(
-        Modifier::new()
-            .fill_max_width()
-            .max_height((max_height - 2.0 * DDM_VERTICAL_PADDING).max(0.0))
-            .vertical_scroll(axis_binding),
-    )
+    let items_column = Box(Modifier::new()
+        .fill_max_width()
+        .max_height((max_height - 2.0 * DDM_VERTICAL_PADDING).max(0.0))
+        .vertical_scroll(axis_binding))
     .child(Column(Modifier::new().fill_max_width()).with_children(children));
 
-    let shadow_elevation = config
-        .shadow_elevation
-        .unwrap_or(th.elevation.level2);
+    let shadow_elevation = config.shadow_elevation.unwrap_or(th.elevation.level2);
 
     let mut card_modifier = Modifier::new()
         .shadow(shadow_elevation, 0.0)
@@ -415,7 +409,11 @@ fn render_dropdown_menu_content(
         .background(config.container_color)
         .clip_rounded(config.shape_radius.unwrap_or(th.shapes.extra_small));
 
-    card_modifier = apply_tonal_elevation(card_modifier, config.tonal_elevation, config.container_color);
+    card_modifier = apply_tonal_elevation(
+        card_modifier,
+        config.tonal_elevation,
+        config.container_color,
+    );
 
     if let Some((border_width, border_color, border_radius)) = config.border {
         card_modifier = card_modifier.border(border_width, border_color, border_radius);

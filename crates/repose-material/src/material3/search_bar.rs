@@ -8,15 +8,13 @@ use repose_core::animation::AnimationSpec;
 use repose_core::text::ImeAction;
 use repose_core::*;
 use repose_ui::{
-    BasicTextField, Box, Column, Row, Spacer, Text, TextFieldState, TextStyle,
-    ViewExt, ZStack,
-    anim::animate_f32,
-    overlay::OverlayHandle,
+    BasicTextField, Box, Column, Row, Spacer, Text, TextFieldState, TextStyle, ViewExt, ZStack,
+    anim::animate_f32, overlay::OverlayHandle,
 };
 
-use super::*;
 use super::app_bar::WindowInsets;
 use super::util::apply_tonal_elevation;
+use super::*;
 
 use super::util::lerp_color;
 /// Color slots for [`SearchBar`]. Matches Compose Material3 `SearchBarColors`.
@@ -552,7 +550,6 @@ pub fn SearchBarInputField(
     }
 }
 
-
 /// Record the collapsed bar's layout rect on the state. Returns a modifier
 /// that should be applied to the collapsed bar.
 fn track_collapsed_layout(state: &Rc<SearchBarState>) -> Modifier {
@@ -562,7 +559,6 @@ fn track_collapsed_layout(state: &Rc<SearchBarState>) -> Modifier {
             .set((rect.x, rect.y, rect.w, rect.h));
     })
 }
-
 
 /// M3 Collapsed Search Bar -> renders ONLY the collapsed bar surface wrapping
 /// the provided `input_field`. Does NOT manage expanded content.
@@ -642,7 +638,6 @@ pub fn SearchBar(
         )),
     )
 }
-
 
 /// M3 Search Bar that manages expanded content with animated width and
 /// suggestions dropdown. Equivalent to CK's

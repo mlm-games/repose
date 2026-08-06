@@ -42,9 +42,7 @@ pub enum DrawCommand {
     },
     /// Screen-space overlays drawn in final device pixels, unaffected by the
     /// world transform.
-    VectorOverlay {
-        meshes: Arc<[VectorMeshData]>,
-    },
+    VectorOverlay { meshes: Arc<[VectorMeshData]> },
     /// Begin a stencil clip from an arbitrary tessellated mask.
     PushVectorClip { mesh: Arc<VectorMeshData> },
     /// End a stencil clip opened by `PushVectorClip`.

@@ -1,10 +1,7 @@
 #![allow(non_snake_case)]
 
-
 use repose_core::*;
 use repose_tree::{NodeId, ViewTree};
-
-
 
 pub(crate) fn open_url(url: &str) {
     let _ = webbrowser::open(url);
@@ -68,7 +65,10 @@ pub(crate) fn infer_label(tree: &ViewTree, node_id: NodeId) -> Option<String> {
     None
 }
 
-pub(crate) fn intersect_rect(a: repose_core::Rect, b: repose_core::Rect) -> Option<repose_core::Rect> {
+pub(crate) fn intersect_rect(
+    a: repose_core::Rect,
+    b: repose_core::Rect,
+) -> Option<repose_core::Rect> {
     let x0 = a.x.max(b.x);
     let y0 = a.y.max(b.y);
     let x1 = (a.x + a.w).min(b.x + b.w);
@@ -82,7 +82,11 @@ pub(crate) fn intersect_rect(a: repose_core::Rect, b: repose_core::Rect) -> Opti
     }
 }
 
-pub(crate) fn clip_hits_to_viewport(hits: &mut Vec<HitRegion>, start: usize, vp: repose_core::Rect) {
+pub(crate) fn clip_hits_to_viewport(
+    hits: &mut Vec<HitRegion>,
+    start: usize,
+    vp: repose_core::Rect,
+) {
     let mut i = start;
     while i < hits.len() {
         if let Some(r) = intersect_rect(hits[i].rect, vp) {

@@ -2,13 +2,13 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::hash::{Hash, Hasher};
 
-use repose_text::{CacheKey, Command};
-use lyon_path::math::Point;
 use lyon_path::Path;
+use lyon_path::math::Point;
 use lyon_tessellation::{
     FillOptions, FillTessellator, LineCap, LineJoin, StrokeOptions, StrokeTessellator,
     VertexBuffers, geometry_builder::simple_builder,
 };
+use repose_text::{CacheKey, Command};
 
 use crate::slug::outline::commands_to_path;
 use crate::slug::path_effect::apply_path_effect;
@@ -193,8 +193,7 @@ impl GlyphSlugCache {
         miter: f32,
         path_effect: &Option<repose_core::PathEffect>,
     ) -> Option<&CachedTessGlyph> {
-        let tess_key =
-            StrokeTessKey::new(width_em, cap, join, miter, path_effect);
+        let tess_key = StrokeTessKey::new(width_em, cap, join, miter, path_effect);
         let lyon_cap = match cap {
             repose_core::StrokeCap::Butt => LineCap::Butt,
             repose_core::StrokeCap::Round => LineCap::Round,

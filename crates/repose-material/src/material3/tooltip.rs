@@ -4,11 +4,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
-use repose_ui::{
-    Box, Text, TextStyle,
-    ViewExt,
-    anim::animate_f32,
-};
+use repose_ui::{Box, Text, TextStyle, ViewExt, anim::animate_f32};
 
 use super::*;
 
@@ -116,10 +112,7 @@ pub fn TooltipBox(
     if config.enable_user_input {
         let enter = state.clone();
         let leave = state.clone();
-        host = host.hoverable(
-            move || enter.show(),
-            move || leave.dismiss(),
-        );
+        host = host.hoverable(move || enter.show(), move || leave.dismiss());
     }
 
     Box(host).child((

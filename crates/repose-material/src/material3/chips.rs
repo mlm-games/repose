@@ -4,14 +4,10 @@ use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
 use repose_core::*;
-use repose_ui::{
-    Box, Row,
-    ViewExt,
-    anim::animate_color,
-};
+use repose_ui::{Box, Row, ViewExt, anim::animate_color};
 
-use super::*;
 use super::util::FILTERCHIP_COUNTER;
+use super::*;
 
 /// Color slots for chips (both non-selectable and selectable).
 #[derive(Clone, Copy, Debug)]
