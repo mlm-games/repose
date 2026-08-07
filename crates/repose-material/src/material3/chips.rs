@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
 use repose_core::*;
-use repose_ui::{Box, Row, ViewExt, anim::animate_color};
+use repose_ui::{Box, FlowRow, Row, ViewExt, anim::animate_color};
 
 use super::util::FILTERCHIP_COUNTER;
 use super::*;
@@ -180,6 +180,7 @@ pub fn AssistChip(
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
     let mut m = Modifier::new()
+        .flex_shrink(0.0)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
@@ -258,6 +259,7 @@ pub fn ElevatedAssistChip(
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
     let mut m = Modifier::new()
+        .flex_shrink(0.0)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
@@ -366,6 +368,7 @@ pub fn FilterChip(
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
     let mut m = Modifier::new()
+        .flex_shrink(0.0)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
@@ -464,6 +467,7 @@ pub fn ElevatedFilterChip(
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
     let mut m = Modifier::new()
+        .flex_shrink(0.0)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
@@ -542,6 +546,7 @@ pub fn SuggestionChip(
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
     let mut m = Modifier::new()
+        .flex_shrink(0.0)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
@@ -606,6 +611,7 @@ pub fn ElevatedSuggestionChip(
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
     let mut m = Modifier::new()
+        .flex_shrink(0.0)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
@@ -703,6 +709,7 @@ pub fn InputChip(
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
     let mut m = Modifier::new()
+        .flex_shrink(0.0)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
@@ -756,4 +763,57 @@ pub fn InputChip(
                 .unwrap_or(Box(Modifier::new())),
         )),
     )
+}
+
+/// Shared layout for the M3 chip group composables: a full-width wrapping
+/// `FlowRow` whose chips keep their intrinsic width (via `flex_shrink(0)`)
+/// instead of shrinking under constrained/centered parents.
+pub fn chip_group_flow(modifier: Modifier, children: impl repose_ui::IntoChildren) -> View {
+    FlowRow(
+        Modifier::new()
+            .fill_max_width()
+            .gap(8.0)
+            .align_items(AlignItems::CENTER)
+            .then(modifier),
+    )
+    .child(children)
+}
+
+/// M3 Filter Chip Group.
+pub fn FilterChipGroup(modifier: Modifier, children: impl repose_ui::IntoChildren) -> View {
+    chip_group_flow(modifier, children)
+}
+
+/// M3 Elevated Filter Chip Group.
+pub fn ElevatedFilterChipGroup(modifier: Modifier, children: impl repose_ui::IntoChildren) -> View {
+    chip_group_flow(modifier, children)
+}
+
+/// M3 Assist Chip Group.
+pub fn AssistChipGroup(modifier: Modifier, children: impl repose_ui::IntoChildren) -> View {
+    chip_group_flow(modifier, children)
+}
+
+/// M3 Elevated Assist Chip Group.
+/// [`ElevatedAssistChip`]s.
+pub fn ElevatedAssistChipGroup(modifier: Modifier, children: impl repose_ui::IntoChildren) -> View {
+    chip_group_flow(modifier, children)
+}
+
+/// M3 Suggestion Chip Group.
+pub fn SuggestionChipGroup(modifier: Modifier, children: impl repose_ui::IntoChildren) -> View {
+    chip_group_flow(modifier, children)
+}
+
+/// M3 Elevated Suggestion Chip Group.
+pub fn ElevatedSuggestionChipGroup(
+    modifier: Modifier,
+    children: impl repose_ui::IntoChildren,
+) -> View {
+    chip_group_flow(modifier, children)
+}
+
+/// M3 Input Chip Group.
+pub fn InputChipGroup(modifier: Modifier, children: impl repose_ui::IntoChildren) -> View {
+    chip_group_flow(modifier, children)
 }
