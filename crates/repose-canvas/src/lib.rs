@@ -47,6 +47,18 @@ pub enum DrawCommand {
     PushVectorClip { mesh: Arc<VectorMeshData> },
     /// End a stencil clip opened by `PushVectorClip`.
     PopVectorClip,
+    /// Push a world transform onto the stack (image/vector subtree).
+    PushTransform { transform: Transform },
+    /// Pop a transform pushed by `PushTransform`.
+    PopTransform,
+    /// A positioned image. `rect` is in image-local space; the transform stack
+    /// maps it to the canvas. `handle` was uploaded via `RenderContext`.
+    Image {
+        rect: Rect,
+        handle: ImageHandle,
+        tint: Color,
+        fit: ImageFit,
+    },
 }
 
 impl DrawScope {
@@ -288,6 +300,31 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                 }
                 DrawCommand::PopVectorClip => {
                     scene.nodes.push(SceneNode::PopVectorClip);
+                }
+                DrawCommand::PushTransform { transform } => {
+                    let mut transform = *transform;
+
+                    // Canvas local -> window global.
+                    transform.translate_x += rect.x;
+                    transform.translate_y += rect.y;
+
+                    scene.nodes.push(SceneNode::PushTransform { transform });
+                }
+                DrawCommand::PopTransform => {
+                    scene.nodes.push(SceneNode::PopTransform);
+                }
+                DrawCommand::Image {
+                    rect: r,
+                    handle,
+                    tint,
+                    fit,
+                } => {
+                    scene.nodes.push(SceneNode::Image {
+                        rect: *r,
+                        handle: *handle,
+                        tint: *tint,
+                        fit: *fit,
+                    });
                 }
             }
         }

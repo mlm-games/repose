@@ -4743,22 +4743,25 @@ impl WgpuSceneRenderer {
 
                     let src_w = img_w as f32;
                     let src_h = img_h as f32;
-                    let transformed = current_transform.apply_to_rect(*rect);
-                    let dst_w = transformed.w.max(0.0);
-                    let dst_h = transformed.h.max(0.0);
+
+                    let dst_w = rect.w.max(0.0);
+                    let dst_h = rect.h.max(0.0);
                     if dst_w <= 0.0 || dst_h <= 0.0 {
                         continue;
                     }
 
-                    let (xywh_ndc, uv_rect) = match fit {
+                    let (draw_rect, uv_rect) = match fit {
                         repose_core::view::ImageFit::Contain => {
                             let scale = (dst_w / src_w).min(dst_h / src_h);
                             let w = src_w * scale;
                             let h = src_h * scale;
-                            let x = transformed.x + (dst_w - w) * 0.5;
-                            let y = transformed.y + (dst_h - h) * 0.5;
                             (
-                                to_ndc(x, y, w, h, current_target_size.0, current_target_size.1),
+                                repose_core::Rect {
+                                    x: rect.x + (dst_w - w) * 0.5,
+                                    y: rect.y + (dst_h - h) * 0.5,
+                                    w,
+                                    h,
+                                },
                                 [0.0, 1.0, 1.0, 0.0],
                             )
                         }
@@ -4772,62 +4775,41 @@ impl WgpuSceneRenderer {
                             let v0 = (overflow_y / content_h).clamp(0.0, 1.0);
                             let u1 = ((overflow_x + dst_w) / content_w).clamp(0.0, 1.0);
                             let v1 = ((overflow_y + dst_h) / content_h).clamp(0.0, 1.0);
-                            (
-                                to_ndc(
-                                    transformed.x,
-                                    transformed.y,
-                                    dst_w,
-                                    dst_h,
-                                    current_target_size.0,
-                                    current_target_size.1,
-                                ),
-                                [u0, 1.0 - v1, u1, 1.0 - v0],
-                            )
+                            (*rect, [u0, 1.0 - v1, u1, 1.0 - v0])
                         }
                         repose_core::view::ImageFit::FitWidth => {
                             let scale = dst_w / src_w;
-                            let w = dst_w;
-                            let h = src_h * scale;
-                            let y = transformed.y + (dst_h - h) * 0.5;
                             (
-                                to_ndc(
-                                    transformed.x,
-                                    y,
-                                    w,
-                                    h,
-                                    current_target_size.0,
-                                    current_target_size.1,
-                                ),
+                                repose_core::Rect {
+                                    x: rect.x,
+                                    y: rect.y + (dst_h - src_h * scale) * 0.5,
+                                    w: dst_w,
+                                    h: src_h * scale,
+                                },
                                 [0.0, 1.0, 1.0, 0.0],
                             )
                         }
                         repose_core::view::ImageFit::FitHeight => {
                             let scale = dst_h / src_h;
-                            let w = src_w * scale;
-                            let h = dst_h;
-                            let x = transformed.x + (dst_w - w) * 0.5;
                             (
-                                to_ndc(
-                                    x,
-                                    transformed.y,
-                                    w,
-                                    h,
-                                    current_target_size.0,
-                                    current_target_size.1,
-                                ),
+                                repose_core::Rect {
+                                    x: rect.x + (dst_w - src_w * scale) * 0.5,
+                                    y: rect.y,
+                                    w: src_w * scale,
+                                    h: dst_h,
+                                },
                                 [0.0, 1.0, 1.0, 0.0],
                             )
                         }
-                        _ => ([0.0; 4], [0.0; 4]),
+                        _ => continue,
                     };
 
-                    // Convert top-left based NDC to center-based for shader
-                    let ndc_center = [
-                        xywh_ndc[0] + xywh_ndc[2] * 0.5,
-                        xywh_ndc[1] + xywh_ndc[3] * 0.5,
-                        xywh_ndc[2],
-                        xywh_ndc[3],
-                    ];
+                    let (ndc_center, sin_cos) = rect_to_instance_ndc(
+                        draw_rect,
+                        current_transform,
+                        current_target_size.0,
+                        current_target_size.1,
+                    );
 
                     if is_nv12 {
                         let uv_x_offset = if let Some(ImageTex::Nv12 { w, color_info, .. }) =
@@ -4846,7 +4828,7 @@ impl WgpuSceneRenderer {
                             uv: uv_rect,
                             color: tint.to_linear(),
                             uv_x_offset,
-                            sin_cos: [1.0, 0.0],
+                            sin_cos,
                             _pad: [0.0],
                         };
                         if let Some((off, _)) = self.nv12.upload(&self.device, &self.queue, &[inst])
@@ -4863,7 +4845,7 @@ impl WgpuSceneRenderer {
                             xywh: ndc_center,
                             uv: uv_rect,
                             color: tint.to_linear(),
-                            sin_cos: [1.0, 0.0],
+                            sin_cos,
                         };
                         if let Some((off, _)) =
                             self.glyph_color.upload(&self.device, &self.queue, &[inst])
