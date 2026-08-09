@@ -211,7 +211,7 @@ impl App {
 
             render: RenderContext::new(),
 
-            inspector: Some(repose_devtools::Inspector::new()),
+            inspector: None, //  Some(repose_devtools::Inspector::new()),// Incomplete / doesn't work, so better disable it
 
             touch_scrolled: false,
             scroll_capture_id: None,
