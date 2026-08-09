@@ -46,7 +46,7 @@ bytemuck = { version = "1.25.0", features = ["derive"] }
 taffy = { version = "0.12", default-features = true }
 
 winit = { version = "0.30", default-features = true }
-wgpu = "30"
+wgpu = { version = "30", features = ["webgl"] }
 pollster = "0.4"
 
 font-awl = "0.2"
