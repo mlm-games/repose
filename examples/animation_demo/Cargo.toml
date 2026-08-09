@@ -2,6 +2,7 @@
 name = "animation_demo"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 publish = false
 description = "Animation demo for repose"
 
