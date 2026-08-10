@@ -900,167 +900,130 @@ pub fn run_desktop_app_with_config(
                     }
                 }
 
-                WindowEvent::MouseInput {
-                    state: ElementState::Pressed,
-                    button: MouseButton::Left,
-                    ..
-                } => {
+                WindowEvent::MouseInput { state, button, .. } => {
                     let pos = Vec2 {
                         x: self.rt.mouse_pos_px.0,
                         y: self.rt.mouse_pos_px.1,
                     };
 
-                    let result = self.rt.handle_pointer_press(pos, PointerButton::Primary);
-
-                    // Platform-specific IME setup for focused textfields
-                    if let Some(fid) = result.focused
-                        && let Some(win) = &self.window
-                        && let Some(f) = &self.rt.frame_cache
-                        && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
-                    {
-                        let sf = win.scale_factor();
-                        rc_web::set_ime_for_textfield_ex(
-                            win,
-                            true,
-                            hit.keyboard_type.ime_purpose_hint(),
-                            hit.auto_correct.unwrap_or(true),
-                            hit.capitalization,
-                        );
-                        win.set_ime_cursor_area(
-                            LogicalPosition::new(hit.rect.x as f64 / sf, hit.rect.y as f64 / sf),
-                            LogicalSize::new(hit.rect.w as f64 / sf, hit.rect.h as f64 / sf),
-                        );
-                    }
-
-                    // Click outside - no focus result from runtime, drop IME
-                    if result.focused.is_none() && self.rt.ime_preedit {
-                        if let Some(win) = &self.window {
-                            rc_web::set_ime_for_textfield(win, false);
-                        }
-                        self.rt.ime_preedit = false;
-                    }
-
-                    if result.needs_a11y_announce {
-                        self.announce_focus_change();
-                    }
-
-                    // Inspector: click-to-select topmost widget under cursor.
-                    if let Some(inspector) = &mut self.inspector
-                        && inspector.hud.inspector_enabled
-                        && let Some(f) = &self.rt.frame_cache
-                        && let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos))
-                    {
-                        let info = f.semantics_nodes.iter().find(|s| s.id == hit.id).map(|s| {
-                            repose_devtools::HoveredInfo {
-                                id: s.id,
-                                role: format!("{:?}", s.role),
-                                label: s.label.clone(),
-                            }
-                        });
-                        inspector
-                            .hud
-                            .select_widget(repose_devtools::SelectedWidget {
-                                id: hit.id,
-                                role: info.as_ref().map(|i| i.role.clone()).unwrap_or_default(),
-                                label: info.as_ref().and_then(|i| i.label.clone()),
-                                bounds: hit.rect,
-                            });
-                    }
-
-                    self.request_redraw();
-                }
-
-                WindowEvent::MouseInput {
-                    state: ElementState::Pressed,
-                    button: MouseButton::Middle,
-                    ..
-                } => {
-                    let Some(f) = &self.rt.frame_cache else {
-                        return;
+                    let mapped = match button {
+                        MouseButton::Left => PointerButton::Primary,
+                        MouseButton::Right => PointerButton::Secondary,
+                        MouseButton::Middle => PointerButton::Tertiary,
+                        // Forward/Back/other buttons are not dispatched by the runtime.
+                        _ => return,
                     };
-                    let pos = Vec2 {
-                        x: self.rt.mouse_pos_px.0,
-                        y: self.rt.mouse_pos_px.1,
-                    };
-                    if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos)) {
-                        // Dispatch Tertiary pointer event
-                        if let Some(cb) = &hit.on_pointer_down {
-                            cb(PointerEvent::new(
-                                PointerId(0),
-                                PointerKind::Mouse,
-                                PointerEventKind::Down(PointerButton::Tertiary),
-                                pos,
-                                1.0,
-                                self.rt.modifiers,
-                            ));
-                        }
-                        // Paste primary selection into textfield
-                        if self.is_textfield(hit.id) {
-                            let key = self.tf_key_of(hit.id);
-                            if let Some(state_rc) = self.rt.textfield_states.get(&key)
-                                && let Some(txt) = self.paste_from_primary()
+
+                    match state {
+                        ElementState::Pressed => {
+                            let result = self.rt.handle_pointer_press(pos, mapped);
+
+                            // Platform-specific IME setup for focused textfields
+                            if let Some(fid) = result.focused
+                                && let Some(win) = &self.window
+                                && let Some(f) = &self.rt.frame_cache
+                                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
                             {
-                                let mut st = state_rc.borrow_mut();
-                                st.insert_text_atomic(&txt);
-                                self.notify_text_change(hit.id, st.text.clone());
-                                if let Some(f) = &self.rt.frame_cache
-                                    && let Some(h) = f.hit_regions.iter().find(|h| h.id == hit.id)
+                                let sf = win.scale_factor();
+                                rc_web::set_ime_for_textfield_ex(
+                                    win,
+                                    true,
+                                    hit.keyboard_type.ime_purpose_hint(),
+                                    hit.auto_correct.unwrap_or(true),
+                                    hit.capitalization,
+                                );
+                                win.set_ime_cursor_area(
+                                    LogicalPosition::new(
+                                        hit.rect.x as f64 / sf,
+                                        hit.rect.y as f64 / sf,
+                                    ),
+                                    LogicalSize::new(hit.rect.w as f64 / sf, hit.rect.h as f64 / sf),
+                                );
+                            }
+
+                            // Click outside - no focus result from runtime, drop IME
+                            if result.focused.is_none() && self.rt.ime_preedit {
+                                if let Some(win) = &self.window {
+                                    rc_web::set_ime_for_textfield(win, false);
+                                }
+                                self.rt.ime_preedit = false;
+                            }
+
+                            if result.needs_a11y_announce {
+                                self.announce_focus_change();
+                            }
+
+                            // Middle-click: paste the primary selection into a textfield.
+                            if matches!(mapped, PointerButton::Tertiary)
+                                && let Some(f) = &self.rt.frame_cache
+                                && let Some(cid) = self.rt.capture_id
+                                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
+                                && self.is_textfield(hit.id)
+                            {
+                                let key = self.tf_key_of(hit.id);
+                                if let Some(state_rc) = self.rt.textfield_states.get(&key)
+                                    && let Some(txt) = self.paste_from_primary()
                                 {
-                                    App::tf_ensure_caret_visible(&mut st, h.tf_multiline);
+                                    let mut st = state_rc.borrow_mut();
+                                    st.insert_text_atomic(&txt);
+                                    self.notify_text_change(hit.id, st.text.clone());
+                                    if let Some(f) = &self.rt.frame_cache
+                                        && let Some(h) =
+                                            f.hit_regions.iter().find(|h| h.id == hit.id)
+                                    {
+                                        App::tf_ensure_caret_visible(&mut st, h.tf_multiline);
+                                    }
                                 }
                             }
+
+                            // Inspector: click-to-select topmost widget under cursor.
+                            if matches!(
+                                mapped,
+                                PointerButton::Primary | PointerButton::Secondary
+                            ) && let Some(inspector) = &mut self.inspector
+                                && inspector.hud.inspector_enabled
+                                && let Some(f) = &self.rt.frame_cache
+                                && let Some(hit) = f
+                                    .hit_regions
+                                    .iter()
+                                    .rev()
+                                    .find(|h| h.rect.contains(pos))
+                            {
+                                let info = f
+                                    .semantics_nodes
+                                    .iter()
+                                    .find(|s| s.id == hit.id)
+                                    .map(|s| repose_devtools::HoveredInfo {
+                                        id: s.id,
+                                        role: format!("{:?}", s.role),
+                                        label: s.label.clone(),
+                                    });
+                                inspector.hud.select_widget(repose_devtools::SelectedWidget {
+                                    id: hit.id,
+                                    role: info.as_ref().map(|i| i.role.clone()).unwrap_or_default(),
+                                    label: info.as_ref().and_then(|i| i.label.clone()),
+                                    bounds: hit.rect,
+                                });
+                            }
+
+                            self.request_redraw();
                         }
-                    }
-                    self.request_redraw();
-                }
 
-                WindowEvent::MouseInput {
-                    state: ElementState::Released,
-                    button: MouseButton::Left,
-                    ..
-                } => {
-                    let pos = Vec2 {
-                        x: self.rt.mouse_pos_px.0,
-                        y: self.rt.mouse_pos_px.1,
-                    };
+                        ElementState::Released => {
+                            self.rt.handle_pointer_release(pos, mapped);
 
-                    self.rt.handle_pointer_release(pos, PointerButton::Primary);
+                            // A11y: announce activation when a click fires on release
+                            if let (Some(f), Some(cid)) = (&self.rt.frame_cache, self.rt.capture_id)
+                                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
+                                && hit.rect.contains(pos)
+                                && hit.on_click.is_some()
+                                && let Some(node) = f.semantics_nodes.iter().find(|n| n.id == cid)
+                            {
+                                let label = node.label.as_deref().unwrap_or("");
+                                self.a11y.announce(&format!("Activated {}", label));
+                            }
 
-                    // A11y: announce activation when a click fires on release
-                    if let (Some(f), Some(cid)) = (&self.rt.frame_cache, self.rt.capture_id)
-                        && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
-                        && hit.rect.contains(pos)
-                        && hit.on_click.is_some()
-                        && let Some(node) = f.semantics_nodes.iter().find(|n| n.id == cid)
-                    {
-                        let label = node.label.as_deref().unwrap_or("");
-                        self.a11y.announce(&format!("Activated {}", label));
-                    }
-
-                    repose_core::request_frame();
-                }
-
-                WindowEvent::MouseInput {
-                    state: ElementState::Released,
-                    button: MouseButton::Middle,
-                    ..
-                } => {
-                    if let Some(f) = &self.rt.frame_cache {
-                        let pos = Vec2 {
-                            x: self.rt.mouse_pos_px.0,
-                            y: self.rt.mouse_pos_px.1,
-                        };
-                        if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos))
-                            && let Some(cb) = &hit.on_pointer_up
-                        {
-                            cb(PointerEvent::new(
-                                PointerId(0),
-                                PointerKind::Mouse,
-                                PointerEventKind::Up(PointerButton::Tertiary),
-                                pos,
-                                1.0,
-                                self.rt.modifiers,
-                            ));
+                            self.request_redraw();
                         }
                     }
                 }

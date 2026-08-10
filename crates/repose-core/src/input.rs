@@ -48,6 +48,7 @@ pub struct PointerEvent {
     pub id: PointerId,
     pub kind: PointerKind,
     pub event: PointerEventKind,
+    /// Position in window/surface physical pixels (device px).
     pub position: Vec2,
     pub pressure: f32,
     pub modifiers: Modifiers,

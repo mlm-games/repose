@@ -48,6 +48,12 @@ pub struct WebOptions {
     /// If true, request redraw continuously (needed for animations).
     continuous_redraw: bool,
 
+    /// If true, winit-web calls `preventDefault()` on the browser events it
+    /// processes (mousedown/move/up, wheel, keydown, ...), suppressing text
+    /// selection, touch scrolling, and similar default browser actions on the
+    /// canvas. Defaults to false.
+    prevent_default: bool,
+
     /// Common options shared with other platforms.
     common: ReposeOptions,
 }
@@ -60,6 +66,7 @@ impl WebOptions {
             canvas_id,
             fullscreen: true,
             continuous_redraw: true,
+            prevent_default: false,
             common: ReposeOptions::default(),
         }
     }
@@ -87,6 +94,16 @@ impl WebOptions {
     #[wasm_bindgen(setter)]
     pub fn set_continuous_redraw(&mut self, v: bool) {
         self.continuous_redraw = v;
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn prevent_default(&self) -> bool {
+        self.prevent_default
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_prevent_default(&mut self, v: bool) {
+        self.prevent_default = v;
     }
 
     #[wasm_bindgen(getter)]
@@ -152,6 +169,11 @@ pub fn run_web_app(
 struct WebDropListeners {
     _drag_over: Closure<dyn FnMut(DragEvent)>,
     _drop: Closure<dyn FnMut(DragEvent)>,
+    /// Suppresses the browser context menu on the canvas so right-click reaches
+    /// app code as `PointerButton::Secondary`.
+    _context_menu: Closure<dyn FnMut(web_sys::MouseEvent)>,
+    /// Suppresses browser middle-click autoscroll on the canvas.
+    _middle_down: Closure<dyn FnMut(web_sys::MouseEvent)>,
 }
 
 struct WebDeeplinkListener {
@@ -528,7 +550,7 @@ impl ApplicationHandler<()> for App {
         let mut attrs = Window::default_attributes()
             .with_title("Repose (Web)")
             .with_inner_size(PhysicalSize::new(1280u32, 800u32))
-            .with_prevent_default(false)
+            .with_prevent_default(self.options.prevent_default)
             .with_focusable(true);
 
         if let Some(id) = self.options.canvas_id.clone() {
@@ -616,9 +638,33 @@ impl ApplicationHandler<()> for App {
                 .add_event_listener_with_callback("dragover", drag_over.as_ref().unchecked_ref());
             let _ = canvas.add_event_listener_with_callback("drop", drop.as_ref().unchecked_ref());
 
+            // Right-click: suppress the OS/browser context menu so
+            // `PointerButton::Secondary` reaches app code.
+            let context_menu = Closure::wrap(Box::new(move |e: web_sys::MouseEvent| {
+                e.prevent_default();
+            }) as Box<dyn FnMut(_)>);
+
+            // Middle-click: suppress browser autoscroll.
+            let middle_down = Closure::wrap(Box::new(move |e: web_sys::MouseEvent| {
+                if e.button() == 1 {
+                    e.prevent_default();
+                }
+            }) as Box<dyn FnMut(_)>);
+
+            let _ = canvas.add_event_listener_with_callback(
+                "contextmenu",
+                context_menu.as_ref().unchecked_ref(),
+            );
+            let _ = canvas.add_event_listener_with_callback(
+                "mousedown",
+                middle_down.as_ref().unchecked_ref(),
+            );
+
             self.drop_listeners = Some(WebDropListeners {
                 _drag_over: drag_over,
                 _drop: drop,
+                _context_menu: context_menu,
+                _middle_down: middle_down,
             });
         }
 
@@ -738,11 +784,15 @@ impl ApplicationHandler<()> for App {
                 }
             }
 
-            WindowEvent::MouseInput {
-                state,
-                button: MouseButton::Left,
-                ..
-            } => {
+            WindowEvent::MouseInput { state, button, .. } => {
+                let mapped = match button {
+                    MouseButton::Left => PointerButton::Primary,
+                    MouseButton::Right => PointerButton::Secondary,
+                    MouseButton::Middle => PointerButton::Tertiary,
+                    // Forward/Back/other buttons are not dispatched by the runtime.
+                    _ => return,
+                };
+
                 let pos = Vec2 {
                     x: self.rt.mouse_pos_px.0,
                     y: self.rt.mouse_pos_px.1,
@@ -750,8 +800,7 @@ impl ApplicationHandler<()> for App {
 
                 match state {
                     ElementState::Pressed => {
-                        let press_result =
-                            self.rt.handle_pointer_press(pos, PointerButton::Primary);
+                        let press_result = self.rt.handle_pointer_press(pos, mapped);
                         // Platform-specific IME setup for focused textfields
                         if let Some(fid) = press_result.focused {
                             if let Some(f) = &self.rt.frame_cache
@@ -768,65 +817,22 @@ impl ApplicationHandler<()> for App {
                         } else {
                             rc_web::set_ime_for_textfield(&window, false);
                         }
+
+                        if matches!(mapped, PointerButton::Tertiary)
+                            && let Some(f) = &self.rt.frame_cache
+                            && let Some(cid) = self.rt.capture_id
+                            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
+                            && self.is_textfield(hit.id)
+                        {
+                            self.request_paste_async();
+                        }
+
                         self.request_redraw();
                     }
 
                     ElementState::Released => {
-                        self.rt.handle_pointer_release(pos, PointerButton::Primary);
+                        self.rt.handle_pointer_release(pos, mapped);
                         self.request_redraw();
-                    }
-                }
-            }
-
-            WindowEvent::MouseInput {
-                state,
-                button: MouseButton::Middle,
-                ..
-            } => {
-                if let Some(f) = &self.rt.frame_cache {
-                    let pos = Vec2 {
-                        x: self.rt.mouse_pos_px.0,
-                        y: self.rt.mouse_pos_px.1,
-                    };
-                    match state {
-                        ElementState::Pressed => {
-                            if let Some(i) = rc::top_hit_index(f, pos) {
-                                let hit = &f.hit_regions[i];
-                                if let Some(cb) = &hit.on_pointer_down {
-                                    cb(PointerEvent::new(
-                                        PointerId(0),
-                                        PointerKind::Mouse,
-                                        PointerEventKind::Down(PointerButton::Tertiary),
-                                        pos,
-                                        1.0,
-                                        self.rt.modifiers,
-                                    ));
-                                }
-                                // Paste from clipboard as a best-effort for middle-click
-                                if self.is_textfield(hit.id) {
-                                    self.request_paste_async();
-                                }
-                            }
-                            self.request_redraw();
-                        }
-                        ElementState::Released => {
-                            let pos = Vec2 {
-                                x: self.rt.mouse_pos_px.0,
-                                y: self.rt.mouse_pos_px.1,
-                            };
-                            if let Some(i) = rc::top_hit_index(f, pos)
-                                && let Some(cb) = &f.hit_regions[i].on_pointer_up
-                            {
-                                cb(PointerEvent::new(
-                                    PointerId(0),
-                                    PointerKind::Mouse,
-                                    PointerEventKind::Up(PointerButton::Tertiary),
-                                    pos,
-                                    1.0,
-                                    self.rt.modifiers,
-                                ));
-                            }
-                        }
                     }
                 }
             }
