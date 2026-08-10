@@ -96,6 +96,9 @@ pub struct ReposeRuntime {
     pub pointer_inside: bool,
     pub hover_id: Option<u64>,
     pub capture_id: Option<u64>,
+    /// Hit path captured at pointer-down: every region under the pointer,
+    /// ordered bottom-up (deepest child first, ancestors last).
+    pub hit_path: Option<Vec<u64>>,
     /// Which scroll consumer currently owns the wheel gesture.
     pub scroll_capture_id: Option<u64>,
     last_scroll_at: Option<web_time::Instant>,
@@ -124,6 +127,7 @@ impl ReposeRuntime {
             pointer_inside: false,
             hover_id: None,
             capture_id: None,
+            hit_path: None,
             scroll_capture_id: None,
             last_scroll_at: None,
             pressed_ids: HashSet::new(),
@@ -278,6 +282,46 @@ impl ReposeRuntime {
         self.frame_cache = Some(frame);
     }
 
+    fn dispatch_pointer_to_path(&self, kind: PointerEventKind, pos: Vec2, path: &[u64]) {
+        let Some(f) = &self.frame_cache else {
+            return;
+        };
+        let mut base = PointerEvent::new(
+            PointerId(0),
+            PointerKind::Mouse,
+            kind,
+            pos,
+            1.0,
+            self.modifiers,
+        );
+        for &id in path {
+            let Some(h) = f.hit_regions.iter().find(|h| h.id == id) else {
+                continue;
+            };
+            let cb = match kind {
+                PointerEventKind::Down(_) => &h.on_pointer_down,
+                PointerEventKind::Up(_) => &h.on_pointer_up,
+                PointerEventKind::Move => &h.on_pointer_move,
+                PointerEventKind::Cancel | PointerEventKind::Enter | PointerEventKind::Leave => {
+                    continue;
+                }
+            };
+            let Some(cb) = cb else {
+                continue;
+            };
+            let mut ev = base.clone();
+            ev.origin = Vec2 {
+                x: h.rect.x,
+                y: h.rect.y,
+            };
+            ev.position = pos - ev.origin;
+            cb(ev);
+            if base.is_consumed() {
+                break;
+            }
+        }
+    }
+
     /// Process a pointer-move event. Returns cursor suggestion.
     pub fn handle_pointer_move(&mut self, pos: Vec2) -> PointerMoveResult {
         self.mouse_pos_px = (pos.x, pos.y);
@@ -341,30 +385,19 @@ impl ReposeRuntime {
             request_frame();
         }
 
-        // Move delivery (captured first)
-        let mut pe = PointerEvent::new(
-            PointerId(0),
-            PointerKind::Mouse,
-            PointerEventKind::Move,
-            pos,
-            1.0,
-            self.modifiers,
-        );
-
-        if let Some(cid) = self.capture_id {
-            if let Some(h) = f.hit_regions.iter().find(|h| h.id == cid)
-                && let Some(cb) = &h.on_pointer_move
-            {
-                pe.origin = Vec2 {
-                    x: h.rect.x,
-                    y: h.rect.y,
-                };
-                pe.position = pe.position - pe.origin;
-                cb(pe);
-            }
+        if let Some(path) = &self.hit_path {
+            self.dispatch_pointer_to_path(PointerEventKind::Move, pos, path);
         } else if let Some(h) = top
             && let Some(cb) = &h.on_pointer_move
         {
+            let mut pe = PointerEvent::new(
+                PointerId(0),
+                PointerKind::Mouse,
+                PointerEventKind::Move,
+                pos,
+                1.0,
+                self.modifiers,
+            );
             pe.origin = Vec2 {
                 x: h.rect.x,
                 y: h.rect.y,
@@ -404,6 +437,15 @@ impl ReposeRuntime {
         };
 
         if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos)) {
+            let path: Vec<u64> = f
+                .hit_regions
+                .iter()
+                .rev()
+                .filter(|h| h.rect.contains(pos))
+                .map(|h| h.id)
+                .collect();
+            self.hit_path = Some(path.clone());
+
             // DnD press
             dnd::handle_drag_action(&DragAction::Press {
                 position: pos,
@@ -452,27 +494,12 @@ impl ReposeRuntime {
                     .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
             }
 
-            // PointerDown callback
-            if let Some(cb) = &hit.on_pointer_down {
-                let mut pe = PointerEvent::new(
-                    PointerId(0),
-                    PointerKind::Mouse,
-                    PointerEventKind::Down(button),
-                    pos,
-                    1.0,
-                    self.modifiers,
-                );
-                pe.origin = Vec2 {
-                    x: hit.rect.x,
-                    y: hit.rect.y,
-                };
-                pe.position = pe.position - pe.origin;
-                cb(pe);
-            }
+            self.dispatch_pointer_to_path(PointerEventKind::Down(button), pos, &path);
 
             request_frame();
         } else {
             // Click outside: drop focus
+            self.hit_path = None;
             if self.ime_preedit {
                 self.ime_preedit = false;
             }
@@ -484,7 +511,7 @@ impl ReposeRuntime {
     }
 
     /// Process a pointer button release.
-    pub fn handle_pointer_release(&mut self, pos: Vec2, _button: PointerButton) {
+    pub fn handle_pointer_release(&mut self, pos: Vec2, button: PointerButton) {
         self.mouse_pos_px = (pos.x, pos.y);
 
         if dnd::handle_drag_action(&DragAction::Release {
@@ -492,6 +519,7 @@ impl ReposeRuntime {
             modifiers: self.modifiers,
         }) {
             self.capture_id = None;
+            self.hit_path = None;
             self.pressed_ids.clear();
             request_frame();
             return;
@@ -503,28 +531,12 @@ impl ReposeRuntime {
 
         let Some(f) = &self.frame_cache else {
             self.capture_id = None;
+            self.hit_path = None;
             return;
         };
 
-        // PointerUp callback
-        if let Some(cid) = self.capture_id
-            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
-            && let Some(cb) = &hit.on_pointer_up
-        {
-            let mut pe = PointerEvent::new(
-                PointerId(0),
-                PointerKind::Mouse,
-                PointerEventKind::Up(_button),
-                pos,
-                1.0,
-                self.modifiers,
-            );
-            pe.origin = Vec2 {
-                x: hit.rect.x,
-                y: hit.rect.y,
-            };
-            pe.position = pe.position - pe.origin;
-            cb(pe);
+        if let Some(path) = &self.hit_path {
+            self.dispatch_pointer_to_path(PointerEventKind::Up(button), pos, path);
         }
 
         // Click detection
@@ -547,6 +559,7 @@ impl ReposeRuntime {
         }
 
         self.capture_id = None;
+        self.hit_path = None;
         request_frame();
     }
 
@@ -564,25 +577,8 @@ impl ReposeRuntime {
             pos,
             self.modifiers,
         );
-        // Emit Cancel for captured region
-        if let (Some(f), Some(cid)) = (&self.frame_cache, self.capture_id)
-            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
-            && let Some(cb) = &hit.on_pointer_cancel
-        {
-            let mut pe = PointerEvent::new(
-                PointerId(0),
-                PointerKind::Mouse,
-                PointerEventKind::Cancel,
-                pos,
-                1.0,
-                self.modifiers,
-            );
-            pe.origin = Vec2 {
-                x: hit.rect.x,
-                y: hit.rect.y,
-            };
-            pe.position = pe.position - pe.origin;
-            cb(pe);
+        if let Some(path) = &self.hit_path {
+            self.dispatch_pointer_to_path(PointerEventKind::Cancel, pos, path);
         }
         self.reset_pointer_state();
     }
@@ -682,6 +678,7 @@ impl ReposeRuntime {
 
     fn reset_pointer_state(&mut self) {
         self.capture_id = None;
+        self.hit_path = None;
         self.pressed_ids.clear();
         self.hover_id = None;
     }
