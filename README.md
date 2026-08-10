@@ -3,8 +3,8 @@
 A small, composable UI toolkit in Rust with a Compose-like API, cross-platform runners (desktop/Android/web), and a WGPU renderer.
 
 [![Crates.io](https://img.shields.io/crates/v/repose-core)](https://crates.io/crates/repose-core)
-[![GitHub](https://img.shields.io/github/license/mlm-games/repose)](LICENSE)
-[![Pages](https://img.shields.io/badge/demo-live-blue)](https://mlm-games.github.io/repose/)
+[![License](https://img.shields.io/github/license/mlm-games/repose)](LICENSE)
+[![Demo](https://img.shields.io/badge/demo-live-blue)](https://mlm-games.github.io/repose/)
 
 > **Status: pre-1.0**. API (mostly minor) might change. A few working apps exist, and there shouldn't be any major issues.
 
@@ -14,16 +14,20 @@ Useful for simple apps (though aiming for bigger ones in the future), and for de
 
 ## Features
 
-- **Declarative UI** - Compose-like API with `View` functions, reactive `Signal`s, and `remember` for state
-- **Cross-platform** - Desktop (winit), Android, and WebAssembly
-- **Layout** - Flexbox and Grid via Taffy
-- **Rendering** - Rectangles, borders, rounded clips, ellipses, text, images via WGPU
-- **Text** - Shaping, metrics, and wrapping with caching
-- **Input** - Pointer events, scrolling, focus traversal, IME support
-- **Widgets** - Text, Button, TextField, Checkbox, Switch, Slider, ScrollArea, LazyColumn
-- **Navigation** - Typed stack navigation with transitions (`repose-navigation`)
-- **Accessibility** - AccessKit integration on desktop, semantic node pipeline
-- **DevTools** - Inspector overlay (Ctrl+Shift+I)
+- **Declarative composition** — `View` functions, reactive `Signal`s, `remember` / `remember_mutable`, derived state (`produce_state`), effects, and composition locals
+- **Cross-platform runners** — Desktop (winit), Android (native activity), WebAssembly (canvas + WGPU/WebGL)
+- **Layout** — Flexbox and Grid via [Taffy](https://github.com/DioxusLabs/taffy); modifiers for padding, gaps, alignment, clipping, borders, etc.
+- **GPU rendering** — Rectangles, rounded clips, borders, ellipses, text, and images through a WGPU backend (atlases + pipelines)
+- **Text** — Shaping, metrics, wrapping/ellipsis with caching (`repose-text` / Parley + font stack)
+- **Input** — Pointer events, scrolling, focus traversal, IME, gestures
+- **Widgets & building blocks** — Text, buttons, text fields, checkbox, switch, slider, `ScrollArea`, `LazyColumn` / lazy lists, pager, overlays & snackbars, color picker, selection, subcompose
+- **Material-inspired components** — Material 3-style controls, ripples, symbols/icons (`repose-material`)
+- **Navigation** — Typed back-stack navigation with transitions (`repose-navigation`)
+- **Canvas** — Custom painting surface (`repose-canvas`)
+- **Docking** — Dockable panels (`repose-docking`)
+- **Accessibility** — AccessKit on desktop + semantic node pipeline
+- **DevTools** — Inspector overlay (Ctrl+Shift+I)
+- **Animation** — Runtime animation clock and helpers
 
 ### Non-Goals
 
@@ -133,16 +137,16 @@ Wanted an UI which was short and easy to understand by looking at the code (esse
 
 ## Architecture
 
-| Crate | Purpose |
-|-------|---------|
+| Crate | Role |
+|-------|------|
 | `repose-core` | Signals, effects, runtime, view model, locals, animation |
 | `repose-ui` | Widgets, layout (Taffy), paint, hit regions, semantics |
 | `repose-render-wgpu` | WGPU renderer, atlases, pipelines |
-| `repose-platform` | Platform runners (winit desktop / Android / WASM web) |
-| `repose-text` | Text shaping, metrics, wrapping/ellipsis caches |
-| `repose-material` | Material Design-inspired components |
-| `repose-navigation` | Typed stack navigation with transitions |
-| `repose-canvas` | Custom painting surface |
+| `repose-platform` | Platform runners (winit desktop / Android / WASM) |
+| `repose-text` | Text shaping, metrics, caches |
+| `repose-material` | Material-inspired components & symbols |
+| `repose-navigation` | Typed stack navigation + transitions |
+| `repose-canvas` | Custom drawing surface |
 | `repose-devtools` | Inspector HUD |
 | `repose-docking` | Dockable panels |
 
@@ -182,6 +186,6 @@ Consider donating if you'd like to support it's development. Open an issue or a 
 
 ## License
 
-Repose is licensed under the GNU Lesser General Public License, version 2.1 or later (`LGPL-2.1-or-later`). 
+MPL-2.0 - see [LICENSE](LICENSE).
 
 See [LICENSE](LICENSE) for more info.
