@@ -3942,6 +3942,27 @@ impl RenderBackend for WgpuSurfaceBackend {
         self.renderer
             .render_scene_to_encoder(scene, &mut encoder, &swap_view, clear_color);
 
+        //NOTE: The WebGL HAL present path (fullscreen triangle / blit) does not
+        // restore gl.colorMask. Hence this is needed to prevent frames from going transparent.
+        {
+            let _reset = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("webgl color_mask reset before present"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &swap_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+        }
+
         self.renderer
             .queue
             .submit(std::iter::once(encoder.finish()));
