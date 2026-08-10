@@ -967,8 +967,8 @@ fn render_split(
                 return;
             }
             let mut t = match dir {
-                SplitDir::Horizontal => (pe.position.x - r.x) / r.w,
-                SplitDir::Vertical => (pe.position.y - r.y) / r.h,
+                SplitDir::Horizontal => (pe.position_in_window().x - r.x) / r.w,
+                SplitDir::Vertical => (pe.position_in_window().y - r.y) / r.h,
             };
             for snap in [0.25_f32, 0.5, 0.75] {
                 if (t - snap).abs() < 0.018 {

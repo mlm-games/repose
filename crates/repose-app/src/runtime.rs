@@ -342,7 +342,7 @@ impl ReposeRuntime {
         }
 
         // Move delivery (captured first)
-        let pe = PointerEvent::new(
+        let mut pe = PointerEvent::new(
             PointerId(0),
             PointerKind::Mouse,
             PointerEventKind::Move,
@@ -355,11 +355,21 @@ impl ReposeRuntime {
             if let Some(h) = f.hit_regions.iter().find(|h| h.id == cid)
                 && let Some(cb) = &h.on_pointer_move
             {
+                pe.origin = Vec2 {
+                    x: h.rect.x,
+                    y: h.rect.y,
+                };
+                pe.position = pe.position - pe.origin;
                 cb(pe);
             }
         } else if let Some(h) = top
             && let Some(cb) = &h.on_pointer_move
         {
+            pe.origin = Vec2 {
+                x: h.rect.x,
+                y: h.rect.y,
+            };
+            pe.position = pe.position - pe.origin;
             cb(pe);
         }
 
@@ -444,7 +454,7 @@ impl ReposeRuntime {
 
             // PointerDown callback
             if let Some(cb) = &hit.on_pointer_down {
-                let pe = PointerEvent::new(
+                let mut pe = PointerEvent::new(
                     PointerId(0),
                     PointerKind::Mouse,
                     PointerEventKind::Down(button),
@@ -452,6 +462,11 @@ impl ReposeRuntime {
                     1.0,
                     self.modifiers,
                 );
+                pe.origin = Vec2 {
+                    x: hit.rect.x,
+                    y: hit.rect.y,
+                };
+                pe.position = pe.position - pe.origin;
                 cb(pe);
             }
 
@@ -496,7 +511,7 @@ impl ReposeRuntime {
             && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
             && let Some(cb) = &hit.on_pointer_up
         {
-            let pe = PointerEvent::new(
+            let mut pe = PointerEvent::new(
                 PointerId(0),
                 PointerKind::Mouse,
                 PointerEventKind::Up(_button),
@@ -504,6 +519,11 @@ impl ReposeRuntime {
                 1.0,
                 self.modifiers,
             );
+            pe.origin = Vec2 {
+                x: hit.rect.x,
+                y: hit.rect.y,
+            };
+            pe.position = pe.position - pe.origin;
             cb(pe);
         }
 
@@ -549,7 +569,7 @@ impl ReposeRuntime {
             && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
             && let Some(cb) = &hit.on_pointer_cancel
         {
-            let pe = PointerEvent::new(
+            let mut pe = PointerEvent::new(
                 PointerId(0),
                 PointerKind::Mouse,
                 PointerEventKind::Cancel,
@@ -557,6 +577,11 @@ impl ReposeRuntime {
                 1.0,
                 self.modifiers,
             );
+            pe.origin = Vec2 {
+                x: hit.rect.x,
+                y: hit.rect.y,
+            };
+            pe.position = pe.position - pe.origin;
             cb(pe);
         }
         self.reset_pointer_state();
@@ -595,7 +620,7 @@ impl ReposeRuntime {
                     x: self.mouse_pos_px.0,
                     y: self.mouse_pos_px.1,
                 };
-                let pe = PointerEvent::new(
+                let mut pe = PointerEvent::new(
                     PointerId(0),
                     PointerKind::Mouse,
                     PointerEventKind::Leave,
@@ -603,6 +628,11 @@ impl ReposeRuntime {
                     1.0,
                     self.modifiers,
                 );
+                pe.origin = Vec2 {
+                    x: prev.rect.x,
+                    y: prev.rect.y,
+                };
+                pe.position = pe.position - pe.origin;
                 cb(pe);
                 changed = true;
             }
@@ -1272,7 +1302,7 @@ fn dispatch_hover_change(
         && let Some(prev) = f.hit_regions.iter().find(|h| h.id == prev_id)
         && let Some(cb) = &prev.on_pointer_leave
     {
-        let pe = PointerEvent::new(
+        let mut pe = PointerEvent::new(
             PointerId(0),
             PointerKind::Mouse,
             PointerEventKind::Leave,
@@ -1280,13 +1310,18 @@ fn dispatch_hover_change(
             1.0,
             modifiers,
         );
+        pe.origin = Vec2 {
+            x: prev.rect.x,
+            y: prev.rect.y,
+        };
+        pe.position = pe.position - pe.origin;
         cb(pe);
     }
     if let Some(hid) = new_hover
         && let Some(h) = f.hit_regions.iter().find(|h| h.id == hid)
         && let Some(cb) = &h.on_pointer_enter
     {
-        let pe = PointerEvent::new(
+        let mut pe = PointerEvent::new(
             PointerId(0),
             PointerKind::Mouse,
             PointerEventKind::Enter,
@@ -1294,6 +1329,11 @@ fn dispatch_hover_change(
             1.0,
             modifiers,
         );
+        pe.origin = Vec2 {
+            x: h.rect.x,
+            y: h.rect.y,
+        };
+        pe.position = pe.position - pe.origin;
         cb(pe);
     }
     *hover_id = new_hover;

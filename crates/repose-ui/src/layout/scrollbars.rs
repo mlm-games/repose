@@ -118,8 +118,12 @@ pub(crate) fn push_scrollbar(
         });
 
         let extract = match axis {
-            ScrollbarAxis::V => (|pe: &PointerEvent| pe.position.y) as fn(&PointerEvent) -> f32,
-            ScrollbarAxis::H => (|pe: &PointerEvent| pe.position.x) as fn(&PointerEvent) -> f32,
+            ScrollbarAxis::V => {
+                (|pe: &PointerEvent| pe.position_in_window().y) as fn(&PointerEvent) -> f32
+            }
+            ScrollbarAxis::H => {
+                (|pe: &PointerEvent| pe.position_in_window().x) as fn(&PointerEvent) -> f32
+            }
         };
 
         let on_pd = {

@@ -707,17 +707,13 @@ impl LayoutEngine {
                 let last_press_id: Rc<Cell<Option<PressId>>> = Rc::new(Cell::new(None));
 
                 // Wrap on_pointer_down to emit Press with position + unique ID.
-                // Pointer events arrive in window coordinates; the ripple origin
-                // is computed relative to the view rect, so convert to local.
+                // Pointer events are already local to the view rect, so pass
+                // the position through unchanged as the ripple origin.
                 let orig_down = hit.on_pointer_down.take();
                 let s_down = msrc.clone();
                 let lpid_down = last_press_id.clone();
-                let rect_origin = (rect.x, rect.y);
                 hit.on_pointer_down = Some(Rc::new(move |ev| {
-                    let local = Vec2 {
-                        x: ev.position.x - rect_origin.0,
-                        y: ev.position.y - rect_origin.1,
-                    };
+                    let local = ev.position;
                     let press = Interaction::new_press(local);
                     if let Interaction::Press(id, _) = press {
                         lpid_down.set(Some(id));

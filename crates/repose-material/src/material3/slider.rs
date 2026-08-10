@@ -304,7 +304,7 @@ pub fn Slider(
             move |pe: PointerEvent| {
                 drag_active.set(true);
                 let r = *track_rect.borrow();
-                (oc)(value_from_x(pe.position.x, r, min, max, step));
+                (oc)(value_from_x(pe.position_in_window().x, r, min, max, step));
             }
         })
         .on_pointer_move({
@@ -316,7 +316,7 @@ pub fn Slider(
                     return;
                 }
                 let r = *track_rect.borrow();
-                (oc)(value_from_x(pe.position.x, r, min, max, step));
+                (oc)(value_from_x(pe.position_in_window().x, r, min, max, step));
             }
         })
         .on_pointer_up({
@@ -623,7 +623,7 @@ pub fn RangeSlider(
                 }
                 drag_active.set(true);
                 let r = *track_rect.borrow();
-                let v = value_from_x(pe.position.x, r, min, max, step);
+                let v = value_from_x(pe.position_in_window().x, r, min, max, step);
                 let use_end = (v - end).abs() < (v - start).abs();
                 active_thumb.set(use_end);
                 let (a, b) = if use_end {
@@ -644,7 +644,7 @@ pub fn RangeSlider(
                     return;
                 }
                 let r = *track_rect.borrow();
-                let v = value_from_x(pe.position.x, r, min, max, step);
+                let v = value_from_x(pe.position_in_window().x, r, min, max, step);
                 let use_end = *active_thumb.get();
                 let (a, b) = if use_end {
                     (start, v.max(start))

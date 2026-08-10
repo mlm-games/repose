@@ -97,8 +97,8 @@ fn make_selectable(
                 return;
             }
             let font_px = dp_to_px(font_size_dp) * text_scale().0;
-            let lx = (ev.position.x - r.x).max(0.0);
-            let ly = (ev.position.y - r.y).max(0.0);
+            let lx = ev.position.x.max(0.0);
+            let ly = ev.position.y.max(0.0);
             let wrap_w = r.w.max(1.0);
             let byte = index_for_xy_bytes(&text, font_px, wrap_w, lx, ly);
 
@@ -190,8 +190,8 @@ fn make_selectable(
                 return;
             }
             let font_px = dp_to_px(font_size_dp) * text_scale().0;
-            let lx = (ev.position.x - r.x).max(0.0);
-            let ly = (ev.position.y - r.y).max(0.0);
+            let lx = ev.position.x.max(0.0);
+            let ly = ev.position.y.max(0.0);
             let wrap_w = r.w.max(1.0);
             let byte = index_for_xy_bytes(&text, font_px, wrap_w, lx, ly);
             let a = *anchor.borrow();
