@@ -279,18 +279,22 @@ impl LayoutEngine {
         child_taffy_ids: &[taffy::NodeId],
         taffy: &mut TaffyTree<NodeContext>,
     ) {
+        let last = child_taffy_ids.last().copied();
         for &child_tid in child_taffy_ids {
             let Ok(cs) = taffy.style(child_tid) else {
                 continue;
             };
             let mut new_cs = cs.clone();
             new_cs.flex_shrink = 0.0;
-            // Fill viewport at minimum so nested scroll / short pages still work.
+            // Width always fills the scroll container.
             new_cs.min_size.width = percent(1.0_f32);
-            new_cs.min_size.height = percent(1.0_f32);
+            // NOTE: Only the last child gets min-height so short pages still fill
+            // the viewport, but earlier children size to their content.
+            if last == Some(child_tid) {
+                new_cs.min_size.height = percent(1.0_f32);
+            }
             match axis {
                 ScrollAxis::Vertical => {
-                    // Grow with content vertically; width already min 100%.
                     new_cs.size.height = Dimension::auto();
                 }
                 ScrollAxis::Horizontal => {
