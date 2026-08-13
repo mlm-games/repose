@@ -4248,12 +4248,14 @@ impl WgpuSceneRenderer {
         // so PopClip can re-stamp the stencil with a decrement pass (mirroring
         // VectorClipPop). Keys: (off, cnt, difference, rounded).
         let mut clip_cmd_stack: Vec<(u64, u32, bool, bool)> = Vec::with_capacity(8);
-        let root_clip_rect = repose_core::Rect {
+        let mut root_clip_rect = repose_core::Rect {
             x: 0.0,
             y: 0.0,
             w: fb_w,
             h: fb_h,
         };
+        let mut saved_scissor_stack: Vec<repose_core::Rect> = Vec::new();
+        let mut saved_root_clip_rect = root_clip_rect;
 
         let mut current_prim: Option<&'static str> = None;
 
@@ -5008,6 +5010,18 @@ impl WgpuSceneRenderer {
                     // round() keeps any bypass of that snap consistent.
                     let w = (rect.w.round().max(1.0)) as u32;
                     let h = (rect.h.round().max(1.0)) as u32;
+                    saved_scissor_stack =
+                        std::mem::replace(&mut scissor_stack, Vec::with_capacity(8));
+                    saved_root_clip_rect = std::mem::replace(
+                        &mut root_clip_rect,
+                        repose_core::Rect {
+                            x: 0.0,
+                            y: 0.0,
+                            w: w as f32,
+                            h: h as f32,
+                        },
+                    );
+                    scissor_stack.push(root_clip_rect);
                     // Close out the current pass, start a new one for the layer.
                     let prev_target = current_pass.target;
                     let prev_scissor = current_pass.initial_scissor;
@@ -5035,6 +5049,8 @@ impl WgpuSceneRenderer {
                 }
                 SceneNode::EndLayer { layer_id } => {
                     flush_batch!();
+                    scissor_stack = std::mem::replace(&mut saved_scissor_stack, Vec::new());
+                    root_clip_rect = saved_root_clip_rect;
                     // Finish the layer's pass, start a new one on the previous target.
                     let saved = std::mem::replace(
                         &mut current_pass,
@@ -5341,6 +5357,23 @@ impl WgpuSceneRenderer {
                 clip_depth = 0;
             }
 
+            let (tw, th) = match pass.target {
+                PassTarget::Surface => (self.output_width, self.output_height),
+                PassTarget::Layer(layer_id) => self
+                    .layer_pool
+                    .get(&layer_id)
+                    .map(|l| (l.width, l.height))
+                    .unwrap_or((self.output_width, self.output_height)),
+            };
+            let initial_scissor = clamp_scissor(
+                pass.initial_scissor.0,
+                pass.initial_scissor.1,
+                pass.initial_scissor.2,
+                pass.initial_scissor.3,
+                tw,
+                th,
+            );
+
             let pipes: &Pipelines = if is_layer {
                 &self.layer_pipes
             } else {
@@ -5386,10 +5419,10 @@ impl WgpuSceneRenderer {
             rpass.set_bind_group(0, &self.globals_bind, &[]);
             rpass.set_stencil_reference(clip_depth);
             rpass.set_scissor_rect(
-                pass.initial_scissor.0,
-                pass.initial_scissor.1,
-                pass.initial_scissor.2,
-                pass.initial_scissor.3,
+                initial_scissor.0,
+                initial_scissor.1,
+                initial_scissor.2,
+                initial_scissor.3,
             );
 
             macro_rules! draw_simple {
@@ -5435,6 +5468,8 @@ impl WgpuSceneRenderer {
                         difference,
                         rounded,
                     } => {
+                        let scissor =
+                            clamp_scissor(scissor.0, scissor.1, scissor.2, scissor.3, tw, th);
                         rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                         rpass.set_stencil_reference(clip_depth);
 
@@ -5463,6 +5498,8 @@ impl WgpuSceneRenderer {
                         difference,
                         rounded: _,
                     } => {
+                        let scissor =
+                            clamp_scissor(scissor.0, scissor.1, scissor.2, scissor.3, tw, th);
                         rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
 
                         if !difference && n > 0 {
@@ -5649,6 +5686,8 @@ impl WgpuSceneRenderer {
                         uoff,
                         scissor,
                     } => {
+                        let scissor =
+                            clamp_scissor(scissor.0, scissor.1, scissor.2, scissor.3, tw, th);
                         rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                         rpass.set_stencil_reference(clip_depth);
                         draw_indexed_mesh!(&pipes.mesh_clip_inc, uoff, voff, vcnt, ioff, icnt);
@@ -5668,6 +5707,8 @@ impl WgpuSceneRenderer {
                         // still at the depth it was incremented to, so the
                         // equal-compare fires; then step the clip depth down.
                         rpass.set_stencil_reference(clip_depth);
+                        let scissor =
+                            clamp_scissor(scissor.0, scissor.1, scissor.2, scissor.3, tw, th);
                         rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                         draw_indexed_mesh!(&pipes.mesh_clip_dec, uoff, voff, vcnt, ioff, icnt);
                         clip_depth = clip_depth.saturating_sub(1);
@@ -5731,6 +5772,14 @@ impl WgpuSceneRenderer {
 
         self.render_scene_to_encoder(scene, encoder, target_view, clear_color);
     }
+}
+
+fn clamp_scissor(x: u32, y: u32, w: u32, h: u32, tw: u32, th: u32) -> (u32, u32, u32, u32) {
+    let x = x.min(tw.saturating_sub(1));
+    let y = y.min(th.saturating_sub(1));
+    let w = w.min(tw.saturating_sub(x)).max(1);
+    let h = h.min(th.saturating_sub(y)).max(1);
+    (x, y, w, h)
 }
 
 fn intersect(a: repose_core::Rect, b: repose_core::Rect) -> repose_core::Rect {
