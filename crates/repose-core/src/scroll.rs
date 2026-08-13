@@ -848,6 +848,7 @@ impl ScrollStateXY {
     pub fn get(&self) -> (f32, f32) {
         (self.off_x.get(), self.off_y.get())
     }
+
     fn rubber_band(amount: f32, max: f32) -> f32 {
         let sign = amount.signum();
         let abs_val = amount.abs();

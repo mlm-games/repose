@@ -298,7 +298,7 @@ impl ReposeRuntime {
             let Some(h) = f.hit_regions.iter().find(|h| h.id == id) else {
                 continue;
             };
-let cb = match kind {
+            let cb = match kind {
                 PointerEventKind::Down(_) => &h.on_pointer_down,
                 PointerEventKind::Up(_) => &h.on_pointer_up,
                 PointerEventKind::Move => &h.on_pointer_move,
