@@ -139,6 +139,9 @@ impl LayoutEngine {
         let children = node.children.clone();
         let is_zstack = matches!(node.kind, ViewKind::ZStack);
         let scroll_axis = node.modifier.scroll.as_ref().map(|s| s.axis());
+        let viewport_main_is_definite = scroll_axis
+            .map(|a| LayoutEngine::viewport_main_is_definite(&node.modifier, a))
+            .unwrap_or(false);
         drop(node);
 
         let child_tids: Vec<taffy::NodeId> = children
@@ -165,7 +168,12 @@ impl LayoutEngine {
             let st = self.scope_trees.get_mut(scope_key).unwrap();
             Self::make_children_absolute_on(is_zstack, &child_tids, &mut st.taffy);
             if let Some(axis) = scroll_axis {
-                Self::apply_scroll_content_styles(axis, &child_tids, &mut st.taffy);
+                Self::apply_scroll_content_styles(
+                    axis,
+                    viewport_main_is_definite,
+                    &child_tids,
+                    &mut st.taffy,
+                );
             }
             t_id
         } else {
@@ -185,7 +193,12 @@ impl LayoutEngine {
             let st = self.scope_trees.get_mut(scope_key).unwrap();
             Self::make_children_absolute_on(is_zstack, &child_tids, &mut st.taffy);
             if let Some(axis) = scroll_axis {
-                Self::apply_scroll_content_styles(axis, &child_tids, &mut st.taffy);
+                Self::apply_scroll_content_styles(
+                    axis,
+                    viewport_main_is_definite,
+                    &child_tids,
+                    &mut st.taffy,
+                );
             }
             t_id
         }

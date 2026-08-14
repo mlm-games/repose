@@ -47,7 +47,12 @@ impl LayoutEngine {
 
         Self::make_children_absolute_on(is_zstack, &child_tids, taffy);
         if let Some(axis) = scroll_axis {
-            Self::apply_scroll_content_styles(axis, &child_tids, taffy);
+            Self::apply_scroll_content_styles(
+                axis,
+                Self::viewport_main_is_definite(&view.modifier, axis),
+                &child_tids,
+                taffy,
+            );
         }
         t
     }
@@ -136,7 +141,7 @@ impl LayoutEngine {
             return t_id;
         }
 
-        let (style, ctx, children, is_zstack, scroll_axis) = {
+        let (style, ctx, children, is_zstack, scroll_axis, viewport_main_is_definite) = {
             let node = self.tree.get(node_id).expect("Node missing in update");
             let collapsed = matches!(
                 node.kind,
@@ -156,6 +161,11 @@ impl LayoutEngine {
                 children,
                 matches!(node.kind, ViewKind::ZStack),
                 node.modifier.scroll.as_ref().map(|s| s.axis()),
+                node.modifier
+                    .scroll
+                    .as_ref()
+                    .map(|s| Self::viewport_main_is_definite(&node.modifier, s.axis()))
+                    .unwrap_or(false),
             )
         };
 
@@ -179,7 +189,12 @@ impl LayoutEngine {
             let _ = self.taffy.set_node_context(t, Some(ctx));
             self.make_children_absolute(is_zstack, &child_taffy_ids);
             if let Some(axis) = scroll_axis {
-                LayoutEngine::apply_scroll_content_styles(axis, &child_taffy_ids, &mut self.taffy);
+                LayoutEngine::apply_scroll_content_styles(
+                    axis,
+                    viewport_main_is_definite,
+                    &child_taffy_ids,
+                    &mut self.taffy,
+                );
             }
             t
         };
@@ -199,7 +214,7 @@ impl LayoutEngine {
         // Ensure this node has a stable view id
         let _ = self.ensure_view_id(node_id);
 
-        let (new_style, new_ctx, children, is_zstack, scroll_axis) = {
+        let (new_style, new_ctx, children, is_zstack, scroll_axis, viewport_main_is_definite) = {
             let node = self.tree.get(node_id).unwrap();
             let collapsed = matches!(
                 node.kind,
@@ -219,6 +234,11 @@ impl LayoutEngine {
                 children,
                 matches!(node.kind, ViewKind::ZStack),
                 node.modifier.scroll.as_ref().map(|s| s.axis()),
+                node.modifier
+                    .scroll
+                    .as_ref()
+                    .map(|s| Self::viewport_main_is_definite(&node.modifier, s.axis()))
+                    .unwrap_or(false),
             )
         };
 
@@ -251,7 +271,12 @@ impl LayoutEngine {
 
         self.make_children_absolute(is_zstack, &child_taffy_ids);
         if let Some(axis) = scroll_axis {
-            LayoutEngine::apply_scroll_content_styles(axis, &child_taffy_ids, &mut self.taffy);
+            LayoutEngine::apply_scroll_content_styles(
+                axis,
+                viewport_main_is_definite,
+                &child_taffy_ids,
+                &mut self.taffy,
+            );
         }
 
         self.stats.taffy_reused += 1;
@@ -276,6 +301,7 @@ impl LayoutEngine {
 
     pub(crate) fn apply_scroll_content_styles(
         axis: ScrollAxis,
+        viewport_main_is_definite: bool,
         child_taffy_ids: &[taffy::NodeId],
         taffy: &mut TaffyTree<NodeContext>,
     ) {
@@ -289,8 +315,14 @@ impl LayoutEngine {
             // Width always fills the scroll container.
             new_cs.min_size.width = percent(1.0_f32);
             // NOTE: Only the last child gets min-height so short pages still fill
-            // the viewport, but earlier children size to their content.
-            if last == Some(child_tid) {
+            // the viewport. For vertical scroll this fill is only applied when the
+            // container is a real viewport (definite/filled height); a content-sized
+            // scroller (e.g. a `max_height` card grid) resolves the percentage against
+            // its own content height and would over-stretch the last item, so it is
+            // left sized to its content instead.
+            if last == Some(child_tid)
+                && (axis != ScrollAxis::Vertical || viewport_main_is_definite)
+            {
                 new_cs.min_size.height = percent(1.0_f32);
             }
             match axis {
@@ -306,6 +338,34 @@ impl LayoutEngine {
                 }
             }
             let _ = taffy.set_style(child_tid, new_cs);
+        }
+    }
+
+    // A short page's last child may be stretched to fill it.
+    fn vertical_viewport_is_definite(m: &repose_core::Modifier) -> bool {
+        m.height.is_some()
+            || m.fill_max.is_some()
+            || m.fill_max_h.is_some()
+            || m.size.is_some_and(|s| s.height.is_finite())
+            || m.required_size.is_some()
+    }
+
+    fn horizontal_viewport_is_definite(m: &repose_core::Modifier) -> bool {
+        m.width.is_some()
+            || m.fill_max.is_some()
+            || m.fill_max_w.is_some()
+            || m.size.is_some_and(|s| s.width.is_finite())
+            || m.required_size.is_some()
+    }
+
+    /// Content-sized scrollers keep their last item at its
+    /// natural size.
+    pub(crate) fn viewport_main_is_definite(m: &repose_core::Modifier, axis: ScrollAxis) -> bool {
+        match axis {
+            ScrollAxis::Vertical => Self::vertical_viewport_is_definite(m),
+            ScrollAxis::Horizontal => Self::horizontal_viewport_is_definite(m),
+            // Two-axis scrollers are content sized on both axes; no viewport fill.
+            ScrollAxis::Both => false,
         }
     }
 
