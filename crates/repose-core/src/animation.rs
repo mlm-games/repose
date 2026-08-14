@@ -101,6 +101,36 @@ pub enum Easing {
     FastOutSlowIn,
     /// Custom cubic-bezier easing with control points (p1x, p1y), (p2x, p2y).
     Custom(CubicBezier),
+    // Godot-style transition families (TRANS_* × EASE_*), added for games
+    CubicIn,
+    CubicOut,
+    CubicInOut,
+    QuartIn,
+    QuartOut,
+    QuartInOut,
+    QuintIn,
+    QuintOut,
+    QuintInOut,
+    SineIn,
+    SineOut,
+    SineInOut,
+    ExpoIn,
+    ExpoOut,
+    ExpoInOut,
+    CircIn,
+    CircOut,
+    CircInOut,
+    /// Back overshoot preset (Godot default overshoot = 1.70158).
+    BackIn,
+    BackOut,
+    BackInOut,
+    /// Springy damped oscillation below/above the end value.
+    ElasticIn,
+    ElasticOut,
+    ElasticInOut,
+    BounceIn,
+    BounceOut,
+    BounceInOut,
 }
 
 impl Easing {
@@ -126,7 +156,164 @@ impl Easing {
             Easing::SpringBouncy => spring_underdamped_normalized(t, 0.2, 12.0),
             Easing::FastOutSlowIn => eval_cubic_bezier(0.4, 0.0, 0.2, 1.0, t),
             Easing::Custom(cb) => eval_cubic_bezier(cb.p1x, cb.p1y, cb.p2x, cb.p2y, t),
+            Easing::CubicIn => t * t * t,
+            Easing::CubicOut => {
+                let u = t - 1.0;
+                u * u * u + 1.0
+            }
+            Easing::CubicInOut => {
+                if t < 0.5 {
+                    4.0 * t * t * t
+                } else {
+                    let u = 2.0 * t - 2.0;
+                    u * u * u / 2.0 + 1.0
+                }
+            }
+            Easing::QuartIn => t * t * t * t,
+            Easing::QuartOut => {
+                let u = t - 1.0;
+                1.0 - u * u * u * u
+            }
+            Easing::QuartInOut => {
+                if t < 0.5 {
+                    8.0 * t * t * t * t
+                } else {
+                    let u = -2.0 * t + 2.0;
+                    1.0 - u * u * u * u / 2.0
+                }
+            }
+            Easing::QuintIn => t * t * t * t * t,
+            Easing::QuintOut => {
+                let u = t - 1.0;
+                u * u * u * u * u + 1.0
+            }
+            Easing::QuintInOut => {
+                if t < 0.5 {
+                    16.0 * t * t * t * t * t
+                } else {
+                    let u = -2.0 * t + 2.0;
+                    1.0 - u * u * u * u * u / 2.0
+                }
+            }
+            Easing::SineIn => 1.0 - (t * std::f32::consts::FRAC_PI_2).cos(),
+            Easing::SineOut => (t * std::f32::consts::FRAC_PI_2).sin(),
+            Easing::SineInOut => 0.5 * (1.0 - (t * std::f32::consts::PI).cos()),
+            Easing::ExpoIn => {
+                if t <= 0.0 {
+                    0.0
+                } else {
+                    2.0f32.powf(10.0 * t - 10.0)
+                }
+            }
+            Easing::ExpoOut => {
+                if t >= 1.0 {
+                    1.0
+                } else {
+                    1.0 - 2.0f32.powf(-10.0 * t)
+                }
+            }
+            Easing::ExpoInOut => {
+                if t <= 0.0 {
+                    0.0
+                } else if t >= 1.0 {
+                    1.0
+                } else if t < 0.5 {
+                    2.0f32.powf(20.0 * t - 10.0) / 2.0
+                } else {
+                    (2.0 - 2.0f32.powf(-20.0 * t + 10.0)) / 2.0
+                }
+            }
+            Easing::CircIn => 1.0 - (1.0 - t * t).sqrt(),
+            Easing::CircOut => (1.0 - (t - 1.0) * (t - 1.0)).sqrt(),
+            Easing::CircInOut => {
+                if t < 0.5 {
+                    (1.0 - (1.0 - 4.0 * t * t).sqrt()) / 2.0
+                } else {
+                    ((1.0 - (-2.0 * t + 2.0) * (-2.0 * t + 2.0)).sqrt() + 1.0) / 2.0
+                }
+            }
+            Easing::BackIn => {
+                const C1: f32 = 1.70158;
+                const C3: f32 = C1 + 1.0;
+                C3 * t * t * t - C1 * t * t
+            }
+            Easing::BackOut => {
+                const C1: f32 = 1.70158;
+                const C3: f32 = C1 + 1.0;
+                let u = t - 1.0;
+                1.0 + C3 * u * u * u + C1 * u * u
+            }
+            Easing::BackInOut => {
+                const C1: f32 = 1.70158;
+                const C3: f32 = C1 + 1.0;
+                if t < 0.5 {
+                    let u = 2.0 * t;
+                    (C3 * u * u * u - C1 * u * u) / 2.0
+                } else {
+                    let u = 2.0 * t - 2.0;
+                    (C3 * u * u * u + C1 * u * u) / 2.0 + 1.0
+                }
+            }
+            Easing::ElasticIn => {
+                const C4: f32 = 2.0 * std::f32::consts::PI / 3.0;
+                if t <= 0.0 {
+                    0.0
+                } else if t >= 1.0 {
+                    1.0
+                } else {
+                    -(2.0f32.powf(10.0 * t - 10.0) * ((10.0 * t - 10.75) * C4).sin())
+                }
+            }
+            Easing::ElasticOut => {
+                const C4: f32 = 2.0 * std::f32::consts::PI / 3.0;
+                if t <= 0.0 {
+                    0.0
+                } else if t >= 1.0 {
+                    1.0
+                } else {
+                    2.0f32.powf(-10.0 * t) * ((10.0 * t - 0.75) * C4).sin() + 1.0
+                }
+            }
+            Easing::ElasticInOut => {
+                const C4: f32 = 2.0 * std::f32::consts::PI / 3.0;
+                if t <= 0.0 {
+                    0.0
+                } else if t >= 1.0 {
+                    1.0
+                } else if t < 0.5 {
+                    -(2.0f32.powf(20.0 * t - 10.0) * ((20.0 * t - 11.125) * C4).sin()) / 2.0
+                } else {
+                    2.0f32.powf(-20.0 * t + 10.0) * ((20.0 * t - 11.125) * C4).sin() / 2.0 + 1.0
+                }
+            }
+            Easing::BounceIn => 1.0 - bounce_out(1.0 - t),
+            Easing::BounceOut => bounce_out(t),
+            Easing::BounceInOut => {
+                if t < 0.5 {
+                    (1.0 - bounce_out(1.0 - 2.0 * t)) / 2.0
+                } else {
+                    (1.0 + bounce_out(2.0 * t - 1.0)) / 2.0
+                }
+            }
         }
+    }
+}
+
+/// Classic ease-out bounce curve (Godot TRANS_BOUNCE EASE_OUT).
+fn bounce_out(t: f32) -> f32 {
+    const N1: f32 = 7.5625;
+    const D1: f32 = 2.75;
+    if t < 1.0 / D1 {
+        N1 * t * t
+    } else if t < 2.0 / D1 {
+        let t = t - 1.5 / D1;
+        N1 * t * t + 0.75
+    } else if t < 2.5 / D1 {
+        let t = t - 2.25 / D1;
+        N1 * t * t + 0.9375
+    } else {
+        let t = t - 2.625 / D1;
+        N1 * t * t + 0.984375
     }
 }
 
@@ -946,5 +1133,82 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
 
     pub fn has_keyframes(&self) -> bool {
         self.keyframes.is_some()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_in_out(ease: Easing) {
+        // All sane eases pass through (0,0) and (1,1).
+        assert!((ease.interpolate(0.0) - 0.0).abs() < 1e-4, "{ease:?} in(0)");
+        assert!((ease.interpolate(1.0) - 1.0).abs() < 1e-4, "{ease:?} in(1)");
+    }
+
+    #[test]
+    fn godot_eases_pass_through_endpoints() {
+        use Easing::*;
+        for ease in [
+            CubicIn,
+            CubicOut,
+            CubicInOut,
+            QuartIn,
+            QuartOut,
+            QuartInOut,
+            QuintIn,
+            QuintOut,
+            QuintInOut,
+            SineIn,
+            SineOut,
+            SineInOut,
+            ExpoIn,
+            ExpoOut,
+            ExpoInOut,
+            CircIn,
+            CircOut,
+            CircInOut,
+            BackIn,
+            BackOut,
+            BackInOut,
+            ElasticIn,
+            ElasticOut,
+            ElasticInOut,
+            BounceIn,
+            BounceOut,
+            BounceInOut,
+        ] {
+            assert_in_out(ease);
+        }
+    }
+
+    #[test]
+    fn easing_direction_is_sane() {
+        use Easing::*;
+        let mid = [CubicOut, QuartOut, QuintOut, SineOut, ExpoOut, CircOut];
+        for e in mid {
+            assert!(e.interpolate(0.5) <= 1.0, "{e:?} stays below 1 at mid");
+            assert!(e.interpolate(0.5) > 0.5, "{e:?} is ease-out at mid");
+        }
+        for e in [CubicIn, QuartIn, QuintIn, SineIn, ExpoIn, CircIn] {
+            assert!(e.interpolate(0.5) < 0.5, "{e:?} is ease-in at mid");
+        }
+        // Overshoot eases exceed the [0,1] band in the middle.
+        for e in [BackOut, ElasticOut] {
+            assert!(e.interpolate(0.5) > 1.0, "{e:?} overshoots");
+        }
+        for e in [BackIn, ElasticIn] {
+            assert!(e.interpolate(0.5) < 0.0, "{e:?} undershoots");
+        }
+    }
+
+    #[test]
+    fn bounce_matches_known_values() {
+        use Easing::*;
+        assert!((BounceOut.interpolate(0.0) - 0.0).abs() < 1e-4);
+        assert!((BounceOut.interpolate(1.0) - 1.0).abs() < 1e-4);
+        // Bounce out reaches its first apex (1.0) at t = 1/2.75, then settles.
+        assert!((BounceOut.interpolate(1.0 / 2.75) - 1.0).abs() < 1e-4);
+        assert!((BounceOut.interpolate(0.5) - 0.765625).abs() < 1e-4);
     }
 }
