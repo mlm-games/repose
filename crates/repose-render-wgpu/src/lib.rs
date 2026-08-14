@@ -4798,7 +4798,7 @@ impl WgpuSceneRenderer {
                             let v0 = (overflow_y / content_h).clamp(0.0, 1.0);
                             let u1 = ((overflow_x + dst_w) / content_w).clamp(0.0, 1.0);
                             let v1 = ((overflow_y + dst_h) / content_h).clamp(0.0, 1.0);
-                            (*rect, [u0, 1.0 - v1, u1, 1.0 - v0])
+                            (*rect, [u0, 1.0 - v0, u1, 1.0 - v1])
                         }
                         repose_core::view::ImageFit::FitWidth => {
                             let scale = dst_w / src_w;
