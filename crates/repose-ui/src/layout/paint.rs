@@ -801,7 +801,11 @@ impl LayoutEngine {
                 font_variation_settings,
                 ..
             } => {
-                let tl = self.text_cache.get(&node_id);
+                let tl = self.text_cache.get(&node_id).or_else(|| {
+                    self.node_to_scope.get(&node_id).and_then(|key| {
+                        self.scope_trees.get(key).and_then(|st| st.text_cache.get(&node_id))
+                    })
+                });
                 let (size_px, line_h_px, lines, line_ranges) = if let Some(tl) = tl {
                     (
                         tl.size_px,
