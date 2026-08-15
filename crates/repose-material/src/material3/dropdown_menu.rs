@@ -342,13 +342,18 @@ fn render_dropdown_menu_content(
                     modifier = modifier
                         .state_colors(StateColors {
                             default: Color::TRANSPARENT,
-                            hovered: th.on_surface.with_alpha_f32(0.08),
-                            focused: th.on_surface.with_alpha_f32(0.12),
-                            pressed: th.on_surface.with_alpha_f32(0.12),
+                            hovered: Color::TRANSPARENT,
+                            focused: Color::TRANSPARENT,
+                            pressed: Color::TRANSPARENT,
                             dragged: th.on_surface.with_alpha_f32(0.12),
                             disabled: Color::TRANSPARENT,
                         })
                         .interaction_source(&item_source)
+                        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+                            color: Some(th.on_surface),
+                            bounded: true,
+                            ..Default::default()
+                        }))
                         .clickable()
                         .on_click(move || {
                             on_click();

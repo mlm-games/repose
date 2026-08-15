@@ -97,13 +97,18 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                         .flex_grow(1.0)
                         .fill_max_height()
                         .interaction_source(&tab_source)
+                        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+                            color: Some(th.on_surface),
+                            bounded: true,
+                            ..Default::default()
+                        }))
                         .align_items(AlignItems::CENTER)
                         .justify_content(JustifyContent::CENTER)
                         .state_colors(StateColors {
                             default: Color::TRANSPARENT,
-                            hovered: th.on_surface.with_alpha_f32(0.08),
-                            focused: th.on_surface.with_alpha_f32(0.12),
-                            pressed: th.on_surface.with_alpha_f32(0.12),
+                            hovered: Color::TRANSPARENT,
+                            focused: Color::TRANSPARENT,
+                            pressed: Color::TRANSPARENT,
                             dragged: th.on_surface.with_alpha_f32(0.12),
                             disabled: Color::TRANSPARENT,
                         })

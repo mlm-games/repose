@@ -608,7 +608,9 @@ impl LayoutEngine {
                 radius: round_clip_px,
             });
         }
-        // State layer as overlay on top (independently animated alpha)
+        // State layer as overlay on top (independently animated alpha).
+        // Indication (ripple) owns hover/focus/press layers in M3, so controls
+        // set those to transparent in `state_colors`; no paint-time guard needed.
         if let Some(sc) = &modifier.state_colors {
             let target = if modifier.disabled {
                 sc.disabled
@@ -693,7 +695,7 @@ impl LayoutEngine {
         }
 
         // Draw indication (ripple, etc.) on top of content but behind hit regions.
-        let indication_factory = modifier.indication.clone().or_else(local_indication);
+        let indication_factory = modifier.indication.clone();
         let indication_source = if let Some(ref src) = modifier.interaction_source {
             Some(src.clone())
         } else if (indication_factory.is_some()
@@ -709,6 +711,17 @@ impl LayoutEngine {
         } else {
             None
         };
+
+        // Sync focus transitions into the InteractionSource (Compose FocusInteraction).
+        if let Some(ref src) = indication_source {
+            let msrc = src.to_mutable();
+            let was = src.collect_is_focused();
+            if is_focused && !was {
+                msrc.emit(Interaction::Focus);
+            } else if !is_focused && was {
+                msrc.emit(Interaction::Unfocus);
+            }
+        }
         if let (Some(factory), Some(interaction_source)) =
             (indication_factory.as_ref(), indication_source.as_ref())
         {

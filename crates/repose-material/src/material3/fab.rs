@@ -51,7 +51,7 @@ fn fab_impl(
             .with_alpha_f32(0.12)
             .composite_over(th.surface_container_low)
     };
-    let _content_color = if is_enabled {
+    let content_color = if is_enabled {
         config.content_color
     } else {
         th.on_surface.with_alpha_f32(0.38)
@@ -62,9 +62,9 @@ fn fab_impl(
         .background(bg)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
-            hovered: config.content_color.with_alpha_f32(0.08),
-            focused: config.content_color.with_alpha_f32(0.12),
-            pressed: config.content_color.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: config.content_color.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         })
@@ -79,6 +79,11 @@ fn fab_impl(
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
     m = m.interaction_source(&source);
+    m = m.indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+        color: Some(content_color),
+        bounded: true,
+        ..Default::default()
+    }));
     if is_enabled {
         m = m.clickable().on_click(on_click);
     }
@@ -154,9 +159,9 @@ pub fn ExtendedFAB(
         .background(bg)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
-            hovered: config.content_color.with_alpha_f32(0.08),
-            focused: config.content_color.with_alpha_f32(0.12),
-            pressed: config.content_color.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: config.content_color.with_alpha_f32(0.12),
             disabled: theme().on_surface.with_alpha_f32(0.12),
         })
@@ -171,6 +176,11 @@ pub fn ExtendedFAB(
         .align_items(AlignItems::CENTER);
 
     m = m.interaction_source(&source);
+    m = m.indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+        color: Some(content_color),
+        bounded: true,
+        ..Default::default()
+    }));
     if is_enabled {
         m = m.clickable().on_click(on_click);
     }

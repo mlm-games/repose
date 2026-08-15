@@ -101,9 +101,9 @@ fn resolve_button_colors(
         };
         let sc = StateColors {
             default: Color::TRANSPARENT,
-            hovered: colors.content_color.with_alpha_f32(0.08),
-            focused: colors.content_color.with_alpha_f32(0.12),
-            pressed: colors.content_color.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: colors.content_color.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         };

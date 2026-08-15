@@ -289,6 +289,11 @@ pub fn ListItem(
         })
         .align_items(vert_align)
         .interaction_source(&li_source)
+        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+            color: Some(theme().on_surface),
+            bounded: true,
+            ..Default::default()
+        }))
         .then(config.modifier);
 
     if config.tonal_elevation > 0.0 || config.dragged_elevation > 0.0 {

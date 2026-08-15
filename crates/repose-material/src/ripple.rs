@@ -59,6 +59,11 @@ pub fn ripple(config: RippleConfig) -> Rc<dyn IndicationNodeFactory> {
     Rc::new(RippleNodeFactory { config })
 }
 
+/// Default factory for `LocalIndication` (color resolved from `content_color()` at draw time).
+pub fn default_ripple() -> Rc<dyn IndicationNodeFactory> {
+    ripple(RippleConfig::default())
+}
+
 #[derive(Clone, Debug)]
 pub struct RippleNodeFactory {
     pub config: RippleConfig,
@@ -103,7 +108,10 @@ impl RippleDrawNode {
 
 impl IndicationDrawNode for RippleDrawNode {
     fn draw(&self, scene: &mut Scene, rect: Rect, radius: [f32; 4], alpha: f32) {
-        let base_color = self.config.color.unwrap_or(Color(0, 0, 0, 255));
+        let base_color = self
+            .config
+            .color
+            .unwrap_or_else(|| repose_core::locals::content_color());
 
         // M3 state layers (focus, hover) rendered as shape-matched overlays.
         // Drawn before the press ripple so the ripple fades in on top.

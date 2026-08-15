@@ -137,12 +137,17 @@ pub fn TimePicker(
         // Time display
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
             Box(Modifier::new()
+                .padding(8.0)
+                .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+                    color: Some(th.on_surface),
+                    bounded: true,
+                    ..Default::default()
+                }))
                 .clickable()
                 .on_click({
                     let s = state.clone();
                     move || s.hour.set((s.hour.get() % 12) + 1)
-                })
-                .padding(8.0))
+                }))
             .child(
                 Text(hour_str)
                     .size(48.0)
@@ -154,12 +159,17 @@ pub fn TimePicker(
                 .color(config.colors.clock_dial_unselected_content_color)
                 .single_line(),
             Box(Modifier::new()
+                .padding(8.0)
+                .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+                    color: Some(th.on_surface),
+                    bounded: true,
+                    ..Default::default()
+                }))
                 .clickable()
                 .on_click({
                     let s = state.clone();
                     move || s.minute.set((s.minute.get() + 1) % 60)
-                })
-                .padding(8.0))
+                }))
             .child(
                 Text(min_str)
                     .size(48.0)
@@ -183,6 +193,11 @@ pub fn TimePicker(
                     Color::TRANSPARENT
                 })
                 .clip_rounded(8.0)
+                .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+                    color: Some(th.on_surface),
+                    bounded: true,
+                    ..Default::default()
+                }))
                 .clickable()
                 .on_click({
                     let s = state.clone();
@@ -216,6 +231,11 @@ pub fn TimePicker(
                     Color::TRANSPARENT
                 })
                 .clip_rounded(8.0)
+                .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+                    color: Some(th.on_surface),
+                    bounded: true,
+                    ..Default::default()
+                }))
                 .clickable()
                 .on_click({
                     let s = state.clone();
@@ -239,10 +259,18 @@ pub fn TimePicker(
         Box(Modifier::new().fill_max_width().height(16.0)),
         Row(Modifier::new().fill_max_width()).child((
             Spacer(),
-            Box(Modifier::new().padding(8.0).clickable().on_click({
-                let on_dismiss = on_dismiss.clone();
-                move || on_dismiss()
-            }))
+            Box(Modifier::new()
+                .padding(8.0)
+                .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+                    color: Some(th.on_surface),
+                    bounded: true,
+                    ..Default::default()
+                }))
+                .clickable()
+                .on_click({
+                    let on_dismiss = on_dismiss.clone();
+                    move || on_dismiss()
+                }))
             .child(
                 Text("Cancel")
                     .color(config.colors.selector_color)
@@ -250,7 +278,15 @@ pub fn TimePicker(
                     .single_line(),
             ),
             Box(Modifier::new().width(8.0).height(1.0)),
-            Box(Modifier::new().padding(8.0).clickable().on_click({
+            Box(Modifier::new()
+                .padding(8.0)
+                .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+                    color: Some(th.on_surface),
+                    bounded: true,
+                    ..Default::default()
+                }))
+                .clickable()
+                .on_click({
                 let on_confirm = on_confirm.clone();
                 let state = state.clone();
                 move || {

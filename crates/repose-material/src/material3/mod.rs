@@ -70,8 +70,23 @@ pub use text_field::*;
 pub use time_picker::*;
 pub use tooltip::*;
 
-use repose_core::{Modifier, View};
+use repose_core::{Modifier, Theme, View, with_local_indication, with_theme};
 use repose_ui::{Box, Column, Row, Spacer, ViewExt};
+
+use crate::ripple::default_ripple;
+
+/// Wrap a subtree with a `Theme` and install the default M3 ripple indication.
+///
+/// Mirrors Compose's Material theme: it provides `LocalIndication` so plain
+/// `.clickable()` surfaces receive a ripple with no per-component wiring.
+pub fn MaterialTheme(theme: Theme, content: impl FnOnce() -> View) -> View {
+    with_theme(theme, || with_material_indication(content))
+}
+
+/// Install the default M3 ripple indication (`LocalIndication`) for a subtree.
+pub fn with_material_indication<R>(f: impl FnOnce() -> R) -> R {
+    with_local_indication(Some(default_ripple()), f)
+}
 
 /// Shared layout helper for alert dialog content.
 pub(crate) fn alert_dialog_body(

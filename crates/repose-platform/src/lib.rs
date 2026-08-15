@@ -231,54 +231,15 @@ pub fn compose_frame<F>(
 where
     F: FnMut(&mut Scheduler) -> View,
 {
-    // Process any programmatic focus request from FocusRequester
-    if let Some(requested_id) = repose_core::take_focus_request() {
-        if requested_id == repose_core::runtime::CLEAR_FOCUS_MARKER {
-            sched.focused = None;
-        } else {
-            sched.focused = Some(requested_id);
-        }
-    }
-
-    set_density_default(Density { scale });
-
-    // Use scheduler's focused state (which may have been updated by focus request)
-    let current_focused = sched.focused;
-
-    let frame = sched.repose(
-        {
-            let scale = scale;
-            move |s: &mut Scheduler| with_density(Density { scale }, || (root_fn)(s))
-        },
-        {
-            let hover_id = hover_id;
-            let pressed_ids = pressed_ids.clone();
-            move |view, _size| {
-                let interactions = repose_ui::Interactions {
-                    hover: hover_id,
-                    pressed: pressed_ids.clone(),
-                };
-
-                with_density(Density { scale }, || {
-                    repose_ui::layout_and_paint(
-                        view,
-                        size_px_u32,
-                        tf_states,
-                        &interactions,
-                        current_focused,
-                    )
-                })
-            }
-        },
-    );
-
-    if let Some(fid) = sched.focused
-        && !frame.focus_chain.contains(&fid)
-    {
-        sched.focused = None;
-    }
-
-    frame
+    repose_app::compose_frame_inner(
+        sched,
+        root_fn,
+        scale,
+        size_px_u32,
+        hover_id,
+        pressed_ids,
+        tf_states,
+    )
 }
 
 pub(crate) fn next_caret_blink_deadline(

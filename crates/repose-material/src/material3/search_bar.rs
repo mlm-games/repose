@@ -769,14 +769,23 @@ pub fn DockedSearchBar(
     };
 
     let clear_btn = if active {
-        Box(Modifier::new().size(24.0, 24.0).clickable().on_click({
-            let cb = on_expanded_change.clone();
-            move || {
-                if let Some(ref cb) = cb {
-                    cb(false);
+        Box(Modifier::new()
+            .size(24.0, 24.0)
+            .clip_rounded(12.0)
+            .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+                color: Some(colors.placeholder_color),
+                bounded: true,
+                ..Default::default()
+            }))
+            .clickable()
+            .on_click({
+                let cb = on_expanded_change.clone();
+                move || {
+                    if let Some(ref cb) = cb {
+                        cb(false);
+                    }
                 }
-            }
-        }))
+            }))
         .child(Text("✕").size(16.0).color(colors.placeholder_color))
     } else {
         Box(Modifier::new())

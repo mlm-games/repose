@@ -184,9 +184,9 @@ pub fn AssistChip(
         .flex_shrink(0.0)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
@@ -199,6 +199,11 @@ pub fn AssistChip(
         .background(bg)
         .clip_rounded(shape)
         .interaction_source(&ch_source)
+        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+            color: Some(label_color),
+            bounded: true,
+            ..Default::default()
+        }))
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
@@ -264,9 +269,9 @@ pub fn ElevatedAssistChip(
         .flex_shrink(0.0)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
@@ -280,6 +285,11 @@ pub fn ElevatedAssistChip(
         .background(bg)
         .clip_rounded(shape)
         .interaction_source(&ch_source)
+        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+            color: Some(label_color),
+            bounded: true,
+            ..Default::default()
+        }))
         .then(config.modifier);
 
     if is_enabled {
@@ -374,9 +384,9 @@ pub fn FilterChip(
         .flex_shrink(0.0)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
@@ -389,6 +399,11 @@ pub fn FilterChip(
         .background(bg)
         .clip_rounded(shape)
         .interaction_source(&ch_source)
+        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+            color: Some(label_color),
+            bounded: true,
+            ..Default::default()
+        }))
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
@@ -474,9 +489,9 @@ pub fn ElevatedFilterChip(
         .flex_shrink(0.0)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
@@ -490,6 +505,11 @@ pub fn ElevatedFilterChip(
         .background(bg)
         .clip_rounded(shape)
         .interaction_source(&ch_source)
+        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+            color: Some(label_color),
+            bounded: true,
+            ..Default::default()
+        }))
         .then(config.modifier);
 
     if is_enabled {
@@ -554,9 +574,9 @@ pub fn SuggestionChip(
         .flex_shrink(0.0)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
@@ -569,6 +589,11 @@ pub fn SuggestionChip(
         .background(bg)
         .clip_rounded(shape)
         .interaction_source(&ch_source)
+        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+            color: Some(label_color),
+            bounded: true,
+            ..Default::default()
+        }))
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
@@ -620,9 +645,9 @@ pub fn ElevatedSuggestionChip(
         .flex_shrink(0.0)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
@@ -636,6 +661,11 @@ pub fn ElevatedSuggestionChip(
         .background(bg)
         .clip_rounded(shape)
         .interaction_source(&ch_source)
+        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+            color: Some(label_color),
+            bounded: true,
+            ..Default::default()
+        }))
         .then(config.modifier);
 
     if is_enabled {
@@ -719,9 +749,9 @@ pub fn InputChip(
         .flex_shrink(0.0)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         })
@@ -734,6 +764,11 @@ pub fn InputChip(
         .background(bg)
         .clip_rounded(shape)
         .interaction_source(&ch_source)
+        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+            color: Some(label_color),
+            bounded: true,
+            ..Default::default()
+        }))
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {

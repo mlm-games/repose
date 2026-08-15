@@ -1247,6 +1247,9 @@ impl Modifier {
     }
     pub fn clickable(mut self) -> Self {
         self.click = true;
+        if self.indication.is_none() {
+            self.indication = crate::locals::local_indication();
+        }
         self
     }
     /// Make this element clickable and attach an [`InteractionSource`] for state tracking.
@@ -1254,6 +1257,9 @@ impl Modifier {
     pub fn clickable_with_source(mut self, source: &MutableInteractionSource) -> Self {
         self.click = true;
         self.interaction_source = Some(source.source());
+        if self.indication.is_none() {
+            self.indication = crate::locals::local_indication();
+        }
         self
     }
     /// Set state-driven background colors for hover, press, disabled states.

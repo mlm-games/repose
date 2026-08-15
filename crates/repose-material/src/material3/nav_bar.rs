@@ -133,6 +133,11 @@ pub fn NavigationBar(
                     let mut item_m = Modifier::new()
                         .flex_grow(1.0)
                         .interaction_source(&nb_source)
+                        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+                            color: Some(theme().on_surface_variant),
+                            bounded: true,
+                            ..Default::default()
+                        }))
                         .semantics(Semantics::new(Role::Tab).with_label(&item.label));
 
                     if is_enabled {
@@ -171,9 +176,9 @@ pub fn NavigationBar(
                                     .clip_rounded(config.indicator_radius)
                                     .state_colors(StateColors {
                                         default: Color::TRANSPARENT,
-                                        hovered: th.on_surface.with_alpha_f32(0.08),
-                                        focused: th.on_surface.with_alpha_f32(0.12),
-                                        pressed: th.on_surface.with_alpha_f32(0.12),
+                                        hovered: Color::TRANSPARENT,
+                                        focused: Color::TRANSPARENT,
+                                        pressed: Color::TRANSPARENT,
                                         dragged: th.on_surface.with_alpha_f32(0.12),
                                         disabled: Color::TRANSPARENT,
                                     })),

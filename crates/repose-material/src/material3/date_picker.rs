@@ -325,6 +325,13 @@ pub fn DatePicker(
                                         Color::TRANSPARENT
                                     })
                                     .clip_rounded(20.0)
+                                    .indication(crate::ripple::ripple(
+                                        crate::ripple::RippleConfig {
+                                            color: Some(theme().on_surface),
+                                            bounded: true,
+                                            ..Default::default()
+                                        },
+                                    ))
                                     .align_items(AlignItems::CENTER)
                                     .justify_content(JustifyContent::CENTER)
                                     .clickable()

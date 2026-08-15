@@ -145,6 +145,11 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         .background(Color::TRANSPARENT)
         .state_colors(config.state_colors)
         .interaction_source(&cb_source)
+        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+            color: Some(theme().on_surface),
+            bounded: true,
+            ..Default::default()
+        }))
         .clickable()
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER)
@@ -252,12 +257,25 @@ pub fn TriStateCheckbox(
         config.checkmark_color
     };
 
+    let tc_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
+
     Box(Modifier::new()
         .width(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .height(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .padding(0.0)
         .clip_rounded(20.0)
         .background(Color::TRANSPARENT)
+        .state_colors(config.state_colors)
+        .interaction_source(&tc_source)
+        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+            color: Some(theme().on_surface),
+            bounded: false,
+            ..Default::default()
+        }))
         .clickable()
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER)
@@ -392,6 +410,11 @@ pub fn RadioButton(
         .background(Color::TRANSPARENT)
         .state_colors(config.state_colors)
         .interaction_source(&rb_source)
+        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+            color: Some(theme().on_surface),
+            bounded: true,
+            ..Default::default()
+        }))
         .clickable()
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER)
@@ -591,6 +614,11 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         .background(track_bg)
         .border(track_border, border_color, track_h * 0.5)
         .interaction_source(&sw_source)
+        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+            color: Some(theme().primary),
+            bounded: true,
+            ..Default::default()
+        }))
         .clickable()
         .on_pointer_enter({
             let h = hovered.clone();

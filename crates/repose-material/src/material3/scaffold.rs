@@ -41,6 +41,16 @@ impl Default for ScaffoldConfig {
 }
 
 pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig) -> View {
+    // Scaffold is the usual M3 app root: install LocalIndication so plain
+    // `.clickable()` surfaces receive the default ripple even when the app
+    // does not wrap the whole tree in `MaterialTheme`.
+    with_material_indication(|| scaffold_inner(content, config))
+}
+
+fn scaffold_inner(
+    content: impl Fn(PaddingValues) -> View,
+    config: ScaffoldConfig,
+) -> View {
     let insets = window_insets();
     let itop = px_to_dp(insets.top);
     let ibottom = px_to_dp(insets.bottom);

@@ -4,6 +4,8 @@ use std::sync::atomic::AtomicU64;
 
 use repose_core::*;
 
+use crate::ripple::{RippleConfig, ripple};
+
 /// Generic component id counter (first used by filter chips).
 pub(crate) static FILTERCHIP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -37,3 +39,26 @@ pub(crate) fn lerp_color(a: Color, b: Color, t: f32) -> Color {
             .clamp(0.0, 255.0) as u8,
     )
 }
+/// Wire source + M3 ripple (content-tinted) + clickable in one consistent path.
+/// Use this for every interactive M3 control so hover/press/focus feedback is
+/// uniform across buttons, chips, icon buttons, FABs, toggles, etc.
+pub(crate) fn apply_m3_clickable(
+    mut m: Modifier,
+    source: &MutableInteractionSource,
+    ripple_color: Color,
+    enabled: bool,
+    on_click: impl Fn() + 'static,
+) -> Modifier {
+    m = m.interaction_source(source);
+    m = m.indication(ripple(RippleConfig {
+        color: Some(ripple_color),
+        bounded: true,
+        ..Default::default()
+    }));
+    if enabled {
+        m = m.clickable().on_click(on_click);
+    }
+    m
+}
+
+

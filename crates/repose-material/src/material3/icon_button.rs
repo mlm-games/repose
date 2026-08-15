@@ -72,7 +72,7 @@ fn icon_button_render(
     state_colors: StateColors,
 ) -> View {
     let is_enabled = config.enabled;
-    let _content_color = config.colors.content(is_enabled);
+    let content_color = config.colors.content(is_enabled);
     let radius = config.shape_radius.unwrap_or(sz * 0.5);
     let mut m = Modifier::new()
         .size(sz, sz)
@@ -94,6 +94,11 @@ fn icon_button_render(
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
     m = m.interaction_source(&source);
+    m = m.indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+        color: Some(content_color),
+        bounded: true,
+        ..Default::default()
+    }));
     if is_enabled {
         m = m.clickable().on_click(on_click);
     }
@@ -116,9 +121,9 @@ pub fn IconButton(icon: View, on_click: impl Fn() + 'static, config: IconButtonC
         None,
         StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         },
@@ -147,9 +152,9 @@ pub fn FilledIconButton(
         None,
         StateColors {
             default: Color::TRANSPARENT,
-            hovered: content_color.with_alpha_f32(0.08),
-            focused: content_color.with_alpha_f32(0.12),
-            pressed: content_color.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: content_color.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         },
@@ -178,9 +183,9 @@ pub fn FilledTonalIconButton(
         None,
         StateColors {
             default: Color::TRANSPARENT,
-            hovered: content_color.with_alpha_f32(0.08),
-            focused: content_color.with_alpha_f32(0.12),
-            pressed: content_color.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: content_color.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         },
@@ -211,9 +216,9 @@ pub fn OutlinedIconButton(
         Some((1.0, border_color)),
         StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         },

@@ -65,9 +65,9 @@ impl ToggleButtonDefaults {
         let th = theme();
         StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         }
@@ -161,9 +161,9 @@ impl ButtonDefaults {
         let th = theme();
         StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         }
@@ -289,9 +289,9 @@ impl IconButtonDefaults {
         let th = theme();
         StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         }
@@ -329,9 +329,9 @@ impl CheckboxDefaults {
         let th = theme();
         StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         }
@@ -362,9 +362,9 @@ impl RadioButtonDefaults {
         let th = theme();
         StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         }
@@ -425,9 +425,9 @@ impl SwitchDefaults {
         let th = theme();
         StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         }
@@ -597,9 +597,9 @@ impl ListItemDefaults {
         let th = theme();
         StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         }
@@ -745,9 +745,9 @@ impl SegmentedButtonDefaults {
         let th = theme();
         StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         }

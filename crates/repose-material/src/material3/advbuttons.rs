@@ -3,6 +3,7 @@
 use std::rc::Rc;
 
 use super::SplitButtonDefaults;
+use super::util::apply_m3_clickable;
 use repose_core::{locals::with_content_color, *};
 use repose_ui::{Box, Row, Text, TextStyle, ViewExt};
 
@@ -253,7 +254,7 @@ pub fn SplitButtonTrailingToggleButton(
     }
     if config.enabled {
         let cb = on_checked_change;
-        m = m.clickable().on_click(move || cb(!checked));
+        m = apply_m3_clickable(m, &tg_source, fg, true, move || cb(!checked));
     } else {
         m = m.alpha(0.38);
     }
@@ -356,7 +357,7 @@ pub fn SplitButtonTonalTrailingToggleButton(
     }
     if config.enabled {
         let cb = on_checked_change;
-        m = m.clickable().on_click(move || cb(!checked));
+        m = apply_m3_clickable(m, &tg_source, fg, true, move || cb(!checked));
     } else {
         m = m.alpha(0.38);
     }
@@ -520,9 +521,9 @@ fn resolve_button_colors(
         };
         let sc = StateColors {
             default: Color::TRANSPARENT,
-            hovered: colors.content_color.with_alpha_f32(0.08),
-            focused: colors.content_color.with_alpha_f32(0.12),
-            pressed: colors.content_color.with_alpha_f32(0.12),
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
             dragged: colors.content_color.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         };

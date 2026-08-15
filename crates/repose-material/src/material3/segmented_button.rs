@@ -138,6 +138,11 @@ pub fn SegmentedButton(
                     .background(bg)
                     .state_colors(state_colors)
                     .interaction_source(&seg_source)
+                    .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+                        color: Some(theme().on_surface),
+                        bounded: true,
+                        ..Default::default()
+                    }))
                     .align_items(AlignItems::CENTER)
                     .justify_content(JustifyContent::CENTER)
                     .padding_values(config.content_padding);

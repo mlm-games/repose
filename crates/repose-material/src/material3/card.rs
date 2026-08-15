@@ -118,9 +118,9 @@ fn card_state_colors(bg: Color) -> StateColors {
     let th = theme();
     StateColors {
         default: Color::TRANSPARENT,
-        hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
-        focused: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
-        pressed: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
+        hovered: Color::TRANSPARENT,
+        focused: Color::TRANSPARENT,
+        pressed: Color::TRANSPARENT,
         dragged: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
         disabled: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
     }
@@ -136,6 +136,11 @@ fn clickable_card_impl(
 ) -> View {
     let m = modifier
         .state_colors(card_state_colors(bg))
+        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+            color: Some(theme().on_surface),
+            bounded: true,
+            ..Default::default()
+        }))
         .clickable()
         .on_pointer_down({
             let cb = on_click;
