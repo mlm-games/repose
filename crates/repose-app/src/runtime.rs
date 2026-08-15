@@ -240,8 +240,7 @@ impl ReposeRuntime {
         repose_core::clipboard::clear_clipboard_observer();
         let clipboard_text = captured.borrow_mut().take();
 
-        let wants_pointer =
-            !f.hit_regions.is_empty() || self.hover_id.is_some() || self.capture_id.is_some();
+        let wants_pointer = self.hover_id.is_some() || self.capture_id.is_some();
         let wants_keyboard = !self.textfield_states.is_empty() || self.ime_preedit;
 
         let ime_allowed = self.sched.focused.is_some_and(|fid| {
@@ -323,7 +322,7 @@ impl ReposeRuntime {
         let Some(f) = &self.frame_cache else {
             return;
         };
-        let mut base = PointerEvent::new(
+        let base = PointerEvent::new(
             PointerId(0),
             PointerKind::Mouse,
             kind,
@@ -591,7 +590,7 @@ impl ReposeRuntime {
 
         // TextField drag end
         if let Some(cid) = self.capture_id
-            && is_semantics_textfield(f, cid)
+            && is_textfield_in_frame(f, cid)
         {
             let key = tf_key_of(f, cid);
             if let Some(state_rc) = self.textfield_states.get(&key) {
@@ -746,11 +745,16 @@ impl ReposeRuntime {
 
     /// Process a keyboard key event. Returns true if consumed.
     pub fn handle_key(&mut self, event: &KeyEvent) -> bool {
-        let Some(f) = &self.frame_cache else {
+        // Owned clone so `dispatch_action` may take `&mut self` below
+        // without conflicting with the long-lived frame borrow.
+        let Some(frame) = self.frame_cache.clone() else {
             return false;
         };
+        let f = &frame;
 
-        // Escape / BrowserBack: cancel DnD first, then try focus key dispatch
+        // Escape / BrowserBack: cancel DnD first, then try focus key dispatch.
+        // If nothing consumed it, do NOT consume: let the host handle back /
+        // exit / window-chrome actions.
         if event.event_type == KeyEventType::Down && !event.is_repeat && event.key == Key::Escape {
             if dnd::handle_drag_action(&DragAction::Cancel) {
                 request_frame();
@@ -761,7 +765,7 @@ impl ReposeRuntime {
                 request_frame();
                 return true;
             }
-            return true;
+            return false;
         }
 
         // Dispatch through focus ancestor chain
@@ -778,21 +782,8 @@ impl ReposeRuntime {
                 repose_core::shortcuts::KeyChord::new(event.key.clone(), self.modifiers),
             )
         {
-            if self.dispatch_action(f, action.clone()) {
-                request_frame();
-                return true;
-            }
-            // Focus navigation
-            if let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.sched, f) {
-                // Lazy-init textfield state for newly focused element
-                if let Some(hit) = f.hit_regions.iter().find(|h| h.id == new_id)
-                    && let Some(key) = hit.tf_state_key
-                {
-                    self.textfield_states
-                        .entry(key)
-                        .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
-                }
-                request_frame();
+            // `dispatch_action` covers focus navigation internally.
+            if self.dispatch_action(action.clone()) {
                 return true;
             }
         }
@@ -1096,21 +1087,151 @@ impl ReposeRuntime {
         false
     }
 
-    /// Dispatch a shortcut action to the focused element.
-    fn dispatch_action(&self, f: &Frame, action: repose_core::shortcuts::Action) -> bool {
-        if let Some(fid) = self.sched.focused
+    /// Dispatch a shortcut action: widget handler first, then built-in
+    /// textfield editing, then the global shortcut map, then focus navigation.
+    /// Returns true if the action was consumed.
+    pub fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
+        // 1) Widget-level handler
+        if let Some(f) = &self.frame_cache
+            && let Some(fid) = self.sched.focused
             && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
             && let Some(cb) = &hit.on_action
             && cb(action.clone())
         {
+            request_frame();
             return true;
         }
 
+        // 2) Built-in textfield editing (undo/redo/copy/cut/paste/select-all)
+        if self.apply_text_editing_action(&action) {
+            return true;
+        }
+
+        // 3) Global shortcut handler
         if repose_core::shortcuts::handle(action.clone()) {
+            request_frame();
+            return true;
+        }
+
+        // 4) Focus navigation (Tab / arrows)
+        if let Some(f) = self.frame_cache.clone()
+            && let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.sched, &f)
+        {
+            // End any in-flight keyboard press (e.g. Space held on the old focus).
+            if let Some(active) = self.key_pressed_active.take() {
+                self.pressed_ids.remove(&active);
+            }
+            // Lazy-init + reset the caret blink for the newly focused text field.
+            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == new_id)
+                && let Some(key) = hit.tf_state_key
+            {
+                self.ensure_textfield_state(key).borrow_mut().reset_caret_blink();
+            }
+            request_frame();
             return true;
         }
 
         false
+    }
+
+    /// Apply built-in textfield editing actions (Undo/Redo/SelectAll/Copy/
+    /// Cut/Paste) to the focused text field. Returns true if consumed.
+    fn apply_text_editing_action(&mut self, action: &repose_core::shortcuts::Action) -> bool {
+        use repose_core::shortcuts::Action;
+        let Some(fid) = self.sched.focused else {
+            return false;
+        };
+        let Some(f) = self.frame_cache.clone() else {
+            return false;
+        };
+        if !is_textfield_in_frame(&f, fid) {
+            return false;
+        }
+        let key = tf_key_of(&f, fid);
+        let Some(state_rc) = self.textfield_states.get(&key).cloned() else {
+            return false;
+        };
+        let multiline = is_multiline_id(&f, fid);
+
+        match action {
+            Action::Undo => {
+                let mut st = state_rc.borrow_mut();
+                if !st.can_undo() {
+                    return false;
+                }
+                st.undo();
+                notify_text_change(&f, fid, st.text.clone());
+                tf_ensure_caret_visible(&mut st, multiline);
+                request_frame();
+                true
+            }
+            Action::Redo => {
+                let mut st = state_rc.borrow_mut();
+                if !st.can_redo() {
+                    return false;
+                }
+                st.redo();
+                notify_text_change(&f, fid, st.text.clone());
+                tf_ensure_caret_visible(&mut st, multiline);
+                request_frame();
+                true
+            }
+            Action::SelectAll => {
+                let mut st = state_rc.borrow_mut();
+                let len = st.text.len();
+                st.selection = 0..len;
+                request_frame();
+                true
+            }
+            Action::Copy => {
+                let st = state_rc.borrow();
+                let (a, b) = (
+                    st.selection.start.min(st.selection.end),
+                    st.selection.start.max(st.selection.end),
+                );
+                if a == b {
+                    return false;
+                }
+                let slice = st.text.get(a..b).unwrap_or("").to_string();
+                drop(st);
+                if !slice.is_empty() {
+                    repose_core::clipboard::copy_to_clipboard(&slice);
+                }
+                true
+            }
+            Action::Cut => {
+                let mut st = state_rc.borrow_mut();
+                let (a, b) = (
+                    st.selection.start.min(st.selection.end),
+                    st.selection.start.max(st.selection.end),
+                );
+                if a == b {
+                    return false;
+                }
+                let slice = st.text.get(a..b).unwrap_or("").to_string();
+                // Replacing the selection with "" deletes it.
+                st.insert_text_atomic("");
+                let new_text = st.text.clone();
+                drop(st);
+                if !slice.is_empty() {
+                    repose_core::clipboard::copy_to_clipboard(&slice);
+                }
+                notify_text_change(&f, fid, new_text);
+                if let Some(mut st) = self.textfield_states.get(&key).map(|s| s.borrow_mut()) {
+                    tf_ensure_caret_visible(&mut st, multiline);
+                }
+                request_frame();
+                true
+            }
+            Action::Paste => {
+                if let Some(txt) = repose_core::clipboard::paste_text() {
+                    self.paste_into_focused(&txt);
+                    return true;
+                }
+                false
+            }
+            _ => false,
+        }
     }
 
     /// Process an IME event.
@@ -1228,7 +1349,53 @@ impl ReposeRuntime {
         }
     }
 
-    /// Insert text into a focused text field (used for paste).
+    /// Insert arbitrary text into the focused text field (composed keyboard
+    /// text, clipboard paste, hardware-keyboard fallback, ...).
+    /// Returns true if text was inserted.
+    ///
+    /// Control characters are filtered out; newlines are dropped for
+    /// single-line text fields. Skips while an IME preedit is active so the
+    /// composition isn't corrupted by duplicate host input.
+    pub fn insert_text_into_focused(&mut self, text: &str) -> bool {
+        if text.is_empty() || self.ime_preedit {
+            return false;
+        }
+        let Some(fid) = self.sched.focused else {
+            return false;
+        };
+        let Some(f) = self.frame_cache.clone() else {
+            return false;
+        };
+        if !is_textfield_in_frame(&f, fid) {
+            return false;
+        }
+        let key = tf_key_of(&f, fid);
+        let Some(state_rc) = self.textfield_states.get(&key).cloned() else {
+            return false;
+        };
+        let multiline = is_multiline_id(&f, fid);
+        let filtered: String = text
+            .chars()
+            .filter(|c| !c.is_control() && *c != '\r' && (multiline || *c != '\n'))
+            .collect();
+        if filtered.is_empty() {
+            return false;
+        }
+        {
+            let mut st = state_rc.borrow_mut();
+            st.insert_text(&filtered);
+            let new_text = st.text.clone();
+            notify_text_change(&f, fid, new_text);
+            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
+                tf_ensure_caret_visible(&mut st, hit.tf_multiline);
+            }
+        }
+        request_frame();
+        true
+    }
+
+    /// Insert text into a focused text field (used for paste). Uses an atomic
+    /// (non-mergeable) edit so Ctrl+V doesn't merge with adjacent typing.
     pub fn paste_into_focused(&mut self, text: &str) {
         let Some(fid) = self.sched.focused else {
             return;
@@ -1245,6 +1412,71 @@ impl ReposeRuntime {
             if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
                 tf_ensure_caret_visible(&mut st, hit.tf_multiline);
             }
+        }
+        request_frame();
+    }
+
+    /// Process a key event with an optional host-composed `text` payload
+    /// (winit `key_event.text`, Android soft-keyboard text, ...).
+    ///
+    /// When the modifiers are free of Ctrl/Alt/Meta and the payload is
+    /// printable, the text is inserted into the focused text field first;
+    /// otherwise the event falls through to [`Self::handle_key`] (single
+    /// characters, navigation, shortcuts, activation).
+    pub fn handle_key_with_text(&mut self, event: &KeyEvent, composed_text: Option<&str>) -> bool {
+        if event.event_type == KeyEventType::Down
+            && !event.is_repeat
+            && !self.ime_preedit
+            && !self.modifiers.ctrl
+            && !self.modifiers.alt
+            && !self.modifiers.meta
+            && let Some(text) = composed_text
+            && !text.chars().all(|c| c.is_control())
+            && self.insert_text_into_focused(text)
+        {
+            return true;
+        }
+        self.handle_key(event)
+    }
+
+    /// Process a scroll event at an explicit position, honoring a caller-owned
+    /// scroll capture id (touch gestures initialize the capture themselves).
+    /// Returns `(consumed, updated_capture_id)`.
+    pub fn handle_scroll_at(
+        &mut self,
+        pos: Vec2,
+        delta: Vec2,
+        scroll_capture: Option<u64>,
+    ) -> (bool, Option<u64>) {
+        let Some(f) = &self.frame_cache else {
+            return (false, scroll_capture);
+        };
+        let (consumed, cap) = dispatch_scroll(f, pos, delta, scroll_capture);
+        if consumed {
+            request_frame();
+        }
+        (consumed, cap)
+    }
+
+    /// Next caret blink edge (`Instant`) for the focused text field, if any.
+    pub fn next_caret_blink_deadline(&self) -> Option<web_time::Instant> {
+        let fid = self.sched.focused?;
+        let frame = self.frame_cache.as_ref()?;
+        let hit = frame.hit_regions.iter().find(|h| h.id == fid)?;
+        let key = hit.tf_state_key?;
+        self.textfield_states.get(&key)?.borrow().next_blink_deadline()
+    }
+
+    /// Tick host-facing overlays (snackbar timeouts) with the elapsed ms since
+    /// the last presented frame. Call once per redraw.
+    pub fn tick_overlays(&self, last_frame: web_time::Instant) {
+        let now = web_time::Instant::now();
+        let ms = now
+            .saturating_duration_since(last_frame)
+            .as_millis()
+            .min(u32::MAX as u128) as u32;
+        if ms > 0 {
+            repose_ui::overlay::SnackbarController::tick_for_frame(ms);
         }
     }
 
@@ -1388,12 +1620,6 @@ fn dispatch_hover_change(
 }
 
 fn is_textfield_in_frame(f: &Frame, id: u64) -> bool {
-    f.semantics_nodes
-        .iter()
-        .any(|n| n.id == id && n.role == repose_core::semantics::Role::TextField)
-}
-
-fn is_semantics_textfield(f: &Frame, id: u64) -> bool {
     f.semantics_nodes
         .iter()
         .any(|n| n.id == id && n.role == repose_core::semantics::Role::TextField)

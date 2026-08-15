@@ -24,10 +24,6 @@ use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys, Window
 use winit::window::{ImePurpose, Window};
 
 use repose_app::ReposeRuntime;
-use repose_ui::TextFieldState;
-use repose_ui::textfield::{
-    TF_FONT_DP, caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes, move_caret_vertical,
-};
 
 enum ClipboardAction {
     PasteText(String),
@@ -269,25 +265,8 @@ impl App {
         6.0 * self.scale(window)
     }
 
-    fn tf_key_of(&self, visual_id: u64) -> u64 {
-        rc::tf_key_of_in_frame(&self.rt.frame_cache, visual_id)
-    }
-
-    fn notify_text_change(&self, id: u64, text: String) {
-        if let Some(f) = &self.rt.frame_cache
-            && let Some(i) = rc::hit_index_by_id(f, id)
-            && let Some(cb) = &f.hit_regions[i].on_text_change
-        {
-            cb(text);
-        }
-    }
-
     fn is_textfield(&self, id: u64) -> bool {
         rc::is_textfield_in_frame(&self.rt.frame_cache, id)
-    }
-
-    fn tf_ensure_caret_visible_in_hit(&self, state: &mut TextFieldState, is_multiline: bool) {
-        rc::tf_ensure_caret_visible(state, is_multiline);
     }
 
     fn inject_fullscreen_css_if_needed(&self, window: &Window) {
@@ -390,84 +369,23 @@ impl App {
 
         for a in actions {
             match a {
-                ClipboardAction::PasteText(mut txt) => {
-                    let multiline = if let Some(fid) = self.rt.sched.focused {
-                        self.rt
-                            .frame_cache
-                            .as_ref()
-                            .and_then(|f| rc::hit_index_by_id(f, fid))
-                            .map(|i| {
-                                self.rt.frame_cache.as_ref().unwrap().hit_regions[i].tf_multiline
-                            })
-                            .unwrap_or(false)
-                    } else {
-                        false
-                    };
-                    txt.retain(|c| !c.is_control() && c != '\r' && (multiline || c != '\n'));
-                    if txt.is_empty() {
-                        continue;
-                    }
-
-                    if let Some(fid) = self.rt.sched.focused {
-                        let key = self.tf_key_of(fid);
-                        if let Some(st_rc) = self.rt.textfield_states.get(&key).cloned() {
-                            let mut st = st_rc.borrow_mut();
-                            st.insert_text(&txt);
-                            self.notify_text_change(fid, st.text.clone());
-
-                            if let Some(f) = &self.rt.frame_cache
-                                && let Some(i) = rc::hit_index_by_id(f, fid)
-                            {
-                                self.tf_ensure_caret_visible_in_hit(
-                                    &mut st,
-                                    f.hit_regions[i].tf_multiline,
-                                );
-                            }
-                        }
-                    }
+                ClipboardAction::PasteText(txt) => {
+                    self.rt.insert_text_into_focused(&txt);
                 }
             }
         }
     }
 
     fn dispatch_action(&mut self, window: &Window, action: repose_core::shortcuts::Action) -> bool {
-        use repose_core::shortcuts;
-
-        if let (Some(f), Some(fid)) = (&self.rt.frame_cache, self.rt.sched.focused) {
-            if let Some(i) = rc::hit_index_by_id(f, fid) {
-                if let Some(cb) = &f.hit_regions[i].on_action {
-                    if cb(action.clone()) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        if shortcuts::handle(action.clone()) {
+        if self.rt.dispatch_action(action.clone()) {
+            rc_web::set_ime_for_textfield(
+                window,
+                self.rt
+                    .sched
+                    .focused
+                    .map_or(false, |id| self.rt.is_textfield(id)),
+            );
             return true;
-        }
-
-        // Focus navigation (Tab/arrows)
-        if let Some(f) = &self.rt.frame_cache {
-            if let Some(new_id) = repose_core::focus::handle_action(&action, &mut self.rt.sched, f)
-            {
-                let tf_state_key = f
-                    .hit_regions
-                    .iter()
-                    .find(|h| h.id == new_id)
-                    .and_then(|h| h.tf_state_key);
-                if let Some(key) = tf_state_key {
-                    self.rt
-                        .textfield_states
-                        .entry(key)
-                        .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
-                    if let Some(state_rc) = self.rt.textfield_states.get(&key) {
-                        state_rc.borrow_mut().reset_caret_blink();
-                    }
-                }
-                rc_web::set_ime_for_textfield(&window, self.is_textfield(new_id));
-                return true;
-            }
         }
 
         // Web clipboard read is async, so Paste needs a platform fallback
@@ -913,26 +831,23 @@ impl ApplicationHandler<()> for App {
                                 self.touch_scroll_accum_x_px += dx_px;
                                 self.touch_scroll_accum_y_px += dy_px;
 
-                                if let Some(f) = &self.rt.frame_cache {
-                                    let (consumed, cap) = rc::dispatch_scroll(
-                                        f,
-                                        pos,
-                                        Vec2 {
-                                            x: -dx_px,
-                                            y: -dy_px,
-                                        },
-                                        self.scroll_capture_id,
-                                    );
-                                    self.scroll_capture_id = cap;
+                                let (consumed, cap) = self.rt.handle_scroll_at(
+                                    pos,
+                                    Vec2 {
+                                        x: -dx_px,
+                                        y: -dy_px,
+                                    },
+                                    self.scroll_capture_id,
+                                );
+                                self.scroll_capture_id = cap;
 
-                                    if consumed
-                                        && (self.touch_scroll_accum_x_px.abs()
-                                            > self.touch_slop_px(&window)
-                                            || self.touch_scroll_accum_y_px.abs()
-                                                > self.touch_slop_px(&window))
-                                    {
-                                        self.touch_scrolled = true;
-                                    }
+                                if consumed
+                                    && (self.touch_scroll_accum_x_px.abs()
+                                        > self.touch_slop_px(&window)
+                                        || self.touch_scroll_accum_y_px.abs()
+                                            > self.touch_slop_px(&window))
+                                {
+                                    self.touch_scrolled = true;
                                 }
                             }
 
@@ -1032,7 +947,7 @@ impl ApplicationHandler<()> for App {
                     utf16_code_point: utf16,
                 };
 
-                if self.rt.handle_key(&ke) {
+                if self.rt.handle_key_with_text(&ke, key_event.text.as_deref()) {
                     self.request_redraw();
                     return;
                 }
@@ -1139,13 +1054,7 @@ impl ApplicationHandler<()> for App {
                 self.request_redraw();
             } else if take_present_request() && self.rt.frame_cache.is_some() {
                 self.request_redraw();
-            } else if crate::next_caret_blink_deadline(
-                &self.rt.sched,
-                &self.rt.frame_cache,
-                &self.rt.textfield_states,
-            )
-            .is_some_and(|d| d <= web_time::Instant::now())
-            {
+            } else if self.rt.next_caret_blink_deadline().is_some_and(|d| d <= web_time::Instant::now()) {
                 self.request_redraw();
             }
         }

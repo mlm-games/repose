@@ -5,7 +5,7 @@ use accesskit_winit::Adapter;
 use repose_core::locals::dp_to_px;
 use repose_core::*;
 use repose_ui::textfield::{
-    TF_FONT_DP, TF_PADDING_X_DP, TextFieldState, TextMeasureConfig, measure_text,
+    TF_FONT_DP, TF_PADDING_X_DP, TextMeasureConfig, measure_text,
 };
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -21,14 +21,10 @@ pub mod web;
 
 pub mod a11y;
 mod common;
-#[cfg(not(target_arch = "wasm32"))]
-mod common_android;
 mod common_web;
 pub mod render;
 
 use common as rc;
-#[cfg(not(target_arch = "wasm32"))]
-use common_android as rc_android;
 use common_web as rc_web;
 
 pub use render::{ImageHandleGuard, RenderCommand, RenderContext};
@@ -215,43 +211,6 @@ pub fn window_is_visible() -> bool {
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn set_close_to_tray(enabled: bool) {
     CLOSE_TO_TRAY.store(enabled, Ordering::Relaxed);
-}
-
-/// Compose a single frame with density and text-scale applied, returning Frame.
-pub fn compose_frame<F>(
-    sched: &mut Scheduler,
-    root_fn: &mut F,
-    scale: f32,
-    size_px_u32: (u32, u32),
-    hover_id: Option<u64>,
-    pressed_ids: &std::collections::HashSet<u64>,
-    tf_states: &std::collections::HashMap<u64, Rc<RefCell<repose_ui::TextFieldState>>>,
-    _focused: Option<u64>,
-) -> Frame
-where
-    F: FnMut(&mut Scheduler) -> View,
-{
-    repose_app::compose_frame_inner(
-        sched,
-        root_fn,
-        scale,
-        size_px_u32,
-        hover_id,
-        pressed_ids,
-        tf_states,
-    )
-}
-
-pub(crate) fn next_caret_blink_deadline(
-    sched: &Scheduler,
-    frame_cache: &Option<Frame>,
-    textfield_states: &std::collections::HashMap<u64, Rc<RefCell<TextFieldState>>>,
-) -> Option<Instant> {
-    let fid = sched.focused?;
-    let frame = frame_cache.as_ref()?;
-    let hit = frame.hit_regions.iter().find(|h| h.id == fid)?;
-    let key = hit.tf_state_key?;
-    textfield_states.get(&key)?.borrow().next_blink_deadline()
 }
 
 /// Helper: ensure caret visibility for a TextFieldState inside a given rect (px).
@@ -541,11 +500,6 @@ pub fn run_desktop_app_with_config(
             }
         }
 
-        // Ensure caret is visible after edits/moves (all units in px)
-        fn tf_ensure_caret_visible(st: &mut TextFieldState, is_multiline: bool) {
-            rc::tf_ensure_caret_visible(st, is_multiline);
-        }
-
         fn paste_from_primary(&self) -> Option<String> {
             let mut opts = clipawl::ClipboardOptions::default();
             opts.linux.selection = clipawl::LinuxSelection::Primary;
@@ -573,30 +527,6 @@ pub fn run_desktop_app_with_config(
             self.rt.capture_id = None;
             self.rt.pressed_ids.clear();
             self.rt.hover_id = None;
-        }
-
-        fn is_textfield(&self, id: u64) -> bool {
-            rc::is_textfield_in_frame(&self.rt.frame_cache, id)
-        }
-
-        fn is_multiline_id(&self, id: u64) -> bool {
-            if let Some(f) = &self.rt.frame_cache {
-                f.hit_regions
-                    .iter()
-                    .find(|h| h.id == id)
-                    .map(|h| h.tf_multiline)
-                    .unwrap_or(false)
-            } else {
-                false
-            }
-        }
-
-        fn hit_by_id(f: &Frame, id: u64) -> Option<&HitRegion> {
-            f.hit_regions.iter().find(|h| h.id == id)
-        }
-
-        fn dp_px(&self, dp: f32) -> f32 {
-            dp_to_px(dp)
         }
     }
 
@@ -922,22 +852,10 @@ pub fn run_desktop_app_with_config(
                                 && let Some(f) = &self.rt.frame_cache
                                 && let Some(cid) = self.rt.capture_id
                                 && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
-                                && self.is_textfield(hit.id)
+                                && self.rt.is_textfield(hit.id)
+                                && let Some(txt) = self.paste_from_primary()
                             {
-                                let key = self.tf_key_of(hit.id);
-                                if let Some(state_rc) = self.rt.textfield_states.get(&key)
-                                    && let Some(txt) = self.paste_from_primary()
-                                {
-                                    let mut st = state_rc.borrow_mut();
-                                    st.insert_text_atomic(&txt);
-                                    self.notify_text_change(hit.id, st.text.clone());
-                                    if let Some(f) = &self.rt.frame_cache
-                                        && let Some(h) =
-                                            f.hit_regions.iter().find(|h| h.id == hit.id)
-                                    {
-                                        App::tf_ensure_caret_visible(&mut st, h.tf_multiline);
-                                    }
-                                }
+                                self.rt.paste_into_focused(&txt);
                             }
 
                             // Inspector: click-to-select topmost widget under cursor.
@@ -1007,129 +925,42 @@ pub fn run_desktop_app_with_config(
                 WindowEvent::KeyboardInput {
                     event: key_event, ..
                 } => {
-                    // --- Platform-specific shortcuts (before generic dispatch) ---
-
-                    // Escape / BrowserBack: cancel DnD, try focus chain, then navigation back
-                    if key_event.state == ElementState::Pressed && !key_event.repeat {
-                        match key_event.physical_key {
-                            PhysicalKey::Code(KeyCode::BrowserBack)
-                            | PhysicalKey::Code(KeyCode::Escape) => {
-                                use repose_navigation::back;
-
-                                if repose_core::dnd::handle_drag_action(
-                                    &repose_core::shortcuts::DragAction::Cancel,
-                                ) {
-                                    return;
-                                }
-
-                                // Try focus-ancestor dispatch without handle_key's always-true return
-                                let mapped = rc::map_key(key_event.physical_key);
-                                if self.dispatch_focus_key_event(&key_event, &mapped) {
-                                    self.request_redraw();
-                                    return;
-                                }
-
-                                if !back::handle() {
-                                    // el.exit();
-                                }
-                                return;
-                            }
-                            _ => {}
-                        }
-                    }
-
                     // Inspector hotkey: Ctrl+Shift+I
-                    if let Some(inspector) = &mut self.inspector
-                        && key_event.state == ElementState::Pressed
+                    if key_event.state == ElementState::Pressed
+                        && !key_event.repeat
                         && self.rt.modifiers.ctrl
                         && self.rt.modifiers.shift
                         && key_event.physical_key == PhysicalKey::Code(KeyCode::KeyI)
+                        && let Some(inspector) = &mut self.inspector
                     {
                         inspector.hud.toggle_inspector();
                         self.request_redraw();
                         return;
                     }
 
-                    // Text undo/redo (Ctrl+Z / Ctrl+Shift+Z)
-                    if key_event.state == ElementState::Pressed
-                        && !key_event.repeat
-                        && self.rt.modifiers.command
-                    {
-                        match key_event.physical_key {
-                            PhysicalKey::Code(KeyCode::KeyZ) if self.rt.modifiers.shift => {
-                                if let Some(fid) = self.rt.sched.focused {
-                                    let key = self.tf_key_of(fid);
-                                    if let Some(state_rc) = self.rt.textfield_states.get(&key) {
-                                        let mut st = state_rc.borrow_mut();
-                                        if st.can_redo() {
-                                            st.redo();
-                                            self.notify_text_change(fid, st.text.clone());
-                                            self.request_redraw();
-                                            return;
-                                        }
-                                    }
-                                }
-                            }
-                            PhysicalKey::Code(KeyCode::KeyZ) => {
-                                if let Some(fid) = self.rt.sched.focused {
-                                    let key = self.tf_key_of(fid);
-                                    if let Some(state_rc) = self.rt.textfield_states.get(&key) {
-                                        let mut st = state_rc.borrow_mut();
-                                        if st.can_undo() {
-                                            st.undo();
-                                            self.notify_text_change(fid, st.text.clone());
-                                            self.request_redraw();
-                                            return;
-                                        }
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-
                     // --- Delegate all generic keyboard dispatch to the runtime ---
-
+                    // (focus-chain dispatch, shortcuts, single-char input, and
+                    // winit's composed `key_event.text` for international layouts).
                     let mapped = rc::map_key(key_event.physical_key);
                     let ke = winit_key_to_repose(&key_event, &mapped, &self.rt.modifiers);
-                    let consumed = self.rt.handle_key(&ke);
-                    if consumed {
+                    if self.rt.handle_key_with_text(&ke, key_event.text.as_deref()) {
                         self.request_redraw();
                         return;
                     }
 
-                    // --- Platform-specific text input (winit key_event.text) ---
-                    // The runtime handles text via Key::Character, but we ALSO try
-                    // winit's composed `key_event.text` for proper IME-less input
-                    // on international keyboard layouts.
-                    if key_event.state == ElementState::Pressed
-                        && !key_event.repeat
-                        && !self.rt.ime_preedit
-                        && !self.rt.modifiers.ctrl
-                        && !self.rt.modifiers.alt
-                        && !self.rt.modifiers.meta
-                        && let Some(raw) = key_event.text.as_deref()
-                    {
-                        let text: String = raw
-                            .chars()
-                            .filter(|c| !c.is_control() && *c != '\n' && *c != '\r')
-                            .collect();
-                        if !text.is_empty()
-                            && let Some(fid) = self.rt.sched.focused
-                        {
-                            let key = self.tf_key_of(fid);
-                            if let Some(state_rc) = self.rt.textfield_states.get(&key) {
-                                let mut st = state_rc.borrow_mut();
-                                st.insert_text(&text);
-                                self.notify_text_change(fid, st.text.clone());
-                                if let Some(f) = &self.rt.frame_cache
-                                    && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
-                                {
-                                    App::tf_ensure_caret_visible(&mut st, hit.tf_multiline);
+                    // Escape / BrowserBack: when the runtime didn't cancel a
+                    // drag / dispatch focus, fall back to navigation back.
+                    if key_event.state == ElementState::Pressed && !key_event.repeat {
+                        match key_event.physical_key {
+                            PhysicalKey::Code(KeyCode::BrowserBack)
+                            | PhysicalKey::Code(KeyCode::Escape) => {
+                                use repose_navigation::back;
+                                if !back::handle() {
+                                    // el.exit();
                                 }
-                                self.request_redraw();
                                 return;
                             }
+                            _ => {}
                         }
                     }
 
@@ -1154,30 +985,20 @@ pub fn run_desktop_app_with_config(
                 }
 
                 WindowEvent::Ime(ime) => {
-                    if let Some(focused_id) = self.rt.sched.focused {
-                        let key = self.tf_key_of(focused_id);
-                        if let Some(state_rc) = self.rt.textfield_states.get(&key) {
-                            let mut state = state_rc.borrow_mut();
-                            let on_text_change = self
-                                .rt
-                                .frame_cache
-                                .as_ref()
-                                .and_then(|f| f.hit_regions.iter().find(|h| h.id == focused_id))
-                                .and_then(|h| h.on_text_change.clone());
-                            let mut notify = |text: String| {
-                                if let Some(cb) = &on_text_change {
-                                    cb(text);
-                                }
-                            };
-                            rc_android::handle_ime_event(
-                                ime,
-                                &mut state,
-                                &mut notify,
-                                &mut self.rt.ime_preedit,
-                            );
-                            self.request_redraw();
+                    // Translate winit IME events into runtime events; the
+                    // runtime owns the composition state + notify callbacks.
+                    let ime_event = match ime {
+                        winit::event::Ime::Enabled => repose_core::input::ImeEvent::Start,
+                        winit::event::Ime::Preedit(text, cursor) => {
+                            repose_core::input::ImeEvent::Update { text, cursor }
                         }
-                    }
+                        winit::event::Ime::Commit(text) => {
+                            repose_core::input::ImeEvent::Commit(text)
+                        }
+                        winit::event::Ime::Disabled => repose_core::input::ImeEvent::Cancel,
+                    };
+                    self.rt.handle_ime(&ime_event);
+                    self.request_redraw();
                 }
 
                 WindowEvent::RedrawRequested => {
@@ -1370,7 +1191,7 @@ pub fn run_desktop_app_with_config(
 
                     self.dispatch_file_drop_now();
 
-                    rc::tick_snackbar(self.last_redraw);
+                    self.rt.tick_overlays(self.last_redraw);
                     self.last_redraw = Instant::now();
                 }
 
@@ -1430,7 +1251,7 @@ pub fn run_desktop_app_with_config(
             if !self.pending_redraw {
                 let now = Instant::now();
                 let idle_cap = web_time::Duration::from_millis(1000);
-                let deadline = self.next_caret_blink_deadline().unwrap_or(now + idle_cap);
+                let deadline = self.rt.next_caret_blink_deadline().unwrap_or(now + idle_cap);
 
                 if now.saturating_duration_since(self.last_redraw) >= idle_cap || now >= deadline {
                     self.redraw_requested.set(true);
@@ -1481,76 +1302,7 @@ pub fn run_desktop_app_with_config(
         fn memory_warning(&mut self, _: &winit::event_loop::ActiveEventLoop) {}
     }
 
-    impl App {
-        /// Dispatch a key event through the focus ancestor chain.
-        /// Returns true if the event was consumed by a handler.
-        fn dispatch_focus_key_event(
-            &self,
-            key_event: &winit::event::KeyEvent,
-            mapped_key: &repose_core::input::Key,
-        ) -> bool {
-            let Some(f) = &self.rt.frame_cache else {
-                return false;
-            };
-            let Some(focused) = self.rt.sched.focused else {
-                return false;
-            };
-            let utf16 = match mapped_key {
-                repose_core::input::Key::Character(c) => *c as u16,
-                _ => 0,
-            };
-            let mods = self.rt.modifiers;
-            let repeat = key_event.repeat;
-            let ev_type = if key_event.state == ElementState::Pressed {
-                repose_core::input::KeyEventType::Down
-            } else {
-                repose_core::input::KeyEventType::Up
-            };
-            let hit_by_id: std::collections::HashMap<u64, &HitRegion> =
-                f.hit_regions.iter().map(|h| (h.id, h)).collect();
-            let sem_parent_of: std::collections::HashMap<u64, u64> = f
-                .semantics_nodes
-                .iter()
-                .filter_map(|n| n.parent.map(|p| (n.id, p)))
-                .collect();
-            let mut ancestors = Vec::new();
-            let mut cur = focused;
-            loop {
-                ancestors.push(cur);
-                if let Some(&p) = sem_parent_of.get(&cur) {
-                    cur = p;
-                } else {
-                    break;
-                }
-            }
-            let make_ke = || repose_core::input::KeyEvent {
-                key: mapped_key.clone(),
-                modifiers: mods,
-                is_repeat: repeat,
-                event_type: ev_type,
-                utf16_code_point: utf16,
-            };
-            // Top-down preview: root -> focused
-            for &id in ancestors.iter().rev() {
-                if let Some(hit) = hit_by_id.get(&id)
-                    && let Some(cb) = &hit.on_preview_key_event
-                    && cb(make_ke())
-                {
-                    return true;
-                }
-            }
-            // Bottom-up normal: focused -> root
-            for &id in ancestors.iter() {
-                if let Some(hit) = hit_by_id.get(&id)
-                    && let Some(cb) = &hit.on_key_event
-                    && cb(make_ke())
-                {
-                    return true;
-                }
-            }
-            false
-        }
-
+impl App {
         fn announce_focus_change(&mut self) {
             if let Some(f) = &self.rt.frame_cache {
                 let focused_node = self
@@ -1560,79 +1312,6 @@ pub fn run_desktop_app_with_config(
                     .and_then(|id| f.semantics_nodes.iter().find(|n| n.id == id));
                 self.a11y.focus_changed(focused_node);
             }
-        }
-
-        fn notify_text_change(&self, id: u64, text: String) {
-            if let Some(f) = &self.rt.frame_cache
-                && let Some(h) = f.hit_regions.iter().find(|h| h.id == id)
-                && let Some(cb) = &h.on_text_change
-            {
-                cb(text);
-            }
-        }
-
-        fn tf_key_of(&self, visual_id: u64) -> u64 {
-            rc::tf_key_of_in_frame(&self.rt.frame_cache, visual_id)
-        }
-
-        /// If a text field is focused with a collapsed selection (caret blinking),
-        /// return the [`Instant`] of the next 500 ms blink edge.
-        fn next_caret_blink_deadline(&self) -> Option<Instant> {
-            next_caret_blink_deadline(
-                &self.rt.sched,
-                &self.rt.frame_cache,
-                &self.rt.textfield_states,
-            )
-        }
-
-        fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
-            use repose_core::shortcuts;
-
-            if let (Some(f), Some(fid)) = (&self.rt.frame_cache, self.rt.sched.focused)
-                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
-                && let Some(cb) = &hit.on_action
-                && cb(action.clone())
-            {
-                return true;
-            }
-
-            if shortcuts::handle(action.clone()) {
-                return true;
-            }
-
-            // Focus navigation (Tab/arrows)
-            if let Some(f) = &self.rt.frame_cache
-                && let Some(new_id) =
-                    repose_core::focus::handle_action(&action, &mut self.rt.sched, f)
-            {
-                if let Some(active) = self.rt.key_pressed_active.take() {
-                    self.rt.pressed_ids.remove(&active);
-                }
-                let tf_state_key = f
-                    .hit_regions
-                    .iter()
-                    .find(|h| h.id == new_id)
-                    .and_then(|h| h.tf_state_key);
-                if let Some(key) = tf_state_key {
-                    self.rt
-                        .textfield_states
-                        .entry(key)
-                        .or_insert_with(|| Rc::new(RefCell::new(repose_ui::TextFieldState::new())));
-                    if let Some(state_rc) = self.rt.textfield_states.get(&key) {
-                        state_rc.borrow_mut().reset_caret_blink();
-                    }
-                }
-                if let Some(win) = &self.window {
-                    let is_textfield = f.semantics_nodes.iter().any(|n| {
-                        n.id == new_id && n.role == repose_core::semantics::Role::TextField
-                    });
-                    rc_web::set_ime_for_textfield(win, is_textfield);
-                }
-                self.announce_focus_change();
-                return true;
-            }
-
-            false
         }
 
         fn dispatch_file_drop_now(&mut self) {

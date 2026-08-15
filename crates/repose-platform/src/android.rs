@@ -1,11 +1,9 @@
 use crate::common as rc;
-use crate::common_android as rc_android;
 use crate::common_web as rc_web;
 use crate::render::RenderContext;
 use crate::*;
 
 use repose_ui::TextFieldState;
-use repose_ui::textfield::{TF_FONT_DP, index_for_x_bytes};
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -193,19 +191,6 @@ pub fn run_android_app_with_options(
             dp * self.scale()
         }
 
-        fn notify_text_change(&self, id: u64, text: String) {
-            if let Some(f) = &self.rt.frame_cache
-                && let Some(i) = rc::hit_index_by_id(f, id)
-                && let Some(cb) = &f.hit_regions[i].on_text_change
-            {
-                cb(text);
-            }
-        }
-
-        fn tf_key_of(&self, visual_id: u64) -> u64 {
-            rc::tf_key_of_in_frame(&self.rt.frame_cache, visual_id)
-        }
-
         fn is_textfield(&self, id: u64) -> bool {
             rc::is_textfield_in_frame(&self.rt.frame_cache, id)
         }
@@ -310,46 +295,17 @@ pub fn run_android_app_with_options(
         }
 
         fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
-            use repose_core::shortcuts;
-
-            if let (Some(f), Some(fid)) = (&self.rt.frame_cache, self.rt.sched.focused) {
-                if let Some(i) = rc::hit_index_by_id(f, fid) {
-                    if let Some(cb) = &f.hit_regions[i].on_action {
-                        if cb(action.clone()) {
-                            return true;
-                        }
-                    }
-                }
-            }
-
-            if shortcuts::handle(action.clone()) {
-                return true;
-            }
-
-            // Focus navigation (Tab/arrows)
-            if let Some(f) = &self.rt.frame_cache {
-                if let Some(new_id) =
-                    repose_core::focus::handle_action(&action, &mut self.rt.sched, f)
-                {
-                    let tf_state_key = f
-                        .hit_regions
-                        .iter()
-                        .find(|h| h.id == new_id)
-                        .and_then(|h| h.tf_state_key);
-                    if let Some(key) = tf_state_key {
+            if self.rt.dispatch_action(action) {
+                if let Some(win) = &self.window {
+                    rc_web::set_ime_for_textfield(
+                        win,
                         self.rt
-                            .textfield_states
-                            .entry(key)
-                            .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
-                        if let Some(state_rc) = self.rt.textfield_states.get(&key) {
-                            state_rc.borrow_mut().reset_caret_blink();
-                        }
-                    }
-                    if let Some(win) = &self.window {
-                        rc_web::set_ime_for_textfield(win, self.rt.is_textfield(new_id));
-                    }
-                    return true;
+                            .sched
+                            .focused
+                            .map_or(false, |id| self.rt.is_textfield(id)),
+                    );
                 }
+                return true;
             }
 
             false
@@ -552,26 +508,22 @@ pub fn run_android_app_with_options(
                                     self.touch_scroll_accum_x_px += dx_px;
                                     self.touch_scroll_accum_y_px += dy_px;
 
-                                    if let Some(f) = &self.rt.frame_cache {
-                                        let (consumed, cap) = rc::dispatch_scroll(
-                                            f,
-                                            pos,
-                                            Vec2 {
-                                                x: -dx_px,
-                                                y: -dy_px,
-                                            },
-                                            self.scroll_capture_id,
-                                        );
-                                        self.scroll_capture_id = cap;
+                                    let (consumed, cap) = self.rt.handle_scroll_at(
+                                        pos,
+                                        Vec2 {
+                                            x: -dx_px,
+                                            y: -dy_px,
+                                        },
+                                        self.scroll_capture_id,
+                                    );
+                                    self.scroll_capture_id = cap;
 
-                                        if consumed
-                                            && (self.touch_scroll_accum_x_px.abs()
-                                                > 6.0 * self.scale()
-                                                || self.touch_scroll_accum_y_px.abs()
-                                                    > 6.0 * self.scale())
-                                        {
-                                            self.touch_scrolled = true;
-                                        }
+                                    if consumed
+                                        && (self.touch_scroll_accum_x_px.abs() > 6.0 * self.scale()
+                                            || self.touch_scroll_accum_y_px.abs()
+                                                > 6.0 * self.scale())
+                                    {
+                                        self.touch_scrolled = true;
                                     }
                                 }
 
@@ -651,63 +603,29 @@ pub fn run_android_app_with_options(
                         key_event.repeat
                     );
 
-                    // Handle text from Android soft keyboard (fallback when IME events don't work)
-                    // Filter out backspace character (\u{8}) which should be handled as delete, not text
-                    if let Some(text) = &key_event.text {
-                        let is_backspace_char = text == "\u{8}" || text == "\u{7f}"; // BS or DEL
-                        if !text.is_empty()
-                            && !is_backspace_char
-                            && key_event.state == ElementState::Pressed
-                        {
-                            if let Some(focused_id) = self.rt.sched.focused {
-                                let key = self.tf_key_of(focused_id);
-                                if let Some(state_rc) = self.rt.textfield_states.get(&key) {
-                                    let mut state = state_rc.borrow_mut();
-                                    state.insert_text(text);
-                                    self.notify_text_change(focused_id, state.text.clone());
-                                    self.dirty = true;
-                                    self.request_redraw();
-                                }
-                            }
-                        }
-                    }
-
-                    // Handle Backspace for textfields (Android soft keyboard fallback)
-                    if key_event.state == ElementState::Pressed {
-                        let is_backspace = matches!(
-                            key_event.physical_key,
-                            PhysicalKey::Code(KeyCode::Backspace)
-                        ) || matches!(
-                            key_event.logical_key,
-                            winit::keyboard::Key::Named(winit::keyboard::NamedKey::Backspace)
-                        );
-                        if is_backspace {
-                            if let Some(focused_id) = self.rt.sched.focused {
-                                let key = self.tf_key_of(focused_id);
-                                if let Some(state_rc) = self.rt.textfield_states.get(&key) {
-                                    let mut state = state_rc.borrow_mut();
-                                    state.delete_backward();
-                                    self.notify_text_change(focused_id, state.text.clone());
-                                    self.dirty = true;
-                                    self.request_redraw();
-                                }
-                            }
-                        }
-
-                        // Handle Enter for textfields (commit composition or submit)
-                        if matches!(key_event.physical_key, PhysicalKey::Code(KeyCode::Enter)) {
-                            if let Some(focused_id) = self.rt.sched.focused {
-                                let key = self.tf_key_of(focused_id);
-                                if let Some(state) = self.rt.textfield_states.get(&key) {
-                                    let mut st = state.borrow_mut();
-                                    // If we have a composition, commit it
-                                    if st.composition.is_some() {
-                                        st.commit_composition(String::new());
-                                        self.notify_text_change(focused_id, st.text.clone());
-                                    }
-                                }
-                            }
-                        }
+                    // Route everything through the runtime: focus-chain dispatch,
+                    // deletion/navigation keys, Enter submit/newline, Space/Enter
+                    // activation, and composed soft-keyboard text.
+                    let mapped_key = rc::map_key(key_event.physical_key);
+                    let utf16 = match mapped_key {
+                        repose_core::input::Key::Character(c) => c as u16,
+                        _ => 0,
+                    };
+                    let ke = repose_core::input::KeyEvent {
+                        key: mapped_key,
+                        modifiers: self.rt.modifiers,
+                        is_repeat: key_event.repeat,
+                        event_type: if key_event.state == ElementState::Pressed {
+                            repose_core::input::KeyEventType::Down
+                        } else {
+                            repose_core::input::KeyEventType::Up
+                        },
+                        utf16_code_point: utf16,
+                    };
+                    if self.rt.handle_key_with_text(&ke, key_event.text.as_deref()) {
+                        self.dirty = true;
+                        self.request_redraw();
+                        return;
                     }
 
                     // Back key / Escape handling (optional)
@@ -715,289 +633,30 @@ pub fn run_android_app_with_options(
                         match key_event.physical_key {
                             PhysicalKey::Code(KeyCode::Escape)
                             | PhysicalKey::Code(KeyCode::BrowserBack) => {
-                                if repose_core::dnd::handle_drag_action(
-                                    &repose_core::shortcuts::DragAction::Cancel,
-                                ) {
-                                    self.request_redraw();
-                                    return;
-                                }
                                 return;
                             }
                             _ => {}
-                        }
-                    }
-
-                    // Dispatch key event through focus ancestor chain (Compose-compatible)
-                    let mapped_key = rc::map_key(key_event.physical_key);
-                    let utf16 = match mapped_key {
-                        repose_core::input::Key::Character(c) => c as u16,
-                        _ => 0,
-                    };
-                    let mods = self.rt.modifiers;
-                    let repeat = key_event.repeat;
-                    let ev_type = if key_event.state == ElementState::Pressed {
-                        repose_core::input::KeyEventType::Down
-                    } else {
-                        repose_core::input::KeyEventType::Up
-                    };
-                    let consumed = self
-                        .rt
-                        .frame_cache
-                        .as_ref()
-                        .and_then(|f| {
-                            let focused = self.rt.sched.focused.or_else(|| {
-                                f.semantics_nodes
-                                    .iter()
-                                    .find(|n| n.parent.is_none())
-                                    .map(|n| n.id)
-                            })?;
-                            let sem_parent_of: std::collections::HashMap<u64, u64> = f
-                                .semantics_nodes
-                                .iter()
-                                .filter_map(|n| n.parent.map(|p| (n.id, p)))
-                                .collect();
-                            let hit_by_id: std::collections::HashMap<u64, &HitRegion> =
-                                f.hit_regions.iter().map(|h| (h.id, h)).collect();
-                            let mut ancestors = Vec::new();
-                            let mut cur = focused;
-                            loop {
-                                ancestors.push(cur);
-                                if let Some(&p) = sem_parent_of.get(&cur) {
-                                    cur = p;
-                                } else {
-                                    break;
-                                }
-                            }
-                            let make_ke = || repose_core::input::KeyEvent {
-                                key: mapped_key.clone(),
-                                modifiers: mods,
-                                is_repeat: repeat,
-                                event_type: ev_type,
-                                utf16_code_point: utf16,
-                            };
-                            // Top-down preview: root -> focused
-                            for &id in ancestors.iter().rev() {
-                                if let Some(hit) = hit_by_id.get(&id) {
-                                    if let Some(cb) = &hit.on_preview_key_event {
-                                        if cb(make_ke()) {
-                                            return Some(true);
-                                        }
-                                    }
-                                }
-                            }
-                            // Bottom-up normal: focused -> root
-                            for &id in ancestors.iter() {
-                                if let Some(hit) = hit_by_id.get(&id) {
-                                    if let Some(cb) = &hit.on_key_event {
-                                        if cb(make_ke()) {
-                                            return Some(true);
-                                        }
-                                    }
-                                }
-                            }
-                            None
-                        })
-                        .unwrap_or(false);
-                    if consumed {
-                        self.dirty = true;
-                        self.request_redraw();
-                        return;
-                    }
-
-                    if key_event.state == ElementState::Pressed {
-                        if let Some(action) = repose_core::shortcuts::resolve_action(
-                            repose_core::shortcuts::KeyChord::new(
-                                rc::map_key(key_event.physical_key),
-                                self.rt.modifiers,
-                            ),
-                        ) {
-                            if self.dispatch_action(action) {
-                                self.dirty = true;
-                                self.request_redraw();
-                                return;
-                            }
-                        }
-                    }
-
-                    // Keyboard activation for focused buttons (Space/Enter)
-                    if let Some(fid) = self.rt.sched.focused {
-                        let is_textfield = if let Some(f) = &self.rt.frame_cache {
-                            f.semantics_nodes
-                                .iter()
-                                .any(|n| n.id == fid && n.role == Role::TextField)
-                        } else {
-                            false
-                        };
-                        if !is_textfield {
-                            match key_event.physical_key {
-                                PhysicalKey::Code(KeyCode::Space)
-                                | PhysicalKey::Code(KeyCode::Enter) => {
-                                    if key_event.state == ElementState::Pressed && !key_event.repeat
-                                    {
-                                        self.rt.pressed_ids.insert(fid);
-                                        self.rt.key_pressed_active = Some(fid);
-                                        self.dirty = true;
-                                        self.request_redraw();
-                                        return;
-                                    } else if key_event.state == ElementState::Released {
-                                        if let Some(active_id) = self.rt.key_pressed_active.take() {
-                                            self.rt.pressed_ids.remove(&active_id);
-                                            if let Some(f) = &self.rt.frame_cache
-                                                && let Some(hit) =
-                                                    f.hit_regions.iter().find(|h| h.id == active_id)
-                                            {
-                                                if let Some(cb) = &hit.on_click {
-                                                    cb();
-                                                } else if let Some(cb) = &hit.on_pointer_down {
-                                                    let pe = PointerEvent::new(
-                                                        PointerId(0),
-                                                        PointerKind::Mouse,
-                                                        PointerEventKind::Down(
-                                                            PointerButton::Primary,
-                                                        ),
-                                                        Vec2 { x: 0.0, y: 0.0 },
-                                                        1.0,
-                                                        self.rt.modifiers,
-                                                    );
-                                                    cb(pe);
-                                                }
-                                            }
-                                            self.dirty = true;
-                                            self.request_redraw();
-                                        }
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-
-                    // Enter submits focused TextField
-                    if key_event.state == ElementState::Pressed && !key_event.repeat {
-                        if let PhysicalKey::Code(KeyCode::Enter) = key_event.physical_key {
-                            if let Some(focused_id) = self.rt.sched.focused
-                                && let Some(f) = &self.rt.frame_cache
-                                && let Some(i) = rc::hit_index_by_id(f, focused_id)
-                                && let Some(on_submit) = &f.hit_regions[i].on_text_submit
-                            {
-                                let key = self.tf_key_of(focused_id);
-                                if let Some(state) = self.rt.textfield_states.get(&key) {
-                                    on_submit(state.borrow().text.clone());
-                                }
-                            }
                         }
                     }
                 }
 
                 // IME (Preedit/Commit)
                 WindowEvent::Ime(ime) => {
-                    if let Some(focused_id) = self.rt.sched.focused {
-                        let key = self.tf_key_of(focused_id);
-                        if let Some(state_rc) = self.rt.textfield_states.get(&key) {
-                            let mut state = state_rc.borrow_mut();
-
-                            let hit_rect = if let Some(f) = self.rt.frame_cache.as_ref() {
-                                rc::hit_index_by_id(f, focused_id)
-                                    .map(|i| f.hit_regions[i].rect)
-                                    .unwrap_or_default()
-                            } else {
-                                Rect::default()
-                            };
-
-                            match ime {
-                                Ime::Enabled => {
-                                    self.rt.ime_preedit = false;
-                                    if !self.ime_visible {
-                                        self.ime_visible = true;
-                                        // Only estimates if rlobkit's real ime_bottom
-                                        // is still 0 (see update_ime_inset).
-                                        self.update_ime_inset();
-                                    }
-                                }
-                                Ime::Preedit(text, cursor) => {
-                                    let cursor_usize =
-                                        cursor.map(|(a, b)| (a as usize, b as usize));
-                                    state.set_composition(text.clone(), cursor_usize);
-                                    self.rt.ime_preedit = !text.is_empty();
-                                    self.notify_text_change(focused_id, state.text.clone());
-                                    let font_px =
-                                        dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-                                    let m = repose_ui::textfield::measure_text(
-                                        &state.text,
-                                        font_px,
-                                        repose_ui::textfield::TextMeasureConfig::default(),
-                                    );
-                                    let caret_x_px = m
-                                        .positions
-                                        .get(state.caret_index())
-                                        .copied()
-                                        .unwrap_or(0.0);
-                                    state.ensure_caret_visible(
-                                        caret_x_px,
-                                        hit_rect.w,
-                                        dp_to_px(2.0),
-                                    );
-                                }
-                                Ime::Commit(text) => {
-                                    state.commit_composition(text);
-                                    self.rt.ime_preedit = false;
-                                    self.notify_text_change(focused_id, state.text.clone());
-                                    let font_px =
-                                        dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-                                    let m = repose_ui::textfield::measure_text(
-                                        &state.text,
-                                        font_px,
-                                        repose_ui::textfield::TextMeasureConfig::default(),
-                                    );
-                                    let caret_x_px = m
-                                        .positions
-                                        .get(state.caret_index())
-                                        .copied()
-                                        .unwrap_or(0.0);
-                                    state.ensure_caret_visible(
-                                        caret_x_px,
-                                        hit_rect.w,
-                                        dp_to_px(2.0),
-                                    );
-                                }
-                                Ime::Disabled => {
-                                    self.rt.ime_preedit = false;
-                                    if self.ime_visible {
-                                        self.ime_visible = false;
-                                        self.update_ime_inset();
-                                    }
-                                    if state.composition.is_some() {
-                                        state.cancel_composition();
-                                        self.notify_text_change(focused_id, state.text.clone());
-                                        let font_px = dp_to_px(TF_FONT_DP)
-                                            * repose_core::locals::text_scale().0;
-                                        let m = repose_ui::textfield::measure_text(
-                                            &state.text,
-                                            font_px,
-                                            repose_ui::textfield::TextMeasureConfig::default(),
-                                        );
-                                        let caret_x_px = m
-                                            .positions
-                                            .get(state.caret_index())
-                                            .copied()
-                                            .unwrap_or(0.0);
-                                        state.ensure_caret_visible(
-                                            caret_x_px,
-                                            hit_rect.w,
-                                            dp_to_px(2.0),
-                                        );
-                                    }
-                                }
-                            }
-
-                            if let Some(win) = &self.window {
-                                self.update_ime_cursor_area(win);
-                            }
-
-                            self.dirty = true;
-                            self.request_redraw();
-                        }
+                    let ime_event = match &ime {
+                        Ime::Enabled => repose_core::input::ImeEvent::Start,
+                        Ime::Preedit(text, cursor) => repose_core::input::ImeEvent::Update {
+                            text: text.clone(),
+                            cursor: cursor.map(|(a, b)| (a as usize, b as usize)),
+                        },
+                        Ime::Commit(text) => repose_core::input::ImeEvent::Commit(text.clone()),
+                        Ime::Disabled => repose_core::input::ImeEvent::Cancel,
+                    };
+                    self.rt.handle_ime(&ime_event);
+                    if let Some(win) = &self.window {
+                        self.update_ime_cursor_area(win);
                     }
+                    self.dirty = true;
+                    self.request_redraw();
                 }
 
                 WindowEvent::RedrawRequested => {
@@ -1019,67 +678,14 @@ pub fn run_android_app_with_options(
                         };
                         win.scale_factor() as f32
                     };
-                    let size_px_u32 = self.rt.sched.size;
                     let focused = self.rt.sched.focused;
 
-                    let rc = self.render.clone();
-                    let root_fn = &mut self.root;
+                    self.rt.scale = scale;
 
-                    let mut composed_root = move |s: &mut Scheduler| (root_fn)(s, &rc);
-
-                    let sched = &mut self.rt.sched;
-                    let pressed_ids = &self.rt.pressed_ids;
-                    let textfield_states = &self.rt.textfield_states;
-
-                    let mut frame =
-                        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-                            compose_frame(
-                                sched,
-                                &mut composed_root,
-                                scale,
-                                size_px_u32,
-                                None, // hover_id (no mouse on Android usually)
-                                pressed_ids,
-                                textfield_states,
-                                focused,
-                            )
-                        })) {
-                            Ok(frame) => frame,
-                            Err(_) => {
-                                log::error!("compose panicked; presenting last good frame");
-                                if let (Some(backend), Some(cached)) =
-                                    (self.backend.as_mut(), self.rt.frame_cache.as_ref())
-                                {
-                                    let mut scene = cached.scene.clone();
-                                    backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
-                                }
-                                return;
-                            }
-                        };
+                    let output = self.rt.frame(&mut self.root, &self.render);
 
                     // Drain upload commands queued during compose before presenting
                     self.process_render_commands();
-
-                    let output = repose_app::FrameOutput {
-                        scene: frame.scene.clone(),
-                        hit_regions: frame.hit_regions.clone(),
-                        semantics_nodes: frame.semantics_nodes.clone(),
-                        focus_chain: frame.focus_chain.clone(),
-                        platform: repose_app::PlatformOutput {
-                            cursor: None,
-                            ime_allowed: false,
-                            ime_cursor_area: None,
-                            clipboard_text: None,
-                            ime_purpose: Default::default(),
-                            ime_auto_correct: true,
-                            ime_capitalization: Default::default(),
-                            keyboard_type: Default::default(),
-                            window_theme_dark: None,
-                        },
-                        wants_pointer: !frame.hit_regions.is_empty()
-                            || self.rt.capture_id.is_some(),
-                        wants_keyboard: !self.rt.textfield_states.is_empty() || self.rt.ime_preedit,
-                    };
 
                     if !output.wants_keyboard
                         && focused.is_some()
@@ -1092,14 +698,23 @@ pub fn run_android_app_with_options(
                         }
                     }
 
+                    let frame = Frame {
+                        scene: output.scene,
+                        hit_regions: output.hit_regions,
+                        semantics_nodes: output.semantics_nodes,
+                        focus_chain: output.focus_chain,
+                    };
+
                     repose_core::dnd::set_dnd_frame(Some(frame.clone()));
                     repose_core::dnd::set_dnd_scale(scale);
-                    self.overlay_drag_indicator(&mut frame.scene);
+
+                    let mut scene = frame.scene.clone();
+                    self.overlay_drag_indicator(&mut scene);
 
                     let Some(backend) = self.backend.as_mut() else {
                         return;
                     };
-                    backend.frame(&frame.scene, GlyphRasterConfig { px: 18.0 * scale });
+                    backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
 
                     if let Some(fid) = self.rt.sched.focused {
                         if let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid)
@@ -1115,7 +730,6 @@ pub fn run_android_app_with_options(
                         }
                     }
 
-                    self.rt.reconcile_hover_from_mouse_pos(&frame);
                     self.rt.cache_frame(frame);
                     self.last_redraw = web_time::Instant::now();
 
@@ -1152,12 +766,10 @@ pub fn run_android_app_with_options(
                     || self.dirty
                     || frame_requested
                     || (present_requested && self.rt.frame_cache.is_some())
-                    || crate::next_caret_blink_deadline(
-                        &self.rt.sched,
-                        &self.rt.frame_cache,
-                        &self.rt.textfield_states,
-                    )
-                    .is_some_and(|d| d <= web_time::Instant::now())
+                    || self
+                        .rt
+                        .next_caret_blink_deadline()
+                        .is_some_and(|d| d <= web_time::Instant::now())
                     || repose_core::animation_driver::is_active()
             };
 

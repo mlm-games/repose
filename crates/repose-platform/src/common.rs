@@ -1,14 +1,6 @@
 use crate::*;
 use repose_core::Modifiers;
-use repose_core::Vec2;
-use repose_core::input::{PointerButton, PointerEvent, PointerEventKind, PointerId, PointerKind};
-use repose_core::locals::dp_to_px;
 use repose_core::runtime::Frame;
-use repose_ui::TextFieldState;
-use repose_ui::textfield::{
-    TF_FONT_DP, TextMeasureConfig, caret_xy_for_byte, index_for_x_bytes, index_for_xy_bytes,
-    measure_text,
-};
 
 pub(crate) fn tick_snackbar(last_redraw: web_time::Instant) {
     let now = web_time::Instant::now();
@@ -23,13 +15,6 @@ pub(crate) fn request_redraw(window: &Option<std::sync::Arc<winit::window::Windo
     if let Some(w) = window {
         w.request_redraw();
     }
-}
-
-pub(crate) fn tf_key_of_in_frame(frame_cache: &Option<Frame>, visual_id: u64) -> u64 {
-    if let Some(f) = frame_cache {
-        return tf_key_of(f, visual_id);
-    }
-    visual_id
 }
 
 pub(crate) fn is_textfield_in_frame(frame_cache: &Option<Frame>, id: u64) -> bool {
@@ -54,88 +39,8 @@ pub(crate) fn update_modifiers(modifiers: &mut Modifiers, state: &winit::keyboar
     };
 }
 
-/// Like `index_for_x_bytes` but applies visual transformation if active on the state.
-/// The returned offset is in the original text's byte space.
-pub(crate) fn index_for_x_bytes_vt(state: &TextFieldState, font_px: f32, x_px: f32) -> usize {
-    if let Some(vt) = &state.visual_transformation {
-        let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
-        let tfmd = vt.filter(&annotated);
-        let display_idx = index_for_x_bytes(tfmd.text.as_str(), font_px, x_px, 400, 0);
-        tfmd.offset_mapping.transformed_to_original(display_idx)
-    } else {
-        index_for_x_bytes(&state.text, font_px, x_px, 400, 0)
-    }
-}
-
-/// Like `index_for_xy_bytes` but applies visual transformation if active on the state.
-pub(crate) fn index_for_xy_bytes_vt(
-    state: &TextFieldState,
-    font_px: f32,
-    wrap_w: f32,
-    x_px: f32,
-    y_px: f32,
-) -> usize {
-    if let Some(vt) = &state.visual_transformation {
-        let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
-        let tfmd = vt.filter(&annotated);
-        let display_idx = index_for_xy_bytes(tfmd.text.as_str(), font_px, wrap_w, x_px, y_px);
-        tfmd.offset_mapping.transformed_to_original(display_idx)
-    } else {
-        index_for_xy_bytes(&state.text, font_px, wrap_w, x_px, y_px)
-    }
-}
-
-/// Find the top-most hit region index under `pos` (reverse iteration).
-pub(crate) fn top_hit_index(frame: &Frame, pos: Vec2) -> Option<usize> {
-    frame
-        .hit_regions
-        .iter()
-        .enumerate()
-        .rev()
-        .find(|(_, h)| h.rect.contains(pos))
-        .map(|(i, _)| i)
-}
-
 pub(crate) fn hit_index_by_id(frame: &Frame, id: u64) -> Option<usize> {
     frame.hit_regions.iter().position(|h| h.id == id)
-}
-
-pub(crate) fn tf_key_of(frame: &Frame, visual_id: u64) -> u64 {
-    if let Some(i) = hit_index_by_id(frame, visual_id) {
-        let hr = &frame.hit_regions[i];
-        return hr.tf_state_key.unwrap_or(hr.id);
-    }
-    visual_id
-}
-
-pub(crate) fn pe_mouse(event: PointerEventKind, pos: Vec2, mods: Modifiers) -> PointerEvent {
-    PointerEvent::new(PointerId(0), PointerKind::Mouse, event, pos, 1.0, mods)
-}
-
-pub(crate) fn pe_touch(event: PointerEventKind, pos: Vec2, mods: Modifiers) -> PointerEvent {
-    PointerEvent::new(PointerId(0), PointerKind::Touch, event, pos, 1.0, mods)
-}
-
-pub(crate) fn pe_down_primary(kind: PointerKind, pos: Vec2, mods: Modifiers) -> PointerEvent {
-    PointerEvent::new(
-        PointerId(0),
-        kind,
-        PointerEventKind::Down(PointerButton::Primary),
-        pos,
-        1.0,
-        mods,
-    )
-}
-
-pub(crate) fn pe_up_primary(kind: PointerKind, pos: Vec2, mods: Modifiers) -> PointerEvent {
-    PointerEvent::new(
-        PointerId(0),
-        kind,
-        PointerEventKind::Up(PointerButton::Primary),
-        pos,
-        1.0,
-        mods,
-    )
 }
 
 pub(crate) fn map_key(key: winit::keyboard::PhysicalKey) -> repose_core::input::Key {
@@ -207,149 +112,6 @@ pub(crate) fn map_key(key: winit::keyboard::PhysicalKey) -> repose_core::input::
         PhysicalKey::Code(KeyCode::F12) => Key::F(12),
         _ => Key::Unknown,
     }
-}
-
-pub(crate) fn tf_ensure_caret_visible(state: &mut TextFieldState, is_multiline: bool) {
-    let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-    let wrap_width = state.inner_width;
-
-    if is_multiline {
-        let (cx, cy, _) = caret_xy_for_byte(&state.text, font_px, wrap_width, state.caret_index());
-        let iw = state.inner_width;
-        let ih = state.inner_height;
-        state.ensure_caret_visible_xy(cx, cy, iw, ih, dp_to_px(2.0));
-    } else {
-        let caret_idx = state.caret_index();
-        let (display, caret_display_off) = if let Some(vt) = &state.visual_transformation {
-            let annotated = repose_core::AnnotatedString::new(state.text.clone(), vec![]);
-            let tfmd = vt.filter(&annotated);
-            let off =
-                repose_core::original_offset_to_display(&state.text, tfmd.text.as_str(), caret_idx);
-            (tfmd.text.text, off)
-        } else {
-            (state.text.clone(), caret_idx)
-        };
-        let m = measure_text(&display, font_px, TextMeasureConfig::default());
-        let caret_x_px = m.positions.get(caret_display_off).copied().unwrap_or(0.0);
-        state.ensure_caret_visible(caret_x_px, wrap_width, dp_to_px(2.0));
-    }
-}
-
-/// Place caret in textfield at pointer position and begin drag selection.
-/// Handles both single-line and multiline textfields.
-/// `pos_px`: absolute pointer position in pixels
-/// `scale`: display scale factor
-/// `shift`: whether shift key is held (extends selection)
-pub(crate) fn tf_place_caret_at_pointer(
-    state: &mut TextFieldState,
-    hit_rect: Rect,
-    content_origin: Option<(f32, f32)>,
-    is_multiline: bool,
-    pos_px: (f32, f32),
-    _scale: f32,
-    shift: bool,
-) {
-    let (ox, oy) = content_origin.unwrap_or((hit_rect.x, hit_rect.y));
-    let content_x_px = (pos_px.0 - ox + state.scroll_offset).max(0.0);
-    let content_y_px = (pos_px.1 - oy + state.scroll_offset_y).max(0.0);
-    let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-    let wrap_w = state.inner_width.max(1.0);
-
-    let idx = if is_multiline {
-        index_for_xy_bytes_vt(state, font_px, wrap_w, content_x_px, content_y_px)
-    } else {
-        index_for_x_bytes_vt(state, font_px, content_x_px)
-    };
-    state.handle_pointer_down(idx, (pos_px.0, pos_px.1), shift);
-}
-
-/// Dispatch wheel/touch-scroll to scroll consumers under `pos`, propagating
-/// leftovers to parent hit regions.
-///
-/// Returns `(any_consumed, updated_capture)`.  Feed the new capture back on
-/// subsequent calls during the same touch gesture.
-pub(crate) fn dispatch_scroll(
-    frame: &Frame,
-    pos: Vec2,
-    delta: Vec2,
-    scroll_capture: Option<u64>,
-) -> (bool, Option<u64>) {
-    if let Some(cid) = scroll_capture
-        && let Some(cb) = frame
-            .hit_regions
-            .iter()
-            .find(|h| h.id == cid)
-            .and_then(|h| h.on_scroll.as_ref())
-    {
-        cb(delta);
-        return (true, Some(cid));
-    }
-    // Captured region is gone from the tree -> release and re-pick below.
-
-    // No held capture: lock to the top-most consumer under the pointer. Capture
-    // it so the same scroller keeps controlling the whole gesture.
-    let mut remaining = delta;
-    for hit in frame
-        .hit_regions
-        .iter()
-        .rev()
-        .filter(|h| h.rect.contains(pos))
-    {
-        if let Some(cb) = &hit.on_scroll {
-            let before = remaining;
-            let leftover = cb(before);
-            let consumed =
-                (before.x - leftover.x).abs() > 0.001 || (before.y - leftover.y).abs() > 0.001;
-            if consumed {
-                return (true, Some(hit.id));
-            }
-            remaining = leftover;
-            if remaining.x.abs() <= 0.001 && remaining.y.abs() <= 0.001 {
-                break;
-            }
-        }
-    }
-    (false, scroll_capture)
-}
-
-#[macro_export]
-macro_rules! handle_text_undo_redo {
-    ($app:expr, $key_event:expr) => {{
-        let mut __handled = false;
-        if $key_event.state == ElementState::Pressed && !$key_event.repeat && $app.modifiers.command
-        {
-            match $key_event.physical_key {
-                PhysicalKey::Code(KeyCode::KeyZ) if $app.modifiers.shift => {
-                    if let Some(fid) = $app.sched.focused {
-                        let key = $app.tf_key_of(fid);
-                        if let Some(state_rc) = $app.textfield_states.get(&key) {
-                            let mut st = state_rc.borrow_mut();
-                            if st.can_redo() {
-                                st.redo();
-                                $app.notify_text_change(fid, st.text.clone());
-                                __handled = true;
-                            }
-                        }
-                    }
-                }
-                PhysicalKey::Code(KeyCode::KeyZ) => {
-                    if let Some(fid) = $app.sched.focused {
-                        let key = $app.tf_key_of(fid);
-                        if let Some(state_rc) = $app.textfield_states.get(&key) {
-                            let mut st = state_rc.borrow_mut();
-                            if st.can_undo() {
-                                st.undo();
-                                $app.notify_text_change(fid, st.text.clone());
-                                __handled = true;
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        __handled
-    }};
 }
 
 pub(crate) fn process_render_commands(
