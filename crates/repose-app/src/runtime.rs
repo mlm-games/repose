@@ -96,6 +96,10 @@ pub struct ReposeRuntime {
     /// Whether the pointer is currently inside the window.
     pub pointer_inside: bool,
     pub hover_id: Option<u64>,
+    /// Needed so `Leave` still fires
+    /// even when the hovered hit region is removed from the tree between frames.
+    /// Rebuilt on every `cache_frame`.
+    hover_leave: HashMap<u64, (f32, f32, f32, f32, Rc<dyn Fn(PointerEvent)>)>,
     pub capture_id: Option<u64>,
     /// Hit path captured at pointer-down: every region under the pointer,
     /// ordered bottom-up (deepest child first, ancestors last).
@@ -127,6 +131,7 @@ impl ReposeRuntime {
             mouse_pos_px: (0.0, 0.0),
             pointer_inside: false,
             hover_id: None,
+            hover_leave: HashMap::new(),
             capture_id: None,
             hit_path: None,
             scroll_capture_id: None,
@@ -167,31 +172,55 @@ impl ReposeRuntime {
     {
         let size = self.sched.size;
         let rc = render_ctx.clone();
-        let mut inner = |s: &mut Scheduler| (root_fn)(s, &rc);
         // Root-level panic guard: a stray panic during compose must not kill the
         // event loop / freeze the hosted demo.
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            compose_frame_inner(
-                &mut self.sched,
-                &mut inner,
-                self.scale,
-                size,
-                self.hover_id,
-                &self.pressed_ids,
-                &self.textfield_states,
-            )
-        })) {
-            Ok(frame) => frame,
-            Err(_) => {
-                log::error!("compose panicked; presenting last good frame");
-                self.frame_cache.clone().unwrap_or_else(|| Frame {
-                    scene: Default::default(),
-                    hit_regions: Vec::new(),
-                    semantics_nodes: Vec::new(),
-                    focus_chain: Vec::new(),
-                })
+        let mut compose_once = |this: &mut Self| {
+            let mut inner = |s: &mut Scheduler| (root_fn)(s, &rc);
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                compose_frame_inner(
+                    &mut this.sched,
+                    &mut inner,
+                    this.scale,
+                    size,
+                    this.hover_id,
+                    &this.pressed_ids,
+                    &this.textfield_states,
+                )
+            })) {
+                Ok(frame) => frame,
+                Err(_) => {
+                    log::error!("compose panicked; presenting last good frame");
+                    this.frame_cache.clone().unwrap_or_else(|| Frame {
+                        scene: Default::default(),
+                        hit_regions: Vec::new(),
+                        semantics_nodes: Vec::new(),
+                        focus_chain: Vec::new(),
+                    })
+                }
             }
+        };
+
+        let frame = compose_once(self);
+
+        // Reconcile hover against the *new* hit list before presenting. If the
+        // hover target changed, recompose once so paint uses the correct
+        // Interactions.hover (eliminates 1-frame sticky/wrong hover).
+        let hover_before = self.hover_id;
+        self.reconcile_hover_from_mouse_pos(&frame);
+        if self.hover_id != hover_before {
+            // Refresh the retained leave map from the first frame so Leave on
+            // further changes still works (cache_frame does this fully).
+            self.hover_leave.clear();
+            for h in &frame.hit_regions {
+                if let Some(cb) = &h.on_pointer_leave {
+                    self.hover_leave
+                        .insert(h.id, (h.rect.x, h.rect.y, h.rect.w, h.rect.h, cb.clone()));
+                }
+            }
+            // Hover should be stable: same geometry + same pointer. Do not loop.
+            return compose_once(self);
         }
+        frame
     }
 
     /// Compose a frame and return structured output for the host.
@@ -280,6 +309,13 @@ impl ReposeRuntime {
 
     /// Store the composed frame for event hit testing.
     pub fn cache_frame(&mut self, frame: Frame) {
+        self.hover_leave.clear();
+        for h in &frame.hit_regions {
+            if let Some(cb) = &h.on_pointer_leave {
+                self.hover_leave
+                    .insert(h.id, (h.rect.x, h.rect.y, h.rect.w, h.rect.h, cb.clone()));
+            }
+        }
         self.frame_cache = Some(frame);
     }
 
@@ -381,7 +417,14 @@ impl ReposeRuntime {
 
         // Enter / Leave
         if new_hover != self.hover_id {
-            dispatch_hover_change(Some(f), &mut self.hover_id, new_hover, pos, self.modifiers);
+            dispatch_hover_change(
+                Some(f),
+                &self.hover_leave,
+                &mut self.hover_id,
+                new_hover,
+                pos,
+                self.modifiers,
+            );
             request_frame();
         }
 
@@ -570,6 +613,7 @@ impl ReposeRuntime {
         };
         dispatch_hover_change(
             self.frame_cache.as_ref(),
+            &self.hover_leave,
             &mut self.hover_id,
             None,
             pos,
@@ -592,6 +636,7 @@ impl ReposeRuntime {
         };
         dispatch_hover_change(
             self.frame_cache.as_ref(),
+            &self.hover_leave,
             &mut self.hover_id,
             None,
             pos,
@@ -601,46 +646,41 @@ impl ReposeRuntime {
 
     /// Reconcile hover state when the composed frame changes.
     pub fn reconcile_hover_from_mouse_pos(&mut self, new_frame: &Frame) {
-        let mut changed = false;
-
-        if let Some(prev_id) = self.hover_id
-            && !new_frame.hit_regions.iter().any(|h| h.id == prev_id)
-        {
-            if let Some(old_f) = &self.frame_cache
-                && let Some(prev) = old_f.hit_regions.iter().find(|h| h.id == prev_id)
-                && let Some(cb) = &prev.on_pointer_leave
-            {
-                let pos = Vec2 {
-                    x: self.mouse_pos_px.0,
-                    y: self.mouse_pos_px.1,
-                };
-                let mut pe = PointerEvent::new(
-                    PointerId(0),
-                    PointerKind::Mouse,
-                    PointerEventKind::Leave,
-                    pos,
-                    1.0,
-                    self.modifiers,
-                );
-                pe.origin = Vec2 {
-                    x: prev.rect.x,
-                    y: prev.rect.y,
-                };
-                pe.position = pe.position - pe.origin;
-                cb(pe);
-                changed = true;
-            }
-            self.hover_id = None;
-        }
-
-        if !self.pointer_inside {
-            return;
-        }
-
         let pos = Vec2 {
             x: self.mouse_pos_px.0,
             y: self.mouse_pos_px.1,
         };
+
+        // If the previous hover target vanished from the new frame, deliver
+        // Leave via the retained map (which survives tree removal), then clear.
+        if let Some(prev_id) = self.hover_id
+            && !new_frame.hit_regions.iter().any(|h| h.id == prev_id)
+        {
+            dispatch_hover_change(
+                Some(new_frame),
+                &self.hover_leave,
+                &mut self.hover_id,
+                None,
+                pos,
+                self.modifiers,
+            );
+        }
+
+        if !self.pointer_inside {
+            if self.hover_id.is_some() {
+                dispatch_hover_change(
+                    Some(new_frame),
+                    &self.hover_leave,
+                    &mut self.hover_id,
+                    None,
+                    pos,
+                    self.modifiers,
+                );
+                request_frame();
+            }
+            return;
+        }
+
         let new_hover = new_frame
             .hit_regions
             .iter()
@@ -658,14 +698,12 @@ impl ReposeRuntime {
         };
 
         if new_hover == self.hover_id {
-            if changed {
-                request_frame();
-            }
             return;
         }
 
         dispatch_hover_change(
             Some(new_frame),
+            &self.hover_leave,
             &mut self.hover_id,
             new_hover,
             pos,
@@ -678,7 +716,6 @@ impl ReposeRuntime {
         self.capture_id = None;
         self.hit_path = None;
         self.pressed_ids.clear();
-        self.hover_id = None;
     }
 
     /// Process a scroll event. Returns true if consumed.
@@ -1283,42 +1320,51 @@ where
 }
 
 /// Fire enter/leave callbacks when the hovered region changes, updating
-/// `hover_id`. If the previous region is gone from the frame, no leave is
-/// fired (its callbacks were dropped with it); `hover_id` is still cleared.
+/// `hover_id`.
 fn dispatch_hover_change(
     frame: Option<&Frame>,
+    leave_map: &HashMap<u64, (f32, f32, f32, f32, Rc<dyn Fn(PointerEvent)>)>,
     hover_id: &mut Option<u64>,
     new_hover: Option<u64>,
     pos: Vec2,
     modifiers: Modifiers,
 ) {
-    let Some(f) = frame else {
-        *hover_id = None;
-        return;
-    };
     if new_hover == *hover_id {
         return;
     }
-    if let Some(prev_id) = *hover_id
-        && let Some(prev) = f.hit_regions.iter().find(|h| h.id == prev_id)
-        && let Some(cb) = &prev.on_pointer_leave
-    {
-        let mut pe = PointerEvent::new(
-            PointerId(0),
-            PointerKind::Mouse,
-            PointerEventKind::Leave,
-            pos,
-            1.0,
-            modifiers,
-        );
-        pe.origin = Vec2 {
-            x: prev.rect.x,
-            y: prev.rect.y,
-        };
-        pe.position = pe.position - pe.origin;
-        cb(pe);
+
+    // --- Leave previous (ALWAYS if we still know how) ---
+    if let Some(prev_id) = *hover_id {
+        let leave_info = leave_map.get(&prev_id).cloned().or_else(|| {
+            frame.and_then(|f| {
+                f.hit_regions
+                    .iter()
+                    .find(|h| h.id == prev_id)
+                    .and_then(|h| {
+                        h.on_pointer_leave
+                            .as_ref()
+                            .map(|cb| (h.rect.x, h.rect.y, h.rect.w, h.rect.h, cb.clone()))
+                    })
+            })
+        });
+        if let Some((rx, ry, _rw, _rh, cb)) = leave_info {
+            let mut pe = PointerEvent::new(
+                PointerId(0),
+                PointerKind::Mouse,
+                PointerEventKind::Leave,
+                pos,
+                1.0,
+                modifiers,
+            );
+            pe.origin = Vec2 { x: rx, y: ry };
+            pe.position = pe.position - pe.origin;
+            cb(pe);
+        }
     }
-    if let Some(hid) = new_hover
+
+    // --- Enter new ---
+    if let Some(f) = frame
+        && let Some(hid) = new_hover
         && let Some(h) = f.hit_regions.iter().find(|h| h.id == hid)
         && let Some(cb) = &h.on_pointer_enter
     {
@@ -1337,6 +1383,7 @@ fn dispatch_hover_change(
         pe.position = pe.position - pe.origin;
         cb(pe);
     }
+
     *hover_id = new_hover;
 }
 

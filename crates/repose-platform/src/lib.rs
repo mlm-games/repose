@@ -1401,9 +1401,10 @@ pub fn run_desktop_app_with_config(
                             .reset_caret_blink();
                     }
 
-                    self.rt.reconcile_hover_from_mouse_pos(&frame);
+                    // NOTE: hover was already reconciled inside `compose()`.
+                    // `cache_frame` rebuilds the retained hover-leave map.
                     repose_core::dnd::set_dnd_frame(Some(frame.clone()));
-                    self.rt.frame_cache = Some(frame);
+                    self.rt.cache_frame(frame);
                     repose_core::dnd::set_dnd_scale(scale);
 
                     self.dispatch_file_drop_now();

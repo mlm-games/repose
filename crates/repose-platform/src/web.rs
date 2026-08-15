@@ -1077,8 +1077,6 @@ impl ApplicationHandler<()> for App {
                 // Drain upload commands queued during compose before presenting
                 self.drain_render_commands();
 
-                self.rt.reconcile_hover_from_mouse_pos(&frame);
-
                 let output = repose_app::FrameOutput {
                     scene: frame.scene.clone(),
                     hit_regions: frame.hit_regions.clone(),

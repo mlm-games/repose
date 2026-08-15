@@ -350,6 +350,21 @@ impl LayoutEngine {
         let is_focused = focused == Some(view_id);
         let (state_hovered, state_pressed, state_focused, state_dragged) =
             if let Some(ref src) = modifier.interaction_source {
+                // force the source to match so state colors don't go stale.
+                if owns_hit {
+                    let msrc = src.to_mutable();
+                    if src.collect_is_hovered() != is_hovered {
+                        if is_hovered {
+                            msrc.emit(Interaction::HoverEnter);
+                        } else {
+                            msrc.emit(Interaction::HoverLeave);
+                        }
+                    }
+                    if src.collect_is_pressed() && !is_pressed {
+                        let pid = src.collect_last_press_id().unwrap_or(0);
+                        msrc.emit(Interaction::Cancel(pid));
+                    }
+                }
                 (
                     src.collect_is_hovered() || is_hovered,
                     src.collect_is_pressed() || is_pressed,

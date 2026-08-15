@@ -1116,7 +1116,7 @@ pub fn run_android_app_with_options(
                     }
 
                     self.rt.reconcile_hover_from_mouse_pos(&frame);
-                    self.rt.frame_cache = Some(frame);
+                    self.rt.cache_frame(frame);
                     self.last_redraw = web_time::Instant::now();
 
                     self.dirty = false;

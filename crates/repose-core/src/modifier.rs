@@ -414,6 +414,16 @@ impl InteractionSource {
             state: self.state.clone(),
         }
     }
+
+    /// Convenience: hard-reset via read handle (same Rc).
+    pub fn reset(&self) {
+        self.to_mutable().reset();
+    }
+
+    /// Convenience: clear hover only via read handle (same Rc).
+    pub fn reset_hover(&self) {
+        self.to_mutable().reset_hover();
+    }
 }
 
 /// Mutable handle to a shared interaction state.
@@ -517,6 +527,22 @@ impl MutableInteractionSource {
     pub fn source(&self) -> InteractionSource {
         InteractionSource {
             state: self.state.clone(),
+        }
+    }
+
+    /// Hard-reset all interaction flags.
+    pub fn reset(&self) {
+        let mut s = self.state.borrow_mut();
+        *s = InteractionState::default();
+        crate::frame_clock::request_frame();
+    }
+
+    /// Clear hover only (keep press/focus/drag).
+    pub fn reset_hover(&self) {
+        let mut s = self.state.borrow_mut();
+        if s.hovered {
+            s.hovered = false;
+            crate::frame_clock::request_frame();
         }
     }
 }
