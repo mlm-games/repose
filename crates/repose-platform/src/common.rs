@@ -1,7 +1,6 @@
 use crate::*;
-use repose_core::Modifiers;
-use repose_core::runtime::Frame;
 
+#[cfg(any(target_arch = "wasm32", target_os = "android"))]
 pub(crate) fn tick_snackbar(last_redraw: web_time::Instant) {
     let now = web_time::Instant::now();
     let elapsed = now.saturating_duration_since(last_redraw);
@@ -17,6 +16,7 @@ pub(crate) fn request_redraw(window: &Option<std::sync::Arc<winit::window::Windo
     }
 }
 
+#[cfg(any(target_arch = "wasm32", target_os = "android"))]
 pub(crate) fn is_textfield_in_frame(frame_cache: &Option<Frame>, id: u64) -> bool {
     if let Some(f) = frame_cache {
         f.semantics_nodes
@@ -27,6 +27,7 @@ pub(crate) fn is_textfield_in_frame(frame_cache: &Option<Frame>, id: u64) -> boo
     }
 }
 
+#[cfg(any(target_arch = "wasm32", target_os = "android"))]
 pub(crate) fn update_modifiers(modifiers: &mut Modifiers, state: &winit::keyboard::ModifiersState) {
     modifiers.shift = state.shift_key();
     modifiers.ctrl = state.control_key();
@@ -39,6 +40,7 @@ pub(crate) fn update_modifiers(modifiers: &mut Modifiers, state: &winit::keyboar
     };
 }
 
+#[cfg(any(target_arch = "wasm32", target_os = "android"))]
 pub(crate) fn hit_index_by_id(frame: &Frame, id: u64) -> Option<usize> {
     frame.hit_regions.iter().position(|h| h.id == id)
 }

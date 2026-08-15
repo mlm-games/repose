@@ -142,7 +142,7 @@ impl LayoutEngine {
         let viewport_main_is_definite = scroll_axis
             .map(|a| LayoutEngine::viewport_main_is_definite(&node.modifier, a))
             .unwrap_or(false);
-        drop(node);
+        let _ = node;
 
         let child_tids: Vec<taffy::NodeId> = children
             .iter()
@@ -164,7 +164,7 @@ impl LayoutEngine {
             if is_root {
                 st.root_taffy_id = Some(t_id);
             }
-            drop(st);
+            let _ = st;
             let st = self.scope_trees.get_mut(scope_key).unwrap();
             Self::make_children_absolute_on(is_zstack, &child_tids, &mut st.taffy);
             if let Some(axis) = scroll_axis {
@@ -189,7 +189,7 @@ impl LayoutEngine {
             if is_root {
                 st.root_taffy_id = Some(t_id);
             }
-            drop(st);
+            let _ = st;
             let st = self.scope_trees.get_mut(scope_key).unwrap();
             Self::make_children_absolute_on(is_zstack, &child_tids, &mut st.taffy);
             if let Some(axis) = scroll_axis {
@@ -214,7 +214,7 @@ impl LayoutEngine {
         let node = self.tree.get(node_id).unwrap();
         let style = self.style_from_node(node, font_px);
         let ctx = self.context_from_node(node);
-        drop(node);
+        let _ = node;
         let st = self.scope_trees.get_mut(scope_key).unwrap();
         if let Some(&t_id) = st.taffy_map.get(&node_id) {
             let _ = st.taffy.set_style(t_id, style);

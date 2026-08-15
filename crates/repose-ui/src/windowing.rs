@@ -204,7 +204,7 @@ enum DragKind {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct DragState {
+pub(crate) struct DragState {
     window_id: u64,
     kind: DragKind,
     start_pointer: Vec2,

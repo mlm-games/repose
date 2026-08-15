@@ -1,3 +1,6 @@
+// intentionally snake_case
+#![allow(non_upper_case_globals)]
+
 mod app;
 mod pages;
 mod ui;

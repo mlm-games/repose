@@ -10,6 +10,7 @@ use rustc_hash::FxHashMap;
 use taffy::TaffyTree;
 
 pub(crate) struct ScopeLayoutTree {
+    #[allow(dead_code)]
     pub(crate) key: String,
     pub(crate) taffy: TaffyTree<NodeContext>,
     pub(crate) taffy_map: FxHashMap<NodeId, taffy::NodeId>,
@@ -162,6 +163,7 @@ pub enum IntrinsicSizeMode {
 
 /// Context stored with each Taffy node.
 #[derive(Clone)]
+#[allow(dead_code)]
 pub(crate) enum NodeContext {
     Text {
         text: String,
@@ -188,6 +190,7 @@ pub(crate) enum NodeContext {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub(crate) struct TextLayout {
     pub(crate) lines: Vec<String>,
     /// Byte ranges into the original text for each line (used for annotation splitting).

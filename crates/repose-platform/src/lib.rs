@@ -69,6 +69,7 @@ pub enum AppLifecycle {
 // 0 = unknown, 1 = Foreground, 2 = Background
 static CURRENT_LIFECYCLE: AtomicU8 = AtomicU8::new(0);
 static LIFECYCLE_CB: Mutex<Option<Box<dyn Fn(AppLifecycle) + Send>>> = Mutex::new(None);
+#[cfg(target_os = "android")]
 static PENDING_LIFECYCLE: Mutex<Vec<AppLifecycle>> = Mutex::new(Vec::new());
 
 /// Register a callback for coarse app lifecycle (foreground/background).
@@ -90,6 +91,7 @@ pub fn current_lifecycle() -> Option<AppLifecycle> {
 
 /// Queue a lifecycle transition and wake the UI loop. Called by platform runners
 /// (e.g. from `suspended` / `resumed`), which already run on the UI thread.
+#[cfg(target_os = "android")]
 pub(crate) fn push_lifecycle(state: AppLifecycle) {
     let code = match state {
         AppLifecycle::Foreground => 1,
@@ -103,6 +105,7 @@ pub(crate) fn push_lifecycle(state: AppLifecycle) {
 
 /// Drain queued lifecycle transitions and dispatch the latest to the callback.
 /// Called from each platform runner's `about_to_wait` handler.
+#[cfg(target_os = "android")]
 pub(crate) fn process_lifecycle() {
     let batch = std::mem::take(&mut *PENDING_LIFECYCLE.lock().unwrap());
     if batch.is_empty() {
@@ -1402,6 +1405,7 @@ pub trait A11yBridge: Send {
     fn announce(&mut self, msg: &str);
 }
 
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 struct NoopA11y;
 impl A11yBridge for NoopA11y {
     fn publish_tree(&mut self, _nodes: &[repose_core::runtime::SemNode]) {

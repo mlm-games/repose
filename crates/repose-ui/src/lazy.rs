@@ -1350,6 +1350,7 @@ where
         .with_children(vec![content])
 }
 
+#[allow(dead_code)] // test helper
 fn builder(_item: i32, _idx: usize) -> View {
     crate::Box(Modifier::new().size(10.0, 10.0))
 }

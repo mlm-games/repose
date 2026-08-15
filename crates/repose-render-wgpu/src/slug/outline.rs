@@ -10,36 +10,27 @@ pub fn commands_to_path(commands: &[Command], _font_size: f32) -> Option<Path> {
         return None;
     }
     let mut builder = Path::builder();
-    let mut cur = Point::new(0.0, 0.0);
-    let mut contour_start = Point::new(0.0, 0.0);
 
     for cmd in commands {
         match *cmd {
             Command::MoveTo(x, y) => {
-                cur = Point::new(x, y);
-                contour_start = cur;
-                builder.begin(cur);
+                builder.begin(Point::new(x, y));
             }
             Command::LineTo(x, y) => {
-                cur = Point::new(x, y);
-                builder.line_to(cur);
+                builder.line_to(Point::new(x, y));
             }
             Command::QuadTo(cx, cy, x, y) => {
-                let c = Point::new(cx, cy);
-                let p = Point::new(x, y);
-                builder.quadratic_bezier_to(c, p);
-                cur = p;
+                builder.quadratic_bezier_to(Point::new(cx, cy), Point::new(x, y));
             }
             Command::CurveTo(c1x, c1y, c2x, c2y, x, y) => {
-                let c1 = Point::new(c1x, c1y);
-                let c2 = Point::new(c2x, c2y);
-                let p = Point::new(x, y);
-                builder.cubic_bezier_to(c1, c2, p);
-                cur = p;
+                builder.cubic_bezier_to(
+                    Point::new(c1x, c1y),
+                    Point::new(c2x, c2y),
+                    Point::new(x, y),
+                );
             }
             Command::Close => {
                 builder.close();
-                cur = contour_start;
             }
         }
     }

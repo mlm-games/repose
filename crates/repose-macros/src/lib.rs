@@ -105,6 +105,7 @@ impl Parse for ViewMacro {
 /// }
 /// ```
 #[proc_macro]
+#[allow(non_snake_case)]
 pub fn View(input: TokenStream) -> TokenStream {
     // Try ViewMacro parser first (handles `Ident { ... }` and `Ident(m: v) { ... }`)
     let cloned = input.clone();

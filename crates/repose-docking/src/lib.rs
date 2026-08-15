@@ -244,7 +244,6 @@ struct HoverHint {
 #[derive(Clone)]
 struct SplitDrag {
     node_id: u64,
-    dir: SplitDir,
 }
 
 /// Ephemeral, reusable dock behavior handle. Created by [`remember_dock_handle`]
@@ -252,7 +251,6 @@ struct SplitDrag {
 /// exact same docking behavior.
 #[derive(Clone)]
 pub struct DockHandle {
-    pub(crate) key: String,
     pub(crate) state: Rc<RefCell<DockState>>,
     pub(crate) callbacks: DockCallbacks,
     pub(crate) hover_sig: Signal<Option<HoverHint>>,
@@ -274,7 +272,6 @@ pub fn remember_dock_handle(
     let drag_active = remember_with_key(format!("dock:drag_active:{key}"), || signal(false));
 
     DockHandle {
-        key,
         state,
         callbacks,
         hover_sig: (*hover_sig).clone(),
@@ -946,7 +943,7 @@ fn render_split(
     let start_drag = {
         let split_drag = split_drag.clone();
         move |_pe: PointerEvent| {
-            *split_drag.borrow_mut() = Some(SplitDrag { node_id, dir });
+            *split_drag.borrow_mut() = Some(SplitDrag { node_id });
             request_frame();
         }
     };

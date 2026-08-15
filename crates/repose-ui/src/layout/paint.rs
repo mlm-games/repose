@@ -926,6 +926,7 @@ impl LayoutEngine {
                             .and_then(|r| r.get(i).map(|&(_, e)| e))
                             .unwrap_or(ln.len());
 
+                        #[allow(dead_code)]
                         struct SegInfo {
                             start: usize,
                             end: usize,

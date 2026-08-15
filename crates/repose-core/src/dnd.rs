@@ -246,7 +246,7 @@ pub struct DragPreviewCtx {
 /// Coordinates are in **screen px**. Draw relative to `ctx.pointer` / `ctx.grab_offset`.
 pub type DragPreview = Rc<dyn Fn(&mut Scene, &DragPreviewCtx)>;
 
-/// Optional one-shot preview set from inside `on_drag_start` (overrides modifier).
+// Optional one-shot preview set from inside `on_drag_start` (overrides modifier).
 thread_local! {
     static PENDING_PREVIEW: RefCell<Option<DragPreview>> = const { RefCell::new(None) };
 }

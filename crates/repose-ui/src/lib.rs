@@ -117,7 +117,6 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
-use taffy::style::FlexDirection;
 
 pub mod textfield;
 use repose_core::locals;
@@ -417,27 +416,6 @@ impl ImageExt for View {
             *f = fit;
         }
         self
-    }
-}
-
-fn flex_dir_for(kind: &ViewKind, modifier: &Modifier) -> Option<FlexDirection> {
-    if let Some(ref scroll) = modifier.scroll {
-        return Some(match scroll.axis() {
-            ScrollAxis::Vertical => FlexDirection::Column,
-            ScrollAxis::Horizontal => FlexDirection::Row,
-            ScrollAxis::Both => FlexDirection::Column,
-        });
-    }
-    match kind {
-        ViewKind::Row => {
-            if repose_core::locals::text_direction() == repose_core::locals::TextDirection::Rtl {
-                Some(FlexDirection::RowReverse)
-            } else {
-                Some(FlexDirection::Row)
-            }
-        }
-        ViewKind::Column => Some(FlexDirection::Column),
-        _ => None,
     }
 }
 

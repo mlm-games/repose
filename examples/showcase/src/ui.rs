@@ -32,18 +32,8 @@ pub mod sp {
 }
 
 pub mod radius {
-    pub const SM: f32 = 8.0;
-    pub const MD: f32 = 12.0;
     pub const LG: f32 = 18.0;
     pub const XL: f32 = 28.0;
-}
-
-pub fn VSpace(h: f32) -> View {
-    Box(Modifier::new().height(h).width(1.0))
-}
-
-pub fn HSpace(w: f32) -> View {
-    Box(Modifier::new().width(w).height(1.0))
 }
 
 pub fn Hint(text: impl Into<String>) -> View {

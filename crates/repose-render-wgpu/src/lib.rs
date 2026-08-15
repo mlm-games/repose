@@ -184,6 +184,7 @@ pub struct WgpuSceneRenderer {
     msaa_tex: Option<wgpu::Texture>,
     msaa_view: Option<wgpu::TextureView>,
 
+    #[allow(dead_code)]
     globals_layout: wgpu::BindGroupLayout,
     globals_buf: wgpu::Buffer,
     globals_bind: wgpu::BindGroup,
@@ -246,6 +247,7 @@ impl Drop for WgpuSceneRenderer {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct LayerTarget {
     texture: wgpu::Texture,
     view: wgpu::TextureView,
@@ -1044,7 +1046,7 @@ struct Pass {
     cmds: Vec<Cmd>,
 }
 
-#[allow(non_snake_case)]
+#[allow(non_snake_case, dead_code)]
 enum Cmd {
     ClipPush {
         off: u64,
@@ -1164,6 +1166,7 @@ enum Cmd {
     },
 }
 
+#[allow(dead_code)]
 enum ImageTex {
     Rgba {
         tex: wgpu::Texture,
@@ -1221,6 +1224,7 @@ struct AtlasRGBA {
 }
 
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 struct GlyphInfo {
     u0: f32,
     v0: f32,

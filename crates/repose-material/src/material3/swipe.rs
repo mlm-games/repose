@@ -53,7 +53,6 @@ pub enum DismissValue {
 /// State for `SwipeToDismiss` - backed by a generic `SwipeableState<DismissValue>`.
 pub struct SwipeToDismissState {
     swipeable: repose_core::SwipeableState<DismissValue>,
-    dismissed_offset: f32,
 }
 
 impl Default for SwipeToDismissState {
@@ -91,7 +90,6 @@ impl SwipeToDismissState {
         swipeable.snap_to(0.0);
         Self {
             swipeable,
-            dismissed_offset: config.dismissed_offset,
         }
     }
 

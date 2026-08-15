@@ -587,6 +587,7 @@ pub enum FontSynthesis {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BaselineShift(pub f32);
 
+#[allow(non_upper_case_globals)]
 impl BaselineShift {
     /// No baseline shift (zero offset).
     pub const Unspecified: BaselineShift = BaselineShift(0.0);
@@ -894,11 +895,6 @@ impl KeyboardActions {
             on_send: Some(Rc::new(move |scope| f(ImeAction::Send, scope))),
         }
     }
-}
-
-struct NoopKeyboardActionScope;
-impl KeyboardActionScope for NoopKeyboardActionScope {
-    fn default_keyboard_action(&self, _action: ImeAction) {}
 }
 
 /// Handles IME action button presses. Single-callback interface used by the

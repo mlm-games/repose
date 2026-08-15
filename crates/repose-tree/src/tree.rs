@@ -22,9 +22,6 @@ pub struct ViewTree {
     /// Nodes that need re-layout.
     dirty: FxHashSet<NodeId>,
 
-    /// Nodes that need re-paint.
-    paint_dirty: FxHashSet<NodeId>,
-
     /// Current generation (frame counter).
     generation: u64,
 
@@ -62,7 +59,6 @@ impl ViewTree {
             nodes: SlotMap::with_key(),
             root: None,
             dirty: FxHashSet::default(),
-            paint_dirty: FxHashSet::default(),
             generation: 0,
             view_id_map: FxHashMap::default(),
             stats: TreeStats::default(),
@@ -163,14 +159,6 @@ impl ViewTree {
     /// reconciliation re-invokes the closure.
     pub fn invalidate_subcompose_cache(&mut self, node_id: NodeId) {
         self.subcompose_cache.remove(&node_id);
-    }
-
-    /// Drop the cached subcomposed views for a list of nodes (used by garbage
-    /// collection).
-    fn drop_subcompose_cache_for(&mut self, ids: &[NodeId]) {
-        for id in ids {
-            self.subcompose_cache.remove(id);
-        }
     }
 
     /// Recursively drop cached subcomposed views for a subtree rooted at

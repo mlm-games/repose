@@ -26,6 +26,7 @@ macro_rules! material_symbols {
 }
 
 /// A Material Symbol icon.
+#[allow(non_snake_case)]
 pub fn Icon(symbol: Symbol) -> View {
     Text(symbol.codepoint.to_string()).font_family("Material Symbols Outlined")
 }

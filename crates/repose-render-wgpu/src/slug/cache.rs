@@ -100,6 +100,7 @@ impl GlyphSlugCache {
         self.frame += 1;
     }
 
+    #[allow(dead_code)]
     pub fn contains(&self, key: &CacheKey) -> bool {
         self.map.contains_key(key)
     }

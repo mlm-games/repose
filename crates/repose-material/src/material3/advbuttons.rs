@@ -382,10 +382,10 @@ impl ButtonGroupMenuState {
 /// Scope passed to [`ButtonGroup`]'s content closure.
 pub struct ButtonGroupScope {
     items: Vec<ButtonGroupItem>,
-    connected: bool,
 }
 
 /// Internal item held by `ButtonGroupScope`.
+#[allow(dead_code)] // `menu_content` is populated via the public API (WIP overflow menus).
 struct ButtonGroupItem {
     button_group_content: Box<dyn FnOnce() -> View>,
     menu_content: Option<Box<dyn FnOnce(&mut ButtonGroupMenuState) -> View>>,
@@ -395,7 +395,6 @@ impl ButtonGroupScope {
     fn new() -> Self {
         Self {
             items: Vec::new(),
-            connected: false,
         }
     }
 

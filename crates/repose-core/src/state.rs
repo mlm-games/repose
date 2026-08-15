@@ -6,6 +6,7 @@ use crate::{
     Signal, on_unmount, reactive, remember_with_key, request_frame, scoped_effect, signal,
 };
 
+#[allow(dead_code)]
 pub struct MutableState<T: Clone + 'static> {
     inner: Signal<T>,
     saver: Option<Box<dyn StateSaver<T>>>,

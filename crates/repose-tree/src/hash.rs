@@ -404,13 +404,6 @@ fn hash_brush(b: &Brush, hasher: &mut impl Hasher) {
     }
 }
 
-fn hash_rect(r: &repose_core::Rect, hasher: &mut impl Hasher) {
-    ((r.x * 100.0) as i32).hash(hasher);
-    ((r.y * 100.0) as i32).hash(hasher);
-    ((r.w * 100.0) as i32).hash(hasher);
-    ((r.h * 100.0) as i32).hash(hasher);
-}
-
 fn hash_text_overflow(o: &TextOverflow, hasher: &mut impl Hasher) {
     std::mem::discriminant(o).hash(hasher);
 }

@@ -325,17 +325,6 @@ impl LayoutEngine {
         *self.taffy.layout(tid).unwrap()
     }
 
-    pub(crate) fn taffy_children_for_node(&self, node_id: NodeId) -> Vec<taffy::NodeId> {
-        if let Some(key) = self.node_to_scope.get(&node_id)
-            && let Some(st) = self.scope_trees.get(key)
-        {
-            let tid = st.taffy_map[&node_id];
-            return st.taffy.children(tid).unwrap_or_default();
-        }
-        let tid = self.taffy_map[&node_id];
-        self.taffy.children(tid).unwrap_or_default()
-    }
-
     pub(crate) fn ensure_view_id(&mut self, node_id: NodeId) -> u64 {
         if let Some(&id) = self.view_ids.get(&node_id) {
             return id;
