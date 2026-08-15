@@ -509,6 +509,12 @@ pub struct HitRegion {
     /// Whether auto-correct is enabled. `None` = follow platform default;
     /// password keyboards always resolve to `false` in the layout engine.
     pub auto_correct: Option<bool>,
+
+    /// Shared interaction source auto-wired by the layout engine
+    /// (press/hover/focus/drag). Used by keyboard activation and focus
+    /// transitions so they stay in parity with pointer input.
+    /// `None` when the component does not need one (no indication/state colors).
+    pub interaction_source: Option<crate::modifier::InteractionSource>,
 }
 
 impl HitRegion {

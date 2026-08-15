@@ -9,27 +9,62 @@ use crate::indication::IndicationNodeFactory;
 use crate::{Brush, Color, PointerEvent, Size, Transform, Vec2};
 
 /// State-driven colors for interactive components.
-/// The layout engine selects the appropriate color based on hover/press/disabled state
+/// The layout engine selects the appropriate color based on hover/press/focus/disabled state
 /// and animates transitions between them.
+///
+/// Priority (paint): disabled > dragged > pressed > focused > hovered > default.
 #[derive(Clone, Copy, Debug)]
 pub struct StateColors {
     pub default: Color,
     pub hovered: Color,
+    /// Color while the component is focused (e.g. keyboard focus).
+    pub focused: Color,
     pub pressed: Color,
     pub disabled: Color,
-    /// Applied while the component is being dragged (preferred over hovered/pressed).
+    /// Applied while the component is being dragged (preferred over hovered/pressed/focused).
     pub dragged: Color,
 }
 
 /// State-driven elevation for interactive components.
+/// Priority (paint): disabled > dragged > pressed > focused > hovered > default.
 #[derive(Clone, Copy, Debug)]
 pub struct StateElevation {
     pub default: f32,
     pub hovered: f32,
+    /// Applied between pressed and hovered in the paint priority order.
+    pub focused: f32,
     pub pressed: f32,
     pub disabled: f32,
-    /// Elevation while the component is being dragged (preferred over hovered/pressed).
+    /// Elevation while the component is being dragged (preferred over hovered/pressed/focused).
     pub dragged: f32,
+}
+
+impl StateColors {
+    /// A fully-transparent palette: useful as a base when only some states matter.
+    pub const fn transparent() -> Self {
+        Self {
+            default: Color::TRANSPARENT,
+            hovered: Color::TRANSPARENT,
+            focused: Color::TRANSPARENT,
+            pressed: Color::TRANSPARENT,
+            disabled: Color::TRANSPARENT,
+            dragged: Color::TRANSPARENT,
+        }
+    }
+}
+
+impl StateElevation {
+    /// A zero-elevation palette.
+    pub const fn zero() -> Self {
+        Self {
+            default: 0.0,
+            hovered: 0.0,
+            focused: 0.0,
+            pressed: 0.0,
+            disabled: 0.0,
+            dragged: 0.0,
+        }
+    }
 }
 
 macro_rules! merge_opts {
@@ -421,7 +456,10 @@ impl MutableInteractionSource {
                 s.pressed = s.pressed.saturating_sub(1);
             }
             Interaction::HoverEnter => s.hovered = true,
-            Interaction::HoverLeave => s.hovered = false,
+            Interaction::HoverLeave => {
+                s.hovered = false;
+                // leave-handlers may Cancel explicitly.
+            }
             Interaction::Focus => s.focused = true,
             Interaction::Unfocus => s.focused = false,
             Interaction::DragStart => s.dragged = s.dragged.saturating_add(1),
@@ -429,6 +467,9 @@ impl MutableInteractionSource {
                 s.dragged = s.dragged.saturating_sub(1);
             }
         }
+        drop(s);
+        // HACK: so source-driven paint (ripple, state layers) cannot stick stale.
+        crate::frame_clock::request_frame();
     }
 
     /// Get a read-only handle to the shared state.
@@ -1183,8 +1224,10 @@ impl Modifier {
         self
     }
     /// Attach an [`InteractionSource`] to this view. The source provides shared
-    /// interaction state (hover/press) that supplements the implicit view-ID-based
-    /// state. The layout engine auto-wires pointer events into the source so it
+    /// interaction state (hover/press/focus/drag) that supplements the implicit
+    /// view-ID-based state. The layout engine auto-wires pointer events
+    /// (press/hover), keyboard activation (Space/Enter press parity), focus
+    /// transitions (Focus/Unfocus) and DnD drag start/end into the source so it
     /// stays in sync with user interaction.
     ///
     /// Use this when you need programmatic control of interaction state (e.g.,

@@ -73,6 +73,7 @@ pub fn Card(config: CardConfig, content: impl FnOnce() -> View) -> View {
         m = m.state_elevation(StateElevation {
             default: config.tonal_elevation,
             hovered: config.tonal_elevation,
+            focused: config.tonal_elevation,
             pressed: config.tonal_elevation,
             dragged: config.tonal_elevation,
             disabled: 0.0,
@@ -90,6 +91,7 @@ pub fn ElevatedCard(config: CardConfig, content: impl FnOnce() -> View) -> View 
             state_elevation: Some(StateElevation {
                 default: th.elevation.level1,
                 hovered: th.elevation.level2,
+                focused: th.elevation.level2,
                 pressed: th.elevation.level3,
                 dragged: th.elevation.level3,
                 disabled: 0.0,
@@ -117,6 +119,7 @@ fn card_state_colors(bg: Color) -> StateColors {
     StateColors {
         default: Color::TRANSPARENT,
         hovered: th.on_surface.with_alpha_f32(0.08).composite_over(bg),
+        focused: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
         pressed: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
         dragged: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
         disabled: th.on_surface.with_alpha_f32(0.12).composite_over(bg),
@@ -191,6 +194,7 @@ pub fn ClickableElevatedCard(
         state_elevation: Some(StateElevation {
             default: th.elevation.level1,
             hovered: th.elevation.level2,
+            focused: th.elevation.level2,
             pressed: th.elevation.level3,
             dragged: th.elevation.level3,
             disabled: 0.0,

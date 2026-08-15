@@ -98,6 +98,10 @@ pub struct LayoutEngine {
     /// get `focus_group_id` set to the top of this stack. A focus group is entered
     /// when a node with `modifier.focus_group == true` is traversed.
     pub(crate) focus_group_stack: Vec<u64>,
+
+    /// InteractionSources that should receive Focus/Unfocus for the current paint tree,
+    /// keyed by view ID.
+    pub(crate) focus_interaction_sources: FxHashMap<u64, InteractionSource>,
 }
 
 /// Statistics about layout performance.

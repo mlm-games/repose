@@ -11,7 +11,8 @@ use repose_core::locals::{Density, dp_to_px, set_density_default, with_density};
 use repose_core::runtime::{Frame, Scheduler};
 use repose_core::shortcuts::DragAction;
 use repose_core::{
-    CursorIcon, HitRegion, RenderContext, Scene, Vec2, View, request_frame, take_focus_request,
+    CursorIcon, HitRegion, Interaction, RenderContext, Scene, Vec2, View, request_frame,
+    take_focus_request,
 };
 use repose_ui::textfield::{
     TF_FONT_DP, TextFieldState, TextMeasureConfig, caret_xy_for_byte, measure_text,
@@ -524,9 +525,7 @@ impl ReposeRuntime {
             return;
         }
 
-        if let Some(cid) = self.capture_id {
-            self.pressed_ids.remove(&cid);
-        }
+        self.pressed_ids.clear();
 
         let Some(f) = &self.frame_cache else {
             self.capture_id = None;
@@ -772,6 +771,17 @@ impl ReposeRuntime {
                     if event.key == Key::Space || event.key == Key::Enter {
                         self.pressed_ids.insert(fid);
                         self.key_pressed_active = Some(fid);
+
+                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
+                            if let Some(src) = &hit.interaction_source {
+                                let local = Vec2 {
+                                    x: hit.rect.w * 0.5,
+                                    y: hit.rect.h * 0.5,
+                                };
+                                src.to_mutable().emit(Interaction::new_press(local));
+                            }
+                        }
+
                         request_frame();
                         return true;
                     }
@@ -781,19 +791,14 @@ impl ReposeRuntime {
                 {
                     self.pressed_ids.remove(&active_id);
                     self.key_pressed_active = None;
+
                     if let Some(hit) = f.hit_regions.iter().find(|h| h.id == active_id) {
+                        if let Some(src) = &hit.interaction_source {
+                            let pid = src.collect_last_press_id().unwrap_or(0);
+                            src.to_mutable().emit(Interaction::Release(pid));
+                        }
                         if let Some(cb) = &hit.on_click {
                             cb();
-                        } else if let Some(cb) = &hit.on_pointer_down {
-                            let pe = PointerEvent::new(
-                                PointerId(0),
-                                PointerKind::Mouse,
-                                PointerEventKind::Down(PointerButton::Primary),
-                                Vec2 { x: 0.0, y: 0.0 },
-                                1.0,
-                                self.modifiers,
-                            );
-                            cb(pe);
                         }
                     }
                     request_frame();

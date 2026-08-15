@@ -102,6 +102,7 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                         .state_colors(StateColors {
                             default: Color::TRANSPARENT,
                             hovered: th.on_surface.with_alpha_f32(0.08),
+                            focused: th.on_surface.with_alpha_f32(0.12),
                             pressed: th.on_surface.with_alpha_f32(0.12),
                             dragged: th.on_surface.with_alpha_f32(0.12),
                             disabled: Color::TRANSPARENT,

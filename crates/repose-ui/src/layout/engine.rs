@@ -180,6 +180,7 @@ impl LayoutEngine {
 
         // 5. Paint
         let t_paint = web_time::Instant::now();
+        self.focus_interaction_sources.clear();
         let (scene, hits, sems) = self.paint(
             root_node_id,
             textfield_states,
@@ -189,17 +190,23 @@ impl LayoutEngine {
         );
         self.stats.paint_time_ms = (web_time::Instant::now() - t_paint).as_secs_f32() * 1000.0;
 
-        // Fire focus change callbacks
+        // Fire focus change callbacks.
         if self.prev_focused != focused {
-            if let Some(old_id) = self.prev_focused
-                && let Some(cb) = self.focus_callbacks.get(&old_id)
-            {
-                (cb)(false);
+            if let Some(old_id) = self.prev_focused {
+                if let Some(cb) = self.focus_callbacks.get(&old_id) {
+                    (cb)(false);
+                }
+                if let Some(src) = self.focus_interaction_sources.get(&old_id) {
+                    src.to_mutable().emit(Interaction::Unfocus);
+                }
             }
-            if let Some(new_id) = focused
-                && let Some(cb) = self.focus_callbacks.get(&new_id)
-            {
-                (cb)(true);
+            if let Some(new_id) = focused {
+                if let Some(cb) = self.focus_callbacks.get(&new_id) {
+                    (cb)(true);
+                }
+                if let Some(src) = self.focus_interaction_sources.get(&new_id) {
+                    src.to_mutable().emit(Interaction::Focus);
+                }
             }
             self.prev_focused = focused;
         }
@@ -208,6 +215,7 @@ impl LayoutEngine {
         for &node_id in &self.tree.removed_ids {
             if let Some(&vid) = self.view_ids.get(&node_id) {
                 self.focus_callbacks.remove(&vid);
+                self.focus_interaction_sources.remove(&vid);
             }
         }
 
@@ -277,6 +285,7 @@ impl LayoutEngine {
             layer_id_counter: 0,
             prev_focused: None,
             focus_callbacks: FxHashMap::default(),
+            focus_interaction_sources: FxHashMap::default(),
             prev_observed_rects: FxHashMap::default(),
             focus_group_stack: Vec::new(),
         }

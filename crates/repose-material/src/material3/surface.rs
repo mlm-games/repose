@@ -54,6 +54,7 @@ pub fn Surface(config: SurfaceConfig, content: impl FnOnce() -> View) -> View {
         m = m.state_elevation(StateElevation {
             default: config.tonal_elevation,
             hovered: config.tonal_elevation,
+            focused: config.tonal_elevation,
             pressed: config.tonal_elevation,
             dragged: config.tonal_elevation,
             disabled: 0.0,

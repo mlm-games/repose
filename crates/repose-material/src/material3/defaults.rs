@@ -66,6 +66,7 @@ impl ToggleButtonDefaults {
         StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
@@ -75,6 +76,7 @@ impl ToggleButtonDefaults {
         StateElevation {
             default: 0.0,
             hovered: 1.0,
+            focused: 0.0,
             pressed: 0.0,
             dragged: 0.0,
             disabled: 0.0,
@@ -85,6 +87,7 @@ impl ToggleButtonDefaults {
         StateElevation {
             default: th.elevation.level1,
             hovered: th.elevation.level2,
+            focused: th.elevation.level1,
             pressed: th.elevation.level1,
             dragged: th.elevation.level1,
             disabled: 0.0,
@@ -159,6 +162,7 @@ impl ButtonDefaults {
         StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
@@ -168,6 +172,7 @@ impl ButtonDefaults {
         StateElevation {
             default: 0.0,
             hovered: 1.0,
+            focused: 0.0,
             pressed: 0.0,
             dragged: 0.0,
             disabled: 0.0,
@@ -178,6 +183,7 @@ impl ButtonDefaults {
         StateElevation {
             default: th.elevation.level1,
             hovered: th.elevation.level2,
+            focused: th.elevation.level1,
             pressed: th.elevation.level1,
             dragged: th.elevation.level1,
             disabled: 0.0,
@@ -284,6 +290,7 @@ impl IconButtonDefaults {
         StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
@@ -323,6 +330,7 @@ impl CheckboxDefaults {
         StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
@@ -355,6 +363,7 @@ impl RadioButtonDefaults {
         StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
@@ -417,6 +426,7 @@ impl SwitchDefaults {
         StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
@@ -465,6 +475,7 @@ impl SliderDefaults {
         StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
@@ -587,6 +598,7 @@ impl ListItemDefaults {
         StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
@@ -734,6 +746,7 @@ impl SegmentedButtonDefaults {
         StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
@@ -761,6 +774,7 @@ impl FABDefaults {
         StateElevation {
             default: theme().elevation.level3,
             hovered: theme().elevation.level4,
+            focused: theme().elevation.level3,
             pressed: theme().elevation.level5,
             dragged: theme().elevation.level5,
             disabled: 0.0,

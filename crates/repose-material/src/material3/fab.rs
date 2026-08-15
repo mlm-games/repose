@@ -63,6 +63,7 @@ fn fab_impl(
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: config.content_color.with_alpha_f32(0.08),
+            focused: config.content_color.with_alpha_f32(0.12),
             pressed: config.content_color.with_alpha_f32(0.12),
             dragged: config.content_color.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
@@ -154,6 +155,7 @@ pub fn ExtendedFAB(
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: config.content_color.with_alpha_f32(0.08),
+            focused: config.content_color.with_alpha_f32(0.12),
             pressed: config.content_color.with_alpha_f32(0.12),
             dragged: config.content_color.with_alpha_f32(0.12),
             disabled: theme().on_surface.with_alpha_f32(0.12),

@@ -203,6 +203,13 @@ impl LayoutEngine {
                     st.caret_visible().hash(&mut h);
                 }
             }
+            if let Some(ref src) = n.modifier.interaction_source {
+                src.collect_is_hovered().hash(&mut h);
+                src.collect_is_pressed().hash(&mut h);
+                src.collect_is_focused().hash(&mut h);
+                src.collect_is_dragged().hash(&mut h);
+                src.collect_last_press_id().hash(&mut h);
+            }
             for &ch in n.children.iter() {
                 stack.push(ch);
             }
@@ -340,19 +347,20 @@ impl LayoutEngine {
         let effective_interaction = interaction_source.unwrap_or(view_id);
         let implicit_hovered = interactions.hover == Some(effective_interaction);
         let implicit_pressed = interactions.pressed.contains(&effective_interaction);
-        let (state_hovered, state_pressed, state_dragged) =
+        let is_focused = focused == Some(view_id);
+        let (state_hovered, state_pressed, state_focused, state_dragged) =
             if let Some(ref src) = modifier.interaction_source {
                 (
                     src.collect_is_hovered() || is_hovered,
                     src.collect_is_pressed() || is_pressed,
+                    src.collect_is_focused() || is_focused,
                     src.collect_is_dragged(),
                 )
             } else if owns_hit {
-                (is_hovered, is_pressed, false)
+                (is_hovered, is_pressed, is_focused, false)
             } else {
-                (implicit_hovered, implicit_pressed, false)
+                (implicit_hovered, implicit_pressed, is_focused, false)
             };
-        let is_focused = focused == Some(view_id);
         let this_alpha = modifier.alpha.unwrap_or(1.0);
         let alpha_accum = (alpha_accum * this_alpha).clamp(0.0, 1.0);
         let alpha_q: u8 = (alpha_accum * 255.0).round() as u8;
@@ -548,6 +556,8 @@ impl LayoutEngine {
                 se.dragged
             } else if state_pressed {
                 se.pressed
+            } else if state_focused {
+                se.focused
             } else if state_hovered {
                 se.hovered
             } else {
@@ -591,6 +601,8 @@ impl LayoutEngine {
                 sc.dragged
             } else if state_pressed {
                 sc.pressed
+            } else if state_focused {
+                sc.focused
             } else if state_hovered {
                 sc.hovered
             } else {
@@ -669,7 +681,11 @@ impl LayoutEngine {
         let indication_factory = modifier.indication.clone().or_else(local_indication);
         let indication_source = if let Some(ref src) = modifier.interaction_source {
             Some(src.clone())
-        } else if indication_factory.is_some() && owns_hit {
+        } else if (indication_factory.is_some()
+            || modifier.state_colors.is_some()
+            || modifier.state_elevation.is_some())
+            && owns_hit
+        {
             let msrc = remember_state_with_key(
                 format!("rx:ixsrc:{view_id}"),
                 MutableInteractionSource::new,
@@ -686,7 +702,9 @@ impl LayoutEngine {
         }
 
         if owns_hit {
-            let focusable = modifier.focusable.unwrap_or(true);
+            let focusable = modifier.focusable.unwrap_or(
+                modifier.click || modifier.on_action.is_some() || modifier.text_input.is_some(),
+            );
             let mut hit = HitRegion {
                 id: view_id,
                 rect,
@@ -697,12 +715,15 @@ impl LayoutEngine {
                 } else {
                     self.focus_group_stack.last().copied()
                 },
+                interaction_source: indication_source.clone(),
                 ..HitRegion::from_modifier(view_id, rect, &modifier)
             };
 
-            // Auto-wire InteractionSource to pointer/hover callbacks.
+            // Auto-wire InteractionSource to pointer/hover/focus/drag callbacks.
             // The source's state is OR'd with the implicit view-ID state in state resolution above.
             if let Some(ref src) = indication_source {
+                self.focus_interaction_sources.insert(view_id, src.clone());
+
                 let msrc = src.to_mutable();
                 let last_press_id: Rc<Cell<Option<PressId>>> = Rc::new(Cell::new(None));
 
@@ -741,8 +762,9 @@ impl LayoutEngine {
                 // Wrap on_pointer_cancel to emit Cancel with the last press ID.
                 let orig_cancel = hit.on_pointer_cancel.take();
                 let s_cancel = msrc.clone();
+                let lpid_cancel = last_press_id.clone();
                 hit.on_pointer_cancel = Some(Rc::new(move |ev| {
-                    let pid = last_press_id.take().unwrap_or(0);
+                    let pid = lpid_cancel.take().unwrap_or(0);
                     s_cancel.emit(Interaction::Cancel(pid));
                     if let Some(ref f) = orig_cancel {
                         f(ev);
@@ -759,12 +781,35 @@ impl LayoutEngine {
                 }));
 
                 let orig_leave = hit.on_pointer_leave.take();
+                let s_leave = msrc.clone();
+                let lpid_leave = last_press_id.clone();
                 hit.on_pointer_leave = Some(Rc::new(move |ev| {
-                    msrc.emit(Interaction::HoverLeave);
+                    s_leave.emit(Interaction::HoverLeave);
+                    if let Some(pid) = lpid_leave.take() {
+                        s_leave.emit(Interaction::Cancel(pid));
+                    }
                     if let Some(ref f) = orig_leave {
                         f(ev);
                     }
                 }));
+
+                if hit.on_drag_start.is_some() || hit.on_drag_end.is_some() {
+                    let orig_ds = hit.on_drag_start.take();
+                    let s_ds = msrc.clone();
+                    hit.on_drag_start = Some(Rc::new(move |start| {
+                        s_ds.emit(Interaction::DragStart);
+                        orig_ds.as_ref().and_then(|f| f(start))
+                    }));
+
+                    let orig_de = hit.on_drag_end.take();
+                    let s_de = msrc.clone();
+                    hit.on_drag_end = Some(Rc::new(move |end| {
+                        s_de.emit(Interaction::DragStop);
+                        if let Some(ref f) = orig_de {
+                            f(end);
+                        }
+                    }));
+                }
             }
 
             hits.push(hit);
@@ -803,7 +848,9 @@ impl LayoutEngine {
             } => {
                 let tl = self.text_cache.get(&node_id).or_else(|| {
                     self.node_to_scope.get(&node_id).and_then(|key| {
-                        self.scope_trees.get(key).and_then(|st| st.text_cache.get(&node_id))
+                        self.scope_trees
+                            .get(key)
+                            .and_then(|st| st.text_cache.get(&node_id))
                     })
                 });
                 let (size_px, line_h_px, lines, line_ranges) = if let Some(tl) = tl {
@@ -1995,14 +2042,6 @@ impl LayoutEngine {
             if modifier.transform.is_some() {
                 scene.nodes.push(SceneNode::PopTransform);
             }
-            if is_focused
-                && (has_pointer
-                    || modifier.click
-                    || modifier.on_action.is_some()
-                    || modifier.focusable == Some(true))
-            {
-                push_focus_ring(scene, rect, focus_radius(&modifier));
-            }
             // Wire up FocusRequester if present on the modifier
             set_focus_requester(&modifier, view_id);
             if let Some(cb) = &modifier.on_focus_changed {
@@ -2128,15 +2167,6 @@ impl LayoutEngine {
         }
         if modifier.transform.is_some() {
             scene.nodes.push(SceneNode::PopTransform);
-        }
-
-        if is_focused
-            && (has_pointer
-                || modifier.click
-                || modifier.on_action.is_some()
-                || modifier.focusable == Some(true))
-        {
-            push_focus_ring(scene, rect, focus_radius(&modifier));
         }
 
         // Wire up FocusRequester if present on the modifier

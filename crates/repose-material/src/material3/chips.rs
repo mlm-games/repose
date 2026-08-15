@@ -81,6 +81,7 @@ impl ChipElevation {
         StateElevation {
             default: self.default,
             hovered: self.hovered,
+            focused: self.focused,
             pressed: self.pressed,
             dragged: self.dragged,
             disabled: self.disabled,
@@ -184,6 +185,7 @@ pub fn AssistChip(
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
@@ -263,6 +265,7 @@ pub fn ElevatedAssistChip(
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
@@ -372,6 +375,7 @@ pub fn FilterChip(
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
@@ -471,6 +475,7 @@ pub fn ElevatedFilterChip(
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
@@ -550,6 +555,7 @@ pub fn SuggestionChip(
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
@@ -615,6 +621,7 @@ pub fn ElevatedSuggestionChip(
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
@@ -713,6 +720,7 @@ pub fn InputChip(
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,

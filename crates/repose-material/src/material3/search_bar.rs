@@ -588,6 +588,7 @@ pub fn SearchBar(
         .state_elevation(StateElevation {
             default: config.tonal_elevation,
             hovered: th.elevation.level2,
+            focused: th.elevation.level2,
             pressed: th.elevation.level3,
             dragged: th.elevation.level3,
             disabled: 0.0,
@@ -792,6 +793,7 @@ pub fn DockedSearchBar(
                 config.tonal_elevation
             },
             hovered: th.elevation.level2,
+            focused: th.elevation.level2,
             pressed: th.elevation.level3,
             dragged: th.elevation.level3,
             disabled: 0.0,
@@ -841,6 +843,7 @@ pub fn DockedSearchBar(
                 .state_elevation(StateElevation {
                     default: th.elevation.level3,
                     hovered: th.elevation.level3,
+                    focused: th.elevation.level3,
                     pressed: th.elevation.level3,
                     dragged: th.elevation.level3,
                     disabled: 0.0,
@@ -1051,6 +1054,7 @@ pub fn ExpandedDockedSearchBar(
                         .state_elevation(StateElevation {
                             default: th.elevation.level3,
                             hovered: th.elevation.level2,
+                            focused: th.elevation.level2,
                             pressed: th.elevation.level3,
                             dragged: th.elevation.level3,
                             disabled: 0.0,
@@ -1066,6 +1070,7 @@ pub fn ExpandedDockedSearchBar(
                         .state_elevation(StateElevation {
                             default: th.elevation.level3,
                             hovered: th.elevation.level3,
+                            focused: th.elevation.level3,
                             pressed: th.elevation.level3,
                             dragged: th.elevation.level3,
                             disabled: 0.0,

@@ -7,6 +7,12 @@ pub(crate) fn open_url(url: &str) {
     let _ = webbrowser::open(url);
 }
 
+/// Old focus ring rendering.
+#[deprecated(
+    since = "0.27.7",
+    note = "Focus is shown via StateColors/StateElevation `focused`; the external ring is removed"
+)]
+#[allow(dead_code)]
 pub(crate) fn push_focus_ring(scene: &mut Scene, rect: repose_core::Rect, radius_dp: [f32; 4]) {
     let width = dp_to_px(2.0);
     let offset = dp_to_px(2.0);
@@ -37,6 +43,15 @@ pub(crate) fn push_focus_ring(scene: &mut Scene, rect: repose_core::Rect, radius
 
 /// Focus ring radius (dp), taken from the full per-corner clip radius so the ring
 /// matches the component shape (including asymmetric corners).
+///
+/// # Deprecated
+/// The focus-ring visual is no longer drawn; focus is shown via the focused
+/// state layer instead..
+#[deprecated(
+    since = "0.27.7",
+    note = "Focus is shown via StateColors/StateElevation `focused`; the external ring is removed"
+)]
+#[allow(dead_code)]
 pub(crate) fn focus_radius(modifier: &Modifier) -> [f32; 4] {
     modifier.clip_rounded.unwrap_or([6.0; 4])
 }

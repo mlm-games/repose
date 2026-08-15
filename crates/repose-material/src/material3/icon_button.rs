@@ -117,6 +117,7 @@ pub fn IconButton(icon: View, on_click: impl Fn() + 'static, config: IconButtonC
         StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
@@ -147,6 +148,7 @@ pub fn FilledIconButton(
         StateColors {
             default: Color::TRANSPARENT,
             hovered: content_color.with_alpha_f32(0.08),
+            focused: content_color.with_alpha_f32(0.12),
             pressed: content_color.with_alpha_f32(0.12),
             dragged: content_color.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
@@ -177,6 +179,7 @@ pub fn FilledTonalIconButton(
         StateColors {
             default: Color::TRANSPARENT,
             hovered: content_color.with_alpha_f32(0.08),
+            focused: content_color.with_alpha_f32(0.12),
             pressed: content_color.with_alpha_f32(0.12),
             dragged: content_color.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
@@ -209,6 +212,7 @@ pub fn OutlinedIconButton(
         StateColors {
             default: Color::TRANSPARENT,
             hovered: th.on_surface.with_alpha_f32(0.08),
+            focused: th.on_surface.with_alpha_f32(0.12),
             pressed: th.on_surface.with_alpha_f32(0.12),
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,

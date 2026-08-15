@@ -300,6 +300,7 @@ pub fn ListItem(
         modifier = modifier.state_elevation(StateElevation {
             default: config.tonal_elevation,
             hovered: config.tonal_elevation,
+            focused: config.tonal_elevation,
             pressed: config.tonal_elevation,
             dragged: dragged_elev,
             disabled: 0.0,
