@@ -1,4 +1,5 @@
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -384,7 +385,7 @@ pub struct InteractionSource {
 
 impl InteractionSource {
     pub fn collect_is_pressed(&self) -> bool {
-        self.state.borrow().pressed > 0
+        !self.state.borrow().active_presses.is_empty()
     }
     pub fn collect_is_hovered(&self) -> bool {
         self.state.borrow().hovered
@@ -445,31 +446,71 @@ impl MutableInteractionSource {
 
     /// Emit an interaction event, updating the shared state.
     pub fn emit(&self, interaction: Interaction) {
-        let mut s = self.state.borrow_mut();
-        match interaction {
-            Interaction::Press(id, pos) => {
-                s.pressed = s.pressed.saturating_add(1);
-                s.last_press_id = Some(id);
-                s.last_press_position = Some(pos);
+        let changed = {
+            let mut s = self.state.borrow_mut();
+            match interaction {
+                Interaction::Press(id, pos) => {
+                    let inserted = s.active_presses.insert(id);
+                    s.last_press_id = Some(id);
+                    s.last_press_position = Some(pos);
+                    inserted
+                }
+                Interaction::Release(id) | Interaction::Cancel(id) => {
+                    if s.active_presses.remove(&id) {
+                        true
+                    } else if id == 0 {
+                        if let Some(any) = s.active_presses.iter().next().copied() {
+                            s.active_presses.remove(&any);
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                }
+                Interaction::HoverEnter => {
+                    let changed = !s.hovered;
+                    s.hovered = true;
+                    changed
+                }
+                Interaction::HoverLeave => {
+                    let changed = s.hovered;
+                    s.hovered = false;
+                    // Leaving while pressed cancels all presses (Compose-like).
+                    if !s.active_presses.is_empty() {
+                        s.active_presses.clear();
+                        true
+                    } else {
+                        changed
+                    }
+                }
+                Interaction::Focus => {
+                    let changed = !s.focused;
+                    s.focused = true;
+                    changed
+                }
+                Interaction::Unfocus => {
+                    let changed = s.focused;
+                    s.focused = false;
+                    changed
+                }
+                Interaction::DragStart => {
+                    let changed = s.dragged == 0;
+                    s.dragged = s.dragged.saturating_add(1);
+                    changed
+                }
+                Interaction::DragStop | Interaction::DragCancel => {
+                    let was = s.dragged;
+                    s.dragged = s.dragged.saturating_sub(1);
+                    was != s.dragged
+                }
             }
-            Interaction::Release(_) | Interaction::Cancel(_) => {
-                s.pressed = s.pressed.saturating_sub(1);
-            }
-            Interaction::HoverEnter => s.hovered = true,
-            Interaction::HoverLeave => {
-                s.hovered = false;
-                // leave-handlers may Cancel explicitly.
-            }
-            Interaction::Focus => s.focused = true,
-            Interaction::Unfocus => s.focused = false,
-            Interaction::DragStart => s.dragged = s.dragged.saturating_add(1),
-            Interaction::DragStop | Interaction::DragCancel => {
-                s.dragged = s.dragged.saturating_sub(1);
-            }
+        };
+        if changed {
+            // So source-driven paint (ripple, state layers) cannot stick stale.
+            crate::frame_clock::request_frame();
         }
-        drop(s);
-        // HACK: so source-driven paint (ripple, state layers) cannot stick stale.
-        crate::frame_clock::request_frame();
     }
 
     /// Get a read-only handle to the shared state.
@@ -488,7 +529,8 @@ impl Default for MutableInteractionSource {
 
 #[derive(Clone, Default)]
 pub(crate) struct InteractionState {
-    pressed: u32,
+    /// Active press IDs (Press → Release/Cancel pairing).
+    active_presses: HashSet<PressId>,
     hovered: bool,
     focused: bool,
     dragged: u32,

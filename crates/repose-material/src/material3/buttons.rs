@@ -506,6 +506,11 @@ fn toggle_button_impl(
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
     m = m.interaction_source(&tg_source);
+    m = m.indication(ripple(RippleConfig {
+        color: Some(fg),
+        bounded: true,
+        ..Default::default()
+    }));
     if let Some((w, c, r)) = border {
         m = m.border(w, c, r);
     }

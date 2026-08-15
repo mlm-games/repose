@@ -23,7 +23,10 @@ pub use crate::locals::{
     with_local_indication, with_text_direction, with_text_scale, with_theme, with_ui_scale,
     with_window_insets, with_window_size_class,
 };
-pub use crate::modifier::Modifier;
+pub use crate::modifier::{
+    Interaction, InteractionSource, Modifier, MutableInteractionSource, PressId, StateColors,
+    StateElevation,
+};
 pub use crate::nested_scroll::{NestedScrollConnection, NestedScrollSource};
 pub use crate::render_api::{GlyphRasterConfig, RenderBackend};
 pub use crate::runtime::{
