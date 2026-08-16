@@ -450,9 +450,7 @@ pub fn run_android_app_with_options(
                                 } else {
                                     Gesture::SwipeLeft
                                 };
-                                if self.dispatch_action(Action::Gesture(g))
-                                    || (right && self.dispatch_action(Action::Back))
-                                {
+                                if self.dispatch_action(Action::Gesture(g)) {
                                     dirty = true;
                                 }
                             }

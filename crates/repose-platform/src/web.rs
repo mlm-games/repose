@@ -778,7 +778,6 @@ impl ApplicationHandler<()> for App {
                             self.touch_gestures
                                 .touch_ended(&mut self.rt, tid, pos_px, cancelled);
 
-                        // try gesture first, then common "swipe right = back"
                         let mut dirty = false;
                         if let Some(right) = swipe_right {
                             let g = if right {
@@ -786,9 +785,7 @@ impl ApplicationHandler<()> for App {
                             } else {
                                 Gesture::SwipeLeft
                             };
-                            if self.dispatch_action(&window, Action::Gesture(g))
-                                || (right && self.dispatch_action(&window, Action::Back))
-                            {
+                            if self.dispatch_action(&window, Action::Gesture(g)) {
                                 dirty = true;
                             }
                         }

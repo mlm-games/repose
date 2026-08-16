@@ -492,6 +492,22 @@ pub fn run_desktop_app_with_config(
             rc::request_redraw(&self.window);
         }
 
+        fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
+            if self.rt.dispatch_action(action) {
+                if let Some(win) = &self.window {
+                    rc_web::set_ime_for_textfield(
+                        win,
+                        self.rt
+                            .sched
+                            .focused
+                            .map_or(false, |id| self.rt.is_textfield(id)),
+                    );
+                }
+                return true;
+            }
+            false
+        }
+
         /// Minimum time between CPU-side redraw requests derived from
         /// `max_fps`. `Duration::ZERO` means uncapped (redraw immediately).
         fn frame_interval(&self) -> web_time::Duration {
@@ -929,9 +945,22 @@ pub fn run_desktop_app_with_config(
                         }
 
                         winit::event::TouchPhase::Moved => {
-                            let (dirty, _pinch_delta) = self
+                            let (mut dirty, pinch_delta) = self
                                 .touch_gestures
                                 .touch_moved(&mut self.rt, tid, pos_px, scale);
+
+                            if let Some(delta_scale) = pinch_delta
+                                && self.dispatch_action(
+                                    repose_core::shortcuts::Action::Gesture(
+                                        repose_core::shortcuts::Gesture::Pinch {
+                                            delta_scale,
+                                        },
+                                    ),
+                                )
+                            {
+                                dirty = true;
+                            }
+
                             if dirty {
                                 self.request_redraw();
                             }
@@ -940,9 +969,26 @@ pub fn run_desktop_app_with_config(
                         winit::event::TouchPhase::Ended
                         | winit::event::TouchPhase::Cancelled => {
                             let cancelled = t.phase == winit::event::TouchPhase::Cancelled;
-                            self.touch_gestures
-                                .touch_ended(&mut self.rt, tid, pos_px, cancelled);
-                            self.request_redraw();
+                            let swipe_right =
+                                self.touch_gestures
+                                    .touch_ended(&mut self.rt, tid, pos_px, cancelled);
+
+                            use repose_core::shortcuts::{Action, Gesture};
+                            let mut dirty = false;
+                            if let Some(right) = swipe_right {
+                                let g = if right {
+                                    Gesture::SwipeRight
+                                } else {
+                                    Gesture::SwipeLeft
+                                };
+                                if self.dispatch_action(Action::Gesture(g)) {
+                                    dirty = true;
+                                }
+                            }
+
+                            if dirty {
+                                self.request_redraw();
+                            }
                         }
                     }
                 }
