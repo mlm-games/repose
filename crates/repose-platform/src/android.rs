@@ -624,7 +624,7 @@ pub fn run_android_app_with_options(
                         return;
                     }
 
-                    // Back key / Escape handling (optional)
+                    // Back key / Escape handling (optional, should probably handle this via rlobkit)
                     if key_event.state == ElementState::Pressed && !key_event.repeat {
                         match key_event.physical_key {
                             PhysicalKey::Code(KeyCode::Escape)
