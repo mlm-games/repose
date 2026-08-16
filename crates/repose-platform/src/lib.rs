@@ -390,14 +390,17 @@ pub fn run_desktop_app_with_config(
         a11y_actions: Arc<Mutex<Vec<accesskit::ActionRequest>>>,
         a11y_tree: A11yTree,
 
-        last_redraw: Instant,
-        pending_redraw: bool,
-
         // Last applied OS window theme (dark/light) to avoid spamming set_theme.
         last_window_theme: Option<bool>,
 
+        last_redraw: Instant,
+        pending_redraw: bool,
+
         // Tracks whether a redraw was requested by app code
         redraw_requested: Cell<bool>,
+
+        // Shared touch-scroll / pinch / swipe gesture state (touchscreens)
+        touch_gestures: rc::TouchGestureState,
     }
 
     impl App {
@@ -479,6 +482,7 @@ pub fn run_desktop_app_with_config(
                 pending_redraw: false,
                 last_window_theme: None,
                 redraw_requested: Cell::new(false),
+                touch_gestures: rc::TouchGestureState::default(),
             }
         }
 
@@ -904,6 +908,40 @@ pub fn run_desktop_app_with_config(
                                 self.a11y.announce(&format!("Activated {}", label));
                             }
 
+                            self.request_redraw();
+                        }
+                    }
+                }
+
+                WindowEvent::Touch(t) => {
+                    let pos_px = (t.location.x as f32, t.location.y as f32);
+                    let tid = t.id;
+                    let scale = self
+                        .window
+                        .as_ref()
+                        .map(|w| w.scale_factor() as f32)
+                        .unwrap_or(1.0);
+
+                    match t.phase {
+                        winit::event::TouchPhase::Started => {
+                            self.touch_gestures.touch_started(&mut self.rt, tid, pos_px);
+                            self.request_redraw();
+                        }
+
+                        winit::event::TouchPhase::Moved => {
+                            let (dirty, _pinch_delta) = self
+                                .touch_gestures
+                                .touch_moved(&mut self.rt, tid, pos_px, scale);
+                            if dirty {
+                                self.request_redraw();
+                            }
+                        }
+
+                        winit::event::TouchPhase::Ended
+                        | winit::event::TouchPhase::Cancelled => {
+                            let cancelled = t.phase == winit::event::TouchPhase::Cancelled;
+                            self.touch_gestures
+                                .touch_ended(&mut self.rt, tid, pos_px, cancelled);
                             self.request_redraw();
                         }
                     }

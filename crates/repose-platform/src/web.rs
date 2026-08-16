@@ -5,7 +5,6 @@ use crate::render::RenderContext;
 use crate::*;
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 use wasm_bindgen::JsCast;
@@ -188,12 +187,8 @@ struct App {
 
     inspector: Option<repose_devtools::Inspector>,
 
-    // touch click-cancel after scroll
-    touch_scrolled: bool,
-    scroll_capture_id: Option<u64>,
-    touch_scroll_accum_x_px: f32,
-    touch_scroll_accum_y_px: f32,
-    prev_touch_px: Option<(f32, f32)>,
+    // Shared touch-scroll / pinch / swipe gesture state
+    touch_gestures: rc::TouchGestureState,
 
     // clipboard async results
     clipboard_actions: Rc<RefCell<Vec<ClipboardAction>>>,
@@ -203,14 +198,6 @@ struct App {
     // keep DOM listener closures alive
     drop_listeners: Option<WebDropListeners>,
     deeplink_listener: Option<WebDeeplinkListener>,
-
-    // multi-touch for pinch
-    active_touches: HashMap<u64, (f32, f32)>,
-    primary_touch_id: Option<u64>,
-    pinch_last_dist: Option<f32>,
-
-    // swipe tracking
-    touch_start: Option<(web_time::Instant, (f32, f32))>,
 
     last_redraw: web_time::Instant,
 }
@@ -231,22 +218,13 @@ impl App {
 
             inspector: None, //  Some(repose_devtools::Inspector::new()),// Incomplete / doesn't work, so better disable it
 
-            touch_scrolled: false,
-            scroll_capture_id: None,
-            touch_scroll_accum_x_px: 0.0,
-            touch_scroll_accum_y_px: 0.0,
-            prev_touch_px: None,
+            touch_gestures: rc::TouchGestureState::default(),
 
             clipboard_actions: Rc::new(RefCell::new(Vec::new())),
 
             external_drop_actions: Rc::new(RefCell::new(Vec::new())),
             drop_listeners: None,
             deeplink_listener: None,
-
-            active_touches: HashMap::new(),
-            primary_touch_id: None,
-            pinch_last_dist: None,
-            touch_start: None,
 
             last_redraw: web_time::Instant::now(),
         }
@@ -259,10 +237,6 @@ impl App {
 
     fn scale(&self, window: &Window) -> f32 {
         window.scale_factor() as f32
-    }
-
-    fn touch_slop_px(&self, window: &Window) -> f32 {
-        6.0 * self.scale(window)
     }
 
     fn is_textfield(&self, id: u64) -> bool {
@@ -759,30 +733,14 @@ impl ApplicationHandler<()> for App {
                 use repose_core::shortcuts::{Action, Gesture};
 
                 let pos_px = (t.location.x as f32, t.location.y as f32);
-                let pos = Vec2 {
-                    x: pos_px.0,
-                    y: pos_px.1,
-                };
-
                 let tid = t.id;
-                self.active_touches.insert(tid, pos_px);
 
                 match t.phase {
                     TouchPhase::Started => {
-                        self.touch_scrolled = false;
-                        self.scroll_capture_id = None;
-                        self.touch_scroll_accum_x_px = 0.0;
-                        self.touch_scroll_accum_y_px = 0.0;
-
-                        if self.primary_touch_id.is_none() {
-                            self.primary_touch_id = Some(tid);
-                            self.touch_start = Some((web_time::Instant::now(), pos_px));
-                        }
-
-                        self.rt.handle_pointer_press(pos, PointerButton::Primary);
+                        let focused = self.touch_gestures.touch_started(&mut self.rt, tid, pos_px);
 
                         // Platform-specific IME setup for focused textfields
-                        if let Some(fid) = self.rt.sched.focused
+                        if let Some(fid) = focused
                             && self.is_textfield(fid)
                         {
                             let (purpose, ac, cap) = self.rt.focused_keyboard_hints();
@@ -791,122 +749,53 @@ impl ApplicationHandler<()> for App {
                             rc_web::set_ime_for_textfield(&window, false);
                         }
 
-                        self.prev_touch_px = Some(pos_px);
                         self.request_redraw();
                     }
 
                     TouchPhase::Moved => {
-                        // Handle pinch gesture with two touches (platform-specific)
-                        if self.active_touches.len() == 2 {
-                            let mut it = self.active_touches.values();
-                            let a = it.next().copied().unwrap();
-                            let b = it.next().copied().unwrap();
-                            let dx = a.0 - b.0;
-                            let dy = a.1 - b.1;
-                            let dist = (dx * dx + dy * dy).sqrt().max(1.0);
+                        let scale = self.scale(&window);
+                        let (mut dirty, pinch_delta) = self
+                            .touch_gestures
+                            .touch_moved(&mut self.rt, tid, pos_px, scale);
 
-                            if let Some(prev) = self.pinch_last_dist.replace(dist) {
-                                let delta_scale = (dist / prev).clamp(0.5, 2.0);
-                                if self.dispatch_action(
-                                    &window,
-                                    Action::Gesture(Gesture::Pinch { delta_scale }),
-                                ) {
-                                    self.request_redraw();
-                                }
-                            }
+                        if let Some(delta_scale) = pinch_delta
+                            && self.dispatch_action(
+                                &window,
+                                Action::Gesture(Gesture::Pinch { delta_scale }),
+                            )
+                        {
+                            dirty = true;
                         }
 
-                        // Skip scroll handling for non-primary touch
-                        if self.primary_touch_id != Some(tid) {
-                            self.prev_touch_px = Some(pos_px);
-                            return;
+                        if dirty {
+                            self.request_redraw();
                         }
-
-                        // Touch-scroll detection + dispatch
-                        if let Some(prev) = self.prev_touch_px {
-                            let dx_px = pos_px.0 - prev.0;
-                            let dy_px = pos_px.1 - prev.1;
-
-                            if dx_px.abs() > 0.0 || dy_px.abs() > 0.0 {
-                                self.touch_scroll_accum_x_px += dx_px;
-                                self.touch_scroll_accum_y_px += dy_px;
-
-                                let (consumed, cap) = self.rt.handle_scroll_at(
-                                    pos,
-                                    Vec2 {
-                                        x: -dx_px,
-                                        y: -dy_px,
-                                    },
-                                    self.scroll_capture_id,
-                                );
-                                self.scroll_capture_id = cap;
-
-                                if consumed
-                                    && (self.touch_scroll_accum_x_px.abs()
-                                        > self.touch_slop_px(&window)
-                                        || self.touch_scroll_accum_y_px.abs()
-                                            > self.touch_slop_px(&window))
-                                {
-                                    self.touch_scrolled = true;
-                                }
-                            }
-
-                            // Delegate pointer-move to runtime for enter/leave/move dispatch
-                            self.rt.handle_pointer_move(pos);
-                        }
-
-                        self.prev_touch_px = Some(pos_px);
-                        self.request_redraw();
                     }
 
                     TouchPhase::Ended | TouchPhase::Cancelled => {
-                        if t.phase == TouchPhase::Cancelled {
-                            self.rt.handle_pointer_cancel();
-                        } else {
-                            self.rt.handle_pointer_release(pos, PointerButton::Primary);
-                        }
+                        let cancelled = t.phase == TouchPhase::Cancelled;
+                        let swipe_right =
+                            self.touch_gestures
+                                .touch_ended(&mut self.rt, tid, pos_px, cancelled);
 
-                        self.active_touches.remove(&tid);
-                        if self.active_touches.len() < 2 {
-                            self.pinch_last_dist = None;
-                        }
-
-                        // Handle swipe gesture for primary touch (platform-specific)
-                        if self.primary_touch_id == Some(tid) {
-                            self.primary_touch_id = None;
-
-                            if let Some((t0, p0)) = self.touch_start.take() {
-                                let dt = (web_time::Instant::now() - t0).as_secs_f32();
-                                let dx = pos_px.0 - p0.0;
-                                let dy = pos_px.1 - p0.1;
-
-                                if dt < 0.35
-                                    && dy.abs() < 40.0
-                                    && dx.abs() > 80.0
-                                    && !self.touch_scrolled
-                                {
-                                    let g = if dx > 0.0 {
-                                        Gesture::SwipeRight
-                                    } else {
-                                        Gesture::SwipeLeft
-                                    };
-
-                                    // try gesture first, then common "swipe right = back"
-                                    if self.dispatch_action(&window, Action::Gesture(g.clone()))
-                                        || (dx > 0.0 && self.dispatch_action(&window, Action::Back))
-                                    {
-                                        self.scroll_capture_id = None;
-                                        self.prev_touch_px = None;
-                                        self.request_redraw();
-                                        return;
-                                    }
-                                }
+                        // try gesture first, then common "swipe right = back"
+                        let mut dirty = false;
+                        if let Some(right) = swipe_right {
+                            let g = if right {
+                                Gesture::SwipeRight
+                            } else {
+                                Gesture::SwipeLeft
+                            };
+                            if self.dispatch_action(&window, Action::Gesture(g))
+                                || (right && self.dispatch_action(&window, Action::Back))
+                            {
+                                dirty = true;
                             }
                         }
 
-                        self.scroll_capture_id = None;
-                        self.prev_touch_px = None;
-                        self.request_redraw();
+                        if dirty {
+                            self.request_redraw();
+                        }
                     }
                 }
             }

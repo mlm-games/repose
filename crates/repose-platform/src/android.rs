@@ -3,7 +3,6 @@ use crate::common_web as rc_web;
 use crate::render::RenderContext;
 use crate::*;
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -92,12 +91,8 @@ pub fn run_android_app_with_options(
         backend: Option<repose_render_wgpu::WgpuBackend>,
         rt: ReposeRuntime,
 
-        // touch scroll cancel-click
-        touch_scrolled: bool,
-        scroll_capture_id: Option<u64>,
-        touch_scroll_accum_x_px: f32,
-        touch_scroll_accum_y_px: f32,
-        prev_touch_px: Option<(f32, f32)>,
+        // Shared touch-scroll / pinch / swipe gesture state
+        touch_gestures: rc::TouchGestureState,
 
         // IME (soft keyboard) tracking
         ime_visible: bool,
@@ -112,15 +107,6 @@ pub fn run_android_app_with_options(
 
         // clipboard
         clipboard: Option<clipawl::Clipboard>,
-
-        active_touches: HashMap<u64, (f32, f32)>,
-        primary_touch_id: Option<u64>,
-        pinch_last_dist: Option<f32>,
-
-        // swipe tracking
-        touch_start: Option<(web_time::Instant, (f32, f32))>,
-
-        touch_long_press_pending: bool,
 
         last_redraw: web_time::Instant,
     }
@@ -138,11 +124,7 @@ pub fn run_android_app_with_options(
                 backend: None,
                 rt: ReposeRuntime::new(),
 
-                touch_scrolled: false,
-                scroll_capture_id: None,
-                touch_scroll_accum_x_px: 0.0,
-                touch_scroll_accum_y_px: 0.0,
-                prev_touch_px: None,
+                touch_gestures: rc::TouchGestureState::default(),
 
                 ime_visible: false,
                 dirty: true,
@@ -150,12 +132,6 @@ pub fn run_android_app_with_options(
                 in_foreground: false,
 
                 clipboard: None,
-                active_touches: HashMap::new(),
-                primary_touch_id: None,
-                pinch_last_dist: None,
-                touch_start: None,
-
-                touch_long_press_pending: false,
 
                 last_redraw: web_time::Instant::now(),
             }
@@ -389,49 +365,22 @@ pub fn run_android_app_with_options(
                 }
 
                 WindowEvent::ModifiersChanged(new_mods) => {
-                    let state = new_mods.state();
-                    self.rt.modifiers.shift = state.shift_key();
-                    self.rt.modifiers.ctrl = state.control_key();
-                    self.rt.modifiers.alt = state.alt_key();
-                    self.rt.modifiers.meta = state.super_key();
-                    self.rt.modifiers.command = if cfg!(target_os = "macos") {
-                        self.rt.modifiers.meta
-                    } else {
-                        self.rt.modifiers.ctrl
-                    };
+                    rc::update_modifiers(&mut self.rt.modifiers, &new_mods.state());
                 }
 
-                // Touch handling (Android primary)
+                // Touch handling (Android primary). Scroll / pinch / swipe
+                // recognition lives in common.rs, shared with web + desktop.
                 WindowEvent::Touch(t) => {
                     let pos_px = (t.location.x as f32, t.location.y as f32);
-                    self.rt.mouse_pos_px = pos_px;
-                    let pos = Vec2 {
-                        x: pos_px.0,
-                        y: pos_px.1,
-                    };
-
                     let tid = t.id;
-                    self.active_touches.insert(tid, pos_px);
 
                     match t.phase {
                         winit::event::TouchPhase::Started => {
-                            self.touch_scrolled = false;
-                            self.scroll_capture_id = None;
-                            self.touch_scroll_accum_x_px = 0.0;
-                            self.touch_scroll_accum_y_px = 0.0;
-
-                            if self.primary_touch_id.is_none() {
-                                self.primary_touch_id = Some(tid);
-                                self.touch_start = Some((web_time::Instant::now(), pos_px));
-                                self.touch_long_press_pending = true;
-                            }
-
-                            // Delegate common pointer-press logic to the runtime
-                            let press_result =
-                                self.rt.handle_pointer_press(pos, PointerButton::Primary);
+                            let focused =
+                                self.touch_gestures.touch_started(&mut self.rt, tid, pos_px);
 
                             // Platform-specific IME setup for focused textfields
-                            if let Some(fid) = press_result.focused
+                            if let Some(fid) = focused
                                 && self.is_textfield(fid)
                             {
                                 if let Some(win) = &self.window
@@ -464,123 +413,54 @@ pub fn run_android_app_with_options(
                                 }
                             }
 
-                            self.prev_touch_px = Some(pos_px);
                             self.dirty = true;
                             self.request_redraw();
                         }
 
                         winit::event::TouchPhase::Moved => {
-                            // Pinch gesture detection (platform-specific)
-                            if self.active_touches.len() == 2 {
-                                let mut it = self.active_touches.values();
-                                let a = it.next().copied().unwrap();
-                                let b = it.next().copied().unwrap();
-                                let dx = a.0 - b.0;
-                                let dy = a.1 - b.1;
-                                let dist = (dx * dx + dy * dy).sqrt().max(1.0);
+                            let scale = self.scale();
+                            let (mut dirty, pinch_delta) = self
+                                .touch_gestures
+                                .touch_moved(&mut self.rt, tid, pos_px, scale);
 
-                                if let Some(prev) = self.pinch_last_dist.replace(dist) {
-                                    let delta_scale = (dist / prev).clamp(0.5, 2.0);
-                                    if self.dispatch_action(Action::Gesture(Gesture::Pinch {
-                                        delta_scale,
-                                    })) {
-                                        self.dirty = true;
-                                        self.request_redraw();
-                                    }
-                                }
+                            if let Some(delta_scale) = pinch_delta
+                                && self.dispatch_action(Action::Gesture(Gesture::Pinch {
+                                    delta_scale,
+                                }))
+                            {
+                                dirty = true;
                             }
 
-                            if self.primary_touch_id != Some(tid) {
-                                self.prev_touch_px = Some(pos_px);
-                                return;
+                            if dirty {
+                                self.dirty = true;
+                                self.request_redraw();
                             }
-
-                            // Touch-scroll detection + dispatch
-                            if let Some(prev) = self.prev_touch_px {
-                                let dx_px = pos_px.0 - prev.0;
-                                let dy_px = pos_px.1 - prev.1;
-
-                                if dx_px.abs() > 0.0 || dy_px.abs() > 0.0 {
-                                    self.touch_scroll_accum_x_px += dx_px;
-                                    self.touch_scroll_accum_y_px += dy_px;
-
-                                    let (consumed, cap) = self.rt.handle_scroll_at(
-                                        pos,
-                                        Vec2 {
-                                            x: -dx_px,
-                                            y: -dy_px,
-                                        },
-                                        self.scroll_capture_id,
-                                    );
-                                    self.scroll_capture_id = cap;
-
-                                    if consumed
-                                        && (self.touch_scroll_accum_x_px.abs() > 6.0 * self.scale()
-                                            || self.touch_scroll_accum_y_px.abs()
-                                                > 6.0 * self.scale())
-                                    {
-                                        self.touch_scrolled = true;
-                                    }
-                                }
-
-                                // Delegate pointer-move to runtime for enter/leave/move dispatch
-                                self.rt.handle_pointer_move(pos);
-                            }
-
-                            self.prev_touch_px = Some(pos_px);
-                            self.dirty = true;
-                            self.request_redraw();
                         }
 
                         winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
-                            self.touch_long_press_pending = false;
+                            let cancelled = t.phase == winit::event::TouchPhase::Cancelled;
+                            let swipe_right =
+                                self.touch_gestures
+                                    .touch_ended(&mut self.rt, tid, pos_px, cancelled);
 
-                            if t.phase == winit::event::TouchPhase::Cancelled {
-                                self.rt.handle_pointer_cancel();
-                            } else {
-                                self.rt.handle_pointer_release(pos, PointerButton::Primary);
-                            }
-
-                            self.active_touches.remove(&tid);
-                            if self.active_touches.len() < 2 {
-                                self.pinch_last_dist = None;
-                            }
-
-                            // Swipe gesture detection (platform-specific)
-                            if self.primary_touch_id == Some(tid) {
-                                self.primary_touch_id = None;
-
-                                if let Some((t0, p0)) = self.touch_start.take() {
-                                    let dt = (web_time::Instant::now() - t0).as_secs_f32();
-                                    let dx = pos_px.0 - p0.0;
-                                    let dy = pos_px.1 - p0.1;
-
-                                    if dt < 0.35
-                                        && dy.abs() < 40.0
-                                        && dx.abs() > 80.0
-                                        && !self.touch_scrolled
-                                    {
-                                        let g = if dx > 0.0 {
-                                            Gesture::SwipeRight
-                                        } else {
-                                            Gesture::SwipeLeft
-                                        };
-
-                                        if self.dispatch_action(Action::Gesture(g.clone()))
-                                            || (dx > 0.0 && self.dispatch_action(Action::Back))
-                                        {
-                                            self.dirty = true;
-                                            self.request_redraw();
-                                            return;
-                                        }
-                                    }
+                            let mut dirty = false;
+                            if let Some(right) = swipe_right {
+                                let g = if right {
+                                    Gesture::SwipeRight
+                                } else {
+                                    Gesture::SwipeLeft
+                                };
+                                if self.dispatch_action(Action::Gesture(g))
+                                    || (right && self.dispatch_action(Action::Back))
+                                {
+                                    dirty = true;
                                 }
                             }
 
-                            self.scroll_capture_id = None;
-                            self.prev_touch_px = None;
-                            self.dirty = true;
-                            self.request_redraw();
+                            if dirty {
+                                self.dirty = true;
+                                self.request_redraw();
+                            }
                         }
                     }
                 }
