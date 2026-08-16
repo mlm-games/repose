@@ -13,6 +13,7 @@ use repose_ui::{
 };
 
 use super::app_bar::WindowInsets;
+use super::util::apply_m3_clickable;
 use super::util::apply_tonal_elevation;
 use super::*;
 
@@ -768,24 +769,22 @@ pub fn DockedSearchBar(
         colors.container_color
     };
 
+    let clear_source: Rc<MutableInteractionSource> = remember(MutableInteractionSource::new);
     let clear_btn = if active {
-        Box(Modifier::new()
-            .size(24.0, 24.0)
-            .clip_rounded(12.0)
-            .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-                color: Some(colors.placeholder_color),
-                bounded: true,
-                ..Default::default()
-            }))
-            .clickable()
-            .on_click({
+        Box(apply_m3_clickable(
+            Modifier::new().size(24.0, 24.0).clip_rounded(12.0),
+            &clear_source,
+            colors.placeholder_color,
+            true,
+            {
                 let cb = on_expanded_change.clone();
                 move || {
                     if let Some(ref cb) = cb {
                         cb(false);
                     }
                 }
-            }))
+            },
+        ))
         .child(Text("✕").size(16.0).color(colors.placeholder_color))
     } else {
         Box(Modifier::new())

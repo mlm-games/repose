@@ -7,6 +7,7 @@ use repose_core::animation::AnimationSpec;
 use repose_core::*;
 use repose_ui::{Box, Column, Text, TextStyle, ViewExt, anim::animate_color};
 
+use super::util::apply_m3_clickable;
 use super::*;
 
 /// Configuration for [`NavigationRail`].
@@ -174,20 +175,12 @@ pub fn NavigationRail(
                 disabled: Color::TRANSPARENT,
             })
             .clip_rounded(config.item_radius)
-            .interaction_source(&nr_source)
-            .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-                color: Some(th.on_surface),
-                bounded: true,
-                ..Default::default()
-            }))
             .semantics(Semantics::new(Role::Tab).with_label(&item.label));
 
-        if is_enabled {
-            item_m = item_m.clickable().on_click({
-                let cb = cb.clone();
-                move || cb()
-            });
-        }
+        item_m = apply_m3_clickable(item_m, &nr_source, th.on_surface, is_enabled, {
+            let cb = cb.clone();
+            move || cb()
+        });
 
         item_views.push(
             Column(item_m).child((

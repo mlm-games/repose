@@ -10,6 +10,7 @@ use repose_ui::{
     anim::{animate_color, animate_f32},
 };
 
+use super::util::apply_m3_clickable;
 use super::*;
 
 static NAVBAR_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -132,20 +133,18 @@ pub fn NavigationBar(
 
                     let mut item_m = Modifier::new()
                         .flex_grow(1.0)
-                        .interaction_source(&nb_source)
-                        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-                            color: Some(theme().on_surface_variant),
-                            bounded: true,
-                            ..Default::default()
-                        }))
                         .semantics(Semantics::new(Role::Tab).with_label(&item.label));
 
-                    if is_enabled {
-                        item_m = item_m.clickable().on_click({
+                    item_m = apply_m3_clickable(
+                        item_m,
+                        &nb_source,
+                        theme().on_surface_variant,
+                        is_enabled,
+                        {
                             let cb = cb.clone();
                             move || cb()
-                        });
-                    }
+                        },
+                    );
 
                     Box(item_m).child(
                         Column(

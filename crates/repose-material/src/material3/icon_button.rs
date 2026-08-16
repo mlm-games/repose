@@ -5,7 +5,7 @@ use std::rc::Rc;
 use repose_core::*;
 use repose_ui::{Box, ViewExt};
 
-use super::util::apply_enabled_click;
+use super::util::apply_m3_clickable_ex;
 use super::*;
 
 /// Color slots for icon buttons.
@@ -105,18 +105,19 @@ fn icon_button_render(
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
-    outer = outer.interaction_source(&source);
-    outer = outer.indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-        color: Some(content_color),
-        bounded: ripple_bounded,
-        radius: Some(if ripple_bounded {
+    outer = apply_m3_clickable_ex(
+        outer,
+        &source,
+        content_color,
+        is_enabled,
+        on_click,
+        ripple_bounded,
+        Some(if ripple_bounded {
             radius
         } else {
             IconButtonDefaults::STATE_LAYER_RADIUS
         }),
-        ..Default::default()
-    }));
-    outer = apply_enabled_click(outer, is_enabled, on_click);
+    );
 
     Box(outer).child(Box(inner).child(with_content_color(content_color, move || icon)))
 }

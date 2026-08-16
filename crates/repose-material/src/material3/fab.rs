@@ -5,7 +5,7 @@ use std::rc::Rc;
 use repose_core::*;
 use repose_ui::{Box, Row, Text, TextStyle, ViewExt};
 
-use super::util::apply_enabled_click;
+use super::util::apply_m3_clickable;
 use super::*;
 
 /// Configuration for FAB components.
@@ -92,13 +92,7 @@ fn fab_impl(
         .interaction_source
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    m = m.interaction_source(&source);
-    m = m.indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-        color: Some(content_color),
-        bounded: true,
-        ..Default::default()
-    }));
-    m = apply_enabled_click(m, is_enabled, on_click);
+    m = apply_m3_clickable(m, &source, content_color, is_enabled, on_click);
 
     Box(m).child(with_content_color(content_color, move || icon))
 }
@@ -200,13 +194,7 @@ pub fn ExtendedFAB(
         })
         .align_items(AlignItems::CENTER);
 
-    m = m.interaction_source(&source);
-    m = m.indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-        color: Some(content_color),
-        bounded: true,
-        ..Default::default()
-    }));
-    m = apply_enabled_click(m, is_enabled, on_click);
+    m = apply_m3_clickable(m, &source, content_color, is_enabled, on_click);
     m = m.then(config.modifier);
     Row(m).child((
         icon.map(|v| with_content_color(content_color, move || v))

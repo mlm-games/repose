@@ -6,7 +6,7 @@ use std::sync::atomic::Ordering;
 use repose_core::*;
 use repose_ui::{Box, FlowRow, Row, ViewExt, anim::animate_color};
 
-use super::util::{FILTERCHIP_COUNTER, apply_enabled_click};
+use super::util::{FILTERCHIP_COUNTER, apply_m3_clickable};
 use super::*;
 
 /// Color slots for chips (both non-selectable and selectable).
@@ -199,19 +199,13 @@ pub fn AssistChip(
         })
         .background(bg)
         .clip_rounded(shape)
-        .interaction_source(&ch_source)
-        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(label_color),
-            bounded: true,
-            ..Default::default()
-        }))
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
         m = m.border(config.border_width, border, shape);
     }
 
-    m = apply_enabled_click(m, is_enabled, on_click);
+    m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -284,15 +278,9 @@ pub fn ElevatedAssistChip(
         })
         .background(bg)
         .clip_rounded(shape)
-        .interaction_source(&ch_source)
-        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(label_color),
-            bounded: true,
-            ..Default::default()
-        }))
         .then(config.modifier);
 
-    m = apply_enabled_click(m, is_enabled, on_click);
+    m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -397,18 +385,12 @@ pub fn FilterChip(
         })
         .background(bg)
         .clip_rounded(shape)
-        .interaction_source(&ch_source)
-        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(label_color),
-            bounded: true,
-            ..Default::default()
-        }))
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
         m = m.border(config.border_width, border, shape);
     }
-    m = apply_enabled_click(m, is_enabled, on_click);
+    m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -502,15 +484,9 @@ pub fn ElevatedFilterChip(
         })
         .background(bg)
         .clip_rounded(shape)
-        .interaction_source(&ch_source)
-        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(label_color),
-            bounded: true,
-            ..Default::default()
-        }))
         .then(config.modifier);
 
-    m = apply_enabled_click(m, is_enabled, on_click);
+    m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -585,18 +561,12 @@ pub fn SuggestionChip(
         })
         .background(bg)
         .clip_rounded(shape)
-        .interaction_source(&ch_source)
-        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(label_color),
-            bounded: true,
-            ..Default::default()
-        }))
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
         m = m.border(config.border_width, border, shape);
     }
-    m = apply_enabled_click(m, is_enabled, on_click);
+    m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -656,15 +626,9 @@ pub fn ElevatedSuggestionChip(
         })
         .background(bg)
         .clip_rounded(shape)
-        .interaction_source(&ch_source)
-        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(label_color),
-            bounded: true,
-            ..Default::default()
-        }))
         .then(config.modifier);
 
-    m = apply_enabled_click(m, is_enabled, on_click);
+    m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -758,18 +722,12 @@ pub fn InputChip(
         })
         .background(bg)
         .clip_rounded(shape)
-        .interaction_source(&ch_source)
-        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(label_color),
-            bounded: true,
-            ..Default::default()
-        }))
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
         m = m.border(config.border_width, border, shape);
     }
-    m = apply_enabled_click(m, is_enabled, on_click);
+    m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((

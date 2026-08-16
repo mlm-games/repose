@@ -2,11 +2,10 @@
 
 use std::rc::Rc;
 
-use crate::ripple::{RippleConfig, ripple};
 use repose_core::*;
 use repose_ui::{Box, ViewExt};
 
-use super::util::apply_enabled_click;
+use super::util::apply_m3_clickable;
 use super::*;
 
 /// Color slots for buttons (matching Compose Material3 `ButtonColors`).
@@ -177,7 +176,7 @@ fn button_impl(
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER);
 
-    // Interaction source + ripple indication
+    // Interaction source + ripple indication (content-tinted, bounded — Compose Button)
     let source: Rc<MutableInteractionSource> =
         interaction_source
             .map(Rc::new)
@@ -187,14 +186,8 @@ fn button_impl(
                 }
                 None => remember(MutableInteractionSource::new),
             });
-    m = m.interaction_source(&source);
-    m = m.indication(ripple(RippleConfig {
-        color: Some(content_color),
-        bounded: true,
-        ..Default::default()
-    }));
 
-    m = apply_enabled_click(m, enabled, on_click);
+    m = apply_m3_clickable(m, &source, content_color, enabled, on_click);
     m = m.then(outer_modifier);
     let content = with_content_color(content_color, content);
     Box(m).child(content)
@@ -480,17 +473,11 @@ fn toggle_button_impl(
     let tg_source: Rc<MutableInteractionSource> = interaction_source
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    m = m.interaction_source(&tg_source);
-    m = m.indication(ripple(RippleConfig {
-        color: Some(fg),
-        bounded: true,
-        ..Default::default()
-    }));
     if let Some((w, c, r)) = border {
         m = m.border(w, c, r);
     }
     let cb = on_checked_change;
-    m = apply_enabled_click(m, enabled, move || cb(!checked));
+    m = apply_m3_clickable(m, &tg_source, fg, enabled, move || cb(!checked));
     with_content_color(fg, || Box(m).child(content(checked)))
 }
 

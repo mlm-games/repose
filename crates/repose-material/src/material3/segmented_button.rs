@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use repose_core::*;
 use repose_ui::{Box, Row, Text, TextStyle, ViewExt, anim::animate_color};
 
+use super::util::apply_m3_clickable;
 use super::*;
 
 /// Configuration for a single segment in [`SegmentedButton`].
@@ -137,21 +138,17 @@ pub fn SegmentedButton(
                     .clip_rounded_radii(radii)
                     .background(bg)
                     .state_colors(state_colors)
-                    .interaction_source(&seg_source)
-                    .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-                        color: Some(theme().on_surface),
-                        bounded: true,
-                        ..Default::default()
-                    }))
                     .align_items(AlignItems::CENTER)
                     .justify_content(JustifyContent::CENTER)
                     .padding_values(config.content_padding);
 
-                let content_modifier = if is_enabled {
-                    content_modifier.clickable().on_click(move || cb())
-                } else {
-                    content_modifier
-                };
+                let content_modifier = apply_m3_clickable(
+                    content_modifier,
+                    &seg_source,
+                    theme().on_surface,
+                    is_enabled,
+                    move || cb(),
+                );
 
                 Row(Modifier::new().flex_grow(1.0).fill_max_height()).child((
                     Row(content_modifier).child((

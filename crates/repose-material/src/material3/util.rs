@@ -42,7 +42,7 @@ pub(crate) fn lerp_color(a: Color, b: Color, t: f32) -> Color {
 /// Wire clickable when enabled, or disable the control when not. Centralizes
 /// the "still clickable when disabled" class of bugs across M3 controls.
 pub(crate) fn apply_enabled_click(
-    mut m: Modifier,
+    m: Modifier,
     enabled: bool,
     on_click: impl Fn() + 'static,
 ) -> Modifier {
@@ -56,17 +56,32 @@ pub(crate) fn apply_enabled_click(
 /// Wire source + M3 ripple (content-tinted) + clickable in one consistent path.
 /// Use this for every interactive M3 control so hover/press/focus feedback is
 /// uniform across buttons, chips, icon buttons, FABs, toggles, etc.
+///
+/// `bounded`/`radius` let selection controls pass unbounded 20dp (Compose parity).
 pub(crate) fn apply_m3_clickable(
-    mut m: Modifier,
+    m: Modifier,
     source: &MutableInteractionSource,
     ripple_color: Color,
     enabled: bool,
     on_click: impl Fn() + 'static,
 ) -> Modifier {
+    apply_m3_clickable_ex(m, source, ripple_color, enabled, on_click, true, None)
+}
+
+pub(crate) fn apply_m3_clickable_ex(
+    mut m: Modifier,
+    source: &MutableInteractionSource,
+    ripple_color: Color,
+    enabled: bool,
+    on_click: impl Fn() + 'static,
+    bounded: bool,
+    radius: Option<f32>,
+) -> Modifier {
     m = m.interaction_source(source);
     m = m.indication(ripple(RippleConfig {
         color: Some(ripple_color),
-        bounded: true,
+        bounded,
+        radius,
         ..Default::default()
     }));
     apply_enabled_click(m, enabled, on_click)

@@ -3,6 +3,7 @@
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use crate::ripple::{RippleConfig, ripple};
 use repose_core::*;
 use repose_ui::Box;
 
@@ -183,16 +184,20 @@ pub fn Slider(
     let mut host = Modifier::new()
         .min_width(200.0)
         .height(44.0)
-        .interaction_source(&sl_source);
+        .interaction_source(&sl_source)
+        .indication(ripple(RippleConfig {
+            color: Some(thumb_col),
+            bounded: false,
+            radius: Some(20.0),
+            ..Default::default()
+        }));
     if !is_enabled {
         host = host.enabled(false);
     }
-    host = host
-        .focusable(true)
-        .on_focus_changed({
-            let f = focused.clone();
-            move |focused| f.set(focused)
-        });
+    host = host.focusable(true).on_focus_changed({
+        let f = focused.clone();
+        move |focused| f.set(focused)
+    });
     Box(host
         .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
             let mul_c = |c: Color| {
@@ -307,18 +312,18 @@ pub fn Slider(
                 radius: [tw * 0.5; 4],
             });
 
-// Compose: circular state layer centered on the thumb (not on handle geometry)
-        let sc_target = if !is_enabled {
-            Color::TRANSPARENT
-        } else if da {
-            sc.pressed
-        } else if fs {
-            sc.focused
-        } else if hv {
-            sc.hovered
-        } else {
-            sc.default
-        };
+            // Compose: circular state layer centered on the thumb (not on handle geometry)
+            let sc_target = if !is_enabled {
+                Color::TRANSPARENT
+            } else if da {
+                sc.pressed
+            } else if fs {
+                sc.focused
+            } else if hv {
+                sc.hovered
+            } else {
+                sc.default
+            };
             if sc_target.3 > 0 {
                 let sl = dp_to_px(SliderDefaults::STATE_LAYER_SIZE);
                 scene.nodes.push(SceneNode::Ellipse {
@@ -509,16 +514,20 @@ pub fn RangeSlider(
     let mut host = Modifier::new()
         .min_width(200.0)
         .height(44.0)
-        .interaction_source(&sl_source);
+        .interaction_source(&sl_source)
+        .indication(ripple(RippleConfig {
+            color: Some(thumb_col),
+            bounded: false,
+            radius: Some(20.0),
+            ..Default::default()
+        }));
     if !is_enabled {
         host = host.enabled(false);
     }
-    host = host
-        .focusable(true)
-        .on_focus_changed({
-            let f = focused.clone();
-            move |focused| f.set(focused)
-        });
+    host = host.focusable(true).on_focus_changed({
+        let f = focused.clone();
+        move |focused| f.set(focused)
+    });
     Box(host
         .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
             let mul_c = |c: Color| {

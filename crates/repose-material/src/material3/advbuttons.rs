@@ -107,15 +107,7 @@ fn split_button_impl(
     let source: Rc<MutableInteractionSource> = interaction_source
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    m = m.interaction_source(&source);
-    m = m.indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-        color: Some(content_color),
-        bounded: true,
-        ..Default::default()
-    }));
-    if enabled {
-        m = m.clickable().on_click(on_click);
-    }
+    m = apply_m3_clickable(m, &source, content_color, enabled, on_click);
     m = m.then(outer_modifier);
     let effective = if enabled {
         content_color
@@ -248,14 +240,12 @@ pub fn SplitButtonTrailingToggleButton(
         .clone()
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    m = m.interaction_source(&tg_source);
     if let Some((w, c, r)) = config.border {
         m = m.border(w, c, r);
     }
-    if config.enabled {
-        let cb = on_checked_change;
-        m = apply_m3_clickable(m, &tg_source, fg, true, move || cb(!checked));
-    } else {
+    let cb = on_checked_change;
+    m = apply_m3_clickable(m, &tg_source, fg, config.enabled, move || cb(!checked));
+    if !config.enabled {
         m = m.alpha(0.38);
     }
     m = m.then(modifier.clip_rounded_radii(split_trailing_shape_radii()));
@@ -351,14 +341,12 @@ pub fn SplitButtonTonalTrailingToggleButton(
         .clone()
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    m = m.interaction_source(&tg_source);
     if let Some((w, c, r)) = config.border {
         m = m.border(w, c, r);
     }
-    if config.enabled {
-        let cb = on_checked_change;
-        m = apply_m3_clickable(m, &tg_source, fg, true, move || cb(!checked));
-    } else {
+    let cb = on_checked_change;
+    m = apply_m3_clickable(m, &tg_source, fg, config.enabled, move || cb(!checked));
+    if !config.enabled {
         m = m.alpha(0.38);
     }
     m = m.then(modifier.clip_rounded_radii(split_trailing_shape_radii()));

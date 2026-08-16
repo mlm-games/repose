@@ -10,6 +10,7 @@ use repose_ui::{
     anim::{animate_color, animate_f32},
 };
 
+use super::util::apply_m3_clickable;
 use super::*;
 
 /// A single tab definition for use with `TabRow`.
@@ -96,12 +97,6 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                     let mut tab_m = Modifier::new()
                         .flex_grow(1.0)
                         .fill_max_height()
-                        .interaction_source(&tab_source)
-                        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-                            color: Some(th.on_surface),
-                            bounded: true,
-                            ..Default::default()
-                        }))
                         .align_items(AlignItems::CENTER)
                         .justify_content(JustifyContent::CENTER)
                         .state_colors(StateColors {
@@ -114,9 +109,7 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                         })
                         .semantics(Semantics::new(Role::Tab).with_label(&tab.label));
 
-                    if is_enabled {
-                        tab_m = tab_m.clickable().on_click(move || cb());
-                    }
+                    tab_m = apply_m3_clickable(tab_m, &tab_source, th.on_surface, is_enabled, move || cb());
 
                     Column(tab_m).child((
                         tab.icon.unwrap_or(Box(Modifier::new())),

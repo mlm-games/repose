@@ -10,7 +10,7 @@ use repose_ui::{
     anim::{animate_color, animate_f32},
 };
 
-use super::util::apply_enabled_click;
+use super::util::{apply_enabled_click, apply_m3_clickable_ex};
 
 use super::*;
 
@@ -139,23 +139,33 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         .clone()
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
+
+    // Compose: unbounded state-layer (StateLayerSize/2 = 20dp), color = indicator
+    // (checked container / on_surface when unchecked). Matches Checkbox.kt + tokens.
+    let ripple_col = if checked {
+        config.checked_color
+    } else {
+        th.on_surface
+    };
+
     let mut m = Modifier::new()
         .width(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .height(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .padding(0.0)
         .background(Color::TRANSPARENT)
-        .state_colors(config.state_colors)
-        .interaction_source(&cb_source)
-        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(th.on_surface),
-            bounded: false, // circular 40dp target → unbounded looks correct
-            radius: Some(20.0),
-            ..Default::default()
-        }))
+        .state_colors(config.state_colors) // keep for dragged/disabled overlays if any
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER);
 
-    m = apply_enabled_click(m, is_enabled, cb);
+    m = apply_m3_clickable_ex(
+        m,
+        &cb_source,
+        ripple_col,
+        is_enabled,
+        cb,
+        false, // unbounded
+        Some(20.0),
+    );
     Box(m.then(config.modifier)).child(
         Box(Modifier::new()
             .size(sz, sz)
@@ -264,24 +274,26 @@ pub fn TriStateCheckbox(
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
+    // Compose parity: state-layer color = indicator (checked container / on_surface).
+    let ripple_col = if has_fill {
+        config.checked_color
+    } else {
+        th.on_surface
+    };
+
     let mut m = Modifier::new()
         .width(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .height(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .padding(0.0)
         .background(Color::TRANSPARENT)
         .state_colors(config.state_colors)
-        .interaction_source(&tc_source)
-        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(th.on_surface),
-            bounded: false,
-            radius: Some(20.0),
-            ..Default::default()
-        }))
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER);
 
-    m = apply_enabled_click(
+    m = apply_m3_clickable_ex(
         m,
+        &tc_source,
+        ripple_col,
         is_enabled,
         move || {
             on_change(match state {
@@ -290,6 +302,8 @@ pub fn TriStateCheckbox(
                 TriState::Unchecked => TriState::Checked,
             })
         },
+        false, // unbounded
+        Some(20.0),
     );
     Box(m.then(config.modifier)).child(
         Box(Modifier::new()
@@ -404,23 +418,32 @@ pub fn RadioButton(
         .clone()
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
+
+    // Compose parity: state-layer color = indicator (selected / on_surface).
+    let ripple_col = if selected {
+        config.selected_color
+    } else {
+        th.on_surface
+    };
+
     let mut m = Modifier::new()
         .width(RadioButtonDefaults::TOUCH_TARGET_SIZE)
         .height(RadioButtonDefaults::TOUCH_TARGET_SIZE)
         .padding(0.0)
         .background(Color::TRANSPARENT)
         .state_colors(config.state_colors)
-        .interaction_source(&rb_source)
-        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(th.on_surface),
-            bounded: false,
-            radius: Some(20.0),
-            ..Default::default()
-        }))
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER);
 
-    m = apply_enabled_click(m, config.enabled, cb);
+    m = apply_m3_clickable_ex(
+        m,
+        &rb_source,
+        ripple_col,
+        config.enabled,
+        cb,
+        false,
+        Some(20.0),
+    );
     Box(m.then(config.modifier)).child(
         Box(Modifier::new()
             .size(d, d)
@@ -600,14 +623,10 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         .border(track_border, border_color, track_h * 0.5)
         .interaction_source(&sw_source);
 
-    track = apply_enabled_click(
-        track,
-        is_enabled,
-        {
-            let cb = on_change;
-            move || cb(!checked)
-        },
-    );
+    track = apply_enabled_click(track, is_enabled, {
+        let cb = on_change;
+        move || cb(!checked)
+    });
 
     Box(track.then(config.modifier)).child((
         Box(Modifier::new()
