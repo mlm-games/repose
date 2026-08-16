@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use repose_core::*;
 use repose_tree::NodeId;
-use rustc_hash::FxHasher;
+use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 
 use crate::Interactions;
 use crate::anim::{animate_color, animate_f32};
@@ -128,6 +128,37 @@ impl LayoutEngine {
         }
 
         hits.sort_by(|a, b| a.z_index.partial_cmp(&b.z_index).unwrap_or(Ordering::Equal));
+
+        {
+            let mut parent_view: FxHashMap<u64, Option<u64>> = FxHashMap::default();
+            let mut stack: Vec<(NodeId, Option<u64>)> = vec![(root_id, None)];
+            while let Some((id, pvid)) = stack.pop() {
+                let vid = self.view_ids.get(&id).copied().unwrap_or(0);
+                if vid != 0 {
+                    parent_view.insert(vid, pvid);
+                }
+                if let Some(node) = self.tree.get(id) {
+                    for &child in node.children.iter() {
+                        stack.push((child, (vid != 0).then_some(vid)));
+                    }
+                }
+            }
+            let hit_ids: FxHashSet<u64> = hits.iter().map(|h| h.id).collect();
+            for h in hits.iter_mut() {
+                let mut cur = h.id;
+                loop {
+                    let Some(p) = parent_view.get(&cur).copied().flatten() else {
+                        break;
+                    };
+                    if hit_ids.contains(&p) {
+                        h.parent = Some(p);
+                        break;
+                    }
+                    cur = p;
+                }
+            }
+        }
+
         (scene, hits, sems)
     }
 
@@ -331,7 +362,11 @@ impl LayoutEngine {
             || modifier.scroll.is_some()
             || matches!(kind, ViewKind::Expander { .. } | ViewKind::TreeRow { .. });
 
+        let this_alpha = modifier.alpha.unwrap_or(1.0);
+        let alpha_accum = (alpha_accum * this_alpha).clamp(0.0, 1.0);
+
         let needs_hit = !modifier.disabled
+            && alpha_accum > 0.01
             && (has_pointer
                 || modifier.click
                 || has_dnd
@@ -376,8 +411,6 @@ impl LayoutEngine {
             } else {
                 (implicit_hovered, implicit_pressed, is_focused, false)
             };
-        let this_alpha = modifier.alpha.unwrap_or(1.0);
-        let alpha_accum = (alpha_accum * this_alpha).clamp(0.0, 1.0);
         let alpha_q: u8 = (alpha_accum * 255.0).round() as u8;
 
         // Repaint Boundary

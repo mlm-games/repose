@@ -568,13 +568,16 @@ impl ReposeRuntime {
         };
 
         if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos)) {
-            let path: Vec<u64> = f
-                .hit_regions
-                .iter()
-                .rev()
-                .filter(|h| h.rect.contains(pos))
-                .map(|h| h.id)
-                .collect();
+            let mut path: Vec<u64> = vec![hit.id];
+            let mut cur = hit.parent;
+            while let Some(pid) = cur {
+                path.push(pid);
+                cur = f
+                    .hit_regions
+                    .iter()
+                    .find(|h| h.id == pid)
+                    .and_then(|h| h.parent);
+            }
             self.hit_path = Some(path.clone());
 
             // DnD press

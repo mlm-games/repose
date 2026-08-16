@@ -134,23 +134,17 @@ fn clickable_card_impl(
     config: CardConfig,
     content: impl FnOnce() -> View,
 ) -> View {
-    let m = modifier
+    let mut m = modifier
         .state_colors(card_state_colors(bg))
         .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
             color: Some(theme().on_surface),
             bounded: true,
             ..Default::default()
         }))
-        .clickable()
-        .on_pointer_down({
-            let cb = on_click;
-            let en = config.enabled;
-            move |_| {
-                if en {
-                    cb();
-                }
-            }
-        });
+        .clickable();
+    if config.enabled {
+        m = m.on_click(on_click);
+    }
     Card(
         CardConfig {
             modifier: m,

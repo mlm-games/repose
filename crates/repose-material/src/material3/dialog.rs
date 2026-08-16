@@ -187,6 +187,7 @@ pub fn Dialog(
                         .fill_max_size()
                         .background(th.scrim.with_alpha((85.0 * alpha) as u8))
                         .focusable(false)
+                        .input_blocker()
                         .on_scroll(|_| Vec2::default())
                         .on_click({
                             let s = state.clone();
