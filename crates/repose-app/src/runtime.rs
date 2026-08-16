@@ -61,6 +61,19 @@ pub struct FrameOutput {
     pub wants_keyboard: bool,
 }
 
+impl FrameOutput {
+    /// Consume the frame into a `repose_core::Frame` for hit-testing/caching
+    /// by the host. Drops the platform-output and pointer metadata.
+    pub fn into_frame(self) -> Frame {
+        Frame {
+            scene: self.scene,
+            hit_regions: self.hit_regions,
+            semantics_nodes: self.semantics_nodes,
+            focus_chain: self.focus_chain,
+        }
+    }
+}
+
 /// Result of a pointer-move event processed by the runtime.
 pub struct PointerMoveResult {
     /// Updated cursor suggestion for the host.

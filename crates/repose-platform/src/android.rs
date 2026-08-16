@@ -287,7 +287,7 @@ pub fn run_android_app_with_options(
             let Some(backend) = &mut self.backend else {
                 return;
             };
-            rc::process_render_commands(backend, self.render.drain());
+            repose_render_wgpu::apply_render_commands(backend, self.render.drain());
         }
 
         fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
@@ -694,12 +694,7 @@ pub fn run_android_app_with_options(
                         }
                     }
 
-                    let frame = Frame {
-                        scene: output.scene,
-                        hit_regions: output.hit_regions,
-                        semantics_nodes: output.semantics_nodes,
-                        focus_chain: output.focus_chain,
-                    };
+                    let frame = output.into_frame();
 
                     let scale = self.scale();
                     self.rt.after_compose(&frame, scale);

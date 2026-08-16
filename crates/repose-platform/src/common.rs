@@ -1,3 +1,4 @@
+#[cfg(any(target_arch = "wasm32", target_os = "android"))]
 use crate::*;
 
 pub(crate) fn request_redraw(window: &Option<std::sync::Arc<winit::window::Window>>) {
@@ -103,73 +104,5 @@ pub(crate) fn map_key(key: winit::keyboard::PhysicalKey) -> repose_core::input::
         PhysicalKey::Code(KeyCode::F11) => Key::F(11),
         PhysicalKey::Code(KeyCode::F12) => Key::F(12),
         _ => Key::Unknown,
-    }
-}
-
-pub(crate) fn process_render_commands(
-    backend: &mut repose_render_wgpu::WgpuBackend,
-    cmds: Vec<RenderCommand>,
-) {
-    for cmd in cmds {
-        match cmd {
-            RenderCommand::SetImageEncoded {
-                handle,
-                bytes,
-                srgb,
-            } => {
-                let _ = backend.set_image_from_bytes(handle, &bytes, srgb);
-            }
-            RenderCommand::SetImageRgba8 {
-                handle,
-                w,
-                h,
-                rgba,
-                srgb,
-            } => {
-                let _ = backend.set_image_rgba8(handle, w, h, &rgba, srgb);
-            }
-            RenderCommand::SetImageNv12 {
-                handle,
-                w,
-                h,
-                y,
-                uv,
-                color_info,
-            } => {
-                let _ = backend.set_image_nv12(handle, w, h, &y, &uv, color_info);
-            }
-            RenderCommand::SetImagePlanes {
-                handle,
-                w,
-                h,
-                pixel_format,
-                planes,
-                color_info,
-            } => {
-                let refs: Vec<&[u8]> = planes.iter().map(|p| p.as_ref()).collect();
-                let _ = backend.set_image_planes(handle, w, h, pixel_format, &refs, color_info);
-            }
-            #[cfg(target_os = "linux")]
-            RenderCommand::SetImageDmaBuf {
-                handle,
-                w,
-                h,
-                fds,
-                fourcc: _,
-                modifier,
-                strides,
-                offsets,
-                color_info,
-            } => {
-                if let Err(e) = backend
-                    .set_image_dmabuf(handle, w, h, fds, modifier, strides, offsets, color_info)
-                {
-                    log::warn!("set_image_dmabuf failed: {e:?}");
-                }
-            }
-            RenderCommand::RemoveImage { handle } => {
-                backend.remove_image(handle);
-            }
-        }
     }
 }

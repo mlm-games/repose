@@ -16,6 +16,9 @@ use wgpu::Instance;
 
 mod slug;
 
+mod commands;
+pub use commands::apply_render_commands;
+
 #[derive(Clone)]
 struct UploadRing {
     buf: wgpu::Buffer,

@@ -406,7 +406,7 @@ impl App {
         let Some(backend) = backend_ref.as_mut() else {
             return;
         };
-        rc::process_render_commands(backend, cmds);
+        repose_render_wgpu::apply_render_commands(backend, cmds);
     }
     fn dispatch_dropped_files(&mut self, window: &Window, names: Vec<String>, pos_px: (f32, f32)) {
         let Some(f) = &self.rt.frame_cache else {
@@ -995,12 +995,7 @@ impl ApplicationHandler<()> for App {
                     self.rt.ime_preedit = false;
                 }
 
-                let frame = Frame {
-                    scene: output.scene,
-                    hit_regions: output.hit_regions,
-                    semantics_nodes: output.semantics_nodes,
-                    focus_chain: output.focus_chain,
-                };
+                let frame = output.into_frame();
 
                 if let Some(backend) = self.backend.borrow_mut().as_mut() {
                     let mut scene = frame.scene.clone();

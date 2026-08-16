@@ -520,7 +520,7 @@ pub fn run_desktop_app_with_config(
             let Some(backend) = self.backend.as_mut() else {
                 return;
             };
-            rc::process_render_commands(backend, self.render.drain());
+            repose_render_wgpu::apply_render_commands(backend, self.render.drain());
         }
 
         fn reset_pointer_state(&mut self) {
@@ -1101,12 +1101,7 @@ pub fn run_desktop_app_with_config(
                         self.rt.ime_preedit = false;
                     }
 
-                    let frame = Frame {
-                        scene: output.scene,
-                        hit_regions: output.hit_regions,
-                        semantics_nodes: output.semantics_nodes,
-                        focus_chain: output.focus_chain,
-                    };
+                    let frame = output.into_frame();
 
                     let build_layout_ms = (Instant::now() - t0).as_secs_f32() * 1000.0;
 
