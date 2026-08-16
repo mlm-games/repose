@@ -137,7 +137,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         .clone()
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    Box(Modifier::new()
+    let mut m = Modifier::new()
         .width(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .height(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .padding(0.0)
@@ -146,16 +146,24 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         .state_colors(config.state_colors)
         .interaction_source(&cb_source)
         .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(theme().on_surface),
-            bounded: true,
+            color: Some(if checked {
+                config.checked_color
+            } else {
+                theme().on_surface
+            }),
+            bounded: false, // circular 40dp target → unbounded looks correct
+            radius: Some(20.0),
             ..Default::default()
         }))
-        .clickable()
         .align_items(AlignItems::CENTER)
-        .justify_content(JustifyContent::CENTER)
-        .on_click(cb)
-        .then(config.modifier))
-    .child(
+        .justify_content(JustifyContent::CENTER);
+
+    if is_enabled {
+        m = m.clickable().on_click(cb);
+    } else {
+        m = m.enabled(false);
+    }
+    Box(m.then(config.modifier)).child(
         Box(Modifier::new()
             .size(sz, sz)
             .background(fill)
@@ -263,7 +271,7 @@ pub fn TriStateCheckbox(
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
-    Box(Modifier::new()
+    let mut m = Modifier::new()
         .width(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .height(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .padding(0.0)
@@ -272,24 +280,30 @@ pub fn TriStateCheckbox(
         .state_colors(config.state_colors)
         .interaction_source(&tc_source)
         .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(theme().on_surface),
+            color: Some(if has_fill {
+                config.checked_color
+            } else {
+                theme().on_surface
+            }),
             bounded: false,
+            radius: Some(20.0),
             ..Default::default()
         }))
-        .clickable()
         .align_items(AlignItems::CENTER)
-        .justify_content(JustifyContent::CENTER)
-        .on_click(move || {
-            if is_enabled {
-                on_change(match state {
-                    TriState::Checked => TriState::Unchecked,
-                    TriState::Indeterminate => TriState::Checked,
-                    TriState::Unchecked => TriState::Checked,
-                })
-            }
-        })
-        .then(config.modifier))
-    .child(
+        .justify_content(JustifyContent::CENTER);
+
+    if is_enabled {
+        m = m.clickable().on_click(move || {
+            on_change(match state {
+                TriState::Checked => TriState::Unchecked,
+                TriState::Indeterminate => TriState::Checked,
+                TriState::Unchecked => TriState::Checked,
+            })
+        });
+    } else {
+        m = m.enabled(false);
+    }
+    Box(m.then(config.modifier)).child(
         Box(Modifier::new()
             .size(sz, sz)
             .background(fill)
@@ -402,7 +416,7 @@ pub fn RadioButton(
         .clone()
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    Box(Modifier::new()
+    let mut m = Modifier::new()
         .width(RadioButtonDefaults::TOUCH_TARGET_SIZE)
         .height(RadioButtonDefaults::TOUCH_TARGET_SIZE)
         .padding(0.0)
@@ -411,16 +425,24 @@ pub fn RadioButton(
         .state_colors(config.state_colors)
         .interaction_source(&rb_source)
         .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(theme().on_surface),
-            bounded: true,
+            color: Some(if selected {
+                config.selected_color
+            } else {
+                theme().on_surface
+            }),
+            bounded: false,
+            radius: Some(20.0),
             ..Default::default()
         }))
-        .clickable()
         .align_items(AlignItems::CENTER)
-        .justify_content(JustifyContent::CENTER)
-        .on_click(cb)
-        .then(config.modifier))
-    .child(
+        .justify_content(JustifyContent::CENTER);
+
+    if config.enabled {
+        m = m.clickable().on_click(cb);
+    } else {
+        m = m.enabled(false);
+    }
+    Box(m.then(config.modifier)).child(
         Box(Modifier::new()
             .size(d, d)
             .border(RadioButtonDefaults::STROKE_WIDTH, ring_col, d * 0.5)
@@ -607,52 +629,82 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         .clone()
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    Box(Modifier::new()
+
+    let mut track = Modifier::new()
         .size(track_w, track_h)
         .padding(0.0)
         .clip_rounded(track_h * 0.5)
         .background(track_bg)
         .border(track_border, border_color, track_h * 0.5)
-        .interaction_source(&sw_source)
-        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(theme().primary),
-            bounded: true,
-            ..Default::default()
-        }))
-        .clickable()
-        .on_pointer_enter({
-            let h = hovered.clone();
-            move |_| h.set(true)
-        })
-        .on_pointer_leave({
-            let h = hovered.clone();
-            let p = pressed.clone();
-            move |_| {
-                h.set(false);
-                p.set(false);
-            }
-        })
-        .on_pointer_down({
-            let p = pressed.clone();
-            move |_| p.set(true)
-        })
-        .on_click({
-            let cb = on_change;
-            move || cb(!checked)
-        })
-        .on_pointer_up({
-            let p = pressed.clone();
-            move |_| p.set(false)
-        })
-        .then(config.modifier))
-    .child((
+        .interaction_source(&sw_source);
+
+    if is_enabled {
+        track = track
+            .clickable()
+            .on_pointer_enter({
+                let h = hovered.clone();
+                move |_| h.set(true)
+            })
+            .on_pointer_leave({
+                let h = hovered.clone();
+                let p = pressed.clone();
+                move |_| {
+                    h.set(false);
+                    p.set(false);
+                }
+            })
+            .on_pointer_down({
+                let p = pressed.clone();
+                move |_| p.set(true)
+            })
+            .on_click({
+                let cb = on_change;
+                move || cb(!checked)
+            })
+            .on_pointer_up({
+                let p = pressed.clone();
+                move |_| p.set(false)
+            });
+    } else {
+        track = track.enabled(false);
+    }
+
+    Box(track.then(config.modifier)).child((
         Box(Modifier::new()
             .size(thumb_d, thumb_d)
             .background(thumb_bg)
             .clip_rounded(thumb_d * 0.5)
             .hit_passthrough()
+            .align_items(AlignItems::CENTER)
+            .justify_content(JustifyContent::CENTER)
+            .interaction_source(&sw_source)
+            .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+                color: Some(th.on_surface),
+                bounded: false,
+                radius: Some(20.0),
+                ..Default::default()
+            }))
             .absolute()
-            .offset(Some(thumb_left), Some(thumb_top), None, None)),
+            .offset(Some(thumb_left), Some(thumb_top), None, None))
+        .child(
+            config
+                .thumb_content
+                .map(|v| {
+                    let icon_col = if !is_enabled {
+                        if checked {
+                            config.disabled_checked_icon_color
+                        } else {
+                            config.disabled_unchecked_icon_color
+                        }
+                    } else if checked {
+                        config.checked_icon_color
+                    } else {
+                        config.unchecked_icon_color
+                    };
+                    with_content_color(icon_col, move || v)
+                })
+                .unwrap_or(Box(Modifier::new())),
+        ),
         Box(Modifier::new()
             .size(40.0, 40.0)
             .clip_rounded(20.0)
