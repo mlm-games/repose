@@ -3,11 +3,7 @@ use crate::common_web as rc_web;
 use crate::render::RenderContext;
 use crate::*;
 
-use repose_ui::TextFieldState;
-
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -664,7 +660,7 @@ pub fn run_android_app_with_options(
                         return; // surface gone; never touch the GPU
                     }
 
-                    rc::tick_snackbar(self.last_redraw);
+                    self.rt.tick_overlays(self.last_redraw);
 
                     // Advance animations before composition (Compose pattern).
                     // `tick()` already calls `request_frame()` if any are running.
@@ -705,8 +701,8 @@ pub fn run_android_app_with_options(
                         focus_chain: output.focus_chain,
                     };
 
-                    repose_core::dnd::set_dnd_frame(Some(frame.clone()));
-                    repose_core::dnd::set_dnd_scale(scale);
+                    let scale = self.scale();
+                    self.rt.after_compose(&frame, scale);
 
                     let mut scene = frame.scene.clone();
                     self.overlay_drag_indicator(&mut scene);
@@ -715,20 +711,6 @@ pub fn run_android_app_with_options(
                         return;
                     };
                     backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
-
-                    if let Some(fid) = self.rt.sched.focused {
-                        if let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid)
-                            && let Some(key) = hit.tf_state_key
-                            && !self.rt.textfield_states.contains_key(&key)
-                        {
-                            self.rt
-                                .textfield_states
-                                .entry(key)
-                                .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())))
-                                .borrow_mut()
-                                .reset_caret_blink();
-                        }
-                    }
 
                     self.rt.cache_frame(frame);
                     self.last_redraw = web_time::Instant::now();

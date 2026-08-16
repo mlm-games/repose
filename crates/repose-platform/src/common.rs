@@ -1,15 +1,5 @@
 use crate::*;
 
-#[cfg(any(target_arch = "wasm32", target_os = "android"))]
-pub(crate) fn tick_snackbar(last_redraw: web_time::Instant) {
-    let now = web_time::Instant::now();
-    let elapsed = now.saturating_duration_since(last_redraw);
-    let ms = elapsed.as_millis().min(u32::MAX as u128) as u32;
-    if ms > 0 {
-        repose_ui::overlay::SnackbarController::tick_for_frame(ms);
-    }
-}
-
 pub(crate) fn request_redraw(window: &Option<std::sync::Arc<winit::window::Window>>) {
     if let Some(w) = window {
         w.request_redraw();

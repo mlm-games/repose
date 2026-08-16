@@ -5,7 +5,7 @@ use crate::render::RenderContext;
 use crate::*;
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 use wasm_bindgen::JsCast;
@@ -967,7 +967,7 @@ impl ApplicationHandler<()> for App {
             }
 
             WindowEvent::RedrawRequested => {
-                rc::tick_snackbar(self.last_redraw);
+                self.rt.tick_overlays(self.last_redraw);
 
                 // Advance animations before composition (Compose pattern)
                 repose_core::animation_driver::tick();
@@ -984,41 +984,23 @@ impl ApplicationHandler<()> for App {
 
                 let scale = self.scale(&window);
 
-                // Compose frame through runtime
-                let root_fn = &mut self.root;
-                let rc = self.render.clone();
-                let frame = self.rt.compose(root_fn, &rc);
+                let output = self.rt.frame(&mut self.root, &self.render);
 
                 // Drain upload commands queued during compose before presenting
                 self.drain_render_commands();
-
-                let output = repose_app::FrameOutput {
-                    scene: frame.scene.clone(),
-                    hit_regions: frame.hit_regions.clone(),
-                    semantics_nodes: frame.semantics_nodes.clone(),
-                    focus_chain: frame.focus_chain.clone(),
-                    platform: repose_app::PlatformOutput {
-                        cursor: self.rt.take_cursor_suggestion(),
-                        ime_allowed: false,
-                        ime_cursor_area: None,
-                        clipboard_text: None,
-                        ime_purpose: Default::default(),
-                        ime_auto_correct: true,
-                        ime_capitalization: Default::default(),
-                        keyboard_type: Default::default(),
-                        window_theme_dark: None,
-                    },
-                    wants_pointer: !frame.hit_regions.is_empty()
-                        || self.rt.hover_id.is_some()
-                        || self.rt.capture_id.is_some(),
-                    wants_keyboard: !self.rt.textfield_states.is_empty() || self.rt.ime_preedit,
-                };
 
                 if !output.wants_keyboard && self.rt.sched.focused.is_some() && self.rt.ime_preedit
                 {
                     rc_web::set_ime_for_textfield(&window, false);
                     self.rt.ime_preedit = false;
                 }
+
+                let frame = Frame {
+                    scene: output.scene,
+                    hit_regions: output.hit_regions,
+                    semantics_nodes: output.semantics_nodes,
+                    focus_chain: output.focus_chain,
+                };
 
                 if let Some(backend) = self.backend.borrow_mut().as_mut() {
                     let mut scene = frame.scene.clone();
@@ -1033,9 +1015,8 @@ impl ApplicationHandler<()> for App {
                     backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
                 }
 
-                self.rt.cache_frame(frame.clone());
-                repose_core::dnd::set_dnd_frame(Some(frame));
-                repose_core::dnd::set_dnd_scale(scale);
+                self.rt.after_compose(&frame, scale);
+                self.rt.cache_frame(frame);
                 self.last_redraw = web_time::Instant::now();
 
                 if self.options.continuous_redraw {

@@ -5,8 +5,7 @@ use accesskit_winit::Adapter;
 use repose_core::locals::dp_to_px;
 use repose_core::*;
 use repose_ui::textfield::{TF_FONT_DP, TF_PADDING_X_DP, TextMeasureConfig, measure_text};
-use std::cell::{Cell, RefCell};
-use std::rc::Rc;
+use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use web_time::Instant;
@@ -892,13 +891,13 @@ pub fn run_desktop_app_with_config(
                         }
 
                         ElementState::Released => {
-                            self.rt.handle_pointer_release(pos, mapped);
+                            let result = self.rt.handle_pointer_release(pos, mapped);
 
-                            // A11y: announce activation when a click fires on release
-                            if let (Some(f), Some(cid)) = (&self.rt.frame_cache, self.rt.capture_id)
-                                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
-                                && hit.rect.contains(pos)
-                                && hit.on_click.is_some()
+                            // A11y: announce activation when a click fires on release.
+                            // The runtime reports the clicked id before clearing its
+                            // capture state, so this cannot race with `capture_id = None`.
+                            if let Some(cid) = result.clicked_id
+                                && let Some(f) = &self.rt.frame_cache
                                 && let Some(node) = f.semantics_nodes.iter().find(|n| n.id == cid)
                             {
                                 let label = node.label.as_deref().unwrap_or("");
@@ -1168,27 +1167,13 @@ pub fn run_desktop_app_with_config(
                     }
 
                     // Initialize TextFieldState for any focused TextField that
-                    // doesn't have one yet (e.g. after FocusRequester::request_focus)
-                    if let Some(fid) = self.rt.sched.focused
-                        && let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid)
-                        && let Some(key) = hit.tf_state_key
-                        && !self.rt.textfield_states.contains_key(&key)
-                    {
-                        self.rt
-                            .textfield_states
-                            .entry(key)
-                            .or_insert_with(|| {
-                                Rc::new(RefCell::new(repose_ui::TextFieldState::new()))
-                            })
-                            .borrow_mut()
-                            .reset_caret_blink();
-                    }
+                    // doesn't have one yet (e.g. after FocusRequester::request_focus),
+                    // reconcile hover, and publish the DnD frame/scale.
+                    self.rt.after_compose(&frame, scale);
 
                     // NOTE: hover was already reconciled inside `compose()`.
                     // `cache_frame` rebuilds the retained hover-leave map.
-                    repose_core::dnd::set_dnd_frame(Some(frame.clone()));
                     self.rt.cache_frame(frame);
-                    repose_core::dnd::set_dnd_scale(scale);
 
                     self.dispatch_file_drop_now();
 

@@ -70,6 +70,7 @@ pub struct PointerMoveResult {
 }
 
 /// Result of a pointer-button event processed by the runtime.
+#[derive(Debug)]
 pub struct PointerButtonResult {
     /// Id of the element that received focus (if any).
     pub focused: Option<u64>,
@@ -79,6 +80,9 @@ pub struct PointerButtonResult {
     pub consumed: bool,
     /// Whether an accessibility announcement was triggered.
     pub needs_a11y_announce: bool,
+    /// Set on release when a click fired, so hosts can announce activation
+    /// without re-reading runtime state that has already been cleared.
+    pub clicked_id: Option<u64>,
 }
 
 /// Embeddable Repose runtime.
@@ -318,6 +322,27 @@ impl ReposeRuntime {
         self.frame_cache = Some(frame);
     }
 
+    /// Post-compose host-agnostic bookkeeping.
+    /// this lazy-initializes text-field state for focus-requester paths, reconciles
+    /// hover against the new hit list, and publishes the frame to the DnD
+    /// registry. Replaces platform-local copies of this logic.
+    pub fn after_compose(&mut self, frame: &Frame, scale: f32) {
+        if let Some(fid) = self.sched.focused
+            && let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid)
+            && let Some(key) = hit.tf_state_key
+            && !self.textfield_states.contains_key(&key)
+        {
+            self.textfield_states
+                .entry(key)
+                .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())))
+                .borrow_mut()
+                .reset_caret_blink();
+        }
+        self.reconcile_hover_from_mouse_pos(frame);
+        repose_core::dnd::set_dnd_frame(Some(frame.clone()));
+        repose_core::dnd::set_dnd_scale(scale);
+    }
+
     fn dispatch_pointer_to_path(&self, kind: PointerEventKind, pos: Vec2, path: &[u64]) {
         let Some(f) = &self.frame_cache else {
             return;
@@ -468,6 +493,7 @@ impl ReposeRuntime {
                 capture_id: None,
                 consumed: false,
                 needs_a11y_announce: false,
+                clicked_id: None,
             };
         };
 
@@ -476,6 +502,7 @@ impl ReposeRuntime {
             capture_id: None,
             consumed: false,
             needs_a11y_announce: false,
+            clicked_id: None,
         };
 
         if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos)) {
@@ -553,8 +580,19 @@ impl ReposeRuntime {
     }
 
     /// Process a pointer button release.
-    pub fn handle_pointer_release(&mut self, pos: Vec2, button: PointerButton) {
+    pub fn handle_pointer_release(
+        &mut self,
+        pos: Vec2,
+        button: PointerButton,
+    ) -> PointerButtonResult {
         self.mouse_pos_px = (pos.x, pos.y);
+        let mut result = PointerButtonResult {
+            focused: self.sched.focused,
+            capture_id: self.capture_id,
+            consumed: false,
+            needs_a11y_announce: false,
+            clicked_id: None,
+        };
 
         if dnd::handle_drag_action(&DragAction::Release {
             position: pos,
@@ -564,7 +602,8 @@ impl ReposeRuntime {
             self.hit_path = None;
             self.pressed_ids.clear();
             request_frame();
-            return;
+            result.consumed = true;
+            return result;
         }
 
         self.pressed_ids.clear();
@@ -572,11 +611,12 @@ impl ReposeRuntime {
         let Some(f) = &self.frame_cache else {
             self.capture_id = None;
             self.hit_path = None;
-            return;
+            return result;
         };
 
         if let Some(path) = &self.hit_path {
             self.dispatch_pointer_to_path(PointerEventKind::Up(button), pos, path);
+            result.consumed = true;
         }
 
         // Click detection
@@ -586,6 +626,9 @@ impl ReposeRuntime {
             && let Some(cb) = &hit.on_click
         {
             cb();
+            result.clicked_id = Some(cid);
+            result.needs_a11y_announce = true;
+            result.consumed = true;
         }
 
         // TextField drag end
@@ -601,6 +644,7 @@ impl ReposeRuntime {
         self.capture_id = None;
         self.hit_path = None;
         request_frame();
+        result
     }
 
     /// Cancel pointer state (focus lost, cursor left window, etc.).
@@ -1359,7 +1403,12 @@ impl ReposeRuntime {
     /// single-line text fields. Skips while an IME preedit is active so the
     /// composition isn't corrupted by duplicate host input.
     pub fn insert_text_into_focused(&mut self, text: &str) -> bool {
-        if text.is_empty() || self.ime_preedit {
+        if text.is_empty()
+            || self.ime_preedit
+            || self.modifiers.ctrl
+            || self.modifiers.alt
+            || self.modifiers.meta
+        {
             return false;
         }
         let Some(fid) = self.sched.focused else {
@@ -1378,7 +1427,12 @@ impl ReposeRuntime {
         let multiline = is_multiline_id(&f, fid);
         let filtered: String = text
             .chars()
-            .filter(|c| !c.is_control() && *c != '\r' && (multiline || *c != '\n'))
+            .filter(|c| {
+                // Keep newlines for multiline fields; otherwise drop control
+                // chars and CR (\n is a control char, so it needs an explicit
+                // exception or it never survives for multiline fields).
+                (*c == '\n' && multiline) || (!c.is_control() && *c != '\r')
+            })
             .collect();
         if filtered.is_empty() {
             return false;
