@@ -184,8 +184,6 @@ pub struct WgpuSceneRenderer {
     msaa_tex: Option<wgpu::Texture>,
     msaa_view: Option<wgpu::TextureView>,
 
-    #[allow(dead_code)]
-    globals_layout: wgpu::BindGroupLayout,
     globals_buf: wgpu::Buffer,
     globals_bind: wgpu::BindGroup,
 
@@ -247,13 +245,10 @@ impl Drop for WgpuSceneRenderer {
 }
 
 #[derive(Clone)]
-#[allow(dead_code)]
 struct LayerTarget {
-    texture: wgpu::Texture,
     view: wgpu::TextureView,
     bind: wgpu::BindGroup,
     bind_linear: wgpu::BindGroup,
-    depth_stencil_tex: wgpu::Texture,
     depth_stencil_view: wgpu::TextureView,
     width: u32,
     height: u32,
@@ -1046,7 +1041,7 @@ struct Pass {
     cmds: Vec<Cmd>,
 }
 
-#[allow(non_snake_case, dead_code)]
+#[allow(non_snake_case)]
 enum Cmd {
     ClipPush {
         off: u64,
@@ -1060,7 +1055,6 @@ enum Cmd {
         cnt: u32,
         scissor: (u32, u32, u32, u32),
         difference: bool,
-        rounded: bool,
     },
     Rect {
         off: u64,
@@ -1104,8 +1098,6 @@ enum Cmd {
         cnt: u32,
         handle: u64,
     },
-    PushTransform(Transform),
-    PopTransform,
     /// Composite a previously-rendered graphics layer back into the
     /// current target as a textured quad. The quad's vertex buffer
     /// lives in `self.glyph_color.ring` (a `GlyphInstance`).
@@ -1113,7 +1105,6 @@ enum Cmd {
         off: u64,
         cnt: u32,
         layer_id: u32,
-        alpha: f32,
     },
     /// Composite a blurred drop shadow of a previously-rendered graphics
     /// layer. The quad's vertex buffer lives in `self.blur_ring` (a
@@ -1166,11 +1157,9 @@ enum Cmd {
     },
 }
 
-#[allow(dead_code)]
 enum ImageTex {
     Rgba {
         tex: wgpu::Texture,
-        view: wgpu::TextureView,
         bind: wgpu::BindGroup,
         w: u32,
         h: u32,
@@ -1180,9 +1169,7 @@ enum ImageTex {
     },
     Nv12 {
         tex_y: wgpu::Texture,
-        view_y: wgpu::TextureView,
         tex_uv: wgpu::Texture,
-        view_uv: wgpu::TextureView,
         bind: wgpu::BindGroup,
         yuv_buf: wgpu::Buffer,
         w: u32,
@@ -1224,7 +1211,6 @@ struct AtlasRGBA {
 }
 
 #[derive(Clone, Copy)]
-#[allow(dead_code)]
 struct GlyphInfo {
     u0: f32,
     v0: f32,
@@ -1232,9 +1218,6 @@ struct GlyphInfo {
     v1: f32,
     w: f32,
     h: f32,
-    bearing_x: f32,
-    bearing_y: f32,
-    advance: f32,
 }
 
 #[repr(C)]
@@ -1968,7 +1951,6 @@ impl WgpuSceneRenderer {
             msaa_view: None,
             globals_bind,
             globals_buf,
-            globals_layout,
 
             atlas_mask,
             atlas_color,
@@ -2274,7 +2256,7 @@ impl WgpuSceneRenderer {
             // Remove old to track budget correctly
             self.remove_image(handle);
 
-            let (tex, view, bind) = self.create_rgba_tex(w, h, format);
+            let (tex, bind) = self.create_rgba_tex(w, h, format);
             let bytes = (w as u64) * (h as u64) * 4;
             self.image_bytes_total += bytes;
 
@@ -2282,7 +2264,6 @@ impl WgpuSceneRenderer {
                 handle,
                 ImageTex::Rgba {
                     tex,
-                    view,
                     bind,
                     w,
                     h,
@@ -2341,7 +2322,7 @@ impl WgpuSceneRenderer {
         w: u32,
         h: u32,
         format: wgpu::TextureFormat,
-    ) -> (wgpu::Texture, wgpu::TextureView, wgpu::BindGroup) {
+    ) -> (wgpu::Texture, wgpu::BindGroup) {
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("user image rgba"),
             size: wgpu::Extent3d {
@@ -2373,7 +2354,7 @@ impl WgpuSceneRenderer {
             ],
         });
 
-        (tex, view, bind)
+        (tex, bind)
     }
 
     pub fn set_image_nv12(
@@ -2494,9 +2475,7 @@ impl WgpuSceneRenderer {
                 handle,
                 ImageTex::Nv12 {
                     tex_y,
-                    view_y,
                     tex_uv,
-                    view_uv,
                     bind,
                     yuv_buf,
                     w,
@@ -2718,9 +2697,7 @@ impl WgpuSceneRenderer {
                 handle,
                 ImageTex::Nv12 {
                     tex_y,
-                    view_y,
                     tex_uv,
-                    view_uv,
                     bind,
                     yuv_buf,
                     w,
@@ -2984,18 +2961,16 @@ impl WgpuSceneRenderer {
         self.images.insert(
             handle,
             ImageTex::Nv12 {
-                tex_y,
-                view_y,
-                tex_uv,
-                view_uv,
-                bind,
-                yuv_buf,
-                w,
-                h,
-                color_info,
-                last_used_frame: self.frame_index,
-                bytes,
-            },
+                    tex_y,
+                    tex_uv,
+                    bind,
+                    yuv_buf,
+                    w,
+                    h,
+                    color_info,
+                    last_used_frame: self.frame_index,
+                    bytes,
+                },
         );
 
         self.evict_budget_excess();
@@ -3032,7 +3007,7 @@ impl WgpuSceneRenderer {
         let Some(r) = self.retained.get(&handle).cloned() else {
             return false;
         };
-        let (tex, view, bind) = self.create_rgba_tex(r.w, r.h, r.format);
+        let (tex, bind) = self.create_rgba_tex(r.w, r.h, r.format);
 
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
@@ -3060,7 +3035,6 @@ impl WgpuSceneRenderer {
             handle,
             ImageTex::Rgba {
                 tex,
-                view,
                 bind,
                 w: r.w,
                 h: r.h,
@@ -3466,11 +3440,9 @@ impl WgpuSceneRenderer {
         self.layer_pool.insert(
             layer_id,
             LayerTarget {
-                texture: tex,
                 view,
                 bind,
                 bind_linear,
-                depth_stencil_tex,
                 depth_stencil_view,
                 width,
                 height,
@@ -3569,9 +3541,6 @@ impl WgpuSceneRenderer {
             v1: (y + h) as f32 / self.atlas_mask.size as f32,
             w: w as f32,
             h: h as f32,
-            bearing_x: 0.0,
-            bearing_y: 0.0,
-            advance: 0.0,
         };
         self.atlas_mask.map.insert(keyp, info);
         Some(info)
@@ -3627,9 +3596,6 @@ impl WgpuSceneRenderer {
             v1: (y + h) as f32 / self.atlas_color.size as f32,
             w: w as f32,
             h: h as f32,
-            bearing_x: 0.0,
-            bearing_y: 0.0,
-            advance: 0.0,
         };
         self.atlas_color.map.insert(keyp, info);
         Some(info)
@@ -4251,7 +4217,7 @@ impl WgpuSceneRenderer {
         // NOTE: Records the clip instance range + flags of each active rounded-rect clip
         // so PopClip can re-stamp the stencil with a decrement pass (mirroring
         // VectorClipPop). Keys: (off, cnt, difference, rounded).
-        let mut clip_cmd_stack: Vec<(u64, u32, bool, bool)> = Vec::with_capacity(8);
+        let mut clip_cmd_stack: Vec<(u64, u32, bool)> = Vec::with_capacity(8);
         let mut root_clip_rect = repose_core::Rect {
             x: 0.0,
             y: 0.0,
@@ -4938,7 +4904,7 @@ impl WgpuSceneRenderer {
                         difference: is_diff,
                         rounded,
                     });
-                    clip_cmd_stack.push((off, 1, is_diff, rounded));
+                    clip_cmd_stack.push((off, 1, is_diff));
                 }
                 SceneNode::PopClip => {
                     flush_batch!();
@@ -4955,14 +4921,13 @@ impl WgpuSceneRenderer {
                         current_target_size.0 as u32,
                         current_target_size.1 as u32,
                     );
-                    let (off, cnt, difference, rounded) =
-                        clip_cmd_stack.pop().unwrap_or((0, 0, false, false));
+                    let (off, cnt, difference) =
+                        clip_cmd_stack.pop().unwrap_or((0, 0, false));
                     current_pass.cmds.push(Cmd::ClipPop {
                         off,
                         cnt,
                         scissor,
                         difference,
-                        rounded,
                     });
                 }
                 SceneNode::Shadow {
@@ -5138,7 +5103,6 @@ impl WgpuSceneRenderer {
                                     off,
                                     cnt,
                                     layer_id: *layer_id,
-                                    alpha: layer_alpha,
                                 });
                             }
                         }
@@ -5500,7 +5464,6 @@ impl WgpuSceneRenderer {
                         cnt: n,
                         scissor,
                         difference,
-                        rounded: _,
                     } => {
                         let scissor =
                             clamp_scissor(scissor.0, scissor.1, scissor.2, scissor.3, tw, th);
@@ -5610,13 +5573,10 @@ impl WgpuSceneRenderer {
                         draw_simple!(&pipes.arcs, self.arcs.ring, ArcInstance, off, n);
                     }
 
-                    Cmd::PushTransform(_) => {}
-                    Cmd::PopTransform => {}
                     Cmd::CompositeLayer {
                         off,
                         cnt: n,
                         layer_id,
-                        alpha: _,
                     } => {
                         if let Some(lt) = self.layer_pool.get(&layer_id).cloned() {
                             draw_with_bind!(

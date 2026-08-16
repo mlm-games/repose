@@ -203,17 +203,13 @@ impl LayoutEngine {
         match ctx {
             Some(NodeContext::Text {
                 text,
-                color: _,
                 font_dp,
                 soft_wrap,
                 max_lines,
                 overflow,
                 font_family,
-                annotations: _,
-                text_align: _,
                 font_weight,
                 font_style,
-                text_decoration: _,
                 letter_spacing,
                 line_height,
                 font_variation_settings,

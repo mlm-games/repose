@@ -10,8 +10,6 @@ use rustc_hash::FxHashMap;
 use taffy::TaffyTree;
 
 pub(crate) struct ScopeLayoutTree {
-    #[allow(dead_code)]
-    pub(crate) key: String,
     pub(crate) taffy: TaffyTree<NodeContext>,
     pub(crate) taffy_map: FxHashMap<NodeId, taffy::NodeId>,
     pub(crate) reverse_map: FxHashMap<taffy::NodeId, NodeId>,
@@ -24,9 +22,8 @@ pub(crate) struct ScopeLayoutTree {
 }
 
 impl ScopeLayoutTree {
-    pub(crate) fn new(key: String) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            key,
             taffy: TaffyTree::new(),
             taffy_map: FxHashMap::default(),
             reverse_map: FxHashMap::default(),
@@ -163,21 +160,16 @@ pub enum IntrinsicSizeMode {
 
 /// Context stored with each Taffy node.
 #[derive(Clone)]
-#[allow(dead_code)]
 pub(crate) enum NodeContext {
     Text {
         text: String,
-        color: Color,
         font_dp: f32,
         soft_wrap: bool,
         max_lines: Option<usize>,
         overflow: TextOverflow,
         font_family: Option<&'static str>,
-        annotations: Option<Arc<[TextSpan]>>,
-        text_align: TextAlign,
         font_weight: FontWeight,
         font_style: FontStyle,
-        text_decoration: TextDecoration,
         letter_spacing: f32,
         line_height: f32,
         font_variation_settings: Option<Arc<str>>,
@@ -190,13 +182,12 @@ pub(crate) enum NodeContext {
 }
 
 #[derive(Clone)]
-#[allow(dead_code)]
 pub(crate) struct TextLayout {
     pub(crate) lines: Vec<String>,
     /// Byte ranges into the original text for each line (used for annotation splitting).
     pub(crate) line_ranges: Vec<(usize, usize)>,
     pub(crate) size_px: f32,
     pub(crate) line_h_px: f32,
-    /// Pre-measured width per line.
+    /// Pre-measured width per line, in the same order as `lines`.
     pub(crate) line_widths: Vec<f32>,
 }

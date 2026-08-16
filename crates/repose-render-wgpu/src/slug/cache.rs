@@ -100,11 +100,6 @@ impl GlyphSlugCache {
         self.frame += 1;
     }
 
-    #[allow(dead_code)]
-    pub fn contains(&self, key: &CacheKey) -> bool {
-        self.map.contains_key(key)
-    }
-
     /// Get or create tessellated geometry for a glyph.
     /// `commands` are raw swash outline commands at the given `font_size`.
     fn tessellate_fill<'a>(

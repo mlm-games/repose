@@ -881,12 +881,13 @@ impl LayoutEngine {
                             .and_then(|st| st.text_cache.get(&node_id))
                     })
                 });
-                let (size_px, line_h_px, lines, line_ranges) = if let Some(tl) = tl {
+                let (size_px, line_h_px, lines, line_ranges, line_widths) = if let Some(tl) = tl {
                     (
                         tl.size_px,
                         tl.line_h_px,
                         tl.lines.clone(),
                         Some(tl.line_ranges.clone()),
+                        Some(tl.line_widths.clone()),
                     )
                 } else {
                     let px = font_px(*font_size);
@@ -895,7 +896,7 @@ impl LayoutEngine {
                     } else {
                         px
                     };
-                    (px, lh, vec![text.clone()], None)
+                    (px, lh, vec![text.clone()], None, None)
                 };
                 let total_h = lines.len() as f32 * line_h_px;
                 let need_v_clip =
@@ -926,7 +927,6 @@ impl LayoutEngine {
                             .and_then(|r| r.get(i).map(|&(_, e)| e))
                             .unwrap_or(ln.len());
 
-                        #[allow(dead_code)]
                         struct SegInfo {
                             start: usize,
                             end: usize,
@@ -944,9 +944,6 @@ impl LayoutEngine {
                             text_direction: TextDirection,
                             font_synthesis: FontSynthesis,
                             baseline_shift: BaselineShift,
-                            hyphens: Hyphens,
-                            line_break: LineBreak,
-                            text_indent: Option<TextIndent>,
                             draw_style: DrawStyle,
                             w: f32,
                             px: f32,
@@ -992,9 +989,6 @@ impl LayoutEngine {
                                     text_direction: text_direction(),
                                     font_synthesis: FontSynthesis::Unspecified,
                                     baseline_shift: BaselineShift::Unspecified,
-                                    hyphens: Hyphens::Unspecified,
-                                    line_break: LineBreak::Unspecified,
-                                    text_indent: None,
                                     draw_style: DrawStyle::Fill,
                                     w: 0.0,
                                     px: 0.0,
@@ -1023,9 +1017,6 @@ impl LayoutEngine {
                                 .style
                                 .baseline_shift
                                 .unwrap_or(BaselineShift::Unspecified);
-                            let span_h = span.style.hyphens.unwrap_or(Hyphens::Unspecified);
-                            let span_lb = span.style.line_break.unwrap_or(LineBreak::Unspecified);
-                            let span_ti = span.style.text_indent;
                             let span_ds = span.style.draw_style.clone().unwrap_or(DrawStyle::Fill);
                             let span_url = span.url.clone();
                             let span_fvs =
@@ -1047,9 +1038,6 @@ impl LayoutEngine {
                                 text_direction: span_td,
                                 font_synthesis: span_fs,
                                 baseline_shift: span_bs,
-                                hyphens: span_h,
-                                line_break: span_lb,
-                                text_indent: span_ti,
                                 draw_style: span_ds,
                                 w: 0.0,
                                 px: 0.0,
@@ -1076,9 +1064,6 @@ impl LayoutEngine {
                                 text_direction: text_direction(),
                                 font_synthesis: FontSynthesis::Unspecified,
                                 baseline_shift: BaselineShift::Unspecified,
-                                hyphens: Hyphens::Unspecified,
-                                line_break: LineBreak::Unspecified,
-                                text_indent: None,
                                 draw_style: DrawStyle::Fill,
                                 w: 0.0,
                                 px: 0.0,
@@ -1202,21 +1187,26 @@ impl LayoutEngine {
                         0
                     };
                     for (i, ln) in lines.iter().enumerate() {
-                        let line_w = measure_text(
-                            ln,
-                            size_px,
-                            TextMeasureConfig {
-                                font_family: *font_family,
-                                font_weight: fw_val,
-                                font_style: fs_val,
-                                letter_spacing: *letter_spacing,
-                                ..Default::default()
-                            },
-                        )
-                        .positions
-                        .last()
-                        .copied()
-                        .unwrap_or(0.0);
+                        let line_w = line_widths
+                            .as_ref()
+                            .and_then(|w| w.get(i).copied())
+                            .unwrap_or_else(|| {
+                                measure_text(
+                                    ln,
+                                    size_px,
+                                    TextMeasureConfig {
+                                        font_family: *font_family,
+                                        font_weight: fw_val,
+                                        font_style: fs_val,
+                                        letter_spacing: *letter_spacing,
+                                        ..Default::default()
+                                    },
+                                )
+                                .positions
+                                .last()
+                                .copied()
+                                .unwrap_or(0.0)
+                            });
                         let align_x = |line_w: f32| -> f32 {
                             match text_align {
                                 TextAlign::End | TextAlign::Right => {

@@ -38,7 +38,7 @@ impl LayoutEngine {
         for key in &active_keys {
             self.scope_trees
                 .entry(key.clone())
-                .or_insert_with(|| ScopeLayoutTree::new(key.clone()));
+                .or_insert_with(ScopeLayoutTree::new);
         }
     }
 

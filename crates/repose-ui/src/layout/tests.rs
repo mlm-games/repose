@@ -4,10 +4,6 @@ use crate::{Box as RBox, Column, Text, ViewExt};
 use repose_core::*;
 use std::collections::HashMap;
 
-fn font_px(dp: f32) -> f32 {
-    dp // 1:1 for tests
-}
-
 #[test]
 fn test_render_z_index_paints_last() {
     // Create a Stack with two children:
