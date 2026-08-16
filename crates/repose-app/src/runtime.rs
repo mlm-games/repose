@@ -340,8 +340,29 @@ impl ReposeRuntime {
     /// hover against the new hit list, and publishes the frame to the DnD
     /// registry. Replaces platform-local copies of this logic.
     pub fn after_compose(&mut self, frame: &Frame, scale: f32) {
-        if let Some(fid) = self.sched.focused
-            && let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid)
+        self.ensure_focused_state_in_frame(frame);
+        self.reconcile_hover_from_mouse_pos(frame);
+        repose_core::dnd::set_dnd_frame(Some(frame.clone()));
+        repose_core::dnd::set_dnd_scale(scale);
+    }
+
+    /// Lazy-init the focused textfield's persistent state (FocusRequester
+    /// paths don't create it until first click). Resets the caret blink.
+    pub fn ensure_focused_textfield_state(&mut self) {
+        let Some(f) = self.frame_cache.clone() else {
+            return;
+        };
+        self.ensure_focused_state_in_frame(&f);
+    }
+
+    /// Shared helper: create a persistent `TextFieldState` for the focused
+    /// widget (if it is a textfield with a state key) and reset its caret
+    /// blink. No-op when the focused widget already has state.
+    fn ensure_focused_state_in_frame(&mut self, frame: &Frame) {
+        let Some(fid) = self.sched.focused else {
+            return;
+        };
+        if let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid)
             && let Some(key) = hit.tf_state_key
             && !self.textfield_states.contains_key(&key)
         {
@@ -351,9 +372,37 @@ impl ReposeRuntime {
                 .borrow_mut()
                 .reset_caret_blink();
         }
-        self.reconcile_hover_from_mouse_pos(frame);
-        repose_core::dnd::set_dnd_frame(Some(frame.clone()));
-        repose_core::dnd::set_dnd_scale(scale);
+    }
+
+    /// Cache a composed [`FrameOutput`] for hit-testing: rebuilds the retained
+    /// hover-leave map, reconciles hover, lazy-initializes focused textfield
+    /// state, and publishes the DnD frame/scale to the input registry.
+    pub fn cache_from_output(&mut self, out: &FrameOutput) {
+        let frame = Frame {
+            scene: out.scene.clone(),
+            hit_regions: out.hit_regions.clone(),
+            semantics_nodes: out.semantics_nodes.clone(),
+            focus_chain: out.focus_chain.clone(),
+        };
+        self.after_compose(&frame, self.scale);
+        self.cache_frame(frame);
+    }
+
+    /// One-shot host tick: advance animations, compose a frame, and publish
+    /// the result (hover reconciliation, focused textfield lazy-init, DnD
+    /// frame/scale) in a single call.
+    pub fn compose_frame_output<F>(
+        &mut self,
+        root: &mut F,
+        render_ctx: &RenderContext,
+    ) -> FrameOutput
+    where
+        F: FnMut(&mut Scheduler, &RenderContext) -> View,
+    {
+        self.tick_animations();
+        let out = self.frame(root, render_ctx);
+        self.cache_from_output(&out);
+        out
     }
 
     fn dispatch_pointer_to_path(&self, kind: PointerEventKind, pos: Vec2, path: &[u64]) {
@@ -1461,6 +1510,13 @@ impl ReposeRuntime {
         }
         request_frame();
         true
+    }
+
+    /// Insert plain text into the focused textfield (winit `key_event.text`,
+    /// Android soft-keyboard text, web paste). Alias for
+    /// [`Self::insert_text_into_focused`].
+    pub fn insert_text(&mut self, text: &str) -> bool {
+        self.insert_text_into_focused(text)
     }
 
     /// Insert text into a focused text field (used for paste). Uses an atomic
