@@ -716,13 +716,15 @@ impl LayoutEngine {
         };
 
         // Sync focus transitions into the InteractionSource (Compose FocusInteraction).
-        if let Some(ref src) = indication_source {
-            let msrc = src.to_mutable();
-            let was = src.collect_is_focused();
-            if is_focused && !was {
-                msrc.emit(Interaction::Focus);
-            } else if !is_focused && was {
-                msrc.emit(Interaction::Unfocus);
+        if owns_hit {
+            if let Some(ref src) = indication_source {
+                let msrc = src.to_mutable();
+                let was = src.collect_is_focused();
+                if is_focused && !was {
+                    msrc.emit(Interaction::Focus);
+                } else if !is_focused && was {
+                    msrc.emit(Interaction::Unfocus);
+                }
             }
         }
         if let (Some(factory), Some(interaction_source)) =

@@ -113,38 +113,16 @@ impl IndicationDrawNode for RippleDrawNode {
             .color
             .unwrap_or_else(|| repose_core::locals::content_color());
 
-        // M3 state layers (focus, hover) rendered as shape-matched overlays.
-        // Drawn before the press ripple so the ripple fades in on top.
+        // M3 state layers (focus, hover) rendered as circles.
         let is_pressed = self.interaction_source.collect_is_pressed();
         let is_hovered = self.interaction_source.collect_is_hovered();
         let is_focused = self.interaction_source.collect_is_focused();
-
-        if self.config.enable_focus && is_focused && !is_pressed {
-            scene.nodes.push(SceneNode::Rect {
-                rect,
-                brush: base_color.with_alpha_f32(FOCUS_ALPHA * alpha).into(),
-                radius,
-            });
-        }
-        if self.config.enable_hover && is_hovered && !is_pressed {
-            scene.nodes.push(SceneNode::Rect {
-                rect,
-                brush: base_color.with_alpha_f32(HOVER_ALPHA * alpha).into(),
-                radius,
-            });
-        }
-
-        if !self.config.enable_press {
-            return;
-        }
-
-        let base = self.anim_base();
         let bounded = self.config.bounded;
+
         let center_scene = Vec2 {
             x: rect.x + rect.w * 0.5,
             y: rect.y + rect.h * 0.5,
         };
-
         let target_radius = self.config.radius.unwrap_or_else(|| {
             let diag = (rect.w * rect.w + rect.h * rect.h).sqrt();
             if bounded {
@@ -153,6 +131,49 @@ impl IndicationDrawNode for RippleDrawNode {
                 diag * 0.5
             }
         });
+
+        if !is_pressed {
+            let layer_alpha = if self.config.enable_focus && is_focused {
+                Some(FOCUS_ALPHA)
+            } else if self.config.enable_hover && is_hovered {
+                Some(HOVER_ALPHA)
+            } else {
+                None
+            };
+
+            if let Some(layer_a) = layer_alpha {
+                let layer_a = layer_a * alpha;
+                if layer_a > 0.001 {
+                    let layer_rect = Rect {
+                        x: center_scene.x - target_radius,
+                        y: center_scene.y - target_radius,
+                        w: target_radius * 2.0,
+                        h: target_radius * 2.0,
+                    };
+                    let brush = base_color.with_alpha_f32(layer_a).into();
+                    if bounded {
+                        scene.nodes.push(SceneNode::PushClip {
+                            rect,
+                            radius,
+                            op: repose_core::ClipOp::Intersect,
+                        });
+                    }
+                    scene.nodes.push(SceneNode::Ellipse {
+                        rect: layer_rect,
+                        brush,
+                    });
+                    if bounded {
+                        scene.nodes.push(SceneNode::PopClip);
+                    }
+                }
+            }
+        }
+
+        if !self.config.enable_press {
+            return;
+        }
+
+        let base = self.anim_base();
         let start_radius = rect.w.max(rect.h) * 0.3;
 
         let current_pid = self.interaction_source.collect_last_press_id();

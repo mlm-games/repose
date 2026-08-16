@@ -141,7 +141,6 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         .width(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .height(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .padding(0.0)
-        .clip_rounded(20.0)
         .background(Color::TRANSPARENT)
         .state_colors(config.state_colors)
         .interaction_source(&cb_source)
@@ -149,7 +148,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
             color: Some(if checked {
                 config.checked_color
             } else {
-                theme().on_surface
+                th.on_surface
             }),
             bounded: false, // circular 40dp target → unbounded looks correct
             radius: Some(20.0),
@@ -275,7 +274,6 @@ pub fn TriStateCheckbox(
         .width(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .height(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .padding(0.0)
-        .clip_rounded(20.0)
         .background(Color::TRANSPARENT)
         .state_colors(config.state_colors)
         .interaction_source(&tc_source)
@@ -283,7 +281,7 @@ pub fn TriStateCheckbox(
             color: Some(if has_fill {
                 config.checked_color
             } else {
-                theme().on_surface
+                th.on_surface
             }),
             bounded: false,
             radius: Some(20.0),
@@ -420,7 +418,6 @@ pub fn RadioButton(
         .width(RadioButtonDefaults::TOUCH_TARGET_SIZE)
         .height(RadioButtonDefaults::TOUCH_TARGET_SIZE)
         .padding(0.0)
-        .clip_rounded(20.0)
         .background(Color::TRANSPARENT)
         .state_colors(config.state_colors)
         .interaction_source(&rb_source)
@@ -428,7 +425,7 @@ pub fn RadioButton(
             color: Some(if selected {
                 config.selected_color
             } else {
-                theme().on_surface
+                th.on_surface
             }),
             bounded: false,
             radius: Some(20.0),
@@ -530,9 +527,6 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
 
     let id = remember(|| SWITCH_COUNTER.fetch_add(1, Ordering::Relaxed));
 
-    let hovered = remember(|| Signal::new(false));
-    let pressed = remember(|| Signal::new(false));
-
     // Thumb: spring-animated position and size
     let thumb_target_pos = if checked {
         track_w - SwitchDefaults::THUMB_CHECKED_SIZE - 4.0
@@ -610,20 +604,6 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         color_spec,
     );
 
-    let state_overlay = animate_color(
-        format!("sw_ol_{}", id),
-        if !is_enabled {
-            Color::TRANSPARENT
-        } else if pressed.get() {
-            config.state_colors.pressed
-        } else if hovered.get() {
-            config.state_colors.hovered
-        } else {
-            config.state_colors.default
-        },
-        color_spec,
-    );
-
     let sw_source: Rc<MutableInteractionSource> = config
         .interaction_source
         .clone()
@@ -639,32 +619,10 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         .interaction_source(&sw_source);
 
     if is_enabled {
-        track = track
-            .clickable()
-            .on_pointer_enter({
-                let h = hovered.clone();
-                move |_| h.set(true)
-            })
-            .on_pointer_leave({
-                let h = hovered.clone();
-                let p = pressed.clone();
-                move |_| {
-                    h.set(false);
-                    p.set(false);
-                }
-            })
-            .on_pointer_down({
-                let p = pressed.clone();
-                move |_| p.set(true)
-            })
-            .on_click({
-                let cb = on_change;
-                move || cb(!checked)
-            })
-            .on_pointer_up({
-                let p = pressed.clone();
-                move |_| p.set(false)
-            });
+        track = track.clickable().on_click({
+            let cb = on_change;
+            move || cb(!checked)
+        });
     } else {
         track = track.enabled(false);
     }
@@ -677,13 +635,6 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
             .hit_passthrough()
             .align_items(AlignItems::CENTER)
             .justify_content(JustifyContent::CENTER)
-            .interaction_source(&sw_source)
-            .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-                color: Some(th.on_surface),
-                bounded: false,
-                radius: Some(20.0),
-                ..Default::default()
-            }))
             .absolute()
             .offset(Some(thumb_left), Some(thumb_top), None, None))
         .child(
@@ -707,9 +658,14 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         ),
         Box(Modifier::new()
             .size(40.0, 40.0)
-            .clip_rounded(20.0)
-            .background(state_overlay)
             .hit_passthrough()
+            .interaction_source(&sw_source)
+            .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+                color: Some(th.on_surface),
+                bounded: false,
+                radius: Some(20.0),
+                ..Default::default()
+            }))
             .absolute()
             .offset(
                 Some(thumb_left + thumb_d * 0.5 - 20.0),
