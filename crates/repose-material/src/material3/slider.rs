@@ -138,6 +138,34 @@ pub fn Slider(
     let range_size = (max - min).max(1e-6);
     let t = ((value - min) / range_size).clamp(0.0, 1.0);
 
+    let is_enabled = config.enabled;
+
+    let act_trk = if !is_enabled {
+        config.disabled_active_track_color
+    } else {
+        config.active_track_color
+    };
+    let inact_trk = if !is_enabled {
+        config.disabled_inactive_track_color
+    } else {
+        config.inactive_track_color
+    };
+    let act_tick = if !is_enabled {
+        config.disabled_active_tick_color
+    } else {
+        config.active_tick_color
+    };
+    let inact_tick = if !is_enabled {
+        config.disabled_inactive_tick_color
+    } else {
+        config.inactive_tick_color
+    };
+    let thumb_col = if !is_enabled {
+        config.disabled_thumb_color
+    } else {
+        config.thumb_color
+    };
+
     let tick_frac: Vec<f32> = if let Some(s) = step {
         let n = ((max - min) / s.max(1e-6)).round() as usize;
         (0..=n).map(|i| i as f32 / n as f32).collect()
@@ -150,11 +178,14 @@ pub fn Slider(
         .clone()
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    Box(Modifier::new()
+    let mut host = Modifier::new()
         .min_width(200.0)
         .height(44.0)
-        .interaction_source(&sl_source)
-        .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
+        .interaction_source(&sl_source);
+    if !is_enabled {
+        host = host.enabled(false);
+    }
+    Box(host.painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
             let mul_c = |c: Color| {
                 Color(
                     c.0,
@@ -203,7 +234,7 @@ pub fn Slider(
                         w: inactive_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(config.inactive_track_color)),
+                    brush: Brush::Solid(mul_c(inact_trk)),
                     radius: [corner; 4],
                 });
                 let sx = track_x + track_w - corner;
@@ -214,7 +245,7 @@ pub fn Slider(
                         w: dot_r * 2.0,
                         h: dot_r * 2.0,
                     },
-                    brush: Brush::Solid(mul_c(config.inactive_tick_color)),
+                    brush: Brush::Solid(mul_c(inact_tick)),
                 });
             }
             let fill_w = (kx - gap - track_x).max(0.0);
@@ -226,7 +257,7 @@ pub fn Slider(
                         w: fill_w,
                         h: track_h,
                     },
-                    brush: Brush::Solid(mul_c(config.active_track_color)),
+                    brush: Brush::Solid(mul_c(act_trk)),
                     radius: [corner; 4],
                 });
             }
@@ -250,9 +281,9 @@ pub fn Slider(
                         h: dot_r * 2.0,
                     },
                     brush: Brush::Solid(mul_c(if on_active {
-                        config.active_tick_color
+                        act_tick
                     } else {
-                        config.inactive_tick_color
+                        inact_tick
                     })),
                 });
             }
@@ -266,7 +297,7 @@ pub fn Slider(
                     w: tw,
                     h: thumb_h,
                 },
-                brush: Brush::Solid(mul_c(config.thumb_color)),
+                brush: Brush::Solid(mul_c(thumb_col)),
                 radius: [tw * 0.5; 4],
             });
             let sc_target = if da {
@@ -291,7 +322,12 @@ pub fn Slider(
         })
         .on_pointer_enter({
             let h = hovered.clone();
-            move |_pe: PointerEvent| h.set(true)
+            let en = is_enabled;
+            move |_pe: PointerEvent| {
+                if en {
+                    h.set(true);
+                }
+            }
         })
         .on_pointer_leave({
             let h = hovered.clone();
@@ -301,7 +337,11 @@ pub fn Slider(
             let oc = oc.clone();
             let track_rect = track_rect.clone();
             let drag_active = drag_active.clone();
+            let en = is_enabled;
             move |pe: PointerEvent| {
+                if !en {
+                    return;
+                }
                 drag_active.set(true);
                 let r = *track_rect.borrow();
                 (oc)(value_from_x(pe.position_in_window().x, r, min, max, step));
@@ -311,7 +351,11 @@ pub fn Slider(
             let oc = oc.clone();
             let track_rect = track_rect.clone();
             let drag_active = drag_active.clone();
+            let en = is_enabled;
             move |pe: PointerEvent| {
+                if !en {
+                    return;
+                }
                 if !*drag_active.get() {
                     return;
                 }
@@ -330,7 +374,11 @@ pub fn Slider(
         })
         .on_scroll({
             let oc = oc.clone();
+            let en = is_enabled;
             move |d: Vec2| -> Vec2 {
+                if !en {
+                    return d;
+                }
                 let dir = if d.y < -0.5 {
                     1
                 } else if d.y > 0.5 {
@@ -356,7 +404,7 @@ pub fn Slider(
         role: Role::Slider,
         label: None,
         focused: false,
-        enabled: true,
+        enabled: is_enabled,
         selectable_group: false,
     })
 }

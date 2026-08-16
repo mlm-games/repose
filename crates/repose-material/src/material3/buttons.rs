@@ -145,8 +145,7 @@ fn button_impl(
     state_colors: StateColors,
     state_elevation: Option<StateElevation>,
     border: Option<(f32, Color, f32)>,
-    padding_left: f32,
-    padding_right: f32,
+    pad: PaddingValues,
     height: f32,
     shape_radius: f32,
     enabled: bool,
@@ -154,7 +153,7 @@ fn button_impl(
 ) -> View {
     let mut m = Modifier::new()
         .min_height(height)
-        .min_width(48.0)
+        .min_width(58.0)
         .flex_shrink(0.0);
     if let Some(bg) = container_color {
         m = m.background(bg);
@@ -179,12 +178,7 @@ fn button_impl(
     }
     m = m
         .clip_rounded(shape_radius)
-        .padding_values(PaddingValues {
-            left: padding_left,
-            right: padding_right,
-            top: 8.0,
-            bottom: 8.0,
-        })
+        .padding_values(pad)
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER);
 
@@ -207,14 +201,11 @@ fn button_impl(
 
     if enabled {
         m = m.clickable().on_click(on_click);
+    } else {
+        m = m.enabled(false);
     }
     m = m.then(outer_modifier);
-    let effective = if enabled {
-        content_color
-    } else {
-        content_color.with_alpha_f32(0.38)
-    };
-    let content = with_content_color(effective, content);
+    let content = with_content_color(content_color, content);
     Box(m).child(content)
 }
 
@@ -238,8 +229,8 @@ pub fn Button(
     let pad = config.content_padding.unwrap_or(PaddingValues {
         left: 24.0,
         right: 24.0,
-        top: 0.0,
-        bottom: 0.0,
+        top: 8.0,
+        bottom: 8.0,
     });
     button_impl(
         modifier.then(config.modifier),
@@ -250,8 +241,7 @@ pub fn Button(
         sc,
         se.or(Some(ButtonDefaults::state_elevation_default())),
         config.border,
-        pad.left,
-        pad.right,
+        pad,
         config.height,
         config.shape_radius,
         config.enabled,
@@ -280,8 +270,8 @@ pub fn FilledTonalButton(
     let pad = config.content_padding.unwrap_or(PaddingValues {
         left: 24.0,
         right: 24.0,
-        top: 0.0,
-        bottom: 0.0,
+        top: 8.0,
+        bottom: 8.0,
     });
     button_impl(
         modifier.then(config.modifier),
@@ -292,8 +282,7 @@ pub fn FilledTonalButton(
         sc,
         se.or(Some(ButtonDefaults::state_elevation_default())),
         config.border,
-        pad.left,
-        pad.right,
+        pad,
         config.height,
         config.shape_radius,
         config.enabled,
@@ -322,8 +311,8 @@ pub fn OutlinedButton(
     let pad = config.content_padding.unwrap_or(PaddingValues {
         left: 24.0,
         right: 24.0,
-        top: 0.0,
-        bottom: 0.0,
+        top: 8.0,
+        bottom: 8.0,
     });
     button_impl(
         modifier.then(config.modifier),
@@ -334,8 +323,7 @@ pub fn OutlinedButton(
         sc,
         se,
         Some(border),
-        pad.left,
-        pad.right,
+        pad,
         config.height,
         config.shape_radius,
         config.enabled,
@@ -361,8 +349,8 @@ pub fn TextButton(
     let pad = config.content_padding.unwrap_or(PaddingValues {
         left: 12.0,
         right: 12.0,
-        top: 0.0,
-        bottom: 0.0,
+        top: 8.0,
+        bottom: 8.0,
     });
     button_impl(
         modifier.then(config.modifier),
@@ -373,8 +361,7 @@ pub fn TextButton(
         sc,
         se,
         None,
-        pad.left,
-        pad.right,
+        pad,
         config.height,
         config.shape_radius,
         config.enabled,
@@ -400,8 +387,8 @@ pub fn ElevatedButton(
     let pad = config.content_padding.unwrap_or(PaddingValues {
         left: 24.0,
         right: 24.0,
-        top: 0.0,
-        bottom: 0.0,
+        top: 8.0,
+        bottom: 8.0,
     });
     button_impl(
         modifier.then(config.modifier),
@@ -412,8 +399,7 @@ pub fn ElevatedButton(
         sc,
         se.or(Some(ButtonDefaults::elevated_state_elevation())),
         config.border,
-        pad.left,
-        pad.right,
+        pad,
         config.height,
         config.shape_radius,
         config.enabled,
@@ -518,7 +504,7 @@ fn toggle_button_impl(
         let cb = on_checked_change;
         m = m.clickable().on_click(move || cb(!checked));
     } else {
-        m = m.alpha(0.38);
+        m = m.enabled(false);
     }
     with_content_color(fg, || Box(m).child(content(checked)))
 }

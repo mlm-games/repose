@@ -63,9 +63,9 @@ pub fn Snackbar(
     let snackbar = Box(Modifier::new()
         .translate(0.0, slide)
         .alpha(alpha)
-        .min_height(48.0)
-        .min_width(280.0)
-        .max_width(600.0)
+        .min_height(config.min_height)
+        .min_width(config.min_width)
+        .max_width(config.max_width)
         .background(bg)
         .clip_rounded(config.shape_radius));
 
@@ -98,7 +98,15 @@ pub fn Snackbar(
                         .child(TextButton(
                             Modifier::new(),
                             move || (a.on_click)(),
-                            ButtonConfig::default(),
+                            ButtonConfig {
+                                colors: Some(ButtonColors {
+                                    container_color: Color::TRANSPARENT,
+                                    content_color: action_color,
+                                    disabled_container_color: Color::TRANSPARENT,
+                                    disabled_content_color: action_color.with_alpha_f32(0.38),
+                                }),
+                                ..Default::default()
+                            },
                             || {
                                 Text(label)
                                     .color(action_color)
@@ -140,7 +148,15 @@ pub fn Snackbar(
                         TextButton(
                             Modifier::new(),
                             move || (a.on_click)(),
-                            ButtonConfig::default(),
+                            ButtonConfig {
+                                colors: Some(ButtonColors {
+                                    container_color: Color::TRANSPARENT,
+                                    content_color: action_color,
+                                    disabled_container_color: Color::TRANSPARENT,
+                                    disabled_content_color: action_color.with_alpha_f32(0.38),
+                                }),
+                                ..Default::default()
+                            },
                             || {
                                 Text(label)
                                     .color(action_color)

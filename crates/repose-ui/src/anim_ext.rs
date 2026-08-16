@@ -224,8 +224,11 @@ where
         if let Some(ref ov) = *oc {
             let exit_alpha = animate_f32_from(format!("cf_exit:{key}:v{v}"), 1.0, 0.0, spec);
             if exit_alpha > 0.005 {
-                let mut exit_box =
-                    Box(Modifier::new().fill_max_size().alpha(exit_alpha)).child(ov.clone());
+                let mut exit_box = Box(Modifier::new()
+                    .fill_max_size()
+                    .alpha(exit_alpha)
+                    .hit_passthrough())
+                .child(ov.clone());
                 exit_box.modifier.key = Some(transition_child_key(&key, v, "cf_exit"));
                 Some(exit_box)
             } else {
@@ -281,6 +284,17 @@ fn transition_child_key(key: &str, version: u64, tag: &str) -> u64 {
 /// flex child makes it grow to consume leftover space).
 fn flow_mod() -> Modifier {
     Modifier::new().fill_max_width()
+}
+
+/// Hit tests must pass through so a closing overlay can never steal clicks
+/// from content that appears beneath it.
+fn exit_mod_fill() -> Modifier {
+    Modifier::new().fill_max_size().hit_passthrough()
+}
+
+/// In-flow variant for exiting content in a Column/Row.
+fn exit_mod_flow() -> Modifier {
+    Modifier::new().fill_max_width().hit_passthrough()
 }
 
 /// Which axis an expand/shrink transition animates.
@@ -645,7 +659,7 @@ fn apply_exit(
     match exit {
         ExitTransition::FadeOut => {
             let val = animate_f32_from(format!("{key}:v{version}:exit:fade"), 1.0, 0.0, *spec);
-            Box(Modifier::new().fill_max_size().alpha(val)).child(view)
+            Box(exit_mod_fill().alpha(val)).child(view)
         }
         ExitTransition::SlideOut { offset_x, offset_y } => {
             let offset = animate_vec2_from(
@@ -657,17 +671,12 @@ fn apply_exit(
                 },
                 *spec,
             );
-            Box(Modifier::new().fill_max_size().translate_vec2(offset)).child(view)
+            Box(exit_mod_fill().translate_vec2(offset)).child(view)
         }
         ExitTransition::ScaleOut { target } => {
             let s = animate_f32_from(format!("{key}:v{version}:exit:scale"), 1.0, *target, *spec);
             let a = animate_f32_from(format!("{key}:v{version}:exit:fade"), 1.0, 0.0, *spec);
-            Box(Modifier::new()
-                .fill_max_size()
-                .transform_origin(0.5, 0.5)
-                .scale(s)
-                .alpha(a))
-            .child(view)
+            Box(exit_mod_fill().transform_origin(0.5, 0.5).scale(s).alpha(a)).child(view)
         }
         ExitTransition::ShrinkVertically {
             clip,
@@ -728,7 +737,7 @@ fn apply_exit_single(
     match exit {
         ExitTransition::FadeOut => {
             let val = animate_f32_from(format!("{key}:v{version}:exit:fade"), 1.0, 0.0, *spec);
-            Box(Modifier::new().fill_max_size().alpha(val)).child(view)
+            Box(exit_mod_fill().alpha(val)).child(view)
         }
         ExitTransition::SlideOut { offset_x, offset_y } => {
             let offset = animate_vec2_from(
@@ -740,15 +749,11 @@ fn apply_exit_single(
                 },
                 *spec,
             );
-            Box(Modifier::new().fill_max_size().translate_vec2(offset)).child(view)
+            Box(exit_mod_fill().translate_vec2(offset)).child(view)
         }
         ExitTransition::ScaleOut { target } => {
             let s = animate_f32_from(format!("{key}:v{version}:exit:scale"), 1.0, *target, *spec);
-            Box(Modifier::new()
-                .fill_max_size()
-                .transform_origin(0.5, 0.5)
-                .scale(s))
-            .child(view)
+            Box(exit_mod_fill().transform_origin(0.5, 0.5).scale(s)).child(view)
         }
         ExitTransition::ShrinkVertically {
             clip,
@@ -965,7 +970,7 @@ fn apply_exit_inflow(
     match exit {
         ExitTransition::FadeOut => {
             let val = animate_f32_from(format!("{key}:v{version}:exit:fade"), 1.0, 0.0, *spec);
-            Box(flow_mod().alpha(val)).child(view)
+            Box(exit_mod_flow().alpha(val)).child(view)
         }
         ExitTransition::SlideOut { offset_x, offset_y } => {
             let offset = animate_vec2_from(
@@ -977,12 +982,12 @@ fn apply_exit_inflow(
                 },
                 *spec,
             );
-            Box(flow_mod().translate_vec2(offset)).child(view)
+            Box(exit_mod_flow().translate_vec2(offset)).child(view)
         }
         ExitTransition::ScaleOut { target } => {
             let s = animate_f32_from(format!("{key}:v{version}:exit:scale"), 1.0, *target, *spec);
             let a = animate_f32_from(format!("{key}:v{version}:exit:fade"), 1.0, 0.0, *spec);
-            Box(flow_mod().transform_origin(0.5, 0.5).scale(s).alpha(a)).child(view)
+            Box(exit_mod_flow().transform_origin(0.5, 0.5).scale(s).alpha(a)).child(view)
         }
         ExitTransition::ShrinkVertically {
             clip,
@@ -1043,7 +1048,7 @@ fn apply_exit_inflow_single(
     match exit {
         ExitTransition::FadeOut => {
             let val = animate_f32_from(format!("{key}:v{version}:exit:fade"), 1.0, 0.0, *spec);
-            Box(flow_mod().alpha(val)).child(view)
+            Box(exit_mod_flow().alpha(val)).child(view)
         }
         ExitTransition::SlideOut { offset_x, offset_y } => {
             let offset = animate_vec2_from(
@@ -1055,11 +1060,11 @@ fn apply_exit_inflow_single(
                 },
                 *spec,
             );
-            Box(flow_mod().translate_vec2(offset)).child(view)
+            Box(exit_mod_flow().translate_vec2(offset)).child(view)
         }
         ExitTransition::ScaleOut { target } => {
             let s = animate_f32_from(format!("{key}:v{version}:exit:scale"), 1.0, *target, *spec);
-            Box(flow_mod().transform_origin(0.5, 0.5).scale(s)).child(view)
+            Box(exit_mod_flow().transform_origin(0.5, 0.5).scale(s)).child(view)
         }
         ExitTransition::ShrinkVertically {
             clip,

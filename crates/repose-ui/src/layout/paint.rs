@@ -51,7 +51,6 @@ impl LayoutEngine {
         let mut hits = Vec::new();
         let mut sems = Vec::new();
         let mut deferred: Vec<(NodeId, (f32, f32), f32, Option<u64>, f32)> = Vec::new();
-        let mut deferred_blockers: Vec<(f32, repose_core::Rect)> = Vec::new();
 
         self.walk_paint(
             root_id,
@@ -71,23 +70,9 @@ impl LayoutEngine {
             false, // Allow deferral in first pass
         );
 
-        // Paint deferred nodes sorted by render_z_index (ascending = higher on top)
         deferred.sort_by(|a, b| a.4.partial_cmp(&b.4).unwrap_or(Ordering::Equal));
         for (node_id, parent_offset_px, alpha_accum, sem_parent, z) in deferred.iter().copied() {
-            let view_id = *self.view_ids.get(&node_id).unwrap_or(&0);
-            let layout = self.layout_for_node(node_id);
-            let rect = repose_core::Rect {
-                x: parent_offset_px.0 + layout.location.x,
-                y: parent_offset_px.1 + layout.location.y,
-                w: layout.size.width,
-                h: layout.size.height,
-            };
-            if let Some(node) = self.tree.get(node_id)
-                && node.modifier.input_blocker
-                && !node.modifier.hit_passthrough
-            {
-                deferred_blockers.push((z, rect));
-            }
+            let hits_before = hits.len();
             self.walk_paint(
                 node_id,
                 &mut scene,
@@ -105,27 +90,12 @@ impl LayoutEngine {
                 &mut Vec::new(), // No further deferral in second pass
                 true,            // Skip defer check
             );
-            let _ = view_id;
-        }
-        deferred.clear();
-
-        if !deferred_blockers.is_empty() {
-            deferred_blockers.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
-            let max_z = hits
-                .iter()
-                .map(|h| h.z_index)
-                .fold(0.0_f32, |a, b| a.max(b));
-            let bump = max_z + 1.0;
-            for (i, (_z, rect)) in deferred_blockers.iter().enumerate() {
-                let blocker_id = u64::MAX - i as u64;
-                hits.push(HitRegion {
-                    id: blocker_id,
-                    rect: *rect,
-                    z_index: bump + i as f32,
-                    ..Default::default()
-                });
+            let z_boost = z.max(0.0);
+            for h in hits[hits_before..].iter_mut() {
+                h.z_index = h.z_index.max(z_boost);
             }
         }
+        deferred.clear();
 
         hits.sort_by(|a, b| a.z_index.partial_cmp(&b.z_index).unwrap_or(Ordering::Equal));
 

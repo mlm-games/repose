@@ -101,9 +101,11 @@ fn icon_button_render(
     }));
     if is_enabled {
         m = m.clickable().on_click(on_click);
+    } else {
+        m = m.enabled(false);
     }
 
-    Box(m).child(icon)
+    Box(m).child(with_content_color(content_color, move || icon))
 }
 
 /// M3 Icon Button - a tappable circular container for an icon.

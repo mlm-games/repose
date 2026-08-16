@@ -70,8 +70,10 @@ pub use text_field::*;
 pub use time_picker::*;
 pub use tooltip::*;
 
-use repose_core::{Modifier, Theme, View, with_local_indication, with_theme};
-use repose_ui::{Box, Column, Row, Spacer, ViewExt};
+use repose_core::{
+    JustifyContent, Modifier, PaddingValues, Theme, View, with_local_indication, with_theme,
+};
+use repose_ui::{Box, Column, Row, ViewExt};
 
 use crate::ripple::default_ripple;
 
@@ -95,14 +97,27 @@ pub(crate) fn alert_dialog_body(
     confirm_button: View,
     dismiss_button: Option<View>,
 ) -> View {
-    Column(Modifier::new()).child((
+    Column(
+        Modifier::new()
+            .padding_values(PaddingValues {
+                left: 24.0,
+                right: 24.0,
+                top: 24.0,
+                bottom: 24.0,
+            })
+            .fill_max_width(),
+    )
+    .child((
         title,
         Box(Modifier::new().fill_max_width().height(16.0)),
         text,
-        Spacer(),
-        Row(Modifier::new()).child((
+        Box(Modifier::new().fill_max_width().height(24.0)),
+        Row(Modifier::new()
+            .fill_max_width()
+            .justify_content(JustifyContent::FLEX_END)
+            .gap(8.0))
+        .child((
             dismiss_button.unwrap_or(Box(Modifier::new())),
-            Spacer(),
             confirm_button,
         )),
     ))

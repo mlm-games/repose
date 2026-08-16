@@ -359,7 +359,7 @@ pub fn OutlinedTextField(
             role: Role::TextField,
             label: None,
             focused: false,
-            enabled: true,
+            enabled: config.enabled,
             selectable_group: false,
         });
 
@@ -782,7 +782,7 @@ pub fn TextField(
                             role: Role::TextField,
                             label: None,
                             focused: false,
-                            enabled: true,
+                            enabled: config.enabled,
                             selectable_group: false,
                         }),
                     config.trailing_icon.unwrap_or(Box(Modifier::new())),

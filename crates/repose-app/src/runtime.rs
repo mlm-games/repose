@@ -258,7 +258,6 @@ impl ReposeRuntime {
         let clipboard_text = captured.borrow_mut().take();
 
         let wants_pointer = self.hover_id.is_some() || self.capture_id.is_some();
-        let wants_keyboard = !self.textfield_states.is_empty() || self.ime_preedit;
 
         let ime_allowed = self.sched.focused.is_some_and(|fid| {
             f.semantics_nodes
@@ -284,6 +283,14 @@ impl ReposeRuntime {
         } else {
             None
         };
+
+        let focused_is_textfield = ime_allowed
+            || self.sched.focused.is_some_and(|fid| {
+                f.hit_regions
+                    .iter()
+                    .any(|h| h.id == fid && h.tf_state_key.is_some())
+            });
+        let wants_keyboard = focused_is_textfield || self.ime_preedit;
 
         let (ime_purpose, ime_auto_correct, ime_capitalization, keyboard_type) =
             match (ime_allowed, focused_hit) {

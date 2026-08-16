@@ -57,7 +57,7 @@ pub fn BottomSheet(
     on_dismiss: impl Fn() + 'static,
     modifier: Modifier,
     content: View,
-    _config: BottomSheetConfig, // HACK: use ot
+    config: BottomSheetConfig,
 ) -> View {
     let th = theme();
     let id = remember(|| BOTTOMSHEET_COUNTER.fetch_add(1, Ordering::Relaxed));
@@ -70,20 +70,24 @@ pub fn BottomSheet(
     );
 
     let keep = visible || opacity > 0.01;
-    if keep {
-        Column(Modifier::new()).child((
-            Box(modifier.alpha(opacity)).child(content),
-            Box(Modifier::new()
-                .width(1.0)
-                .height(0.0)
-                .fill_max_width()
-                .alpha(opacity)
-                .hit_passthrough()
-                .on_pointer_down(move |_| on_dismiss())),
-        ))
-    } else {
-        Box(Modifier::new())
+    if !keep {
+        return Box(Modifier::new());
     }
+    Column(Modifier::new().fill_max_width()).child((
+        Box(modifier
+            .alpha(opacity)
+            .background(config.container_color)
+            .clip_rounded(config.shape_radius)
+            .then(config.modifier))
+        .child(with_content_color(config.content_color, move || content)),
+        Box(Modifier::new()
+            .width(1.0)
+            .height(0.0)
+            .fill_max_width()
+            .alpha(opacity)
+            .hit_passthrough()
+            .on_pointer_down(move |_| on_dismiss())),
+    ))
 }
 
 /// State for `ModalBottomSheet` - manages visibility and drag offset.
@@ -136,6 +140,10 @@ pub fn ModalBottomSheet(
     let anim_distance = peek_h.max(48.0).max(400.0);
     let overlay_id = remember_with_key("mbs_oid", || signal(0u64));
 
+    // Fresh content each composition (builder captures content once).
+    let current_content = remember_state_with_key("mbs_c", || Box(Modifier::new()));
+    *current_content.borrow_mut() = content;
+
     // Drag state -> offset_at_drag_start is the anim value when the drag began
     let drag_anchor_y: Rc<RefCell<f32>> = remember_state_with_key("mbs_drag_y", || 0.0);
     let offset_at_drag_start: Rc<RefCell<f32>> = remember_state_with_key("mbs_drag_base", || 0.0);
@@ -180,66 +188,72 @@ pub fn ModalBottomSheet(
                 let state = state.clone();
                 let anim = anim.clone();
                 let modifier = modifier.clone();
-                let content = content.clone();
+                let current_content = current_content.clone();
                 let drag_anchor_y = drag_anchor_y.clone();
                 let offset_at_drag_start = offset_at_drag_start.clone();
                 let is_dragging = is_dragging.clone();
                 let anim_distance = anim_distance;
                 move || {
                     let off = *anim.borrow().get();
+                    let content = current_content.borrow().clone();
 
-                    let sheet_body = Box(modifier
+                    let mut sheet_mod = modifier
                         .clone()
                         .fill_max_width()
                         .max_width(dp_to_px(config.max_width))
                         .translate(0.0, off)
                         .background(config.container_color)
-                        .clip_rounded(config.shape_radius)
-                        .on_pointer_down({
-                            let anim = anim.clone();
-                            let drag_anchor_y = drag_anchor_y.clone();
-                            let offset_at_drag_start = offset_at_drag_start.clone();
-                            let is_dragging = is_dragging.clone();
-                            move |ev| {
-                                *drag_anchor_y.borrow_mut() = ev.position.y;
-                                *offset_at_drag_start.borrow_mut() = *anim.borrow().get();
-                                *is_dragging.borrow_mut() = true;
-                            }
-                        })
-                        .on_pointer_move({
-                            let anim = anim.clone();
-                            let drag_anchor_y = drag_anchor_y.clone();
-                            let offset_at_drag_start = offset_at_drag_start.clone();
-                            let is_dragging = is_dragging.clone();
-                            move |ev| {
-                                if !*is_dragging.borrow() {
-                                    return;
+                        .clip_rounded(config.shape_radius);
+
+                    if config.gestures_enabled {
+                        sheet_mod = sheet_mod
+                            .on_pointer_down({
+                                let anim = anim.clone();
+                                let drag_anchor_y = drag_anchor_y.clone();
+                                let offset_at_drag_start = offset_at_drag_start.clone();
+                                let is_dragging = is_dragging.clone();
+                                move |ev| {
+                                    *drag_anchor_y.borrow_mut() = ev.position.y;
+                                    *offset_at_drag_start.borrow_mut() = *anim.borrow().get();
+                                    *is_dragging.borrow_mut() = true;
                                 }
-                                let delta = ev.position.y - *drag_anchor_y.borrow();
-                                let start_off = *offset_at_drag_start.borrow();
-                                let total = (start_off + delta).max(0.0);
-                                anim.borrow_mut().snap_to(total);
-                                request_frame();
-                            }
-                        })
-                        .on_pointer_up({
-                            let anim = anim.clone();
-                            let is_dragging = is_dragging.clone();
-                            let state = state.clone();
-                            let anim_distance = anim_distance;
-                            move |_| {
-                                *is_dragging.borrow_mut() = false;
-                                let current_off = *anim.borrow().get();
-                                let threshold = anim_distance * 0.3;
-                                if current_off > threshold {
-                                    anim.borrow_mut().set_target(anim_distance);
-                                    state.dismiss();
-                                } else {
-                                    anim.borrow_mut().set_target(0.0);
+                            })
+                            .on_pointer_move({
+                                let anim = anim.clone();
+                                let drag_anchor_y = drag_anchor_y.clone();
+                                let offset_at_drag_start = offset_at_drag_start.clone();
+                                let is_dragging = is_dragging.clone();
+                                move |ev| {
+                                    if !*is_dragging.borrow() {
+                                        return;
+                                    }
+                                    let delta = ev.position.y - *drag_anchor_y.borrow();
+                                    let start_off = *offset_at_drag_start.borrow();
+                                    let total = (start_off + delta).max(0.0);
+                                    anim.borrow_mut().snap_to(total);
+                                    request_frame();
                                 }
-                            }
-                        }))
-                    .child(
+                            })
+                            .on_pointer_up({
+                                let anim = anim.clone();
+                                let is_dragging = is_dragging.clone();
+                                let state = state.clone();
+                                let anim_distance = anim_distance;
+                                move |_| {
+                                    *is_dragging.borrow_mut() = false;
+                                    let current_off = *anim.borrow().get();
+                                    let threshold = anim_distance * 0.3;
+                                    if current_off > threshold {
+                                        anim.borrow_mut().set_target(anim_distance);
+                                        state.dismiss();
+                                    } else {
+                                        anim.borrow_mut().set_target(0.0);
+                                    }
+                                }
+                            });
+                    }
+
+                    let sheet_body = Box(sheet_mod).child(
                         Column(Modifier::new().fill_max_width()).child((
                             Row(Modifier::new()
                                 .fill_max_width()
@@ -250,7 +264,7 @@ pub fn ModalBottomSheet(
                                 .height(config.drag_handle_height)
                                 .background(config.drag_handle_color)
                                 .clip_rounded(2.0))),
-                            content.clone(),
+                            content,
                         )),
                     );
 
@@ -269,6 +283,8 @@ pub fn ModalBottomSheet(
                     let scrim = Box(Modifier::new()
                         .fill_max_size()
                         .background(config.scrim_color.with_alpha(scrim_alpha))
+                        .input_blocker()
+                        .on_scroll(|_| Vec2::default())
                         .on_pointer_down({
                             let s = state.clone();
                             move |_| s.dismiss()
