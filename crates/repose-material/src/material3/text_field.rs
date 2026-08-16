@@ -295,6 +295,11 @@ pub struct OutlinedTextFieldConfig {
     pub is_error: bool,
     /// If false, input is visually disabled and `on_value_change` won't fire.
     pub enabled: bool,
+    /// If true, the field can be focused and text selected/copied but not modified.
+    pub read_only: bool,
+    /// Transforms the displayed text without changing the underlying value
+    /// (e.g. password masking). Passed through to the lower-level text field.
+    pub visual_transformation: Option<Rc<dyn VisualTransformation>>,
     /// Supporting text shown below the field.
     pub supporting_text: Option<String>,
     /// Static text prefix inside the field, before the input.
@@ -321,6 +326,8 @@ impl Default for OutlinedTextFieldConfig {
             single_line: true,
             is_error: false,
             enabled: true,
+            read_only: false,
+            visual_transformation: None,
             supporting_text: None,
             prefix: None,
             suffix: None,
@@ -397,13 +404,13 @@ pub fn OutlinedTextField(
                 }),
                 focus_tracker: Some(focus_tracker),
                 value: value.clone(),
-                visual_transformation: None,
+                visual_transformation: config.visual_transformation.clone(),
                 keyboard_type: Default::default(),
                 capitalization: Default::default(),
                 ime_action: Default::default(),
                 auto_correct_enabled: None,
                 enabled: config.enabled,
-                read_only: false,
+                read_only: config.read_only,
                 max_lines: None,
                 min_lines: 1,
                 cursor_color: config
@@ -419,7 +426,10 @@ pub fn OutlinedTextField(
         )
         .semantics(Semantics {
             role: Role::TextField,
-            label: None,
+            label: config
+                .label
+                .clone()
+                .or_else(|| config.supporting_text.clone()),
             focused: false,
             enabled: config.enabled,
             selectable_group: false,
@@ -486,6 +496,7 @@ pub fn OutlinedTextFieldState(
             on_submit: config.on_submit.clone(),
             focus_tracker: Some(focus_tracker),
             enabled: config.enabled,
+            read_only: config.read_only,
             ..Default::default()
         },
     );
@@ -752,6 +763,11 @@ pub struct TextFieldConfig {
     pub single_line: bool,
     pub is_error: bool,
     pub enabled: bool,
+    /// If true, the field can be focused and text selected/copied but not modified.
+    pub read_only: bool,
+    /// Transforms the displayed text without changing the underlying value
+    /// (e.g. password masking). Passed through to the lower-level text field.
+    pub visual_transformation: Option<Rc<dyn VisualTransformation>>,
     /// Supporting text shown below the field.
     pub supporting_text: Option<String>,
     /// Static text prefix inside the field, before the input.
@@ -772,6 +788,8 @@ impl Default for TextFieldConfig {
             single_line: true,
             is_error: false,
             enabled: true,
+            read_only: false,
+            visual_transformation: None,
             supporting_text: None,
             prefix: None,
             suffix: None,
@@ -794,7 +812,7 @@ pub fn TextField(
     config: TextFieldConfig,
 ) -> View {
     let th = theme();
-    let label_str: Option<Rc<str>> = config.label.map(Rc::from);
+    let label_str: Option<Rc<str>> = config.label.clone().map(Rc::from);
     let has_label = label_str.is_some();
 
     let id = *remember(|| TF_COUNTER.fetch_add(1, Ordering::Relaxed));
@@ -953,13 +971,13 @@ pub fn TextField(
                 }),
                 focus_tracker: Some(focus_tracker),
                 value: value.clone(),
-                visual_transformation: None,
+                visual_transformation: config.visual_transformation.clone(),
                 keyboard_type: Default::default(),
                 capitalization: Default::default(),
                 ime_action: Default::default(),
                 auto_correct_enabled: None,
                 enabled: config.enabled,
-                read_only: false,
+                read_only: config.read_only,
                 max_lines: None,
                 min_lines: 1,
                 cursor_color: config
@@ -975,7 +993,10 @@ pub fn TextField(
         )
         .semantics(Semantics {
             role: Role::TextField,
-            label: None,
+            label: config
+                .label
+                .clone()
+                .or_else(|| config.supporting_text.clone()),
             focused: false,
             enabled: config.enabled,
             selectable_group: false,

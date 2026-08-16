@@ -39,6 +39,17 @@ pub(crate) fn lerp_color(a: Color, b: Color, t: f32) -> Color {
             .clamp(0.0, 255.0) as u8,
     )
 }
+/// Disable a control's interactions without attaching a clickable. Use on any
+/// interactive modifier chain so a future "disabled still receives hover/focus"
+/// bug cannot reappear.
+pub(crate) fn apply_enabled(m: Modifier, enabled: bool) -> Modifier {
+    if enabled {
+        m
+    } else {
+        m.enabled(false)
+    }
+}
+
 /// Wire clickable when enabled, or disable the control when not. Centralizes
 /// the "still clickable when disabled" class of bugs across M3 controls.
 pub(crate) fn apply_enabled_click(
@@ -49,7 +60,7 @@ pub(crate) fn apply_enabled_click(
     if enabled {
         m.clickable().on_click(on_click)
     } else {
-        m.enabled(false)
+        apply_enabled(m, enabled)
     }
 }
 
