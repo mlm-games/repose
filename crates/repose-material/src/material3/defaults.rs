@@ -148,7 +148,7 @@ impl ButtonDefaults {
         theme().on_surface_variant
     }
     pub fn outlined_border_color() -> Color {
-        theme().outline_variant
+        theme().outline
     }
     pub fn text_content_color() -> Color {
         theme().primary
@@ -438,7 +438,12 @@ impl SwitchDefaults {
 pub struct SliderDefaults;
 
 impl SliderDefaults {
-    pub const TRACK_HEIGHT: f32 = 4.0;
+    pub const TRACK_HEIGHT: f32 = 16.0;
+    pub const THUMB_WIDTH: f32 = 4.0;
+    pub const THUMB_HEIGHT: f32 = 44.0;
+    /// State-layer diameter around the thumb (Compose SliderTokens / StateLayerSize).
+    pub const STATE_LAYER_SIZE: f32 = 40.0;
+    /// Deprecated, kept as an alias. The painter uses [`THUMB_WIDTH`]/[`THUMB_HEIGHT`].
     pub const THUMB_SIZE: f32 = 20.0;
     pub fn active_track_color() -> Color {
         theme().primary
@@ -472,12 +477,13 @@ impl SliderDefaults {
     }
     pub fn state_colors_default() -> StateColors {
         let th = theme();
+        let c = th.primary;
         StateColors {
             default: Color::TRANSPARENT,
-            hovered: th.on_surface.with_alpha_f32(0.08),
-            focused: th.on_surface.with_alpha_f32(0.12),
-            pressed: th.on_surface.with_alpha_f32(0.12),
-            dragged: th.on_surface.with_alpha_f32(0.12),
+            hovered: c.with_alpha_f32(0.08),
+            focused: c.with_alpha_f32(0.12),
+            pressed: c.with_alpha_f32(0.10),
+            dragged: c.with_alpha_f32(0.10),
             disabled: Color::TRANSPARENT,
         }
     }

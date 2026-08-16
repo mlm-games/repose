@@ -182,6 +182,7 @@ pub fn AssistChip(
 
     let mut m = Modifier::new()
         .flex_shrink(0.0)
+        .min_height(ChipDefaults::HEIGHT)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,
@@ -269,6 +270,7 @@ pub fn ElevatedAssistChip(
 
     let mut m = Modifier::new()
         .flex_shrink(0.0)
+        .min_height(ChipDefaults::HEIGHT)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,
@@ -386,6 +388,7 @@ pub fn FilterChip(
 
     let mut m = Modifier::new()
         .flex_shrink(0.0)
+        .min_height(ChipDefaults::HEIGHT)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,
@@ -493,6 +496,7 @@ pub fn ElevatedFilterChip(
 
     let mut m = Modifier::new()
         .flex_shrink(0.0)
+        .min_height(ChipDefaults::HEIGHT)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,
@@ -580,6 +584,7 @@ pub fn SuggestionChip(
 
     let mut m = Modifier::new()
         .flex_shrink(0.0)
+        .min_height(ChipDefaults::HEIGHT)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,
@@ -653,6 +658,7 @@ pub fn ElevatedSuggestionChip(
 
     let mut m = Modifier::new()
         .flex_shrink(0.0)
+        .min_height(ChipDefaults::HEIGHT)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,
@@ -759,6 +765,7 @@ pub fn InputChip(
 
     let mut m = Modifier::new()
         .flex_shrink(0.0)
+        .min_height(ChipDefaults::HEIGHT)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,

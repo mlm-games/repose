@@ -211,13 +211,15 @@ pub fn Button(
     config: ButtonConfig,
     content: impl FnOnce() -> View,
 ) -> View {
+    let th = theme();
     let def = ButtonColors {
         container_color: ButtonDefaults::container_color(),
         content_color: ButtonDefaults::content_color(),
-        disabled_container_color: ButtonDefaults::container_color()
+        disabled_container_color: th
+            .on_surface
             .with_alpha_f32(0.12)
-            .composite_over(theme().surface_container_low),
-        disabled_content_color: ButtonDefaults::content_color().with_alpha_f32(0.38),
+            .composite_over(th.surface),
+        disabled_content_color: th.on_surface.with_alpha_f32(0.38),
     };
     let (cc, bg, sc, se) = resolve_button_colors(&config, def);
     let pad = config.content_padding.unwrap_or(PaddingValues {

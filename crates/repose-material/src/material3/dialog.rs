@@ -142,6 +142,7 @@ pub fn Dialog(
                 move || {
                     let progress = *anim.borrow().get();
                     let alpha = progress.min(1.0);
+                    let scale = 0.8 + 0.2 * progress;
                     let th = theme();
                     let content = current_content.borrow().clone();
                     let _p = props.borrow().clone();
@@ -155,6 +156,7 @@ pub fn Dialog(
                         .background(th.surface_container_high)
                         .clip_rounded(th.shapes.extra_large)
                         .alpha(alpha)
+                        .scale(scale)
                         .focus_group()
                         .clickable()
                         .focusable(false)

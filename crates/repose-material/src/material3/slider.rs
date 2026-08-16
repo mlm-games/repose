@@ -195,9 +195,9 @@ pub fn Slider(
                     ((c.3 as f32) * alpha).clamp(0.0, 255.0) as u8,
                 )
             };
-            let track_h = dp_to_px(16.0);
-            let thumb_w = dp_to_px(4.0);
-            let thumb_h = dp_to_px(44.0);
+            let track_h = dp_to_px(SliderDefaults::TRACK_HEIGHT);
+            let thumb_w = dp_to_px(SliderDefaults::THUMB_WIDTH);
+            let thumb_h = dp_to_px(SliderDefaults::THUMB_HEIGHT);
             let dot_r = dp_to_px(2.0);
             let corner = track_h * 0.5;
             let gap = thumb_w * 0.5 + dp_to_px(ProgressIndicatorDefaults::SLIDER_THUMB_TRACK_GAP);
@@ -307,15 +307,15 @@ pub fn Slider(
                 sc.default
             };
             if sc_target.3 > 0 {
-                scene.nodes.push(SceneNode::Rect {
+                let sl = dp_to_px(SliderDefaults::STATE_LAYER_SIZE);
+                scene.nodes.push(SceneNode::Ellipse {
                     rect: Rect {
-                        x: kx - tw * 0.5,
-                        y: cy - thumb_h * 0.5,
-                        w: tw,
-                        h: thumb_h,
+                        x: kx - sl * 0.5,
+                        y: cy - sl * 0.5,
+                        w: sl,
+                        h: sl,
                     },
                     brush: Brush::Solid(mul_c(sc_target)),
-                    radius: [tw * 0.5; 4],
                 });
             }
         })
@@ -473,9 +473,19 @@ pub fn RangeSlider(
     let active_thumb_p = active_thumb.clone();
     let hovered_sig = hovered.clone();
 
-    Box(Modifier::new()
+    let sl_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
+    let mut host = Modifier::new()
         .min_width(200.0)
         .height(44.0)
+        .interaction_source(&sl_source);
+    if !is_enabled {
+        host = host.enabled(false);
+    }
+    Box(host
         .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
             let mul_c = |c: Color| {
                 Color(
@@ -485,9 +495,9 @@ pub fn RangeSlider(
                     ((c.3 as f32) * alpha).clamp(0.0, 255.0) as u8,
                 )
             };
-            let track_h = dp_to_px(16.0);
-            let thumb_w = dp_to_px(4.0);
-            let thumb_h = dp_to_px(44.0);
+            let track_h = dp_to_px(SliderDefaults::TRACK_HEIGHT);
+            let thumb_w = dp_to_px(SliderDefaults::THUMB_WIDTH);
+            let thumb_h = dp_to_px(SliderDefaults::THUMB_HEIGHT);
             let dot_r = dp_to_px(2.0);
             let corner = track_h * 0.5;
             let gap = thumb_w * 0.5 + dp_to_px(ProgressIndicatorDefaults::SLIDER_THUMB_TRACK_GAP);
@@ -632,15 +642,15 @@ pub fn RangeSlider(
                     sc.default
                 };
                 if sc_target.3 > 0 {
-                    scene.nodes.push(SceneNode::Rect {
+                    let sl = dp_to_px(SliderDefaults::STATE_LAYER_SIZE);
+                    scene.nodes.push(SceneNode::Ellipse {
                         rect: Rect {
-                            x: kx - tw * 0.5,
-                            y: cy - thumb_h * 0.5,
-                            w: tw,
-                            h: thumb_h,
+                            x: kx - sl * 0.5,
+                            y: cy - sl * 0.5,
+                            w: sl,
+                            h: sl,
                         },
                         brush: Brush::Solid(mul_c(sc_target)),
-                        radius: [tw * 0.5; 4],
                     });
                 }
             }
@@ -686,7 +696,11 @@ pub fn RangeSlider(
             let track_rect = track_rect.clone();
             let drag_active = drag_active.clone();
             let active_thumb = active_thumb.clone();
+            let en = is_enabled;
             move |pe: PointerEvent| {
+                if !en {
+                    return;
+                }
                 if !*drag_active.get() {
                     return;
                 }
@@ -704,9 +718,13 @@ pub fn RangeSlider(
         .on_pointer_up({
             let drag_active = drag_active.clone();
             let active_thumb = active_thumb.clone();
+            let on_finished = config.on_value_change_finished.clone();
             move |_pe: PointerEvent| {
                 drag_active.set(false);
                 active_thumb.set(false);
+                if let Some(ref cb) = on_finished {
+                    (cb)();
+                }
             }
         })
         .on_scroll({

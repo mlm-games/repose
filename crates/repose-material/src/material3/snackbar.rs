@@ -67,7 +67,8 @@ pub fn Snackbar(
         .min_width(config.min_width)
         .max_width(config.max_width)
         .background(bg)
-        .clip_rounded(config.shape_radius));
+        .clip_rounded(config.shape_radius)
+        .shadow(th.elevation.level3, 0.0));
 
     let snackbar = if config.action_on_new_line {
         snackbar.child(
