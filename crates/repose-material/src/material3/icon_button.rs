@@ -76,39 +76,52 @@ fn icon_button_render(
     let is_enabled = config.enabled;
     let content_color = config.colors.content(is_enabled);
     let radius = config.shape_radius.unwrap_or(sz * 0.5);
-    let mut m = Modifier::new()
-        .size(sz, sz)
-        .clip_rounded(radius)
-        .state_colors(state_colors)
+
+    let touch = IconButtonDefaults::MIN_INTERACTIVE_SIZE.max(sz);
+    let mut outer = Modifier::new()
+        .size(touch, touch)
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER)
         .then(config.modifier.clone());
 
+    let mut inner = Modifier::new()
+        .size(sz, sz)
+        .clip_rounded(radius)
+        .state_colors(state_colors)
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER);
+
     if let Some(bg_color) = bg {
-        m = m.background(bg_color);
+        inner = inner.background(bg_color);
     }
     if let Some((w, c)) = bdr {
-        m = m.border(w, c, radius);
+        inner = inner.border(w, c, radius);
     }
+
     let source: Rc<MutableInteractionSource> = config
         .interaction_source
         .clone()
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    m = m.interaction_source(&source);
-    m = m.indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+
+    outer = outer.interaction_source(&source);
+    outer = outer.indication(crate::ripple::ripple(crate::ripple::RippleConfig {
         color: Some(content_color),
         bounded: ripple_bounded,
-        radius: Some(sz * 0.5),
+        radius: Some(if ripple_bounded {
+            radius
+        } else {
+            IconButtonDefaults::STATE_LAYER_RADIUS
+        }),
         ..Default::default()
     }));
     if is_enabled {
-        m = m.clickable().on_click(on_click);
+        outer = outer.clickable().on_click(on_click);
     } else {
-        m = m.enabled(false);
+        outer = outer.enabled(false);
     }
 
-    Box(m).child(with_content_color(content_color, move || icon))
+    Box(outer).child(Box(inner).child(with_content_color(content_color, move || icon)))
 }
 
 /// M3 Icon Button - a tappable circular container for an icon.

@@ -154,8 +154,22 @@ impl ButtonDefaults {
         theme().primary
     }
     pub const HEIGHT: f32 = 40.0;
+    pub const MIN_HEIGHT: f32 = 40.0;
+    pub const MIN_WIDTH: f32 = 58.0;
     pub const HORIZONTAL_PADDING: f32 = 24.0;
     pub const TEXT_HORIZONTAL_PADDING: f32 = 12.0;
+    pub const CONTENT_PADDING: PaddingValues = PaddingValues {
+        left: 24.0,
+        right: 24.0,
+        top: 8.0,
+        bottom: 8.0,
+    };
+    pub const TEXT_CONTENT_PADDING: PaddingValues = PaddingValues {
+        left: 12.0,
+        right: 12.0,
+        top: 8.0,
+        bottom: 8.0,
+    };
     pub const SHAPE_RADIUS: f32 = 20.0;
     pub fn state_colors_default() -> StateColors {
         let th = theme();
@@ -265,8 +279,13 @@ impl DialogDefaults {
 pub struct IconButtonDefaults;
 
 impl IconButtonDefaults {
-    pub const CONTAINER_SIZE: f32 = 48.0;
+    /// Visual / ripple container (Compose smallContainerSize / StateLayerSize).
+    pub const CONTAINER_SIZE: f32 = 40.0;
     pub const FILLED_CONTAINER_SIZE: f32 = 40.0;
+    /// Accessibility minimum touch target.
+    pub const MIN_INTERACTIVE_SIZE: f32 = 48.0;
+    /// Unbounded state-layer / ripple radius (half of CONTAINER_SIZE).
+    pub const STATE_LAYER_RADIUS: f32 = 20.0;
     pub fn content_color() -> Color {
         theme().on_surface_variant
     }
@@ -1153,7 +1172,7 @@ impl OutlinedTextFieldDefaults {
         theme().primary
     }
     pub fn container_color() -> Color {
-        theme().surface
+        Color::TRANSPARENT
     }
 }
 

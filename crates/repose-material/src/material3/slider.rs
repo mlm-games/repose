@@ -126,10 +126,12 @@ pub fn Slider(
     let track_rect = remember_state_with_key(format!("ms_rect_{}", id), Rect::default);
     let drag_active = remember_mutable_with_key(format!("ms_da_{}", id), || false);
     let hovered = remember(|| Signal::new(false));
+    let focused = remember(|| Signal::new(false));
 
     let track_rect_p = track_rect.clone();
     let drag_active_p = drag_active.clone();
     let hovered_sig = hovered.clone();
+    let focused_sig = focused.clone();
     let sc = config.state_colors;
 
     let min = range.0;
@@ -185,6 +187,12 @@ pub fn Slider(
     if !is_enabled {
         host = host.enabled(false);
     }
+    host = host
+        .focusable(true)
+        .on_focus_changed({
+            let f = focused.clone();
+            move |focused| f.set(focused)
+        });
     Box(host
         .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
             let mul_c = |c: Color| {
@@ -286,6 +294,7 @@ pub fn Slider(
             }
             let da = *drag_active_p.get();
             let hv = hovered_sig.get();
+            let fs = focused_sig.get();
             let tw = if da { thumb_w * 0.5 } else { thumb_w };
             scene.nodes.push(SceneNode::Rect {
                 rect: Rect {
@@ -297,15 +306,19 @@ pub fn Slider(
                 brush: Brush::Solid(mul_c(thumb_col)),
                 radius: [tw * 0.5; 4],
             });
-            let sc_target = if !is_enabled {
-                Color::TRANSPARENT
-            } else if da {
-                sc.pressed
-            } else if hv {
-                sc.hovered
-            } else {
-                sc.default
-            };
+
+// Compose: circular state layer centered on the thumb (not on handle geometry)
+        let sc_target = if !is_enabled {
+            Color::TRANSPARENT
+        } else if da {
+            sc.pressed
+        } else if fs {
+            sc.focused
+        } else if hv {
+            sc.hovered
+        } else {
+            sc.default
+        };
             if sc_target.3 > 0 {
                 let sl = dp_to_px(SliderDefaults::STATE_LAYER_SIZE);
                 scene.nodes.push(SceneNode::Ellipse {
@@ -425,6 +438,7 @@ pub fn RangeSlider(
     let drag_active = remember_mutable_with_key(format!("mrs_da_{}", id), || false);
     let active_thumb = remember_mutable_with_key(format!("mrs_at_{}", id), || false);
     let hovered = remember(|| Signal::new(false));
+    let focused = remember(|| Signal::new(false));
 
     let min = range.0;
     let max = range.1;
@@ -472,6 +486,7 @@ pub fn RangeSlider(
     let drag_active_p = drag_active.clone();
     let active_thumb_p = active_thumb.clone();
     let hovered_sig = hovered.clone();
+    let focused_sig = focused.clone();
 
     let sl_source: Rc<MutableInteractionSource> = config
         .interaction_source
@@ -485,6 +500,12 @@ pub fn RangeSlider(
     if !is_enabled {
         host = host.enabled(false);
     }
+    host = host
+        .focusable(true)
+        .on_focus_changed({
+            let f = focused.clone();
+            move |focused| f.set(focused)
+        });
     Box(host
         .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
             let mul_c = |c: Color| {
@@ -618,6 +639,7 @@ pub fn RangeSlider(
             let da = *drag_active_p.get();
             let at = *active_thumb_p.get();
             let hv = hovered_sig.get();
+            let fs = focused_sig.get();
             let thumbs = [k0, k1];
             for (idx, &kx) in thumbs.iter().enumerate() {
                 let is_active = da && (if idx == 0 { !at } else { at });
@@ -636,6 +658,8 @@ pub fn RangeSlider(
                     Color::TRANSPARENT
                 } else if is_active {
                     sc.pressed
+                } else if fs {
+                    sc.focused
                 } else if hv {
                     sc.hovered
                 } else {

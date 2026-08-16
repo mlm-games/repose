@@ -233,6 +233,25 @@ impl Default for LinearProgressIndicatorConfig {
 /// Pass `LinearProgressIndicatorConfig::default()` for standard M3 appearance,
 /// or override individual fields via struct-update syntax.
 pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicatorConfig) -> View {
+    let indet_t = if value.is_none() {
+        let shared = remember_state_with_key("lin_ind_shared", || {
+            let mut a = AnimatedValue::new(
+                0.0f32,
+                AnimationSpec::tween(Duration::from_millis(1800), Easing::Linear)
+                    .repeated(RepeatableSpec::infinite()),
+            );
+            a.set_target(1.0);
+            a
+        });
+        let mut s = shared.borrow_mut();
+        s.update();
+        let t = *s.get();
+        drop(s);
+        Some(t)
+    } else {
+        None
+    };
+
     Box(Modifier::new()
         .fill_max_width()
         .height(ProgressIndicatorDefaults::LINEAR_INDICATOR_HEIGHT)
@@ -248,73 +267,82 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
             };
             let track_h = rect.h;
             let corner = track_h * 0.5;
-            let dot_r = dp_to_px(config.stop_size) * 0.5;
             let cy = rect.y + rect.h * 0.5;
-            let t = value.unwrap_or(0.0).clamp(0.0, 1.0);
-
             let cap_radius = if config.stroke_cap == StrokeCap::Butt {
                 0.0
             } else {
                 corner
             };
+            let gap = dp_to_px(config.gap_size);
 
-            let gap = dp_to_px(config.gap_size)
-                - if config.stroke_cap == StrokeCap::Butt {
-                    0.0
-                } else {
-                    cap_radius
-                };
+            // always draw the full track first (Compose draws track under indicator)
+            scene.nodes.push(SceneNode::Rect {
+                rect: Rect {
+                    x: rect.x,
+                    y: cy - corner,
+                    w: rect.w,
+                    h: track_h,
+                },
+                brush: Brush::Solid(mul_c(config.track_color)),
+                radius: [cap_radius; 4],
+            });
 
-            let cap_ofs = cap_radius;
-            let ind_end = (t * rect.w).clamp(cap_ofs, rect.w - cap_ofs);
-            let ind_w = (ind_end - cap_ofs).max(0.0);
-
-            // Indicator (active portion from left)
-            if t > 0.0 && ind_w > 0.0 {
-                scene.nodes.push(SceneNode::Rect {
-                    rect: Rect {
-                        x: rect.x + cap_ofs,
-                        y: cy - corner,
-                        w: ind_w,
-                        h: track_h,
-                    },
-                    brush: Brush::Solid(mul_c(config.color)),
-                    radius: [cap_radius; 4],
-                });
-            }
-
-            // Track (inactive portion after gap)
-            let track_start = (rect.x + ind_end + gap).min(rect.x + rect.w);
-            let track_w = (rect.x + rect.w - track_start).max(0.0);
-            if t < 1.0 && track_w > 0.0 {
-                let track_left = track_start + cap_ofs;
-                let track_right = rect.x + rect.w;
-                if track_right > track_left {
-                    scene.nodes.push(SceneNode::Rect {
+            match (value, indet_t) {
+                (Some(v), _) => {
+                    let t = v.clamp(0.0, 1.0);
+                    let ind_w = (t * rect.w).max(0.0);
+                    if ind_w > 0.0 {
+                        scene.nodes.push(SceneNode::Rect {
+                            rect: Rect {
+                                x: rect.x,
+                                y: cy - corner,
+                                w: (ind_w - gap).max(0.0),
+                                h: track_h,
+                            },
+                            brush: Brush::Solid(mul_c(config.color)),
+                            radius: [cap_radius; 4],
+                        });
+                    }
+                    let dot_r = dp_to_px(config.stop_size) * 0.5;
+                    scene.nodes.push(SceneNode::Ellipse {
                         rect: Rect {
-                            x: track_left,
-                            y: cy - corner,
-                            w: track_right - track_left,
-                            h: track_h,
+                            x: rect.x + rect.w - dot_r * 2.0,
+                            y: cy - dot_r,
+                            w: dot_r * 2.0,
+                            h: dot_r * 2.0,
                         },
-                        brush: Brush::Solid(mul_c(config.track_color)),
-                        radius: [cap_radius; 4],
+                        brush: Brush::Solid(mul_c(config.color)),
                     });
                 }
-            }
-
-            // Stop indicator at right end circle
-            {
-                let sx = rect.x + rect.w - dot_r;
-                scene.nodes.push(SceneNode::Ellipse {
-                    rect: Rect {
-                        x: sx - dot_r,
-                        y: cy - dot_r,
-                        w: dot_r * 2.0,
-                        h: dot_r * 2.0,
-                    },
-                    brush: Brush::Solid(mul_c(config.color)),
-                });
+                (None, Some(t)) => {
+                    let mut draw_seg = |start: f32, end: f32| {
+                        let s = start.clamp(0.0, 1.0) * rect.w;
+                        let e = end.clamp(0.0, 1.0) * rect.w;
+                        let w = (e - s).max(0.0);
+                        if w > 0.5 {
+                            scene.nodes.push(SceneNode::Rect {
+                                rect: Rect {
+                                    x: rect.x + s,
+                                    y: cy - corner,
+                                    w,
+                                    h: track_h,
+                                },
+                                brush: Brush::Solid(mul_c(config.color)),
+                                radius: [cap_radius; 4],
+                            });
+                        }
+                    };
+                    // segment 1
+                    let s1 = (t * 1.4 - 0.2).clamp(0.0, 1.0);
+                    let e1 = (t * 1.4 + 0.25).clamp(0.0, 1.0);
+                    draw_seg(s1, e1);
+                    // segment 2 (phase offset)
+                    let t2 = (t + 0.45) % 1.0;
+                    let s2 = (t2 * 1.2 - 0.15).clamp(0.0, 1.0);
+                    let e2 = (t2 * 1.2 + 0.15).clamp(0.0, 1.0);
+                    draw_seg(s2, e2);
+                }
+                _ => {}
             }
         }))
     .semantics(Semantics {

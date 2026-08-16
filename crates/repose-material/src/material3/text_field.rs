@@ -2,6 +2,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
 use repose_ui::{
@@ -12,6 +13,38 @@ use repose_ui::{
 };
 
 use super::*;
+
+static OTF_COUNTER: AtomicU64 = AtomicU64::new(0);
+static OTFS_COUNTER: AtomicU64 = AtomicU64::new(0);
+static TF_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Tint a leading icon with the M3 icon color (12dp gap to the input, Compose style).
+fn tint_icon(color: Color, icon: Option<View>) -> View {
+    match icon {
+        Some(v) => Box(Modifier::new().padding_values(PaddingValues {
+            left: 0.0,
+            right: 12.0,
+            top: 0.0,
+            bottom: 0.0,
+        }))
+        .child(with_content_color(color, move || v)),
+        None => Box(Modifier::new()),
+    }
+}
+
+/// Tint a trailing icon with the M3 icon color (12dp gap to the input, Compose style).
+fn tint_trailing_icon(color: Color, icon: Option<View>) -> View {
+    match icon {
+        Some(v) => Box(Modifier::new().padding_values(PaddingValues {
+            left: 12.0,
+            right: 0.0,
+            top: 0.0,
+            bottom: 0.0,
+        }))
+        .child(with_content_color(color, move || v)),
+        None => Box(Modifier::new()),
+    }
+}
 
 /// Color slots for text fields -> matches Compose Material3 `TextFieldColors`.
 /// All 42 color fields (focused/unfocused/disabled/error variants of each slot).
@@ -328,11 +361,9 @@ pub fn OutlinedTextField(
     let label_str: Option<Rc<str>> = config.label.clone().map(Rc::from);
     let has_label = label_str.is_some();
 
-    // Unique animation key per label to avoid conflicts when multiple fields exist
-    let anim_key = match &label_str {
-        Some(l) => format!("otf_{}", &l[..l.len().min(32)]),
-        None => "otf_nolabel".into(),
-    };
+    // Unique stable animation key (label text collides when two fields share a label)
+    let id = *remember(|| OTF_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let anim_key = format!("otf_{id}");
 
     // Persistent focus tracker - set by layout/paint when this field is focused,
     // read here on the next frame. This gives a one-frame delay on tap-to-float,
@@ -415,11 +446,9 @@ pub fn OutlinedTextFieldState(
     let label_str: Option<Rc<str>> = config.label.clone().map(Rc::from);
     let has_label = label_str.is_some();
 
-    // Unique animation key per label to avoid conflicts when multiple fields exist
-    let anim_key = match &label_str {
-        Some(l) => format!("otf_{}", &l[..l.len().min(32)]),
-        None => "otf_nolabel".into(),
-    };
+    // Unique stable animation key (label text collides when two fields share a label)
+    let id = *remember(|| OTFS_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let anim_key = format!("otfs_{id}");
 
     let focus_tracker: Rc<Cell<bool>> = match config.focus_tracker.clone() {
         Some(ft) => ft,
@@ -524,7 +553,7 @@ fn outlined_field_decoration(
             } else {
                 th.on_surface_variant
             },
-            th.surface,
+            Color::TRANSPARENT,
         )
     };
 
@@ -566,6 +595,32 @@ fn outlined_field_decoration(
             },
         )
     };
+
+    let (lead_c, trail_c) = if let Some(ref tc) = config.colors {
+        (
+            tc.leading_icon_color(config.enabled, config.is_error, is_focused),
+            tc.trailing_icon_color(config.enabled, config.is_error, is_focused),
+        )
+    } else {
+        let c = if !config.enabled {
+            th.on_surface.with_alpha_f32(0.38)
+        } else if config.is_error {
+            th.error
+        } else {
+            th.on_surface_variant
+        };
+        (c, c)
+    };
+
+    let text_c = config
+        .colors
+        .as_ref()
+        .map(|c| c.text_color(config.enabled, config.is_error, is_focused))
+        .unwrap_or(if config.enabled {
+            th.on_surface
+        } else {
+            th.on_surface.with_alpha_f32(0.38)
+        });
 
     let supporting = config.supporting_text.as_ref().map(|st| {
         let c = if let Some(ref tc) = config.colors {
@@ -639,7 +694,7 @@ fn outlined_field_decoration(
                 })
                 .align_items(AlignItems::CENTER))
             .child((
-                config.leading_icon.clone().unwrap_or(Box(Modifier::new())),
+                tint_icon(lead_c, config.leading_icon.clone()),
                 config
                     .prefix
                     .as_ref()
@@ -650,7 +705,7 @@ fn outlined_field_decoration(
                             .single_line()
                     })
                     .unwrap_or(Box(Modifier::new())),
-                text_input,
+                with_content_color(text_c, move || text_input),
                 config
                     .suffix
                     .as_ref()
@@ -661,7 +716,7 @@ fn outlined_field_decoration(
                             .single_line()
                     })
                     .unwrap_or(Box(Modifier::new())),
-                config.trailing_icon.clone().unwrap_or(Box(Modifier::new())),
+                tint_trailing_icon(trail_c, config.trailing_icon.clone()),
             )),
             if let Some(lbl) = label_str {
                 Box(Modifier::new()
@@ -742,10 +797,8 @@ pub fn TextField(
     let label_str: Option<Rc<str>> = config.label.map(Rc::from);
     let has_label = label_str.is_some();
 
-    let anim_key = match &label_str {
-        Some(l) => format!("tf_{}", &l[..l.len().min(32)]),
-        None => "tf_nolabel".into(),
-    };
+    let id = *remember(|| TF_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let anim_key = format!("tf_{id}");
 
     let focus_tracker: Rc<Cell<bool>> =
         remember_with_key(format!("tf_focus_{}", anim_key), || Cell::new(false));
@@ -765,16 +818,20 @@ pub fn TextField(
         let bg = tc.container_color(config.enabled, config.is_error, enf);
         (ind, lb, bg)
     } else {
-        let ind = if config.is_error {
+        let ind = if !config.enabled {
+            th.on_surface.with_alpha_f32(0.38)
+        } else if config.is_error {
             th.error
-        } else if float_t > 0.5 {
+        } else if is_focused {
             th.primary
         } else {
             th.on_surface_variant
         };
-        let lb = if config.is_error {
+        let lb = if !config.enabled {
+            th.on_surface.with_alpha_f32(0.38)
+        } else if config.is_error {
             th.error
-        } else if float_t > 0.5 {
+        } else if is_focused {
             th.primary
         } else {
             th.on_surface_variant
@@ -839,6 +896,32 @@ pub fn TextField(
         )
     };
 
+    let (lead_c, trail_c) = if let Some(ref tc) = config.colors {
+        (
+            tc.leading_icon_color(config.enabled, config.is_error, is_focused),
+            tc.trailing_icon_color(config.enabled, config.is_error, is_focused),
+        )
+    } else {
+        let c = if !config.enabled {
+            th.on_surface.with_alpha_f32(0.38)
+        } else if config.is_error {
+            th.error
+        } else {
+            th.on_surface_variant
+        };
+        (c, c)
+    };
+
+    let text_c = config
+        .colors
+        .as_ref()
+        .map(|c| c.text_color(config.enabled, config.is_error, is_focused))
+        .unwrap_or(if config.enabled {
+            th.on_surface
+        } else {
+            th.on_surface.with_alpha_f32(0.38)
+        });
+
     let supporting = config.supporting_text.as_ref().map(|st| {
         let c = if let Some(ref tc) = config.colors {
             tc.supporting_text_color(config.enabled, config.is_error, is_focused)
@@ -858,116 +941,119 @@ pub fn TextField(
             }))
     });
 
+    let text_input = View::new(0, ViewKind::Box)
+        .modifier(
+            Modifier::new().flex_grow(1.0).text_input(TextInputConfig {
+                hint: tf_placeholder,
+                multiline: !config.single_line,
+                on_change: Some(Rc::new(on_value_change) as _),
+                on_submit: config.on_submit.clone().map(|f| {
+                    let f = f.clone();
+                    Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
+                }),
+                focus_tracker: Some(focus_tracker),
+                value: value.clone(),
+                visual_transformation: None,
+                keyboard_type: Default::default(),
+                capitalization: Default::default(),
+                ime_action: Default::default(),
+                auto_correct_enabled: None,
+                enabled: config.enabled,
+                read_only: false,
+                max_lines: None,
+                min_lines: 1,
+                cursor_color: config
+                    .colors
+                    .as_ref()
+                    .map(|c| c.cursor_color(config.is_error)),
+                on_text_layout: None,
+                text_style: None,
+                keyboard_actions: None,
+                interaction_source: None,
+                line_limits: None,
+            }),
+        )
+        .semantics(Semantics {
+            role: Role::TextField,
+            label: None,
+            focused: false,
+            enabled: config.enabled,
+            selectable_group: false,
+        });
+
     Column(modifier.min_width(TextFieldDefaults::MIN_WIDTH)).child((
-        Box(Modifier::new()
-            .fill_max_width()
-            .min_height(TextFieldDefaults::MIN_HEIGHT)
-            .clip_rounded(th.shapes.extra_small)
-            .background(container_bg))
-        .child(
-            Column(Modifier::new().fill_max_size()).child((
-                // Input row
-                Row(Modifier::new()
-                    .fill_max_size()
-                    .padding_values(PaddingValues {
-                        left: 16.0,
-                        right: 16.0,
-                        top: top_pad,
-                        bottom: bottom_pad,
-                    })
-                    .align_items(AlignItems::CENTER))
-                .child((
-                    config.leading_icon.unwrap_or(Box(Modifier::new())),
-                    config
-                        .prefix
-                        .as_ref()
-                        .map(|p| {
-                            Text(p.clone())
-                                .color(prefix_color)
-                                .size(th.typography.body_large)
-                                .single_line()
-                        })
-                        .unwrap_or(Box(Modifier::new())),
-                    View::new(0, ViewKind::Box)
-                        .modifier(
-                            Modifier::new().flex_grow(1.0).text_input(TextInputConfig {
-                                hint: tf_placeholder,
-                                multiline: !config.single_line,
-                                on_change: Some(Rc::new(on_value_change) as _),
-                                on_submit: config.on_submit.clone().map(|f| {
-                                    let f = f.clone();
-                                    Rc::new(move |s| f(s)) as Rc<dyn Fn(String)>
-                                }),
-                                focus_tracker: Some(focus_tracker.clone()),
-                                value: value.clone(),
-                                visual_transformation: None,
-                                keyboard_type: Default::default(),
-                                capitalization: Default::default(),
-                                ime_action: Default::default(),
-                                auto_correct_enabled: None,
-                                enabled: config.enabled,
-                                read_only: false,
-                                max_lines: None,
-                                min_lines: 1,
-                                cursor_color: config
-                                    .colors
-                                    .as_ref()
-                                    .map(|c| c.cursor_color(config.is_error)),
-                                on_text_layout: None,
-                                text_style: None,
-                                keyboard_actions: None,
-                                interaction_source: None,
-                                line_limits: None,
-                            }),
-                        )
-                        .semantics(Semantics {
-                            role: Role::TextField,
-                            label: None,
-                            focused: false,
-                            enabled: config.enabled,
-                            selectable_group: false,
-                        }),
-                    config
-                        .suffix
-                        .as_ref()
-                        .map(|s| {
-                            Text(s.clone())
-                                .color(suffix_color)
-                                .size(th.typography.body_large)
-                                .single_line()
-                        })
-                        .unwrap_or(Box(Modifier::new())),
-                    config.trailing_icon.unwrap_or(Box(Modifier::new())),
-                )),
-                // Bottom indicator line
-                Box(Modifier::new()
-                    .fill_max_width()
-                    .height(indicator_w)
-                    .absolute()
-                    .offset(None, None, None, Some(0.0))
-                    .background(indicator_color)),
-            )),
-        ),
-        // Floating label
-        if let Some(lbl) = label_str {
+        ZStack(
+            Modifier::new()
+                .fill_max_width()
+                .min_height(TextFieldDefaults::MIN_HEIGHT),
+        )
+        .child((
+            // Container: top-rounded only (M3 filled shape)
             Box(Modifier::new()
-                .min_width(200.0)
+                .fill_max_size()
+                .clip_rounded_radii([
+                    0.0,                   // BL
+                    0.0,                   // BR
+                    th.shapes.extra_small, // TR
+                    th.shapes.extra_small, // TL
+                ])
+                .background(container_bg)),
+            // Input row
+            Row(Modifier::new()
+                .fill_max_size()
                 .padding_values(PaddingValues {
-                    left: label_x,
-                    right: 20.0,
-                    top: 0.0,
-                    bottom: 0.0,
+                    left: 16.0,
+                    right: 16.0,
+                    top: top_pad,
+                    bottom: bottom_pad,
                 })
+                .align_items(AlignItems::CENTER))
+            .child((
+                tint_icon(lead_c, config.leading_icon.clone()),
+                config
+                    .prefix
+                    .as_ref()
+                    .map(|p| {
+                        Text(p.clone())
+                            .color(prefix_color)
+                            .size(th.typography.body_large)
+                            .single_line()
+                    })
+                    .unwrap_or(Box(Modifier::new())),
+                with_content_color(text_c, move || text_input),
+                config
+                    .suffix
+                    .as_ref()
+                    .map(|s| {
+                        Text(s.clone())
+                            .color(suffix_color)
+                            .size(th.typography.body_large)
+                            .single_line()
+                    })
+                    .unwrap_or(Box(Modifier::new())),
+                tint_trailing_icon(trail_c, config.trailing_icon.clone()),
+            )),
+            // Bottom indicator line
+            Box(Modifier::new()
+                .fill_max_width()
+                .height(indicator_w)
                 .absolute()
-                .offset(Some(0.0), Some(label_y), None, None))
-            .child(
-                Text(lbl.as_ref().to_string())
-                    .color(label_color)
-                    .size(label_size),
-            )
-        } else {
-            Box(Modifier::new())
-        },
+                .offset(None, None, None, Some(0.0))
+                .background(indicator_color)),
+            // Floating label inside the stack
+            if let Some(lbl) = label_str {
+                Box(Modifier::new()
+                    .absolute()
+                    .offset(Some(label_x), Some(label_y), None, None))
+                .child(
+                    Text(lbl.as_ref().to_string())
+                        .color(label_color)
+                        .size(label_size),
+                )
+            } else {
+                Box(Modifier::new())
+            },
+        )),
         supporting.unwrap_or(Box(Modifier::new())),
     ))
 }

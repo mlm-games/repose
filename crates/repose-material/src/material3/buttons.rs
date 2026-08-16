@@ -147,7 +147,7 @@ fn button_impl(
 ) -> View {
     let mut m = Modifier::new()
         .min_height(height)
-        .min_width(58.0)
+        .min_width(ButtonDefaults::MIN_WIDTH)
         .flex_shrink(0.0);
     if let Some(bg) = container_color {
         m = m.background(bg);
@@ -222,12 +222,9 @@ pub fn Button(
         disabled_content_color: th.on_surface.with_alpha_f32(0.38),
     };
     let (cc, bg, sc, se) = resolve_button_colors(&config, def);
-    let pad = config.content_padding.unwrap_or(PaddingValues {
-        left: 24.0,
-        right: 24.0,
-        top: 8.0,
-        bottom: 8.0,
-    });
+    let pad = config
+        .content_padding
+        .unwrap_or(ButtonDefaults::CONTENT_PADDING);
     button_impl(
         modifier.then(config.modifier),
         on_click,
@@ -263,12 +260,9 @@ pub fn FilledTonalButton(
         disabled_content_color: th.on_surface.with_alpha_f32(0.38),
     };
     let (cc, bg, sc, se) = resolve_button_colors(&config, def);
-    let pad = config.content_padding.unwrap_or(PaddingValues {
-        left: 24.0,
-        right: 24.0,
-        top: 8.0,
-        bottom: 8.0,
-    });
+    let pad = config
+        .content_padding
+        .unwrap_or(ButtonDefaults::CONTENT_PADDING);
     button_impl(
         modifier.then(config.modifier),
         on_click,
@@ -309,12 +303,9 @@ pub fn OutlinedButton(
         };
         (1.0, c, config.shape_radius)
     });
-    let pad = config.content_padding.unwrap_or(PaddingValues {
-        left: 24.0,
-        right: 24.0,
-        top: 8.0,
-        bottom: 8.0,
-    });
+    let pad = config
+        .content_padding
+        .unwrap_or(ButtonDefaults::CONTENT_PADDING);
     button_impl(
         modifier.then(config.modifier),
         on_click,
@@ -347,12 +338,9 @@ pub fn TextButton(
         disabled_content_color: th.on_surface.with_alpha_f32(0.38),
     };
     let (cc, bg, sc, se) = resolve_button_colors(&config, def);
-    let pad = config.content_padding.unwrap_or(PaddingValues {
-        left: 12.0,
-        right: 12.0,
-        top: 8.0,
-        bottom: 8.0,
-    });
+    let pad = config
+        .content_padding
+        .unwrap_or(ButtonDefaults::TEXT_CONTENT_PADDING);
     button_impl(
         modifier.then(config.modifier),
         on_click,
@@ -385,12 +373,9 @@ pub fn ElevatedButton(
         disabled_content_color: th.on_surface.with_alpha_f32(0.38),
     };
     let (cc, bg, sc, se) = resolve_button_colors(&config, def);
-    let pad = config.content_padding.unwrap_or(PaddingValues {
-        left: 24.0,
-        right: 24.0,
-        top: 8.0,
-        bottom: 8.0,
-    });
+    let pad = config
+        .content_padding
+        .unwrap_or(ButtonDefaults::CONTENT_PADDING);
     button_impl(
         modifier.then(config.modifier),
         on_click,

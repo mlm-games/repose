@@ -145,11 +145,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         .state_colors(config.state_colors)
         .interaction_source(&cb_source)
         .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(if checked {
-                config.checked_color
-            } else {
-                th.on_surface
-            }),
+            color: Some(th.on_surface),
             bounded: false, // circular 40dp target → unbounded looks correct
             radius: Some(20.0),
             ..Default::default()
@@ -278,11 +274,7 @@ pub fn TriStateCheckbox(
         .state_colors(config.state_colors)
         .interaction_source(&tc_source)
         .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(if has_fill {
-                config.checked_color
-            } else {
-                th.on_surface
-            }),
+            color: Some(th.on_surface),
             bounded: false,
             radius: Some(20.0),
             ..Default::default()
@@ -422,11 +414,7 @@ pub fn RadioButton(
         .state_colors(config.state_colors)
         .interaction_source(&rb_source)
         .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(if selected {
-                config.selected_color
-            } else {
-                th.on_surface
-            }),
+            color: Some(th.on_surface),
             bounded: false,
             radius: Some(20.0),
             ..Default::default()
