@@ -6,7 +6,7 @@ use std::sync::atomic::Ordering;
 use repose_core::*;
 use repose_ui::{Box, FlowRow, Row, ViewExt, anim::animate_color};
 
-use super::util::FILTERCHIP_COUNTER;
+use super::util::{FILTERCHIP_COUNTER, apply_enabled_click};
 use super::*;
 
 /// Color slots for chips (both non-selectable and selectable).
@@ -211,11 +211,7 @@ pub fn AssistChip(
         m = m.border(config.border_width, border, shape);
     }
 
-    if is_enabled {
-        m = m.clickable().on_click(on_click);
-    } else {
-        m = m.enabled(false);
-    }
+    m = apply_enabled_click(m, is_enabled, on_click);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -296,11 +292,7 @@ pub fn ElevatedAssistChip(
         }))
         .then(config.modifier);
 
-    if is_enabled {
-        m = m.clickable().on_click(on_click);
-    } else {
-        m = m.enabled(false);
-    }
+    m = apply_enabled_click(m, is_enabled, on_click);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -416,11 +408,7 @@ pub fn FilterChip(
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
         m = m.border(config.border_width, border, shape);
     }
-    if is_enabled {
-        m = m.clickable().on_click(on_click);
-    } else {
-        m = m.enabled(false);
-    }
+    m = apply_enabled_click(m, is_enabled, on_click);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -522,11 +510,7 @@ pub fn ElevatedFilterChip(
         }))
         .then(config.modifier);
 
-    if is_enabled {
-        m = m.clickable().on_click(on_click);
-    } else {
-        m = m.enabled(false);
-    }
+    m = apply_enabled_click(m, is_enabled, on_click);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -612,11 +596,7 @@ pub fn SuggestionChip(
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
         m = m.border(config.border_width, border, shape);
     }
-    if is_enabled {
-        m = m.clickable().on_click(on_click);
-    } else {
-        m = m.enabled(false);
-    }
+    m = apply_enabled_click(m, is_enabled, on_click);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -684,11 +664,7 @@ pub fn ElevatedSuggestionChip(
         }))
         .then(config.modifier);
 
-    if is_enabled {
-        m = m.clickable().on_click(on_click);
-    } else {
-        m = m.enabled(false);
-    }
+    m = apply_enabled_click(m, is_enabled, on_click);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -793,11 +769,7 @@ pub fn InputChip(
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
         m = m.border(config.border_width, border, shape);
     }
-    if is_enabled {
-        m = m.clickable().on_click(on_click);
-    } else {
-        m = m.enabled(false);
-    }
+    m = apply_enabled_click(m, is_enabled, on_click);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((

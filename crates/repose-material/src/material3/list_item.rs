@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use repose_core::*;
 use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt, anim::animate_color};
 
+use super::util::apply_enabled_click;
 use super::*;
 
 /// Colors for [`ListItem`] -> matches Compose Material3 `ListItemColors` with
@@ -316,18 +317,21 @@ pub fn ListItem(
             bounded: true,
             ..Default::default()
         }));
+        let click_cb = on_click.clone();
+        modifier = apply_enabled_click(
+            modifier,
+            is_enabled,
+            move || {
+                if let Some(cb) = &click_cb {
+                    cb();
+                }
+            },
+        );
         if is_enabled {
-            modifier = modifier.clickable();
-            if let Some(cb) = on_click {
-                let cb = cb.clone();
-                modifier = modifier.on_click(move || cb());
-            }
             if let Some(cb) = &on_long_click {
                 let cb = cb.clone();
                 modifier = modifier.on_long_click(move || cb());
             }
-        } else {
-            modifier = modifier.enabled(false);
         }
     }
 

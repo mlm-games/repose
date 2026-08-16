@@ -5,6 +5,7 @@ use std::rc::Rc;
 use repose_core::*;
 use repose_ui::{Box, Row, Text, TextStyle, ViewExt};
 
+use super::util::apply_enabled_click;
 use super::*;
 
 /// Configuration for FAB components.
@@ -97,11 +98,7 @@ fn fab_impl(
         bounded: true,
         ..Default::default()
     }));
-    if is_enabled {
-        m = m.clickable().on_click(on_click);
-    } else {
-        m = m.enabled(false);
-    }
+    m = apply_enabled_click(m, is_enabled, on_click);
 
     Box(m).child(with_content_color(content_color, move || icon))
 }
@@ -209,11 +206,7 @@ pub fn ExtendedFAB(
         bounded: true,
         ..Default::default()
     }));
-    if is_enabled {
-        m = m.clickable().on_click(on_click);
-    } else {
-        m = m.enabled(false);
-    }
+    m = apply_enabled_click(m, is_enabled, on_click);
     m = m.then(config.modifier);
     Row(m).child((
         icon.map(|v| with_content_color(content_color, move || v))

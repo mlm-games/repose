@@ -39,6 +39,20 @@ pub(crate) fn lerp_color(a: Color, b: Color, t: f32) -> Color {
             .clamp(0.0, 255.0) as u8,
     )
 }
+/// Wire clickable when enabled, or disable the control when not. Centralizes
+/// the "still clickable when disabled" class of bugs across M3 controls.
+pub(crate) fn apply_enabled_click(
+    mut m: Modifier,
+    enabled: bool,
+    on_click: impl Fn() + 'static,
+) -> Modifier {
+    if enabled {
+        m.clickable().on_click(on_click)
+    } else {
+        m.enabled(false)
+    }
+}
+
 /// Wire source + M3 ripple (content-tinted) + clickable in one consistent path.
 /// Use this for every interactive M3 control so hover/press/focus feedback is
 /// uniform across buttons, chips, icon buttons, FABs, toggles, etc.
@@ -55,8 +69,5 @@ pub(crate) fn apply_m3_clickable(
         bounded: true,
         ..Default::default()
     }));
-    if enabled {
-        m = m.clickable().on_click(on_click);
-    }
-    m
+    apply_enabled_click(m, enabled, on_click)
 }

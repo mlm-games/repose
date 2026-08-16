@@ -5,6 +5,7 @@ use std::rc::Rc;
 use repose_core::*;
 use repose_ui::{Box, ViewExt};
 
+use super::util::apply_enabled_click;
 use super::*;
 
 /// Color slots for icon buttons.
@@ -115,11 +116,7 @@ fn icon_button_render(
         }),
         ..Default::default()
     }));
-    if is_enabled {
-        outer = outer.clickable().on_click(on_click);
-    } else {
-        outer = outer.enabled(false);
-    }
+    outer = apply_enabled_click(outer, is_enabled, on_click);
 
     Box(outer).child(Box(inner).child(with_content_color(content_color, move || icon)))
 }

@@ -10,6 +10,8 @@ use repose_ui::{
     anim::{animate_color, animate_f32},
 };
 
+use super::util::apply_enabled_click;
+
 use super::*;
 
 /// Configuration for [`Checkbox`].
@@ -153,11 +155,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER);
 
-    if is_enabled {
-        m = m.clickable().on_click(cb);
-    } else {
-        m = m.enabled(false);
-    }
+    m = apply_enabled_click(m, is_enabled, cb);
     Box(m.then(config.modifier)).child(
         Box(Modifier::new()
             .size(sz, sz)
@@ -282,17 +280,17 @@ pub fn TriStateCheckbox(
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER);
 
-    if is_enabled {
-        m = m.clickable().on_click(move || {
+    m = apply_enabled_click(
+        m,
+        is_enabled,
+        move || {
             on_change(match state {
                 TriState::Checked => TriState::Unchecked,
                 TriState::Indeterminate => TriState::Checked,
                 TriState::Unchecked => TriState::Checked,
             })
-        });
-    } else {
-        m = m.enabled(false);
-    }
+        },
+    );
     Box(m.then(config.modifier)).child(
         Box(Modifier::new()
             .size(sz, sz)
@@ -422,11 +420,7 @@ pub fn RadioButton(
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER);
 
-    if config.enabled {
-        m = m.clickable().on_click(cb);
-    } else {
-        m = m.enabled(false);
-    }
+    m = apply_enabled_click(m, config.enabled, cb);
     Box(m.then(config.modifier)).child(
         Box(Modifier::new()
             .size(d, d)
@@ -606,14 +600,14 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
         .border(track_border, border_color, track_h * 0.5)
         .interaction_source(&sw_source);
 
-    if is_enabled {
-        track = track.clickable().on_click({
+    track = apply_enabled_click(
+        track,
+        is_enabled,
+        {
             let cb = on_change;
             move || cb(!checked)
-        });
-    } else {
-        track = track.enabled(false);
-    }
+        },
+    );
 
     Box(track.then(config.modifier)).child((
         Box(Modifier::new()

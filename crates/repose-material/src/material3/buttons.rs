@@ -6,6 +6,7 @@ use crate::ripple::{RippleConfig, ripple};
 use repose_core::*;
 use repose_ui::{Box, ViewExt};
 
+use super::util::apply_enabled_click;
 use super::*;
 
 /// Color slots for buttons (matching Compose Material3 `ButtonColors`).
@@ -193,11 +194,7 @@ fn button_impl(
         ..Default::default()
     }));
 
-    if enabled {
-        m = m.clickable().on_click(on_click);
-    } else {
-        m = m.enabled(false);
-    }
+    m = apply_enabled_click(m, enabled, on_click);
     m = m.then(outer_modifier);
     let content = with_content_color(content_color, content);
     Box(m).child(content)
@@ -492,12 +489,8 @@ fn toggle_button_impl(
     if let Some((w, c, r)) = border {
         m = m.border(w, c, r);
     }
-    if enabled {
-        let cb = on_checked_change;
-        m = m.clickable().on_click(move || cb(!checked));
-    } else {
-        m = m.enabled(false);
-    }
+    let cb = on_checked_change;
+    m = apply_enabled_click(m, enabled, move || cb(!checked));
     with_content_color(fg, || Box(m).child(content(checked)))
 }
 

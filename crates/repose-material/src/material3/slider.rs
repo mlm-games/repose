@@ -376,11 +376,24 @@ pub fn Slider(
             }
         })
         .on_pointer_up({
+            let drag_active = drag_active.clone();
             let on_finished = config.on_value_change_finished.clone();
             move |_pe: PointerEvent| {
                 drag_active.set(false);
                 if let Some(ref cb) = on_finished {
                     (cb)();
+                }
+            }
+        })
+        .on_pointer_cancel({
+            let drag_active = drag_active.clone();
+            let on_finished = config.on_value_change_finished.clone();
+            move |_pe: PointerEvent| {
+                if *drag_active.get() {
+                    drag_active.set(false);
+                    if let Some(ref cb) = on_finished {
+                        (cb)();
+                    }
                 }
             }
         })
@@ -748,6 +761,20 @@ pub fn RangeSlider(
                 active_thumb.set(false);
                 if let Some(ref cb) = on_finished {
                     (cb)();
+                }
+            }
+        })
+        .on_pointer_cancel({
+            let drag_active = drag_active.clone();
+            let active_thumb = active_thumb.clone();
+            let on_finished = config.on_value_change_finished.clone();
+            move |_pe: PointerEvent| {
+                if *drag_active.get() {
+                    drag_active.set(false);
+                    active_thumb.set(false);
+                    if let Some(ref cb) = on_finished {
+                        (cb)();
+                    }
                 }
             }
         })
