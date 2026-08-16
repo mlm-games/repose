@@ -88,9 +88,7 @@ impl SwipeToDismissState {
         );
         // Start at the default position (not anchors[0], which may be negative).
         swipeable.snap_to(0.0);
-        Self {
-            swipeable,
-        }
+        Self { swipeable }
     }
 
     /// Current animated offset in pixels.

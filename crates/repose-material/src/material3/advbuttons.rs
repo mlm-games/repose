@@ -393,9 +393,7 @@ struct ButtonGroupItem {
 
 impl ButtonGroupScope {
     fn new() -> Self {
-        Self {
-            items: Vec::new(),
-        }
+        Self { items: Vec::new() }
     }
 
     /// Add a clickable item (rendered as a [`Button`] internally).

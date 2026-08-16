@@ -47,10 +47,7 @@ pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig)
     with_material_indication(|| scaffold_inner(content, config))
 }
 
-fn scaffold_inner(
-    content: impl Fn(PaddingValues) -> View,
-    config: ScaffoldConfig,
-) -> View {
+fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig) -> View {
     let insets = window_insets();
     let itop = px_to_dp(insets.top);
     let ibottom = px_to_dp(insets.bottom);

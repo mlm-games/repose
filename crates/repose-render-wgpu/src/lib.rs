@@ -2961,16 +2961,16 @@ impl WgpuSceneRenderer {
         self.images.insert(
             handle,
             ImageTex::Nv12 {
-                    tex_y,
-                    tex_uv,
-                    bind,
-                    yuv_buf,
-                    w,
-                    h,
-                    color_info,
-                    last_used_frame: self.frame_index,
-                    bytes,
-                },
+                tex_y,
+                tex_uv,
+                bind,
+                yuv_buf,
+                w,
+                h,
+                color_info,
+                last_used_frame: self.frame_index,
+                bytes,
+            },
         );
 
         self.evict_budget_excess();
@@ -4921,8 +4921,7 @@ impl WgpuSceneRenderer {
                         current_target_size.0 as u32,
                         current_target_size.1 as u32,
                     );
-                    let (off, cnt, difference) =
-                        clip_cmd_stack.pop().unwrap_or((0, 0, false));
+                    let (off, cnt, difference) = clip_cmd_stack.pop().unwrap_or((0, 0, false));
                     current_pass.cmds.push(Cmd::ClipPop {
                         off,
                         cnt,

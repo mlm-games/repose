@@ -1125,7 +1125,9 @@ impl ReposeRuntime {
             if let Some(hit) = f.hit_regions.iter().find(|h| h.id == new_id)
                 && let Some(key) = hit.tf_state_key
             {
-                self.ensure_textfield_state(key).borrow_mut().reset_caret_blink();
+                self.ensure_textfield_state(key)
+                    .borrow_mut()
+                    .reset_caret_blink();
             }
             request_frame();
             return true;
@@ -1464,7 +1466,10 @@ impl ReposeRuntime {
         let frame = self.frame_cache.as_ref()?;
         let hit = frame.hit_regions.iter().find(|h| h.id == fid)?;
         let key = hit.tf_state_key?;
-        self.textfield_states.get(&key)?.borrow().next_blink_deadline()
+        self.textfield_states
+            .get(&key)?
+            .borrow()
+            .next_blink_deadline()
     }
 
     /// Tick host-facing overlays (snackbar timeouts) with the elapsed ms since

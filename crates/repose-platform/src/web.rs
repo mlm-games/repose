@@ -1054,7 +1054,11 @@ impl ApplicationHandler<()> for App {
                 self.request_redraw();
             } else if take_present_request() && self.rt.frame_cache.is_some() {
                 self.request_redraw();
-            } else if self.rt.next_caret_blink_deadline().is_some_and(|d| d <= web_time::Instant::now()) {
+            } else if self
+                .rt
+                .next_caret_blink_deadline()
+                .is_some_and(|d| d <= web_time::Instant::now())
+            {
                 self.request_redraw();
             }
         }

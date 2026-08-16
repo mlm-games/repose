@@ -60,5 +60,3 @@ pub(crate) fn apply_m3_clickable(
     }
     m
 }
-
-

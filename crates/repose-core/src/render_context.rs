@@ -103,11 +103,7 @@ mod imp {
             request_present();
         }
 
-        pub fn image_from_encoded(
-            &self,
-            bytes: impl Into<Vec<u8>>,
-            srgb: bool,
-        ) -> ImageHandle {
+        pub fn image_from_encoded(&self, bytes: impl Into<Vec<u8>>, srgb: bool) -> ImageHandle {
             let handle = self.alloc_image_handle();
             self.set_image_encoded(handle, bytes.into(), srgb);
             handle
@@ -292,11 +288,7 @@ mod imp {
             request_present();
         }
 
-        pub fn image_from_encoded(
-            &self,
-            bytes: impl Into<Vec<u8>>,
-            srgb: bool,
-        ) -> ImageHandle {
+        pub fn image_from_encoded(&self, bytes: impl Into<Vec<u8>>, srgb: bool) -> ImageHandle {
             let handle = self.alloc_image_handle();
             self.set_image_encoded(handle, bytes.into(), srgb);
             handle

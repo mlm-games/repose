@@ -287,13 +287,13 @@ pub fn TimePicker(
                 }))
                 .clickable()
                 .on_click({
-                let on_confirm = on_confirm.clone();
-                let state = state.clone();
-                move || {
-                    let (h, m) = state.selected_time();
-                    on_confirm(h, m);
-                }
-            }))
+                    let on_confirm = on_confirm.clone();
+                    let state = state.clone();
+                    move || {
+                        let (h, m) = state.selected_time();
+                        on_confirm(h, m);
+                    }
+                }))
             .child(
                 Text("OK")
                     .color(config.colors.selector_color)

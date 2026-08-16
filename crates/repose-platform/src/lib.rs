@@ -4,9 +4,7 @@ use crate::a11y::ReposeActionHandler;
 use accesskit_winit::Adapter;
 use repose_core::locals::dp_to_px;
 use repose_core::*;
-use repose_ui::textfield::{
-    TF_FONT_DP, TF_PADDING_X_DP, TextMeasureConfig, measure_text,
-};
+use repose_ui::textfield::{TF_FONT_DP, TF_PADDING_X_DP, TextMeasureConfig, measure_text};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -1254,7 +1252,10 @@ pub fn run_desktop_app_with_config(
             if !self.pending_redraw {
                 let now = Instant::now();
                 let idle_cap = web_time::Duration::from_millis(1000);
-                let deadline = self.rt.next_caret_blink_deadline().unwrap_or(now + idle_cap);
+                let deadline = self
+                    .rt
+                    .next_caret_blink_deadline()
+                    .unwrap_or(now + idle_cap);
 
                 if now.saturating_duration_since(self.last_redraw) >= idle_cap || now >= deadline {
                     self.redraw_requested.set(true);
@@ -1305,7 +1306,7 @@ pub fn run_desktop_app_with_config(
         fn memory_warning(&mut self, _: &winit::event_loop::ActiveEventLoop) {}
     }
 
-impl App {
+    impl App {
         fn announce_focus_change(&mut self) {
             if let Some(f) = &self.rt.frame_cache {
                 let focused_node = self
