@@ -159,6 +159,28 @@ impl TextFieldColors {
             self.unfocused_supporting_text_color
         }
     }
+    pub fn prefix_color(&self, enabled: bool, is_error: bool, focused: bool) -> Color {
+        if !enabled {
+            self.disabled_prefix_color
+        } else if is_error {
+            self.error_prefix_color
+        } else if focused {
+            self.focused_prefix_color
+        } else {
+            self.unfocused_prefix_color
+        }
+    }
+    pub fn suffix_color(&self, enabled: bool, is_error: bool, focused: bool) -> Color {
+        if !enabled {
+            self.disabled_suffix_color
+        } else if is_error {
+            self.error_suffix_color
+        } else if focused {
+            self.focused_suffix_color
+        } else {
+            self.unfocused_suffix_color
+        }
+    }
 }
 
 /// Default values for text field colors.
@@ -240,6 +262,12 @@ pub struct OutlinedTextFieldConfig {
     pub is_error: bool,
     /// If false, input is visually disabled and `on_value_change` won't fire.
     pub enabled: bool,
+    /// Supporting text shown below the field.
+    pub supporting_text: Option<String>,
+    /// Static text prefix inside the field, before the input.
+    pub prefix: Option<String>,
+    /// Static text suffix inside the field, after the input.
+    pub suffix: Option<String>,
     /// Called when the user presses Enter on a single-line field.
     pub on_submit: Option<Rc<dyn Fn(String)>>,
     /// Colors for all text field UI elements.
@@ -260,6 +288,9 @@ impl Default for OutlinedTextFieldConfig {
             single_line: true,
             is_error: false,
             enabled: true,
+            supporting_text: None,
+            prefix: None,
+            suffix: None,
             on_submit: None,
             colors: None,
             focus_tracker: None,
@@ -327,7 +358,7 @@ pub fn OutlinedTextField(
         .modifier(
             Modifier::new().flex_grow(1.0).text_input(TextInputConfig {
                 hint: tf_placeholder,
-                multiline: false,
+                multiline: !config.single_line,
                 on_change: Some(Rc::new(on_value_change) as _),
                 on_submit: config.on_submit.clone().map(|f| {
                     let f = f.clone();
@@ -516,6 +547,45 @@ fn outlined_field_decoration(
     // Container padding matches reference: 8dp top/bottom with label, 16dp without
     let (top_pad, bottom_pad) = if has_label { (8.0, 8.0) } else { (16.0, 16.0) };
 
+    let (prefix_color, suffix_color) = if let Some(ref tc) = config.colors {
+        (
+            tc.prefix_color(config.enabled, config.is_error, is_focused),
+            tc.suffix_color(config.enabled, config.is_error, is_focused),
+        )
+    } else {
+        (
+            if config.is_error {
+                th.error
+            } else {
+                th.on_surface
+            },
+            if config.is_error {
+                th.error
+            } else {
+                th.on_surface
+            },
+        )
+    };
+
+    let supporting = config.supporting_text.as_ref().map(|st| {
+        let c = if let Some(ref tc) = config.colors {
+            tc.supporting_text_color(config.enabled, config.is_error, is_focused)
+        } else if config.is_error {
+            th.error
+        } else {
+            th.on_surface_variant
+        };
+        Text(st.clone())
+            .color(c)
+            .size(th.typography.body_small)
+            .modifier(Modifier::new().padding_values(PaddingValues {
+                left: 16.0,
+                right: 16.0,
+                top: 4.0,
+                bottom: 0.0,
+            }))
+    });
+
     // Outer Stack holds both the clipped content and the unclipped label.
     // The label sits outside the clipped Box so it can extend above the border.
     let label_cutout = label_str.as_ref().map(|lbl| {
@@ -533,68 +603,87 @@ fn outlined_field_decoration(
         )
     });
 
-    ZStack(
-        modifier
-            .min_height(OutlinedTextFieldDefaults::MIN_HEIGHT)
-            .min_width(OutlinedTextFieldDefaults::MIN_WIDTH),
-    )
-    .child((
-        // Background layer -> no border, full surface color (no notch)
-        Box(Modifier::new()
-            .fill_max_size()
-            .clip_rounded(th.shapes.small)
-            .background(container_bg)),
-        // Border layer -> drawn on top of background, with notch for the label
-        if has_label {
-            let mut bm = Modifier::new()
-                .fill_max_size()
-                .clip_rounded(th.shapes.small)
-                .border(border_w, border_color, th.shapes.small);
-            if let Some((l, t, r, b)) = label_cutout {
-                bm = bm.clip_rect(l, t, r, b, ClipOp::Difference);
-            }
-            Box(bm)
-        } else {
-            Box(Modifier::new()
-                .fill_max_size()
-                .clip_rounded(th.shapes.small)
-                .border(border_w, border_color, th.shapes.small))
-        },
-        // Content layer -> text input with proper padding
-        Row(Modifier::new()
-            .fill_max_size()
-            .padding_values(PaddingValues {
-                left: 16.0,
-                right: 16.0,
-                top: top_pad,
-                bottom: bottom_pad,
-            })
-            .align_items(AlignItems::CENTER))
+    Column(modifier.min_width(OutlinedTextFieldDefaults::MIN_WIDTH)).child((
+        ZStack(
+            Modifier::new()
+                .fill_max_width()
+                .min_height(OutlinedTextFieldDefaults::MIN_HEIGHT),
+        )
         .child((
-            config.leading_icon.clone().unwrap_or(Box(Modifier::new())),
-            text_input,
-            config.trailing_icon.clone().unwrap_or(Box(Modifier::new())),
-        )),
-        // Floating label -> plain text, no background chip (matches M3 reference)
-        if let Some(lbl) = label_str {
             Box(Modifier::new()
-                .min_width(200.0)
+                .fill_max_size()
+                .clip_rounded(th.shapes.small)
+                .background(container_bg)),
+            if has_label {
+                let mut bm = Modifier::new()
+                    .fill_max_size()
+                    .clip_rounded(th.shapes.small)
+                    .border(border_w, border_color, th.shapes.small);
+                if let Some((l, t, r, b)) = label_cutout {
+                    bm = bm.clip_rect(l, t, r, b, ClipOp::Difference);
+                }
+                Box(bm)
+            } else {
+                Box(Modifier::new()
+                    .fill_max_size()
+                    .clip_rounded(th.shapes.small)
+                    .border(border_w, border_color, th.shapes.small))
+            },
+            Row(Modifier::new()
+                .fill_max_size()
                 .padding_values(PaddingValues {
-                    left: label_x,
-                    right: 20.0,
-                    top: 0.0,
-                    bottom: 0.0,
+                    left: 16.0,
+                    right: 16.0,
+                    top: top_pad,
+                    bottom: bottom_pad,
                 })
-                .absolute()
-                .offset(Some(0.0), Some(label_y), None, None))
-            .child(
-                Text(lbl.as_ref().to_string())
-                    .color(label_color)
-                    .size(label_size),
-            )
-        } else {
-            Box(Modifier::new())
-        },
+                .align_items(AlignItems::CENTER))
+            .child((
+                config.leading_icon.clone().unwrap_or(Box(Modifier::new())),
+                config
+                    .prefix
+                    .as_ref()
+                    .map(|p| {
+                        Text(p.clone())
+                            .color(prefix_color)
+                            .size(th.typography.body_large)
+                            .single_line()
+                    })
+                    .unwrap_or(Box(Modifier::new())),
+                text_input,
+                config
+                    .suffix
+                    .as_ref()
+                    .map(|s| {
+                        Text(s.clone())
+                            .color(suffix_color)
+                            .size(th.typography.body_large)
+                            .single_line()
+                    })
+                    .unwrap_or(Box(Modifier::new())),
+                config.trailing_icon.clone().unwrap_or(Box(Modifier::new())),
+            )),
+            if let Some(lbl) = label_str {
+                Box(Modifier::new()
+                    .min_width(200.0)
+                    .padding_values(PaddingValues {
+                        left: label_x,
+                        right: 20.0,
+                        top: 0.0,
+                        bottom: 0.0,
+                    })
+                    .absolute()
+                    .offset(Some(0.0), Some(label_y), None, None))
+                .child(
+                    Text(lbl.as_ref().to_string())
+                        .color(label_color)
+                        .size(label_size),
+                )
+            } else {
+                Box(Modifier::new())
+            },
+        )),
+        supporting.unwrap_or(Box(Modifier::new())),
     ))
 }
 
@@ -608,6 +697,12 @@ pub struct TextFieldConfig {
     pub single_line: bool,
     pub is_error: bool,
     pub enabled: bool,
+    /// Supporting text shown below the field.
+    pub supporting_text: Option<String>,
+    /// Static text prefix inside the field, before the input.
+    pub prefix: Option<String>,
+    /// Static text suffix inside the field, after the input.
+    pub suffix: Option<String>,
     pub on_submit: Option<Rc<dyn Fn(String)>>,
     pub colors: Option<TextFieldColors>,
 }
@@ -622,6 +717,9 @@ impl Default for TextFieldConfig {
             single_line: true,
             is_error: false,
             enabled: true,
+            supporting_text: None,
+            prefix: None,
+            suffix: None,
             on_submit: None,
             colors: None,
         }
@@ -721,15 +819,49 @@ pub fn TextField(
 
     let (top_pad, bottom_pad) = if has_label { (8.0, 8.0) } else { (16.0, 16.0) };
 
-    Column(
-        modifier
-            .min_height(TextFieldDefaults::MIN_HEIGHT)
-            .min_width(TextFieldDefaults::MIN_WIDTH),
-    )
-    .child((
-        // Clipped background and input content
+    let (prefix_color, suffix_color) = if let Some(ref tc) = config.colors {
+        (
+            tc.prefix_color(config.enabled, config.is_error, is_focused),
+            tc.suffix_color(config.enabled, config.is_error, is_focused),
+        )
+    } else {
+        (
+            if config.is_error {
+                th.error
+            } else {
+                th.on_surface
+            },
+            if config.is_error {
+                th.error
+            } else {
+                th.on_surface
+            },
+        )
+    };
+
+    let supporting = config.supporting_text.as_ref().map(|st| {
+        let c = if let Some(ref tc) = config.colors {
+            tc.supporting_text_color(config.enabled, config.is_error, is_focused)
+        } else if config.is_error {
+            th.error
+        } else {
+            th.on_surface_variant
+        };
+        Text(st.clone())
+            .color(c)
+            .size(th.typography.body_small)
+            .modifier(Modifier::new().padding_values(PaddingValues {
+                left: 16.0,
+                right: 16.0,
+                top: 4.0,
+                bottom: 0.0,
+            }))
+    });
+
+    Column(modifier.min_width(TextFieldDefaults::MIN_WIDTH)).child((
         Box(Modifier::new()
-            .fill_max_size()
+            .fill_max_width()
+            .min_height(TextFieldDefaults::MIN_HEIGHT)
             .clip_rounded(th.shapes.extra_small)
             .background(container_bg))
         .child(
@@ -746,6 +878,16 @@ pub fn TextField(
                     .align_items(AlignItems::CENTER))
                 .child((
                     config.leading_icon.unwrap_or(Box(Modifier::new())),
+                    config
+                        .prefix
+                        .as_ref()
+                        .map(|p| {
+                            Text(p.clone())
+                                .color(prefix_color)
+                                .size(th.typography.body_large)
+                                .single_line()
+                        })
+                        .unwrap_or(Box(Modifier::new())),
                     View::new(0, ViewKind::Box)
                         .modifier(
                             Modifier::new().flex_grow(1.0).text_input(TextInputConfig {
@@ -785,6 +927,16 @@ pub fn TextField(
                             enabled: config.enabled,
                             selectable_group: false,
                         }),
+                    config
+                        .suffix
+                        .as_ref()
+                        .map(|s| {
+                            Text(s.clone())
+                                .color(suffix_color)
+                                .size(th.typography.body_large)
+                                .single_line()
+                        })
+                        .unwrap_or(Box(Modifier::new())),
                     config.trailing_icon.unwrap_or(Box(Modifier::new())),
                 )),
                 // Bottom indicator line
@@ -816,5 +968,6 @@ pub fn TextField(
         } else {
             Box(Modifier::new())
         },
+        supporting.unwrap_or(Box(Modifier::new())),
     ))
 }

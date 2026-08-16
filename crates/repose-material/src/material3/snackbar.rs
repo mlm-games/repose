@@ -107,12 +107,7 @@ pub fn Snackbar(
                                 }),
                                 ..Default::default()
                             },
-                            || {
-                                Text(label)
-                                    .color(action_color)
-                                    .size(th.typography.label_large)
-                                    .single_line()
-                            },
+                            || Text(label).size(th.typography.label_large).single_line(),
                         ))
                     })
                     .unwrap_or(Box(Modifier::new())),
@@ -157,12 +152,7 @@ pub fn Snackbar(
                                 }),
                                 ..Default::default()
                             },
-                            || {
-                                Text(label)
-                                    .color(action_color)
-                                    .size(th.typography.label_large)
-                                    .single_line()
-                            },
+                            || Text(label).size(th.typography.label_large).single_line(),
                         )
                     })
                     .unwrap_or(Box(Modifier::new())),

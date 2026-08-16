@@ -289,11 +289,6 @@ pub fn ListItem(
         })
         .align_items(vert_align)
         .interaction_source(&li_source)
-        .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
-            color: Some(theme().on_surface),
-            bounded: true,
-            ..Default::default()
-        }))
         .then(config.modifier);
 
     if config.tonal_elevation > 0.0 || config.dragged_elevation > 0.0 {
@@ -316,22 +311,23 @@ pub fn ListItem(
     }
 
     if on_click.is_some() || on_long_click.is_some() {
-        modifier = modifier.clickable();
-        if let Some(cb) = on_click {
-            let cb = cb.clone();
-            modifier = modifier.on_click(move || {
-                if is_enabled {
-                    cb();
-                }
-            });
-        }
-        if let Some(cb) = &on_long_click {
-            let cb = cb.clone();
-            modifier = modifier.on_long_click(move || {
-                if is_enabled {
-                    cb();
-                }
-            });
+        modifier = modifier.indication(crate::ripple::ripple(crate::ripple::RippleConfig {
+            color: Some(theme().on_surface),
+            bounded: true,
+            ..Default::default()
+        }));
+        if is_enabled {
+            modifier = modifier.clickable();
+            if let Some(cb) = on_click {
+                let cb = cb.clone();
+                modifier = modifier.on_click(move || cb());
+            }
+            if let Some(cb) = &on_long_click {
+                let cb = cb.clone();
+                modifier = modifier.on_long_click(move || cb());
+            }
+        } else {
+            modifier = modifier.enabled(false);
         }
     }
 

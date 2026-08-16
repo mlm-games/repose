@@ -57,6 +57,19 @@ fn fab_impl(
         th.on_surface.with_alpha_f32(0.38)
     };
 
+    let elev = if is_enabled {
+        config.state_elevation
+    } else {
+        StateElevation {
+            default: 0.0,
+            hovered: 0.0,
+            focused: 0.0,
+            pressed: 0.0,
+            dragged: 0.0,
+            disabled: 0.0,
+        }
+    };
+
     let mut m = Modifier::new()
         .size(size, size)
         .background(bg)
@@ -68,7 +81,7 @@ fn fab_impl(
             dragged: config.content_color.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         })
-        .state_elevation(config.state_elevation)
+        .state_elevation(elev)
         .clip_rounded(shape_r)
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER)
@@ -86,9 +99,11 @@ fn fab_impl(
     }));
     if is_enabled {
         m = m.clickable().on_click(on_click);
+    } else {
+        m = m.enabled(false);
     }
 
-    Box(m).child(icon)
+    Box(m).child(with_content_color(content_color, move || icon))
 }
 
 /// M3 Floating Action Button (regular, 56dp).
@@ -147,6 +162,19 @@ pub fn ExtendedFAB(
         th.on_surface.with_alpha_f32(0.38)
     };
 
+    let elev = if is_enabled {
+        config.state_elevation
+    } else {
+        StateElevation {
+            default: 0.0,
+            hovered: 0.0,
+            focused: 0.0,
+            pressed: 0.0,
+            dragged: 0.0,
+            disabled: 0.0,
+        }
+    };
+
     let source: Rc<MutableInteractionSource> = config
         .interaction_source
         .clone()
@@ -165,7 +193,7 @@ pub fn ExtendedFAB(
             dragged: config.content_color.with_alpha_f32(0.12),
             disabled: theme().on_surface.with_alpha_f32(0.12),
         })
-        .state_elevation(config.state_elevation)
+        .state_elevation(elev)
         .clip_rounded(FABDefaults::SHAPE_RADIUS)
         .padding_values(PaddingValues {
             left: 16.0,
@@ -183,10 +211,13 @@ pub fn ExtendedFAB(
     }));
     if is_enabled {
         m = m.clickable().on_click(on_click);
+    } else {
+        m = m.enabled(false);
     }
     m = m.then(config.modifier);
     Row(m).child((
-        icon.unwrap_or(Box(Modifier::new())),
+        icon.map(|v| with_content_color(content_color, move || v))
+            .unwrap_or(Box(Modifier::new())),
         Box(Modifier::new()
             .width(if has_icon { 12.0 } else { 0.0 })
             .fill_max_height()),

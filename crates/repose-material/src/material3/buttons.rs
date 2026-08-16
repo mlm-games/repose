@@ -88,52 +88,46 @@ fn resolve_button_colors(
     config: &ButtonConfig,
     def: ButtonColors,
 ) -> (Color, Option<Color>, StateColors, Option<StateElevation>) {
-    if let Some(colors) = &config.colors {
-        let bg = if config.enabled {
-            colors.container_color
-        } else {
-            colors.disabled_container_color
-        };
-        let cc = if config.enabled {
-            colors.content_color
-        } else {
-            colors.disabled_content_color
-        };
-        let sc = StateColors {
+    let colors = config.colors.unwrap_or(ButtonColors {
+        container_color: config.container_color.unwrap_or(def.container_color),
+        content_color: config.content_color.unwrap_or(def.content_color),
+        disabled_container_color: def.disabled_container_color,
+        disabled_content_color: def.disabled_content_color,
+    });
+
+    let bg = colors.container(config.enabled);
+    let cc = colors.content(config.enabled);
+
+    let sc = if config.enabled {
+        let mut sc = config.state_colors;
+        if sc.dragged.3 == 0 {
+            sc.dragged = colors.content_color.with_alpha_f32(0.12);
+        }
+        sc
+    } else {
+        StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,
             focused: Color::TRANSPARENT,
             pressed: Color::TRANSPARENT,
-            dragged: colors.content_color.with_alpha_f32(0.12),
-            disabled: Color::TRANSPARENT,
-        };
-        let se = config.elevation.map(|e| StateElevation {
+            dragged: Color::TRANSPARENT,
+            disabled: config.state_colors.disabled,
+        }
+    };
+
+    let se = config
+        .elevation
+        .map(|e| StateElevation {
             default: e.default,
             hovered: e.hovered,
             focused: e.focused,
             pressed: e.pressed,
             dragged: e.pressed,
             disabled: e.disabled,
-        });
-        (cc, Some(bg), sc, se)
-    } else {
-        let cc = config.content_color.unwrap_or(def.content_color);
-        let bg = Some(config.container_color.unwrap_or(def.container_color));
-        let sc = if config.enabled {
-            config.state_colors
-        } else {
-            StateColors {
-                default: Color::TRANSPARENT,
-                hovered: Color::TRANSPARENT,
-                focused: Color::TRANSPARENT,
-                pressed: Color::TRANSPARENT,
-                dragged: Color::TRANSPARENT,
-                disabled: config.state_colors.disabled,
-            }
-        };
-        let se = config.state_elevation;
-        (cc, bg, sc, se)
-    }
+        })
+        .or(config.state_elevation);
+
+    (cc, Some(bg), sc, se)
 }
 
 fn button_impl(
@@ -305,9 +299,14 @@ pub fn OutlinedButton(
         disabled_content_color: th.on_surface.with_alpha_f32(0.38),
     };
     let (cc, bg, sc, se) = resolve_button_colors(&config, def);
-    let border = config
-        .border
-        .unwrap_or((1.0, ButtonDefaults::outlined_border_color(), 20.0));
+    let border = config.border.unwrap_or_else(|| {
+        let c = if config.enabled {
+            ButtonDefaults::outlined_border_color()
+        } else {
+            th.on_surface.with_alpha_f32(0.12)
+        };
+        (1.0, c, config.shape_radius)
+    });
     let pad = config.content_padding.unwrap_or(PaddingValues {
         left: 24.0,
         right: 24.0,
@@ -464,12 +463,18 @@ fn toggle_button_impl(
     interaction_source: Option<MutableInteractionSource>,
 ) -> View {
     let th = theme();
-    let bg = if checked {
+    let bg = if !enabled {
+        th.on_surface
+            .with_alpha_f32(0.12)
+            .composite_over(th.surface_container_high)
+    } else if checked {
         checked_container_color.unwrap_or(th.primary)
     } else {
         container_color.unwrap_or(Color::TRANSPARENT)
     };
-    let fg = if checked {
+    let fg = if !enabled {
+        th.on_surface.with_alpha_f32(0.38)
+    } else if checked {
         checked_content_color.unwrap_or(th.on_primary)
     } else {
         content_color

@@ -140,10 +140,11 @@ fn clickable_card_impl(
             color: Some(theme().on_surface),
             bounded: true,
             ..Default::default()
-        }))
-        .clickable();
+        }));
     if config.enabled {
-        m = m.on_click(on_click);
+        m = m.clickable().on_click(on_click);
+    } else {
+        m = m.enabled(false);
     }
     Card(
         CardConfig {
@@ -171,14 +172,12 @@ pub fn ClickableCard(
     content: impl FnOnce() -> View,
 ) -> View {
     let th = theme();
-    clickable_card_impl(
-        on_click,
-        modifier,
-        th.surface_container_highest,
-        th.shapes.medium,
-        config,
-        content,
-    )
+    let bg = if config.container_color != CardDefaults::filled_container_color() {
+        config.container_color
+    } else {
+        th.surface_container_highest
+    };
+    clickable_card_impl(on_click, modifier, bg, th.shapes.medium, config, content)
 }
 
 /// M3 Clickable Elevated Card - interactive card with elevation.

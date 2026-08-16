@@ -62,6 +62,7 @@ impl Default for IconButtonConfig {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn icon_button_render(
     icon: View,
     on_click: impl Fn() + 'static,
@@ -70,6 +71,7 @@ fn icon_button_render(
     bg: Option<Color>,
     bdr: Option<(f32, Color)>,
     state_colors: StateColors,
+    ripple_bounded: bool,
 ) -> View {
     let is_enabled = config.enabled;
     let content_color = config.colors.content(is_enabled);
@@ -96,7 +98,8 @@ fn icon_button_render(
     m = m.interaction_source(&source);
     m = m.indication(crate::ripple::ripple(crate::ripple::RippleConfig {
         color: Some(content_color),
-        bounded: true,
+        bounded: ripple_bounded,
+        radius: Some(sz * 0.5),
         ..Default::default()
     }));
     if is_enabled {
@@ -129,6 +132,7 @@ pub fn IconButton(icon: View, on_click: impl Fn() + 'static, config: IconButtonC
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         },
+        false,
     )
 }
 
@@ -136,9 +140,22 @@ pub fn IconButton(icon: View, on_click: impl Fn() + 'static, config: IconButtonC
 pub fn FilledIconButton(
     icon: View,
     on_click: impl Fn() + 'static,
-    config: IconButtonConfig,
+    mut config: IconButtonConfig,
 ) -> View {
     let th = theme();
+    if config.colors.container_color == Color::TRANSPARENT
+        && config.colors.disabled_container_color == Color::TRANSPARENT
+    {
+        config.colors = IconButtonColors {
+            container_color: IconButtonDefaults::filled_container_color(),
+            content_color: IconButtonDefaults::filled_content_color(),
+            disabled_container_color: th
+                .on_surface
+                .with_alpha_f32(0.12)
+                .composite_over(th.surface),
+            disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+        };
+    }
     let is_enabled = config.enabled;
     let sz = config
         .container_size
@@ -160,6 +177,7 @@ pub fn FilledIconButton(
             dragged: content_color.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         },
+        true,
     )
 }
 
@@ -167,9 +185,22 @@ pub fn FilledIconButton(
 pub fn FilledTonalIconButton(
     icon: View,
     on_click: impl Fn() + 'static,
-    config: IconButtonConfig,
+    mut config: IconButtonConfig,
 ) -> View {
     let th = theme();
+    if config.colors.container_color == Color::TRANSPARENT
+        && config.colors.disabled_container_color == Color::TRANSPARENT
+    {
+        config.colors = IconButtonColors {
+            container_color: IconButtonDefaults::filled_tonal_container_color(),
+            content_color: IconButtonDefaults::filled_tonal_content_color(),
+            disabled_container_color: th
+                .on_surface
+                .with_alpha_f32(0.12)
+                .composite_over(th.surface),
+            disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+        };
+    }
     let is_enabled = config.enabled;
     let sz = config
         .container_size
@@ -191,6 +222,7 @@ pub fn FilledTonalIconButton(
             dragged: content_color.with_alpha_f32(0.12),
             disabled: th.on_surface.with_alpha_f32(0.12),
         },
+        true,
     )
 }
 
@@ -224,5 +256,6 @@ pub fn OutlinedIconButton(
             dragged: th.on_surface.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         },
+        true,
     )
 }

@@ -212,6 +212,8 @@ pub fn AssistChip(
 
     if is_enabled {
         m = m.clickable().on_click(on_click);
+    } else {
+        m = m.enabled(false);
     }
 
     Box(m).child(
@@ -294,6 +296,8 @@ pub fn ElevatedAssistChip(
 
     if is_enabled {
         m = m.clickable().on_click(on_click);
+    } else {
+        m = m.enabled(false);
     }
 
     Box(m).child(
@@ -411,6 +415,8 @@ pub fn FilterChip(
     }
     if is_enabled {
         m = m.clickable().on_click(on_click);
+    } else {
+        m = m.enabled(false);
     }
 
     Box(m).child(
@@ -514,6 +520,8 @@ pub fn ElevatedFilterChip(
 
     if is_enabled {
         m = m.clickable().on_click(on_click);
+    } else {
+        m = m.enabled(false);
     }
 
     Box(m).child(
@@ -601,6 +609,8 @@ pub fn SuggestionChip(
     }
     if is_enabled {
         m = m.clickable().on_click(on_click);
+    } else {
+        m = m.enabled(false);
     }
 
     Box(m).child(
@@ -670,6 +680,8 @@ pub fn ElevatedSuggestionChip(
 
     if is_enabled {
         m = m.clickable().on_click(on_click);
+    } else {
+        m = m.enabled(false);
     }
 
     Box(m).child(
@@ -776,6 +788,8 @@ pub fn InputChip(
     }
     if is_enabled {
         m = m.clickable().on_click(on_click);
+    } else {
+        m = m.enabled(false);
     }
 
     Box(m).child(

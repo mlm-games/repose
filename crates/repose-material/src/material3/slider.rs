@@ -185,7 +185,8 @@ pub fn Slider(
     if !is_enabled {
         host = host.enabled(false);
     }
-    Box(host.painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
+    Box(host
+        .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
             let mul_c = |c: Color| {
                 Color(
                     c.0,
@@ -280,11 +281,7 @@ pub fn Slider(
                         w: dot_r * 2.0,
                         h: dot_r * 2.0,
                     },
-                    brush: Brush::Solid(mul_c(if on_active {
-                        act_tick
-                    } else {
-                        inact_tick
-                    })),
+                    brush: Brush::Solid(mul_c(if on_active { act_tick } else { inact_tick })),
                 });
             }
             let da = *drag_active_p.get();
@@ -300,7 +297,9 @@ pub fn Slider(
                 brush: Brush::Solid(mul_c(thumb_col)),
                 radius: [tw * 0.5; 4],
             });
-            let sc_target = if da {
+            let sc_target = if !is_enabled {
+                Color::TRANSPARENT
+            } else if da {
                 sc.pressed
             } else if hv {
                 sc.hovered
