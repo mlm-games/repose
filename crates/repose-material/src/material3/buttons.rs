@@ -5,7 +5,7 @@ use std::rc::Rc;
 use repose_core::*;
 use repose_ui::{Box, ViewExt};
 
-use super::util::apply_m3_clickable;
+use super::util::{apply_m3_clickable, with_button_semantics};
 use super::*;
 
 /// Color slots for buttons (matching Compose Material3 `ButtonColors`).
@@ -188,17 +188,12 @@ fn button_impl(
             });
 
     m = apply_m3_clickable(m, &source, content_color, enabled, on_click);
+    m = with_button_semantics(m, enabled);
     m = m.then(outer_modifier);
     let content = with_content_color(content_color, || {
         with_text_size(theme().typography.label_large, content)
     });
-    Box(m).child(content).semantics(Semantics {
-        role: Role::Button,
-        label: None,
-        focused: false,
-        enabled,
-        selectable_group: false,
-    })
+    Box(m).child(content)
 }
 
 /// M3 Button - prominent action button with primary color fill.
@@ -517,15 +512,10 @@ fn toggle_button_impl(
     }
     let cb = on_checked_change;
     m = apply_m3_clickable(m, &tg_source, fg, enabled, move || cb(!checked));
+    m = with_button_semantics(m, enabled);
     with_content_color(fg, || {
         with_text_size(theme().typography.label_large, || {
-            Box(m).child(content(checked)).semantics(Semantics {
-                role: Role::Button,
-                label: None,
-                focused: false,
-                enabled,
-                selectable_group: false,
-            })
+            Box(m).child(content(checked))
         })
     })
 }

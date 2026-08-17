@@ -5,7 +5,7 @@ use std::rc::Rc;
 use repose_core::*;
 use repose_ui::{Box, ViewExt};
 
-use super::util::apply_m3_clickable_ex;
+use super::util::{apply_m3_clickable_ex, with_button_semantics};
 use super::*;
 
 /// Color slots for icon buttons.
@@ -122,16 +122,9 @@ fn icon_button_render(
         bounded,
         r,
     );
+    inner = with_button_semantics(inner, is_enabled);
 
-    Box(outer)
-        .child(Box(inner).child(with_content_color(content_color, move || icon)))
-        .semantics(Semantics {
-            role: Role::Button,
-            label: None,
-            focused: false,
-            enabled: is_enabled,
-            selectable_group: false,
-        })
+    Box(outer).child(Box(inner).child(with_content_color(content_color, move || icon)))
 }
 
 /// M3 Icon Button - a tappable circular container for an icon.

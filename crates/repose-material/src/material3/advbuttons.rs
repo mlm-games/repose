@@ -3,7 +3,7 @@
 use std::rc::Rc;
 
 use super::SplitButtonDefaults;
-use super::util::apply_m3_clickable;
+use super::util::{apply_m3_clickable, with_button_semantics};
 use repose_core::{locals::with_content_color, *};
 use repose_ui::{Box, Row, Text, TextStyle, ViewExt};
 
@@ -108,13 +108,9 @@ fn split_button_impl(
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
     m = apply_m3_clickable(m, &source, content_color, enabled, on_click);
+    m = with_button_semantics(m, enabled);
     m = m.then(outer_modifier);
-    let effective = if enabled {
-        content_color
-    } else {
-        content_color.with_alpha_f32(0.38)
-    };
-    with_content_color(effective, || Box(m).child(content()))
+    with_content_color(content_color, || Box(m).child(content()))
 }
 
 pub fn SplitButtonLeadingButton(

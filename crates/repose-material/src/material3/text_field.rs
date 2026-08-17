@@ -341,9 +341,8 @@ impl Default for OutlinedTextFieldConfig {
 /// M3 Outlined Text Field with floating label, leading/trailing icons, and error state.
 ///
 /// The label floats up when `value` is non-empty or when the field is focused.
-/// Note: focus-based floating is approximated via animated `float_t` - the label
-/// begins floating once `on_value_change` fires (i.e. when the user types).
-/// For strict focus-on-tap floating, pair with an external focus signal.
+/// Focus state comes from the persistent `focus_tracker`, which paint updates
+/// on the frame the field gains/loses focus (one-frame delay on tap-to-float).
 ///
 /// # Example
 /// ```ignore

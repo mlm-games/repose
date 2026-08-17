@@ -5,7 +5,7 @@ use std::rc::Rc;
 use repose_core::*;
 use repose_ui::{Box, Row, Text, TextStyle, ViewExt};
 
-use super::util::apply_m3_clickable;
+use super::util::{apply_m3_clickable, with_button_semantics};
 use super::*;
 
 /// Configuration for FAB components.
@@ -87,16 +87,11 @@ fn fab_impl(icon: View, on_click: impl Fn() + 'static, config: FABConfig) -> Vie
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
     m = apply_m3_clickable(m, &source, content_color, is_enabled, on_click);
+    m = with_button_semantics(m, is_enabled);
 
     Box(m)
         .child(with_content_color(content_color, move || icon))
-        .semantics(Semantics {
-            role: Role::Button,
-            label: None,
-            focused: false,
-            enabled: is_enabled,
-            selectable_group: false,
-        })
+        
 }
 
 /// M3 Floating Action Button (regular, 56dp).
@@ -185,6 +180,7 @@ pub fn ExtendedFAB(
         .align_items(AlignItems::CENTER);
 
     m = apply_m3_clickable(m, &source, content_color, is_enabled, on_click);
+    m = with_button_semantics(m, is_enabled);
     m = m.then(config.modifier);
     Row(m)
         .child((
@@ -198,11 +194,5 @@ pub fn ExtendedFAB(
                 .size(th.typography.label_large)
                 .single_line(),
         ))
-        .semantics(Semantics {
-            role: Role::Button,
-            label: None,
-            focused: false,
-            enabled: is_enabled,
-            selectable_group: false,
-        })
+        
 }

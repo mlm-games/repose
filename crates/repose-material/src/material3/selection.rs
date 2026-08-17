@@ -166,6 +166,13 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         false, // unbounded
         Some(20.0),
     );
+    m = m.semantics(Semantics {
+        role: Role::Checkbox,
+        label: None,
+        focused: false,
+        enabled: is_enabled,
+        selectable_group: false,
+    });
     Box(m.then(config.modifier)).child(
         Box(Modifier::new()
             .size(sz, sz)
@@ -305,6 +312,13 @@ pub fn TriStateCheckbox(
         false, // unbounded
         Some(20.0),
     );
+    m = m.semantics(Semantics {
+        role: Role::Checkbox,
+        label: None,
+        focused: false,
+        enabled: is_enabled,
+        selectable_group: false,
+    });
     Box(m.then(config.modifier)).child(
         Box(Modifier::new()
             .size(sz, sz)
@@ -444,6 +458,13 @@ pub fn RadioButton(
         false,
         Some(20.0),
     );
+    m = m.semantics(Semantics {
+        role: Role::RadioButton,
+        label: None,
+        focused: false,
+        enabled: config.enabled,
+        selectable_group: false,
+    });
     Box(m.then(config.modifier)).child(
         Box(Modifier::new()
             .size(d, d)

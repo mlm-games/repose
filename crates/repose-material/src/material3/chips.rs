@@ -6,7 +6,7 @@ use std::sync::atomic::Ordering;
 use repose_core::*;
 use repose_ui::{Box, FlowRow, Row, ViewExt, anim::animate_color};
 
-use super::util::{FILTERCHIP_COUNTER, apply_m3_clickable};
+use super::util::{FILTERCHIP_COUNTER, apply_m3_clickable, with_button_semantics};
 use super::*;
 
 /// Color slots for chips (both non-selectable and selectable).
@@ -209,6 +209,7 @@ pub fn AssistChip(
     }
 
     m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
+    m = with_button_semantics(m, is_enabled);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -236,13 +237,7 @@ pub fn AssistChip(
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
-    ).semantics(Semantics {
-        role: Role::Button,
-        label: None,
-        focused: false,
-        enabled: is_enabled,
-        selectable_group: false,
-    })
+    )
 }
 
 /// M3 Elevated Assist Chip - like [`AssistChip`] but with elevated container.
@@ -293,6 +288,7 @@ pub fn ElevatedAssistChip(
         .then(config.modifier);
 
     m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
+    m = with_button_semantics(m, is_enabled);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -320,13 +316,7 @@ pub fn ElevatedAssistChip(
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
-    ).semantics(Semantics {
-        role: Role::Button,
-        label: None,
-        focused: false,
-        enabled: is_enabled,
-        selectable_group: false,
-    })
+    )
 }
 
 pub fn FilterChip(
@@ -412,6 +402,7 @@ pub fn FilterChip(
         m = m.border(config.border_width, border, shape);
     }
     m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
+    m = with_button_semantics(m, is_enabled);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -439,13 +430,7 @@ pub fn FilterChip(
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
-    ).semantics(Semantics {
-        role: Role::Button,
-        label: None,
-        focused: false,
-        enabled: is_enabled,
-        selectable_group: false,
-    })
+    )
 }
 
 /// M3 Elevated Filter Chip - like [`FilterChip`] but with elevation and filled container.
@@ -517,6 +502,7 @@ pub fn ElevatedFilterChip(
         .then(config.modifier);
 
     m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
+    m = with_button_semantics(m, is_enabled);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -544,13 +530,7 @@ pub fn ElevatedFilterChip(
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
-    ).semantics(Semantics {
-        role: Role::Button,
-        label: None,
-        focused: false,
-        enabled: is_enabled,
-        selectable_group: false,
-    })
+    )
 }
 
 pub fn SuggestionChip(
@@ -606,6 +586,7 @@ pub fn SuggestionChip(
         m = m.border(config.border_width, border, shape);
     }
     m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
+    m = with_button_semantics(m, is_enabled);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -621,13 +602,7 @@ pub fn SuggestionChip(
             .unwrap_or(Box(Modifier::new())),
             with_content_color(label_color, move || label),
         )),
-    ).semantics(Semantics {
-        role: Role::Button,
-        label: None,
-        focused: false,
-        enabled: is_enabled,
-        selectable_group: false,
-    })
+    )
 }
 
 /// M3 Elevated Suggestion Chip - like [`SuggestionChip`] but with elevation and filled bg.
@@ -677,6 +652,7 @@ pub fn ElevatedSuggestionChip(
         .then(config.modifier);
 
     m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
+    m = with_button_semantics(m, is_enabled);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -692,13 +668,7 @@ pub fn ElevatedSuggestionChip(
             .unwrap_or(Box(Modifier::new())),
             with_content_color(label_color, move || label),
         )),
-    ).semantics(Semantics {
-        role: Role::Button,
-        label: None,
-        focused: false,
-        enabled: is_enabled,
-        selectable_group: false,
-    })
+    )
 }
 
 pub fn InputChip(
@@ -785,6 +755,7 @@ pub fn InputChip(
         m = m.border(config.border_width, border, shape);
     }
     m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
+    m = with_button_semantics(m, is_enabled);
 
     Box(m).child(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
@@ -813,13 +784,7 @@ pub fn InputChip(
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
-    ).semantics(Semantics {
-        role: Role::Button,
-        label: None,
-        focused: false,
-        enabled: is_enabled,
-        selectable_group: false,
-    })
+    )
 }
 
 /// Shared layout for the M3 chip group composables: a full-width wrapping

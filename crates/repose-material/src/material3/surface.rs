@@ -5,7 +5,7 @@ use std::rc::Rc;
 use repose_core::*;
 use repose_ui::{Box, TextStyle, ViewExt};
 
-use super::util::apply_tonal_elevation;
+use super::util::{apply_m3_clickable, apply_tonal_elevation, with_button_semantics};
 use super::*;
 
 /// Configuration for [`Surface`].
@@ -61,6 +61,42 @@ pub fn Surface(config: SurfaceConfig, content: impl FnOnce() -> View) -> View {
     if !config.enabled {
         m = m.enabled(false);
     }
+    Box(m)
+        .color(config.content_color)
+        .child(with_content_color(config.content_color, content))
+}
+
+/// M3 Clickable Surface
+pub fn ClickableSurface(
+    on_click: impl Fn() + 'static,
+    config: SurfaceConfig,
+    content: impl FnOnce() -> View,
+) -> View {
+    let sf_source: Rc<MutableInteractionSource> = config
+        .interaction_source
+        .clone()
+        .map(Rc::new)
+        .unwrap_or_else(|| remember(MutableInteractionSource::new));
+    let mut m = Modifier::new().background(config.color);
+    m = apply_tonal_elevation(m, config.tonal_elevation, config.color);
+    m = m
+        .clip_rounded(config.shape_radius)
+        .interaction_source(&sf_source)
+        .then(config.modifier);
+    if config.shadow_elevation > 0.0 {
+        m = m.shadow(config.shadow_elevation, 0.0);
+    }
+    if let Some((w, c)) = config.border {
+        m = m.border(w, c, config.shape_radius);
+    }
+    m = apply_m3_clickable(
+        m,
+        &sf_source,
+        config.content_color,
+        config.enabled,
+        on_click,
+    );
+    m = with_button_semantics(m, config.enabled);
     Box(m)
         .color(config.content_color)
         .child(with_content_color(config.content_color, content))
