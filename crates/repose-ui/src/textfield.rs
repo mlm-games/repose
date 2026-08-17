@@ -2221,10 +2221,10 @@ fn text_field_view(
     line_limits: Option<repose_core::TextFieldLineLimits>,
     _input_transformation: Option<Rc<dyn repose_core::InputTransformation>>,
     _output_transformation: Option<Rc<dyn repose_core::OutputTransformation>>,
-    _decoration_box: Option<Rc<dyn Fn(repose_core::View) -> repose_core::View>>,
+    decoration_box: Option<Rc<dyn Fn(repose_core::View) -> repose_core::View>>,
     _codepoint_transformation: Option<repose_core::CodepointTransformation>,
 ) -> View {
-    let modif = modifier.text_input(TextInputConfig {
+    let mut modif = modifier.text_input(TextInputConfig {
         hint,
         multiline,
         on_change,
@@ -2248,7 +2248,15 @@ fn text_field_view(
         line_limits,
     });
 
-    View::new(0, ViewKind::Box)
+    // `enabled=false` => not focusable and inert;
+    // `read_only` keeps focus for selection/copy but blocks mutation.
+    if !enabled {
+        modif = modif.focusable(false).enabled(false);
+    } else if read_only {
+        modif = modif.focusable(true);
+    }
+
+    let inner = View::new(0, ViewKind::Box)
         .modifier(modif)
         .semantics(Semantics {
             role: Role::TextField,
@@ -2256,7 +2264,14 @@ fn text_field_view(
             focused: false,
             enabled,
             selectable_group: false,
-        })
+        });
+
+    // Compose `decorationBox`: wrap the field node when provided.
+    if let Some(decorate) = decoration_box {
+        decorate(inner)
+    } else {
+        inner
+    }
 }
 
 #[cfg(test)]

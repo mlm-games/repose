@@ -98,6 +98,12 @@ pub struct PointerButtonResult {
     pub clicked_id: Option<u64>,
 }
 
+// ViewConfiguration defaults.
+const LONG_PRESS_MS: u128 = 400;
+const DOUBLE_CLICK_MS: u128 = 300;
+const DOUBLE_CLICK_SLOP_PX: f32 = 20.0;
+const LONG_PRESS_SLOP_PX: f32 = 18.0;
+
 /// Embeddable Repose runtime.
 ///
 /// Manages composition scheduling, input routing, text-field state, and
@@ -129,6 +135,10 @@ pub struct ReposeRuntime {
     pub key_pressed_active: Option<u64>,
     pub last_focus: Option<u64>,
 
+    last_up: Option<(u64, web_time::Instant, f32, f32)>,
+    long_press: Option<(u64, web_time::Instant, f32, f32)>,
+    suppress_next_click: bool,
+
     // Per-frame cache for hit testing
     pub frame_cache: Option<Frame>,
 
@@ -157,6 +167,9 @@ impl ReposeRuntime {
             ime_preedit: false,
             key_pressed_active: None,
             last_focus: None,
+            last_up: None,
+            long_press: None,
+            suppress_next_click: false,
             frame_cache: None,
             cursor: None,
             textfield_states: HashMap::new(),
@@ -455,6 +468,13 @@ impl ReposeRuntime {
     pub fn handle_pointer_move(&mut self, pos: Vec2) -> PointerMoveResult {
         self.mouse_pos_px = (pos.x, pos.y);
 
+        // Cancel long-press once the pointer leaves the press slop.
+        if let Some((_, _, x0, y0)) = self.long_press
+            && ((pos.x - x0).abs() > LONG_PRESS_SLOP_PX || (pos.y - y0).abs() > LONG_PRESS_SLOP_PX)
+        {
+            self.long_press = None;
+        }
+
         // DnD move
         if dnd::handle_drag_action(&DragAction::Move {
             position: pos,
@@ -600,6 +620,19 @@ impl ReposeRuntime {
             result.capture_id = Some(hit.id);
             result.consumed = true;
 
+            // Long-press timer (combinedClickable parity)
+            match button {
+                PointerButton::Primary => {
+                    self.long_press = if hit.on_long_click.is_some() {
+                        Some((hit.id, web_time::Instant::now(), pos.x, pos.y))
+                    } else {
+                        None
+                    };
+                    self.suppress_next_click = false;
+                }
+                _ => {}
+            }
+
             // TextField caret placement
             if is_textfield_in_frame(f, hit.id) {
                 let key = tf_key_of(f, hit.id);
@@ -691,17 +724,51 @@ impl ReposeRuntime {
             result.consumed = true;
         }
 
-        // Click detection
-        if let Some(cid) = self.capture_id
+        // Long-press resolution (fires on release after LONG_PRESS_MS held).
+        if let Some((lid, t0, _, _)) = self.long_press.take() {
+            if Some(lid) == self.capture_id
+                && t0.elapsed().as_millis() >= LONG_PRESS_MS
+                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == lid)
+                && let Some(cb) = &hit.on_long_click
+            {
+                cb();
+                self.suppress_next_click = true;
+                result.clicked_id = Some(lid);
+                result.needs_a11y_announce = true;
+                result.consumed = true;
+            }
+        }
+
+        // Click detection (with double-click pairing, Compose combinedClickable parity)
+        if !self.suppress_next_click
+            && let Some(cid) = self.capture_id
             && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
             && hit.rect.contains(pos)
-            && let Some(cb) = &hit.on_click
         {
-            cb();
+            let now = web_time::Instant::now();
+            let is_double = self.last_up.is_some_and(|(pid, t0, x0, y0)| {
+                pid == cid
+                    && now.duration_since(t0).as_millis() <= DOUBLE_CLICK_MS
+                    && (pos.x - x0).abs() <= DOUBLE_CLICK_SLOP_PX
+                    && (pos.y - y0).abs() <= DOUBLE_CLICK_SLOP_PX
+                    && hit.on_double_click.is_some()
+            });
+            if is_double {
+                if let Some(cb) = &hit.on_double_click {
+                    cb();
+                }
+                self.last_up = None; // consume the pair
+            } else {
+                if let Some(cb) = &hit.on_click {
+                    cb();
+                }
+                self.last_up = Some((cid, now, pos.x, pos.y));
+            }
             result.clicked_id = Some(cid);
             result.needs_a11y_announce = true;
             result.consumed = true;
         }
+        self.suppress_next_click = false;
 
         // TextField drag end
         if let Some(cid) = self.capture_id
@@ -721,6 +788,8 @@ impl ReposeRuntime {
 
     /// Cancel pointer state (focus lost, cursor left window, etc.).
     pub fn handle_pointer_cancel(&mut self) {
+        self.long_press = None;
+        self.last_up = None;
         dnd::handle_drag_action(&DragAction::Cancel);
         let pos = Vec2 {
             x: self.mouse_pos_px.0,
@@ -977,6 +1046,9 @@ impl ReposeRuntime {
             } else {
                 // Multiline plain Enter: insert newline
                 let key = tf_key_of(f, fid);
+                if !is_tf_editable(f, fid) {
+                    return true;
+                }
                 if let Some(state_rc) = self.textfield_states.get(&key) {
                     let mut st = state_rc.borrow_mut();
                     st.insert_text("\n");
@@ -997,6 +1069,9 @@ impl ReposeRuntime {
                     let mut state = state_rc.borrow_mut();
                     match event.key {
                         Key::Backspace => {
+                            if !is_tf_editable(f, fid) {
+                                return true;
+                            }
                             state.delete_backward();
                             let new_text = state.text.clone();
                             notify_text_change(f, fid, new_text);
@@ -1005,6 +1080,9 @@ impl ReposeRuntime {
                             return true;
                         }
                         Key::Delete => {
+                            if !is_tf_editable(f, fid) {
+                                return true;
+                            }
                             state.delete_forward();
                             let new_text = state.text.clone();
                             notify_text_change(f, fid, new_text);
@@ -1122,6 +1200,9 @@ impl ReposeRuntime {
                 && let Some(fid) = self.sched.focused
             {
                 let key = tf_key_of(f, fid);
+                if !is_tf_editable(f, fid) {
+                    return true;
+                }
                 if let Some(state_rc) = self.textfield_states.get(&key) {
                     let mut st = state_rc.borrow_mut();
                     let text = c.to_string();
@@ -1318,6 +1399,9 @@ impl ReposeRuntime {
                 true
             }
             Action::Cut => {
+                if !is_tf_editable(&f, fid) {
+                    return false;
+                }
                 let mut st = state_rc.borrow_mut();
                 let (a, b) = (
                     st.selection.start.min(st.selection.end),
@@ -1360,6 +1444,9 @@ impl ReposeRuntime {
         let Some(f) = &self.frame_cache else {
             return;
         };
+        if !is_tf_editable(f, fid) {
+            return;
+        }
         let key = tf_key_of(f, fid);
         let Some(state_rc) = self.textfield_states.get(&key) else {
             return;
@@ -1492,6 +1579,9 @@ impl ReposeRuntime {
         if !is_textfield_in_frame(&f, fid) {
             return false;
         }
+        if !is_tf_editable(&f, fid) {
+            return false;
+        }
         let key = tf_key_of(&f, fid);
         let Some(state_rc) = self.textfield_states.get(&key).cloned() else {
             return false;
@@ -1538,6 +1628,9 @@ impl ReposeRuntime {
         let Some(f) = &self.frame_cache.clone() else {
             return;
         };
+        if !is_tf_editable(f, fid) {
+            return;
+        }
         let key = tf_key_of(f, fid);
         if let Some(state_rc) = self.textfield_states.get(&key) {
             let mut st = state_rc.borrow_mut();
@@ -1769,6 +1862,19 @@ fn is_multiline_id(f: &Frame, id: u64) -> bool {
         .find(|h| h.id == id)
         .map(|h| h.tf_multiline)
         .unwrap_or(false)
+}
+
+/// `enabled=false` rejects edits; `readOnly` also rejects
+/// edits but keeps selection/focus/copy working.
+fn tf_can_edit(hit: &HitRegion) -> bool {
+    hit.tf_enabled && !hit.tf_read_only
+}
+
+fn is_tf_editable(f: &Frame, id: u64) -> bool {
+    f.hit_regions
+        .iter()
+        .find(|h| h.id == id)
+        .is_some_and(tf_can_edit)
 }
 
 fn tf_key_of(frame: &Frame, visual_id: u64) -> u64 {

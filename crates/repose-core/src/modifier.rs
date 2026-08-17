@@ -1397,10 +1397,12 @@ impl Modifier {
     }
     pub fn on_double_click(mut self, f: impl Fn() + 'static) -> Self {
         self.on_double_click = Some(Rc::new(f));
+        self.click = true;
         self
     }
     pub fn on_long_click(mut self, f: impl Fn() + 'static) -> Self {
         self.on_long_click = Some(Rc::new(f));
+        self.click = true;
         self
     }
     pub fn semantics(mut self, s: crate::Semantics) -> Self {

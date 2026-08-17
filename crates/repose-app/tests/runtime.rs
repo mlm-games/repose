@@ -29,6 +29,8 @@ fn textfield_frame(id: u64) -> Frame {
     hr.focusable = true;
     hr.tf_state_key = Some(id);
     hr.tf_multiline = false;
+    hr.tf_enabled = true;
+    hr.tf_read_only = false;
     hr.cursor = Some(CursorIcon::Text);
 
     let rect = hr.rect;

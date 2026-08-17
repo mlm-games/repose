@@ -451,6 +451,8 @@ pub struct HitRegion {
     pub depth: u32,
     pub parent: Option<u64>,
     pub on_click: Option<Rc<dyn Fn()>>,
+    pub on_double_click: Option<Rc<dyn Fn()>>,
+    pub on_long_click: Option<Rc<dyn Fn()>>,
     pub on_scroll: Option<Rc<dyn Fn(crate::Vec2) -> crate::Vec2>>,
     pub focusable: bool,
     pub on_pointer_down: Option<Rc<dyn Fn(crate::input::PointerEvent)>>,
@@ -474,6 +476,12 @@ pub struct HitRegion {
     /// does not shift selection into the top of the content.
     /// `None` for non-textfields.
     pub tf_content_origin: Option<(f32, f32)>,
+
+    /// When false, the field rejects edits and is not focusable
+    pub tf_enabled: bool,
+
+    /// When true, selection/focus/copy are allowed but mutations are rejected
+    pub tf_read_only: bool,
 
     // internal
     pub on_drag_start: Option<Rc<dyn Fn(crate::dnd::DragStart) -> Option<crate::dnd::DragPayload>>>,
@@ -528,6 +536,8 @@ impl HitRegion {
             rect,
             z_index: m.z_index,
             on_click: m.on_click.clone(),
+            on_double_click: m.on_double_click.clone(),
+            on_long_click: m.on_long_click.clone(),
             on_pointer_down: m.on_pointer_down.clone(),
             on_pointer_move: m.on_pointer_move.clone(),
             on_pointer_up: m.on_pointer_up.clone(),
@@ -546,6 +556,8 @@ impl HitRegion {
             on_scroll: m.on_scroll.clone(),
             on_drop: m.on_drop.clone(),
             drag_preview: m.drag_preview.clone(),
+            tf_enabled: true,
+            tf_read_only: false,
             ..Default::default()
         }
     }
