@@ -362,6 +362,7 @@ pub fn Slider(
                 drag_active.set(true);
                 let r = *track_rect.borrow();
                 (oc)(value_from_x(pe.position_in_window().x, r, min, max, step));
+                pe.consume();
             }
         })
         .on_pointer_move({
@@ -378,15 +379,19 @@ pub fn Slider(
                 }
                 let r = *track_rect.borrow();
                 (oc)(value_from_x(pe.position_in_window().x, r, min, max, step));
+                pe.consume();
             }
         })
         .on_pointer_up({
             let drag_active = drag_active.clone();
             let on_finished = config.on_value_change_finished.clone();
             move |_pe: PointerEvent| {
+                let was = *drag_active.get();
                 drag_active.set(false);
-                if let Some(ref cb) = on_finished {
-                    (cb)();
+                if was {
+                    if let Some(ref cb) = on_finished {
+                        (cb)();
+                    }
                 }
             }
         })
@@ -427,6 +432,30 @@ pub fn Slider(
                 } else {
                     d
                 }
+            }
+        })
+        .on_key_event({
+            let oc = oc.clone();
+            let en = is_enabled;
+            move |ke: KeyEvent| -> bool {
+                if !en || ke.event_type != KeyEventType::Down {
+                    return false;
+                }
+                let step_val = step.unwrap_or(((max - min) / 100.0).max(1e-6)).max(1e-6);
+                let page = step_val * 10.0;
+                let new_val = match ke.key {
+                    Key::ArrowLeft | Key::ArrowDown => snap_step(value - step_val, min, max, step),
+                    Key::ArrowRight | Key::ArrowUp => snap_step(value + step_val, min, max, step),
+                    Key::PageDown => snap_step(value - page, min, max, step),
+                    Key::PageUp => snap_step(value + page, min, max, step),
+                    Key::Home => min,
+                    Key::End => max,
+                    _ => return false,
+                };
+                if (new_val - value).abs() > 1e-6 {
+                    (oc)(new_val);
+                }
+                true
             }
         })
         .then(config.modifier))
@@ -735,6 +764,7 @@ pub fn RangeSlider(
                     (v.min(end), end)
                 };
                 (oc)(a, b);
+                pe.consume();
             }
         })
         .on_pointer_move({
@@ -759,6 +789,7 @@ pub fn RangeSlider(
                     (v.min(end), end)
                 };
                 (oc)(a, b);
+                pe.consume();
             }
         })
         .on_pointer_up({
@@ -766,10 +797,13 @@ pub fn RangeSlider(
             let active_thumb = active_thumb.clone();
             let on_finished = config.on_value_change_finished.clone();
             move |_pe: PointerEvent| {
+                let was = *drag_active.get();
                 drag_active.set(false);
                 active_thumb.set(false);
-                if let Some(ref cb) = on_finished {
-                    (cb)();
+                if was {
+                    if let Some(ref cb) = on_finished {
+                        (cb)();
+                    }
                 }
             }
         })
@@ -819,6 +853,54 @@ pub fn RangeSlider(
                 } else {
                     d
                 }
+            }
+        })
+        .on_key_event({
+            let oc = oc.clone();
+            let active_thumb = active_thumb.clone();
+            let en = is_enabled;
+            move |ke: KeyEvent| -> bool {
+                if !en || ke.event_type != KeyEventType::Down {
+                    return false;
+                }
+                let step_val = step.unwrap_or(((max - min) / 100.0).max(1e-6)).max(1e-6);
+                let page = step_val * 10.0;
+                let use_end = *active_thumb.get();
+                let (a, b) = if use_end {
+                    let new_b = match ke.key {
+                        Key::ArrowLeft | Key::ArrowDown => {
+                            snap_step(end - step_val, min, max, step)
+                        }
+                        Key::ArrowRight | Key::ArrowUp => {
+                            snap_step(end + step_val, min, max, step)
+                        }
+                        Key::PageDown => snap_step(end - page, min, max, step),
+                        Key::PageUp => snap_step(end + page, min, max, step),
+                        Key::Home => start,
+                        Key::End => max,
+                        _ => return false,
+                    };
+                    (start, new_b.max(start))
+                } else {
+                    let new_a = match ke.key {
+                        Key::ArrowLeft | Key::ArrowDown => {
+                            snap_step(start - step_val, min, max, step)
+                        }
+                        Key::ArrowRight | Key::ArrowUp => {
+                            snap_step(start + step_val, min, max, step)
+                        }
+                        Key::PageDown => snap_step(start - page, min, max, step),
+                        Key::PageUp => snap_step(start + page, min, max, step),
+                        Key::Home => min,
+                        Key::End => end,
+                        _ => return false,
+                    };
+                    (new_a.min(end), end)
+                };
+                if (a - start).abs() > 1e-6 || (b - end).abs() > 1e-6 {
+                    (oc)(a, b);
+                }
+                true
             }
         })
         .then(config.modifier))

@@ -48,9 +48,9 @@ pub struct PointerEvent {
     pub id: PointerId,
     pub kind: PointerKind,
     pub event: PointerEventKind,
-    /// Position in window/surface physical pixels (device px).
+    /// Position relative to `origin` (hit-region top-left), in physical px.
     pub position: Vec2,
-    /// Top-left of the hit region this event is being delivered to.
+    /// Top-left of the hit region this event is being delivered to (physical px).
     pub origin: Vec2,
     pub pressure: f32,
     pub modifiers: Modifiers,
@@ -80,7 +80,7 @@ impl PointerEvent {
         }
     }
 
-    /// Position in window/surface physical pixels.
+    /// Absolute position in window/surface physical pixels.
     pub fn position_in_window(&self) -> Vec2 {
         self.position + self.origin
     }

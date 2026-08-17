@@ -167,9 +167,10 @@ pub fn FlowColumn(modifier: Modifier) -> View {
     Column(modifier.flex_wrap(FlexWrap::Wrap))
 }
 
-/// Align self-center shorthand.
+/// Centers children both axes inside this Box.
+/// (Compose `Box(contentAlignment = Alignment.Center)`.)
 pub fn Center(modifier: Modifier) -> View {
-    Box(modifier.align_self(AlignSelf::CENTER))
+    Box(modifier.content_alignment(Alignment::Center))
 }
 
 pub fn ZStack(modifier: Modifier) -> View {
@@ -343,7 +344,7 @@ pub fn DragValue(
             let drg = is_dragging.clone();
             move |pe: PointerEvent| {
                 drg.set(true);
-                dsx.set(pe.position.x);
+                dsx.set(pe.position_in_window().x);
                 dsv.set(cur);
             }
         })
@@ -358,7 +359,8 @@ pub fn DragValue(
                 }
                 let start_x = dsx.with(|v| *v);
                 let start_val = dsv.with(|v| *v);
-                let new_val = (start_val + (pe.position.x - start_x) * speed).clamp(min, max);
+                let new_val =
+                    (start_val + (pe.position_in_window().x - start_x) * speed).clamp(min, max);
                 (oc)(new_val);
             }
         })

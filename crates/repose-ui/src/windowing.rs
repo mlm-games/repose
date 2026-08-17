@@ -290,7 +290,7 @@ impl WindowModifierExt for Modifier {
                 *drag_state_down.borrow_mut() = Some(DragState {
                     window_id,
                     kind: DragKind::Move,
-                    start_pointer: px_vec_to_dp(pe.position),
+                    start_pointer: px_vec_to_dp(pe.position_in_window()),
                     start_pos: pos,
                     start_size: size,
                     min_size,
@@ -298,6 +298,7 @@ impl WindowModifierExt for Modifier {
                 });
 
                 state_down.borrow_mut().bring_to_front(window_id);
+                pe.consume();
                 request_frame();
             })
             .window_drag_continuation(host, window_id)
@@ -329,7 +330,7 @@ impl WindowModifierExt for Modifier {
                 *drag_state_down.borrow_mut() = Some(DragState {
                     window_id,
                     kind: DragKind::Resize(handle),
-                    start_pointer: px_vec_to_dp(pe.position),
+                    start_pointer: px_vec_to_dp(pe.position_in_window()),
                     start_pos: pos,
                     start_size: size,
                     min_size,
@@ -337,6 +338,7 @@ impl WindowModifierExt for Modifier {
                 });
 
                 state_down.borrow_mut().bring_to_front(window_id);
+                pe.consume();
                 request_frame();
             })
             .window_drag_continuation(host, window_id)
@@ -348,48 +350,51 @@ impl WindowModifierExt for Modifier {
         let bounds_move = host.bounds.clone();
 
         let drag_state_up = host.drag_state.clone();
+        let drag_state_cancel = host.drag_state.clone();
 
         self.on_pointer_move(move |pe: PointerEvent| {
             let Some(ds) = *drag_state_move.borrow() else {
                 return;
             };
-
             if ds.window_id != window_id {
                 return;
             }
 
-            let cur = px_vec_to_dp(pe.position);
+            let cur = px_vec_to_dp(pe.position_in_window());
             let delta = Vec2 {
                 x: cur.x - ds.start_pointer.x,
                 y: cur.y - ds.start_pointer.y,
             };
 
             let bounds = *bounds_move.borrow();
-
-            let (mut pos, mut size) = match ds.kind {
-                DragKind::Move => (
-                    Vec2 {
-                        x: ds.start_pos.x + delta.x,
-                        y: ds.start_pos.y + delta.y,
-                    },
-                    ds.start_size,
-                ),
-                DragKind::Resize(handle) => resize_from_handle(ds, handle, delta),
-            };
-
-            let (clamped_pos, clamped_size) =
-                clamp_rect(pos, size, ds.min_size, ds.max_size, bounds);
-
-            pos = clamped_pos;
-            size = clamped_size;
+            let (pos, size) = apply_drag(ds, delta, bounds);
 
             let mut st = state_move.borrow_mut();
             st.set_position(window_id, pos);
             st.set_size(window_id, size);
+            pe.consume();
             request_frame();
         })
-        .on_pointer_up(move |_pe: PointerEvent| {
-            *drag_state_up.borrow_mut() = None;
+        .on_pointer_up(move |pe: PointerEvent| {
+            let clearing = drag_state_up
+                .borrow()
+                .as_ref()
+                .is_some_and(|d| d.window_id == window_id);
+            if clearing {
+                *drag_state_up.borrow_mut() = None;
+                pe.consume();
+                request_frame();
+            }
+        })
+        .on_pointer_cancel(move |_pe: PointerEvent| {
+            let clearing = drag_state_cancel
+                .borrow()
+                .as_ref()
+                .is_some_and(|d| d.window_id == window_id);
+            if clearing {
+                *drag_state_cancel.borrow_mut() = None;
+                request_frame();
+            }
         })
     }
 }
@@ -769,34 +774,60 @@ fn resize_from_handle(ds: DragState, handle: ResizeHandle, delta: Vec2) -> (Vec2
     (pos, size)
 }
 
-fn clamp_rect(
-    mut pos: Vec2,
-    mut size: Size,
-    min_size: Size,
-    max_size: Option<Size>,
-    bounds: Rect,
-) -> (Vec2, Size) {
-    let min_w = min_size.width.max(120.0);
-    let min_h = min_size.height.max(TITLE_BAR_HEIGHT_DP + 40.0);
-    size.width = size.width.max(min_w);
-    size.height = size.height.max(min_h);
+fn apply_drag(ds: DragState, delta: Vec2, bounds: Rect) -> (Vec2, Size) {
+    let (mut pos, mut size) = match ds.kind {
+        DragKind::Move => (
+            Vec2 {
+                x: ds.start_pos.x + delta.x,
+                y: ds.start_pos.y + delta.y,
+            },
+            ds.start_size,
+        ),
+        DragKind::Resize(handle) => resize_from_handle(ds, handle, delta),
+    };
 
-    if let Some(max) = max_size {
-        size.width = size.width.min(max.width.max(min_w));
-        size.height = size.height.min(max.height.max(min_h));
+    let min_w = ds.min_size.width.max(120.0);
+    let min_h = ds.min_size.height.max(TITLE_BAR_HEIGHT_DP + 40.0);
+
+    let mut max_w = f32::INFINITY;
+    let mut max_h = f32::INFINITY;
+    if let Some(max) = ds.max_size {
+        max_w = max.width.max(min_w);
+        max_h = max.height.max(min_h);
+    }
+    if bounds.w > 1.0 && bounds.h > 1.0 {
+        max_w = max_w.min(bounds.w.max(min_w));
+        max_h = max_h.min(bounds.h.max(min_h));
+    }
+
+    let right = pos.x + size.width;
+    let bottom = pos.y + size.height;
+
+    size.width = size.width.clamp(min_w, max_w);
+    size.height = size.height.clamp(min_h, max_h);
+
+    if let DragKind::Resize(handle) = ds.kind {
+        let affects_left = matches!(
+            handle,
+            ResizeHandle::Left | ResizeHandle::TopLeft | ResizeHandle::BottomLeft
+        );
+        let affects_top = matches!(
+            handle,
+            ResizeHandle::Top | ResizeHandle::TopLeft | ResizeHandle::TopRight
+        );
+        if affects_left {
+            pos.x = right - size.width;
+        }
+        if affects_top {
+            pos.y = bottom - size.height;
+        }
     }
 
     if bounds.w > 1.0 && bounds.h > 1.0 {
-        let max_w = bounds.w.max(min_w);
-        let max_h = bounds.h.max(min_h);
-        size.width = size.width.min(max_w);
-        size.height = size.height.min(max_h);
-
         let min_x = bounds.x - size.width + KEEP_VISIBLE_DP;
         let max_x = bounds.x + bounds.w - KEEP_VISIBLE_DP;
         let min_y = bounds.y - size.height + KEEP_VISIBLE_DP;
         let max_y = bounds.y + bounds.h - KEEP_VISIBLE_DP;
-
         pos.x = clamp_f32(pos.x, min_x, max_x);
         pos.y = clamp_f32(pos.y, min_y, max_y);
     }
