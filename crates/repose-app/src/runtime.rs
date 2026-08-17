@@ -98,11 +98,10 @@ pub struct PointerButtonResult {
     pub clicked_id: Option<u64>,
 }
 
-// ViewConfiguration defaults.
-const LONG_PRESS_MS: u128 = 400;
+// ViewConfiguration defaults
+const LONG_PRESS_MS: u128 = 500;
 const DOUBLE_CLICK_MS: u128 = 300;
-const DOUBLE_CLICK_SLOP_PX: f32 = 20.0;
-const LONG_PRESS_SLOP_PX: f32 = 18.0;
+const DOUBLE_TAP_MIN_MS: u128 = 40;
 
 /// Embeddable Repose runtime.
 ///
@@ -136,8 +135,21 @@ pub struct ReposeRuntime {
     pub last_focus: Option<u64>,
 
     last_up: Option<(u64, web_time::Instant, f32, f32)>,
+    /// Position/time of the most recent pointer-down, used to time the second
+    /// tap of a double click (Compose: window + min time measured to the
+    /// second DOWN, not its up).
+    last_down: Option<(u64, web_time::Instant)>,
+    /// Set when the second tap of a double-click qualifies (within
+    /// [DOUBLE_TAP_MIN_MS, DOUBLE_CLICK_MS] of the first tap's up). Its up
+    /// confirms the double click; a canceled up falls back to the first tap's
+    /// onClick (Compose detectTapGestures).
+    double_candidate: Option<u64>,
     long_press: Option<(u64, web_time::Instant, f32, f32)>,
+    /// Keyboard long-press (Compose combinedClickable: holding Space/Enter
+    /// past LONG_PRESS_MS fires on_long_click). `bool` = already fired.
+    key_long_press: Option<(u64, web_time::Instant, bool)>,
     suppress_next_click: bool,
+    pending_click: Option<(u64, web_time::Instant, Rc<dyn Fn()>)>,
 
     // Per-frame cache for hit testing
     pub frame_cache: Option<Frame>,
@@ -168,8 +180,12 @@ impl ReposeRuntime {
             key_pressed_active: None,
             last_focus: None,
             last_up: None,
+            last_down: None,
+            double_candidate: None,
             long_press: None,
+            key_long_press: None,
             suppress_next_click: false,
+            pending_click: None,
             frame_cache: None,
             cursor: None,
             textfield_states: HashMap::new(),
@@ -200,6 +216,10 @@ impl ReposeRuntime {
     where
         F: FnMut(&mut Scheduler, &RenderContext) -> View,
     {
+        self.poll_long_press();
+        self.flush_pending_click();
+        self.poll_key_long_press();
+
         let size = self.sched.size;
         let rc = render_ctx.clone();
         // Root-level panic guard: a stray panic during compose must not kill the
@@ -468,13 +488,6 @@ impl ReposeRuntime {
     pub fn handle_pointer_move(&mut self, pos: Vec2) -> PointerMoveResult {
         self.mouse_pos_px = (pos.x, pos.y);
 
-        // Cancel long-press once the pointer leaves the press slop.
-        if let Some((_, _, x0, y0)) = self.long_press
-            && ((pos.x - x0).abs() > LONG_PRESS_SLOP_PX || (pos.y - y0).abs() > LONG_PRESS_SLOP_PX)
-        {
-            self.long_press = None;
-        }
-
         // DnD move
         if dnd::handle_drag_action(&DragAction::Move {
             position: pos,
@@ -497,6 +510,17 @@ impl ReposeRuntime {
                 hover_id: None,
             };
         };
+
+        // Cancel the long press once the pointer leaves the element's bounds
+        if self.long_press.is_some()
+            && let Some(lid) = self.long_press.map(|(id, _, _, _)| id)
+            && f.hit_regions
+                .iter()
+                .find(|h| h.id == lid)
+                .map_or(true, |h| !h.rect.contains(pos))
+        {
+            self.long_press = None;
+        }
 
         // TextField/TextArea drag selection (if captured)
         if let Some(cid) = self.capture_id
@@ -620,6 +644,28 @@ impl ReposeRuntime {
             result.capture_id = Some(hit.id);
             result.consumed = true;
 
+            // A new press cancels a still-pending delayed single click
+            self.pending_click = None;
+            // Record the down for double-click timing (Compose: the second
+            // tap is timed from its DOWN, not its up).
+            self.last_down = Some((hit.id, web_time::Instant::now()));
+            // The second DOWN must land within
+            // [doubleTapMinTimeMillis, doubleTapTimeoutMillis] after the first
+            // tap's UP. No distance/slop requirement between the taps.
+            self.double_candidate = if hit.on_double_click.is_some()
+                && self.last_up.is_some_and(|(pid, t0, _, _)| {
+                    pid == hit.id
+                        && self.last_down.is_some_and(|(did, dt)| {
+                            did == hit.id
+                                && dt.duration_since(t0).as_millis() >= DOUBLE_TAP_MIN_MS
+                                && dt.duration_since(t0).as_millis() <= DOUBLE_CLICK_MS
+                        })
+                }) {
+                Some(hit.id)
+            } else {
+                None
+            };
+
             // Long-press timer (combinedClickable parity)
             match button {
                 PointerButton::Primary => {
@@ -724,7 +770,7 @@ impl ReposeRuntime {
             result.consumed = true;
         }
 
-        // Long-press resolution (fires on release after LONG_PRESS_MS held).
+        // Long-press resolution: `poll_long_press` normally fires on timeout when held.
         if let Some((lid, t0, _, _)) = self.long_press.take() {
             if Some(lid) == self.capture_id
                 && t0.elapsed().as_millis() >= LONG_PRESS_MS
@@ -733,42 +779,69 @@ impl ReposeRuntime {
             {
                 cb();
                 self.suppress_next_click = true;
+                self.pending_click = None;
                 result.clicked_id = Some(lid);
                 result.needs_a11y_announce = true;
                 result.consumed = true;
             }
         }
 
-        // Click detection (with double-click pairing, Compose combinedClickable parity)
         if !self.suppress_next_click
             && let Some(cid) = self.capture_id
             && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
             && hit.rect.contains(pos)
         {
             let now = web_time::Instant::now();
-            let is_double = self.last_up.is_some_and(|(pid, t0, x0, y0)| {
-                pid == cid
-                    && now.duration_since(t0).as_millis() <= DOUBLE_CLICK_MS
-                    && (pos.x - x0).abs() <= DOUBLE_CLICK_SLOP_PX
-                    && (pos.y - y0).abs() <= DOUBLE_CLICK_SLOP_PX
-                    && hit.on_double_click.is_some()
-            });
-            if is_double {
-                if let Some(cb) = &hit.on_double_click {
-                    cb();
+            // With onDoubleTap present, single
+            // clicks are delayed until the double-tap window elapses.
+            if hit.on_double_click.is_some() {
+                if let Some(cb) = hit.on_click.clone() {
+                    self.pending_click = Some((cid, now, cb));
                 }
-                self.last_up = None; // consume the pair
+                self.last_up = Some((cid, now, pos.x, pos.y));
+                result.consumed = true;
+                request_frame(); // need another frame to flush pending
             } else {
                 if let Some(cb) = &hit.on_click {
                     cb();
                 }
                 self.last_up = Some((cid, now, pos.x, pos.y));
+                result.clicked_id = Some(cid);
+                result.needs_a11y_announce = true;
+                result.consumed = true;
             }
-            result.clicked_id = Some(cid);
-            result.needs_a11y_announce = true;
-            result.consumed = true;
         }
         self.suppress_next_click = false;
+
+        // Double-click resolution. The second DOWN (handle_pointer_down)
+        // qualifies the pair; the second UP confirms it. A canceled second tap
+        // (moved out of bounds) falls back to the first tap's onClick.
+        if let Some(dc) = self.double_candidate.take() {
+            self.pending_click = None;
+            self.last_up = None;
+            self.last_down = None;
+            if self.capture_id == Some(dc)
+                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == dc)
+                && hit.rect.contains(pos)
+            {
+                if let Some(cb) = &hit.on_double_click {
+                    cb();
+                }
+                result.clicked_id = Some(dc);
+                result.needs_a11y_announce = true;
+                result.consumed = true;
+            } else if self.capture_id == Some(dc)
+                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == dc)
+            {
+                // Second tap canceled -> the first tap counts as a click.
+                if let Some(cb) = &hit.on_click {
+                    cb();
+                }
+                result.clicked_id = Some(dc);
+                result.needs_a11y_announce = true;
+                result.consumed = true;
+            }
+        }
 
         // TextField drag end
         if let Some(cid) = self.capture_id
@@ -900,6 +973,88 @@ impl ReposeRuntime {
         self.capture_id = None;
         self.hit_path = None;
         self.pressed_ids.clear();
+        self.pending_click = None;
+        self.last_down = None;
+        self.double_candidate = None;
+        self.key_long_press = None;
+    }
+
+    fn flush_pending_click(&mut self) {
+        let Some((id, t0, cb)) = self.pending_click.take() else {
+            return;
+        };
+        if t0.elapsed().as_millis() >= DOUBLE_CLICK_MS {
+            cb();
+        } else {
+            self.pending_click = Some((id, t0, cb));
+            request_frame();
+        }
+    }
+
+    fn poll_long_press(&mut self) {
+        let Some(f) = self.frame_cache.clone() else {
+            return;
+        };
+        let Some((lid, t0, _, _)) = self.long_press else {
+            return;
+        };
+        if t0.elapsed().as_millis() < LONG_PRESS_MS {
+            request_frame();
+            return;
+        }
+        // Still captured and within the element bounds? (Compose cancels the
+        // long press when the pointer leaves the element.)
+        if self.capture_id != Some(lid) {
+            self.long_press = None;
+            return;
+        }
+        let (mx, my) = self.mouse_pos_px;
+        let in_bounds = f
+            .hit_regions
+            .iter()
+            .find(|h| h.id == lid)
+            .map_or(false, |h| h.rect.contains(Vec2 { x: mx, y: my }));
+        if !in_bounds {
+            self.long_press = None;
+            return;
+        }
+        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == lid)
+            && let Some(cb) = &hit.on_long_click
+        {
+            self.long_press = None;
+            self.suppress_next_click = true;
+            self.pending_click = None;
+            self.last_up = None;
+            cb();
+            request_frame();
+        } else {
+            self.long_press = None;
+        }
+    }
+
+    /// Compose combinedClickable keyboard parity: holding Space/Enter past
+    /// LONG_PRESS_MS fires on_long_click; the subsequent KeyUp must not also
+    /// fire onClick.
+    fn poll_key_long_press(&mut self) {
+        let Some(f) = self.frame_cache.clone() else {
+            return;
+        };
+        let Some((kid, t0, fired)) = self.key_long_press else {
+            return;
+        };
+        if t0.elapsed().as_millis() < LONG_PRESS_MS {
+            request_frame();
+            return;
+        }
+        if !fired {
+            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == kid)
+                && let Some(cb) = &hit.on_long_click
+            {
+                cb();
+            }
+            self.key_long_press = Some((kid, t0, true));
+            request_frame();
+        }
     }
 
     /// Process a scroll event. Returns true if consumed.
@@ -982,6 +1137,12 @@ impl ReposeRuntime {
             if !is_tf {
                 if event.event_type == KeyEventType::Down && !event.is_repeat {
                     if event.key == Key::Space || event.key == Key::Enter {
+                        let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) else {
+                            return false;
+                        };
+                        if hit.on_click.is_none() {
+                            return false; // don't steal keys from non-clickable focusables
+                        }
                         self.pressed_ids.insert(fid);
                         self.key_pressed_active = Some(fid);
 
@@ -1215,22 +1376,6 @@ impl ReposeRuntime {
                     return true;
                 }
             }
-        }
-
-        // Key release: finish keyboard activation
-        if event.event_type == KeyEventType::Up
-            && let Some(active_id) = self.key_pressed_active
-            && (event.key == Key::Space || event.key == Key::Enter)
-        {
-            self.pressed_ids.remove(&active_id);
-            self.key_pressed_active = None;
-            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == active_id)
-                && let Some(cb) = &hit.on_click
-            {
-                cb();
-            }
-            request_frame();
-            return true;
         }
 
         false

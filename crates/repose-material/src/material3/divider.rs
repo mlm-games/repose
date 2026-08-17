@@ -27,7 +27,7 @@ impl Default for DividerConfig {
 /// (Equivalent to Compose Material3's `HorizontalDivider`.)
 pub fn HorizontalDivider(config: DividerConfig) -> View {
     Box(Modifier::new()
-        .min_width(200.0)
+        .fill_max_width()
         .height(config.thickness)
         .background(config.color)
         .then(config.modifier))

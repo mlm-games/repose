@@ -4797,6 +4797,40 @@ impl WgpuSceneRenderer {
                                 [0.0, 1.0, 1.0, 0.0],
                             )
                         }
+                        repose_core::view::ImageFit::FillBounds => {
+                            (*rect, [0.0, 1.0, 1.0, 0.0])
+                        }
+                        repose_core::view::ImageFit::Inside => {
+                            let scale = (dst_w / src_w).min(dst_h / src_h).min(1.0);
+                            let w = src_w * scale;
+                            let h = src_h * scale;
+                            (
+                                repose_core::Rect {
+                                    x: rect.x + (dst_w - w) * 0.5,
+                                    y: rect.y + (dst_h - h) * 0.5,
+                                    w,
+                                    h,
+                                },
+                                [0.0, 1.0, 1.0, 0.0],
+                            )
+                        }
+                        repose_core::view::ImageFit::None => {
+                            (
+                                repose_core::Rect {
+                                    x: rect.x,
+                                    y: rect.y,
+                                    w: src_w.min(dst_w),
+                                    h: src_h.min(dst_h),
+                                },
+                                // If larger than dst, crop top-left of source:
+                                [
+                                    0.0,
+                                    1.0,
+                                    (dst_w / src_w).min(1.0),
+                                    1.0 - (dst_h / src_h).min(1.0),
+                                ],
+                            )
+                        }
                         _ => continue,
                     };
 

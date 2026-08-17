@@ -273,6 +273,7 @@ pub fn ListItem(
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
     let mut modifier = Modifier::new()
+        .fill_max_width()
         .min_width(200.0)
         .min_height(min_h)
         .background(bg);

@@ -1405,6 +1405,33 @@ impl Modifier {
         self.click = true;
         self
     }
+    /// Hack: move this later to `Modifier.clickable(enabled, onClick)`.
+    pub fn clickable_fn(self, enabled: bool, on_click: impl Fn() + 'static) -> Self {
+        if !enabled {
+            return self.enabled(false);
+        }
+        self.clickable().on_click(on_click)
+    }
+    /// Hack: move this later to `Modifier.combinedClickable`.
+    pub fn combined_clickable(
+        self,
+        enabled: bool,
+        on_click: impl Fn() + 'static,
+        on_double_click: Option<impl Fn() + 'static>,
+        on_long_click: Option<impl Fn() + 'static>,
+    ) -> Self {
+        if !enabled {
+            return self.enabled(false);
+        }
+        let mut m = self.clickable().on_click(on_click);
+        if let Some(f) = on_double_click {
+            m = m.on_double_click(f);
+        }
+        if let Some(f) = on_long_click {
+            m = m.on_long_click(f);
+        }
+        m
+    }
     pub fn semantics(mut self, s: crate::Semantics) -> Self {
         self.semantics = Some(s);
         self

@@ -63,10 +63,20 @@ pub type ImageHandle = u64;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ImageFit {
+    /// ContentScale.Fit - default in Compose Image
     Contain,
+    /// ContentScale.Crop
     Cover,
+    /// ContentScale.FillWidth
     FitWidth,
+    /// ContentScale.FillHeight
     FitHeight,
+    /// ContentScale.FillBounds - stretch, ignore aspect
+    FillBounds,
+    /// ContentScale.Inside - like Contain but never upscales
+    Inside,
+    /// ContentScale.None - no scaling, top-left (alignment can offset later)
+    None,
 }
 
 pub type Callback = Rc<dyn Fn()>;
