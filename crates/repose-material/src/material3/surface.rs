@@ -5,7 +5,7 @@ use std::rc::Rc;
 use repose_core::*;
 use repose_ui::{Box, TextStyle, ViewExt};
 
-use super::util::{apply_m3_clickable, apply_tonal_elevation, with_button_semantics};
+use super::util::{apply_m3_clickable, apply_tonal_elevation};
 use super::*;
 
 /// Configuration for [`Surface`].
@@ -66,7 +66,7 @@ pub fn Surface(config: SurfaceConfig, content: impl FnOnce() -> View) -> View {
         .child(with_content_color(config.content_color, content))
 }
 
-/// M3 Clickable Surface
+/// M3 Clickable Surface - Compose `Surface(onClick = ...)` equivalent.
 pub fn ClickableSurface(
     on_click: impl Fn() + 'static,
     config: SurfaceConfig,
@@ -77,7 +77,10 @@ pub fn ClickableSurface(
         .clone()
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    let mut m = Modifier::new().background(config.color);
+    let mut m = Modifier::new()
+        .min_width(48.0)
+        .min_height(48.0)
+        .background(config.color);
     m = apply_tonal_elevation(m, config.tonal_elevation, config.color);
     m = m
         .clip_rounded(config.shape_radius)
@@ -96,7 +99,6 @@ pub fn ClickableSurface(
         config.enabled,
         on_click,
     );
-    m = with_button_semantics(m, config.enabled);
     Box(m)
         .color(config.content_color)
         .child(with_content_color(config.content_color, content))
