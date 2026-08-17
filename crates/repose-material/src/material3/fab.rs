@@ -36,13 +36,7 @@ impl Default for FABConfig {
     }
 }
 
-fn fab_impl(
-    icon: View,
-    on_click: impl Fn() + 'static,
-    size: f32,
-    shape_r: f32,
-    config: FABConfig,
-) -> View {
+fn fab_impl(icon: View, on_click: impl Fn() + 'static, config: FABConfig) -> View {
     let th = theme();
     let is_enabled = config.enabled;
     let bg = if is_enabled {
@@ -72,7 +66,7 @@ fn fab_impl(
     };
 
     let mut m = Modifier::new()
-        .size(size, size)
+        .size(config.size, config.size)
         .background(bg)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
@@ -83,7 +77,7 @@ fn fab_impl(
             disabled: th.on_surface.with_alpha_f32(0.12),
         })
         .state_elevation(elev)
-        .clip_rounded(shape_r)
+        .clip_rounded(config.shape_radius)
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER)
         .then(config.modifier);
@@ -94,40 +88,36 @@ fn fab_impl(
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
     m = apply_m3_clickable(m, &source, content_color, is_enabled, on_click);
 
-    Box(m).child(with_content_color(content_color, move || icon))
+    Box(m)
+        .child(with_content_color(content_color, move || icon))
+        .semantics(Semantics {
+            role: Role::Button,
+            label: None,
+            focused: false,
+            enabled: is_enabled,
+            selectable_group: false,
+        })
 }
 
 /// M3 Floating Action Button (regular, 56dp).
-pub fn FAB(icon: View, on_click: impl Fn() + 'static, config: FABConfig) -> View {
-    fab_impl(
-        icon,
-        on_click,
-        FABDefaults::SIZE,
-        FABDefaults::SHAPE_RADIUS,
-        config,
-    )
+pub fn FAB(icon: View, on_click: impl Fn() + 'static, mut config: FABConfig) -> View {
+    config.size = FABDefaults::SIZE;
+    config.shape_radius = FABDefaults::SHAPE_RADIUS;
+    fab_impl(icon, on_click, config)
 }
 
 /// M3 Small FAB (40dp).
-pub fn SmallFAB(icon: View, on_click: impl Fn() + 'static, config: FABConfig) -> View {
-    fab_impl(
-        icon,
-        on_click,
-        FABDefaults::SMALL_SIZE,
-        FABDefaults::SMALL_SHAPE_RADIUS,
-        config,
-    )
+pub fn SmallFAB(icon: View, on_click: impl Fn() + 'static, mut config: FABConfig) -> View {
+    config.size = FABDefaults::SMALL_SIZE;
+    config.shape_radius = FABDefaults::SMALL_SHAPE_RADIUS;
+    fab_impl(icon, on_click, config)
 }
 
 /// M3 Large FAB (96dp).
-pub fn LargeFAB(icon: View, on_click: impl Fn() + 'static, config: FABConfig) -> View {
-    fab_impl(
-        icon,
-        on_click,
-        FABDefaults::LARGE_SIZE,
-        FABDefaults::LARGE_SHAPE_RADIUS,
-        config,
-    )
+pub fn LargeFAB(icon: View, on_click: impl Fn() + 'static, mut config: FABConfig) -> View {
+    config.size = FABDefaults::LARGE_SIZE;
+    config.shape_radius = FABDefaults::LARGE_SHAPE_RADIUS;
+    fab_impl(icon, on_click, config)
 }
 
 /// M3 Extended FAB - FAB with icon + label.
@@ -196,15 +186,23 @@ pub fn ExtendedFAB(
 
     m = apply_m3_clickable(m, &source, content_color, is_enabled, on_click);
     m = m.then(config.modifier);
-    Row(m).child((
-        icon.map(|v| with_content_color(content_color, move || v))
-            .unwrap_or(Box(Modifier::new())),
-        Box(Modifier::new()
-            .width(if has_icon { 12.0 } else { 0.0 })
-            .fill_max_height()),
-        Text(label)
-            .color(content_color)
-            .size(th.typography.label_large)
-            .single_line(),
-    ))
+    Row(m)
+        .child((
+            icon.map(|v| with_content_color(content_color, move || v))
+                .unwrap_or(Box(Modifier::new())),
+            Box(Modifier::new()
+                .width(if has_icon { 12.0 } else { 0.0 })
+                .fill_max_height()),
+            Text(label)
+                .color(content_color)
+                .size(th.typography.label_large)
+                .single_line(),
+        ))
+        .semantics(Semantics {
+            role: Role::Button,
+            label: None,
+            focused: false,
+            enabled: is_enabled,
+            selectable_group: false,
+        })
 }

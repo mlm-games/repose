@@ -5,6 +5,7 @@ use std::rc::Rc;
 use repose_core::*;
 use repose_ui::{Box, Column, TextStyle, ViewExt};
 
+use super::util::apply_tonal_elevation;
 use super::*;
 
 /// Configuration for [`Card`].
@@ -59,27 +60,34 @@ pub fn Card(config: CardConfig, content: impl FnOnce() -> View) -> View {
         .clone()
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    let mut m = Modifier::new()
+    let mut m = config
+        .modifier
         .background(bg)
         .clip_rounded(config.shape_radius)
-        .interaction_source(&source)
-        .then(config.modifier);
+        .interaction_source(&source);
     if let Some((w, c)) = config.border {
         m = m.border(w, c, config.shape_radius);
     }
     if let Some(se) = config.state_elevation {
-        m = m.state_elevation(se);
-    } else if config.tonal_elevation > 0.0 {
-        m = m.state_elevation(StateElevation {
-            default: config.tonal_elevation,
-            hovered: config.tonal_elevation,
-            focused: config.tonal_elevation,
-            pressed: config.tonal_elevation,
-            dragged: config.tonal_elevation,
-            disabled: 0.0,
+        m = m.state_elevation(if config.enabled {
+            se
+        } else {
+            StateElevation {
+                default: 0.0,
+                hovered: 0.0,
+                focused: 0.0,
+                pressed: 0.0,
+                dragged: 0.0,
+                disabled: 0.0,
+            }
         });
+    } else if config.tonal_elevation > 0.0 {
+        m = apply_tonal_elevation(m, config.tonal_elevation, bg);
     }
-    Box(m).color(fg).child(content())
+    if !config.enabled {
+        m = m.enabled(false);
+    }
+    Box(m).color(fg).child(with_content_color(fg, content))
 }
 
 /// M3 Elevated Card - card with elevation.

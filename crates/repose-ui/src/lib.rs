@@ -194,7 +194,7 @@ pub fn Text(text: impl Into<String>) -> View {
         ViewKind::Text {
             text: text.into(),
             color: locals::content_color(),
-            font_size: 16.0, // dp (converted to px in layout/paint)
+            font_size: locals::text_size().unwrap_or(16.0), // dp (converted to px in layout/paint)
             soft_wrap: true,
             max_lines: None,
             overflow: TextOverflow::Visible,
@@ -226,7 +226,7 @@ pub fn AnnotatedText(annotated: AnnotatedString) -> View {
         ViewKind::Text {
             text: annotated.text,
             color: locals::content_color(),
-            font_size: 16.0,
+            font_size: locals::text_size().unwrap_or(16.0),
             soft_wrap: true,
             max_lines: None,
             overflow: TextOverflow::Visible,

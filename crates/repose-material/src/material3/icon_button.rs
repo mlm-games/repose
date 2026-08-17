@@ -79,12 +79,14 @@ fn icon_button_render(
     let radius = config.shape_radius.unwrap_or(sz * 0.5);
 
     let touch = IconButtonDefaults::MIN_INTERACTIVE_SIZE.max(sz);
-    let mut outer = Modifier::new()
+
+    let outer = Modifier::new()
         .size(touch, touch)
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER)
         .then(config.modifier.clone());
 
+    // Inner = visual container + ripple + click (Compose Surface).
     let mut inner = Modifier::new()
         .size(sz, sz)
         .clip_rounded(radius)
@@ -105,21 +107,31 @@ fn icon_button_render(
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
-    outer = apply_m3_clickable_ex(
-        outer,
+    let (bounded, r) = if ripple_bounded {
+        (true, None)
+    } else {
+        (false, Some(IconButtonDefaults::STATE_LAYER_RADIUS))
+    };
+
+    inner = apply_m3_clickable_ex(
+        inner,
         &source,
         content_color,
         is_enabled,
         on_click,
-        ripple_bounded,
-        Some(if ripple_bounded {
-            radius
-        } else {
-            IconButtonDefaults::STATE_LAYER_RADIUS
-        }),
+        bounded,
+        r,
     );
 
-    Box(outer).child(Box(inner).child(with_content_color(content_color, move || icon)))
+    Box(outer)
+        .child(Box(inner).child(with_content_color(content_color, move || icon)))
+        .semantics(Semantics {
+            role: Role::Button,
+            label: None,
+            focused: false,
+            enabled: is_enabled,
+            selectable_group: false,
+        })
 }
 
 /// M3 Icon Button - a tappable circular container for an icon.

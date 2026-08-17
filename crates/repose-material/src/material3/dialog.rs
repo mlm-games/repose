@@ -184,10 +184,11 @@ pub fn Dialog(
                         }))
                     .child(content);
 
-                    // Scrim that dismisses on click (if enabled)
+                    let scrim_color = AlertDialogDefaults::scrim_color();
+                    let scrim_alpha = (scrim_color.3 as f32 / 255.0) * alpha;
                     let scrim = Box(Modifier::new()
                         .fill_max_size()
-                        .background(th.scrim.with_alpha((85.0 * alpha) as u8))
+                        .background(scrim_color.with_alpha_f32(scrim_alpha.clamp(0.0, 1.0)))
                         .focusable(false)
                         .input_blocker()
                         .on_scroll(|_| Vec2::default())

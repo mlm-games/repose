@@ -189,8 +189,16 @@ fn button_impl(
 
     m = apply_m3_clickable(m, &source, content_color, enabled, on_click);
     m = m.then(outer_modifier);
-    let content = with_content_color(content_color, content);
-    Box(m).child(content)
+    let content = with_content_color(content_color, || {
+        with_text_size(theme().typography.label_large, content)
+    });
+    Box(m).child(content).semantics(Semantics {
+        role: Role::Button,
+        label: None,
+        focused: false,
+        enabled,
+        selectable_group: false,
+    })
 }
 
 /// M3 Button - prominent action button with primary color fill.
@@ -440,10 +448,22 @@ fn toggle_button_impl(
     interaction_source: Option<MutableInteractionSource>,
 ) -> View {
     let th = theme();
+    let disabled_bg = {
+        let enabled_bg = if checked {
+            checked_container_color.unwrap_or(th.primary)
+        } else {
+            container_color.unwrap_or(Color::TRANSPARENT)
+        };
+        if enabled_bg.3 == 0 {
+            Color::TRANSPARENT
+        } else {
+            th.on_surface
+                .with_alpha_f32(0.12)
+                .composite_over(th.surface)
+        }
+    };
     let bg = if !enabled {
-        th.on_surface
-            .with_alpha_f32(0.12)
-            .composite_over(th.surface_container_high)
+        disabled_bg
     } else if checked {
         checked_container_color.unwrap_or(th.primary)
     } else {
@@ -455,6 +475,25 @@ fn toggle_button_impl(
         checked_content_color.unwrap_or(th.on_primary)
     } else {
         content_color
+    };
+    let border = border.map(|(w, c, r)| {
+        if !enabled {
+            (w, th.on_surface.with_alpha_f32(0.12), r)
+        } else {
+            (w, c, r)
+        }
+    });
+    let se = if enabled {
+        state_elevation
+    } else {
+        StateElevation {
+            default: 0.0,
+            hovered: 0.0,
+            focused: 0.0,
+            pressed: 0.0,
+            dragged: 0.0,
+            disabled: 0.0,
+        }
     };
     let mut m = Modifier::new()
         .min_height(height)
@@ -469,7 +508,7 @@ fn toggle_button_impl(
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER)
         .state_colors(state_colors)
-        .state_elevation(state_elevation);
+        .state_elevation(se);
     let tg_source: Rc<MutableInteractionSource> = interaction_source
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
@@ -478,7 +517,17 @@ fn toggle_button_impl(
     }
     let cb = on_checked_change;
     m = apply_m3_clickable(m, &tg_source, fg, enabled, move || cb(!checked));
-    with_content_color(fg, || Box(m).child(content(checked)))
+    with_content_color(fg, || {
+        with_text_size(theme().typography.label_large, || {
+            Box(m).child(content(checked)).semantics(Semantics {
+                role: Role::Button,
+                label: None,
+                focused: false,
+                enabled,
+                selectable_group: false,
+            })
+        })
+    })
 }
 
 /// M3 Toggle Button - a button that toggles between checked/unchecked states.

@@ -183,6 +183,7 @@ pub fn AssistChip(
     let mut m = Modifier::new()
         .flex_shrink(0.0)
         .min_height(ChipDefaults::HEIGHT)
+        .height(ChipDefaults::HEIGHT)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,
@@ -194,11 +195,13 @@ pub fn AssistChip(
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.horizontal_padding,
-            top: 8.0,
-            bottom: 8.0,
+            top: 0.0,
+            bottom: 0.0,
         })
         .background(bg)
         .clip_rounded(shape)
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER)
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
@@ -233,7 +236,13 @@ pub fn AssistChip(
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
-    )
+    ).semantics(Semantics {
+        role: Role::Button,
+        label: None,
+        focused: false,
+        enabled: is_enabled,
+        selectable_group: false,
+    })
 }
 
 /// M3 Elevated Assist Chip - like [`AssistChip`] but with elevated container.
@@ -261,6 +270,7 @@ pub fn ElevatedAssistChip(
     let mut m = Modifier::new()
         .flex_shrink(0.0)
         .min_height(ChipDefaults::HEIGHT)
+        .height(ChipDefaults::HEIGHT)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,
@@ -273,11 +283,13 @@ pub fn ElevatedAssistChip(
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.horizontal_padding,
-            top: 8.0,
-            bottom: 8.0,
+            top: 0.0,
+            bottom: 0.0,
         })
         .background(bg)
         .clip_rounded(shape)
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER)
         .then(config.modifier);
 
     m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
@@ -308,7 +320,13 @@ pub fn ElevatedAssistChip(
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
-    )
+    ).semantics(Semantics {
+        role: Role::Button,
+        label: None,
+        focused: false,
+        enabled: is_enabled,
+        selectable_group: false,
+    })
 }
 
 pub fn FilterChip(
@@ -369,6 +387,7 @@ pub fn FilterChip(
     let mut m = Modifier::new()
         .flex_shrink(0.0)
         .min_height(ChipDefaults::HEIGHT)
+        .height(ChipDefaults::HEIGHT)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,
@@ -380,11 +399,13 @@ pub fn FilterChip(
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.horizontal_padding,
-            top: 8.0,
-            bottom: 8.0,
+            top: 0.0,
+            bottom: 0.0,
         })
         .background(bg)
         .clip_rounded(shape)
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER)
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
@@ -418,7 +439,13 @@ pub fn FilterChip(
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
-    )
+    ).semantics(Semantics {
+        role: Role::Button,
+        label: None,
+        focused: false,
+        enabled: is_enabled,
+        selectable_group: false,
+    })
 }
 
 /// M3 Elevated Filter Chip - like [`FilterChip`] but with elevation and filled container.
@@ -467,6 +494,7 @@ pub fn ElevatedFilterChip(
     let mut m = Modifier::new()
         .flex_shrink(0.0)
         .min_height(ChipDefaults::HEIGHT)
+        .height(ChipDefaults::HEIGHT)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,
@@ -479,11 +507,13 @@ pub fn ElevatedFilterChip(
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.horizontal_padding,
-            top: 8.0,
-            bottom: 8.0,
+            top: 0.0,
+            bottom: 0.0,
         })
         .background(bg)
         .clip_rounded(shape)
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER)
         .then(config.modifier);
 
     m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
@@ -514,7 +544,13 @@ pub fn ElevatedFilterChip(
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
-    )
+    ).semantics(Semantics {
+        role: Role::Button,
+        label: None,
+        focused: false,
+        enabled: is_enabled,
+        selectable_group: false,
+    })
 }
 
 pub fn SuggestionChip(
@@ -545,6 +581,7 @@ pub fn SuggestionChip(
     let mut m = Modifier::new()
         .flex_shrink(0.0)
         .min_height(ChipDefaults::HEIGHT)
+        .height(ChipDefaults::HEIGHT)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,
@@ -556,11 +593,13 @@ pub fn SuggestionChip(
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.horizontal_padding,
-            top: 8.0,
-            bottom: 8.0,
+            top: 0.0,
+            bottom: 0.0,
         })
         .background(bg)
         .clip_rounded(shape)
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER)
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
@@ -582,7 +621,13 @@ pub fn SuggestionChip(
             .unwrap_or(Box(Modifier::new())),
             with_content_color(label_color, move || label),
         )),
-    )
+    ).semantics(Semantics {
+        role: Role::Button,
+        label: None,
+        focused: false,
+        enabled: is_enabled,
+        selectable_group: false,
+    })
 }
 
 /// M3 Elevated Suggestion Chip - like [`SuggestionChip`] but with elevation and filled bg.
@@ -609,6 +654,7 @@ pub fn ElevatedSuggestionChip(
     let mut m = Modifier::new()
         .flex_shrink(0.0)
         .min_height(ChipDefaults::HEIGHT)
+        .height(ChipDefaults::HEIGHT)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,
@@ -621,11 +667,13 @@ pub fn ElevatedSuggestionChip(
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.horizontal_padding,
-            top: 8.0,
-            bottom: 8.0,
+            top: 0.0,
+            bottom: 0.0,
         })
         .background(bg)
         .clip_rounded(shape)
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER)
         .then(config.modifier);
 
     m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
@@ -644,7 +692,13 @@ pub fn ElevatedSuggestionChip(
             .unwrap_or(Box(Modifier::new())),
             with_content_color(label_color, move || label),
         )),
-    )
+    ).semantics(Semantics {
+        role: Role::Button,
+        label: None,
+        focused: false,
+        enabled: is_enabled,
+        selectable_group: false,
+    })
 }
 
 pub fn InputChip(
@@ -706,6 +760,7 @@ pub fn InputChip(
     let mut m = Modifier::new()
         .flex_shrink(0.0)
         .min_height(ChipDefaults::HEIGHT)
+        .height(ChipDefaults::HEIGHT)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,
@@ -717,11 +772,13 @@ pub fn InputChip(
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.horizontal_padding,
-            top: 8.0,
-            bottom: 8.0,
+            top: 0.0,
+            bottom: 0.0,
         })
         .background(bg)
         .clip_rounded(shape)
+        .align_items(AlignItems::CENTER)
+        .justify_content(JustifyContent::CENTER)
         .then(config.modifier);
 
     if config.border_width > 0.0 && border != Color::TRANSPARENT {
@@ -756,7 +813,13 @@ pub fn InputChip(
                 })
                 .unwrap_or(Box(Modifier::new())),
         )),
-    )
+    ).semantics(Semantics {
+        role: Role::Button,
+        label: None,
+        focused: false,
+        enabled: is_enabled,
+        selectable_group: false,
+    })
 }
 
 /// Shared layout for the M3 chip group composables: a full-width wrapping

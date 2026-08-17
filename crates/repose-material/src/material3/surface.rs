@@ -5,6 +5,7 @@ use std::rc::Rc;
 use repose_core::*;
 use repose_ui::{Box, TextStyle, ViewExt};
 
+use super::util::apply_tonal_elevation;
 use super::*;
 
 /// Configuration for [`Surface`].
@@ -45,26 +46,22 @@ pub fn Surface(config: SurfaceConfig, content: impl FnOnce() -> View) -> View {
         .clone()
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
-    let mut m = Modifier::new()
-        .background(config.color)
+    let mut m = Modifier::new().background(config.color);
+    m = apply_tonal_elevation(m, config.tonal_elevation, config.color);
+    m = m
         .clip_rounded(config.shape_radius)
         .interaction_source(&sf_source)
         .then(config.modifier);
-    if config.tonal_elevation > 0.0 {
-        m = m.state_elevation(StateElevation {
-            default: config.tonal_elevation,
-            hovered: config.tonal_elevation,
-            focused: config.tonal_elevation,
-            pressed: config.tonal_elevation,
-            dragged: config.tonal_elevation,
-            disabled: 0.0,
-        });
-    }
     if config.shadow_elevation > 0.0 {
         m = m.shadow(config.shadow_elevation, 0.0);
     }
     if let Some((w, c)) = config.border {
         m = m.border(w, c, config.shape_radius);
     }
-    Box(m).color(config.content_color).child(content())
+    if !config.enabled {
+        m = m.enabled(false);
+    }
+    Box(m)
+        .color(config.content_color)
+        .child(with_content_color(config.content_color, content))
 }

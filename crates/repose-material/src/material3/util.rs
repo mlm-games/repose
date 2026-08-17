@@ -10,16 +10,33 @@ use crate::ripple::{RippleConfig, ripple};
 pub(crate) static FILTERCHIP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Apply tonal elevation as a translucent primary overlay when the container
-/// color matches the surface color. This mirrors CK's Surface tonalElevation.
+/// color matches the surface color. This mirrors CK's Surface tonalElevation:
+/// the overlay is composited over the container so the base tint is preserved.
 pub(crate) fn apply_tonal_elevation(m: Modifier, elevation: f32, container: Color) -> Modifier {
-    if elevation > 0.0 {
-        let th = theme();
-        if container == th.colors.surface {
-            let overlay_alpha = (elevation * 4.0 + 4.0).min(24.0) / 100.0;
-            return m.background(th.colors.primary.with_alpha_f32(overlay_alpha));
-        }
+    if elevation <= 0.0 {
+        return m;
     }
-    m
+    let th = theme();
+    if container != th.surface {
+        return m;
+    }
+    let overlay_alpha = match elevation {
+        e if e < 0.5 => 0.0,
+        e if e < 1.5 => 0.05,
+        e if e < 2.5 => 0.08,
+        e if e < 3.5 => 0.11,
+        e if e < 4.5 => 0.12,
+        _ => 0.14,
+    };
+    if overlay_alpha <= 0.0 {
+        return m;
+    }
+    m.background(
+        th.colors
+            .primary
+            .with_alpha_f32(overlay_alpha)
+            .composite_over(container),
+    )
 }
 
 pub(crate) fn lerp_color(a: Color, b: Color, t: f32) -> Color {
@@ -43,11 +60,7 @@ pub(crate) fn lerp_color(a: Color, b: Color, t: f32) -> Color {
 /// interactive modifier chain so a future "disabled still receives hover/focus"
 /// bug cannot reappear.
 pub(crate) fn apply_enabled(m: Modifier, enabled: bool) -> Modifier {
-    if enabled {
-        m
-    } else {
-        m.enabled(false)
-    }
+    if enabled { m } else { m.enabled(false) }
 }
 
 /// Wire clickable when enabled, or disable the control when not. Centralizes

@@ -629,6 +629,22 @@ pub fn content_color() -> Color {
         .unwrap_or_else(|| theme().on_surface)
 }
 
+/// Composition-local default text size (dp). Bare `Text(...)`
+/// children inherit the container's typography instead of the global default.
+#[derive(Clone, Copy, Debug)]
+pub struct TextSize(pub f32);
+
+pub fn with_text_size<R>(size: f32, f: impl FnOnce() -> R) -> R {
+    with_locals_frame(|| {
+        set_local_boxed(TypeId::of::<TextSize>(), Box::new(TextSize(size)));
+        f()
+    })
+}
+
+pub fn text_size() -> Option<f32> {
+    get_local::<TextSize>().map(|t| t.0)
+}
+
 /// Composition-local default indication (ripple/highlight) factory.
 /// Components like `Button` read this to get the default press feedback.
 /// Mirrors Compose's `LocalIndication`.
