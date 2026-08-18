@@ -1,10 +1,11 @@
 /// High‑level semantic role of a view, similar to ARIA roles.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Role {
     Text,
     Button,
     Tab,
     TextField,
+    #[default]
     Container,
     Checkbox,
     RadioButton,
@@ -71,6 +72,6 @@ impl Semantics {
 
 impl Default for Semantics {
     fn default() -> Self {
-        Self::new(Role::Container)
+        Self::new(Role::default())
     }
 }

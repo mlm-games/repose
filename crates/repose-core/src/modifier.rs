@@ -291,6 +291,34 @@ pub struct TextInputConfig {
     pub line_limits: Option<crate::text::TextFieldLineLimits>,
 }
 
+impl Default for TextInputConfig {
+    fn default() -> Self {
+        Self {
+            hint: String::new(),
+            multiline: false,
+            on_change: None,
+            on_submit: None,
+            focus_tracker: None,
+            value: String::new(),
+            visual_transformation: None,
+            keyboard_type: crate::text::KeyboardType::default(),
+            capitalization: crate::text::KeyboardCapitalization::default(),
+            ime_action: crate::text::ImeAction::default(),
+            auto_correct_enabled: None,
+            enabled: true,
+            read_only: false,
+            max_lines: None,
+            min_lines: 1,
+            cursor_color: None,
+            on_text_layout: None,
+            text_style: None,
+            keyboard_actions: None,
+            interaction_source: None,
+            line_limits: None,
+        }
+    }
+}
+
 impl std::fmt::Debug for TextInputConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut s = f.debug_struct("TextInputConfig");

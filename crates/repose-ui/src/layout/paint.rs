@@ -1277,11 +1277,7 @@ impl LayoutEngine {
                     label: Some(text.clone()),
                     rect,
                     focused: is_focused,
-                    enabled: true,
-                    selectable_group: false,
-                    checked: None,
-                    selected: None,
-                    value: None,
+                    ..Default::default()
                 });
                 next_sem_parent = Some(view_id);
             }
@@ -1536,10 +1532,7 @@ impl LayoutEngine {
                     rect,
                     focused: is_focused,
                     enabled: ti.enabled,
-                    selectable_group: false,
-                    checked: None,
-                    selected: None,
-                    value: None,
+                    ..Default::default()
                 });
                 next_sem_parent = Some(view_id);
             }
@@ -1567,10 +1560,7 @@ impl LayoutEngine {
                     rect,
                     focused: is_focused,
                     enabled: !modifier.disabled,
-                    selectable_group: false,
-                    checked: None,
-                    selected: None,
-                    value: None,
+                    ..Default::default()
                 });
                 next_sem_parent = Some(view_id);
             }
@@ -1664,10 +1654,7 @@ impl LayoutEngine {
                     rect,
                     focused: is_focused,
                     enabled: !modifier.disabled,
-                    selectable_group: false,
-                    checked: None,
-                    selected: None,
-                    value: None,
+                    ..Default::default()
                 });
                 next_sem_parent = Some(view_id);
             }

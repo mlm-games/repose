@@ -592,6 +592,24 @@ pub struct SemNode {
     pub value: Option<String>,
 }
 
+impl Default for SemNode {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            parent: None,
+            role: Role::default(),
+            label: None,
+            rect: Rect::default(),
+            focused: false,
+            enabled: true,
+            selectable_group: false,
+            checked: None,
+            selected: None,
+            value: None,
+        }
+    }
+}
+
 pub struct Scheduler {
     next_id: u64,
     /// Per-scope unique IDs, assigned lazily when a scope first executes.

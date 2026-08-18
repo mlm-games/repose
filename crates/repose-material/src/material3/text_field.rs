@@ -404,23 +404,13 @@ pub fn OutlinedTextField(
                 focus_tracker: Some(focus_tracker),
                 value: value.clone(),
                 visual_transformation: config.visual_transformation.clone(),
-                keyboard_type: Default::default(),
-                capitalization: Default::default(),
-                ime_action: Default::default(),
-                auto_correct_enabled: None,
                 enabled: config.enabled,
                 read_only: config.read_only,
-                max_lines: None,
-                min_lines: 1,
                 cursor_color: config
                     .colors
                     .as_ref()
                     .map(|c| c.cursor_color(config.is_error)),
-                on_text_layout: None,
-                text_style: None,
-                keyboard_actions: None,
-                interaction_source: None,
-                line_limits: None,
+                ..Default::default()
             }),
         )
         .semantics(Semantics {
@@ -970,23 +960,13 @@ pub fn TextField(
                 focus_tracker: Some(focus_tracker),
                 value: value.clone(),
                 visual_transformation: config.visual_transformation.clone(),
-                keyboard_type: Default::default(),
-                capitalization: Default::default(),
-                ime_action: Default::default(),
-                auto_correct_enabled: None,
                 enabled: config.enabled,
                 read_only: config.read_only,
-                max_lines: None,
-                min_lines: 1,
                 cursor_color: config
                     .colors
                     .as_ref()
                     .map(|c| c.cursor_color(config.is_error)),
-                on_text_layout: None,
-                text_style: None,
-                keyboard_actions: None,
-                interaction_source: None,
-                line_limits: None,
+                ..Default::default()
             }),
         )
         .semantics(Semantics {

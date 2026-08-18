@@ -36,16 +36,11 @@ fn textfield_frame(id: u64) -> Frame {
     let rect = hr.rect;
     let sem = SemNode {
         id,
-        parent: None,
         role: Role::TextField,
         label: Some("Field".into()),
         rect,
         focused: true,
-        enabled: true,
-        selectable_group: false,
-        checked: None,
-        selected: None,
-        value: None,
+        ..Default::default()
     };
 
     Frame {
