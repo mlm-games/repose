@@ -43,6 +43,9 @@ fn textfield_frame(id: u64) -> Frame {
         focused: true,
         enabled: true,
         selectable_group: false,
+        checked: None,
+        selected: None,
+        value: None,
     };
 
     Frame {
@@ -283,6 +286,111 @@ fn plain_clickable_is_immediate() {
     let result = rt.handle_pointer_release(pos, PointerButton::Primary);
     assert_eq!(*clicks.borrow(), 1, "plain click must fire on release");
     assert_eq!(result.clicked_id, Some(BTN_ID));
+}
+
+#[test]
+fn pending_click_survives_press_on_another_id() {
+    let mut rt = ReposeRuntime::new();
+    let a_clicks = Rc::new(RefCell::new(0u32));
+    let b_clicks = Rc::new(RefCell::new(0u32));
+    let ac = a_clicks.clone();
+    let bc = b_clicks.clone();
+    let da = a_clicks.clone();
+    let frame = button_frame(
+        BTN_ID,
+        Some(Rc::new(move || *ac.borrow_mut() += 1)),
+        Some(Rc::new(move || {
+            let _ = *da.borrow();
+        })),
+        None,
+    );
+    let mut other = button_frame(
+        BTN_ID + 1,
+        Some(Rc::new(move || *bc.borrow_mut() += 1)),
+        None,
+        None,
+    );
+    other.hit_regions[0].rect.x = 200.0;
+    rt.cache_frame(Frame {
+        scene: Scene::default(),
+        hit_regions: [frame.hit_regions, other.hit_regions].concat(),
+        semantics_nodes: Vec::new(),
+        focus_chain: Vec::new(),
+    });
+    let pos_a = Vec2 { x: 10.0, y: 10.0 };
+    let pos_b = Vec2 {
+        x: 210.0,
+        y: 10.0,
+    };
+    let _ = rt.handle_pointer_press(pos_a, PointerButton::Primary);
+    let _ = rt.handle_pointer_release(pos_a, PointerButton::Primary);
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let _ = rt.handle_pointer_press(pos_b, PointerButton::Primary);
+    let _ = rt.handle_pointer_release(pos_b, PointerButton::Primary);
+    assert_eq!(
+        *b_clicks.borrow(),
+        1,
+        "second element must click immediately"
+    );
+    assert_eq!(
+        *a_clicks.borrow(),
+        0,
+        "the first tap's delayed click must survive a press elsewhere"
+    );
+    std::thread::sleep(std::time::Duration::from_millis(350));
+    rt.poll_gesture_timers();
+    assert_eq!(
+        *a_clicks.borrow(),
+        1,
+        "delayed click must still fire after its timeout"
+    );
+}
+
+#[test]
+fn keyboard_hold_long_press_fires_and_suppresses_click() {
+    let mut rt = ReposeRuntime::new();
+    let clicks = Rc::new(RefCell::new(0u32));
+    let longs = Rc::new(RefCell::new(0u32));
+    let c = clicks.clone();
+    let l = longs.clone();
+    let frame = button_frame(
+        BTN_ID,
+        Some(Rc::new(move || *c.borrow_mut() += 1)),
+        None,
+        Some(Rc::new(move || *l.borrow_mut() += 1)),
+    );
+    rt.cache_frame(frame);
+    rt.sched.focused = Some(BTN_ID);
+
+    let down = KeyEvent {
+        key: Key::Space,
+        modifiers: Modifiers::default(),
+        is_repeat: false,
+        event_type: KeyEventType::Down,
+        utf16_code_point: 0,
+    };
+    let up = KeyEvent {
+        key: Key::Space,
+        modifiers: Modifiers::default(),
+        is_repeat: false,
+        event_type: KeyEventType::Up,
+        utf16_code_point: 0,
+    };
+
+    assert!(rt.handle_key(&down));
+    std::thread::sleep(std::time::Duration::from_millis(550));
+    rt.poll_gesture_timers();
+    assert_eq!(
+        *longs.borrow(),
+        1,
+        "holding Space past the long-press timeout must fire onLongClick"
+    );
+    assert!(rt.handle_key(&up));
+    assert_eq!(
+        *clicks.borrow(),
+        0,
+        "release after a fired keyboard long-press must not also click"
+    );
 }
 
 fn focused_textfield_rt() -> ReposeRuntime {

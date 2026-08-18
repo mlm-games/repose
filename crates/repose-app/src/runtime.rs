@@ -102,6 +102,7 @@ pub struct PointerButtonResult {
 const LONG_PRESS_MS: u128 = 500;
 const DOUBLE_CLICK_MS: u128 = 300;
 const DOUBLE_TAP_MIN_MS: u128 = 40;
+const LONG_PRESS_SLOP_DP: f32 = 18.0;
 
 /// Embeddable Repose runtime.
 ///
@@ -517,6 +518,15 @@ impl ReposeRuntime {
             };
         };
 
+        if let Some((_, _, x0, y0)) = self.long_press {
+            let slop = LONG_PRESS_SLOP_DP * self.scale;
+            let dx = pos.x - x0;
+            let dy = pos.y - y0;
+            if dx * dx + dy * dy > slop * slop {
+                self.long_press = None;
+            }
+        }
+
         // Cancel the long press once the pointer leaves the element's bounds
         if self.long_press.is_some()
             && let Some(lid) = self.long_press.map(|(id, _, _, _)| id)
@@ -659,10 +669,9 @@ impl ReposeRuntime {
             result.capture_id = Some(hit.id);
             result.consumed = true;
 
-            // A new press cancels a still-pending delayed single click
-            self.pending_click = None;
-            // Record the down for double-click timing (Compose: the second
-            // tap is timed from its DOWN, not its up).
+            // A new press cancels a still-pending delayed single click only
+            // when it qualifies as the second tap of a double click on the
+            // same element (Compose detectTapGestures).
             self.last_down = Some((hit.id, web_time::Instant::now()));
             // The second DOWN must land within
             // [doubleTapMinTimeMillis, doubleTapTimeoutMillis] after the first
@@ -680,6 +689,9 @@ impl ReposeRuntime {
             } else {
                 None
             };
+            if self.double_candidate.is_some() {
+                self.pending_click = None;
+            }
 
             // Long-press timer (combinedClickable parity)
             match button {
@@ -801,7 +813,8 @@ impl ReposeRuntime {
             }
         }
 
-        if !self.suppress_next_click
+        if self.double_candidate.is_none()
+            && !self.suppress_next_click
             && let Some(cid) = self.capture_id
             && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid && !h.disabled)
             && hit.rect.contains(pos)
@@ -992,6 +1005,7 @@ impl ReposeRuntime {
         self.last_down = None;
         self.double_candidate = None;
         self.key_long_press = None;
+        self.suppress_next_click = false;
     }
 
     fn flush_pending_click(&mut self) {
@@ -1000,6 +1014,7 @@ impl ReposeRuntime {
         };
         if t0.elapsed().as_millis() >= DOUBLE_CLICK_MS {
             cb();
+            request_frame();
         } else {
             self.pending_click = Some((id, t0, cb));
             request_frame();
@@ -1155,11 +1170,19 @@ impl ReposeRuntime {
                         let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) else {
                             return false;
                         };
-                        if hit.on_click.is_none() {
+                        if hit.on_click.is_none()
+                            && hit.on_long_click.is_none()
+                            && hit.on_double_click.is_none()
+                        {
                             return false; // don't steal keys from non-clickable focusables
                         }
                         self.pressed_ids.insert(fid);
                         self.key_pressed_active = Some(fid);
+                        self.key_long_press = if hit.on_long_click.is_some() {
+                            Some((fid, web_time::Instant::now(), false))
+                        } else {
+                            None
+                        };
 
                         if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
                             if let Some(src) = &hit.interaction_source {
@@ -1181,13 +1204,21 @@ impl ReposeRuntime {
                     self.pressed_ids.remove(&active_id);
                     self.key_pressed_active = None;
 
+                    let long_fired = self
+                        .key_long_press
+                        .take()
+                        .map(|(_, _, fired)| fired)
+                        .unwrap_or(false);
+
                     if let Some(hit) = f.hit_regions.iter().find(|h| h.id == active_id && !h.disabled) {
                         if let Some(src) = &hit.interaction_source {
                             let pid = src.collect_last_press_id().unwrap_or(0);
                             src.to_mutable().emit(Interaction::Release(pid));
                         }
-                        if let Some(cb) = &hit.on_click {
-                            cb();
+                        if !long_fired {
+                            if let Some(cb) = &hit.on_click {
+                                cb();
+                            }
                         }
                     }
                     request_frame();
@@ -1478,6 +1509,7 @@ impl ReposeRuntime {
             if let Some(active) = self.key_pressed_active.take() {
                 self.pressed_ids.remove(&active);
             }
+            self.key_long_press = None;
             // Lazy-init + reset the caret blink for the newly focused text field.
             if let Some(hit) = f.hit_regions.iter().find(|h| h.id == new_id)
                 && let Some(key) = hit.tf_state_key

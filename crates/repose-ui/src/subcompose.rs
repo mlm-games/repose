@@ -170,7 +170,7 @@ mod tests {
                 font_size: 14.0,
                 soft_wrap: true,
                 max_lines: None,
-                overflow: TextOverflow::Visible,
+                overflow: TextOverflow::Clip,
                 font_family: None,
                 annotations: None,
                 text_align: TextAlign::Unspecified,

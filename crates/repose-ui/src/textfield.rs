@@ -2260,10 +2260,8 @@ fn text_field_view(
         .modifier(modif)
         .semantics(Semantics {
             role: Role::TextField,
-            label: None,
-            focused: false,
             enabled,
-            selectable_group: false,
+            ..Default::default()
         });
 
     // Compose `decorationBox`: wrap the field node when provided.

@@ -194,10 +194,7 @@ pub fn CircularProgressIndicator(
     ))
     .semantics(Semantics {
         role: Role::ProgressBar,
-        label: None,
-        focused: false,
-        enabled: true,
-        selectable_group: false,
+        ..Default::default()
     })
 }
 
@@ -352,9 +349,6 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
         }))
     .semantics(Semantics {
         role: Role::ProgressBar,
-        label: None,
-        focused: false,
-        enabled: true,
-        selectable_group: false,
+        ..Default::default()
     })
 }

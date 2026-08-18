@@ -458,7 +458,7 @@ pub fn SearchBarInputField(
             label: Some("Search".into()),
             focused: expanded || focused,
             enabled,
-            selectable_group: false,
+            ..Default::default()
         })
         .on_key_event({
             let s = state.clone();
@@ -619,8 +619,7 @@ pub fn SearchBar(
             role: Role::TextField,
             label: Some("Search".into()),
             focused: state.is_active(),
-            enabled: true,
-            selectable_group: false,
+            ..Default::default()
         })
         .background(colors.container_color)
         .clip_rounded(config.shape_radius)

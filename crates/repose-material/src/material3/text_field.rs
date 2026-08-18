@@ -429,9 +429,8 @@ pub fn OutlinedTextField(
                 .label
                 .clone()
                 .or_else(|| config.supporting_text.clone()),
-            focused: false,
             enabled: config.enabled,
-            selectable_group: false,
+            ..Default::default()
         });
 
     outlined_field_decoration(
@@ -996,9 +995,8 @@ pub fn TextField(
                 .label
                 .clone()
                 .or_else(|| config.supporting_text.clone()),
-            focused: false,
             enabled: config.enabled,
-            selectable_group: false,
+            ..Default::default()
         });
 
     Column(modifier.min_width(TextFieldDefaults::MIN_WIDTH)).child((

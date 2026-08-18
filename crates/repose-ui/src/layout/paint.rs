@@ -1279,6 +1279,9 @@ impl LayoutEngine {
                     focused: is_focused,
                     enabled: true,
                     selectable_group: false,
+                    checked: None,
+                    selected: None,
+                    value: None,
                 });
                 next_sem_parent = Some(view_id);
             }
@@ -1534,6 +1537,9 @@ impl LayoutEngine {
                     focused: is_focused,
                     enabled: ti.enabled,
                     selectable_group: false,
+                    checked: None,
+                    selected: None,
+                    value: None,
                 });
                 next_sem_parent = Some(view_id);
             }
@@ -1562,6 +1568,9 @@ impl LayoutEngine {
                     focused: is_focused,
                     enabled: !modifier.disabled,
                     selectable_group: false,
+                    checked: None,
+                    selected: None,
+                    value: None,
                 });
                 next_sem_parent = Some(view_id);
             }
@@ -1656,6 +1665,9 @@ impl LayoutEngine {
                     focused: is_focused,
                     enabled: !modifier.disabled,
                     selectable_group: false,
+                    checked: None,
+                    selected: None,
+                    value: None,
                 });
                 next_sem_parent = Some(view_id);
             }
@@ -1670,6 +1682,9 @@ impl LayoutEngine {
                         focused: is_focused,
                         enabled: !modifier.disabled,
                         selectable_group: s.selectable_group,
+                        checked: s.checked,
+                        selected: s.selected,
+                        value: s.value.clone(),
                     });
                     next_sem_parent = Some(view_id);
                 }

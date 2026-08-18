@@ -1393,6 +1393,9 @@ impl Modifier {
     pub fn on_click(mut self, f: impl Fn() + 'static) -> Self {
         self.on_click = Some(Rc::new(f));
         self.click = true;
+        if self.semantics.is_none() {
+            self.semantics = Some(crate::Semantics::new(crate::Role::Button));
+        }
         self
     }
     pub fn on_double_click(mut self, f: impl Fn() + 'static) -> Self {

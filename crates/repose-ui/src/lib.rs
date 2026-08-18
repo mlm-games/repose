@@ -198,7 +198,7 @@ pub fn Text(text: impl Into<String>) -> View {
             font_size: locals::text_size().unwrap_or(16.0), // dp (converted to px in layout/paint)
             soft_wrap: true,
             max_lines: None,
-            overflow: TextOverflow::Visible,
+            overflow: TextOverflow::Clip,
             font_family: Some("sans-serif"),
             annotations: None,
             text_align: TextAlign::Start,
@@ -230,7 +230,7 @@ pub fn AnnotatedText(annotated: AnnotatedString) -> View {
             font_size: locals::text_size().unwrap_or(16.0),
             soft_wrap: true,
             max_lines: None,
-            overflow: TextOverflow::Visible,
+            overflow: TextOverflow::Clip,
             font_family: Some("sans-serif"),
             annotations,
             text_align: TextAlign::Start,

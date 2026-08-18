@@ -587,6 +587,9 @@ pub struct SemNode {
     pub enabled: bool,
     /// Marks this node as a collection of selectable children (e.g., Tabs).
     pub selectable_group: bool,
+    pub checked: Option<bool>,
+    pub selected: Option<bool>,
+    pub value: Option<String>,
 }
 
 pub struct Scheduler {

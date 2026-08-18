@@ -406,10 +406,9 @@ pub fn Slider(
         .then(config.modifier))
     .semantics(Semantics {
         role: Role::Slider,
-        label: None,
-        focused: false,
         enabled: is_enabled,
-        selectable_group: false,
+        value: Some(format!("{value}")),
+        ..Default::default()
     })
 }
 
@@ -799,9 +798,8 @@ pub fn RangeSlider(
         .then(config.modifier))
     .semantics(Semantics {
         role: Role::Slider,
-        label: None,
-        focused: false,
         enabled: is_enabled,
-        selectable_group: false,
+        value: Some(format!("{start}..{end}")),
+        ..Default::default()
     })
 }

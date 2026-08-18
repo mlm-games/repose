@@ -157,7 +157,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER);
 
-    m = apply_m3_clickable_ex(
+m = apply_m3_clickable_ex(
         m,
         &cb_source,
         ripple_col,
@@ -168,10 +168,9 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
     );
     m = m.semantics(Semantics {
         role: Role::Checkbox,
-        label: None,
-        focused: false,
         enabled: is_enabled,
-        selectable_group: false,
+        checked: Some(checked),
+        ..Default::default()
     });
     Box(m.then(config.modifier)).child(
         Box(Modifier::new()
@@ -314,10 +313,13 @@ pub fn TriStateCheckbox(
     );
     m = m.semantics(Semantics {
         role: Role::Checkbox,
-        label: None,
-        focused: false,
         enabled: is_enabled,
-        selectable_group: false,
+        checked: if is_indeterminate {
+            None
+        } else {
+            Some(is_checked)
+        },
+        ..Default::default()
     });
     Box(m.then(config.modifier)).child(
         Box(Modifier::new()
@@ -460,10 +462,9 @@ pub fn RadioButton(
     );
     m = m.semantics(Semantics {
         role: Role::RadioButton,
-        label: None,
-        focused: false,
         enabled: config.enabled,
-        selectable_group: false,
+        selected: Some(selected),
+        ..Default::default()
     });
     Box(m.then(config.modifier)).child(
         Box(Modifier::new()
@@ -647,6 +648,12 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
     track = apply_enabled_click(track, is_enabled, {
         let cb = on_change;
         move || cb(!checked)
+    });
+    track = track.semantics(Semantics {
+        role: Role::Switch,
+        enabled: is_enabled,
+        checked: Some(checked),
+        ..Default::default()
     });
 
     Box(track.then(config.modifier)).child((

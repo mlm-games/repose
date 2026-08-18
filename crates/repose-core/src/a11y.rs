@@ -165,6 +165,16 @@ fn build_accesskit_node(sem: &SemNode, children: &[u64], scale: f64) -> Node {
         node.set_children(children.iter().copied().map(NodeId).collect::<Vec<_>>());
     }
 
+    if let Some(checked) = sem.checked {
+        node.set_toggled(checked.into());
+    }
+    if let Some(selected) = sem.selected {
+        node.set_selected(selected);
+    }
+    if let Some(v) = &sem.value {
+        node.set_value(v.clone());
+    }
+
     if sem.enabled {
         match sem.role {
             CoreRole::Button
@@ -217,9 +227,14 @@ fn hash_sem_node(sem: &SemNode, children: &[u64], scale: f64) -> u64 {
     sem.focused.hash(&mut h);
     sem.enabled.hash(&mut h);
     sem.selectable_group.hash(&mut h);
+    sem.checked.hash(&mut h);
+    sem.selected.hash(&mut h);
 
     if let Some(lbl) = &sem.label {
         lbl.hash(&mut h);
+    }
+    if let Some(v) = &sem.value {
+        v.hash(&mut h);
     }
 
     children.len().hash(&mut h);

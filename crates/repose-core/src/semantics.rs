@@ -29,8 +29,9 @@ pub struct Semantics {
     /// Marks this node as a collection of horizontally or vertically stacked
     /// selectable elements (ex: Tabs, RadioButtons).
     pub selectable_group: bool,
-    // pub value: Option<String>,
-    // pub checked: Option<bool>,
+    pub checked: Option<bool>,
+    pub selected: Option<bool>,
+    pub value: Option<String>,
 }
 
 impl Semantics {
@@ -41,8 +42,9 @@ impl Semantics {
             focused: false,
             enabled: true,
             selectable_group: false,
-            // value: None,
-            // checked: None,
+            checked: None,
+            selected: None,
+            value: None,
         }
     }
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
@@ -52,5 +54,23 @@ impl Semantics {
     pub fn with_selectable_group(mut self) -> Self {
         self.selectable_group = true;
         self
+    }
+    pub fn with_checked(mut self, checked: bool) -> Self {
+        self.checked = Some(checked);
+        self
+    }
+    pub fn with_selected(mut self, selected: bool) -> Self {
+        self.selected = Some(selected);
+        self
+    }
+    pub fn with_value(mut self, value: impl Into<String>) -> Self {
+        self.value = Some(value.into());
+        self
+    }
+}
+
+impl Default for Semantics {
+    fn default() -> Self {
+        Self::new(Role::Container)
     }
 }

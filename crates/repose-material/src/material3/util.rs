@@ -116,9 +116,7 @@ pub(crate) fn apply_m3_clickable_ex(
 pub(crate) fn with_button_semantics(m: Modifier, enabled: bool) -> Modifier {
     m.semantics(Semantics {
         role: Role::Button,
-        label: None,
-        focused: false,
         enabled,
-        selectable_group: false,
+        ..Default::default()
     })
 }
