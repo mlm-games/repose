@@ -208,6 +208,12 @@ impl ReposeRuntime {
         repose_core::animation_driver::tick();
     }
 
+    pub fn poll_gesture_timers(&mut self) {
+        self.poll_long_press();
+        self.flush_pending_click();
+        self.poll_key_long_press();
+    }
+
     /// Compose and layout a frame, returning the output for rendering.
     ///
     /// Call `tick_animations` before this and `cache_frame` after (once you
@@ -545,7 +551,11 @@ impl ReposeRuntime {
         }
 
         // Determine topmost hit
-        let top = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos));
+        let top = f
+            .hit_regions
+            .iter()
+            .rev()
+            .find(|h| !h.disabled && h.rect.contains(pos));
 
         // Update cursor
         self.cursor = top.and_then(|h| h.cursor).or(Some(CursorIcon::Default));
@@ -618,7 +628,12 @@ impl ReposeRuntime {
             clicked_id: None,
         };
 
-        if let Some(hit) = f.hit_regions.iter().rev().find(|h| h.rect.contains(pos)) {
+        if let Some(hit) = f
+            .hit_regions
+            .iter()
+            .rev()
+            .find(|h| !h.disabled && h.rect.contains(pos))
+        {
             let mut path: Vec<u64> = vec![hit.id];
             let mut cur = hit.parent;
             while let Some(pid) = cur {
@@ -774,7 +789,7 @@ impl ReposeRuntime {
         if let Some((lid, t0, _, _)) = self.long_press.take() {
             if Some(lid) == self.capture_id
                 && t0.elapsed().as_millis() >= LONG_PRESS_MS
-                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == lid)
+                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == lid && !h.disabled)
                 && let Some(cb) = &hit.on_long_click
             {
                 cb();
@@ -788,7 +803,7 @@ impl ReposeRuntime {
 
         if !self.suppress_next_click
             && let Some(cid) = self.capture_id
-            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
+            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid && !h.disabled)
             && hit.rect.contains(pos)
         {
             let now = web_time::Instant::now();
@@ -821,7 +836,7 @@ impl ReposeRuntime {
             self.last_up = None;
             self.last_down = None;
             if self.capture_id == Some(dc)
-                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == dc)
+                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == dc && !h.disabled)
                 && hit.rect.contains(pos)
             {
                 if let Some(cb) = &hit.on_double_click {
@@ -831,7 +846,7 @@ impl ReposeRuntime {
                 result.needs_a11y_announce = true;
                 result.consumed = true;
             } else if self.capture_id == Some(dc)
-                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == dc)
+                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == dc && !h.disabled)
             {
                 // Second tap canceled -> the first tap counts as a click.
                 if let Some(cb) = &hit.on_click {
@@ -942,7 +957,7 @@ impl ReposeRuntime {
             .hit_regions
             .iter()
             .rev()
-            .find(|h| h.rect.contains(pos))
+            .find(|h| !h.disabled && h.rect.contains(pos))
             .map(|h| h.id);
 
         self.cursor = if dnd::is_dragging() {
@@ -1018,7 +1033,7 @@ impl ReposeRuntime {
             self.long_press = None;
             return;
         }
-        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == lid)
+        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == lid && !h.disabled)
             && let Some(cb) = &hit.on_long_click
         {
             self.long_press = None;
@@ -1047,7 +1062,7 @@ impl ReposeRuntime {
             return;
         }
         if !fired {
-            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == kid)
+            if let Some(hit) = f.hit_regions.iter().find(|h| h.id == kid && !h.disabled)
                 && let Some(cb) = &hit.on_long_click
             {
                 cb();
@@ -1166,7 +1181,7 @@ impl ReposeRuntime {
                     self.pressed_ids.remove(&active_id);
                     self.key_pressed_active = None;
 
-                    if let Some(hit) = f.hit_regions.iter().find(|h| h.id == active_id) {
+                    if let Some(hit) = f.hit_regions.iter().find(|h| h.id == active_id && !h.disabled) {
                         if let Some(src) = &hit.interaction_source {
                             let pid = src.collect_last_press_id().unwrap_or(0);
                             src.to_mutable().emit(Interaction::Release(pid));

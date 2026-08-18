@@ -1405,32 +1405,68 @@ impl Modifier {
         self.click = true;
         self
     }
-    /// Hack: move this later to `Modifier.clickable(enabled, onClick)`.
-    pub fn clickable_fn(self, enabled: bool, on_click: impl Fn() + 'static) -> Self {
-        if !enabled {
-            return self.enabled(false);
-        }
-        self.clickable().on_click(on_click)
-    }
-    /// Hack: move this later to `Modifier.combinedClickable`.
-    pub fn combined_clickable(
-        self,
+    pub fn clickable_ext(
+        mut self,
         enabled: bool,
+        on_click_label: Option<String>,
+        role: Option<crate::semantics::Role>,
         on_click: impl Fn() + 'static,
-        on_double_click: Option<impl Fn() + 'static>,
-        on_long_click: Option<impl Fn() + 'static>,
     ) -> Self {
         if !enabled {
-            return self.enabled(false);
+            let mut s = self.semantics.clone().unwrap_or_else(|| {
+                crate::semantics::Semantics::new(role.unwrap_or(crate::semantics::Role::Button))
+            });
+            s.enabled = false;
+            if let Some(r) = role {
+                s.role = r;
+            }
+            if let Some(l) = on_click_label {
+                s.label = Some(l);
+            }
+            return self
+                .clickable()
+                .enabled(false)
+                .default_min_size(48.0, 48.0)
+                .semantics(s);
         }
-        let mut m = self.clickable().on_click(on_click);
-        if let Some(f) = on_double_click {
-            m = m.on_double_click(f);
+        self = self.clickable().on_click(on_click);
+        if role.is_some() || on_click_label.is_some() {
+            let mut s = self.semantics.clone().unwrap_or_else(|| {
+                crate::semantics::Semantics::new(role.unwrap_or(crate::semantics::Role::Button))
+            });
+            s.enabled = true;
+            if let Some(r) = role {
+                s.role = r;
+            }
+            if let Some(l) = on_click_label {
+                s.label = Some(l);
+            }
+            self = self.semantics(s);
         }
+        self.default_min_size(48.0, 48.0)
+    }
+    pub fn combined_clickable(
+        mut self,
+        enabled: bool,
+        on_click_label: Option<String>,
+        role: Option<crate::semantics::Role>,
+        on_long_click_label: Option<String>,
+        on_click: impl Fn() + 'static,
+        on_long_click: Option<impl Fn() + 'static>,
+        on_double_click: Option<impl Fn() + 'static>,
+    ) -> Self {
+        let _ = on_long_click_label;
+        if !enabled {
+            return self.clickable_ext(false, on_click_label, role, || {});
+        }
+        self = self.clickable_ext(true, on_click_label, role, on_click);
         if let Some(f) = on_long_click {
-            m = m.on_long_click(f);
+            self = self.on_long_click(f);
         }
-        m
+        if let Some(f) = on_double_click {
+            self = self.on_double_click(f);
+        }
+        self.default_min_size(48.0, 48.0)
     }
     pub fn semantics(mut self, s: crate::Semantics) -> Self {
         self.semantics = Some(s);

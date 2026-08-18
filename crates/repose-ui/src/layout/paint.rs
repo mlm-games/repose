@@ -335,14 +335,15 @@ impl LayoutEngine {
         let this_alpha = modifier.alpha.unwrap_or(1.0);
         let alpha_accum = (alpha_accum * this_alpha).clamp(0.0, 1.0);
 
-        let needs_hit = !modifier.disabled
+        let needs_hit = (!modifier.disabled
             && alpha_accum > 0.01
             && (has_pointer
                 || modifier.click
                 || has_dnd
                 || modifier.on_action.is_some()
                 || modifier.focusable == Some(true)
-                || (modifier.input_blocker && !modifier.hit_passthrough));
+                || (modifier.input_blocker && !modifier.hit_passthrough)))
+            || (modifier.disabled && modifier.click && alpha_accum > 0.01);
 
         // A node that creates its own hit region is its own interactive surface.
         // Resolve hover/press from its own hit instead of inheriting the state of
@@ -735,14 +736,18 @@ impl LayoutEngine {
         }
 
         if owns_hit {
-            let focusable = modifier.focusable.unwrap_or(
-                modifier.click || modifier.on_action.is_some() || modifier.text_input.is_some(),
-            );
+            let focusable = !modifier.disabled
+                && modifier.focusable.unwrap_or(
+                    modifier.click
+                        || modifier.on_action.is_some()
+                        || modifier.text_input.is_some(),
+                );
             let mut hit = HitRegion {
                 id: view_id,
                 rect,
                 z_index: modifier.z_index,
                 focusable,
+                disabled: modifier.disabled,
                 focus_group_id: if modifier.focus_group {
                     Some(view_id)
                 } else {

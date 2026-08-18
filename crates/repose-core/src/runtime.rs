@@ -462,6 +462,7 @@ pub struct HitRegion {
     pub on_pointer_enter: Option<Rc<dyn Fn(crate::input::PointerEvent)>>,
     pub on_pointer_leave: Option<Rc<dyn Fn(crate::input::PointerEvent)>>,
     pub z_index: f32,
+    pub disabled: bool,
     pub on_text_change: Option<Rc<dyn Fn(String)>>,
     pub on_text_submit: Option<Rc<dyn Fn(String)>>,
     /// If this hit region belongs to a TextField, this persistent key is used
@@ -556,6 +557,7 @@ impl HitRegion {
             on_scroll: m.on_scroll.clone(),
             on_drop: m.on_drop.clone(),
             drag_preview: m.drag_preview.clone(),
+            disabled: m.disabled,
             tf_enabled: true,
             tf_read_only: false,
             ..Default::default()

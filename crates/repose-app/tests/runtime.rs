@@ -149,6 +149,142 @@ fn release_click_off_target_reports_nothing() {
     assert!(!result.needs_a11y_announce);
 }
 
+fn button_frame(
+    id: u64,
+    on_click: Option<Rc<dyn Fn()>>,
+    on_double_click: Option<Rc<dyn Fn()>>,
+    on_long_click: Option<Rc<dyn Fn()>>,
+) -> Frame {
+    let mut hr = HitRegion::default();
+    hr.id = id;
+    hr.rect = Rect {
+        x: 0.0,
+        y: 0.0,
+        w: 100.0,
+        h: 50.0,
+    };
+    hr.on_click = on_click;
+    hr.on_double_click = on_double_click;
+    hr.on_long_click = on_long_click;
+    Frame {
+        scene: Scene::default(),
+        hit_regions: vec![hr],
+        semantics_nodes: Vec::new(),
+        focus_chain: Vec::new(),
+    }
+}
+
+#[test]
+fn combined_clickable_delays_single_click_when_double_configured() {
+    let mut rt = ReposeRuntime::new();
+    let clicks = Rc::new(RefCell::new(0u32));
+    let doubles = Rc::new(RefCell::new(0u32));
+    let c = clicks.clone();
+    let d = doubles.clone();
+    let frame = button_frame(
+        BTN_ID,
+        Some(Rc::new(move || *c.borrow_mut() += 1)),
+        Some(Rc::new(move || *d.borrow_mut() += 1)),
+        None,
+    );
+    rt.cache_frame(frame);
+    let pos = Vec2 { x: 10.0, y: 10.0 };
+    let _ = rt.handle_pointer_press(pos, PointerButton::Primary);
+    let _ = rt.handle_pointer_release(pos, PointerButton::Primary);
+    assert_eq!(
+        *clicks.borrow(),
+        0,
+        "single click must be delayed while the double-tap window is open"
+    );
+    assert_eq!(*doubles.borrow(), 0);
+    std::thread::sleep(std::time::Duration::from_millis(350));
+    rt.poll_gesture_timers();
+    assert_eq!(
+        *clicks.borrow(),
+        1,
+        "delayed onClick must fire after the double-tap timeout"
+    );
+    assert_eq!(*doubles.borrow(), 0);
+}
+
+#[test]
+fn combined_clickable_double_tap_skips_on_click() {
+    let mut rt = ReposeRuntime::new();
+    let clicks = Rc::new(RefCell::new(0u32));
+    let doubles = Rc::new(RefCell::new(0u32));
+    let c = clicks.clone();
+    let d = doubles.clone();
+    let frame = button_frame(
+        BTN_ID,
+        Some(Rc::new(move || *c.borrow_mut() += 1)),
+        Some(Rc::new(move || *d.borrow_mut() += 1)),
+        None,
+    );
+    rt.cache_frame(frame);
+    let pos = Vec2 { x: 10.0, y: 10.0 };
+    let _ = rt.handle_pointer_press(pos, PointerButton::Primary);
+    let _ = rt.handle_pointer_release(pos, PointerButton::Primary);
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let _ = rt.handle_pointer_press(pos, PointerButton::Primary);
+    let result = rt.handle_pointer_release(pos, PointerButton::Primary);
+    assert_eq!(
+        *doubles.borrow(),
+        1,
+        "second tap must fire onDoubleClick"
+    );
+    assert_eq!(
+        *clicks.borrow(),
+        0,
+        "onClick must be skipped when a double tap completes"
+    );
+    assert_eq!(result.clicked_id, Some(BTN_ID));
+}
+
+#[test]
+fn long_press_fires_while_held_and_suppresses_click() {
+    let mut rt = ReposeRuntime::new();
+    let clicks = Rc::new(RefCell::new(0u32));
+    let longs = Rc::new(RefCell::new(0u32));
+    let c = clicks.clone();
+    let l = longs.clone();
+    let frame = button_frame(
+        BTN_ID,
+        Some(Rc::new(move || *c.borrow_mut() += 1)),
+        None,
+        Some(Rc::new(move || *l.borrow_mut() += 1)),
+    );
+    rt.cache_frame(frame);
+    let pos = Vec2 { x: 10.0, y: 10.0 };
+    let _ = rt.handle_pointer_press(pos, PointerButton::Primary);
+    std::thread::sleep(std::time::Duration::from_millis(550));
+    rt.poll_gesture_timers();
+    assert_eq!(
+        *longs.borrow(),
+        1,
+        "long press must fire while the pointer is still held"
+    );
+    let _ = rt.handle_pointer_release(pos, PointerButton::Primary);
+    assert_eq!(
+        *clicks.borrow(),
+        0,
+        "release after a fired long press must not also click"
+    );
+}
+
+#[test]
+fn plain_clickable_is_immediate() {
+    let mut rt = ReposeRuntime::new();
+    let clicks = Rc::new(RefCell::new(0u32));
+    let c = clicks.clone();
+    let frame = button_frame(BTN_ID, Some(Rc::new(move || *c.borrow_mut() += 1)), None, None);
+    rt.cache_frame(frame);
+    let pos = Vec2 { x: 10.0, y: 10.0 };
+    let _ = rt.handle_pointer_press(pos, PointerButton::Primary);
+    let result = rt.handle_pointer_release(pos, PointerButton::Primary);
+    assert_eq!(*clicks.borrow(), 1, "plain click must fire on release");
+    assert_eq!(result.clicked_id, Some(BTN_ID));
+}
+
 fn focused_textfield_rt() -> ReposeRuntime {
     let mut rt = ReposeRuntime::new();
     rt.sched.focused = Some(TF_ID);
