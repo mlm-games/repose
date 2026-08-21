@@ -68,8 +68,7 @@ impl TouchGestureState {
         }
 
         self.prev_touch_px = Some(pos_px);
-        rt.handle_pointer_press(pos, PointerButton::Primary)
-            .focused
+        rt.handle_pointer_press(pos, PointerButton::Primary).focused
     }
 
     /// Handle a touch move. Returns `(dirty, pinch_delta_scale)`; the host
@@ -227,9 +226,19 @@ pub(crate) fn hit_index_by_id(frame: &Frame, id: u64) -> Option<usize> {
     frame.hit_regions.iter().position(|h| h.id == id)
 }
 
-pub(crate) fn map_key(key: winit::keyboard::PhysicalKey) -> repose_core::input::Key {
+/// Map a physical key to a Repose key. Letters are always lowercase (chord
+/// matching keys off the modifier flags); digits and punctuation produce the
+/// US-layout (most used) character the key would type, honoring `mods.shift`, so Shift+8
+/// arrives as '*' and Shift+Equal as '+'.
+pub(crate) fn map_key(
+    key: winit::keyboard::PhysicalKey,
+    mods: &repose_core::input::Modifiers,
+) -> repose_core::input::Key {
     use repose_core::input::Key;
     use winit::keyboard::{KeyCode, PhysicalKey};
+
+    // (unshifted, shifted) character pair for a US-layout key.
+    let shifted = |a: char, b: char| Key::Character(if mods.shift { b } else { a });
 
     match key {
         PhysicalKey::Code(KeyCode::Enter) => Key::Enter,
@@ -273,16 +282,43 @@ pub(crate) fn map_key(key: winit::keyboard::PhysicalKey) -> repose_core::input::
         PhysicalKey::Code(KeyCode::KeyX) => Key::Character('x'),
         PhysicalKey::Code(KeyCode::KeyY) => Key::Character('y'),
         PhysicalKey::Code(KeyCode::KeyZ) => Key::Character('z'),
-        PhysicalKey::Code(KeyCode::Digit0) => Key::Character('0'),
-        PhysicalKey::Code(KeyCode::Digit1) => Key::Character('1'),
-        PhysicalKey::Code(KeyCode::Digit2) => Key::Character('2'),
-        PhysicalKey::Code(KeyCode::Digit3) => Key::Character('3'),
-        PhysicalKey::Code(KeyCode::Digit4) => Key::Character('4'),
-        PhysicalKey::Code(KeyCode::Digit5) => Key::Character('5'),
-        PhysicalKey::Code(KeyCode::Digit6) => Key::Character('6'),
-        PhysicalKey::Code(KeyCode::Digit7) => Key::Character('7'),
-        PhysicalKey::Code(KeyCode::Digit8) => Key::Character('8'),
-        PhysicalKey::Code(KeyCode::Digit9) => Key::Character('9'),
+        PhysicalKey::Code(KeyCode::Digit0) => shifted('0', ')'),
+        PhysicalKey::Code(KeyCode::Digit1) => shifted('1', '!'),
+        PhysicalKey::Code(KeyCode::Digit2) => shifted('2', '@'),
+        PhysicalKey::Code(KeyCode::Digit3) => shifted('3', '#'),
+        PhysicalKey::Code(KeyCode::Digit4) => shifted('4', '$'),
+        PhysicalKey::Code(KeyCode::Digit5) => shifted('5', '%'),
+        PhysicalKey::Code(KeyCode::Digit6) => shifted('6', '^'),
+        PhysicalKey::Code(KeyCode::Digit7) => shifted('7', '&'),
+        PhysicalKey::Code(KeyCode::Digit8) => shifted('8', '*'),
+        PhysicalKey::Code(KeyCode::Digit9) => shifted('9', '('),
+        PhysicalKey::Code(KeyCode::Minus) => shifted('-', '_'),
+        PhysicalKey::Code(KeyCode::Equal) => shifted('=', '+'),
+        PhysicalKey::Code(KeyCode::BracketLeft) => shifted('[', '{'),
+        PhysicalKey::Code(KeyCode::BracketRight) => shifted(']', '}'),
+        PhysicalKey::Code(KeyCode::Backslash) => shifted('\\', '|'),
+        PhysicalKey::Code(KeyCode::Semicolon) => shifted(';', ':'),
+        PhysicalKey::Code(KeyCode::Quote) => shifted('\'', '"'),
+        PhysicalKey::Code(KeyCode::Comma) => shifted(',', '<'),
+        PhysicalKey::Code(KeyCode::Period) => shifted('.', '>'),
+        PhysicalKey::Code(KeyCode::Slash) => shifted('/', '?'),
+        PhysicalKey::Code(KeyCode::Backquote) => shifted('`', '~'),
+        PhysicalKey::Code(KeyCode::NumpadAdd) => Key::Character('+'),
+        PhysicalKey::Code(KeyCode::NumpadSubtract) => Key::Character('-'),
+        PhysicalKey::Code(KeyCode::NumpadMultiply) => Key::Character('*'),
+        PhysicalKey::Code(KeyCode::NumpadDivide) => Key::Character('/'),
+        PhysicalKey::Code(KeyCode::NumpadEnter) => Key::Enter,
+        PhysicalKey::Code(KeyCode::NumpadDecimal) => Key::Character('.'),
+        PhysicalKey::Code(KeyCode::Numpad0) => Key::Character('0'),
+        PhysicalKey::Code(KeyCode::Numpad1) => Key::Character('1'),
+        PhysicalKey::Code(KeyCode::Numpad2) => Key::Character('2'),
+        PhysicalKey::Code(KeyCode::Numpad3) => Key::Character('3'),
+        PhysicalKey::Code(KeyCode::Numpad4) => Key::Character('4'),
+        PhysicalKey::Code(KeyCode::Numpad5) => Key::Character('5'),
+        PhysicalKey::Code(KeyCode::Numpad6) => Key::Character('6'),
+        PhysicalKey::Code(KeyCode::Numpad7) => Key::Character('7'),
+        PhysicalKey::Code(KeyCode::Numpad8) => Key::Character('8'),
+        PhysicalKey::Code(KeyCode::Numpad9) => Key::Character('9'),
         PhysicalKey::Code(KeyCode::F1) => Key::F(1),
         PhysicalKey::Code(KeyCode::F2) => Key::F(2),
         PhysicalKey::Code(KeyCode::F3) => Key::F(3),

@@ -1025,7 +1025,7 @@ pub fn run_desktop_app_with_config(
                     // --- Delegate all generic keyboard dispatch to the runtime ---
                     // (focus-chain dispatch, shortcuts, single-char input, and
                     // winit's composed `key_event.text` for international layouts).
-                    let mapped = rc::map_key(key_event.physical_key);
+                    let mapped = rc::map_key(key_event.physical_key, &self.rt.modifiers);
                     let ke = winit_key_to_repose(&key_event, &mapped, &self.rt.modifiers);
                     if self.rt.handle_key_with_text(&ke, key_event.text.as_deref()) {
                         self.request_redraw();

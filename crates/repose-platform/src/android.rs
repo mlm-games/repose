@@ -480,7 +480,7 @@ pub fn run_android_app_with_options(
                     // Route everything through the runtime: focus-chain dispatch,
                     // deletion/navigation keys, Enter submit/newline, Space/Enter
                     // activation, and composed soft-keyboard text.
-                    let mapped_key = rc::map_key(key_event.physical_key);
+                    let mapped_key = rc::map_key(key_event.physical_key, &self.rt.modifiers);
                     let utf16 = match mapped_key {
                         repose_core::input::Key::Character(c) => c as u16,
                         _ => 0,

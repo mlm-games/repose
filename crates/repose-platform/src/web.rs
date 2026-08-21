@@ -814,7 +814,7 @@ impl ApplicationHandler<()> for App {
                 }
 
                 // Convert to KeyEvent for runtime dispatch
-                let mapped_key = rc::map_key(key_event.physical_key);
+                let mapped_key = rc::map_key(key_event.physical_key, &self.rt.modifiers);
                 let utf16 = match mapped_key {
                     repose_core::input::Key::Character(c) => c as u16,
                     _ => 0,
