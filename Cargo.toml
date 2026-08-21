@@ -73,6 +73,3 @@ repose-platform = { path = "crates/repose-platform", version = "0.28.2" }
 repose-tree = { path = "crates/repose-tree", version = "0.28.2" }
 repose-docking = { path = "crates/repose-docking", version = "0.28.2" }
 repose-macros = { path = "crates/repose-macros", version = "0.28.2" }
-
-[package.metadata.android.sdk]
-version_code = 16784386
