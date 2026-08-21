@@ -236,6 +236,7 @@ pub(crate) fn map_key(key: winit::keyboard::PhysicalKey) -> repose_core::input::
         PhysicalKey::Code(KeyCode::Tab) => Key::Tab,
         PhysicalKey::Code(KeyCode::Backspace) => Key::Backspace,
         PhysicalKey::Code(KeyCode::Delete) => Key::Delete,
+        PhysicalKey::Code(KeyCode::Insert) => Key::Insert,
         PhysicalKey::Code(KeyCode::Escape) => Key::Escape,
         PhysicalKey::Code(KeyCode::ArrowLeft) => Key::ArrowLeft,
         PhysicalKey::Code(KeyCode::ArrowRight) => Key::ArrowRight,

@@ -114,6 +114,7 @@ pub enum Key {
     Tab,
     Backspace,
     Delete,
+    Insert,
     Escape,
     ArrowLeft,
     ArrowRight,
