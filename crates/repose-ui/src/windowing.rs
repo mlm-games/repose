@@ -902,7 +902,7 @@ fn key_for(window_id: u64, part: u64) -> u64 {
 }
 
 fn px_to_dp(px: f32) -> f32 {
-    let scale = repose_core::locals::density().scale * repose_core::locals::ui_scale().0;
+    let scale = repose_core::locals::effective_density_scale();
     if scale > 0.0001 { px / scale } else { px }
 }
 

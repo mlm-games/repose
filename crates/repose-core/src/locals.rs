@@ -99,8 +99,14 @@ pub struct Dp(pub f32);
 impl Dp {
     /// Converts this dp value into physical pixels using current Density * UiScale.
     pub fn to_px(self) -> f32 {
-        self.0 * density().scale * ui_scale().0
+        self.0 * effective_density_scale()
     }
+}
+
+/// Effective dp→px scale: device density × app UI scale.
+#[inline]
+pub fn effective_density_scale() -> f32 {
+    (density().scale * ui_scale().0).max(0.0001)
 }
 
 /// Convenience: convert a raw dp scalar into px using current Density * UiScale.
@@ -110,8 +116,8 @@ pub fn dp_to_px(dp: f32) -> f32 {
 
 /// Convenience: convert a raw px scalar into dp using current Density * UiScale.
 pub fn px_to_dp(px: f32) -> f32 {
-    let scale = density().scale * ui_scale().0;
-    if scale <= 0.0 { 0.0 } else { px / scale }
+    let scale = effective_density_scale();
+    if scale <= 0.0001 { 0.0 } else { px / scale }
 }
 
 fn with_locals_frame<R>(f: impl FnOnce() -> R) -> R {

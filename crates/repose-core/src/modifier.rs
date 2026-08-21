@@ -1080,7 +1080,7 @@ impl Modifier {
     /// Combine with `system_bars_padding()` to handle both system bars and keyboard.
     pub fn ime_padding(mut self) -> Self {
         let insets = crate::locals::window_insets();
-        let scale = crate::locals::density().scale * crate::locals::ui_scale().0;
+        let scale = crate::locals::effective_density_scale();
         let mut p = self.padding_values.unwrap_or_default();
         p.bottom += insets.ime_bottom / scale;
         self.padding_values = Some(p);
@@ -1089,7 +1089,7 @@ impl Modifier {
     /// Add padding equal to the current system bar insets (status bar top, nav bar bottom).
     pub fn system_bars_padding(mut self) -> Self {
         let insets = crate::locals::window_insets();
-        let scale = crate::locals::density().scale * crate::locals::ui_scale().0;
+        let scale = crate::locals::effective_density_scale();
         let mut p = self.padding_values.unwrap_or_default();
         p.top += insets.top / scale;
         p.bottom += insets.bottom / scale;
@@ -1099,7 +1099,7 @@ impl Modifier {
     /// Add status bar inset as top padding.
     pub fn status_bars_padding(mut self) -> Self {
         let insets = crate::locals::window_insets();
-        let scale = crate::locals::density().scale * crate::locals::ui_scale().0;
+        let scale = crate::locals::effective_density_scale();
         let mut p = self.padding_values.unwrap_or_default();
         p.top += insets.top / scale;
         self.padding_values = Some(p);
@@ -1108,7 +1108,7 @@ impl Modifier {
     /// Add navigation bar inset as bottom padding.
     pub fn navigation_bars_padding(mut self) -> Self {
         let insets = crate::locals::window_insets();
-        let scale = crate::locals::density().scale * crate::locals::ui_scale().0;
+        let scale = crate::locals::effective_density_scale();
         let mut p = self.padding_values.unwrap_or_default();
         p.bottom += insets.bottom / scale;
         self.padding_values = Some(p);

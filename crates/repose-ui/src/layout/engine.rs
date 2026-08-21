@@ -47,7 +47,7 @@ impl LayoutEngine {
         }
 
         // 1. Update tree
-        let density_scale = locals::density().scale.max(0.0001);
+        let density_scale = locals::effective_density_scale();
         let max_w_dp = size_px.0 as f32 / density_scale;
         let max_h_dp = size_px.1 as f32 / density_scale;
         self.tree
@@ -66,7 +66,7 @@ impl LayoutEngine {
         //     `window_size_class()` returns an up-to-date value even outside
         //     a `with_window_size_class { ... }` scope. We only touch the
         //     default when it actually changes to keep the lock uncontended.
-        let density_scale = locals::density().scale * locals::ui_scale().0;
+        // Reuse the same effective density_scale computed above (do not shadow)
         let class = locals::calculate_window_size_class(size_px.0, size_px.1, density_scale);
         if class != locals::window_size_class() {
             locals::set_window_size_class_default(class);
@@ -82,7 +82,20 @@ impl LayoutEngine {
         );
         let has_tree_mutation =
             !self.tree.dirty_nodes().is_empty() || !self.tree.removed_ids.is_empty();
-        let need_layout = size_changed || !self.layout_valid || has_tree_mutation || locals_changed;
+        let mut need_layout =
+            size_changed || !self.layout_valid || has_tree_mutation || locals_changed;
+
+        // Must force a style refresh for all nodes to keep physical sizes in sync with the new scale.
+        if locals_changed {
+            let all_ids: Vec<NodeId> = self.tree.iter_with_ids().map(|(id, _)| id).collect();
+            for id in all_ids {
+                self.tree.mark_dirty(id);
+            }
+            for st in self.scope_trees.values_mut() {
+                st.valid = false;
+            }
+            need_layout = true;
+        }
 
         // NOTE: Needed to ensure that text is always re-measured with the new available width
         if size_changed {
@@ -340,6 +353,7 @@ impl LayoutEngine {
 
         // These affect layout measurement and/or flex direction decisions.
         locals::density().scale.to_bits().hash(&mut h);
+        locals::ui_scale().0.to_bits().hash(&mut h);
         locals::text_scale().0.to_bits().hash(&mut h);
 
         let dir_u8 = match locals::text_direction() {
