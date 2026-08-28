@@ -619,6 +619,7 @@ impl ReposeRuntime {
         button: PointerButton,
     ) -> PointerButtonResult {
         self.mouse_pos_px = (pos.x, pos.y);
+        let _ = repose_core::request_input_mode(repose_core::InputMode::Touch);
 
         let Some(f) = &self.frame_cache else {
             return PointerButtonResult {
@@ -1115,6 +1116,11 @@ impl ReposeRuntime {
 
     /// Process a keyboard key event. Returns true if consumed.
     pub fn handle_key(&mut self, event: &KeyEvent) -> bool {
+        // Compose: key events → InputMode.Keyboard (show focus ring on Tab/arrows).
+        if event.event_type == KeyEventType::Down {
+            let _ = repose_core::request_input_mode(repose_core::InputMode::Keyboard);
+        }
+
         // Owned clone so `dispatch_action` may take `&mut self` below
         // without conflicting with the long-lived frame borrow.
         let Some(frame) = self.frame_cache.clone() else {
@@ -1210,7 +1216,11 @@ impl ReposeRuntime {
                         .map(|(_, _, fired)| fired)
                         .unwrap_or(false);
 
-                    if let Some(hit) = f.hit_regions.iter().find(|h| h.id == active_id && !h.disabled) {
+                    if let Some(hit) = f
+                        .hit_regions
+                        .iter()
+                        .find(|h| h.id == active_id && !h.disabled)
+                    {
                         if let Some(src) = &hit.interaction_source {
                             let pid = src.collect_last_press_id().unwrap_or(0);
                             src.to_mutable().emit(Interaction::Release(pid));
@@ -1844,6 +1854,9 @@ impl ReposeRuntime {
     /// otherwise the event falls through to [`Self::handle_key`] (single
     /// characters, navigation, shortcuts, activation).
     pub fn handle_key_with_text(&mut self, event: &KeyEvent, composed_text: Option<&str>) -> bool {
+        if event.event_type == KeyEventType::Down {
+            let _ = repose_core::request_input_mode(repose_core::InputMode::Keyboard);
+        }
         if event.event_type == KeyEventType::Down
             && !event.is_repeat
             && !self.ime_preedit

@@ -147,6 +147,8 @@ impl LayoutEngine {
         alpha_q.hash(&mut h);
         interactions.hover.hash(&mut h);
         focused.hash(&mut h);
+        // Invalidate cached paint when focus chrome visibility flips with mode.
+        repose_core::input::input_mode().hash(&mut h);
 
         repose_core::animation_driver::live_epoch().hash(&mut h);
         if !interactions.pressed.is_empty() {
@@ -207,7 +209,7 @@ impl LayoutEngine {
             if let Some(ref src) = n.modifier.interaction_source {
                 src.collect_is_hovered().hash(&mut h);
                 src.collect_is_pressed().hash(&mut h);
-                src.collect_is_focused().hash(&mut h);
+                src.collect_is_focus_visible().hash(&mut h);
                 src.collect_is_dragged().hash(&mut h);
                 src.collect_last_press_id().hash(&mut h);
             }
@@ -382,6 +384,10 @@ impl LayoutEngine {
             } else {
                 (implicit_hovered, implicit_pressed, is_focused, false)
             };
+
+        let state_focused = state_focused
+            && repose_core::input::input_mode() == repose_core::input::InputMode::Keyboard;
+
         let alpha_q: u8 = (alpha_accum * 255.0).round() as u8;
 
         // Repaint Boundary
@@ -738,9 +744,7 @@ impl LayoutEngine {
         if owns_hit {
             let focusable = !modifier.disabled
                 && modifier.focusable.unwrap_or(
-                    modifier.click
-                        || modifier.on_action.is_some()
-                        || modifier.text_input.is_some(),
+                    modifier.click || modifier.on_action.is_some() || modifier.text_input.is_some(),
                 );
             let mut hit = HitRegion {
                 id: view_id,

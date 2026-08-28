@@ -421,6 +421,12 @@ impl InteractionSource {
     pub fn collect_is_focused(&self) -> bool {
         self.state.borrow().focused
     }
+
+    /// Focused and keyboard/D-pad input mode (Compose `:focus-visible`).
+    pub fn collect_is_focus_visible(&self) -> bool {
+        crate::input::is_focus_visible(self.collect_is_focused())
+    }
+
     pub fn collect_is_dragged(&self) -> bool {
         self.state.borrow().dragged > 0
     }

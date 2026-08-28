@@ -670,6 +670,27 @@ pub fn with_local_indication<R>(
     })
 }
 
+/// Optional composition-local override for [`crate::input::InputMode`].
+/// Mirrors Compose `LocalInputModeManager` for tests and nested hosts.
+#[derive(Clone, Copy, Debug)]
+struct LocalInputMode(pub crate::input::InputMode);
+
+/// Override input mode for a composition subtree.
+pub fn with_input_mode<R>(mode: crate::input::InputMode, f: impl FnOnce() -> R) -> R {
+    with_locals_frame(|| {
+        set_local_boxed(
+            TypeId::of::<LocalInputMode>(),
+            Box::new(LocalInputMode(mode)),
+        );
+        f()
+    })
+}
+
+/// Read a composition-local input mode override, if any.
+pub(crate) fn local_input_mode() -> Option<crate::input::InputMode> {
+    get_local::<LocalInputMode>().map(|m| m.0)
+}
+
 pub fn local_indication() -> Option<Rc<dyn IndicationNodeFactory>> {
     // Manual stack walk (get_local requires Copy, which LocalIndication is not).
 

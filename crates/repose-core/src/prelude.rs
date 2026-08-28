@@ -20,8 +20,8 @@ pub use crate::locals::{
     set_ime_inset, set_window_container_height, set_window_container_size,
     set_window_container_width, set_window_size_class_default, text_direction, text_scale, theme,
     ui_scale, window_insets, window_size_class, with_content_color, with_density,
-    with_local_indication, with_text_direction, with_text_scale, with_theme, with_ui_scale,
-    with_window_insets, with_window_size_class,
+    with_input_mode, with_local_indication, with_text_direction, with_text_scale, with_theme,
+    with_ui_scale, with_window_insets, with_window_size_class,
 };
 pub use crate::modifier::{
     Interaction, InteractionSource, Modifier, MutableInteractionSource, PressId, StateColors,

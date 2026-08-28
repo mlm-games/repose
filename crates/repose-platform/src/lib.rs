@@ -428,6 +428,8 @@ pub fn run_desktop_app_with_config(
                         }
                     }
                     accesskit::Action::Focus => {
+                        // Assistive tech focus should show the focus ring.
+                        let _ = repose_core::request_input_mode(repose_core::InputMode::Keyboard);
                         self.rt.sched.focused = Some(target_id);
                         self.request_redraw();
                     }

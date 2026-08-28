@@ -60,7 +60,7 @@ impl IndicationDrawNode for DebugIndicationDrawNode {
     fn draw(&self, scene: &mut Scene, rect: Rect, radius: [f32; 4], alpha: f32) {
         let pressed = self.interaction_source.collect_is_pressed();
         let hovered = self.interaction_source.collect_is_hovered();
-        let focused = self.interaction_source.collect_is_focused();
+        let focused = self.interaction_source.collect_is_focus_visible();
 
         // Draw focus overlay
         if focused && !pressed && self.focus_color.3 > 0 {

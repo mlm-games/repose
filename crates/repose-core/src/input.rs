@@ -178,3 +178,102 @@ pub enum InputEvent {
     Text(TextInputEvent),
     Ime(ImeEvent),
 }
+
+///
+
+///
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+pub enum InputMode {
+    #[default]
+    Touch,
+    /// Keyboard, Tab, arrow/D-pad, or other non-pointer navigation.
+    Keyboard,
+}
+
+thread_local! {
+    static INPUT_MODE: Cell<InputMode> = const { Cell::new(InputMode::Touch) };
+}
+
+/// Current input mode (Compose `InputModeManager.inputMode`).
+///
+/// Composition-local override ([`crate::locals::with_input_mode`]) wins over
+/// the thread default.
+#[inline]
+pub fn input_mode() -> InputMode {
+    crate::locals::local_input_mode().unwrap_or_else(|| INPUT_MODE.get())
+}
+
+/// Force the global default input mode (no frame request). Prefer
+/// [`request_input_mode`] from event handlers.
+#[inline]
+pub fn set_input_mode_default(mode: InputMode) {
+    INPUT_MODE.set(mode);
+}
+
+/// Request a new input mode. Returns `true` if the mode changed.
+///
+/// On change, requests a frame so focus chrome can appear/disappear.
+pub fn request_input_mode(mode: InputMode) -> bool {
+    let prev = INPUT_MODE.get();
+    if prev == mode {
+        return false;
+    }
+    INPUT_MODE.set(mode);
+    crate::frame_clock::request_frame();
+    true
+}
+
+/// `true` when focus indication should paint (focused **and** keyboard mode).
+#[inline]
+pub fn is_focus_visible(focused: bool) -> bool {
+    focused && input_mode() == InputMode::Keyboard
+}
+
+#[cfg(test)]
+mod input_mode_tests {
+    use super::*;
+    use crate::frame_clock::take_frame_request;
+    use crate::modifier::{Interaction, MutableInteractionSource};
+
+    #[test]
+    fn request_input_mode_changes_and_requests_frame() {
+        set_input_mode_default(InputMode::Touch);
+        let _ = take_frame_request();
+
+        assert!(!request_input_mode(InputMode::Touch));
+        assert!(!take_frame_request());
+
+        assert!(request_input_mode(InputMode::Keyboard));
+        assert_eq!(input_mode(), InputMode::Keyboard);
+        assert!(take_frame_request());
+
+        assert!(request_input_mode(InputMode::Touch));
+        assert_eq!(input_mode(), InputMode::Touch);
+        set_input_mode_default(InputMode::Touch);
+    }
+
+    #[test]
+    fn focus_visible_requires_keyboard_mode() {
+        set_input_mode_default(InputMode::Touch);
+        let src = MutableInteractionSource::new();
+        src.emit(Interaction::Focus);
+        assert!(src.source().collect_is_focused());
+        assert!(!src.source().collect_is_focus_visible());
+
+        set_input_mode_default(InputMode::Keyboard);
+        assert!(src.source().collect_is_focus_visible());
+
+        set_input_mode_default(InputMode::Touch);
+        src.emit(Interaction::Unfocus);
+    }
+
+    #[test]
+    fn with_input_mode_overrides_global() {
+        set_input_mode_default(InputMode::Touch);
+        crate::locals::with_input_mode(InputMode::Keyboard, || {
+            assert_eq!(input_mode(), InputMode::Keyboard);
+        });
+        assert_eq!(input_mode(), InputMode::Touch);
+    }
+}

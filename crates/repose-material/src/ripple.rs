@@ -118,7 +118,7 @@ impl IndicationDrawNode for RippleDrawNode {
         // priority: focus > hover.
         let is_pressed = self.interaction_source.collect_is_pressed();
         let is_hovered = self.interaction_source.collect_is_hovered();
-        let is_focused = self.interaction_source.collect_is_focused();
+        let is_focused = self.interaction_source.collect_is_focus_visible();
         let bounded = self.config.bounded;
 
         let center_scene = Vec2 {
