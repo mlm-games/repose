@@ -1,15 +1,65 @@
 #[cfg(any(target_arch = "wasm32", target_os = "android"))]
 use crate::*;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use repose_app::ReposeRuntime;
 use repose_core::Vec2;
 use repose_core::input::PointerButton;
 
+#[derive(Clone, Copy, Debug)]
+struct DynGestureState {
+    avg_distance: f32,
+    avg_pos: Vec2,
+    heading: f32,
+}
+
+#[derive(Clone, Debug)]
+struct GestureState {
+    start_time: f64,
+    start_pointer_pos: Vec2,
+    pinch_type: PinchType,
+    previous: Option<DynGestureState>,
+    current: DynGestureState,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PinchType {
+    Horizontal,
+    Vertical,
+    Proportional,
+}
+
+impl PinchType {
+    fn classify(touches: &BTreeMap<u64, (f32, f32)>) -> Self {
+        if touches.len() == 2 {
+            let mut it = touches.values();
+            let a = *it.next().unwrap();
+            let b = *it.next().unwrap();
+            let dx = (a.0 - b.0).abs();
+            let dy = (a.1 - b.1).abs();
+            if dx > 3.0 * dy {
+                Self::Horizontal
+            } else if dy > 3.0 * dx {
+                Self::Vertical
+            } else {
+                Self::Proportional
+            }
+        } else {
+            Self::Proportional
+        }
+    }
+}
+
+pub(crate) struct MultiTouchDelta {
+    pub zoom: f32,
+    pub translation: Vec2,
+    pub center: Vec2,
+    pub num_touches: usize,
+}
+
 pub(crate) struct TouchGestureState {
-    active_touches: HashMap<u64, (f32, f32)>,
-    previous_touches: HashMap<u64, (f32, f32)>,
+    active_touches: BTreeMap<u64, (f32, f32)>,
     primary_touch_id: Option<u64>,
     prev_touch_px: Option<(f32, f32)>,
     touch_start: Option<(web_time::Instant, (f32, f32))>,
@@ -17,8 +67,12 @@ pub(crate) struct TouchGestureState {
     touch_scroll_accum_y_px: f32,
     touch_scrolled: bool,
     scroll_capture_id: Option<u64>,
-    last_centroid: Option<(f32, f32)>,
-    last_centroid_size: Option<f32>,
+    gesture_state: Option<GestureState>,
+    past_touch_slop: bool,
+    accum_pan: Vec2,
+    accum_zoom: f32,
+    accum_rotation: f32,
+    // single-finger pending (deferred press to allow 2nd finger to cancel)
     primary_press_dispatched: bool,
     pending_primary: Option<(Vec2, web_time::Instant, u64)>,
 }
@@ -26,8 +80,7 @@ pub(crate) struct TouchGestureState {
 impl Default for TouchGestureState {
     fn default() -> Self {
         Self {
-            active_touches: HashMap::new(),
-            previous_touches: HashMap::new(),
+            active_touches: BTreeMap::new(),
             primary_touch_id: None,
             prev_touch_px: None,
             touch_start: None,
@@ -35,8 +88,11 @@ impl Default for TouchGestureState {
             touch_scroll_accum_y_px: 0.0,
             touch_scrolled: false,
             scroll_capture_id: None,
-            last_centroid: None,
-            last_centroid_size: None,
+            gesture_state: None,
+            past_touch_slop: false,
+            accum_pan: Vec2 { x: 0.0, y: 0.0 },
+            accum_zoom: 1.0,
+            accum_rotation: 0.0,
             primary_press_dispatched: false,
             pending_primary: None,
         }
@@ -44,6 +100,91 @@ impl Default for TouchGestureState {
 }
 
 impl TouchGestureState {
+    fn calc_dynamic_state(&self) -> Option<DynGestureState> {
+        let n = self.active_touches.len();
+        if n < 2 {
+            return None;
+        }
+        let n_recip = 1.0 / n as f32;
+        let mut avg_pos = Vec2 { x: 0.0, y: 0.0 };
+        for (_, (x, y)) in &self.active_touches {
+            avg_pos.x += *x;
+            avg_pos.y += *y;
+        }
+        avg_pos.x *= n_recip;
+        avg_pos.y *= n_recip;
+        let mut avg_distance = 0.0;
+        for (_, (x, y)) in &self.active_touches {
+            let dx = avg_pos.x - *x;
+            let dy = avg_pos.y - *y;
+            avg_distance += (dx * dx + dy * dy).sqrt();
+        }
+        avg_distance *= n_recip;
+        // heading for rotation (not used for pan/zoom-only, but kept for completeness)
+        let first = self.active_touches.values().next().unwrap();
+        let heading = (avg_pos.x - first.0).atan2(avg_pos.y - first.1);
+        Some(DynGestureState {
+            avg_distance: avg_distance.max(1.0),
+            avg_pos,
+            heading,
+        })
+    }
+
+    fn update_gesture(&mut self, time: f64, pointer_pos: Option<Vec2>, added_or_removed: bool) {
+        if let Some(dyn_state) = self.calc_dynamic_state() {
+            if let Some(state) = &mut self.gesture_state {
+                state.previous = Some(state.current);
+                state.current = dyn_state;
+                if added_or_removed {
+                    state.previous = None;
+                    // Reset accum so next delta is not a jump
+                    self.past_touch_slop = false;
+                    self.accum_pan = Vec2 { x: 0.0, y: 0.0 };
+                    self.accum_zoom = 1.0;
+                    self.accum_rotation = 0.0;
+                }
+            } else if let Some(pointer_pos) = pointer_pos {
+                self.gesture_state = Some(GestureState {
+                    start_time: time,
+                    start_pointer_pos: pointer_pos,
+                    pinch_type: PinchType::classify(&self.active_touches),
+                    previous: None,
+                    current: dyn_state,
+                });
+                self.past_touch_slop = false;
+                self.accum_pan = Vec2 { x: 0.0, y: 0.0 };
+                self.accum_zoom = 1.0;
+                self.accum_rotation = 0.0;
+                if added_or_removed {
+                    if let Some(s) = &mut self.gesture_state {
+                        s.previous = None;
+                    }
+                }
+            }
+        } else {
+            self.gesture_state = None;
+            self.past_touch_slop = false;
+            self.accum_pan = Vec2 { x: 0.0, y: 0.0 };
+            self.accum_zoom = 1.0;
+            self.accum_rotation = 0.0;
+        }
+    }
+
+    fn multi_touch_delta(&self) -> Option<(Vec2, f32, f32, Vec2)> {
+        let state = self.gesture_state.as_ref()?;
+        let prev = state.previous.unwrap_or(state.current);
+        let curr = state.current;
+        let zoom = curr.avg_distance / prev.avg_distance;
+        let pan = Vec2 {
+            x: curr.avg_pos.x - prev.avg_pos.x,
+            y: curr.avg_pos.y - prev.avg_pos.y,
+        };
+        let rotation = curr.heading - prev.heading;
+        // Normalize rotation to [-π, π] like egui's normalized_angle
+        let rotation = rotation.sin().atan2(rotation.cos());
+        Some((pan, zoom, rotation, curr.avg_pos))
+    }
+
     pub(crate) fn touch_started(
         &mut self,
         rt: &mut ReposeRuntime,
@@ -55,6 +196,7 @@ impl TouchGestureState {
             x: pos_px.0,
             y: pos_px.1,
         };
+        let was_empty = self.active_touches.is_empty();
         self.active_touches.insert(tid, pos_px);
 
         let is_primary = self.primary_touch_id.is_none();
@@ -68,6 +210,12 @@ impl TouchGestureState {
             self.prev_touch_px = Some(pos_px);
             self.pending_primary = Some((pos, web_time::Instant::now(), tid));
             self.primary_press_dispatched = false;
+            // If this is actually the 2nd finger making it multi-touch, gesture will be created on next move;
+            // we don't dispatch press yet (deferred via pending).
+            if self.active_touches.len() >= 2 {
+                let time = web_time::Instant::now().elapsed().as_secs_f64();
+                self.update_gesture(time, Some(pos), true);
+            }
             return None;
         }
         if self.pending_primary.is_some() {
@@ -77,27 +225,15 @@ impl TouchGestureState {
             rt.handle_pointer_cancel();
             self.primary_press_dispatched = false;
         }
-
-        None
-    }
-
-    fn compute_centroid_and_size(&self) -> Option<((f32, f32), f32)> {
-        let count = self.active_touches.len() as f32;
-        if count < 2.0 {
-            return None;
+        if self.active_touches.len() >= 2 {
+            let time = web_time::Instant::now().elapsed().as_secs_f64();
+            let pointer_pos = self
+                .primary_touch_id
+                .and_then(|pid| self.active_touches.get(&pid).copied())
+                .map(|(x, y)| Vec2 { x, y });
+            self.update_gesture(time, pointer_pos, true);
         }
-        let (sum_x, sum_y) = self
-            .active_touches
-            .values()
-            .fold((0.0, 0.0), |(sx, sy), &(x, y)| (sx + x, sy + y));
-        let centroid = (sum_x / count, sum_y / count);
-        let sum_dist = self.active_touches.values().fold(0.0, |acc, &(x, y)| {
-            let dx = x - centroid.0;
-            let dy = y - centroid.1;
-            acc + (dx * dx + dy * dy).sqrt()
-        });
-        let size = sum_dist / count;
-        Some((centroid, size))
+        None
     }
 
     pub(crate) fn touch_moved(
@@ -113,60 +249,60 @@ impl TouchGestureState {
             y: pos_px.1,
         };
         let mut dirty = false;
-        let mut pinch = None;
-        let mut pan = None;
+        let mut pinch: Option<(f32, Vec2)> = None;
+        let mut pan: Option<Vec2> = None;
         self.active_touches.insert(tid, pos_px);
 
         if self.active_touches.len() >= 2 {
-            if self.pending_primary.is_some() {
-                self.pending_primary = None;
-            }
-            if self.primary_press_dispatched {
-                rt.handle_pointer_cancel();
-                self.primary_press_dispatched = false;
-            }
-
-            if let Some((centroid, centroid_size)) = self.compute_centroid_and_size() {
-                if let (Some(last_centroid), Some(last_size)) =
-                    (self.last_centroid, self.last_centroid_size)
-                {
-                    let pan_delta = Vec2 {
-                        x: centroid.0 - last_centroid.0,
-                        y: centroid.1 - last_centroid.1,
-                    };
-                    let zoom_delta = if last_size > 0.0 {
-                        centroid_size / last_size
-                    } else {
-                        1.0
-                    };
-
-                    let centroid_vec = Vec2 {
-                        x: centroid.0,
-                        y: centroid.1,
-                    };
-
-                    if (zoom_delta - 1.0).abs() > 0.01 {
-                        pinch = Some((zoom_delta.clamp(0.8, 1.25), centroid_vec));
+            let time = web_time::Instant::now().elapsed().as_secs_f64();
+            let pointer_pos = self
+                .primary_touch_id
+                .and_then(|pid| self.active_touches.get(&pid).copied())
+                .map(|(x, y)| Vec2 { x, y });
+            self.update_gesture(time, pointer_pos, false);
+            if let Some((raw_pan, raw_zoom, _raw_rot, center)) = self.multi_touch_delta() {
+                // Compose-like
+                let centroid_size = self
+                    .gesture_state
+                    .as_ref()
+                    .map(|s| s.current.avg_distance)
+                    .unwrap_or(1.0);
+                let touch_slop = 18.0 * scale; // viewConfiguration.touchSlop for finger, 6 for mouse
+                if !self.past_touch_slop {
+                    self.accum_pan.x += raw_pan.x;
+                    self.accum_pan.y += raw_pan.y;
+                    self.accum_zoom *= raw_zoom;
+                    // rotation not used (panZoomLock)
+                    let zoom_motion = (self.accum_zoom - 1.0).abs() * centroid_size;
+                    let pan_motion = (self.accum_pan.x * self.accum_pan.x
+                        + self.accum_pan.y * self.accum_pan.y)
+                        .sqrt();
+                    if zoom_motion > touch_slop || pan_motion > touch_slop {
+                        self.past_touch_slop = true;
                     }
-                    let pan_len = (pan_delta.x * pan_delta.x + pan_delta.y * pan_delta.y).sqrt();
-                    if pan_len > 0.5 {
-                        pan = Some(pan_delta);
-                        self.touch_scrolled = true;
-                    }
-                    dirty = true;
                 }
-
-                self.last_centroid = Some(centroid);
-                self.last_centroid_size = Some(centroid_size);
+                if self.past_touch_slop {
+                    // Exactly like Compose: after slop, dispatch raw per-frame deltas
+                    // No per-frame clamp or deadzone — smoothness comes from centroid,
+                    // previous=None on count change, and touchSlop gating. No compromises.
+                    pinch = Some((raw_zoom, center));
+                    pan = Some(raw_pan);
+                    self.touch_scrolled = true;
+                    dirty = true;
+                } else {
+                    dirty = false;
+                }
             }
-            self.previous_touches = self.active_touches.clone();
+            // Keep single-finger prev in sync for when we go back to 1 finger
+            if self.primary_touch_id == Some(tid) {
+                self.prev_touch_px = Some(pos_px);
+            }
             return (dirty, pinch, pan);
         }
 
-        self.previous_touches = self.active_touches.clone();
-
+        // Single-finger: deferred press + scroll
         if self.primary_touch_id != Some(tid) {
-            return (dirty, pinch, pan);
+            return (dirty, None, None);
         }
 
         if let Some((pending_pos, pending_instant, _pending_tid)) = self.pending_primary {
@@ -174,6 +310,7 @@ impl TouchGestureState {
             let dx = pos_px.0 - pending_pos.x;
             let dy = pos_px.1 - pending_pos.y;
             let dist = (dx * dx + dy * dy).sqrt();
+            // pastTouchSlop for single finger: 6*scale or 30ms
             if dt > 0.03 || dist > 6.0 * scale {
                 let _focused = rt
                     .handle_pointer_press(pending_pos, PointerButton::Primary)
@@ -182,8 +319,7 @@ impl TouchGestureState {
                 self.pending_primary = None;
             } else {
                 self.prev_touch_px = Some(pos_px);
-                self.previous_touches = self.active_touches.clone();
-                return (dirty, pinch, pan);
+                return (dirty, None, None);
             }
         }
 
@@ -223,7 +359,7 @@ impl TouchGestureState {
         }
 
         self.prev_touch_px = Some(pos_px);
-        (dirty, pinch, pan)
+        (dirty, None, None)
     }
 
     pub(crate) fn touch_ended(
@@ -240,23 +376,25 @@ impl TouchGestureState {
         };
 
         let is_primary = self.primary_touch_id == Some(tid);
+        let was_multi = self.active_touches.len() >= 2;
 
         if is_primary {
             if let Some((pending_pos, _, _)) = self.pending_primary.take() {
-                if !cancelled && self.active_touches.len() < 2 {
+                if !cancelled && !was_multi && self.active_touches.len() < 2 {
                     let _ = rt.handle_pointer_press(pending_pos, PointerButton::Primary);
                     rt.handle_pointer_release(pos, PointerButton::Primary);
                 } else {
+                    // Pending was for a tap that became multi-touch, so no press/click
                 }
                 self.primary_press_dispatched = false;
             } else if self.primary_press_dispatched {
-                if cancelled || self.active_touches.len() >= 2 {
+                if cancelled || was_multi {
                     rt.handle_pointer_cancel();
                 } else {
                     rt.handle_pointer_release(pos, PointerButton::Primary);
                 }
                 self.primary_press_dispatched = false;
-            } else if cancelled || self.active_touches.len() >= 2 {
+            } else if cancelled || was_multi {
                 rt.handle_pointer_cancel();
             }
         } else {
@@ -264,15 +402,23 @@ impl TouchGestureState {
         }
 
         self.active_touches.remove(&tid);
-        self.previous_touches.remove(&tid);
-
-        if self.active_touches.len() < 2 {
-            self.last_centroid = None;
-            self.last_centroid_size = None;
+        if self.active_touches.len() >= 2 {
+            let time = web_time::Instant::now().elapsed().as_secs_f64();
+            let pointer_pos = self
+                .primary_touch_id
+                .and_then(|pid| self.active_touches.get(&pid).copied())
+                .map(|(x, y)| Vec2 { x, y });
+            self.update_gesture(time, pointer_pos, true);
+        } else {
+            self.gesture_state = None;
+            self.past_touch_slop = false;
+            self.accum_pan = Vec2 { x: 0.0, y: 0.0 };
+            self.accum_zoom = 1.0;
+            self.accum_rotation = 0.0;
         }
 
         let mut swipe_right = None;
-        if self.primary_touch_id == Some(tid) {
+        if is_primary {
             self.primary_touch_id = None;
             if let Some((t0, p0)) = self.touch_start.take() {
                 let dt = (web_time::Instant::now() - t0).as_secs_f32();
@@ -287,6 +433,23 @@ impl TouchGestureState {
             self.prev_touch_px = None;
         }
         swipe_right
+    }
+
+    pub(crate) fn multi_touch_info(&self) -> Option<MultiTouchDelta> {
+        let state = self.gesture_state.as_ref()?;
+        let prev = state.previous.unwrap_or(state.current);
+        let curr = state.current;
+        let zoom = curr.avg_distance / prev.avg_distance;
+        let translation = Vec2 {
+            x: curr.avg_pos.x - prev.avg_pos.x,
+            y: curr.avg_pos.y - prev.avg_pos.y,
+        };
+        Some(MultiTouchDelta {
+            zoom,
+            translation,
+            center: curr.avg_pos,
+            num_touches: self.active_touches.len(),
+        })
     }
 }
 
