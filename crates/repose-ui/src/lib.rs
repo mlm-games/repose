@@ -133,6 +133,7 @@ thread_local! {
 #[derive(Default)]
 pub struct Interactions {
     pub hover: Option<u64>,
+    pub hover_ancestors: std::collections::HashSet<u64>,
     pub pressed: HashSet<u64>,
 }
 

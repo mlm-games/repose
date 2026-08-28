@@ -111,6 +111,22 @@ pub(crate) fn apply_m3_clickable_ex(
     apply_enabled_click(m, enabled, on_click)
 }
 
+pub(crate) fn apply_m3_clickable_without_indication(
+    mut m: Modifier,
+    source: &MutableInteractionSource,
+    enabled: bool,
+    on_click: impl Fn() + 'static,
+) -> Modifier {
+    m = m.interaction_source(source);
+    if enabled {
+        m = m.clickable().on_click(on_click);
+        m.indication = None;
+    } else {
+        m = m.enabled(false);
+    }
+    m
+}
+
 /// Attach Compose-equivalent action semantics (role + enabled) to a control's
 /// modifier.
 pub(crate) fn with_button_semantics(m: Modifier, enabled: bool) -> Modifier {

@@ -312,7 +312,8 @@ impl LayoutEngine {
 
         let base_px = (rect.x, rect.y);
 
-        let is_hovered = interactions.hover == Some(view_id);
+        let is_hovered =
+            interactions.hover == Some(view_id) || interactions.hover_ancestors.contains(&view_id);
         let is_pressed = interactions.pressed.contains(&view_id);
 
         let has_pointer = modifier.on_pointer_down.is_some()
@@ -353,7 +354,8 @@ impl LayoutEngine {
         let owns_hit = needs_hit && !kind_handles_hit && !modifier.hit_passthrough;
 
         let effective_interaction = interaction_source.unwrap_or(view_id);
-        let implicit_hovered = interactions.hover == Some(effective_interaction);
+        let implicit_hovered = interactions.hover == Some(effective_interaction)
+            || interactions.hover_ancestors.contains(&effective_interaction);
         let implicit_pressed = interactions.pressed.contains(&effective_interaction);
         let is_focused = focused == Some(view_id);
         let (state_hovered, state_pressed, state_focused, state_dragged) =

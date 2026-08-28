@@ -10,7 +10,9 @@ use repose_ui::{
     anim::{animate_color, animate_f32},
 };
 
-use super::util::apply_m3_clickable;
+use crate::ripple::{RippleConfig, ripple};
+
+use super::util::apply_m3_clickable_without_indication;
 use super::*;
 
 static NAVBAR_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -131,20 +133,76 @@ pub fn NavigationBar(
                         .map(Rc::new)
                         .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
+                    let item_width = remember_state_with_key(
+                        format!("nb_w_{}_{}", id, i),
+                        || 0.0f32,
+                    );
                     let mut item_m = Modifier::new()
                         .flex_grow(1.0)
+                        .fill_max_height()
+                        .propagate_min_constraints(true)
+                        .on_size_changed({
+                            let w = item_width.clone();
+                            move |size| *w.borrow_mut() = size.x
+                        })
                         .semantics(Semantics::new(Role::Tab).with_label(&item.label));
 
-                    item_m = apply_m3_clickable(
-                        item_m,
-                        &nb_source,
-                        theme().on_surface_variant,
-                        is_enabled,
-                        {
+                    item_m = apply_m3_clickable_without_indication(
+                        item_m, &nb_source, is_enabled, {
                             let cb = cb.clone();
                             move || cb()
                         },
                     );
+
+                    // Pill-sized ripple host - hover/focus now pill-bounded, not full item.
+                    // Map press pos from outer item (full width) to pill local via MappedInteractionSource offset.
+                    let pill_dx = (*item_width.borrow() - config.indicator_width) / 2.0;
+                    let pill_dy = 14.0;
+                    let pill_m = Modifier::new()
+                        .absolute()
+                        .offset(
+                            Some((24.0 - config.indicator_width) / 2.0),
+                            Some((24.0 - config.indicator_height) / 2.0),
+                            None,
+                            None,
+                        )
+                        .width(config.indicator_width)
+                        .height(config.indicator_height)
+                        .clip_rounded(config.indicator_radius)
+                        .interaction_source(&nb_source)
+                        .indication(ripple(RippleConfig {
+                            color: Some(theme().on_surface_variant),
+                            bounded: true,
+                            press_offset: if *item_width.borrow() > 0.0 {
+                                Some(Vec2 {
+                                    x: pill_dx,
+                                    y: pill_dy,
+                                })
+                            } else {
+                                None
+                            },
+                            ..Default::default()
+                        }));
+                    let bg_m = Modifier::new()
+                        .absolute()
+                        .offset(
+                            Some((24.0 - config.indicator_width) / 2.0),
+                            Some((24.0 - config.indicator_height) / 2.0),
+                            None,
+                            None,
+                        )
+                        .width(config.indicator_width)
+                        .height(config.indicator_height)
+                        .background(indicator_bg)
+                        .clip_rounded(config.indicator_radius)
+                        .state_colors(StateColors {
+                            default: Color::TRANSPARENT,
+                            hovered: Color::TRANSPARENT,
+                            focused: Color::TRANSPARENT,
+                            pressed: Color::TRANSPARENT,
+                            dragged: th.on_surface.with_alpha_f32(0.12),
+                            disabled: Color::TRANSPARENT,
+                        });
 
                     Box(item_m).child(
                         Column(
@@ -154,34 +212,15 @@ pub fn NavigationBar(
                                 .justify_content(JustifyContent::CENTER),
                         )
                         .child((
-                            // Indicator pill behind icon
                             Column(
                                 Modifier::new()
                                     .align_items(AlignItems::CENTER)
                                     .justify_content(JustifyContent::CENTER),
                             )
                             .child((
-                                Box(Modifier::new()
-                                    .absolute()
-                                    .offset(
-                                        Some((24.0 - config.indicator_width) / 2.0),
-                                        Some((24.0 - config.indicator_height) / 2.0),
-                                        None,
-                                        None,
-                                    )
-                                    .width(config.indicator_width)
-                                    .height(config.indicator_height)
-                                    .background(indicator_bg)
-                                    .clip_rounded(config.indicator_radius)
-                                    .state_colors(StateColors {
-                                        default: Color::TRANSPARENT,
-                                        hovered: Color::TRANSPARENT,
-                                        focused: Color::TRANSPARENT,
-                                        pressed: Color::TRANSPARENT,
-                                        dragged: th.on_surface.with_alpha_f32(0.12),
-                                        disabled: Color::TRANSPARENT,
-                                    })),
+                                Box(bg_m),
                                 with_content_color(fg_icon, move || item.icon),
+                                Box(pill_m),
                             )),
                             // 8dp gap: 4dp IndicatorVerticalPadding + 4dp IndicatorToLabelPadding
                             Box(Modifier::new().height(8.0)),

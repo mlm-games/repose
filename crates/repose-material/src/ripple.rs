@@ -40,6 +40,7 @@ pub struct RippleConfig {
     pub enable_press: bool,
     pub enable_focus: bool,
     pub enable_hover: bool,
+    pub press_offset: Option<Vec2>,
 }
 
 impl Default for RippleConfig {
@@ -51,6 +52,7 @@ impl Default for RippleConfig {
             enable_press: true,
             enable_focus: true,
             enable_hover: true,
+            press_offset: None,
         }
     }
 }
@@ -152,11 +154,10 @@ impl IndicationDrawNode for RippleDrawNode {
                     h: target_radius * 2.0,
                 };
                 let brush = base_color.with_alpha_f32(layer_a).into();
-                // Compose bounded state layer uses an axis-aligned clipRect.
                 if bounded {
                     scene.nodes.push(SceneNode::PushClip {
                         rect,
-                        radius: [0.0; 4],
+                        radius,
                         op: repose_core::ClipOp::Intersect,
                     });
                 }
@@ -335,8 +336,16 @@ impl IndicationDrawNode for RippleDrawNode {
 
         let origin_scene = match press_pos {
             Some(pos) => {
-                let ox = rect.x + pos.x;
-                let oy = rect.y + pos.y;
+                let effective = if let Some(off) = self.config.press_offset {
+                    Vec2 {
+                        x: pos.x - off.x,
+                        y: pos.y - off.y,
+                    }
+                } else {
+                    pos
+                };
+                let ox = rect.x + effective.x;
+                let oy = rect.y + effective.y;
                 if bounded {
                     Vec2 {
                         x: ox + (center_scene.x - ox) * ctr_pct,

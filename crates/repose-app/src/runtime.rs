@@ -119,6 +119,7 @@ pub struct ReposeRuntime {
     /// Whether the pointer is currently inside the window.
     pub pointer_inside: bool,
     pub hover_id: Option<u64>,
+    pub hover_ancestors: std::collections::HashSet<u64>,
     /// Needed so `Leave` still fires
     /// even when the hovered hit region is removed from the tree between frames.
     /// Rebuilt on every `cache_frame`.
@@ -171,6 +172,7 @@ impl ReposeRuntime {
             mouse_pos_px: (0.0, 0.0),
             pointer_inside: false,
             hover_id: None,
+            hover_ancestors: std::collections::HashSet::new(),
             hover_leave: HashMap::new(),
             capture_id: None,
             hit_path: None,
@@ -234,12 +236,13 @@ impl ReposeRuntime {
         let mut compose_once = |this: &mut Self| {
             let mut inner = |s: &mut Scheduler| (root_fn)(s, &rc);
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                compose_frame_inner(
+                compose_frame_inner_with_ancestors(
                     &mut this.sched,
                     &mut inner,
                     this.scale,
                     size,
                     this.hover_id,
+                    &this.hover_ancestors,
                     &this.pressed_ids,
                     &this.textfield_states,
                 )
@@ -572,12 +575,15 @@ impl ReposeRuntime {
 
         let new_hover = top.map(|h| h.id);
 
-        // Enter / Leave
-        if new_hover != self.hover_id {
-            dispatch_hover_change(
+        // Enter / Leave with bubbling
+        let old_chain = hover_chain_for(Some(f), self.hover_id);
+        let new_chain = hover_chain_for(Some(f), new_hover);
+        if new_chain != old_chain {
+            dispatch_hover_change_bubbled(
                 Some(f),
                 &self.hover_leave,
                 &mut self.hover_id,
+                &mut self.hover_ancestors,
                 new_hover,
                 pos,
                 self.modifiers,
@@ -897,10 +903,11 @@ impl ReposeRuntime {
             x: self.mouse_pos_px.0,
             y: self.mouse_pos_px.1,
         };
-        dispatch_hover_change(
+        dispatch_hover_change_bubbled(
             self.frame_cache.as_ref(),
             &self.hover_leave,
             &mut self.hover_id,
+            &mut self.hover_ancestors,
             None,
             pos,
             self.modifiers,
@@ -913,17 +920,18 @@ impl ReposeRuntime {
 
     /// Clear hover state, emitting HoverLeave for the currently hovered region.
     pub fn clear_hover(&mut self) {
-        if self.hover_id.is_none() {
+        if self.hover_id.is_none() && self.hover_ancestors.is_empty() {
             return;
         }
         let pos = Vec2 {
             x: self.mouse_pos_px.0,
             y: self.mouse_pos_px.1,
         };
-        dispatch_hover_change(
+        dispatch_hover_change_bubbled(
             self.frame_cache.as_ref(),
             &self.hover_leave,
             &mut self.hover_id,
+            &mut self.hover_ancestors,
             None,
             pos,
             self.modifiers,
@@ -942,10 +950,11 @@ impl ReposeRuntime {
         if let Some(prev_id) = self.hover_id
             && !new_frame.hit_regions.iter().any(|h| h.id == prev_id)
         {
-            dispatch_hover_change(
+            dispatch_hover_change_bubbled(
                 Some(new_frame),
                 &self.hover_leave,
                 &mut self.hover_id,
+                &mut self.hover_ancestors,
                 None,
                 pos,
                 self.modifiers,
@@ -953,11 +962,12 @@ impl ReposeRuntime {
         }
 
         if !self.pointer_inside {
-            if self.hover_id.is_some() {
-                dispatch_hover_change(
+            if self.hover_id.is_some() || !self.hover_ancestors.is_empty() {
+                dispatch_hover_change_bubbled(
                     Some(new_frame),
                     &self.hover_leave,
                     &mut self.hover_id,
+                    &mut self.hover_ancestors,
                     None,
                     pos,
                     self.modifiers,
@@ -983,14 +993,17 @@ impl ReposeRuntime {
                 .or(Some(CursorIcon::Default))
         };
 
-        if new_hover == self.hover_id {
+        let new_chain = hover_chain_for(Some(new_frame), new_hover);
+        let old_chain = hover_chain_for(Some(new_frame), self.hover_id);
+        if new_chain == old_chain {
             return;
         }
 
-        dispatch_hover_change(
+        dispatch_hover_change_bubbled(
             Some(new_frame),
             &self.hover_leave,
             &mut self.hover_id,
+            &mut self.hover_ancestors,
             new_hover,
             pos,
             self.modifiers,
@@ -1946,6 +1959,24 @@ pub fn compose_frame_inner<F>(
 where
     F: FnMut(&mut Scheduler) -> View,
 {
+    compose_frame_inner_with_ancestors(
+        sched, root_fn, scale, size_px_u32, hover_id, &std::collections::HashSet::new(), pressed_ids, tf_states,
+    )
+}
+
+pub fn compose_frame_inner_with_ancestors<F>(
+    sched: &mut Scheduler,
+    root_fn: &mut F,
+    scale: f32,
+    size_px_u32: (u32, u32),
+    hover_id: Option<u64>,
+    hover_ancestors: &std::collections::HashSet<u64>,
+    pressed_ids: &HashSet<u64>,
+    tf_states: &HashMap<u64, Rc<RefCell<TextFieldState>>>,
+) -> Frame
+where
+    F: FnMut(&mut Scheduler) -> View,
+{
     if let Some(requested_id) = take_focus_request() {
         if requested_id == repose_core::runtime::CLEAR_FOCUS_MARKER {
             sched.focused = None;
@@ -1965,10 +1996,12 @@ where
         },
         {
             let hover_id = hover_id;
+            let hover_ancestors = hover_ancestors.clone();
             let pressed_ids = pressed_ids.clone();
             move |view, _size| {
                 let interactions = Interactions {
                     hover: hover_id,
+                    hover_ancestors: hover_ancestors.clone(),
                     pressed: pressed_ids.clone(),
                 };
                 with_density(Density { scale }, || {
@@ -2053,6 +2086,96 @@ fn dispatch_hover_change(
     }
 
     *hover_id = new_hover;
+}
+
+fn hover_chain_for(frame: Option<&Frame>, hover: Option<u64>) -> std::collections::HashSet<u64> {
+    let Some(f) = frame else {
+        return std::collections::HashSet::new();
+    };
+    let Some(mut cur) = hover else {
+        return std::collections::HashSet::new();
+    };
+    let map: std::collections::HashMap<u64, Option<u64>> =
+        f.hit_regions.iter().map(|h| (h.id, h.parent)).collect();
+    let mut set = std::collections::HashSet::new();
+    loop {
+        set.insert(cur);
+        if let Some(Some(parent)) = map.get(&cur).copied() {
+            cur = parent;
+        } else {
+            break;
+        }
+    }
+    set
+}
+
+fn dispatch_hover_change_bubbled(
+    frame: Option<&Frame>,
+    leave_map: &HashMap<u64, (f32, f32, f32, f32, Rc<dyn Fn(PointerEvent)>)>,
+    hover_id: &mut Option<u64>,
+    hover_ancestors: &mut std::collections::HashSet<u64>,
+    new_hover: Option<u64>,
+    pos: Vec2,
+    modifiers: Modifiers,
+) {
+    let old_hover = *hover_id;
+    let old_chain = hover_chain_for(frame, old_hover);
+    let new_chain = hover_chain_for(frame, new_hover);
+    if old_chain == new_chain {
+        return;
+    }
+    for leave_id in old_chain.difference(&new_chain) {
+        let leave_info = leave_map.get(leave_id).cloned().or_else(|| {
+            frame.and_then(|f| {
+                f.hit_regions
+                    .iter()
+                    .find(|h| h.id == *leave_id)
+                    .and_then(|h| {
+                        h.on_pointer_leave
+                            .as_ref()
+                            .map(|cb| (h.rect.x, h.rect.y, h.rect.w, h.rect.h, cb.clone()))
+                    })
+            })
+        });
+        if let Some((rx, ry, _rw, _rh, cb)) = leave_info {
+            let mut pe = PointerEvent::new(
+                PointerId(0),
+                PointerKind::Mouse,
+                PointerEventKind::Leave,
+                pos,
+                1.0,
+                modifiers,
+            );
+            pe.origin = Vec2 { x: rx, y: ry };
+            pe.position = pe.position - pe.origin;
+            cb(pe);
+        }
+    }
+    for enter_id in new_chain.difference(&old_chain) {
+        if let Some(f) = frame
+            && let Some(h) = f.hit_regions.iter().find(|h| h.id == *enter_id)
+            && let Some(cb) = &h.on_pointer_enter
+        {
+            let mut pe = PointerEvent::new(
+                PointerId(0),
+                PointerKind::Mouse,
+                PointerEventKind::Enter,
+                pos,
+                1.0,
+                modifiers,
+            );
+            pe.origin = Vec2 { x: h.rect.x, y: h.rect.y };
+            pe.position = pe.position - pe.origin;
+            cb(pe);
+        }
+    }
+    *hover_id = new_hover;
+    hover_ancestors.clear();
+    for id in &new_chain {
+        if Some(*id) != new_hover {
+            hover_ancestors.insert(*id);
+        }
+    }
 }
 
 fn is_textfield_in_frame(f: &Frame, id: u64) -> bool {
