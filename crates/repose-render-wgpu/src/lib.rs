@@ -2061,21 +2061,46 @@ impl WgpuSurfaceBackend {
         let size = window.inner_size();
 
         let caps = surface.get_capabilities(&adapter);
-        let format = caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| f.is_srgb())
-            .unwrap_or(caps.formats[0]);
+
+        let (format, view_format) = if cfg!(target_arch = "wasm32")
+            && adapter
+                .get_downlevel_capabilities()
+                .flags
+                .contains(wgpu::DownlevelFlags::SURFACE_VIEW_FORMATS)
+        {
+            let non_srgb = caps
+                .formats
+                .iter()
+                .copied()
+                .find(|f| !f.is_srgb())
+                .unwrap_or(caps.formats[0]);
+            (non_srgb, Some(non_srgb.add_srgb_suffix()))
+        } else if cfg!(target_arch = "wasm32") {
+            let fmt = caps
+                .formats
+                .iter()
+                .copied()
+                .find(|f| f.is_srgb())
+                .unwrap_or(caps.formats[0]);
+            (fmt, None)
+        } else {
+            let fmt = caps
+                .formats
+                .iter()
+                .copied()
+                .find(|f| f.is_srgb())
+                .unwrap_or(caps.formats[0]);
+            (fmt, None)
+        };
+
         let present_mode = pick_present_mode(&caps, present_mode);
         let alpha_mode = caps.alpha_modes[0];
 
-        // Pick MSAA sample count, honoring the requested value. The depth
-        // target is created at the same sample count and the MSAA color target
-        // resolves to the surface, so both must support the count.
+        let render_format = view_format.unwrap_or(format);
         let msaa_samples = pick_surface_msaa(&adapter, format, msaa_samples);
+        let renderer = WgpuSceneRenderer::from_device(device, queue, render_format, msaa_samples);
 
-        let renderer = WgpuSceneRenderer::from_device(device, queue, format, msaa_samples);
+        let view_formats = view_format.into_iter().collect::<Vec<_>>();
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -2085,7 +2110,7 @@ impl WgpuSurfaceBackend {
             present_mode,
             alpha_mode,
             color_space: wgpu::SurfaceColorSpace::Auto,
-            view_formats: vec![],
+            view_formats,
             desired_maximum_frame_latency: 1,
         };
         surface.configure(&renderer.device, &config);
@@ -3895,9 +3920,20 @@ impl RenderBackend for WgpuSurfaceBackend {
             }
         };
 
-        let swap_view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let swap_view = if let Some(view_format) = self
+            .surface_config
+            .as_ref()
+            .and_then(|c| c.view_formats.iter().find(|f| f.is_srgb()).copied())
+        {
+            frame.texture.create_view(&wgpu::TextureViewDescriptor {
+                format: Some(view_format),
+                ..Default::default()
+            })
+        } else {
+            frame
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default())
+        };
         let mut encoder =
             self.renderer
                 .device
@@ -4797,9 +4833,7 @@ impl WgpuSceneRenderer {
                                 [0.0, 1.0, 1.0, 0.0],
                             )
                         }
-                        repose_core::view::ImageFit::FillBounds => {
-                            (*rect, [0.0, 1.0, 1.0, 0.0])
-                        }
+                        repose_core::view::ImageFit::FillBounds => (*rect, [0.0, 1.0, 1.0, 0.0]),
                         repose_core::view::ImageFit::Inside => {
                             let scale = (dst_w / src_w).min(dst_h / src_h).min(1.0);
                             let w = src_w * scale;
