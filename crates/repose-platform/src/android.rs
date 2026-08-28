@@ -419,13 +419,21 @@ pub fn run_android_app_with_options(
 
                         winit::event::TouchPhase::Moved => {
                             let scale = self.scale();
-                            let (mut dirty, pinch_delta) = self
+                            let (mut dirty, pinch, pan) = self
                                 .touch_gestures
                                 .touch_moved(&mut self.rt, tid, pos_px, scale);
 
-                            if let Some(delta_scale) = pinch_delta
+                            if let Some((delta_scale, center)) = pinch
                                 && self.dispatch_action(Action::Gesture(Gesture::Pinch {
                                     delta_scale,
+                                    center,
+                                }))
+                            {
+                                dirty = true;
+                            }
+                            if let Some(delta) = pan
+                                && self.dispatch_action(Action::Gesture(Gesture::Pan {
+                                    delta,
                                 }))
                             {
                                 dirty = true;

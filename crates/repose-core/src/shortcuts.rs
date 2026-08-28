@@ -9,8 +9,15 @@ pub enum Gesture {
     SwipeLeft,
     SwipeRight,
     /// delta_scale > 1 => zoom in; < 1 => zoom out
+    /// `center` is the centroid of the pinch in physical px (window coordinates).
     Pinch {
         delta_scale: f32,
+        center: Vec2,
+    },
+    /// 2/3-finger pan (centroid translation). `delta` is in physical px,
+    /// positive = content moves right/down (natural scrolling).
+    Pan {
+        delta: Vec2,
     },
 }
 

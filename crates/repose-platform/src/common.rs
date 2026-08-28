@@ -4,17 +4,12 @@ use crate::*;
 use std::collections::HashMap;
 
 use repose_app::ReposeRuntime;
-use repose_core::input::PointerButton;
 use repose_core::Vec2;
+use repose_core::input::PointerButton;
 
-/// Shared multi-touch gesture state used by the desktop, Android, and web
-/// runners. Recognizes touch-scroll (with a scroll capture id), pinch zoom,
-/// and horizontal swipe-back gestures, dispatching them through a host hook.
-///
-/// Winit delivers `WindowEvent::Touch` uniformly, so the same state machine
-/// powers touchscreens on every platform.
 pub(crate) struct TouchGestureState {
     active_touches: HashMap<u64, (f32, f32)>,
+    previous_touches: HashMap<u64, (f32, f32)>,
     primary_touch_id: Option<u64>,
     prev_touch_px: Option<(f32, f32)>,
     touch_start: Option<(web_time::Instant, (f32, f32))>,
@@ -22,13 +17,17 @@ pub(crate) struct TouchGestureState {
     touch_scroll_accum_y_px: f32,
     touch_scrolled: bool,
     scroll_capture_id: Option<u64>,
-    pinch_last_dist: Option<f32>,
+    last_centroid: Option<(f32, f32)>,
+    last_centroid_size: Option<f32>,
+    primary_press_dispatched: bool,
+    pending_primary: Option<(Vec2, web_time::Instant, u64)>,
 }
 
 impl Default for TouchGestureState {
     fn default() -> Self {
         Self {
             active_touches: HashMap::new(),
+            previous_touches: HashMap::new(),
             primary_touch_id: None,
             prev_touch_px: None,
             touch_start: None,
@@ -36,14 +35,15 @@ impl Default for TouchGestureState {
             touch_scroll_accum_y_px: 0.0,
             touch_scrolled: false,
             scroll_capture_id: None,
-            pinch_last_dist: None,
+            last_centroid: None,
+            last_centroid_size: None,
+            primary_press_dispatched: false,
+            pending_primary: None,
         }
     }
 }
 
 impl TouchGestureState {
-    /// Handle a touch down. Returns the id that was focused by the press (if
-    /// any) so hosts can set up IME for a focused text field.
     pub(crate) fn touch_started(
         &mut self,
         rt: &mut ReposeRuntime,
@@ -57,56 +57,134 @@ impl TouchGestureState {
         };
         self.active_touches.insert(tid, pos_px);
 
-        self.touch_scrolled = false;
-        self.scroll_capture_id = None;
-        self.touch_scroll_accum_x_px = 0.0;
-        self.touch_scroll_accum_y_px = 0.0;
-
-        if self.primary_touch_id.is_none() {
+        let is_primary = self.primary_touch_id.is_none();
+        if is_primary {
             self.primary_touch_id = Some(tid);
             self.touch_start = Some((web_time::Instant::now(), pos_px));
+            self.touch_scrolled = false;
+            self.scroll_capture_id = None;
+            self.touch_scroll_accum_x_px = 0.0;
+            self.touch_scroll_accum_y_px = 0.0;
+            self.prev_touch_px = Some(pos_px);
+            self.pending_primary = Some((pos, web_time::Instant::now(), tid));
+            self.primary_press_dispatched = false;
+            return None;
+        }
+        if self.pending_primary.is_some() {
+            self.pending_primary = None;
+        }
+        if self.primary_press_dispatched {
+            rt.handle_pointer_cancel();
+            self.primary_press_dispatched = false;
         }
 
-        self.prev_touch_px = Some(pos_px);
-        rt.handle_pointer_press(pos, PointerButton::Primary).focused
+        None
     }
 
-    /// Handle a touch move. Returns `(dirty, pinch_delta_scale)`; the host
-    /// dispatches any pinch gesture through its own action handler.
+    fn compute_centroid_and_size(&self) -> Option<((f32, f32), f32)> {
+        let count = self.active_touches.len() as f32;
+        if count < 2.0 {
+            return None;
+        }
+        let (sum_x, sum_y) = self
+            .active_touches
+            .values()
+            .fold((0.0, 0.0), |(sx, sy), &(x, y)| (sx + x, sy + y));
+        let centroid = (sum_x / count, sum_y / count);
+        let sum_dist = self.active_touches.values().fold(0.0, |acc, &(x, y)| {
+            let dx = x - centroid.0;
+            let dy = y - centroid.1;
+            acc + (dx * dx + dy * dy).sqrt()
+        });
+        let size = sum_dist / count;
+        Some((centroid, size))
+    }
+
     pub(crate) fn touch_moved(
         &mut self,
         rt: &mut ReposeRuntime,
         tid: u64,
         pos_px: (f32, f32),
         scale: f32,
-    ) -> (bool, Option<f32>) {
+    ) -> (bool, Option<(f32, Vec2)>, Option<Vec2>) {
         rt.mouse_pos_px = pos_px;
         let pos = Vec2 {
             x: pos_px.0,
             y: pos_px.1,
         };
         let mut dirty = false;
-        let mut pinch_delta = None;
+        let mut pinch = None;
+        let mut pan = None;
         self.active_touches.insert(tid, pos_px);
 
-        // Pinch gesture (two active touches)
-        if self.active_touches.len() == 2 {
-            let mut it = self.active_touches.values();
-            let a = it.next().copied().unwrap();
-            let b = it.next().copied().unwrap();
-            let dx = a.0 - b.0;
-            let dy = a.1 - b.1;
-            let dist = (dx * dx + dy * dy).sqrt().max(1.0);
-
-            if let Some(prev) = self.pinch_last_dist.replace(dist) {
-                pinch_delta = Some((dist / prev).clamp(0.5, 2.0));
+        if self.active_touches.len() >= 2 {
+            if self.pending_primary.is_some() {
+                self.pending_primary = None;
             }
+            if self.primary_press_dispatched {
+                rt.handle_pointer_cancel();
+                self.primary_press_dispatched = false;
+            }
+
+            if let Some((centroid, centroid_size)) = self.compute_centroid_and_size() {
+                if let (Some(last_centroid), Some(last_size)) =
+                    (self.last_centroid, self.last_centroid_size)
+                {
+                    let pan_delta = Vec2 {
+                        x: centroid.0 - last_centroid.0,
+                        y: centroid.1 - last_centroid.1,
+                    };
+                    let zoom_delta = if last_size > 0.0 {
+                        centroid_size / last_size
+                    } else {
+                        1.0
+                    };
+
+                    let centroid_vec = Vec2 {
+                        x: centroid.0,
+                        y: centroid.1,
+                    };
+
+                    if (zoom_delta - 1.0).abs() > 0.01 {
+                        pinch = Some((zoom_delta.clamp(0.8, 1.25), centroid_vec));
+                    }
+                    let pan_len = (pan_delta.x * pan_delta.x + pan_delta.y * pan_delta.y).sqrt();
+                    if pan_len > 0.5 {
+                        pan = Some(pan_delta);
+                        self.touch_scrolled = true;
+                    }
+                    dirty = true;
+                }
+
+                self.last_centroid = Some(centroid);
+                self.last_centroid_size = Some(centroid_size);
+            }
+            self.previous_touches = self.active_touches.clone();
+            return (dirty, pinch, pan);
         }
 
-        // Only the primary touch drives scroll / pointer-move.
+        self.previous_touches = self.active_touches.clone();
+
         if self.primary_touch_id != Some(tid) {
-            self.prev_touch_px = Some(pos_px);
-            return (dirty, pinch_delta);
+            return (dirty, pinch, pan);
+        }
+
+        if let Some((pending_pos, pending_instant, _pending_tid)) = self.pending_primary {
+            let dt = (web_time::Instant::now() - pending_instant).as_secs_f32();
+            let dx = pos_px.0 - pending_pos.x;
+            let dy = pos_px.1 - pending_pos.y;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dt > 0.03 || dist > 6.0 * scale {
+                let _focused = rt
+                    .handle_pointer_press(pending_pos, PointerButton::Primary)
+                    .focused;
+                self.primary_press_dispatched = true;
+                self.pending_primary = None;
+            } else {
+                self.prev_touch_px = Some(pos_px);
+                self.previous_touches = self.active_touches.clone();
+                return (dirty, pinch, pan);
+            }
         }
 
         if let Some(prev) = self.prev_touch_px {
@@ -117,35 +195,37 @@ impl TouchGestureState {
                 self.touch_scroll_accum_x_px += dx_px;
                 self.touch_scroll_accum_y_px += dy_px;
 
-                let (consumed, cap) = rt.handle_scroll_at(
-                    pos,
-                    Vec2 {
-                        x: -dx_px,
-                        y: -dy_px,
-                    },
-                    self.scroll_capture_id,
-                );
-                self.scroll_capture_id = cap;
+                let is_scroll = self.touch_scrolled
+                    || self.touch_scroll_accum_x_px.abs() > 6.0 * scale
+                    || self.touch_scroll_accum_y_px.abs() > 6.0 * scale;
 
-                if consumed
-                    && (self.touch_scroll_accum_x_px.abs() > 6.0 * scale
-                        || self.touch_scroll_accum_y_px.abs() > 6.0 * scale)
-                {
-                    self.touch_scrolled = true;
+                if is_scroll {
+                    let (consumed, cap) = rt.handle_scroll_at(
+                        pos,
+                        Vec2 {
+                            x: -dx_px,
+                            y: -dy_px,
+                        },
+                        self.scroll_capture_id,
+                    );
+                    self.scroll_capture_id = cap;
+
+                    if consumed {
+                        self.touch_scrolled = true;
+                    }
                 }
             }
 
-            // Enter/leave/move dispatch
-            rt.handle_pointer_move(pos);
+            if self.primary_press_dispatched {
+                rt.handle_pointer_move(pos);
+            }
             dirty = true;
         }
 
         self.prev_touch_px = Some(pos_px);
-        (dirty, pinch_delta)
+        (dirty, pinch, pan)
     }
 
-    /// Handle a touch up / cancel. Returns `Some(right)` when a horizontal
-    /// swipe gesture fired (`right == dx > 0`), which the host dispatches.
     pub(crate) fn touch_ended(
         &mut self,
         rt: &mut ReposeRuntime,
@@ -159,18 +239,38 @@ impl TouchGestureState {
             y: pos_px.1,
         };
 
-        if cancelled {
-            rt.handle_pointer_cancel();
+        let is_primary = self.primary_touch_id == Some(tid);
+
+        if is_primary {
+            if let Some((pending_pos, _, _)) = self.pending_primary.take() {
+                if !cancelled && self.active_touches.len() < 2 {
+                    let _ = rt.handle_pointer_press(pending_pos, PointerButton::Primary);
+                    rt.handle_pointer_release(pos, PointerButton::Primary);
+                } else {
+                }
+                self.primary_press_dispatched = false;
+            } else if self.primary_press_dispatched {
+                if cancelled || self.active_touches.len() >= 2 {
+                    rt.handle_pointer_cancel();
+                } else {
+                    rt.handle_pointer_release(pos, PointerButton::Primary);
+                }
+                self.primary_press_dispatched = false;
+            } else if cancelled || self.active_touches.len() >= 2 {
+                rt.handle_pointer_cancel();
+            }
         } else {
-            rt.handle_pointer_release(pos, PointerButton::Primary);
+            if self.pending_primary.is_some() && self.active_touches.len() < 2 {}
         }
 
         self.active_touches.remove(&tid);
+        self.previous_touches.remove(&tid);
+
         if self.active_touches.len() < 2 {
-            self.pinch_last_dist = None;
+            self.last_centroid = None;
+            self.last_centroid_size = None;
         }
 
-        // Swipe gesture for the primary touch
         let mut swipe_right = None;
         if self.primary_touch_id == Some(tid) {
             self.primary_touch_id = None;
@@ -183,10 +283,9 @@ impl TouchGestureState {
                     swipe_right = Some(dx > 0.0);
                 }
             }
+            self.scroll_capture_id = None;
+            self.prev_touch_px = None;
         }
-
-        self.scroll_capture_id = None;
-        self.prev_touch_px = None;
         swipe_right
     }
 }
