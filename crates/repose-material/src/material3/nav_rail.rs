@@ -7,7 +7,9 @@ use repose_core::animation::AnimationSpec;
 use repose_core::*;
 use repose_ui::{Box, Column, Text, TextStyle, ViewExt, anim::animate_color};
 
-use super::util::apply_m3_clickable;
+use crate::ripple::{RippleConfig, ripple};
+
+use super::util::apply_m3_clickable_without_indication;
 use super::*;
 
 /// Configuration for [`NavigationRail`].
@@ -155,6 +157,8 @@ pub fn NavigationRail(
             .map(Rc::new)
             .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
+        // Track item width for MappedInteractionSource offset (like NavigationBar)
+        let item_width = remember_state_with_key(format!("rail_w_{}_{}", id, i), || 0.0f32);
         let mut item_m = Modifier::new()
             .fill_max_width()
             .padding_values(PaddingValues {
@@ -165,28 +169,64 @@ pub fn NavigationRail(
             })
             .align_items(AlignItems::CENTER)
             .justify_content(JustifyContent::CENTER)
-            .background(bg)
-            .state_colors(StateColors {
-                default: Color::TRANSPARENT,
-                hovered: Color::TRANSPARENT,
-                focused: Color::TRANSPARENT,
-                pressed: Color::TRANSPARENT,
-                dragged: th.on_surface.with_alpha_f32(0.12),
-                disabled: Color::TRANSPARENT,
+            .on_size_changed({
+                let w = item_width.clone();
+                move |size| *w.borrow_mut() = size.x
             })
-            .clip_rounded(config.item_radius)
             .semantics(Semantics::new(Role::Tab).with_label(&item.label));
 
-        item_m = apply_m3_clickable(item_m, &nr_source, th.on_surface, is_enabled, {
+        item_m = apply_m3_clickable_without_indication(item_m, &nr_source, is_enabled, {
             let cb = cb.clone();
             move || cb()
         });
 
+        // Pill background - now pill-sized, not full item
+        let bg_m = Modifier::new()
+            .absolute()
+            .offset(
+                Some((24.0 - config.indicator_width) / 2.0),
+                Some((24.0 - config.indicator_height) / 2.0),
+                None,
+                None,
+            )
+            .width(config.indicator_width)
+            .height(config.indicator_height)
+            .background(bg)
+            .clip_rounded(config.item_radius);
+
+        // Pill ripple host - handles hover/focus/press, mapped from outer item
+        let dx = (*item_width.borrow() - config.indicator_width) / 2.0;
+        let pill_m = Modifier::new()
+            .absolute()
+            .offset(
+                Some((24.0 - config.indicator_width) / 2.0),
+                Some((24.0 - config.indicator_height) / 2.0),
+                None,
+                None,
+            )
+            .width(config.indicator_width)
+            .height(config.indicator_height)
+            .clip_rounded(config.item_radius)
+            .interaction_source(&nr_source)
+            .indication(ripple(RippleConfig {
+                color: Some(th.on_surface),
+                bounded: true,
+                press_offset: if *item_width.borrow() > 0.0 {
+                    Some(Vec2 { x: dx, y: 0.0 })
+                } else {
+                    None
+                },
+                ..Default::default()
+            }));
+
         item_views.push(
             Column(item_m).child((
                 Column(Modifier::new()).child((
-                    Box(Modifier::new().size(24.0, 24.0))
-                        .child(with_content_color(fg, move || item.icon)),
+                    Box(Modifier::new().size(24.0, 24.0)).child((
+                        Box(bg_m),
+                        with_content_color(fg, move || item.icon),
+                        Box(pill_m),
+                    )),
                     item.badge
                         .map(|b| {
                             Box(Modifier::new()
