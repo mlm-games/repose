@@ -954,7 +954,7 @@ pub fn run_desktop_app_with_config(
                             if let Some((delta_scale, center)) = pinch
                                 && self.dispatch_action(
                                     repose_core::shortcuts::Action::Gesture(
-                                        repose_core::shortcuts::Gesture::Pinch {
+                                        repose_core::shortcuts::Gesture::PinchWithCenter {
                                             delta_scale,
                                             center,
                                         },

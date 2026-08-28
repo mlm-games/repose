@@ -761,7 +761,7 @@ impl ApplicationHandler<()> for App {
                         if let Some((delta_scale, center)) = pinch
                             && self.dispatch_action(
                                 &window,
-                                Action::Gesture(Gesture::Pinch {
+                                Action::Gesture(Gesture::PinchWithCenter {
                                     delta_scale,
                                     center,
                                 }),
