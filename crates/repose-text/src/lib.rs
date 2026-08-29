@@ -4,6 +4,9 @@ use rapidhash::{HashMapExt, RapidHashMap, fast::RapidHasher};
 use skrifa::MetadataProvider;
 use skrifa::outline::OutlinePen;
 
+pub mod fallback;
+pub mod fallback_data;
+
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
     collections::{HashMap, VecDeque},
@@ -13,6 +16,7 @@ use std::{
 use unicode_segmentation::UnicodeSegmentation;
 
 static FRAME_COUNTER: AtomicU64 = AtomicU64::new(0);
+static FALLBACK_DIRTY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn begin_frame() {
     FRAME_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -20,6 +24,10 @@ pub fn begin_frame() {
 
 pub fn current_frame() -> u64 {
     FRAME_COUNTER.load(Ordering::Relaxed)
+}
+
+pub fn take_fallback_dirty() -> bool {
+    FALLBACK_DIRTY.swap(false, Ordering::Relaxed)
 }
 
 const GLYPH_CACHE_CAP: usize = 4096;
@@ -335,7 +343,43 @@ pub fn register_font_data(bytes: &[u8]) {
         let mut p = provider_lock.lock().unwrap();
         p.collection_mut().register_fonts(blob, None);
     }
+    // Invalidate caches so text with newly available glyphs will relayout
+    clear_caches_for_fallback();
 }
+
+pub(crate) fn clear_caches_for_fallback() {
+    if let Some(c) = METRICS_LRU.get() {
+        c.lock().unwrap().map.clear();
+        c.lock().unwrap().order.clear();
+    }
+    if let Some(c) = WRAP_LRU.get() {
+        c.lock().unwrap().map.clear();
+        c.lock().unwrap().order.clear();
+    }
+    if let Some(c) = WRAP_RANGES_LRU.get() {
+        c.lock().unwrap().map.clear();
+        c.lock().unwrap().order.clear();
+    }
+    if let Some(c) = ELLIP_LRU.get() {
+        c.lock().unwrap().map.clear();
+        c.lock().unwrap().order.clear();
+    }
+    // Also bump frame counter to signal stale
+    bump_frame_for_fallback();
+}
+
+pub(crate) fn bump_frame_for_fallback() {
+    FRAME_COUNTER.fetch_add(1, Ordering::Relaxed);
+    FALLBACK_DIRTY.store(true, Ordering::Relaxed);
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn ensure_web_fallback_initialized() {
+    crate::fallback::wasm_fallback::ensure_fallback_initialized();
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn ensure_web_fallback_initialized() {}
 
 /// Load a font from a file path and register it into the global font system.
 ///
@@ -368,6 +412,38 @@ fn key_from_pair(font_id: u64, glyph_id: u16) -> GlyphKey {
     font_id.hash(&mut h);
     glyph_id.hash(&mut h);
     GlyphKey(h.finish())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn collect_unresolved_codepoints(layout: &parley::Layout<()>, text: &str) -> Vec<u32> {
+    use parley::layout::PositionedLayoutItem;
+    let mut out = Vec::new();
+    for line in layout.lines() {
+        for item in line.items() {
+            let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                continue;
+            };
+            let run = glyph_run.run();
+            // parley clusters already grouped by text; if glyph id==0 => missing
+            for cluster in run.clusters() {
+                let has_missing = cluster.glyphs().any(|g| g.id == 0);
+                if has_missing {
+                    let range = cluster.text_range();
+                    // slice may be invalid if out of bounds? clamp
+                    let end = range.end.min(text.len());
+                    let start = range.start.min(end);
+                    for ch in text[start..end].chars() {
+                        out.push(ch as u32);
+                    }
+                    // Fallback: if text_range empty but still missing, push replacement
+                    if range.start == range.end {
+                        // try to guess from glyph? skip
+                    }
+                }
+            }
+        }
+    }
+    out
 }
 
 fn shape_line_inner(
@@ -443,6 +519,17 @@ fn shape_line_inner(
         parley::Alignment::Start,
         parley::AlignmentOptions::default(),
     );
+
+    // Detect unresolved codepoints for web fallback (tofu = gid 0)
+    #[cfg(target_arch = "wasm32")]
+    {
+        let unresolved = collect_unresolved_codepoints(&layout, text);
+        if !unresolved.is_empty() {
+            crate::fallback::wasm_fallback::submit_unresolved(unresolved);
+            // Ensure background task is running
+            crate::fallback::wasm_fallback::ensure_fallback_initialized();
+        }
+    }
 
     let mut out: Vec<ShapedGlyph> = Vec::new();
     for line in layout.lines() {
@@ -733,6 +820,14 @@ pub fn metrics_for_textfield(
         parley::Alignment::Start,
         parley::AlignmentOptions::default(),
     );
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let unresolved = collect_unresolved_codepoints(&layout, text);
+        if !unresolved.is_empty() {
+            crate::fallback::wasm_fallback::submit_unresolved(unresolved);
+        }
+    }
 
     let mut edges: Vec<(usize, f32)> = Vec::new();
     let mut last_x = 0.0f32;

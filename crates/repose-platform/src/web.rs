@@ -126,6 +126,7 @@ pub fn run_web_app(
 ) -> Result<(), JsValue> {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     let _ = console_log::init_with_level(log::Level::Info);
+    repose_text::ensure_web_fallback_initialized();
 
     repose_core::animation::set_clock(Box::new(repose_core::animation::SystemClock));
 
@@ -754,9 +755,9 @@ impl ApplicationHandler<()> for App {
 
                     TouchPhase::Moved => {
                         let scale = self.scale(&window);
-                        let (mut dirty, pinch, pan) = self
-                            .touch_gestures
-                            .touch_moved(&mut self.rt, tid, pos_px, scale);
+                        let (mut dirty, pinch, pan) =
+                            self.touch_gestures
+                                .touch_moved(&mut self.rt, tid, pos_px, scale);
 
                         if let Some((delta_scale, center)) = pinch
                             && self.dispatch_action(
@@ -770,10 +771,8 @@ impl ApplicationHandler<()> for App {
                             dirty = true;
                         }
                         if let Some(delta) = pan
-                            && self.dispatch_action(
-                                &window,
-                                Action::Gesture(Gesture::Pan { delta }),
-                            )
+                            && self
+                                .dispatch_action(&window, Action::Gesture(Gesture::Pan { delta }))
                         {
                             dirty = true;
                         }
@@ -922,6 +921,10 @@ impl ApplicationHandler<()> for App {
 
     fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
         crate::process_deeplinks();
+        // Noto fallback manager may have fetched a font and cleared caches; trigger recompose
+        if repose_text::take_fallback_dirty() {
+            self.request_redraw();
+        }
         if !self.options.continuous_redraw {
             if take_frame_request() {
                 self.request_redraw();
