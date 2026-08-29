@@ -159,7 +159,7 @@ These were built to test the toolkit in real apps:
 - **[soredowe](https://github.com/mlm-games/soredowe)** - Linux pacman/flathub/aur/appimage UI for install/updates
 - **[renamite](https://github.com/mlm-games/renamite)** - Motion / vector animation editor (repose based editor all 3 platforms)
 - **[my-ecosystem-template-bevy](https://github.com/mlm-games/my-ecosystem-template-bevy)** - 2D Bevy game template (uses repose-bevy for UI and inputs)
-- **[ednitar-clap](https://github.com/mlm-games/ednitar-clap)** - Rust CLAP guitar effect plugin (UI only for demonstration of repose-audui (baseview wrapper) on Android + desktop)
+- **[ednitar-clap](https://github.com/mlm-games/ednitar-clap)** - Rust CLAP guitar effect plugin (only for the demonstration of repose-audui (baseview wrapper))
 
 ## Contributing
 
