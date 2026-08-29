@@ -20,6 +20,7 @@ pub mod a11y;
 mod common;
 mod common_web;
 pub mod render;
+pub mod window_v2;
 
 use common as rc;
 use common_web as rc_web;

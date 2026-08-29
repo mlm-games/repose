@@ -110,6 +110,7 @@ pub mod overlay;
 pub mod pager;
 pub mod scroll;
 pub mod windowing;
+pub mod window_v2;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
