@@ -108,12 +108,24 @@ pub(crate) fn alert_dialog_body(
             .fill_max_width(),
     )
     .child((
-        title,
-        Box(Modifier::new().fill_max_width().height(16.0)),
-        text,
-        Box(Modifier::new().fill_max_width().height(24.0)),
+        Box(Modifier::new().fill_max_width().flex_shrink(0.0)).child(title),
+        Box(Modifier::new()
+            .fill_max_width()
+            .height(16.0)
+            .flex_shrink(0.0)),
+        Box(Modifier::new()
+            .fill_max_width()
+            .flex_grow(1.0)
+            .flex_shrink(1.0)
+            .flex_basis(0.0))
+        .child(text),
+        Box(Modifier::new()
+            .fill_max_width()
+            .height(24.0)
+            .flex_shrink(0.0)),
         Row(Modifier::new()
             .fill_max_width()
+            .flex_shrink(0.0)
             .justify_content(JustifyContent::FLEX_END)
             .gap(8.0))
         .child((

@@ -65,6 +65,10 @@ pub struct DialogProperties {
     /// Whether pressing Escape (or Back gesture) triggers dismissal.
     /// Default: `true`.
     pub dismiss_on_back_press: bool,
+    /// Compose `usePlatformDefaultWidth`. Default: true.
+    pub use_platform_default_width: bool,
+    /// Compose `usePlatformInsets` (+ IME). Default: true.
+    pub use_platform_insets: bool,
 }
 
 impl Default for DialogProperties {
@@ -73,8 +77,81 @@ impl Default for DialogProperties {
             on_dismiss_request: None,
             dismiss_on_click_outside: true,
             dismiss_on_back_press: true,
+            use_platform_default_width: true,
+            use_platform_insets: true,
         }
     }
+}
+
+fn preferred_dialog_width_dp(container_w: f32, container_h: f32) -> f32 {
+    let smallest = container_w.min(container_h);
+    if smallest >= 600.0 {
+        super::DialogDefaults::PREFERRED_WIDTH_EXPANDED
+    } else if smallest >= 480.0 {
+        super::DialogDefaults::PREFERRED_WIDTH_MEDIUM
+    } else {
+        super::DialogDefaults::PREFERRED_WIDTH_COMPACT
+    }
+}
+
+fn dialog_available_bounds(
+    use_platform_default_width: bool,
+    use_platform_insets: bool,
+) -> (f32 /*max_w*/, f32 /*max_h*/, PaddingValues) {
+    let win_w = get_window_container_width().max(0.0);
+    let win_h = get_window_container_height().max(0.0);
+
+    let mut pad = PaddingValues::default();
+    if use_platform_insets {
+        let insets = window_insets();
+        // WindowInsets fields are physical px (see ime_padding / system_bars_padding).
+        pad.left = px_to_dp(insets.left);
+        pad.right = px_to_dp(insets.right);
+        pad.top = px_to_dp(insets.top);
+        pad.bottom = px_to_dp(insets.bottom) + px_to_dp(insets.ime_bottom);
+    }
+
+    let avail_w = (win_w - pad.left - pad.right).max(0.0);
+    let avail_h = (win_h - pad.top - pad.bottom).max(0.0);
+
+    let max_w = if use_platform_default_width {
+        preferred_dialog_width_dp(win_w, win_h)
+            .min(avail_w)
+            .min(super::DialogDefaults::MAX_WIDTH)
+    } else {
+        avail_w.min(super::DialogDefaults::MAX_WIDTH)
+    };
+    // Always keep dialog fully on-screen vertically.
+    let max_h = avail_h;
+
+    (max_w.max(0.0), max_h.max(0.0), pad)
+}
+
+/// After merging caller modifiers, clamp size so the dialog can never escape the viewport.
+fn clamp_dialog_modifier(mut m: Modifier, platform_max_w: f32, platform_max_h: f32) -> Modifier {
+    let max_w = m
+        .max_width
+        .unwrap_or(platform_max_w)
+        .min(platform_max_w)
+        .max(0.0);
+    let max_h = m
+        .max_height
+        .unwrap_or(platform_max_h)
+        .min(platform_max_h)
+        .max(0.0);
+    m.max_width = Some(max_w);
+    m.max_height = Some(max_h);
+
+    // Compose Constraints: min cannot exceed max.
+    if let Some(min_w) = m.min_width {
+        m.min_width = Some(min_w.min(max_w).max(0.0));
+    } else {
+        m.min_width = Some(super::DialogDefaults::MIN_WIDTH.min(max_w).max(0.0));
+    }
+    if let Some(min_h) = m.min_height {
+        m.min_height = Some(min_h.min(max_h).max(0.0));
+    }
+    m
 }
 
 /// A modal dialog rendered in the overlay layer with scrim and spring animation.
@@ -108,6 +185,9 @@ pub fn Dialog(
     let props = remember_state_with_key(state.key("p"), || properties.clone());
     *props.borrow_mut() = properties;
 
+    let scroll_state: Rc<repose_core::scroll::ScrollState> =
+        remember_with_key(state.key("scroll"), repose_core::scroll::ScrollState::new);
+
     // Animated scale/alpha for enter/exit
     let spec = AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn);
     let anim = remember_state_with_key(state.key("anim"), || AnimatedValue::new(0.0, spec));
@@ -139,50 +219,73 @@ pub fn Dialog(
                 let modifier = modifier.clone();
                 let current_content = current_content.clone();
                 let props = props.clone();
+                let scroll_state = scroll_state.clone();
                 move || {
                     let progress = *anim.borrow().get();
                     let alpha = progress.min(1.0);
                     let scale = 0.8 + 0.2 * progress;
                     let th = theme();
                     let content = current_content.borrow().clone();
-                    let _p = props.borrow().clone();
+                    let p = props.borrow().clone();
 
-                    // Dialog surface with focus group for tab isolation
-                    let dialog = Box(Modifier::new()
-                        .min_width(280.0)
-                        .max_width(560.0)
-                        .then(modifier.clone())
-                        .justify_content(JustifyContent::CENTER)
-                        .background(th.surface_container_high)
-                        .clip_rounded(th.shapes.extra_large)
-                        .alpha(alpha)
-                        .scale(scale)
-                        .focus_group()
-                        .clickable()
-                        .focusable(false)
-                        .on_key_event({
-                            let s = state.clone();
-                            let p = props.clone();
-                            move |ke| {
-                                use repose_core::input::{Key, KeyEventType};
-                                if ke.key == Key::Escape && ke.event_type == KeyEventType::Down {
-                                    let (dismiss, cb) = {
-                                        let p = p.borrow();
-                                        (p.dismiss_on_back_press, p.on_dismiss_request.clone())
-                                    };
-                                    if dismiss {
-                                        if let Some(cb) = cb {
-                                            cb();
-                                        } else {
-                                            s.dismiss();
+                    // Recomputed every frame → correct after resize / IME / insets.
+                    let (platform_max_w, platform_max_h, inset_pad) = dialog_available_bounds(
+                        p.use_platform_default_width,
+                        p.use_platform_insets,
+                    );
+
+                    let dialog_mod = clamp_dialog_modifier(
+                        Modifier::new()
+                            .min_width(super::DialogDefaults::MIN_WIDTH)
+                            .max_width(super::DialogDefaults::MAX_WIDTH)
+                            .then(modifier.clone())
+                            .justify_content(JustifyContent::CENTER)
+                            .background(th.surface_container_high)
+                            .clip_rounded(th.shapes.extra_large)
+                            .alpha(alpha)
+                            .scale(scale)
+                            .focus_group()
+                            .clickable()
+                            .focusable(false)
+                            .on_key_event({
+                                let s = state.clone();
+                                let props = props.clone();
+                                move |ke| {
+                                    use repose_core::input::{Key, KeyEventType};
+                                    if ke.key == Key::Escape && ke.event_type == KeyEventType::Down
+                                    {
+                                        let (dismiss, cb) = {
+                                            let p = props.borrow();
+                                            (p.dismiss_on_back_press, p.on_dismiss_request.clone())
+                                        };
+                                        if dismiss {
+                                            if let Some(cb) = cb {
+                                                cb();
+                                            } else {
+                                                s.dismiss();
+                                            }
+                                            return true;
                                         }
-                                        return true;
                                     }
+                                    false
                                 }
-                                false
-                            }
-                        }))
+                            }),
+                        platform_max_w,
+                        platform_max_h,
+                    );
+
+                    // Scroll when content exceeds the clamped height (dropdown pattern).
+                    let axis_binding = match scroll_state.to_binding() {
+                        repose_core::scroll::ScrollBinding::Vertical(a) => a,
+                        _ => unreachable!(),
+                    };
+                    let scrollable_body = Box(Modifier::new()
+                        .fill_max_width()
+                        .max_height(platform_max_h)
+                        .vertical_scroll(axis_binding))
                     .child(content);
+
+                    let dialog = Box(dialog_mod).child(scrollable_body);
 
                     let scrim_color = AlertDialogDefaults::scrim_color();
                     let scrim_alpha = (scrim_color.3 as f32 / 255.0) * alpha;
@@ -194,10 +297,10 @@ pub fn Dialog(
                         .on_scroll(|_| Vec2::default())
                         .on_click({
                             let s = state.clone();
-                            let p = props.clone();
+                            let props = props.clone();
                             move || {
                                 let (dismiss, cb) = {
-                                    let p = p.borrow();
+                                    let p = props.borrow();
                                     (p.dismiss_on_click_outside, p.on_dismiss_request.clone())
                                 };
                                 if dismiss {
@@ -210,10 +313,12 @@ pub fn Dialog(
                             }
                         }));
 
+                    // Center inside the safe area (insets as padding), not the raw window.
                     ZStack(Modifier::new().fill_max_size().absolute()).child((
                         scrim,
                         Box(Modifier::new()
                             .fill_max_size()
+                            .padding_values(inset_pad)
                             .justify_content(JustifyContent::CENTER)
                             .align_items(AlignItems::CENTER)
                             .hit_passthrough())

@@ -273,6 +273,10 @@ impl DialogDefaults {
     pub const MIN_WIDTH: f32 = 280.0;
     pub const MAX_WIDTH: f32 = 560.0;
     pub const HORIZONTAL_PADDING: f32 = 24.0;
+    /// Compose/Android preferred dialog widths by smallest-side bucket.
+    pub const PREFERRED_WIDTH_COMPACT: f32 = 320.0; // smallest < 480
+    pub const PREFERRED_WIDTH_MEDIUM: f32 = 440.0; // smallest < 600
+    pub const PREFERRED_WIDTH_EXPANDED: f32 = 580.0; // smallest >= 600
 }
 
 /// Default values for icon button components.
