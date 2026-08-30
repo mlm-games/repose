@@ -310,6 +310,43 @@ impl ColorScheme {
             focus: Color::from_hex("#1D4ED8"),
         }
     }
+
+    /// Compose `ColorScheme.contentColorFor(backgroundColor)`.
+    /// Maps a scheme container/background role to its paired on-* content color.
+    pub fn content_color_for(self, background: Color) -> Option<Color> {
+        if background == self.primary {
+            Some(self.on_primary)
+        } else if background == self.primary_container {
+            Some(self.on_primary_container)
+        } else if background == self.secondary {
+            Some(self.on_secondary)
+        } else if background == self.secondary_container {
+            Some(self.on_secondary_container)
+        } else if background == self.tertiary {
+            Some(self.on_tertiary)
+        } else if background == self.tertiary_container {
+            Some(self.on_tertiary_container)
+        } else if background == self.background {
+            Some(self.on_background)
+        } else if background == self.surface
+            || background == self.surface_bright
+            || background == self.surface_dim
+            || background == self.surface_container
+            || background == self.surface_container_low
+            || background == self.surface_container_high
+            || background == self.surface_container_highest
+        {
+            Some(self.on_surface)
+        } else if background == self.inverse_surface {
+            Some(self.inverse_on_surface)
+        } else if background == self.error {
+            Some(self.on_error)
+        } else if background == self.error_container {
+            Some(self.on_error_container)
+        } else {
+            None
+        }
+    }
 }
 
 impl Default for ColorScheme {
@@ -633,6 +670,26 @@ pub fn content_color() -> Color {
     get_local::<ContentColor>()
         .map(|c| c.0)
         .unwrap_or_else(|| theme().on_surface)
+}
+
+/// Compose `@Composable contentColorFor(backgroundColor)`.
+/// Scheme role pair if known; otherwise current `LocalContentColor`, then a
+/// luminance fallback so custom fills never inherit a same-luma icon color.
+pub fn content_color_for(background: Color) -> Color {
+    if let Some(c) = theme().colors.content_color_for(background) {
+        return c;
+    }
+    let local = content_color();
+    // If ambient content would sit on a similarly light/dark fill, flip.
+    if (background.relative_luminance() - local.relative_luminance()).abs() < 0.25 {
+        if background.is_dark() {
+            Color::WHITE
+        } else {
+            Color::BLACK
+        }
+    } else {
+        local
+    }
 }
 
 /// Composition-local default text size (dp). Bare `Text(...)`

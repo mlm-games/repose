@@ -283,31 +283,80 @@ impl DialogDefaults {
 pub struct IconButtonDefaults;
 
 impl IconButtonDefaults {
-    /// Visual / ripple container (Compose smallContainerSize / StateLayerSize).
     pub const CONTAINER_SIZE: f32 = 40.0;
     pub const FILLED_CONTAINER_SIZE: f32 = 40.0;
-    /// Accessibility minimum touch target.
     pub const MIN_INTERACTIVE_SIZE: f32 = 48.0;
-    /// Unbounded state-layer / ripple radius (half of CONTAINER_SIZE).
     pub const STATE_LAYER_RADIUS: f32 = 20.0;
+
     pub fn content_color() -> Color {
-        theme().on_surface_variant
+        repose_core::content_color()
     }
+
     pub fn disabled_content_color() -> Color {
-        theme().on_surface.with_alpha_f32(0.38)
+        // Compose: contentColor.copy(alpha = DisabledOpacity ≈ 0.38)
+        Self::content_color().with_alpha_f32(0.38)
     }
-    pub fn filled_content_color() -> Color {
-        theme().on_primary
-    }
+
     pub fn filled_container_color() -> Color {
         theme().primary
     }
-    pub fn filled_tonal_content_color() -> Color {
-        theme().on_secondary_container
+
+    pub fn filled_content_color() -> Color {
+        repose_core::content_color_for(Self::filled_container_color())
     }
+
     pub fn filled_tonal_container_color() -> Color {
         theme().secondary_container
     }
+
+    pub fn filled_tonal_content_color() -> Color {
+        repose_core::content_color_for(Self::filled_tonal_container_color())
+    }
+
+    pub fn colors() -> super::IconButtonColors {
+        let th = theme();
+        super::IconButtonColors {
+            container_color: Color::TRANSPARENT,
+            content_color: Self::content_color(),
+            disabled_container_color: Color::TRANSPARENT,
+            disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+        }
+    }
+
+    /// Compose's `filledIconButtonColors()`.
+    pub fn filled_colors() -> super::IconButtonColors {
+        let th = theme();
+        let container = Self::filled_container_color();
+        super::IconButtonColors {
+            container_color: container,
+            content_color: Self::filled_content_color(),
+            disabled_container_color: th
+                .on_surface
+                .with_alpha_f32(0.12)
+                .composite_over(th.surface),
+            disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+        }
+    }
+
+    /// Compose's `filledTonalIconButtonColors()`.
+    pub fn filled_tonal_colors() -> super::IconButtonColors {
+        let th = theme();
+        super::IconButtonColors {
+            container_color: Self::filled_tonal_container_color(),
+            content_color: Self::filled_tonal_content_color(),
+            disabled_container_color: th
+                .on_surface
+                .with_alpha_f32(0.12)
+                .composite_over(th.surface),
+            disabled_content_color: th.on_surface.with_alpha_f32(0.38),
+        }
+    }
+
+    /// Compose's `outlinedIconButtonColors()` (transparent container, local content).
+    pub fn outlined_colors() -> super::IconButtonColors {
+        Self::colors()
+    }
+
     pub fn state_colors_default() -> StateColors {
         let th = theme();
         StateColors {
@@ -797,7 +846,7 @@ impl FABDefaults {
         theme().primary_container
     }
     pub fn content_color() -> Color {
-        theme().on_primary_container
+        repose_core::content_color_for(Self::container_color())
     }
     pub fn state_elevation() -> StateElevation {
         StateElevation {

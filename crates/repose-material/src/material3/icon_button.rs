@@ -5,10 +5,10 @@ use std::rc::Rc;
 use repose_core::*;
 use repose_ui::{Box, ViewExt};
 
-use super::util::{apply_m3_clickable_ex, with_button_semantics};
+use super::util::{apply_m3_clickable_ex, icon_content_with_color, with_button_semantics};
 use super::*;
 
-/// Color slots for icon buttons.
+/// Color slots for icon buttons (Compose `IconButtonColors`).
 #[derive(Clone, Copy, Debug)]
 pub struct IconButtonColors {
     pub container_color: Color,
@@ -32,9 +32,30 @@ impl IconButtonColors {
             self.disabled_content_color
         }
     }
+
+    /// When caller only sets container, derive a contrasting content color
+    /// (Compose `contentColorFor` + local fallback). Prevents white-on-white.
+    pub fn ensuring_contrast(mut self) -> Self {
+        // Transparent container: content is drawn on parent; keep content as-is.
+        if self.container_color.3 == 0 {
+            return self;
+        }
+        let paired = content_color_for(self.container_color);
+        // If content is missing contrast vs container, replace with paired/fallback.
+        let cl = self.content_color.relative_luminance();
+        let bl = self.container_color.relative_luminance();
+        if (cl - bl).abs() < 0.25 {
+            self.content_color = paired;
+        }
+        let dcl = self.disabled_content_color.relative_luminance();
+        let dbl = self.disabled_container_color.relative_luminance();
+        if self.disabled_container_color.3 != 0 && (dcl - dbl).abs() < 0.25 {
+            self.disabled_content_color = theme().on_surface.with_alpha_f32(0.38);
+        }
+        self
+    }
 }
 
-/// Configuration for [`IconButton`], [`FilledIconButton`], [`FilledTonalIconButton`], and [`OutlinedIconButton`].
 #[derive(Clone, Debug)]
 pub struct IconButtonConfig {
     pub modifier: Modifier,
@@ -52,9 +73,9 @@ impl Default for IconButtonConfig {
             enabled: true,
             colors: IconButtonColors {
                 container_color: Color::TRANSPARENT,
-                content_color: IconButtonDefaults::content_color(),
+                content_color: Color::TRANSPARENT,
                 disabled_container_color: Color::TRANSPARENT,
-                disabled_content_color: IconButtonDefaults::disabled_content_color(),
+                disabled_content_color: Color::TRANSPARENT,
             },
             container_size: None,
             interaction_source: None,
@@ -63,11 +84,40 @@ impl Default for IconButtonConfig {
     }
 }
 
+fn is_default_colors(c: &IconButtonColors) -> bool {
+    c.container_color == Color::TRANSPARENT
+        && c.disabled_container_color == Color::TRANSPARENT
+        && c.content_color == Color::TRANSPARENT
+        && c.disabled_content_color == Color::TRANSPARENT
+}
+
+fn resolve_colors(
+    config: &IconButtonConfig,
+    variant_defaults: IconButtonColors,
+) -> IconButtonColors {
+    if is_default_colors(&config.colors) {
+        return variant_defaults.ensuring_contrast();
+    }
+    let mut c = config.colors;
+    if c.content_color == Color::TRANSPARENT {
+        c.content_color = if c.container_color.3 == 0 {
+            IconButtonDefaults::content_color()
+        } else {
+            content_color_for(c.container_color)
+        };
+    }
+    if c.disabled_content_color == Color::TRANSPARENT {
+        c.disabled_content_color = theme().on_surface.with_alpha_f32(0.38);
+    }
+    c.ensuring_contrast()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn icon_button_render(
     icon: View,
     on_click: impl Fn() + 'static,
     config: &IconButtonConfig,
+    colors: IconButtonColors,
     sz: f32,
     bg: Option<Color>,
     bdr: Option<(f32, Color)>,
@@ -75,9 +125,8 @@ fn icon_button_render(
     ripple_bounded: bool,
 ) -> View {
     let is_enabled = config.enabled;
-    let content_color = config.colors.content(is_enabled);
+    let content_color = colors.content(is_enabled);
     let radius = config.shape_radius.unwrap_or(sz * 0.5);
-
     let touch = IconButtonDefaults::MIN_INTERACTIVE_SIZE.max(sz);
 
     let outer = Modifier::new()
@@ -86,7 +135,6 @@ fn icon_button_render(
         .justify_content(JustifyContent::CENTER)
         .then(config.modifier.clone());
 
-    // Inner = visual container + ripple + click (Compose Surface).
     let mut inner = Modifier::new()
         .size(sz, sz)
         .clip_rounded(radius)
@@ -124,64 +172,56 @@ fn icon_button_render(
     );
     inner = with_button_semantics(inner, is_enabled);
 
-    Box(outer).child(Box(inner).child(with_content_color(content_color, move || icon)))
+    let icon = icon_content_with_color(content_color, icon);
+
+    Box(outer).child(Box(inner).child(icon))
 }
 
-/// M3 Icon Button - a tappable circular container for an icon.
+/// M3 standard Icon Button (transparent container).
 pub fn IconButton(icon: View, on_click: impl Fn() + 'static, config: IconButtonConfig) -> View {
-    let th = theme();
+    let colors = resolve_colors(&config, IconButtonDefaults::colors());
     let sz = config
         .container_size
         .unwrap_or(IconButtonDefaults::CONTAINER_SIZE);
+    let cc = colors.content(config.enabled);
     icon_button_render(
         icon,
         on_click,
         &config,
+        colors,
         sz,
-        None,
+        None, // transparent container — no fill
         None,
         StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,
             focused: Color::TRANSPARENT,
             pressed: Color::TRANSPARENT,
-            dragged: th.on_surface.with_alpha_f32(0.12),
+            dragged: cc.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         },
         false,
     )
 }
 
-/// M3 Filled Icon Button - icon button with a filled container background.
 pub fn FilledIconButton(
     icon: View,
     on_click: impl Fn() + 'static,
-    mut config: IconButtonConfig,
+    config: IconButtonConfig,
 ) -> View {
     let th = theme();
-    if config.colors.container_color == Color::TRANSPARENT
-        && config.colors.disabled_container_color == Color::TRANSPARENT
-    {
-        config.colors = IconButtonColors {
-            container_color: IconButtonDefaults::filled_container_color(),
-            content_color: IconButtonDefaults::filled_content_color(),
-            disabled_container_color: th
-                .on_surface
-                .with_alpha_f32(0.12)
-                .composite_over(th.surface),
-            disabled_content_color: th.on_surface.with_alpha_f32(0.38),
-        };
-    }
+    let colors = resolve_colors(&config, IconButtonDefaults::filled_colors());
     let is_enabled = config.enabled;
     let sz = config
         .container_size
         .unwrap_or(IconButtonDefaults::FILLED_CONTAINER_SIZE);
-    let bg = config.colors.container(is_enabled);
-    let content_color = config.colors.content(is_enabled);
+    let bg = colors.container(is_enabled);
+    let content_color = colors.content(is_enabled);
     icon_button_render(
         icon,
         on_click,
         &config,
+        colors,
         sz,
         Some(bg),
         None,
@@ -197,36 +237,24 @@ pub fn FilledIconButton(
     )
 }
 
-/// M3 Filled Tonal Icon Button - icon button with a secondary container background.
 pub fn FilledTonalIconButton(
     icon: View,
     on_click: impl Fn() + 'static,
-    mut config: IconButtonConfig,
+    config: IconButtonConfig,
 ) -> View {
     let th = theme();
-    if config.colors.container_color == Color::TRANSPARENT
-        && config.colors.disabled_container_color == Color::TRANSPARENT
-    {
-        config.colors = IconButtonColors {
-            container_color: IconButtonDefaults::filled_tonal_container_color(),
-            content_color: IconButtonDefaults::filled_tonal_content_color(),
-            disabled_container_color: th
-                .on_surface
-                .with_alpha_f32(0.12)
-                .composite_over(th.surface),
-            disabled_content_color: th.on_surface.with_alpha_f32(0.38),
-        };
-    }
+    let colors = resolve_colors(&config, IconButtonDefaults::filled_tonal_colors());
     let is_enabled = config.enabled;
     let sz = config
         .container_size
         .unwrap_or(IconButtonDefaults::FILLED_CONTAINER_SIZE);
-    let bg = config.colors.container(is_enabled);
-    let content_color = config.colors.content(is_enabled);
+    let bg = colors.container(is_enabled);
+    let content_color = colors.content(is_enabled);
     icon_button_render(
         icon,
         on_click,
         &config,
+        colors,
         sz,
         Some(bg),
         None,
@@ -242,13 +270,13 @@ pub fn FilledTonalIconButton(
     )
 }
 
-/// M3 Outlined Icon Button - icon button with a transparent background and border.
 pub fn OutlinedIconButton(
     icon: View,
     on_click: impl Fn() + 'static,
     config: IconButtonConfig,
 ) -> View {
     let th = theme();
+    let colors = resolve_colors(&config, IconButtonDefaults::outlined_colors());
     let sz = config
         .container_size
         .unwrap_or(IconButtonDefaults::CONTAINER_SIZE);
@@ -257,10 +285,12 @@ pub fn OutlinedIconButton(
     } else {
         th.on_surface.with_alpha_f32(0.12)
     };
+    let cc = colors.content(config.enabled);
     icon_button_render(
         icon,
         on_click,
         &config,
+        colors,
         sz,
         None,
         Some((1.0, border_color)),
@@ -269,7 +299,7 @@ pub fn OutlinedIconButton(
             hovered: Color::TRANSPARENT,
             focused: Color::TRANSPARENT,
             pressed: Color::TRANSPARENT,
-            dragged: th.on_surface.with_alpha_f32(0.12),
+            dragged: cc.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         },
         true,

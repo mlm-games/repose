@@ -136,3 +136,27 @@ pub(crate) fn with_button_semantics(m: Modifier, enabled: bool) -> Modifier {
         ..Default::default()
     })
 }
+
+/// Compose IconButton/FAB/Surface provide `LocalContentColor` *before* content
+/// composes. Repose `Text`/`Icon` bake color at construction, so an eager `View`
+/// passed into IconButton never sees `with_content_color`.
+pub(crate) fn force_content_color_on_view(view: &mut View, to: Color) {
+    match &mut view.kind {
+        ViewKind::Text { color, .. } => {
+            *color = to;
+        }
+        // Material icons are font glyphs (Text). Leave Image tints alone.
+        _ => {}
+    }
+    for child in &mut view.children {
+        force_content_color_on_view(child, to);
+    }
+}
+
+/// Build icon content under the correct LocalContentColor, then harden baked
+/// text colors so eager `View` call sites (repadio-style) stay correct.
+pub(crate) fn icon_content_with_color(content_color: Color, icon: View) -> View {
+    let mut icon = with_content_color(content_color, move || icon);
+    force_content_color_on_view(&mut icon, content_color);
+    icon
+}

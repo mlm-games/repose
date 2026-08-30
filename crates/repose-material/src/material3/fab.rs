@@ -89,9 +89,7 @@ fn fab_impl(icon: View, on_click: impl Fn() + 'static, config: FABConfig) -> Vie
     m = apply_m3_clickable(m, &source, content_color, is_enabled, on_click);
     m = with_button_semantics(m, is_enabled);
 
-    Box(m)
-        .child(with_content_color(content_color, move || icon))
-        
+    Box(m).child(super::util::icon_content_with_color(content_color, icon))
 }
 
 /// M3 Floating Action Button (regular, 56dp).
@@ -184,7 +182,7 @@ pub fn ExtendedFAB(
     m = m.then(config.modifier);
     Row(m)
         .child((
-            icon.map(|v| with_content_color(content_color, move || v))
+            icon.map(|v| super::util::icon_content_with_color(content_color, v))
                 .unwrap_or(Box(Modifier::new())),
             Box(Modifier::new()
                 .width(if has_icon { 12.0 } else { 0.0 })
