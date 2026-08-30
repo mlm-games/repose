@@ -484,6 +484,9 @@ pub struct HitRegion {
     /// When true, selection/focus/copy are allowed but mutations are rejected
     pub tf_read_only: bool,
 
+    /// Controlled text snapshot for this field (last compose).
+    pub tf_value: String,
+
     // internal
     pub on_drag_start: Option<Rc<dyn Fn(crate::dnd::DragStart) -> Option<crate::dnd::DragPayload>>>,
     pub on_drag_end: Option<Rc<dyn Fn(crate::dnd::DragEnd)>>,

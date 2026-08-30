@@ -355,7 +355,9 @@ impl LayoutEngine {
 
         let effective_interaction = interaction_source.unwrap_or(view_id);
         let implicit_hovered = interactions.hover == Some(effective_interaction)
-            || interactions.hover_ancestors.contains(&effective_interaction);
+            || interactions
+                .hover_ancestors
+                .contains(&effective_interaction);
         let implicit_pressed = interactions.pressed.contains(&effective_interaction);
         let is_focused = focused == Some(view_id);
         let (state_hovered, state_pressed, state_focused, state_dragged) =
@@ -677,6 +679,7 @@ impl LayoutEngine {
 
             if let Some(ref state_rc) = state {
                 let mut st = state_rc.borrow_mut();
+                st.apply_controlled_value(&ti.value);
                 st.set_inner_width(content_rect.w);
                 st.set_inner_height(content_rect.h);
                 st.tick_scroll_animation();
@@ -1306,24 +1309,18 @@ impl LayoutEngine {
                 let tf_key = view_id;
 
                 if let Some(cell) = focus_tracker.as_ref() {
+                    let was = cell.get();
                     cell.set(is_focused);
+                    if was != is_focused {
+                        repose_core::request_frame();
+                    }
                 }
 
-                // Sync the controlled value into the TextFieldState
+                // Sync still needed for hit-region path / thread-local map, but paint already did apply.
                 if let Some(state_rc) = textfield_states.get(&tf_key) {
                     crate::textfield::set_textfield_state(tf_key, state_rc.clone());
                     let mut st = state_rc.borrow_mut();
-                    if st.text != *value {
-                        st.text = value.clone();
-                        st.composition = None;
-                        st.drag_anchor = None;
-                        let len = st.text.len();
-                        let ns = st.selection.start.min(len);
-                        let ne = st.selection.end.min(len);
-                        if ns != st.selection.start || ne != st.selection.end {
-                            st.selection = ns..ne;
-                        }
-                    }
+                    st.apply_controlled_value(value);
                 }
 
                 // Scroll wheel support for multiline text areas
@@ -1504,6 +1501,7 @@ impl LayoutEngine {
                         tf_content_origin: Some((content_rect.x, content_rect.y)),
                         tf_enabled: ti.enabled,
                         tf_read_only: ti.read_only,
+                        tf_value: ti.value.clone(),
                         on_action: combined,
                         cursor: Some(crate::CursorIcon::Text),
                         keyboard_type: ti.keyboard_type,

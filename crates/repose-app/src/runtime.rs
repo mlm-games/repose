@@ -19,6 +19,22 @@ use repose_ui::textfield::{
 };
 use repose_ui::{Interactions, layout_and_paint};
 
+fn ensure_tf_state(
+    map: &mut HashMap<u64, Rc<RefCell<TextFieldState>>>,
+    key: u64,
+    seed: &str,
+) -> Rc<RefCell<TextFieldState>> {
+    map.entry(key)
+        .or_insert_with(|| {
+            Rc::new(RefCell::new(if seed.is_empty() {
+                TextFieldState::new()
+            } else {
+                TextFieldState::with_text(seed.to_string())
+            }))
+        })
+        .clone()
+}
+
 /// Platform-directed side effects requested by the UI.
 #[derive(Clone, Default)]
 pub struct PlatformOutput {
@@ -414,13 +430,11 @@ impl ReposeRuntime {
         };
         if let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid)
             && let Some(key) = hit.tf_state_key
-            && !self.textfield_states.contains_key(&key)
         {
-            self.textfield_states
-                .entry(key)
-                .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())))
-                .borrow_mut()
-                .reset_caret_blink();
+            let st = ensure_tf_state(&mut self.textfield_states, key, hit.tf_value.as_str());
+            let mut st = st.borrow_mut();
+            st.apply_controlled_value(&hit.tf_value);
+            st.reset_caret_blink();
         }
     }
 
@@ -716,23 +730,27 @@ impl ReposeRuntime {
             // TextField caret placement
             if is_textfield_in_frame(f, hit.id) {
                 let key = tf_key_of(f, hit.id);
-                let st_rc = self
-                    .textfield_states
-                    .entry(key)
-                    .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
-                let mut st = st_rc.borrow_mut();
-                let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
-                let content_x = (pos.x - ox + st.scroll_offset).max(0.0);
-                let content_y = (pos.y - oy + st.scroll_offset_y).max(0.0);
-                let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-                let wrap_w = st.inner_width.max(1.0);
+                let seed = hit.tf_value.as_str();
+                let st_rc = ensure_tf_state(&mut self.textfield_states, key, seed);
+                {
+                    let mut st = st_rc.borrow_mut();
+                    // Keep in sync if host value changed while unfocused
+                    st.apply_controlled_value(seed);
+                    st.reset_caret_blink();
 
-                let idx = if hit.tf_multiline {
-                    index_for_xy_bytes_vt(&st, font_px, wrap_w, content_x, content_y)
-                } else {
-                    index_for_x_bytes_vt(&st, font_px, content_x)
-                };
-                st.handle_pointer_down(idx, (pos.x, pos.y), self.modifiers.shift);
+                    let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
+                    let content_x = (pos.x - ox + st.scroll_offset).max(0.0);
+                    let content_y = (pos.y - oy + st.scroll_offset_y).max(0.0);
+                    let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+                    let wrap_w = st.inner_width.max(1.0);
+
+                    let idx = if hit.tf_multiline {
+                        index_for_xy_bytes_vt(&st, font_px, wrap_w, content_x, content_y)
+                    } else {
+                        index_for_x_bytes_vt(&st, font_px, content_x)
+                    };
+                    st.handle_pointer_down(idx, (pos.x, pos.y), self.modifiers.shift);
+                }
             }
 
             // Pressed visual
@@ -742,10 +760,13 @@ impl ReposeRuntime {
             if hit.focusable {
                 self.sched.focused = Some(hit.id);
                 result.focused = Some(hit.id);
-                let key = tf_key_of(f, hit.id);
-                self.textfield_states
-                    .entry(key)
-                    .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())));
+                if hit.tf_state_key.is_some() {
+                    let key = tf_key_of(f, hit.id);
+                    let st =
+                        ensure_tf_state(&mut self.textfield_states, key, hit.tf_value.as_str());
+                    st.borrow_mut().apply_controlled_value(&hit.tf_value);
+                    st.borrow_mut().reset_caret_blink();
+                }
             }
 
             self.dispatch_pointer_to_path(PointerEventKind::Down(button), pos, &path);
@@ -1537,9 +1558,12 @@ impl ReposeRuntime {
             if let Some(hit) = f.hit_regions.iter().find(|h| h.id == new_id)
                 && let Some(key) = hit.tf_state_key
             {
-                self.ensure_textfield_state(key)
-                    .borrow_mut()
-                    .reset_caret_blink();
+                let st = ensure_tf_state(&mut self.textfield_states, key, hit.tf_value.as_str());
+                {
+                    let mut s = st.borrow_mut();
+                    s.apply_controlled_value(&hit.tf_value);
+                    s.reset_caret_blink();
+                }
             }
             request_frame();
             return true;
@@ -1711,6 +1735,14 @@ impl ReposeRuntime {
             .entry(key)
             .or_insert_with(|| Rc::new(RefCell::new(TextFieldState::new())))
             .clone()
+    }
+
+    pub fn ensure_textfield_state_seeded(
+        &mut self,
+        key: u64,
+        seed: &str,
+    ) -> Rc<RefCell<TextFieldState>> {
+        ensure_tf_state(&mut self.textfield_states, key, seed)
     }
 
     /// Look up the persistent state key for a visual hit-region id.
@@ -1960,7 +1992,14 @@ where
     F: FnMut(&mut Scheduler) -> View,
 {
     compose_frame_inner_with_ancestors(
-        sched, root_fn, scale, size_px_u32, hover_id, &std::collections::HashSet::new(), pressed_ids, tf_states,
+        sched,
+        root_fn,
+        scale,
+        size_px_u32,
+        hover_id,
+        &std::collections::HashSet::new(),
+        pressed_ids,
+        tf_states,
     )
 }
 
@@ -2164,7 +2203,10 @@ fn dispatch_hover_change_bubbled(
                 1.0,
                 modifiers,
             );
-            pe.origin = Vec2 { x: h.rect.x, y: h.rect.y };
+            pe.origin = Vec2 {
+                x: h.rect.x,
+                y: h.rect.y,
+            };
             pe.position = pe.position - pe.origin;
             cb(pe);
         }

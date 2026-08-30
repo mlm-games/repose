@@ -1054,6 +1054,32 @@ impl TextFieldState {
         Some(self.blink_start + Duration::from_millis((next_tick * PERIOD_MS) as u64))
     }
 
+    /// Seed state from a controlled value (first focus / first click).
+    pub fn with_text(text: impl Into<String>) -> Self {
+        let mut s = Self::new();
+        s.text = text.into();
+        let len = s.text.len();
+        s.selection = len..len;
+        s
+    }
+
+    /// Apply host-controlled value without clobbering IME composition.
+    /// Call this *before* paint and *before* pointer→index mapping.
+    pub fn apply_controlled_value(&mut self, value: &str) {
+        if self.text.as_str() == value {
+            return;
+        }
+        if self.composition.is_some() {
+            return;
+        }
+        self.text = value.to_string();
+        let len = self.text.len();
+        let ns = clamp_to_char_boundary(&self.text, self.selection.start.min(len));
+        let ne = clamp_to_char_boundary(&self.text, self.selection.end.min(len));
+        self.selection = ns..ne;
+        self.drag_anchor = None;
+    }
+
     pub fn set_inner_width(&mut self, w_px: f32) {
         self.inner_width = w_px.max(0.0);
         if self.scroll_offset.is_nan() {
@@ -1686,15 +1712,20 @@ pub(crate) fn paint_text_field(
             }
 
             // Text
-            let txt_col = if st.text.is_empty() {
+            let display_src = if st.text.is_empty() && !text_input.value.is_empty() {
+                text_input.value.as_str()
+            } else {
+                st.text.as_str()
+            };
+            let txt_col = if display_src.is_empty() {
                 ts.color.unwrap_or(th.on_surface_variant)
             } else {
                 ts.color.unwrap_or(th.on_surface)
             };
-            let render_txt = if st.text.is_empty() {
+            let render_txt = if display_src.is_empty() {
                 text_input.hint.clone()
             } else {
-                rendered_by_vt(&st.text)
+                rendered_by_vt(display_src)
             };
             scene.nodes.push(SceneNode::Text {
                 rect: repose_core::Rect {

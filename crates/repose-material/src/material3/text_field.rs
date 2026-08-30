@@ -8,7 +8,7 @@ use repose_core::*;
 use repose_ui::{
     BasicTextField, Box, Column, Row, Text, TextFieldConfig as BasicTextFieldConfig,
     TextFieldState, TextStyle, ViewExt, ZStack,
-    anim::animate_f32,
+    anim::{animate_color, animate_f32},
     textfield::{TextMeasureConfig, measure_text},
 };
 
@@ -519,7 +519,7 @@ fn outlined_field_decoration(
         th.motion.color,
     );
 
-    let target_border_w = if config.is_error || should_float {
+    let target_border_w = if config.is_error || is_focused {
         OutlinedTextFieldDefaults::FOCUSED_BORDER_THICKNESS
     } else {
         OutlinedTextFieldDefaults::UNFOCUSED_BORDER_THICKNESS
@@ -530,7 +530,7 @@ fn outlined_field_decoration(
         th.motion.color,
     );
 
-    let (border_color, label_color, container_bg) = if let Some(ref tc) = config.colors {
+    let (border_color_target, label_color_target, container_bg) = if let Some(ref tc) = config.colors {
         (
             tc.indicator_color(config.enabled, config.is_error, is_focused),
             tc.label_color(config.enabled, config.is_error, is_focused),
@@ -555,6 +555,17 @@ fn outlined_field_decoration(
             Color::TRANSPARENT,
         )
     };
+
+    let border_color = animate_color(
+        format!("otf_bc_{}", anim_key),
+        border_color_target,
+        th.motion.color,
+    );
+    let label_color = animate_color(
+        format!("otf_lc_{}", anim_key),
+        label_color_target,
+        th.motion.color,
+    );
 
     // Label font size: 16dp (expanded, inside) -> 12dp (minimized, at border)
     let label_size = 16.0 - 4.0 * float_t;
@@ -817,7 +828,7 @@ pub fn TextField(
         th.motion.color,
     );
 
-    let (indicator_color, label_color, container_bg) = if let Some(ref tc) = config.colors {
+    let (indicator_color_target, label_color_target, container_bg) = if let Some(ref tc) = config.colors {
         let enf = config.enabled && is_focused;
         let ind = tc.indicator_color(config.enabled, config.is_error, enf);
         let lb = tc.label_color(config.enabled, config.is_error, enf);
@@ -851,6 +862,17 @@ pub fn TextField(
         };
         (ind, lb, bg)
     };
+
+    let indicator_color = animate_color(
+        format!("tf_ind_c_{}", anim_key),
+        indicator_color_target,
+        th.motion.color,
+    );
+    let label_color = animate_color(
+        format!("tf_lc_{}", anim_key),
+        label_color_target,
+        th.motion.color,
+    );
 
     let label_size = 16.0 - 4.0 * float_t;
 
