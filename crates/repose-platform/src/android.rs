@@ -3,6 +3,7 @@ use crate::common_web as rc_web;
 use crate::render::RenderContext;
 use crate::*;
 
+use std::cell::Cell;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -109,6 +110,9 @@ pub fn run_android_app_with_options(
         clipboard: Option<clipawl::Clipboard>,
 
         last_redraw: web_time::Instant,
+
+        /// Tracks whether a redraw was requested by app code that needs compose.
+        compose_requested: Cell<bool>,
     }
 
     impl AppState {
@@ -134,12 +138,22 @@ pub fn run_android_app_with_options(
                 clipboard: None,
 
                 last_redraw: web_time::Instant::now(),
+
+                compose_requested: Cell::new(false),
             }
         }
 
         fn request_redraw(&self) {
+            self.compose_requested.set(true);
             repose_core::request_frame();
             rc::request_redraw(&self.window);
+        }
+
+        fn request_present_only(&self) {
+            // Do NOT set compose_requested — present-only
+            if let Some(w) = &self.window {
+                w.request_redraw();
+            }
         }
 
         /// Whether frames should be forced continuously (static option or a
@@ -546,6 +560,27 @@ pub fn run_android_app_with_options(
                         return; // surface gone; never touch the GPU
                     }
 
+                    crate::run_pre_redraw(&self.render);
+
+                    let do_compose = self.compose_requested.replace(false)
+                        || self.dirty
+                        || self.continuous_redraw();
+
+                    if !do_compose {
+                        // Present-only: no compose, just present cached scene with updated textures
+                        self.process_render_commands();
+                        if let (Some(backend), Some(frame)) =
+                            (self.backend.as_mut(), self.rt.frame_cache.as_ref())
+                        {
+                            let scale = self.scale();
+                            let mut scene = frame.scene.clone();
+                            self.overlay_drag_indicator(&mut scene);
+                            backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
+                        }
+                        self.last_redraw = web_time::Instant::now();
+                        return;
+                    }
+
                     self.rt.tick_overlays(self.last_redraw);
 
                     // Advance animations before composition (Compose pattern).
@@ -619,16 +654,13 @@ pub fn run_android_app_with_options(
             let frame_requested = take_frame_request();
             let present_requested = take_present_request();
 
-            let needs = if !self.in_foreground {
-                // Surface active but app backgrounded: only honor explicit
-                // frame requests (e.g. a bg worker wanting a toast), not caret
-                // blink or animations.
-                self.dirty || frame_requested || present_requested
+            // Compose needed ?
+            let needs_compose = if !self.in_foreground {
+                self.dirty || frame_requested
             } else {
                 self.continuous_redraw()
                     || self.dirty
                     || frame_requested
-                    || (present_requested && self.rt.frame_cache.is_some())
                     || self
                         .rt
                         .next_caret_blink_deadline()
@@ -636,8 +668,19 @@ pub fn run_android_app_with_options(
                     || repose_core::animation_driver::is_active()
             };
 
-            if needs {
+            if needs_compose {
                 self.request_redraw();
+                return;
+            }
+
+            // Present-only: texture was updated, redraw cached scene without compose.
+            let needs_present = if !self.in_foreground {
+                present_requested && self.rt.frame_cache.is_some()
+            } else {
+                present_requested && self.rt.frame_cache.is_some()
+            };
+            if needs_present {
+                self.request_present_only();
             }
         }
     }

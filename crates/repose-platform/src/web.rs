@@ -4,7 +4,7 @@ use crate::common_web as rc_web;
 use crate::render::RenderContext;
 use crate::*;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
 use wasm_bindgen::JsCast;
@@ -201,6 +201,8 @@ struct App {
     deeplink_listener: Option<WebDeeplinkListener>,
 
     last_redraw: web_time::Instant,
+
+    compose_requested: Cell<bool>,
 }
 
 impl App {
@@ -228,12 +230,21 @@ impl App {
             deeplink_listener: None,
 
             last_redraw: web_time::Instant::now(),
+
+            compose_requested: Cell::new(false),
         }
     }
 
     fn request_redraw(&self) {
+        self.compose_requested.set(true);
         repose_core::request_frame();
         rc::request_redraw(&self.window);
+    }
+
+    fn request_present_only(&self) {
+        if let Some(w) = &self.window {
+            w.request_redraw();
+        }
     }
 
     fn scale(&self, window: &Window) -> f32 {
@@ -863,6 +874,35 @@ impl ApplicationHandler<()> for App {
             }
 
             WindowEvent::RedrawRequested => {
+                crate::run_pre_redraw(&self.render);
+
+                let compose_needed = self.compose_requested.replace(false);
+                // Present-only: no compose needed, just present cached scene with updated textures
+                if !self.options.continuous_redraw && !compose_needed
+                {
+                    self.drain_render_commands();
+                    if let (Some(backend), Some(frame)) = (
+                        self.backend.borrow_mut().as_mut(),
+                        self.rt.frame_cache.as_ref(),
+                    ) {
+                        let scale = self.scale(&window);
+                        let mut scene = frame.scene.clone();
+                        if let Some(inspector) = &mut self.inspector {
+                            inspector.frame(&mut scene);
+                        }
+                        repose_core::dnd::overlay_drag_indicator(
+                            &mut scene,
+                            self.rt.mouse_pos_px,
+                            false,
+                        );
+                        backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
+                    } else if self.backend.borrow().is_none() {
+                        window.request_redraw();
+                    }
+                    self.last_redraw = web_time::Instant::now();
+                    return;
+                }
+
                 self.rt.tick_overlays(self.last_redraw);
 
                 // Advance animations before composition (Compose pattern)
@@ -926,15 +966,19 @@ impl ApplicationHandler<()> for App {
             self.request_redraw();
         }
         if !self.options.continuous_redraw {
-            if take_frame_request() {
+            let frame_requested = take_frame_request();
+            let present_requested = take_present_request();
+            if frame_requested {
                 self.request_redraw();
-            } else if take_present_request() && self.rt.frame_cache.is_some() {
-                self.request_redraw();
+            } else if present_requested && self.rt.frame_cache.is_some() {
+                self.request_present_only();
             } else if self
                 .rt
                 .next_caret_blink_deadline()
                 .is_some_and(|d| d <= web_time::Instant::now())
             {
+                self.request_redraw();
+            } else if repose_core::animation_driver::is_active() {
                 self.request_redraw();
             }
         }

@@ -45,6 +45,28 @@ static CLOSE_TO_TRAY: AtomicBool = AtomicBool::new(false);
 #[cfg(not(target_arch = "wasm32"))]
 static EVENT_LOOP_PROXY: OnceLock<winit::event_loop::EventLoopProxy<()>> = OnceLock::new();
 
+thread_local! {
+    /// Called at the start of every RedrawRequested, *before* compose vs present.
+    /// Intended for media sinks that must upload textures without forcing a full recompose.
+    /// Not `Send`: always runs on the UI/event-loop thread.
+    static PRE_REDRAW: std::cell::RefCell<Option<Box<dyn FnMut(&RenderContext)>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Register a UI-thread callback invoked once per redraw, before compose/present.
+/// Replaces any previous callback. Pass `None` to clear.
+pub fn set_pre_redraw(cb: Option<Box<dyn FnMut(&RenderContext)>>) {
+    PRE_REDRAW.with(|c| *c.borrow_mut() = cb);
+}
+
+pub(crate) fn run_pre_redraw(ctx: &RenderContext) {
+    PRE_REDRAW.with(|c| {
+        if let Some(cb) = c.borrow_mut().as_mut() {
+            cb(ctx);
+        }
+    });
+}
+
 /// Optional callback invoked on every AboutToWait, regardless of redraw state.
 /// Used for draining cross-thread commands (e.g. tray toggles) that must be
 /// processed even when the window is hidden.
@@ -1099,6 +1121,9 @@ pub fn run_desktop_app_with_config(
                 }
 
                 WindowEvent::RedrawRequested => {
+                    // Allow media (etc.) to queue texture uploads without compose.
+                    crate::run_pre_redraw(&self.render);
+
                     // 1. Check our redraw flag before processing a11y.
                     if !self.redraw_requested.replace(false) {
                         self.process_a11y_actions();
