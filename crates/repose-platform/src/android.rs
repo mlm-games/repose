@@ -569,13 +569,17 @@ pub fn run_android_app_with_options(
                     if !do_compose {
                         // Present-only: no compose, just present cached scene with updated textures
                         self.process_render_commands();
-                        if let (Some(backend), Some(frame)) =
-                            (self.backend.as_mut(), self.rt.frame_cache.as_ref())
-                        {
-                            let scale = self.scale();
+                        let scale = self.scale();
+                        let mut scene_opt = None;
+                        if let Some(frame) = self.rt.frame_cache.as_ref() {
                             let mut scene = frame.scene.clone();
                             self.overlay_drag_indicator(&mut scene);
-                            backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
+                            scene_opt = Some(scene);
+                        }
+                        if let (Some(backend), Some(scene)) =
+                            (self.backend.as_mut(), scene_opt.as_ref())
+                        {
+                            backend.frame(scene, GlyphRasterConfig { px: 18.0 * scale });
                         }
                         self.last_redraw = web_time::Instant::now();
                         return;
