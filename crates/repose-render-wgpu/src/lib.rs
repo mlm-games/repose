@@ -2281,7 +2281,6 @@ impl WgpuSceneRenderer {
         };
 
         if needs_recreate {
-            // Remove old to track budget correctly
             self.remove_image(handle);
 
             let (tex, bind) = self.create_rgba_tex(w, h, format);
@@ -4088,7 +4087,6 @@ impl WgpuSceneRenderer {
             let cx = rect.x + rect.w * 0.5;
             let cy = rect.y + rect.h * 0.5;
 
-            // Apply full transform to center
             let sx = cx * transform.scale_x;
             let sy = cy * transform.scale_y;
             let cos_a = transform.rotate.cos();

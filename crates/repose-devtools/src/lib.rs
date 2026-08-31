@@ -321,7 +321,7 @@ impl Hud {
 
     /// Draw a horizontal bar-chart sparkline from a rolling FPS history.
     ///
-    /// The newest sample is drawn at the right edge; older samples scroll left.
+    /// The newest sample is drawn at the right edge. Older samples scroll left.
     fn draw_fps_sparkline(
         scene: &mut Scene,
         x: f32,

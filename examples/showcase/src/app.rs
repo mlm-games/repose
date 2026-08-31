@@ -216,7 +216,7 @@ fn light_theme() -> Theme {
     Theme::default().with_colors(ColorScheme::light())
 }
 
-/// One place that builds the "saved" snackbar; the undo action is shared
+/// One place that builds the "saved" snackbar. The undo action is shared
 /// between the request and the builder instead of being constructed 3 times.
 fn save_snackbar_request(snackbar: &SnackbarController) -> SnackbarRequest {
     let undo: Rc<dyn Fn()> = Rc::new({

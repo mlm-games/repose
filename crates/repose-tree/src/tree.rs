@@ -70,7 +70,7 @@ impl ViewTree {
 
     /// Set the constraints that will be passed to any `SubcomposeLayout`
     /// content closures during the next [`update`](Self::update) call.
-    /// The scope is read once per reconcile of a `SubcomposeLayout` node; if
+    /// The scope is read once per reconcile of a `SubcomposeLayout` node. If
     /// you need different scopes at different depths, the closure itself is
     /// responsible for narrowing the values it receives.
     pub fn set_subcompose_scope(&mut self, scope: SubcomposeScope) {
@@ -338,7 +338,6 @@ impl ViewTree {
                 ctx.skipped += 1;
             }
 
-            // Update view_id
             node.view_id = view_id;
         } // Mutable borrow of node ends here
 
@@ -670,7 +669,7 @@ impl ViewTree {
 /// resulting min and max both equal that value). Padding values reduce the
 /// available content area (matching Compose semantics where padding offsets
 /// the child constraints). `fill_max_w` / `fill_max_h` are layout-direction
-/// hints resolved by Taffy and cannot produce a concrete size here; they
+/// hints resolved by Taffy and cannot produce a concrete size here. They
 /// are handled by storing the Taffy-computed size after layout.
 fn intersect_scope_with_modifier(scope: SubcomposeScope, modifier: &Modifier) -> SubcomposeScope {
     let mut s = scope;
@@ -814,7 +813,6 @@ mod tests {
 
         tree.update(&root1);
 
-        // Get B's NodeId
         let _b_view_id = tree
             .root()
             .and_then(|r| tree.children(r))

@@ -134,7 +134,7 @@ pub enum ViewKind {
         content: Arc<dyn Fn(&SubcomposeScope) -> Vec<(u64, View)>>,
     },
     /// A collapsible section with a clickable header.
-    /// First child is the header content; remaining children shown only when expanded.
+    /// First child is the header content. Remaining children shown only when expanded.
     Expander {
         expanded: bool,
         on_toggle: Option<Callback>,
@@ -374,7 +374,7 @@ pub enum SceneNode {
         mesh: Arc<VectorMeshData>,
         transform: [f32; 6],
         paint: PaintDesc,
-        /// Reserved for explicit clip assignment; clipping is otherwise
+        /// Reserved for explicit clip assignment. Clipping is otherwise
         /// structural via `PushVectorClip`/`PopVectorClip`.
         clip: Option<u32>,
         blend: BlendMode,
@@ -429,7 +429,7 @@ pub enum PaintDesc {
 }
 
 /// Blend mode for a `VectorMesh`. Only `Alpha` (premultiplied alpha) is wired
-/// into the renderer today; the remaining variants are reserved.
+/// into the renderer today. The remaining variants are reserved.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 #[derive(Default)]

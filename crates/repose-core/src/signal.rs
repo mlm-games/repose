@@ -142,7 +142,7 @@ pub fn signal<T>(t: T) -> Signal<T> {
     Signal::new(t)
 }
 
-/// RAII guard for a Signal subscription; unsubscribes on drop.
+/// RAII guard for a Signal subscription. Unsubscribes on drop.
 pub struct SubGuard<T: 'static> {
     sig: crate::Signal<T>,
     id: SubId,

@@ -162,7 +162,7 @@ impl<T: 'static> Mutable<T> {
         }
     }
 
-    /// Escape hatch when batching many writes; call [`request_frame`] yourself.
+    /// Escape hatch when batching many writes. Call [`request_frame`] yourself.
     pub fn borrow_mut_silent(&self) -> RefMut<'_, T> {
         self.0.borrow_mut()
     }
@@ -178,7 +178,7 @@ pub fn remember_mutable<T: 'static>(init: impl FnOnce() -> T) -> Mutable<T> {
     crate::remember(|| Mutable::new(init())).as_ref().clone()
 }
 
-/// Key-based variant of [`remember_mutable`]; stable across conditional branches.
+/// Key-based variant of [`remember_mutable`]. Stable across conditional branches.
 #[track_caller]
 pub fn remember_mutable_with_key<T: 'static>(
     key: impl Into<String>,
@@ -192,7 +192,7 @@ pub fn remember_mutable_with_key<T: 'static>(
 /// Remember a reducer-backed local state. Returns a [`Mutable`] snapshot reader
 /// plus a dispatch closure that runs `H::reduce` and writes the result back.
 ///
-/// Prefer this for multi-field widget state over many loose `Mutable`s; it keeps
+/// Prefer this for multi-field widget state over many loose `Mutable`s. It keeps
 /// the state shape and all mutations in one place.
 #[track_caller]
 pub fn remember_reducer<H: StateHolder>() -> (Mutable<H::State>, impl Fn(H::Event) + Clone)
@@ -210,7 +210,7 @@ where
     (state, dispatch)
 }
 
-/// Key-based variant of [`remember_reducer`]; stable across conditional branches.
+/// Key-based variant of [`remember_reducer`]. Stable across conditional branches.
 #[track_caller]
 pub fn remember_reducer_with_key<H: StateHolder>(
     key: impl Into<String>,

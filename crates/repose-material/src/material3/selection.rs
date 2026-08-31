@@ -379,7 +379,7 @@ impl Default for RadioButtonConfig {
 
 /// M3 RadioButton.
 /// Renders a 40dp touch-target with a 20dp outer circle + inner dot.
-/// Ring color animates with 100ms FastOutSlowIn; dot size animates with spring.
+/// Ring color animates with 100ms FastOutSlowIn. Dot size animates with spring.
 static RADIO_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub fn RadioButton(
     selected: bool,

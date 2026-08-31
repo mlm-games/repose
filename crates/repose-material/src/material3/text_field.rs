@@ -216,7 +216,7 @@ impl TextFieldColors {
     }
 }
 
-/// Default values for text field colors.
+/// Defaults for text field colors.
 pub struct TextFieldDefaults;
 
 impl TextFieldDefaults {
@@ -282,14 +282,14 @@ pub struct OutlinedTextFieldConfig {
     /// is suppressed). When the label floats, it animates to the top border.
     pub label: Option<String>,
     /// Placeholder text shown inside the TextField when empty and unfocused.
-    /// Only shown when `label` is `None`; when a label is present the label
+    /// Only shown when `label` is `None`. When a label is present the label
     /// itself serves as the visual placeholder.
     pub placeholder: Option<String>,
     /// Icon displayed at the start of the input.
     pub leading_icon: Option<View>,
     /// Icon displayed at the end of the input.
     pub trailing_icon: Option<View>,
-    /// If true, Enter submits; if false, Enter inserts a newline.
+    /// If true, Enter submits. If false, Enter inserts a newline.
     pub single_line: bool,
     /// If true, border and label color switch to error color.
     pub is_error: bool,

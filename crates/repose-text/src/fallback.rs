@@ -252,7 +252,6 @@ impl NotoFontDownloader {
             return Vec::new();
         }
 
-        // Build font arena and candidate list
         // Ensure font objects exist for all fonts referenced in required components
         for &comp_idx in &required_component_indices {
             for &font_idx in &components[comp_idx].fonts.clone() {
@@ -295,7 +294,6 @@ impl NotoFontDownloader {
             let best_font = font_index_to_obj.get(&best_idx).unwrap();
             selected.push(best_font.font);
 
-            // Remove its coverage
             let covered_components: Vec<usize> = best_font.cover_components.clone();
             for comp_idx in covered_components {
                 let comp_cover = components[comp_idx].cover_count;
@@ -310,7 +308,6 @@ impl NotoFontDownloader {
                 components[comp_idx].cover_count = 0;
             }
 
-            // Remove fonts with zero cover
             candidate_vec.retain(|fid| {
                 font_index_to_obj
                     .get(fid)

@@ -283,7 +283,7 @@ impl TouchGestureState {
                 }
                 if self.past_touch_slop {
                     // Exactly like Compose: after slop, dispatch raw per-frame deltas
-                    // No per-frame clamp or deadzone — smoothness comes from centroid,
+                    // No per-frame clamp or deadzone  - smoothness comes from centroid,
                     // previous=None on count change, and touchSlop gating. No compromises.
                     pinch = Some((raw_zoom, center));
                     pan = Some(raw_pan);

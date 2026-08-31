@@ -24,7 +24,7 @@ pub struct Semantics {
     pub label: Option<String>,
     /// Whether this node is currently focused.
     pub focused: bool,
-    /// Whether this node is actionable; disabled nodes remain in the tree
+    /// Whether this node is actionable. Disabled nodes remain in the tree
     /// but are marked not enabled.
     pub enabled: bool,
     /// Marks this node as a collection of horizontally or vertically stacked

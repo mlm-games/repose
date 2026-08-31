@@ -44,7 +44,6 @@ mod tests {
     fn test_deep_tree() {
         let mut tree = ViewTree::new();
 
-        // Create a deep tree
         let mut current = make_text("Leaf");
         for _ in 0..10 {
             current = make_box().with_children(vec![current]);
@@ -104,7 +103,6 @@ mod tests {
         tree.update(&root1);
         assert_eq!(tree.len(), 4);
 
-        // Remove middle child
         let root2 = make_column().with_children(vec![
             make_text("A").modifier(Modifier::new().key(1)),
             make_text("C").modifier(Modifier::new().key(3)),

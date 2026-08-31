@@ -51,7 +51,7 @@ pub enum DrawCommand {
     PushTransform { transform: Transform },
     /// Pop a transform pushed by `PushTransform`.
     PopTransform,
-    /// A positioned image. `rect` is in image-local space; the transform stack
+    /// A positioned image. `rect` is in image-local space. The transform stack
     /// maps it to the canvas. `handle` was uploaded via `RenderContext`.
     Image {
         rect: Rect,

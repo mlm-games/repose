@@ -320,7 +320,6 @@ impl TextLayoutResult {
         let pos_in_line = if char_in_line == 0 {
             line.left
         } else {
-            // Approximate position
             let chars = line.end - line.start;
             if chars == 0 {
                 line.left

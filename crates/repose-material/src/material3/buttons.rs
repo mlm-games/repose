@@ -176,7 +176,7 @@ fn button_impl(
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER);
 
-    // Interaction source + ripple indication (content-tinted, bounded — Compose Button)
+    // Interaction source + ripple indication (content-tinted, bounded  - Compose Button)
     let source: Rc<MutableInteractionSource> =
         interaction_source
             .map(Rc::new)

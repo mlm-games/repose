@@ -6,7 +6,6 @@ use std::collections::HashMap;
 
 #[test]
 fn test_render_z_index_paints_last() {
-    // Create a Stack with two children:
     // 1. A red box (painted first, no render_z_index)
     // 2. A blue box with render_z_index(100.0) (should be painted last)
 

@@ -45,7 +45,7 @@ pub(crate) fn push_focus_ring(scene: &mut Scene, rect: repose_core::Rect, radius
 /// matches the component shape (including asymmetric corners).
 ///
 /// # Deprecated
-/// The focus-ring visual is no longer drawn; focus is shown via the focused
+/// The focus-ring visual is no longer drawn. Focus is shown via the focused
 /// state layer instead..
 #[deprecated(
     since = "0.27.7",

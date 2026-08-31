@@ -1187,7 +1187,7 @@ struct EdgeDragAnchor {
 
 /// State for a single side-docked, collapsible panel.
 ///
-/// Wrapped in `Rc<RefCell<_>>` and remembered by the caller; the slide
+/// Wrapped in `Rc<RefCell<_>>` and remembered by the caller. The slide
 /// animation is advanced inside [`CollapsibleSidePanel`] each frame.
 pub struct CollapsiblePanelState {
     pub side: DockSide,

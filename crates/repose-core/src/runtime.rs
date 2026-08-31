@@ -119,7 +119,7 @@ impl FocusManager {
 
     /// Clears focus entirely on the next frame.
     /// Corresponds to Compose's `FocusManager.clearFocus()`.
-    /// The `force` parameter is accepted for API compatibility; in repose
+    /// The `force` parameter is accepted for API compatibility. In repose
     /// focus is always cleared immediately (no keep-focus mechanism).
     pub fn clear_focus(&self, _force: bool) {
         FOCUS_REQUEST.with(|r| r.set(Some(CLEAR_FOCUS_MARKER)));
@@ -425,7 +425,7 @@ pub fn remember_state<T: 'static>(init: impl FnOnce() -> T) -> Rc<RefCell<T>> {
     remember(|| RefCell::new(init()))
 }
 
-/// Key-based variant of [`remember_state`]; same no-frame-on-write caveat.
+/// Key-based variant of [`remember_state`]. Same no-frame-on-write caveat.
 pub fn remember_state_with_key<T: 'static>(
     key: impl Into<String>,
     init: impl FnOnce() -> T,

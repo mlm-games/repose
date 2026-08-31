@@ -27,7 +27,7 @@ pub fn subcompose_hash_key<K: Hash>(key: &K) -> u64 {
 /// A layout whose `content` closure is invoked with the current available
 /// size (in dp) and returns one or more `(slot_id, view)` pairs.
 ///
-/// The single-slot form takes a closure that returns a single `View`; that
+/// The single-slot form takes a closure that returns a single `View`. That
 /// view is implicitly assigned slot id `0`. The multi-slot form takes a
 /// closure returning a `Vec<(u64, View)>` and is exposed by
 /// [`subcompose_layout_with_slots`] for callers that need multiple slots.

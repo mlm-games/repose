@@ -73,7 +73,7 @@ where
 }
 
 /// Block-style convenience for [`Modifier::on_drop`] with a typed payload. The
-/// drop is accepted when the closure returns `true`; the typed payload is
+/// drop is accepted when the closure returns `true`. The typed payload is
 /// downcast before the closure is invoked.
 ///
 /// ```ignore
@@ -689,7 +689,6 @@ pub fn handle_drag_action(action: &DragAction) -> bool {
                             modifiers,
                         )
                     {
-                        // Update over immediately
                         DND_SESSION.with(|s| {
                             if let Some(ref mut session) = *s.borrow_mut() {
                                 dnd_update_over(&frame, session, modifiers, position);

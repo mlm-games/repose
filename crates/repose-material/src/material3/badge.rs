@@ -24,7 +24,7 @@ impl Default for BadgeConfig {
 }
 
 /// M3 Badge - a small notification indicator. If `content` is `None`, shows a
-/// small 6dp dot; otherwise shows the content inside a 16dp pill.
+/// small 6dp dot. Otherwise shows the content inside a 16dp pill.
 pub fn Badge(content: Option<View>, config: BadgeConfig) -> View {
     match content {
         None => Box(Modifier::new()

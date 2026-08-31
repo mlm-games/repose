@@ -673,7 +673,7 @@ pub fn content_color() -> Color {
 }
 
 /// Compose `@Composable contentColorFor(backgroundColor)`.
-/// Scheme role pair if known; otherwise current `LocalContentColor`, then a
+/// Scheme role pair if known. Otherwise current `LocalContentColor`, then a
 /// luminance fallback so custom fills never inherit a same-luma icon color.
 pub fn content_color_for(background: Color) -> Color {
     if let Some(c) = theme().colors.content_color_for(background) {
@@ -804,13 +804,13 @@ pub fn set_window_container_size(width_dp: f32, height_dp: f32) {
 }
 
 /// Set just the logical window container width (in dp). Prefer
-/// [`set_window_container_size`]; kept for hosts that update one axis at a time.
+/// [`set_window_container_size`]. Kept for hosts that update one axis at a time.
 pub fn set_window_container_width(w_dp: f32) {
     defaults().write().container_width = w_dp;
 }
 
 /// Set just the logical window container height (in dp). Prefer
-/// [`set_window_container_size`]; kept for hosts that update one axis at a time.
+/// [`set_window_container_size`]. Kept for hosts that update one axis at a time.
 pub fn set_window_container_height(h_dp: f32) {
     defaults().write().container_height = h_dp;
 }

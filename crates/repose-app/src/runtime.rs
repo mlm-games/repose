@@ -123,7 +123,7 @@ const LONG_PRESS_SLOP_DP: f32 = 18.0;
 /// Embeddable Repose runtime.
 ///
 /// Manages composition scheduling, input routing, text-field state, and
-/// pointer/key dispatch.  The host owns the event loop and GPU device; this
+/// pointer/key dispatch.  The host owns the event loop and GPU device. This
 /// is purely the UI logic layer.
 pub struct ReposeRuntime {
     pub sched: Scheduler,
@@ -2204,7 +2204,7 @@ fn is_multiline_id(f: &Frame, id: u64) -> bool {
         .unwrap_or(false)
 }
 
-/// `enabled=false` rejects edits; `readOnly` also rejects
+/// `enabled=false` rejects edits. `readOnly` also rejects
 /// edits but keeps selection/focus/copy working.
 fn tf_can_edit(hit: &HitRegion) -> bool {
     hit.tf_enabled && !hit.tf_read_only

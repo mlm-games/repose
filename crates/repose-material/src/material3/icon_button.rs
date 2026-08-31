@@ -190,7 +190,7 @@ pub fn IconButton(icon: View, on_click: impl Fn() + 'static, config: IconButtonC
         &config,
         colors,
         sz,
-        None, // transparent container — no fill
+        None, // transparent container - no fill
         None,
         StateColors {
             default: Color::TRANSPARENT,

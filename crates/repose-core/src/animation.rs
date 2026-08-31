@@ -1005,7 +1005,6 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
         };
 
         if !still {
-            // Check if we should repeat
             if let Some(repeat) = &self.spec.repeat {
                 let maxed = repeat
                     .iterations
@@ -1076,7 +1075,6 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
         );
         let progress = progress.clamp(-0.1, 2.0);
 
-        // Check if settled
         if (progress - 1.0).abs() < spring.settle_progress
             && velocity.abs() < spring.settle_velocity
         {

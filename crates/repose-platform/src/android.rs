@@ -47,7 +47,7 @@ impl Default for AndroidOptions {
 
 /// Runtime override for [`AndroidOptions::continuous_redraw`].
 ///
-/// Useful for a settings toggle; takes precedence over the static option.
+/// Useful for a settings toggle. Takes precedence over the static option.
 #[cfg(target_os = "android")]
 static CONTINUOUS_REDRAW: AtomicBool = AtomicBool::new(false);
 
@@ -150,7 +150,7 @@ pub fn run_android_app_with_options(
         }
 
         fn request_present_only(&self) {
-            // Do NOT set compose_requested — present-only
+            // Do NOT set compose_requested  - present-only
             if let Some(w) = &self.window {
                 w.request_redraw();
             }

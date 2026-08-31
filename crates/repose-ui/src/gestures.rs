@@ -63,7 +63,6 @@ impl GestureDetector {
                 self.last_position = Some(event.position);
                 self.last_move_time = Some(Instant::now());
 
-                // Check for double tap
                 if let Some(last) = self.last_tap
                     && (Instant::now() - last) < Duration::from_millis(300)
                 {

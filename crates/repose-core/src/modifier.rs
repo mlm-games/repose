@@ -1537,7 +1537,7 @@ impl Modifier {
         self
     }
     /// Material-style elevation. Auto-scales blur and offset by `level` (dp)
-    /// and uses a default shadow color. Level 0 = no shadow; 4 = subtle;
+    /// and uses a default shadow color. Level 0 = no shadow. 4 = subtle;
     /// 16 = strong. Requires [`Modifier::graphics_layer`] to take effect.
     pub fn elevation(mut self, level: f32) -> Self {
         if level <= 0.0 {

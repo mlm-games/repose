@@ -721,7 +721,6 @@ pub fn run_desktop_app_with_config(
                     if self.hovered_files.len() < 32 {
                         self.hovered_files.push(path);
                     }
-                    // Update drop position (best effort)
                     if self.pending_drop_pos_px.is_none() {
                         self.pending_drop_pos_px = Some(self.rt.mouse_pos_px);
                     }
@@ -1170,7 +1169,6 @@ pub fn run_desktop_app_with_config(
 
                     let output = self.rt.frame(&mut self.root, &self.render);
 
-                    // Apply cursor from platform output
                     if let Some(cursor) = &output.platform.cursor {
                         win.set_cursor(winit::window::Cursor::Icon(map_cursor(*cursor)));
                     }

@@ -28,7 +28,7 @@ pub(crate) fn set_ime_for_textfield(window: &Window, is_textfield: bool) {
 }
 
 /// Where winit supports it (desktop X11/Wayland/Windows) this drives the OS
-/// IME purpose; the capitalization/auto-correct hints are informational for
+/// IME purpose. The capitalization/auto-correct hints are informational for
 /// platforms that can react to them.
 pub(crate) fn set_ime_for_textfield_ex(
     window: &Window,

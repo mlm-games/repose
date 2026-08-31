@@ -380,7 +380,7 @@ pub(crate) fn next_grapheme_boundary(text: &str, byte: usize) -> usize {
 }
 
 /// Find the word boundaries around the given byte index.
-/// Selects alphanumeric+underscore runs; falls back to the grapheme cluster.
+/// Selects alphanumeric+underscore runs. Falls back to the grapheme cluster.
 pub(crate) fn word_range(text: &str, byte: usize) -> (usize, usize) {
     let byte = byte.min(text.len());
     let is_word = |g: &str| g.chars().all(|c| c.is_alphanumeric() || c == '_');
@@ -2225,7 +2225,7 @@ pub(crate) fn paint_text_field(
 }
 
 /// Shared view-builder for `BasicTextField`.
-/// Creates the view with text_input modifier. Painting is handled natively
+/// View with text_input modifier. Painting is handled natively
 /// by layout.rs when it encounters `modifier.text_input` (Compose-aligned).
 fn text_field_view(
     modifier: Modifier,

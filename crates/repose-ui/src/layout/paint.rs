@@ -975,7 +975,6 @@ impl LayoutEngine {
                                 0
                             }
                         }
-                        // Build segments from spans
                         let mut segments: Vec<SegInfo> = Vec::new();
                         let mut cursor = line_start;
 
@@ -1259,7 +1258,6 @@ impl LayoutEngine {
                             url: url.clone(),
                             font_variation_settings: font_variation_settings.clone(),
                         });
-                        // Create hit region for view-level URL
                         if let Some(link_url) = url {
                             let link_id = view_id ^ 0x8000_0000_0000_0000;
                             let lu = link_url.clone();

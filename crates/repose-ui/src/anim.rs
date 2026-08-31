@@ -207,7 +207,7 @@ pub struct InfiniteTransition {
     _private: (),
 }
 
-/// Creates an `InfiniteTransition` scoped to the current composition slot.
+/// `InfiniteTransition` scoped to the current composition slot.
 ///
 /// Use its `animate_float`, `animate_color`, `animate_vec2`, `animate_size`,
 /// and `animate_rect` methods for continuous looping animations.
@@ -271,7 +271,7 @@ pub struct TransitionScope<T> {
     state: Rc<RefCell<T>>,
 }
 
-/// Creates a `TransitionScope` keyed to the given state.
+/// `TransitionScope` keyed to the given state.
 ///
 /// Whenever `target_state` differs from the previous call (via `PartialEq`),
 /// all child animation targets are updated and the transition animates toward
