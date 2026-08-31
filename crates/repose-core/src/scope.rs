@@ -2,6 +2,8 @@ use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 
+use rustc_hash::FxHashMap;
+
 use crate::effects::Dispose;
 
 thread_local! {
@@ -15,7 +17,7 @@ pub struct Scope {
 struct ScopeInner {
     disposers: RefCell<Vec<Box<dyn FnOnce()>>>,
     children: RefCell<Vec<Scope>>,
-    memo_cache: RefCell<std::collections::HashMap<String, Box<dyn Any>>>,
+    memo_cache: RefCell<FxHashMap<String, Box<dyn Any>>>,
     disposed: Cell<bool>,
 }
 
@@ -31,7 +33,7 @@ impl Scope {
             inner: Rc::new(ScopeInner {
                 disposers: RefCell::new(Vec::new()),
                 children: RefCell::new(Vec::new()),
-                memo_cache: RefCell::new(std::collections::HashMap::new()),
+                memo_cache: RefCell::new(FxHashMap::default()),
                 disposed: Cell::new(false),
             }),
         }

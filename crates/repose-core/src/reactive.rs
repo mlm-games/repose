@@ -1,6 +1,8 @@
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 use std::rc::Rc;
+
+use rustc_hash::{FxHashMap, FxHashSet};
 
 pub type SignalId = usize;
 pub type ObserverId = usize;
@@ -16,12 +18,12 @@ thread_local! {
 struct DepGraph {
     next_observer: ObserverId,
     // signal_id -> observers that depend on it
-    edges: HashMap<SignalId, HashSet<ObserverId>>,
+    edges: FxHashMap<SignalId, FxHashSet<ObserverId>>,
     // observer_id -> signals it depends on
-    back: HashMap<ObserverId, HashSet<SignalId>>,
+    back: FxHashMap<ObserverId, FxHashSet<SignalId>>,
     // recompute closures
-    observers: HashMap<ObserverId, Rc<dyn Fn()>>,
-    running: HashSet<ObserverId>,
+    observers: FxHashMap<ObserverId, Rc<dyn Fn()>>,
+    running: FxHashSet<ObserverId>,
 }
 
 impl DepGraph {
