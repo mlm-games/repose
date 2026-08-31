@@ -333,8 +333,7 @@ pub enum SceneNode {
     /// `alpha` is the group-compositing alpha applied at composite time.
     /// `blur_radius_x` / `blur_radius_y` are the gaussian blur radii in pixels
     /// applied to the layer before compositing (0.0 = no blur on that axis).
-    /// `rectangle_edge` when true means clamp edge pixels (Rectangle treatment);
-    /// when false, out-of-bounds samples are transparent (Unbounded).
+    /// `rectangle_edge` true = clamp edge pixels (Rectangle). False = transparent out-of-bounds (Unbounded).
     BeginLayer {
         rect: Rect,
         layer_id: u32,
@@ -380,10 +379,9 @@ pub enum SceneNode {
         clip: Option<u32>,
         blend: BlendMode,
     },
-    /// Screen-space overlays (handles, rubber bands, playhead, …). Each mesh
-    /// is positioned in final device pixels and is *not* affected by the
-    /// world `PushTransform` stack — emit these outside the viewport's world
-    /// transform scope.
+    /// Screen-space overlays (handles, rubber bands, playhead). Each mesh
+    /// is positioned in final device pixels and ignores the world
+    /// PushTransform stack. Emit outside the viewport's world transform.
     VectorOverlay {
         meshes: Arc<[VectorMeshData]>,
     },

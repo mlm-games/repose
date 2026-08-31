@@ -168,7 +168,7 @@ fn translate_mesh_data(m: &VectorMeshData, dx: f32, dy: f32) -> VectorMeshData {
 }
 
 pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) -> View {
-    // Painter replays drawing each frame, so Canvas can react to signals/animation.
+
     let painter = move |scene: &mut Scene, rect: Rect, _alpha: f32| {
         let mut scope = DrawScope {
             commands: Vec::new(),
@@ -179,7 +179,6 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
         };
         on_draw(&mut scope);
 
-        // local->global helper
         let to_global = |r: Rect| Rect {
             x: rect.x + r.x,
             y: rect.y + r.y,
@@ -330,7 +329,6 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
         }
     };
 
-    // Respect caller sizing. Only apply a default if they didn't specify any size behavior.
     let mut m = modifier.painter(painter);
     let has_size = m.size.is_some()
         || m.width.is_some()

@@ -37,13 +37,11 @@ impl ScopeLayoutTree {
 }
 
 pub struct LayoutEngine {
-    /// Persistent view tree.
     pub(crate) tree: ViewTree,
 
     /// Root Taffy layout tree (inter-scope layout + non-scope nodes).
     pub(crate) taffy: TaffyTree<NodeContext>,
 
-    /// Map from ViewTree NodeId to root Taffy NodeId.
     pub(crate) taffy_map: FxHashMap<NodeId, taffy::NodeId>,
 
     /// Reverse map: root Taffy NodeId to ViewTree NodeId.
@@ -105,7 +103,6 @@ pub struct LayoutEngine {
 /// Statistics about layout performance.
 #[derive(Clone, Debug, Default)]
 pub struct LayoutStats {
-    /// Stats from tree reconciliation.
     pub tree: TreeStats,
 
     /// Taffy nodes created this frame.

@@ -1,6 +1,5 @@
 use repose_core::*;
 
-/// Default values for surface component.
 pub struct SurfaceDefaults;
 
 impl SurfaceDefaults {
@@ -15,7 +14,6 @@ impl SurfaceDefaults {
     pub const SHADOW_ELEVATION: f32 = 0.0;
 }
 
-/// Default values for toggle button components.
 pub struct ToggleButtonDefaults;
 
 impl ToggleButtonDefaults {
@@ -95,7 +93,6 @@ impl ToggleButtonDefaults {
     }
 }
 
-/// Default values for progress indicator components.
 pub struct ProgressIndicatorDefaults;
 
 impl ProgressIndicatorDefaults {
@@ -122,7 +119,6 @@ impl ProgressIndicatorDefaults {
     pub const SLIDER_THUMB_TRACK_GAP: f32 = 6.0;
 }
 
-/// Default values for button components.
 pub struct ButtonDefaults;
 
 impl ButtonDefaults {
@@ -205,7 +201,6 @@ impl ButtonDefaults {
     }
 }
 
-/// Default values for snackbar components.
 pub struct SnackbarDefaults;
 
 impl SnackbarDefaults {
@@ -227,7 +222,6 @@ impl SnackbarDefaults {
     }
 }
 
-/// Default values for card components.
 pub struct CardDefaults;
 
 impl CardDefaults {
@@ -262,7 +256,6 @@ impl CardDefaults {
     pub const ELEVATION: f32 = 0.0;
 }
 
-/// Default values for dialog components.
 pub struct DialogDefaults;
 
 impl DialogDefaults {
@@ -279,7 +272,6 @@ impl DialogDefaults {
     pub const PREFERRED_WIDTH_EXPANDED: f32 = 580.0; // smallest >= 600
 }
 
-/// Default values for icon button components.
 pub struct IconButtonDefaults;
 
 impl IconButtonDefaults {
@@ -370,7 +362,6 @@ impl IconButtonDefaults {
     }
 }
 
-/// Default values for checkbox.
 pub struct CheckboxDefaults;
 
 impl CheckboxDefaults {
@@ -410,7 +401,6 @@ impl CheckboxDefaults {
     }
 }
 
-/// Default values for radio button.
 pub struct RadioButtonDefaults;
 
 impl RadioButtonDefaults {
@@ -443,7 +433,6 @@ impl RadioButtonDefaults {
     }
 }
 
-/// Default values for switch.
 pub struct SwitchDefaults;
 
 impl SwitchDefaults {
@@ -506,7 +495,6 @@ impl SwitchDefaults {
     }
 }
 
-/// Default values for slider.
 pub struct SliderDefaults;
 
 impl SliderDefaults {
@@ -561,7 +549,6 @@ impl SliderDefaults {
     }
 }
 
-/// Default values for divider.
 pub struct DividerDefaults;
 
 impl DividerDefaults {
@@ -571,7 +558,6 @@ impl DividerDefaults {
     }
 }
 
-/// Default values for badge.
 pub struct BadgeDefaults;
 
 impl BadgeDefaults {
@@ -590,7 +576,6 @@ impl BadgeDefaults {
     }
 }
 
-/// Default values for list item.
 pub struct ListItemDefaults;
 
 impl ListItemDefaults {
@@ -684,7 +669,6 @@ impl ListItemDefaults {
     }
 }
 
-/// Default values for top app bar.
 pub struct TopAppBarDefaults;
 
 impl TopAppBarDefaults {
@@ -709,7 +693,6 @@ impl TopAppBarDefaults {
     }
 }
 
-/// Default values for tab row.
 pub struct TabDefaults;
 
 impl TabDefaults {
@@ -730,7 +713,6 @@ impl TabDefaults {
     }
 }
 
-/// Default values for navigation bar.
 pub struct NavigationBarDefaults;
 
 impl NavigationBarDefaults {
@@ -764,7 +746,6 @@ impl NavigationBarDefaults {
     pub const INDICATOR_RADIUS: f32 = 16.0;
 }
 
-/// Default values for navigation rail.
 pub struct NavigationRailDefaults;
 
 impl NavigationRailDefaults {
@@ -795,7 +776,6 @@ impl NavigationRailDefaults {
     }
 }
 
-/// Default values for segmented button.
 pub struct SegmentedButtonDefaults;
 
 impl SegmentedButtonDefaults {
@@ -832,7 +812,6 @@ impl SegmentedButtonDefaults {
     }
 }
 
-/// Default values for FAB.
 pub struct FABDefaults;
 
 impl FABDefaults {
@@ -860,7 +839,6 @@ impl FABDefaults {
     }
 }
 
-/// Default values for chip components.
 pub struct ChipDefaults;
 
 impl ChipDefaults {
@@ -989,7 +967,6 @@ impl ChipDefaults {
     }
 }
 
-/// Default values for scaffold layout.
 pub struct ScaffoldDefaults;
 
 impl ScaffoldDefaults {
@@ -1004,7 +981,6 @@ impl ScaffoldDefaults {
     pub const FAB_MARGIN: f32 = 16.0;
 }
 
-/// Default values for navigation drawer.
 pub struct NavigationDrawerDefaults;
 
 impl NavigationDrawerDefaults {
@@ -1022,7 +998,6 @@ impl NavigationDrawerDefaults {
     pub const SHAPE_RADIUS: f32 = 16.0;
 }
 
-/// Default values for bottom sheet / modal bottom sheet.
 pub struct BottomSheetDefaults;
 
 impl BottomSheetDefaults {
@@ -1046,7 +1021,6 @@ impl BottomSheetDefaults {
     pub const MAX_WIDTH: f32 = 640.0;
 }
 
-/// Default values for search bar.
 pub struct SearchBarDefaults;
 
 impl SearchBarDefaults {
@@ -1110,7 +1084,6 @@ impl SearchBarDefaults {
     }
 }
 
-/// Default values for dropdown menu.
 pub struct DropdownMenuDefaults;
 
 impl DropdownMenuDefaults {
@@ -1133,7 +1106,6 @@ impl DropdownMenuDefaults {
     }
 }
 
-/// Default values for tooltip.
 pub struct TooltipDefaults;
 
 impl TooltipDefaults {
@@ -1149,7 +1121,6 @@ impl TooltipDefaults {
     }
 }
 
-/// Default values for pull-to-refresh.
 pub struct PullToRefreshDefaults;
 
 impl PullToRefreshDefaults {
@@ -1162,7 +1133,6 @@ impl PullToRefreshDefaults {
     }
 }
 
-/// Default values for alert dialog.
 pub struct AlertDialogDefaults;
 
 impl AlertDialogDefaults {
@@ -1174,7 +1144,6 @@ impl AlertDialogDefaults {
     }
 }
 
-/// Default values for outlined text field.
 pub struct OutlinedTextFieldDefaults;
 
 impl OutlinedTextFieldDefaults {
@@ -1229,7 +1198,6 @@ impl OutlinedTextFieldDefaults {
     }
 }
 
-/// Default values for date picker.
 pub struct DatePickerDefaults;
 
 impl DatePickerDefaults {
@@ -1277,7 +1245,6 @@ impl DatePickerDefaults {
     }
 }
 
-/// Default values for time picker.
 pub struct TimePickerDefaults;
 
 impl TimePickerDefaults {
@@ -1339,7 +1306,6 @@ impl TimePickerDefaults {
     }
 }
 
-/// Default values for swipe-to-dismiss.
 pub struct SwipeToDismissDefaults;
 
 impl SwipeToDismissDefaults {
@@ -1349,13 +1315,10 @@ impl SwipeToDismissDefaults {
     pub const MAX_WIDTH: f32 = 400.0;
 }
 
-/// Default values for split button.
-///
-/// Token values sourced from `SplitButton{Small,XSmall,Medium,Large,XLarge}Tokens`.
+
 pub struct SplitButtonDefaults;
 
 impl SplitButtonDefaults {
-    /// Between-space from `SplitButtonSmallTokens.BetweenSpace` (2.0.dp).
     pub const SPACING: f32 = 2.0;
     pub const LEADING_BUTTON_MIN_WIDTH: f32 = 48.0;
 
@@ -1365,37 +1328,26 @@ impl SplitButtonDefaults {
     pub const LARGE_CONTAINER_HEIGHT: f32 = 64.0; // estimate -> no LargeTokens in repo
     pub const XLARGE_CONTAINER_HEIGHT: f32 = 72.0; // estimate
 
-    /// Outer corners are fully rounded (50% -> effectively full radius).
     pub const OUTER_CORNER_SIZE: f32 = f32::INFINITY; // ShapeDefaults.CornerFull equivalent
-    /// Small inner corner size from `SplitButtonSmallTokens.InnerCornerCornerSize`.
     pub const SMALL_INNER_CORNER_SIZE: f32 = 4.0;
-    /// Extra-small inner corner size from `SplitButtonXSmallTokens.InnerCornerCornerSize`.
     pub const XSMALL_INNER_CORNER_SIZE: f32 = 4.0;
-    /// Medium inner corner size from `SplitButtonMediumTokens.InnerCornerCornerSize`.
     pub const MEDIUM_INNER_CORNER_SIZE: f32 = 4.0;
-    /// Large inner corner size (estimate).
     pub const LARGE_INNER_CORNER_SIZE: f32 = 4.0;
-    /// Extra-large inner corner size (estimate).
     pub const XLARGE_INNER_CORNER_SIZE: f32 = 4.0;
 
-    /// Pressed inner corner sizes (from tokens).
     pub const XSMALL_INNER_CORNER_SIZE_PRESSED: f32 = 6.0;
     pub const SMALL_INNER_CORNER_SIZE_PRESSED: f32 = 6.0;
     pub const MEDIUM_INNER_CORNER_SIZE_PRESSED: f32 = 6.0;
     pub const LARGE_INNER_CORNER_SIZE_PRESSED: f32 = 6.0;
     pub const XLARGE_INNER_CORNER_SIZE_PRESSED: f32 = 6.0;
 
-    /// Leading icon size from `ButtonSmallTokens.IconSize`.
     pub const LEADING_ICON_SIZE: f32 = 18.0;
-    /// Trailing icon size from `SplitButtonSmallTokens.TrailingIconSize`.
     pub const TRAILING_ICON_SIZE: f32 = 22.0;
     pub const XSMALL_TRAILING_ICON_SIZE: f32 = 22.0;
     pub const MEDIUM_TRAILING_ICON_SIZE: f32 = 26.0;
     pub const LARGE_TRAILING_ICON_SIZE: f32 = 26.0;
     pub const XLARGE_TRAILING_ICON_SIZE: f32 = 26.0;
 
-    /// Content padding for a small leading button.
-    /// `SplitButtonSmallTokens.LeadingButtonLeadingSpace` (16.0) /
     /// `LeadingButtonTrailingSpace` (12.0).
     pub fn small_leading_content_padding() -> PaddingValues {
         PaddingValues {
@@ -1406,8 +1358,6 @@ impl SplitButtonDefaults {
         }
     }
 
-    /// Content padding for a small trailing button.
-    /// `SplitButtonSmallTokens.TrailingButtonLeadingSpace` (13.0) /
     /// `TrailingButtonTrailingSpace` (13.0).
     pub fn small_trailing_content_padding() -> PaddingValues {
         PaddingValues {
@@ -1419,7 +1369,6 @@ impl SplitButtonDefaults {
     }
 
     /// Content padding for an extra-small leading button.
-    /// `SplitButtonXSmallTokens.LeadingButtonLeadingSpace` (12.0) /
     /// `LeadingButtonTrailingSpace` (10.0).
     pub fn xsmall_leading_content_padding() -> PaddingValues {
         PaddingValues {
@@ -1431,7 +1380,6 @@ impl SplitButtonDefaults {
     }
 
     /// Content padding for an extra-small trailing button.
-    /// `SplitButtonXSmallTokens.TrailingButtonLeadingSpace` (13.0) /
     /// `TrailingButtonTrailingSpace` (13.0).
     pub fn xsmall_trailing_content_padding() -> PaddingValues {
         PaddingValues {
@@ -1442,8 +1390,6 @@ impl SplitButtonDefaults {
         }
     }
 
-    /// Content padding for a medium leading button.
-    /// `SplitButtonMediumTokens.LeadingButtonLeadingSpace` (24.0) /
     /// `LeadingButtonTrailingSpace` (24.0).
     pub fn medium_leading_content_padding() -> PaddingValues {
         PaddingValues {
@@ -1454,8 +1400,6 @@ impl SplitButtonDefaults {
         }
     }
 
-    /// Content padding for a medium trailing button.
-    /// `SplitButtonMediumTokens.TrailingButtonLeadingSpace` (15.0) /
     /// `TrailingButtonTrailingSpace` (15.0).
     pub fn medium_trailing_content_padding() -> PaddingValues {
         PaddingValues {
@@ -1466,7 +1410,6 @@ impl SplitButtonDefaults {
         }
     }
 
-    /// Content padding for a large leading button (estimate).
     pub fn large_leading_content_padding() -> PaddingValues {
         PaddingValues {
             left: 32.0,
@@ -1476,7 +1419,6 @@ impl SplitButtonDefaults {
         }
     }
 
-    /// Content padding for a large trailing button (estimate).
     pub fn large_trailing_content_padding() -> PaddingValues {
         PaddingValues {
             left: 24.0,
@@ -1507,21 +1449,15 @@ impl SplitButtonDefaults {
     }
 }
 
-/// Default values for button group.
-///
-/// Token values sourced from `ButtonGroupSmallTokens` and
-/// `ConnectedButtonGroupSmallTokens`.
+
 pub struct ButtonGroupDefaults;
 
 impl ButtonGroupDefaults {
-    /// The default percentage (15%) by which a pressed item expands.
     pub const EXPANDED_RATIO: f32 = 0.15;
 
-    /// Between-space from `ButtonGroupSmallTokens.BetweenSpace` (12.0.dp)
     /// -> used for unconnected (standard) button groups.
     pub const STANDARD_GAP: f32 = 12.0;
 
-    /// Between-space from `ConnectedButtonGroupSmallTokens.BetweenSpace` (2.0.dp)
     /// -> used for connected button groups.
     pub const CONNECTED_GAP: f32 = 2.0;
 
@@ -1529,17 +1465,12 @@ impl ButtonGroupDefaults {
 
     // Connected button group shape helpers (shapes for leading/middle/trailing items)
 
-    /// Inner corner size for connected button group.
     pub const CONNECTED_INNER_CORNER: f32 = 8.0; // ConnectedButtonGroupSmallTokens.InnerCornerCornerSize
-    /// Pressed inner corner size for connected button group.
     pub const CONNECTED_PRESSED_INNER_CORNER: f32 = 4.0; // PressedInnerCornerCornerSize
-    /// Full corner size for checked state.
     pub const CONNECTED_CHECKED_CORNER: f32 = f32::INFINITY;
-    /// Full corner size for outer edges.
     pub const CONNECTED_OUTER_CORNER: f32 = f32::INFINITY;
 }
 
-/// Default values for carousel.
 pub struct CarouselDefaults;
 
 impl CarouselDefaults {

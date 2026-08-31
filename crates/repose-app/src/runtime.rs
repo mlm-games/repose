@@ -129,7 +129,6 @@ pub struct ReposeRuntime {
     pub sched: Scheduler,
     pub scale: f32,
 
-    // Input state
     pub modifiers: Modifiers,
     pub mouse_pos_px: (f32, f32),
     /// Whether the pointer is currently inside the window.
@@ -159,8 +158,7 @@ pub struct ReposeRuntime {
     last_down: Option<(u64, web_time::Instant)>,
     /// Set when the second tap of a double-click qualifies (within
     /// [DOUBLE_TAP_MIN_MS, DOUBLE_CLICK_MS] of the first tap's up). Its up
-    /// confirms the double click; a canceled up falls back to the first tap's
-    /// onClick (Compose detectTapGestures).
+    /// Confirms the double click. A canceled second tap falls back to the first tap's onClick.
     double_candidate: Option<u64>,
     long_press: Option<(u64, web_time::Instant, f32, f32)>,
     /// Keyboard long-press (Compose combinedClickable: holding Space/Enter
@@ -169,13 +167,10 @@ pub struct ReposeRuntime {
     suppress_next_click: bool,
     pending_click: Option<(u64, web_time::Instant, Rc<dyn Fn()>)>,
 
-    // Per-frame cache for hit testing
     pub frame_cache: Option<Frame>,
 
-    // Platform output accumulator (cursor changes, etc.)
     cursor: Option<CursorIcon>,
 
-    // Text field state
     pub textfield_states: HashMap<u64, Rc<RefCell<TextFieldState>>>,
 }
 
@@ -247,8 +242,6 @@ impl ReposeRuntime {
 
         let size = self.sched.size;
         let rc = render_ctx.clone();
-        // Root-level panic guard: a stray panic during compose must not kill the
-        // event loop / freeze the hosted demo.
         let mut compose_once = |this: &mut Self| {
             let mut inner = |s: &mut Scheduler| (root_fn)(s, &rc);
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -512,7 +505,6 @@ impl ReposeRuntime {
     pub fn handle_pointer_move(&mut self, pos: Vec2) -> PointerMoveResult {
         self.mouse_pos_px = (pos.x, pos.y);
 
-        // DnD move
         if dnd::handle_drag_action(&DragAction::Move {
             position: pos,
             modifiers: self.modifiers,
@@ -577,19 +569,16 @@ impl ReposeRuntime {
             }
         }
 
-        // Determine topmost hit
         let top = f
             .hit_regions
             .iter()
             .rev()
             .find(|h| !h.disabled && h.rect.contains(pos));
 
-        // Update cursor
         self.cursor = top.and_then(|h| h.cursor).or(Some(CursorIcon::Default));
 
         let new_hover = top.map(|h| h.id);
 
-        // Enter / Leave with bubbling
         let old_chain = hover_chain_for(Some(f), self.hover_id);
         let new_chain = hover_chain_for(Some(f), new_hover);
         if new_chain != old_chain {
@@ -677,7 +666,6 @@ impl ReposeRuntime {
             }
             self.hit_path = Some(path.clone());
 
-            // DnD press
             dnd::handle_drag_action(&DragAction::Press {
                 position: pos,
                 capture_id: hit.id,
@@ -685,7 +673,6 @@ impl ReposeRuntime {
                 modifiers: self.modifiers,
             });
 
-            // Capture
             self.capture_id = Some(hit.id);
             result.capture_id = Some(hit.id);
             result.consumed = true;
@@ -714,7 +701,6 @@ impl ReposeRuntime {
                 self.pending_click = None;
             }
 
-            // Long-press timer (combinedClickable parity)
             match button {
                 PointerButton::Primary => {
                     self.long_press = if hit.on_long_click.is_some() {
@@ -727,7 +713,6 @@ impl ReposeRuntime {
                 _ => {}
             }
 
-            // TextField caret placement
             if is_textfield_in_frame(f, hit.id) {
                 let key = tf_key_of(f, hit.id);
                 let seed = hit.tf_value.as_str();
@@ -753,10 +738,8 @@ impl ReposeRuntime {
                 }
             }
 
-            // Pressed visual
             self.pressed_ids.insert(hit.id);
 
-            // Focus + IME
             if hit.focusable {
                 self.sched.focused = Some(hit.id);
                 result.focused = Some(hit.id);
@@ -773,7 +756,6 @@ impl ReposeRuntime {
 
             request_frame();
         } else {
-            // Click outside: drop focus
             self.hit_path = None;
             if self.ime_preedit {
                 self.ime_preedit = false;
@@ -1097,9 +1079,7 @@ impl ReposeRuntime {
         }
     }
 
-    /// Compose combinedClickable keyboard parity: holding Space/Enter past
-    /// LONG_PRESS_MS fires on_long_click; the subsequent KeyUp must not also
-    /// fire onClick.
+    /// Holding Space/Enter past LONG_PRESS_MS fires long-click. The following KeyUp must not fire onClick.
     fn poll_key_long_press(&mut self) {
         let Some(f) = self.frame_cache.clone() else {
             return;
@@ -1150,13 +1130,10 @@ impl ReposeRuntime {
 
     /// Process a keyboard key event. Returns true if consumed.
     pub fn handle_key(&mut self, event: &KeyEvent) -> bool {
-        // Compose: key events → InputMode.Keyboard (show focus ring on Tab/arrows).
         if event.event_type == KeyEventType::Down {
             let _ = repose_core::request_input_mode(repose_core::InputMode::Keyboard);
         }
 
-        // Owned clone so `dispatch_action` may take `&mut self` below
-        // without conflicting with the long-lived frame borrow.
         let Some(frame) = self.frame_cache.clone() else {
             return false;
         };
@@ -1484,7 +1461,6 @@ impl ReposeRuntime {
             .filter_map(|n| n.parent.map(|p| (n.id, p)))
             .collect();
 
-        // Build ancestor chain
         let mut ancestors = Vec::new();
         let mut cur = focused;
         loop {
@@ -1496,7 +1472,6 @@ impl ReposeRuntime {
             }
         }
 
-        // Top-down preview: root -> focused
         for &id in ancestors.iter().rev() {
             if let Some(hit) = hit_by_id.get(&id)
                 && let Some(cb) = &hit.on_preview_key_event
@@ -1506,7 +1481,6 @@ impl ReposeRuntime {
             }
         }
 
-        // Bottom-up normal: focused -> root
         for &id in ancestors.iter() {
             if let Some(hit) = hit_by_id.get(&id)
                 && let Some(cb) = &hit.on_key_event
@@ -1805,9 +1779,7 @@ impl ReposeRuntime {
     /// text, clipboard paste, hardware-keyboard fallback, ...).
     /// Returns true if text was inserted.
     ///
-    /// Control characters are filtered out; newlines are dropped for
-    /// single-line text fields. Skips while an IME preedit is active so the
-    /// composition isn't corrupted by duplicate host input.
+    /// Control chars are filtered. Newlines are dropped for single-line fields. Skipped during IME preedit.
     pub fn insert_text_into_focused(&mut self, text: &str) -> bool {
         if text.is_empty()
             || self.ime_preedit
@@ -1895,9 +1867,7 @@ impl ReposeRuntime {
     /// (winit `key_event.text`, Android soft-keyboard text, ...).
     ///
     /// When the modifiers are free of Ctrl/Alt/Meta and the payload is
-    /// printable, the text is inserted into the focused text field first;
-    /// otherwise the event falls through to [`Self::handle_key`] (single
-    /// characters, navigation, shortcuts, activation).
+    /// Printable text goes to the focused field first. Otherwise falls through to handle_key.
     pub fn handle_key_with_text(&mut self, event: &KeyEvent, composed_text: Option<&str>) -> bool {
         if event.event_type == KeyEventType::Down {
             let _ = repose_core::request_input_mode(repose_core::InputMode::Keyboard);

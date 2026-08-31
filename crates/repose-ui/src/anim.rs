@@ -49,7 +49,7 @@ pub fn animate_f32_from(
     }
 }
 
-/// Animate f32 to the given target; starts at the target on first mount (legacy behavior).
+/// Animate f32 to target. Starts at target on first mount.
 pub fn animate_f32(key: impl Into<String>, target: f32, spec: AnimationSpec) -> f32 {
     animate_f32_from(key, target, target, spec)
 }
@@ -103,22 +103,22 @@ animate_from_impl!(animate_vec2_from, Vec2, "vec2");
 animate_from_impl!(animate_size_from, Size, "size");
 animate_from_impl!(animate_rect_from, Rect, "rect");
 
-/// Animate Color to the given target; starts at the target on first mount (legacy behavior).
+/// Animate Color to target. Starts at target on first mount.
 pub fn animate_color(key: impl Into<String>, target: Color, spec: AnimationSpec) -> Color {
     animate_color_from(key, target, target, spec)
 }
 
-/// Animate Vec2 to the given target; starts at the target on first mount.
+/// Animate Vec2 to target. Starts at target on first mount.
 pub fn animate_vec2(key: impl Into<String>, target: Vec2, spec: AnimationSpec) -> Vec2 {
     animate_vec2_from(key, target, target, spec)
 }
 
-/// Animate Size to the given target; starts at the target on first mount.
+/// Animate Size to target. Starts at target on first mount.
 pub fn animate_size(key: impl Into<String>, target: Size, spec: AnimationSpec) -> Size {
     animate_size_from(key, target, target, spec)
 }
 
-/// Animate Rect to the given target; starts at the target on first mount.
+/// Animate Rect to target. Starts at target on first mount.
 pub fn animate_rect(key: impl Into<String>, target: Rect, spec: AnimationSpec) -> Rect {
     animate_rect_from(key, target, target, spec)
 }

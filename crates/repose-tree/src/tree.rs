@@ -231,7 +231,6 @@ impl ViewTree {
     pub fn mark_dirty(&mut self, id: NodeId) {
         self.dirty.insert(id);
 
-        // Also mark ancestors dirty (layout flows down from root)
         let mut current = id;
         while let Some(node) = self.nodes.get(current) {
             if let Some(parent) = node.parent {
@@ -261,10 +260,8 @@ impl ViewTree {
 
         self.root = Some(root_id);
 
-        // Remove orphaned nodes (nodes not updated this generation)
         self.collect_garbage();
 
-        // Update stats
         self.stats.total_nodes = self.nodes.len();
         self.stats.dirty_nodes = self.dirty.len();
         self.stats.reconciled_nodes = ctx.reconciled;
@@ -317,7 +314,6 @@ impl ViewTree {
                 .get_mut(node_id)
                 .expect("reconcile_node: node not found");
 
-            // Update parent, depth, generation
             node.parent = parent;
             node.depth = depth;
             node.generation = self.generation;
@@ -364,14 +360,12 @@ impl ViewTree {
     ) -> Vec<u64> {
         let child_depth = parent_depth + 1;
 
-        // Get current children
         let old_children: SmallVec<[NodeId; 4]> = self
             .nodes
             .get(parent_id)
             .map(|n| n.children.clone())
             .unwrap_or_default();
 
-        // Build a map of keyed children for efficient lookup
         let mut keyed_children: FxHashMap<u64, NodeId> = FxHashMap::default();
         let mut unkeyed_children: Vec<NodeId> = Vec::new();
 
@@ -406,7 +400,7 @@ impl ViewTree {
             }
             let idx = i as u32;
             let child_id = if let Some(key) = new_child.modifier.key {
-                // Keyed child: look up by key
+
                 if let Some(&existing_id) = keyed_children.get(&key) {
                     used_nodes.insert(existing_id);
                     self.reconcile_node(
@@ -421,7 +415,7 @@ impl ViewTree {
                     self.create_node(new_child, Some(parent_id), child_depth, idx, ctx)
                 }
             } else {
-                // Unkeyed child: match by position
+
                 if unkeyed_index < unkeyed_children.len() {
                     let existing_id = unkeyed_children[unkeyed_index];
                     unkeyed_index += 1;
@@ -446,14 +440,12 @@ impl ViewTree {
             }
         }
 
-        // Mark unused old children for removal
         for &old_child in &old_children {
             if !used_nodes.contains(&old_child) {
                 self.mark_for_removal(old_child, ctx);
             }
         }
 
-        // Update parent's children list
         if let Some(parent) = self.nodes.get_mut(parent_id) {
             parent.children = new_child_ids;
         }
@@ -472,7 +464,6 @@ impl ViewTree {
     ) -> NodeId {
         let content_hash = hash_view_content(view);
 
-        // Insert a partial node first
         let node_id = self.nodes.insert_with_key(|id| {
             TreeNode::new(
                 id,
@@ -496,7 +487,6 @@ impl ViewTree {
             node.scope_key = view.scope_key.clone();
         }
 
-        // Now, recursively create children
         let child_depth = depth + 1;
         let mut child_ids: SmallVec<[NodeId; 4]> = SmallVec::new();
         let mut child_hashes: Vec<u64> = Vec::with_capacity(view.children.len());
@@ -520,7 +510,6 @@ impl ViewTree {
             );
         }
 
-        // Now compute the view_id and subtree_hash, and update the node
         let view_id = self.compute_view_id(view, node_id, parent, index_in_parent);
         let subtree_hash = hash_subtree(content_hash, &child_hashes);
 
@@ -545,12 +534,11 @@ impl ViewTree {
         parent: Option<NodeId>,
         index_in_parent: u32,
     ) -> ViewId {
-        // If the view already has an ID assigned, use it
+
         if view.id != 0 {
             return view.id;
         }
 
-        // Otherwise compute from parent + index/key
         let parent_id = parent
             .and_then(|p| self.nodes.get(p))
             .map(|n| n.view_id)
@@ -558,7 +546,6 @@ impl ViewTree {
 
         let salt = view.modifier.key.unwrap_or(index_in_parent as u64);
 
-        // Simple hash combination
         let mut id = parent_id.wrapping_mul(31).wrapping_add(salt);
         id = id.wrapping_mul(0x9E3779B97F4A7C15);
         id ^= id >> 30;
@@ -572,7 +559,7 @@ impl ViewTree {
 
     /// Mark a node and its descendants for removal.
     fn mark_for_removal(&mut self, node_id: NodeId, ctx: &mut ReconcileContext) {
-        // Gather what we need from the node first so the immutable borrow ends
+
         // before we mutate other state.
         let (view_id, children) = {
             let node = self.nodes.get(node_id);
@@ -591,7 +578,6 @@ impl ViewTree {
         }
         ctx.removed += 1;
 
-        // Mark the node's generation as old so it gets collected
         if let Some(node) = self.nodes.get_mut(node_id) {
             node.generation = 0; // Will be collected
         }
@@ -601,7 +587,6 @@ impl ViewTree {
     fn collect_garbage(&mut self) {
         let current_gen = self.generation;
 
-        // Find nodes to remove
         let to_remove: Vec<NodeId> = self
             .nodes
             .iter()
@@ -609,7 +594,6 @@ impl ViewTree {
             .map(|(id, _)| id)
             .collect();
 
-        // Remove them
         for id in to_remove {
             if let Some(node) = self.nodes.remove(id) {
                 self.view_id_map.remove(&node.view_id);
@@ -795,7 +779,6 @@ mod tests {
         tree.update(&root);
         let gen1 = tree.generation();
 
-        // Same tree
         tree.update(&root);
         let gen2 = tree.generation();
 

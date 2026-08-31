@@ -168,7 +168,6 @@ impl TextFieldValue {
         AnnotatedString::new(text, spans)
     }
 
-    /// Returns a copy with the given annotated string.
     pub fn copy(&self, annotated_string: AnnotatedString) -> Self {
         TextFieldValue {
             annotated_string,
@@ -177,7 +176,6 @@ impl TextFieldValue {
         }
     }
 
-    /// Returns a copy with the given plain text.
     pub fn copy_text(&self, text: String) -> Self {
         TextFieldValue {
             annotated_string: AnnotatedString::from(text),
@@ -187,30 +185,20 @@ impl TextFieldValue {
     }
 }
 
-/// Result of text layout computation, provided to the `on_text_layout` callback.
-/// Exposes key information about the rendered text layout.
+/// Result of text layout for `on_text_layout`.
 #[derive(Clone, Debug)]
 pub struct TextLayoutResult {
-    /// Number of visual lines in the layout.
     pub line_count: usize,
-    /// Total content width in px.
     pub width_px: f32,
-    /// Total content height in px.
     pub height_px: f32,
-    /// First baseline position in px.
     pub first_baseline: f32,
-    /// Last baseline position in px.
     pub last_baseline: f32,
-    /// Whether text overflows the available width.
     pub did_overflow_width: bool,
-    /// Whether text overflows the available height.
     pub did_overflow_height: bool,
-    /// Per-line layout information.
     pub lines: Vec<TextLineInfo>,
 }
 
-/// Determines how text is obfuscated in a secure text field.
-/// Corresponds to Compose's `TextObfuscationMode`.
+/// How text is obfuscated in secure fields.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum TextObfuscationMode {
     /// Text is visible, no obfuscation.
@@ -308,13 +296,10 @@ impl TextLayoutResult {
             .unwrap_or(0.0)
     }
 
-    /// Returns true if the text has visual overflow in either direction.
     pub fn has_visual_overflow(&self) -> bool {
         self.did_overflow_width || self.did_overflow_height
     }
 
-    /// Returns the bounding box of the character at the given offset.
-    /// Returns a zero rect if the offset is out of range.
     pub fn get_bounding_box(&self, offset: usize) -> crate::Rect {
         if self.lines.is_empty() || offset > self.lines.last().unwrap().end {
             return crate::Rect::default();
@@ -355,7 +340,6 @@ impl TextLayoutResult {
         }
     }
 
-    /// Returns the cursor rectangle at the given offset.
     pub fn get_cursor_rect(&self, offset: usize) -> crate::Rect {
         let line = self
             .lines
@@ -379,7 +363,6 @@ impl TextLayoutResult {
         }
     }
 
-    /// Returns the offset closest to the given position.
     pub fn get_offset_for_position(&self, position: (f32, f32)) -> Option<usize> {
         let line_idx = self.get_line_for_vertical_position(position.1);
         let line = self.lines.get(line_idx)?;
@@ -394,7 +377,6 @@ impl TextLayoutResult {
         Some((line.start + offset_in_line).min(line.end))
     }
 
-    /// Returns the text range of the word at the given offset.
     pub fn get_word_boundary(&self, _offset: usize) -> super::TextRange {
         // Simple word boundary: extend to spaces or line boundaries
         let text = ""; // We don't store the full text in layout result
@@ -403,18 +385,15 @@ impl TextLayoutResult {
         super::TextRange::new(start, end)
     }
 
-    /// Returns the paragraph direction at the given offset.
     pub fn get_paragraph_direction(&self, _offset: usize) -> u8 {
         0 // LTR
     }
 
-    /// Returns the BiDi run direction at the given offset.
     pub fn get_bidi_run_direction(&self, _offset: usize) -> u8 {
         0 // LTR
     }
 }
 
-/// Bidirectional offset mapping between original and transformed text.
 pub trait OffsetMapping: Debug + Send + Sync + 'static {
     fn original_to_transformed(&self, offset: usize) -> usize;
     fn transformed_to_original(&self, offset: usize) -> usize;
@@ -437,19 +416,16 @@ impl OffsetMapping for IdentityOffsetMapping {
     }
 }
 
-/// Transforms the visual representation of a text field's text without changing
-/// the underlying value. For example, password masking.
+/// Transforms display text without changing the underlying value (e.g. password masking).
 pub trait VisualTransformation: Debug + Send + Sync + 'static {
     /// Transform the text for display. Takes the original `AnnotatedString` and returns
     /// the transformed `TransformedText` with an offset mapping.
     fn filter(&self, text: &AnnotatedString) -> TransformedText;
 }
 
-/// The result of applying a `VisualTransformation`.
+/// Output of `VisualTransformation::filter`.
 pub struct TransformedText {
-    /// The transformed text (annotated).
     pub text: AnnotatedString,
-    /// Maps offsets between original and transformed text.
     pub offset_mapping: Box<dyn OffsetMapping>,
 }
 
@@ -479,8 +455,6 @@ impl Debug for TransformedText {
     }
 }
 
-/// A `VisualTransformation` that displays text as-is (identity).
-/// Equivalent to Compose's `VisualTransformation.None`.
 #[derive(Clone, Copy, Debug)]
 pub struct IdentityVisualTransformation;
 
@@ -497,7 +471,6 @@ impl VisualTransformation for IdentityVisualTransformation {
 /// Matches Compose's `PasswordVisualTransformation`.
 #[derive(Clone, Copy, Debug)]
 pub struct PasswordVisualTransformation {
-    /// The replacement character (default `•` U+2022, to match compose, was *).
     pub mask: char,
 }
 

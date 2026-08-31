@@ -9,25 +9,22 @@ use crate::animation::AnimationSpec;
 use crate::indication::IndicationNodeFactory;
 use crate::{Brush, Color, PointerEvent, Size, Transform, Vec2};
 
-/// State-driven colors for interactive components.
-/// The layout engine selects the appropriate color based on hover/press/focus/disabled state
-/// and animates transitions between them.
+/// State-driven colors. Priority: disabled > dragged > pressed > focused > hovered > default.
 ///
 /// Priority (paint): disabled > dragged > pressed > focused > hovered > default.
 #[derive(Clone, Copy, Debug)]
 pub struct StateColors {
     pub default: Color,
     pub hovered: Color,
-    /// Color while the component is focused (e.g. keyboard focus).
+    /// Color while focused.
     pub focused: Color,
     pub pressed: Color,
     pub disabled: Color,
-    /// Applied while the component is being dragged (preferred over hovered/pressed/focused).
+    /// While dragged (overrides hover/press/focus).
     pub dragged: Color,
 }
 
-/// State-driven elevation for interactive components.
-/// Priority (paint): disabled > dragged > pressed > focused > hovered > default.
+/// State-driven elevation. Priority: disabled > dragged > pressed > focused > hovered > default.
 #[derive(Clone, Copy, Debug)]
 pub struct StateElevation {
     pub default: f32,
@@ -41,7 +38,6 @@ pub struct StateElevation {
 }
 
 impl StateColors {
-    /// A fully-transparent palette: useful as a base when only some states matter.
     pub const fn transparent() -> Self {
         Self {
             default: Color::TRANSPARENT,
@@ -55,7 +51,6 @@ impl StateColors {
 }
 
 impl StateElevation {
-    /// A zero-elevation palette.
     pub const fn zero() -> Self {
         Self {
             default: 0.0,

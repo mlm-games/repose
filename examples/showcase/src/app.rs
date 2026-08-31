@@ -284,7 +284,7 @@ fn install_save_shortcut(snackbar: SnackbarController, on_fire: Rc<dyn Fn()>) {
 }
 
 pub fn app(_s: &mut Scheduler) -> View {
-    // App state
+
     let dark = remember(|| signal(true));
     let rtl = remember(|| signal(false));
     let ui_scale = remember(|| signal(1.0f32));
@@ -316,7 +316,6 @@ pub fn app(_s: &mut Scheduler) -> View {
     };
     let render = renderer(move |scope| pages::render(&ctx, *scope.key()));
 
-    // Environment defaults
     set_theme_default(if dark.get() {
         Theme::default()
     } else {
@@ -369,7 +368,6 @@ pub fn app(_s: &mut Scheduler) -> View {
     );
     let overlay_root = (*overlay).host(Modifier::new().fill_max_size(), content);
 
-    // Ctrl/Cmd+S demo
     let shortcut_note = remember(|| signal("Press Ctrl+S to trigger".to_string()));
     let shortcut_fired = remember(|| signal(false));
     install_save_shortcut(

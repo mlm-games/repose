@@ -161,27 +161,19 @@ impl LayoutConstraints {
 /// Statistics about tree operations.
 #[derive(Clone, Debug, Default)]
 pub struct TreeStats {
-    /// Total nodes in tree.
     pub total_nodes: usize,
 
-    /// Nodes marked dirty this frame.
     pub dirty_nodes: usize,
 
-    /// Nodes that were reconciled (updated).
     pub reconciled_nodes: usize,
 
-    /// Nodes that were skipped (unchanged).
     pub skipped_nodes: usize,
 
-    /// Nodes that were created.
     pub created_nodes: usize,
 
-    /// Nodes that were removed.
     pub removed_nodes: usize,
 
-    /// Layout cache hits.
     pub layout_cache_hits: usize,
 
-    /// Layout cache misses.
     pub layout_cache_misses: usize,
 }
