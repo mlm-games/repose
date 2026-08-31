@@ -433,9 +433,9 @@ pub fn run_android_app_with_options(
 
                         winit::event::TouchPhase::Moved => {
                             let scale = self.scale();
-                            let (mut dirty, pinch, pan) = self
-                                .touch_gestures
-                                .touch_moved(&mut self.rt, tid, pos_px, scale);
+                            let (mut dirty, pinch, pan) =
+                                self.touch_gestures
+                                    .touch_moved(&mut self.rt, tid, pos_px, scale);
 
                             if let Some((delta_scale, center)) = pinch
                                 && self.dispatch_action(Action::Gesture(Gesture::PinchWithCenter {
@@ -446,9 +446,7 @@ pub fn run_android_app_with_options(
                                 dirty = true;
                             }
                             if let Some(delta) = pan
-                                && self.dispatch_action(Action::Gesture(Gesture::Pan {
-                                    delta,
-                                }))
+                                && self.dispatch_action(Action::Gesture(Gesture::Pan { delta }))
                             {
                                 dirty = true;
                             }
@@ -461,9 +459,12 @@ pub fn run_android_app_with_options(
 
                         winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
                             let cancelled = t.phase == winit::event::TouchPhase::Cancelled;
-                            let swipe_right =
-                                self.touch_gestures
-                                    .touch_ended(&mut self.rt, tid, pos_px, cancelled);
+                            let swipe_right = self.touch_gestures.touch_ended(
+                                &mut self.rt,
+                                tid,
+                                pos_px,
+                                cancelled,
+                            );
 
                             let mut dirty = false;
                             if let Some(right) = swipe_right {

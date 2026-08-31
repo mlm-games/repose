@@ -1315,7 +1315,6 @@ impl SwipeToDismissDefaults {
     pub const MAX_WIDTH: f32 = 400.0;
 }
 
-
 pub struct SplitButtonDefaults;
 
 impl SplitButtonDefaults {
@@ -1448,7 +1447,6 @@ impl SplitButtonDefaults {
         }
     }
 }
-
 
 pub struct ButtonGroupDefaults;
 

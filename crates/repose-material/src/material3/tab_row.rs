@@ -109,7 +109,13 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                         })
                         .semantics(Semantics::new(Role::Tab).with_label(&tab.label));
 
-                    tab_m = apply_m3_clickable(tab_m, &tab_source, th.on_surface, is_enabled, move || cb());
+                    tab_m = apply_m3_clickable(
+                        tab_m,
+                        &tab_source,
+                        th.on_surface,
+                        is_enabled,
+                        move || cb(),
+                    );
 
                     Column(tab_m).child((
                         tab.icon.unwrap_or(Box(Modifier::new())),

@@ -530,31 +530,32 @@ fn outlined_field_decoration(
         th.motion.color,
     );
 
-    let (border_color_target, label_color_target, container_bg) = if let Some(ref tc) = config.colors {
-        (
-            tc.indicator_color(config.enabled, config.is_error, is_focused),
-            tc.label_color(config.enabled, config.is_error, is_focused),
-            tc.container_color(config.enabled, config.is_error, is_focused),
-        )
-    } else {
-        (
-            if config.is_error {
-                th.error
-            } else if is_focused {
-                th.primary
-            } else {
-                th.outline
-            },
-            if config.is_error {
-                th.error
-            } else if is_focused {
-                th.primary
-            } else {
-                th.on_surface_variant
-            },
-            Color::TRANSPARENT,
-        )
-    };
+    let (border_color_target, label_color_target, container_bg) =
+        if let Some(ref tc) = config.colors {
+            (
+                tc.indicator_color(config.enabled, config.is_error, is_focused),
+                tc.label_color(config.enabled, config.is_error, is_focused),
+                tc.container_color(config.enabled, config.is_error, is_focused),
+            )
+        } else {
+            (
+                if config.is_error {
+                    th.error
+                } else if is_focused {
+                    th.primary
+                } else {
+                    th.outline
+                },
+                if config.is_error {
+                    th.error
+                } else if is_focused {
+                    th.primary
+                } else {
+                    th.on_surface_variant
+                },
+                Color::TRANSPARENT,
+            )
+        };
 
     let border_color = animate_color(
         format!("otf_bc_{}", anim_key),
@@ -828,40 +829,41 @@ pub fn TextField(
         th.motion.color,
     );
 
-    let (indicator_color_target, label_color_target, container_bg) = if let Some(ref tc) = config.colors {
-        let enf = config.enabled && is_focused;
-        let ind = tc.indicator_color(config.enabled, config.is_error, enf);
-        let lb = tc.label_color(config.enabled, config.is_error, enf);
-        let bg = tc.container_color(config.enabled, config.is_error, enf);
-        (ind, lb, bg)
-    } else {
-        let ind = if !config.enabled {
-            th.on_surface.with_alpha_f32(0.38)
-        } else if config.is_error {
-            th.error
-        } else if is_focused {
-            th.primary
+    let (indicator_color_target, label_color_target, container_bg) =
+        if let Some(ref tc) = config.colors {
+            let enf = config.enabled && is_focused;
+            let ind = tc.indicator_color(config.enabled, config.is_error, enf);
+            let lb = tc.label_color(config.enabled, config.is_error, enf);
+            let bg = tc.container_color(config.enabled, config.is_error, enf);
+            (ind, lb, bg)
         } else {
-            th.on_surface_variant
+            let ind = if !config.enabled {
+                th.on_surface.with_alpha_f32(0.38)
+            } else if config.is_error {
+                th.error
+            } else if is_focused {
+                th.primary
+            } else {
+                th.on_surface_variant
+            };
+            let lb = if !config.enabled {
+                th.on_surface.with_alpha_f32(0.38)
+            } else if config.is_error {
+                th.error
+            } else if is_focused {
+                th.primary
+            } else {
+                th.on_surface_variant
+            };
+            let bg = if config.enabled {
+                th.surface_container_highest
+            } else {
+                th.on_surface
+                    .with_alpha_f32(0.04)
+                    .composite_over(th.surface)
+            };
+            (ind, lb, bg)
         };
-        let lb = if !config.enabled {
-            th.on_surface.with_alpha_f32(0.38)
-        } else if config.is_error {
-            th.error
-        } else if is_focused {
-            th.primary
-        } else {
-            th.on_surface_variant
-        };
-        let bg = if config.enabled {
-            th.surface_container_highest
-        } else {
-            th.on_surface
-                .with_alpha_f32(0.04)
-                .composite_over(th.surface)
-        };
-        (ind, lb, bg)
-    };
 
     let indicator_color = animate_color(
         format!("tf_ind_c_{}", anim_key),

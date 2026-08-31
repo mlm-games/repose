@@ -969,28 +969,24 @@ pub fn run_desktop_app_with_config(
                         }
 
                         winit::event::TouchPhase::Moved => {
-                            let (mut dirty, pinch, pan) = self
-                                .touch_gestures
-                                .touch_moved(&mut self.rt, tid, pos_px, scale);
+                            let (mut dirty, pinch, pan) =
+                                self.touch_gestures
+                                    .touch_moved(&mut self.rt, tid, pos_px, scale);
 
                             if let Some((delta_scale, center)) = pinch
-                                && self.dispatch_action(
-                                    repose_core::shortcuts::Action::Gesture(
-                                        repose_core::shortcuts::Gesture::PinchWithCenter {
-                                            delta_scale,
-                                            center,
-                                        },
-                                    ),
-                                )
+                                && self.dispatch_action(repose_core::shortcuts::Action::Gesture(
+                                    repose_core::shortcuts::Gesture::PinchWithCenter {
+                                        delta_scale,
+                                        center,
+                                    },
+                                ))
                             {
                                 dirty = true;
                             }
                             if let Some(delta) = pan
-                                && self.dispatch_action(
-                                    repose_core::shortcuts::Action::Gesture(
-                                        repose_core::shortcuts::Gesture::Pan { delta },
-                                    ),
-                                )
+                                && self.dispatch_action(repose_core::shortcuts::Action::Gesture(
+                                    repose_core::shortcuts::Gesture::Pan { delta },
+                                ))
                             {
                                 dirty = true;
                             }
@@ -1000,12 +996,14 @@ pub fn run_desktop_app_with_config(
                             }
                         }
 
-                        winit::event::TouchPhase::Ended
-                        | winit::event::TouchPhase::Cancelled => {
+                        winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
                             let cancelled = t.phase == winit::event::TouchPhase::Cancelled;
-                            let swipe_right =
-                                self.touch_gestures
-                                    .touch_ended(&mut self.rt, tid, pos_px, cancelled);
+                            let swipe_right = self.touch_gestures.touch_ended(
+                                &mut self.rt,
+                                tid,
+                                pos_px,
+                                cancelled,
+                            );
 
                             use repose_core::shortcuts::{Action, Gesture};
                             let mut dirty = false;

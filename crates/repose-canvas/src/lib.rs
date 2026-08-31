@@ -168,7 +168,6 @@ fn translate_mesh_data(m: &VectorMeshData, dx: f32, dy: f32) -> VectorMeshData {
 }
 
 pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) -> View {
-
     let painter = move |scene: &mut Scene, rect: Rect, _alpha: f32| {
         let mut scope = DrawScope {
             commands: Vec::new(),

@@ -319,15 +319,11 @@ pub fn ListItem(
             ..Default::default()
         }));
         let click_cb = on_click.clone();
-        modifier = apply_enabled_click(
-            modifier,
-            is_enabled,
-            move || {
-                if let Some(cb) = &click_cb {
-                    cb();
-                }
-            },
-        );
+        modifier = apply_enabled_click(modifier, is_enabled, move || {
+            if let Some(cb) = &click_cb {
+                cb();
+            }
+        });
         if is_enabled {
             if let Some(cb) = &on_long_click {
                 let cb = cb.clone();

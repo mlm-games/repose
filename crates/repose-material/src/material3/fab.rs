@@ -180,17 +180,15 @@ pub fn ExtendedFAB(
     m = apply_m3_clickable(m, &source, content_color, is_enabled, on_click);
     m = with_button_semantics(m, is_enabled);
     m = m.then(config.modifier);
-    Row(m)
-        .child((
-            icon.map(|v| super::util::icon_content_with_color(content_color, v))
-                .unwrap_or(Box(Modifier::new())),
-            Box(Modifier::new()
-                .width(if has_icon { 12.0 } else { 0.0 })
-                .fill_max_height()),
-            Text(label)
-                .color(content_color)
-                .size(th.typography.label_large)
-                .single_line(),
-        ))
-        
+    Row(m).child((
+        icon.map(|v| super::util::icon_content_with_color(content_color, v))
+            .unwrap_or(Box(Modifier::new())),
+        Box(Modifier::new()
+            .width(if has_icon { 12.0 } else { 0.0 })
+            .fill_max_height()),
+        Text(label)
+            .color(content_color)
+            .size(th.typography.label_large)
+            .single_line(),
+    ))
 }

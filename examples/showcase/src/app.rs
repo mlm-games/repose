@@ -284,7 +284,6 @@ fn install_save_shortcut(snackbar: SnackbarController, on_fire: Rc<dyn Fn()>) {
 }
 
 pub fn app(_s: &mut Scheduler) -> View {
-
     let dark = remember(|| signal(true));
     let rtl = remember(|| signal(false));
     let ui_scale = remember(|| signal(1.0f32));

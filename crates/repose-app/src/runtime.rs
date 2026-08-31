@@ -43,7 +43,8 @@ fn ensure_all_tf_states_from_frame(
         if let Some(key) = hit.tf_state_key {
             let st = ensure_tf_state(map, key, hit.tf_value.as_str());
             // Only sync text; do not move caret.
-            st.borrow_mut().apply_controlled_value(hit.tf_value.as_str());
+            st.borrow_mut()
+                .apply_controlled_value(hit.tf_value.as_str());
         }
     }
 }

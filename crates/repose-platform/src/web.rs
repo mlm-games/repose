@@ -878,8 +878,7 @@ impl ApplicationHandler<()> for App {
 
                 let compose_needed = self.compose_requested.replace(false);
                 // Present-only: no compose needed, just present cached scene with updated textures
-                if !self.options.continuous_redraw && !compose_needed
-                {
+                if !self.options.continuous_redraw && !compose_needed {
                     self.drain_render_commands();
                     if let (Some(backend), Some(frame)) = (
                         self.backend.borrow_mut().as_mut(),

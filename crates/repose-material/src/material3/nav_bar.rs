@@ -133,10 +133,8 @@ pub fn NavigationBar(
                         .map(Rc::new)
                         .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
-                    let item_width = remember_state_with_key(
-                        format!("nb_w_{}_{}", id, i),
-                        || 0.0f32,
-                    );
+                    let item_width =
+                        remember_state_with_key(format!("nb_w_{}_{}", id, i), || 0.0f32);
                     let mut item_m = Modifier::new()
                         .flex_grow(1.0)
                         .fill_max_height()
@@ -147,12 +145,11 @@ pub fn NavigationBar(
                         })
                         .semantics(Semantics::new(Role::Tab).with_label(&item.label));
 
-                    item_m = apply_m3_clickable_without_indication(
-                        item_m, &nb_source, is_enabled, {
+                    item_m =
+                        apply_m3_clickable_without_indication(item_m, &nb_source, is_enabled, {
                             let cb = cb.clone();
                             move || cb()
-                        },
-                    );
+                        });
 
                     // Pill-sized ripple host - hover/focus now pill-bounded, not full item.
                     // Map press pos from outer item (full width) to pill local via MappedInteractionSource offset.

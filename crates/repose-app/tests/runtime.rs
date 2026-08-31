@@ -225,11 +225,7 @@ fn combined_clickable_double_tap_skips_on_click() {
     std::thread::sleep(std::time::Duration::from_millis(50));
     let _ = rt.handle_pointer_press(pos, PointerButton::Primary);
     let result = rt.handle_pointer_release(pos, PointerButton::Primary);
-    assert_eq!(
-        *doubles.borrow(),
-        1,
-        "second tap must fire onDoubleClick"
-    );
+    assert_eq!(*doubles.borrow(), 1, "second tap must fire onDoubleClick");
     assert_eq!(
         *clicks.borrow(),
         0,
@@ -274,7 +270,12 @@ fn plain_clickable_is_immediate() {
     let mut rt = ReposeRuntime::new();
     let clicks = Rc::new(RefCell::new(0u32));
     let c = clicks.clone();
-    let frame = button_frame(BTN_ID, Some(Rc::new(move || *c.borrow_mut() += 1)), None, None);
+    let frame = button_frame(
+        BTN_ID,
+        Some(Rc::new(move || *c.borrow_mut() += 1)),
+        None,
+        None,
+    );
     rt.cache_frame(frame);
     let pos = Vec2 { x: 10.0, y: 10.0 };
     let _ = rt.handle_pointer_press(pos, PointerButton::Primary);
@@ -313,10 +314,7 @@ fn pending_click_survives_press_on_another_id() {
         focus_chain: Vec::new(),
     });
     let pos_a = Vec2 { x: 10.0, y: 10.0 };
-    let pos_b = Vec2 {
-        x: 210.0,
-        y: 10.0,
-    };
+    let pos_b = Vec2 { x: 210.0, y: 10.0 };
     let _ = rt.handle_pointer_press(pos_a, PointerButton::Primary);
     let _ = rt.handle_pointer_release(pos_a, PointerButton::Primary);
     std::thread::sleep(std::time::Duration::from_millis(50));

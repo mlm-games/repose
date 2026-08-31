@@ -399,7 +399,6 @@ impl ViewTree {
             }
             let idx = i as u32;
             let child_id = if let Some(key) = new_child.modifier.key {
-
                 if let Some(&existing_id) = keyed_children.get(&key) {
                     used_nodes.insert(existing_id);
                     self.reconcile_node(
@@ -414,7 +413,6 @@ impl ViewTree {
                     self.create_node(new_child, Some(parent_id), child_depth, idx, ctx)
                 }
             } else {
-
                 if unkeyed_index < unkeyed_children.len() {
                     let existing_id = unkeyed_children[unkeyed_index];
                     unkeyed_index += 1;
@@ -533,7 +531,6 @@ impl ViewTree {
         parent: Option<NodeId>,
         index_in_parent: u32,
     ) -> ViewId {
-
         if view.id != 0 {
             return view.id;
         }
@@ -558,7 +555,6 @@ impl ViewTree {
 
     /// Mark a node and its descendants for removal.
     fn mark_for_removal(&mut self, node_id: NodeId, ctx: &mut ReconcileContext) {
-
         // before we mutate other state.
         let (view_id, children) = {
             let node = self.nodes.get(node_id);

@@ -157,7 +157,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER);
 
-m = apply_m3_clickable_ex(
+    m = apply_m3_clickable_ex(
         m,
         &cb_source,
         ripple_col,

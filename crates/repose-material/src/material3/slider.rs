@@ -763,9 +763,7 @@ pub fn RangeSlider(
                         Key::ArrowLeft | Key::ArrowDown => {
                             snap_step(end - step_val, min, max, step)
                         }
-                        Key::ArrowRight | Key::ArrowUp => {
-                            snap_step(end + step_val, min, max, step)
-                        }
+                        Key::ArrowRight | Key::ArrowUp => snap_step(end + step_val, min, max, step),
                         Key::PageDown => snap_step(end - page, min, max, step),
                         Key::PageUp => snap_step(end + page, min, max, step),
                         Key::Home => start,
