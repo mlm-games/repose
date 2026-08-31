@@ -35,6 +35,26 @@ fn ensure_tf_state(
         .clone()
 }
 
+fn ensure_all_tf_states_from_frame(
+    map: &mut HashMap<u64, Rc<RefCell<TextFieldState>>>,
+    frame: &Frame,
+) {
+    for hit in &frame.hit_regions {
+        if let Some(key) = hit.tf_state_key {
+            let st = ensure_tf_state(map, key, hit.tf_value.as_str());
+            // Only sync text; do not move caret.
+            st.borrow_mut().apply_controlled_value(hit.tf_value.as_str());
+        }
+    }
+}
+
+fn is_tf_hit(f: &Frame, id: u64) -> bool {
+    f.hit_regions
+        .iter()
+        .any(|h| h.id == id && h.tf_state_key.is_some())
+        || is_textfield_in_frame(f, id)
+}
+
 /// Platform-directed side effects requested by the UI.
 #[derive(Clone, Default)]
 pub struct PlatformOutput {
@@ -399,6 +419,7 @@ impl ReposeRuntime {
     /// hover against the new hit list, and publishes the frame to the DnD
     /// registry. Replaces platform-local copies of this logic.
     pub fn after_compose(&mut self, frame: &Frame, scale: f32) {
+        ensure_all_tf_states_from_frame(&mut self.textfield_states, frame);
         self.ensure_focused_state_in_frame(frame);
         self.reconcile_hover_from_mouse_pos(frame);
         repose_core::dnd::set_dnd_frame(Some(frame.clone()));
@@ -425,9 +446,7 @@ impl ReposeRuntime {
             && let Some(key) = hit.tf_state_key
         {
             let st = ensure_tf_state(&mut self.textfield_states, key, hit.tf_value.as_str());
-            let mut st = st.borrow_mut();
-            st.apply_controlled_value(&hit.tf_value);
-            st.reset_caret_blink();
+            st.borrow_mut().apply_controlled_value(&hit.tf_value);
         }
     }
 
@@ -549,7 +568,7 @@ impl ReposeRuntime {
 
         // TextField/TextArea drag selection (if captured)
         if let Some(cid) = self.capture_id
-            && is_textfield_in_frame(f, cid)
+            && is_tf_hit(f, cid)
             && let Some(hit) = f.hit_regions.iter().find(|h| h.id == cid)
         {
             let key = tf_key_of(f, cid);
@@ -713,15 +732,24 @@ impl ReposeRuntime {
                 _ => {}
             }
 
-            if is_textfield_in_frame(f, hit.id) {
+            if hit.tf_state_key.is_some() || is_textfield_in_frame(f, hit.id) {
                 let key = tf_key_of(f, hit.id);
                 let seed = hit.tf_value.as_str();
                 let st_rc = ensure_tf_state(&mut self.textfield_states, key, seed);
                 {
                     let mut st = st_rc.borrow_mut();
-                    // Keep in sync if host value changed while unfocused
+                    // Sync text only; never place-at-end here.
                     st.apply_controlled_value(seed);
-                    st.reset_caret_blink();
+
+                    if st.inner_width <= 0.0 {
+                        let w = hit
+                            .tf_content_origin
+                            .map(|_| hit.rect.w)
+                            .unwrap_or(hit.rect.w)
+                            .max(1.0);
+                        st.set_inner_width(w);
+                        st.set_inner_height(hit.rect.h.max(1.0));
+                    }
 
                     let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
                     let content_x = (pos.x - ox + st.scroll_offset).max(0.0);
@@ -735,6 +763,7 @@ impl ReposeRuntime {
                         index_for_x_bytes_vt(&st, font_px, content_x)
                     };
                     st.handle_pointer_down(idx, (pos.x, pos.y), self.modifiers.shift);
+                    // caret was placed by pointer this gesture
                 }
             }
 
@@ -747,8 +776,9 @@ impl ReposeRuntime {
                     let key = tf_key_of(f, hit.id);
                     let st =
                         ensure_tf_state(&mut self.textfield_states, key, hit.tf_value.as_str());
-                    st.borrow_mut().apply_controlled_value(&hit.tf_value);
-                    st.borrow_mut().reset_caret_blink();
+                    let mut s = st.borrow_mut();
+                    s.apply_controlled_value(&hit.tf_value);
+                    s.reset_caret_blink();
                 }
             }
 
@@ -883,7 +913,7 @@ impl ReposeRuntime {
 
         // TextField drag end
         if let Some(cid) = self.capture_id
-            && is_textfield_in_frame(f, cid)
+            && is_tf_hit(f, cid)
         {
             let key = tf_key_of(f, cid);
             if let Some(state_rc) = self.textfield_states.get(&key) {
@@ -1556,7 +1586,7 @@ impl ReposeRuntime {
         let Some(f) = self.frame_cache.clone() else {
             return false;
         };
-        if !is_textfield_in_frame(&f, fid) {
+        if !is_tf_hit(&f, fid) {
             return false;
         }
         let key = tf_key_of(&f, fid);

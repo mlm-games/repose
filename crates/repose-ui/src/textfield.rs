@@ -1054,17 +1054,26 @@ impl TextFieldState {
         Some(self.blink_start + Duration::from_millis((next_tick * PERIOD_MS) as u64))
     }
 
-    /// Seed state from a controlled value (first focus / first click).
+    /// Seed state from a controlled value (first paint / first focus).
     pub fn with_text(text: impl Into<String>) -> Self {
         let mut s = Self::new();
         s.text = text.into();
-        let len = s.text.len();
-        s.selection = len..len;
+        s.selection = 0..0;
         s
     }
 
-    /// Apply host-controlled value without clobbering IME composition.
-    /// Call this *before* paint and *before* pointer→index mapping.
+    /// Place caret at end of current text (keyboard focus / explicit API).
+    pub fn place_cursor_at_end(&mut self) {
+        let len = self.text.len();
+        self.selection = len..len;
+        self.drag_anchor = None;
+        self.preferred_x_px = None;
+        self.reset_caret_blink();
+    }
+
+    /// Apply host-controlled value without clobbering IME composition or a
+    /// user-placed caret more than necessary.
+    /// Call *before* paint and *before* pointer→index mapping.
     pub fn apply_controlled_value(&mut self, value: &str) {
         if self.text.as_str() == value {
             return;
