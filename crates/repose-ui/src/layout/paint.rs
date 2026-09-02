@@ -1486,6 +1486,12 @@ impl LayoutEngine {
                             (None, None) => None,
                         };
 
+                    let font_size_dp = ti
+                        .text_style
+                        .as_ref()
+                        .map(|ts| ts.font_size)
+                        .filter(|&v| v != 0.0)
+                        .unwrap_or(crate::textfield::TF_FONT_DP);
                     hits.push(HitRegion {
                         id: view_id,
                         rect,
@@ -1500,6 +1506,7 @@ impl LayoutEngine {
                         tf_enabled: ti.enabled,
                         tf_read_only: ti.read_only,
                         tf_value: ti.value.clone(),
+                        tf_font_size_dp: font_size_dp,
                         on_action: combined,
                         cursor: Some(crate::CursorIcon::Text),
                         keyboard_type: ti.keyboard_type,

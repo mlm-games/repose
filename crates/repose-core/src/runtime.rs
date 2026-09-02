@@ -487,6 +487,10 @@ pub struct HitRegion {
     /// Controlled text snapshot for this field (last compose).
     pub tf_value: String,
 
+    /// Font size for this text field in dp (for hit-test / caret mapping).
+    /// 0.0 means use `TF_FONT_DP` default.
+    pub tf_font_size_dp: f32,
+
     // internal
     pub on_drag_start: Option<Rc<dyn Fn(crate::dnd::DragStart) -> Option<crate::dnd::DragPayload>>>,
     pub on_drag_end: Option<Rc<dyn Fn(crate::dnd::DragEnd)>>,

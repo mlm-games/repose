@@ -578,7 +578,12 @@ impl ReposeRuntime {
                 let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
                 let content_x = (pos.x - ox + st.scroll_offset).max(0.0);
                 let content_y = (pos.y - oy + st.scroll_offset_y).max(0.0);
-                let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+                let font_size_dp = if hit.tf_font_size_dp != 0.0 {
+                    hit.tf_font_size_dp
+                } else {
+                    TF_FONT_DP
+                };
+                let font_px = dp_to_px(font_size_dp) * repose_core::locals::text_scale().0;
                 let wrap_w = st.inner_width.max(1.0);
                 let idx = if hit.tf_multiline {
                     index_for_xy_bytes_vt(&st, font_px, wrap_w, content_x, content_y)
@@ -755,7 +760,12 @@ impl ReposeRuntime {
                     let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
                     let content_x = (pos.x - ox + st.scroll_offset).max(0.0);
                     let content_y = (pos.y - oy + st.scroll_offset_y).max(0.0);
-                    let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+                    let font_size_dp = if hit.tf_font_size_dp != 0.0 {
+                        hit.tf_font_size_dp
+                    } else {
+                        TF_FONT_DP
+                    };
+                    let font_px = dp_to_px(font_size_dp) * repose_core::locals::text_scale().0;
                     let wrap_w = st.inner_width.max(1.0);
 
                     let idx = if hit.tf_multiline {
@@ -1367,7 +1377,13 @@ impl ReposeRuntime {
                             if is_multiline_id(f, fid)
                                 && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
                             {
-                                let font_px = dp_to_px(TF_FONT_DP);
+                                let font_size_dp = if hit.tf_font_size_dp != 0.0 {
+                                    hit.tf_font_size_dp
+                                } else {
+                                    TF_FONT_DP
+                                };
+                                let font_px =
+                                    dp_to_px(font_size_dp) * repose_core::locals::text_scale().0;
                                 let cur = state.caret_index();
                                 let (new_pos, px) = repose_ui::textfield::move_caret_vertical(
                                     &state.text,
@@ -1400,7 +1416,13 @@ impl ReposeRuntime {
                             if is_multiline_id(f, fid)
                                 && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
                             {
-                                let font_px = dp_to_px(TF_FONT_DP);
+                                let font_size_dp = if hit.tf_font_size_dp != 0.0 {
+                                    hit.tf_font_size_dp
+                                } else {
+                                    TF_FONT_DP
+                                };
+                                let font_px =
+                                    dp_to_px(font_size_dp) * repose_core::locals::text_scale().0;
                                 let cur = state.caret_index();
                                 let (new_pos, px) = repose_ui::textfield::move_caret_vertical(
                                     &state.text,

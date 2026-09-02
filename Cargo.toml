@@ -42,14 +42,12 @@ web-sys = { version = "0.3", features = [
   "Headers",
 ] }
 js-sys = "0.3"
-
 console_error_panic_hook = "0.1"
 console_log = "1"
 getrandom = "0.3"
 bytemuck = { version = "1.25.0", features = ["derive"] }
 
 taffy = { version = "0.12", default-features = true }
-
 winit = { version = "0.30", default-features = true }
 wgpu = { version = "30", features = ["webgl"] }
 pollster = "0.4"
@@ -78,3 +76,10 @@ repose-platform = { path = "crates/repose-platform", version = "0.28.13" }
 repose-tree = { path = "crates/repose-tree", version = "0.28.13" }
 repose-docking = { path = "crates/repose-docking", version = "0.28.13" }
 repose-macros = { path = "crates/repose-macros", version = "0.28.13" }
+
+# [patch.crates-io]
+# repose-core = { path = "../repose/crates/repose-core" }
+# font-awl = { path = "../font-awl" }
+
+# [profile.release]
+# lto = "thin"
