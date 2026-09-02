@@ -1,12 +1,15 @@
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use repose_core::{Modifier, View, ViewKind, request_frame};
+use web_time::{Duration, Instant};
 
 thread_local! {
     static SNACKBAR_TICKS: RefCell<Vec<Rc<dyn Fn(u32)>>> = RefCell::new(Vec::new());
     static SNACKBAR_DISMISSING: Cell<bool> = const { Cell::new(false) };
+    static SNACKBAR_REGISTRY: RefCell<Vec<Weak<RefCell<SnackbarState>>>> =
+        RefCell::new(Vec::new());
 }
 
 /// Set whether the current frame's snackbar is in the exit-animation phase.
@@ -162,9 +165,9 @@ struct ActiveSnackbar {
     id: u64,
     message: String,
     action: Option<SnackbarAction>,
-    remaining_ms: u32,
+    deadline: Instant,
     dismiss_started: Rc<Cell<bool>>,
-    dismiss_elapsed: u32,
+    dismiss_deadline: Option<Instant>,
 }
 
 impl SnackbarController {
@@ -182,6 +185,7 @@ impl SnackbarController {
             Rc::new(move |elapsed_ms| controller.tick(elapsed_ms))
         };
         SNACKBAR_TICKS.with(|slot| slot.borrow_mut().push(tick));
+        SNACKBAR_REGISTRY.with(|reg| reg.borrow_mut().push(Rc::downgrade(&controller.inner)));
         controller
     }
 
@@ -191,6 +195,38 @@ impl SnackbarController {
                 cb(elapsed_ms);
             }
         });
+    }
+
+    /// Earliest `Instant` when any snackbar needs to wake (dismiss start or
+    /// finish). `None` if no snackbar is active/queued.
+    pub fn next_deadline() -> Option<Instant> {
+        SNACKBAR_REGISTRY.with(|reg| {
+            let mut reg = reg.borrow_mut();
+            // prune dead ones
+            reg.retain(|w| w.upgrade().is_some());
+            let mut earliest: Option<Instant> = None;
+            for weak in reg.iter() {
+                if let Some(rc) = weak.upgrade() {
+                    let state = rc.borrow();
+                    if let Some(active) = &state.active {
+                        let deadline = if active.dismiss_started.get() {
+                            active.dismiss_deadline.unwrap_or_else(Instant::now)
+                        } else {
+                            active.deadline
+                        };
+                        earliest = Some(match earliest {
+                            Some(e) => e.min(deadline),
+                            None => deadline,
+                        });
+                    } else if let Some(req) = state.queue.front() {
+                        // queued item will activate immediately after current dismisses;
+                        // its deadline is not yet scheduled, so ignore until active.
+                        let _ = req;
+                    }
+                }
+            }
+            earliest
+        })
     }
 
     pub fn show(&self, request: SnackbarRequest) {
@@ -204,19 +240,28 @@ impl SnackbarController {
     }
 
     pub fn tick(&self, elapsed_ms: u32) {
+        // Keep elapsed_ms path for compat, will be removed eventually.
+        let now = Instant::now();
         let mut inner = self.inner.borrow_mut();
         if let Some(active) = inner.active.as_mut() {
             if active.dismiss_started.get() {
-                active.dismiss_elapsed += elapsed_ms;
-                if active.dismiss_elapsed >= 200 {
-                    self.overlay.dismiss(active.id);
-                    inner.active = None;
+                if let Some(dd) = active.dismiss_deadline {
+                    if now >= dd {
+                        self.overlay.dismiss(active.id);
+                        inner.active = None;
+                    }
+                } else {
+                    // if deadline missing (should not happen though)
+                    active.dismiss_deadline = Some(now + Duration::from_millis(200));
+                    request_frame();
                 }
-            } else if elapsed_ms >= active.remaining_ms {
+            } else if now >= active.deadline || elapsed_ms >= 60_000 {
                 active.dismiss_started.set(true);
+                active.dismiss_deadline = Some(now + Duration::from_millis(200));
                 request_frame();
             } else {
-                active.remaining_ms -= elapsed_ms;
+                // keep remaining as deadline.
+                let _ = elapsed_ms;
             }
         }
         drop(inner);
@@ -229,6 +274,7 @@ impl SnackbarController {
             && !active.dismiss_started.get()
         {
             active.dismiss_started.set(true);
+            active.dismiss_deadline = Some(Instant::now() + Duration::from_millis(200));
             request_frame();
         }
     }
@@ -278,13 +324,14 @@ impl SnackbarController {
             label: a.label,
         });
         let id = self.overlay.show_entry(wrapped_builder, 900.0, true);
+        let deadline = Instant::now() + Duration::from_millis(u64::from(req.duration_ms.max(1)));
         inner.active = Some(ActiveSnackbar {
             id,
             message: req.message,
             action,
-            remaining_ms: req.duration_ms.max(1),
+            deadline,
             dismiss_started: dismiss_flag,
-            dismiss_elapsed: 0,
+            dismiss_deadline: None,
         });
     }
 }

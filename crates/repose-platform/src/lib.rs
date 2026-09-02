@@ -1350,12 +1350,11 @@ pub fn run_desktop_app_with_config(
             if !self.pending_redraw {
                 let now = Instant::now();
                 let idle_cap = web_time::Duration::from_millis(1000);
-                let deadline = self
-                    .rt
-                    .next_caret_blink_deadline()
-                    .unwrap_or(now + idle_cap);
+                let deadline = self.rt.next_frame_deadline(now, idle_cap);
 
-                if now.saturating_duration_since(self.last_redraw) >= idle_cap || now >= deadline {
+                if now.saturating_duration_since(self.last_redraw) >= idle_cap
+                    || self.rt.is_wakeup_due(now)
+                {
                     self.redraw_requested.set(true);
                     request_frame();
                     rc::request_redraw(&self.window);

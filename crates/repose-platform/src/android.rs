@@ -648,7 +648,7 @@ pub fn run_android_app_with_options(
             }
         }
 
-        fn about_to_wait(&mut self, _el: &winit::event_loop::ActiveEventLoop) {
+        fn about_to_wait(&mut self, el: &winit::event_loop::ActiveEventLoop) {
             crate::process_deeplinks();
             crate::process_lifecycle();
 
@@ -659,17 +659,14 @@ pub fn run_android_app_with_options(
             let frame_requested = take_frame_request();
             let present_requested = take_present_request();
 
-            // Compose needed ?
+            // Compose needed ? Unified via ReposeRuntime wakeup helpers.
             let needs_compose = if !self.in_foreground {
                 self.dirty || frame_requested
             } else {
                 self.continuous_redraw()
                     || self.dirty
                     || frame_requested
-                    || self
-                        .rt
-                        .next_caret_blink_deadline()
-                        .is_some_and(|d| d <= web_time::Instant::now())
+                    || self.rt.is_wakeup_due(web_time::Instant::now())
                     || repose_core::animation_driver::is_active()
             };
 
@@ -686,6 +683,11 @@ pub fn run_android_app_with_options(
             };
             if needs_present {
                 self.request_present_only();
+                return;
+            }
+
+            if let Some(deadline) = self.rt.next_wakeup_deadline() {
+                el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
             }
         }
     }

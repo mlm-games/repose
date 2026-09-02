@@ -971,9 +971,9 @@ impl ApplicationHandler<()> for App {
                 self.request_redraw();
             } else if present_requested && self.rt.frame_cache.is_some() {
                 self.request_present_only();
-            } else if let Some(deadline) = self.rt.next_caret_blink_deadline() {
+            } else if let Some(deadline) = self.rt.next_wakeup_deadline() {
                 let now = web_time::Instant::now();
-                if deadline <= now {
+                if self.rt.is_wakeup_due(now) {
                     self.request_redraw();
                 } else {
                     el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));

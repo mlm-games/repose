@@ -1960,7 +1960,8 @@ impl ReposeRuntime {
     }
 
     /// Next caret blink edge (`Instant`) for the focused text field, if any.
-    pub fn next_caret_blink_deadline(&self) -> Option<web_time::Instant> {
+    /// Internal - platform should use `next_wakeup_deadline()` instead.
+    fn next_caret_blink_deadline(&self) -> Option<web_time::Instant> {
         let fid = self.sched.focused?;
         let frame = self.frame_cache.as_ref()?;
         let hit = frame.hit_regions.iter().find(|h| h.id == fid)?;
@@ -1969,6 +1970,40 @@ impl ReposeRuntime {
             .get(&key)?
             .borrow()
             .next_blink_deadline()
+    }
+
+    /// Centralized wakeup helper for platform runners (caret, snackbar, etc.).
+    pub fn next_wakeup_deadline(&self) -> Option<web_time::Instant> {
+        let caret = self.next_caret_blink_deadline();
+        let snack = repose_ui::overlay::SnackbarController::next_deadline();
+        match (caret, snack) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        }
+    }
+
+    /// Whether a scheduled wakeup is due at `now` (deadline <= now).
+    pub fn is_wakeup_due(&self, now: web_time::Instant) -> bool {
+        self.next_wakeup_deadline().is_some_and(|d| d <= now)
+    }
+
+    /// Whether a caret blink edge is due at `now` (deadline <= now).
+    /// Deprecated: use `is_wakeup_due`.
+    pub fn is_caret_blink_due(&self, now: web_time::Instant) -> bool {
+        self.is_wakeup_due(now)
+    }
+
+    /// Desktop-style deadline with idle keep-alive fallback.
+    /// `idle_cap` is the maximum time the host should sleep without a
+    /// scheduled wakeup (e.g. 1s on desktop to handle tray Deeplinks).
+    pub fn next_frame_deadline(
+        &self,
+        now: web_time::Instant,
+        idle_cap: web_time::Duration,
+    ) -> web_time::Instant {
+        self.next_wakeup_deadline().unwrap_or(now + idle_cap)
     }
 
     /// Tick host-facing overlays (snackbar timeouts) with the elapsed ms since
