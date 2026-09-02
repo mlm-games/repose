@@ -958,7 +958,7 @@ impl ApplicationHandler<()> for App {
         }
     }
 
-    fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         crate::process_deeplinks();
         // Noto fallback manager may have fetched a font and cleared caches; trigger recompose
         if repose_text::take_fallback_dirty() {
@@ -971,12 +971,14 @@ impl ApplicationHandler<()> for App {
                 self.request_redraw();
             } else if present_requested && self.rt.frame_cache.is_some() {
                 self.request_present_only();
-            } else if self
-                .rt
-                .next_caret_blink_deadline()
-                .is_some_and(|d| d <= web_time::Instant::now())
-            {
-                self.request_redraw();
+            } else if let Some(deadline) = self.rt.next_caret_blink_deadline() {
+                let now = web_time::Instant::now();
+                if deadline <= now {
+                    self.request_redraw();
+                } else {
+                    el.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
+                    return;
+                }
             } else if repose_core::animation_driver::is_active() {
                 self.request_redraw();
             }
