@@ -1972,16 +1972,24 @@ impl ReposeRuntime {
             .next_blink_deadline()
     }
 
-    /// Centralized wakeup helper for platform runners (caret, snackbar, etc.).
+    /// Centralized wakeup helper for platform runners (caret, snackbar, debounce, etc.).
     pub fn next_wakeup_deadline(&self) -> Option<web_time::Instant> {
-        let caret = self.next_caret_blink_deadline();
+        let mut earliest = self.next_caret_blink_deadline();
         let snack = repose_ui::overlay::SnackbarController::next_deadline();
-        match (caret, snack) {
+        earliest = match (earliest, snack) {
             (Some(a), Some(b)) => Some(a.min(b)),
             (Some(a), None) => Some(a),
             (None, Some(b)) => Some(b),
             (None, None) => None,
-        }
+        };
+        let debounce = repose_core::debounce::next_deadline();
+        earliest = match (earliest, debounce) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        };
+        earliest
     }
 
     /// Whether a scheduled wakeup is due at `now` (deadline <= now).
@@ -2006,7 +2014,7 @@ impl ReposeRuntime {
         self.next_wakeup_deadline().unwrap_or(now + idle_cap)
     }
 
-    /// Tick host-facing overlays (snackbar timeouts) with the elapsed ms since
+    /// Tick host-facing overlays (snackbar timeouts) + debounce with the elapsed ms since
     /// the last presented frame. Call once per redraw.
     pub fn tick_overlays(&self, last_frame: web_time::Instant) {
         let now = web_time::Instant::now();
@@ -2017,6 +2025,8 @@ impl ReposeRuntime {
         if ms > 0 {
             repose_ui::overlay::SnackbarController::tick_for_frame(ms);
         }
+        // debounce poll is deadline-based, not elapsed - fire due callbacks
+        repose_core::debounce::poll();
     }
 
     /// Get the cursor suggestion (set during pointer-move handling).
