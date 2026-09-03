@@ -5476,8 +5476,13 @@ impl WgpuSceneRenderer {
                 }
                 SceneNode::Callback { rect, payload } => {
                     flush_batch!();
+                    let t = transform_stack
+                        .last()
+                        .copied()
+                        .unwrap_or(Transform::identity());
+                    let transformed = t.apply_to_rect(*rect);
                     current_pass.cmds.push(Cmd::Callback {
-                        rect: *rect,
+                        rect: transformed,
                         payload: payload.clone(),
                     });
                 }
