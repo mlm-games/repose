@@ -254,6 +254,7 @@ pub fn run_android_app_with_options(
                 .set_viewport_and_scale(size.width, size.height, scale);
             if let Some(b) = &mut self.backend {
                 b.configure_surface(size.width, size.height);
+                b.set_pixels_per_point(scale);
             }
             // Recompute IME inset estimate when window size changes
             self.update_ime_inset();

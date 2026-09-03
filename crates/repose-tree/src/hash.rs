@@ -293,6 +293,7 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     // Layers / custom paint / custom layout
     m.graphics_layer.map(|a| (a * 255.0) as u8).hash(hasher);
     m.painter.is_some().hash(hasher);
+    m.paint_callback.is_some().hash(hasher);
     m.layout.is_some().hash(hasher);
     if let Some(sh) = &m.shadow {
         ((sh.blur_radius * 100.0) as i32).hash(hasher);

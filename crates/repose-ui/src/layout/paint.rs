@@ -708,6 +708,12 @@ impl LayoutEngine {
         if let Some(p) = &modifier.painter {
             (p)(scene, rect, alpha_accum);
         }
+        if let Some(payload) = &modifier.paint_callback {
+            scene.nodes.push(SceneNode::Callback {
+                rect,
+                payload: payload.clone(),
+            });
+        }
 
         // Draw indication (ripple, etc.) on top of content but behind hit regions.
         let indication_factory = modifier.indication.clone();

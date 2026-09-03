@@ -19,6 +19,9 @@ mod slug;
 mod commands;
 pub use commands::apply_render_commands;
 
+mod callback;
+pub use callback::{Callback, CallbackResources, ScreenDescriptor, WgpuCallback};
+
 #[derive(Clone)]
 struct UploadRing {
     buf: wgpu::Buffer,
@@ -127,6 +130,8 @@ pub struct WgpuSceneRenderer {
     pub output_format: wgpu::TextureFormat,
     pub output_width: u32,
     pub output_height: u32,
+    /// Pixels per point (DPI scale) for `ScreenDescriptor` / `PaintCallbackInfo`.
+    pub pixels_per_point: f32,
 
     // Render pipelines. Two sets: one for the MSAA surface pass, one for
     // graphics-layer render-to-texture passes (sample_count = 1).
@@ -218,6 +223,8 @@ pub struct WgpuSceneRenderer {
     ws_bind: Option<wgpu::BindGroup>,
     display_pipeline: Option<wgpu::RenderPipeline>,
     display_layout: Option<wgpu::BindGroupLayout>,
+
+    pub callback_resources: CallbackResources,
 }
 
 pub struct WgpuSurfaceBackend {
@@ -1158,6 +1165,10 @@ enum Cmd {
         uoff: u64,
         scissor: (u32, u32, u32, u32),
     },
+    Callback {
+        rect: repose_core::Rect,
+        payload: repose_core::PaintCallbackPayload,
+    },
 }
 
 enum ImageTex {
@@ -1167,6 +1178,14 @@ enum ImageTex {
         w: u32,
         h: u32,
         format: wgpu::TextureFormat,
+        last_used_frame: u64,
+        bytes: u64,
+    },
+    /// For a user-provided texture view.
+    User {
+        bind: wgpu::BindGroup,
+        w: u32,
+        h: u32,
         last_used_frame: u64,
         bytes: u64,
     },
@@ -1909,6 +1928,7 @@ impl WgpuSceneRenderer {
             output_format,
             output_width: 0,
             output_height: 0,
+            pixels_per_point: 1.0,
 
             surface_pipes,
             layer_pipes,
@@ -1974,6 +1994,8 @@ impl WgpuSceneRenderer {
             ws_bind: None,
             display_pipeline: None,
             display_layout: None,
+
+            callback_resources: CallbackResources::default(),
         };
 
         renderer.recreate_msaa_and_depth_stencil();
@@ -2382,6 +2404,122 @@ impl WgpuSceneRenderer {
         });
 
         (tex, bind)
+    }
+
+    /// Register an externally-created `wgpu::TextureView` as an image (zero-copy).
+    pub fn register_native_texture(
+        &mut self,
+        view: &wgpu::TextureView,
+        width: u32,
+        height: u32,
+    ) -> u64 {
+        let handle = self.next_image_handle;
+        self.next_image_handle += 1;
+        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("user native image"),
+            layout: &self.image_bind_layout_rgba,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.image_sampler),
+                },
+            ],
+        });
+        self.images.insert(
+            handle,
+            ImageTex::User {
+                bind,
+                w: width,
+                h: height,
+                last_used_frame: self.frame_index,
+                bytes: 0,
+            },
+        );
+        handle
+    }
+
+    /// Like `register_native_texture` but with custom sampler descriptor.
+    pub fn register_native_texture_with_sampler(
+        &mut self,
+        view: &wgpu::TextureView,
+        sampler_desc: wgpu::SamplerDescriptor<'_>,
+        width: u32,
+        height: u32,
+    ) -> u64 {
+        let handle = self.next_image_handle;
+        self.next_image_handle += 1;
+        let sampler = self.device.create_sampler(&sampler_desc);
+        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("user native image sampleropts"),
+            layout: &self.image_bind_layout_rgba,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        self.images.insert(
+            handle,
+            ImageTex::User {
+                bind,
+                w: width,
+                h: height,
+                last_used_frame: self.frame_index,
+                bytes: 0,
+            },
+        );
+        handle
+    }
+
+    /// Update an existing native texture handle with a new view (reuse handle).
+    pub fn update_native_texture(&mut self, handle: u64, view: &wgpu::TextureView) {
+        let Some(entry) = self.images.get_mut(&handle) else {
+            log::warn!("update_native_texture: handle {handle} not found");
+            return;
+        };
+        let w = match entry {
+            ImageTex::User { w, .. } => *w,
+            ImageTex::Rgba { w, .. } => *w,
+            _ => {
+                log::warn!("update_native_texture: handle {handle} is not rgba/user");
+                return;
+            }
+        };
+        let h = match entry {
+            ImageTex::User { h, .. } => *h,
+            ImageTex::Rgba { h, .. } => *h,
+            _ => 0,
+        };
+        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("user native image update"),
+            layout: &self.image_bind_layout_rgba,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.image_sampler),
+                },
+            ],
+        });
+        *entry = ImageTex::User {
+            bind,
+            w,
+            h,
+            last_used_frame: self.frame_index,
+            bytes: 0,
+        };
     }
 
     pub fn set_image_nv12(
@@ -3009,6 +3147,7 @@ impl WgpuSceneRenderer {
             let b = match &img {
                 ImageTex::Rgba { bytes, .. } => *bytes,
                 ImageTex::Nv12 { bytes, .. } => *bytes,
+                ImageTex::User { bytes, .. } => *bytes,
             };
             self.image_bytes_total = self.image_bytes_total.saturating_sub(b);
         }
@@ -3022,6 +3161,7 @@ impl WgpuSceneRenderer {
         let b = match &img {
             ImageTex::Rgba { bytes, .. } => *bytes,
             ImageTex::Nv12 { bytes, .. } => *bytes,
+            ImageTex::User { bytes, .. } => *bytes,
         };
         self.image_bytes_total = self.image_bytes_total.saturating_sub(b);
         b
@@ -3085,6 +3225,15 @@ impl WgpuSceneRenderer {
                     *last_used_frame = self.frame_index;
                     Some((*w, *h, false))
                 }
+                ImageTex::User {
+                    w,
+                    h,
+                    last_used_frame,
+                    ..
+                } => {
+                    *last_used_frame = self.frame_index;
+                    Some((*w, *h, false))
+                }
                 ImageTex::Nv12 {
                     w,
                     h,
@@ -3132,6 +3281,9 @@ impl WgpuSceneRenderer {
                 ImageTex::Rgba {
                     last_used_frame, ..
                 } => *last_used_frame,
+                ImageTex::User {
+                    last_used_frame, ..
+                } => *last_used_frame,
                 ImageTex::Nv12 {
                     last_used_frame, ..
                 } => *last_used_frame,
@@ -3166,6 +3318,11 @@ impl WgpuSceneRenderer {
                         bytes,
                         ..
                     } => (*last_used_frame, *bytes),
+                    ImageTex::User {
+                        last_used_frame,
+                        bytes,
+                        ..
+                    } => (*last_used_frame, *bytes),
                     ImageTex::Nv12 {
                         last_used_frame,
                         bytes,
@@ -3194,6 +3351,11 @@ impl WgpuSceneRenderer {
                 self.remove_image(h);
             }
         }
+    }
+
+    /// Set pixels per point (DPI scale) for callback `ScreenDescriptor` / `PaintCallbackInfo`.
+    pub fn set_pixels_per_point(&mut self, ppp: f32) {
+        self.pixels_per_point = ppp.max(0.5).min(8.0);
     }
 
     /// Enable or disable linear working-space rendering.
@@ -5312,11 +5474,67 @@ impl WgpuSceneRenderer {
                         log::warn!("PopVectorClip with empty clip stack");
                     }
                 }
+                SceneNode::Callback { rect, payload } => {
+                    flush_batch!();
+                    current_pass.cmds.push(Cmd::Callback {
+                        rect: *rect,
+                        payload: payload.clone(),
+                    });
+                }
                 _ => {}
             }
         }
 
         flush_batch!();
+
+        {
+            let mut seen: std::collections::HashSet<usize> = std::collections::HashSet::new();
+            let mut prepare_list: Vec<Arc<Callback>> = Vec::new();
+            for node in &scene.nodes {
+                if let SceneNode::Callback { payload, .. } = node
+                    && payload.downcast_ref::<Callback>().is_some()
+                {
+                    let ptr = Arc::as_ptr(payload) as *const () as usize;
+                    if seen.insert(ptr) {
+                        if let Ok(cb_arc) = payload.clone().downcast::<Callback>() {
+                            prepare_list.push(cb_arc);
+                        }
+                    }
+                }
+            }
+            if !prepare_list.is_empty() {
+                let screen_desc = ScreenDescriptor {
+                    size_in_pixels: [self.output_width, self.output_height],
+                    pixels_per_point: self.pixels_per_point,
+                    target_format: self.output_format,
+                    sample_count: self.msaa_samples.max(1),
+                };
+                let mut user_cmd_bufs: Vec<wgpu::CommandBuffer> = Vec::new();
+                for cb in &prepare_list {
+                    user_cmd_bufs.extend(cb.0.prepare(
+                        &self.device,
+                        &self.queue,
+                        encoder,
+                        &screen_desc,
+                        &mut self.callback_resources,
+                    ));
+                }
+                for cb in &prepare_list {
+                    user_cmd_bufs.extend(cb.0.finish_prepare(
+                        &self.device,
+                        &self.queue,
+                        encoder,
+                        &screen_desc,
+                        &mut self.callback_resources,
+                    ));
+                }
+                // NOTE: For now submit immediately via queue
+                // so they execute before main render pass.
+                if !user_cmd_bufs.is_empty() {
+                    self.queue.submit(user_cmd_bufs);
+                }
+            }
+        }
 
         // Push the final pass.
         passes.push(current_pass);
@@ -5594,7 +5812,12 @@ impl WgpuSceneRenderer {
                         cnt: n,
                         handle,
                     } => {
-                        if let Some(ImageTex::Rgba { bind, .. }) = self.images.get(&handle) {
+                        let bind_opt = match self.images.get(&handle) {
+                            Some(ImageTex::Rgba { bind, .. }) => Some(bind),
+                            Some(ImageTex::User { bind, .. }) => Some(bind),
+                            _ => None,
+                        };
+                        if let Some(bind) = bind_opt {
                             draw_with_bind!(
                                 &pipes.image_rgba,
                                 self.glyph_color.ring,
@@ -5745,6 +5968,36 @@ impl WgpuSceneRenderer {
                         draw_indexed_mesh!(&pipes.mesh_clip_dec, uoff, voff, vcnt, ioff, icnt);
                         clip_depth = clip_depth.saturating_sub(1);
                         rpass.set_stencil_reference(clip_depth);
+                    }
+
+                    Cmd::Callback { rect, payload } => {
+                        if let Some(cb) = payload.downcast_ref::<Callback>() {
+                            let vp_x = rect.x.floor().max(0.0) as f32;
+                            let vp_y = rect.y.floor().max(0.0) as f32;
+                            let vp_w = rect.w.ceil().max(1.0);
+                            let vp_h = rect.h.ceil().max(1.0);
+                            if vp_w > 0.0 && vp_h > 0.0 {
+                                rpass.set_viewport(vp_x, vp_y, vp_w, vp_h, 0.0, 1.0);
+                                let info = repose_core::PaintCallbackInfo {
+                                    viewport: rect,
+                                    clip_rect: rect,
+                                    pixels_per_point: self.pixels_per_point,
+                                    screen_size_px: [tw, th],
+                                };
+                                let rpass_static: &mut wgpu::RenderPass<'static> = unsafe {
+                                    std::mem::transmute::<
+                                        &mut wgpu::RenderPass<'_>,
+                                        &mut wgpu::RenderPass<'static>,
+                                    >(&mut rpass)
+                                };
+                                cb.0.paint(info, rpass_static, &self.callback_resources);
+                                rpass.set_viewport(0.0, 0.0, tw as f32, th as f32, 0.0, 1.0);
+                                rpass.set_bind_group(0, &self.globals_bind, &[]);
+                                rpass.set_stencil_reference(clip_depth);
+                            }
+                        } else {
+                            log::warn!("Unknown paint callback payload");
+                        }
                     }
                 }
             }

@@ -81,11 +81,12 @@ pub enum Route {
     Windows,
     M3,
     Adaptive,
+    Embedded,
 }
 
 impl Route {
     /// Single source of truth for display order.
-    pub const ALL: [Route; 19] = [
+    pub const ALL: [Route; 20] = [
         Route::Home,
         Route::M3,
         Route::Widgets,
@@ -94,6 +95,7 @@ impl Route {
         Route::Text,
         Route::Canvas,
         Route::VectorMesh,
+        Route::Embedded,
         Route::Lists,
         Route::Grid,
         Route::StaggeredGrid,
@@ -126,6 +128,7 @@ impl Route {
             Route::ScrollFeatures => "Scroll Features",
             Route::Canvas => "Canvas",
             Route::VectorMesh => "Vector Mesh",
+            Route::Embedded => "Embedded",
             Route::Animation => "Animation",
             Route::Lists => "Lists",
             Route::Grid => "Grid",
@@ -150,6 +153,7 @@ impl Route {
             Route::ScrollFeatures => "Overscroll, pull-to-refresh.",
             Route::Canvas => "Drawing primitives and scenes.",
             Route::VectorMesh => "Tessellated meshes, gradients, vector clips.",
+            Route::Embedded => "wgpu callbacks + native textures (egui-like).",
             Route::Animation => "Springs, tweens, crossfades.",
             Route::Lists => "Lazy columns, carousel, swipe.",
             Route::Grid => "Virtualized vertical grids.",
@@ -168,7 +172,12 @@ impl Route {
         match self {
             Route::Home => RouteGroup::Overview,
             Route::M3 | Route::Widgets => RouteGroup::Material,
-            Route::Adaptive | Route::Layout | Route::Text | Route::Canvas | Route::VectorMesh => {
+            Route::Adaptive
+            | Route::Layout
+            | Route::Text
+            | Route::Canvas
+            | Route::VectorMesh
+            | Route::Embedded => {
                 RouteGroup::Foundation
             }
             Route::Lists
@@ -192,6 +201,7 @@ impl Route {
             Route::ScrollFeatures => "Fx",
             Route::Canvas => "Cv",
             Route::VectorMesh => "Vm",
+            Route::Embedded => "Em",
             Route::Animation => "Mo",
             Route::Lists => "Ls",
             Route::Grid => "Gr",

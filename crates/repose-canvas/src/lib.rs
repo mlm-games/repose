@@ -167,6 +167,8 @@ fn translate_mesh_data(m: &VectorMeshData, dx: f32, dy: f32) -> VectorMeshData {
     }
 }
 
+pub use repose_core::{PaintCallbackInfo, PaintCallbackPayload};
+
 pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) -> View {
     let painter = move |scene: &mut Scene, rect: Rect, _alpha: f32| {
         let mut scope = DrawScope {
@@ -340,4 +342,26 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
     }
 
     Box(m)
+}
+
+/// Low-level `Embedded` - prefers `repose_render_wgpu::Callback::new` for payload.
+/// Idiomatic `repose` (signal snapshot): `let payload = { let a=*angle.get(); Callback::new(MyTriangle{angle:a}) }; Embedded(modifier,payload)`.
+/// `Callback::embedded_view(modifier, cb)` hides `Arc<dyn Any>`. `Canvas` is for 2D `DrawScope`, `Embedded` for raw `wgpu`.
+pub fn Embedded(modifier: Modifier, payload: PaintCallbackPayload) -> View {
+    let mut m = modifier.paint_callback(payload);
+    let has_size = m.size.is_some()
+        || m.width.is_some()
+        || m.height.is_some()
+        || m.fill_max.is_some()
+        || m.fill_max_w.is_some()
+        || m.fill_max_h.is_some();
+    if !has_size {
+        m = m.size(100.0, 100.0);
+    }
+    Box(m)
+}
+
+/// Alias for `Embedded` (for egui-like naming)
+pub fn PaintCallbackView(modifier: Modifier, payload: PaintCallbackPayload) -> View {
+    Embedded(modifier, payload)
 }

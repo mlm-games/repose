@@ -647,7 +647,8 @@ pub fn run_desktop_app_with_config(
                             self.msaa_samples,
                             self.present_mode,
                         ) {
-                            Ok(b) => {
+                            Ok(mut b) => {
+                                b.set_pixels_per_point(sf);
                                 self.backend = Some(b);
                                 set_app_window(w.clone());
                                 self.window = Some(w);
@@ -760,6 +761,7 @@ pub fn run_desktop_app_with_config(
                     self.rt.set_viewport_and_scale(size.width, size.height, sf);
                     if let Some(b) = self.backend.as_mut() {
                         b.configure_surface(size.width, size.height);
+                        b.set_pixels_per_point(sf);
                     }
                     if let Some(w) = &self.window {
                         let sf = w.scale_factor() as f32;

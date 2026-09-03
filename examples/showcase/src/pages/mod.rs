@@ -13,6 +13,7 @@ pub mod animation;
 pub mod canvas;
 pub mod dnd;
 pub mod docking;
+pub mod embedded;
 pub mod errors;
 pub mod grid;
 pub mod home;
@@ -57,5 +58,6 @@ pub fn render(ctx: &PageCtx, route: Route) -> View {
         Route::M3 => m3::screen(ctx.overlay.clone()),
         Route::Adaptive => adaptive::screen(),
         Route::VectorMesh => vector_mesh::screen(),
+        Route::Embedded => embedded::screen(),
     }
 }

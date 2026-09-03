@@ -111,6 +111,7 @@ macro_rules! impl_option_fields {
                     margin_left, margin_right, margin_top, margin_bottom,
                     aspect_ratio, intrinsic_width, intrinsic_height,
                     painter,
+                    paint_callback,
                     on_drag_start, on_drag_end, on_drag_enter, on_drag_over, on_drag_leave, on_drop,
                     drag_preview,
                     on_action, cursor, animate_content_size, focus_requester, on_focus_changed,
@@ -750,6 +751,7 @@ pub struct Modifier {
     /// Size this node's height to its min or max intrinsic content size.
     pub intrinsic_height: Option<IntrinsicSize>,
     pub painter: Option<Rc<dyn Fn(&mut crate::Scene, crate::Rect, f32)>>,
+    pub paint_callback: Option<crate::PaintCallbackPayload>,
 
     // Drag-drop (internal)
     pub on_drag_start: Option<Rc<dyn Fn(crate::dnd::DragStart) -> Option<crate::dnd::DragPayload>>>,
@@ -893,6 +895,7 @@ impl std::fmt::Debug for Modifier {
             on_key_event,
             on_preview_key_event,
             painter,
+            paint_callback,
             on_drag_start,
             on_drag_end,
             on_drag_enter,
@@ -1636,6 +1639,15 @@ impl Modifier {
     }
     pub fn painter(mut self, f: impl Fn(&mut crate::Scene, crate::Rect, f32) + 'static) -> Self {
         self.painter = Some(Rc::new(f));
+        self
+    }
+    /// Attach a custom GPU callback (like `egui::PaintCallback`). The payload
+    /// is type-erased (`Arc<dyn Any>`) so the core crate stays backend-agnostic.
+    /// Prefer `repose_render_wgpu::Callback::new` + `repose_ui::Embedded` or
+    /// `repose_render_wgpu::Callback::embedded_view` over calling this directly.
+    /// `rect` for the callback comes from layout (`SceneNode::Callback.rect`).
+    pub fn paint_callback(mut self, payload: crate::PaintCallbackPayload) -> Self {
+        self.paint_callback = Some(payload);
         self
     }
     pub fn scale(self, s: f32) -> Self {

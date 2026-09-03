@@ -41,7 +41,9 @@ repose-navigation.workspace = true
 repose-docking.workspace = true
 repose-platform.workspace = true
 repose-text.workspace = true
+repose-render-wgpu.workspace = true
 
+wgpu = { workspace = true }
 winit = { workspace = true }
 env_logger = { workspace = true }
 anyhow = { workspace = true }

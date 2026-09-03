@@ -262,6 +262,20 @@ impl Default for TextExtraStyle {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct PaintCallbackInfo {
+    /// Viewport in physical pixels where the callback should paint.
+    pub viewport: Rect,
+    /// Clip rect in physical pixels (intersection of callback rect and current clip).
+    pub clip_rect: Rect,
+    /// Pixels per point (DPI scale).
+    pub pixels_per_point: f32,
+    /// Screen size in physical pixels.
+    pub screen_size_px: [u32; 2],
+}
+
+pub type PaintCallbackPayload = Arc<dyn std::any::Any + Send + Sync>;
+
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum SceneNode {
@@ -393,6 +407,11 @@ pub enum SceneNode {
     },
     /// End a vector clip opened by `PushVectorClip`.
     PopVectorClip,
+    /// Custom GPU paint callback (check `egui::PaintCallback`).
+    Callback {
+        rect: Rect,
+        payload: PaintCallbackPayload,
+    },
 }
 
 /// Shared vertex/index buffers for a tessellated vector mesh.

@@ -319,6 +319,7 @@ impl App {
             self.rt.set_viewport_and_scale(s.width, s.height, sf);
             if let Some(b) = self.backend.borrow_mut().as_mut() {
                 b.configure_surface(s.width, s.height);
+                b.set_pixels_per_point(sf);
             }
         }
     }
@@ -586,7 +587,9 @@ impl ApplicationHandler<()> for App {
             {
                 Ok(mut b) => {
                     let s = window_for_async.inner_size();
+                    let sf = window_for_async.scale_factor() as f32;
                     b.configure_surface(s.width, s.height);
+                    b.set_pixels_per_point(sf);
                     *backend_cell.borrow_mut() = Some(b);
                     window_for_async.request_redraw();
                     log::info!("WGPU backend initialized");

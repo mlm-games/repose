@@ -404,6 +404,21 @@ pub fn Image(modifier: Modifier, handle: ImageHandle) -> View {
     .modifier(modifier)
 }
 
+/// Embedded GPU callback (like `egui::PaintCallback`).
+pub fn Embedded(modifier: Modifier, payload: PaintCallbackPayload) -> View {
+    let mut m = modifier.paint_callback(payload);
+    let has_size = m.size.is_some()
+        || m.width.is_some()
+        || m.height.is_some()
+        || m.fill_max.is_some()
+        || m.fill_max_w.is_some()
+        || m.fill_max_h.is_some();
+    if !has_size {
+        m = m.size(100.0, 100.0);
+    }
+    Box(m)
+}
+
 pub trait ImageExt {
     fn image_tint(self, c: Color) -> View;
     fn image_fit(self, fit: ImageFit) -> View;
