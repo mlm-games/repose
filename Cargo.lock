@@ -3374,6 +3374,7 @@ version = "0.28.14"
 dependencies = [
  "android_logger",
  "anyhow",
+ "bytemuck",
  "console_error_panic_hook",
  "console_log",
  "env_logger",

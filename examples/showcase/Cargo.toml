@@ -44,6 +44,7 @@ repose-text.workspace = true
 repose-render-wgpu.workspace = true
 
 wgpu = { workspace = true }
+bytemuck = { workspace = true }
 winit = { workspace = true }
 env_logger = { workspace = true }
 anyhow = { workspace = true }
