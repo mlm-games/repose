@@ -6,8 +6,11 @@ license.workspace = true
 description = "Repose wgpu handler"
 
 [features]
-default = ["winit-surface"]
+default = ["winit-surface", "fragile-send-sync-non-atomic-wasm"]
 winit-surface = ["dep:winit"]
+
+# Enabled by default, disable it when targeting wasm with atomics/threads.
+fragile-send-sync-non-atomic-wasm = ["wgpu/fragile-send-sync-non-atomic-wasm"]
 
 [dependencies]
 repose-core.workspace = true

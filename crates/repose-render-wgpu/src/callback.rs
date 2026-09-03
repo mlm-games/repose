@@ -38,29 +38,62 @@ use std::sync::Arc;
 use repose_core::{PaintCallbackInfo, PaintCallbackPayload, Rect};
 
 /// Type-map for callback-shared wgpu resources (pipelines, buffers, etc.).
+#[cfg(not(all(
+    target_arch = "wasm32",
+    not(feature = "fragile-send-sync-non-atomic-wasm")
+)))]
+type AnyBox = Box<dyn std::any::Any + Send + Sync>;
+#[cfg(all(
+    target_arch = "wasm32",
+    not(feature = "fragile-send-sync-non-atomic-wasm")
+))]
+type AnyBox = Box<dyn std::any::Any>;
+
+#[cfg(not(all(
+    target_arch = "wasm32",
+    not(feature = "fragile-send-sync-non-atomic-wasm")
+)))]
+pub trait MaybeSendSync: Send + Sync + 'static {}
+#[cfg(not(all(
+    target_arch = "wasm32",
+    not(feature = "fragile-send-sync-non-atomic-wasm")
+)))]
+impl<T: Send + Sync + 'static> MaybeSendSync for T {}
+
+#[cfg(all(
+    target_arch = "wasm32",
+    not(feature = "fragile-send-sync-non-atomic-wasm")
+))]
+pub trait MaybeSendSync: 'static {}
+#[cfg(all(
+    target_arch = "wasm32",
+    not(feature = "fragile-send-sync-non-atomic-wasm")
+))]
+impl<T: 'static> MaybeSendSync for T {}
+
 #[derive(Default)]
 pub struct CallbackResources {
-    map: HashMap<TypeId, Box<dyn std::any::Any + Send + Sync>>,
+    map: HashMap<TypeId, AnyBox>,
 }
 
 impl CallbackResources {
-    pub fn insert<T: 'static + Send + Sync>(&mut self, value: T) {
+    pub fn insert<T: MaybeSendSync>(&mut self, value: T) {
         self.map.insert(TypeId::of::<T>(), Box::new(value));
     }
 
-    pub fn get<T: 'static + Send + Sync>(&self) -> Option<&T> {
+    pub fn get<T: MaybeSendSync>(&self) -> Option<&T> {
         self.map
             .get(&TypeId::of::<T>())
             .and_then(|b| b.downcast_ref::<T>())
     }
 
-    pub fn get_mut<T: 'static + Send + Sync>(&mut self) -> Option<&mut T> {
+    pub fn get_mut<T: MaybeSendSync>(&mut self) -> Option<&mut T> {
         self.map
             .get_mut(&TypeId::of::<T>())
             .and_then(|b| b.downcast_mut::<T>())
     }
 
-    pub fn get_or_insert_with<T: 'static + Send + Sync + Default>(&mut self) -> &mut T {
+    pub fn get_or_insert_with<T: MaybeSendSync + Default>(&mut self) -> &mut T {
         let id = TypeId::of::<T>();
         if !self.map.contains_key(&id) {
             self.map.insert(id, Box::new(T::default()));
