@@ -71,7 +71,13 @@ impl OffscreenRenderer {
     pub async fn new(width: u32, height: u32, msaa: u32) -> Result<Self> {
         let width = width.max(1);
         let height = height.max(1);
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let instance = if cfg!(target_arch = "wasm32") {
+            let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
+            desc.backends = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
+            wgpu::util::new_instance_with_webgpu_detection(desc).await
+        } else {
+            wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle())
+        };
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
