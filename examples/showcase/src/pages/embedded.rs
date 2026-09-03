@@ -226,7 +226,7 @@ pub fn screen() -> View {
         Section(
             "Interactive 3D (wgpu callback)",
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
-                Hint("Drag in any direction (directly scooped from egui, though bottom-up rotation doesn't work as intended) horizontal = yaw, vertical = pitch. prepare uploads vec2 uniform, paint draws with perspective + per-vertex gradient. Viewport = layout rect."),
+                Hint("Drag in any direction (directly scooped from egui, though bottom-up rotation doesn't work as intended) horizontal = yaw, vertical = pitch. prepare uploads vec2 uniform, paint draws with perspective + per-vertex gradient. Viewport = layout rect.")
                     .color(theme().on_surface_variant)
                     .size(12.0),
                 Row(Modifier::new().gap(sp::SM)).child((
