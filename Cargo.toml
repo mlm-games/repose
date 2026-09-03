@@ -82,5 +82,8 @@ repose-macros = { path = "crates/repose-macros", version = "0.28.15" }
 # repose-core = { path = "../repose/crates/repose-core" }
 # font-awl = { path = "../font-awl" }
 
+[profile.dev]
+opt-level = 1
+
 # [profile.release]
 # lto = "thin"
