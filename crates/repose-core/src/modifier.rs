@@ -1414,6 +1414,47 @@ impl Modifier {
         self.on_pointer_cancel = Some(Rc::new(f));
         self
     }
+
+    pub fn draggable(self, on_drag: impl Fn(Vec2) + 'static) -> Self {
+        let drag_pos = crate::state::remember_mutable(|| Vec2::default());
+        let is_dragging = crate::state::remember_mutable(|| false);
+        let on_drag = Rc::new(on_drag);
+        self.on_pointer_down({
+            let drag_pos = drag_pos.clone();
+            let is_dragging = is_dragging.clone();
+            move |ev| {
+                is_dragging.set(true);
+                drag_pos.set(ev.position);
+            }
+        })
+        .on_pointer_up({
+            let is_dragging = is_dragging.clone();
+            move |_| is_dragging.set(false)
+        })
+        .on_pointer_cancel({
+            let is_dragging = is_dragging.clone();
+            move |_| is_dragging.set(false)
+        })
+        .on_pointer_move({
+            let drag_pos = drag_pos.clone();
+            let is_dragging = is_dragging.clone();
+            let on_drag = on_drag.clone();
+            move |ev| {
+                if !*is_dragging.get() {
+                    return;
+                }
+                let prev = *drag_pos.get();
+                let cur = ev.position;
+                let delta = Vec2 {
+                    x: cur.x - prev.x,
+                    y: cur.y - prev.y,
+                };
+                drag_pos.set(cur);
+                on_drag(delta);
+                crate::frame_clock::request_frame();
+            }
+        })
+    }
     pub fn on_pointer_enter(mut self, f: impl Fn(PointerEvent) + 'static) -> Self {
         self.on_pointer_enter = Some(Rc::new(f));
         self
