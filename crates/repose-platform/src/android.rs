@@ -330,6 +330,10 @@ pub fn run_android_app_with_options(
                         self.options.common.present_mode,
                     ) {
                         Ok(b) => {
+                            repose_render_wgpu::offscreen::set_shared_device(
+                                b.device.clone(),
+                                b.queue.clone(),
+                            );
                             self.backend = Some(b);
                             self.window = Some(w);
                             self.clipboard = clipawl::Clipboard::new().ok();

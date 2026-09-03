@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::num::NonZero;
 #[cfg(feature = "winit-surface")]
 use std::panic::{AssertUnwindSafe, catch_unwind};
-#[cfg(feature = "winit-surface")]
 use std::sync::Arc;
 
 use repose_core::color::{ChromaSiting, ColorInfo, PixelFormat};
@@ -18,6 +17,8 @@ mod slug;
 
 mod commands;
 pub use commands::apply_render_commands;
+
+pub mod offscreen;
 
 mod callback;
 pub use callback::{Callback, CallbackResources, ScreenDescriptor, WgpuCallback};
@@ -2230,7 +2231,7 @@ fn pick_present_mode(caps: &wgpu::SurfaceCapabilities, pref: PresentModePref) ->
 
 /// Pick the MSAA sample count for the surface pass, honoring `requested` and
 /// falling back to the largest supported count <= it.
-fn pick_surface_msaa(adapter: &wgpu::Adapter, format: wgpu::TextureFormat, requested: u32) -> u32 {
+pub fn pick_surface_msaa(adapter: &wgpu::Adapter, format: wgpu::TextureFormat, requested: u32) -> u32 {
     let requested = requested.max(1);
     let color_feat = adapter.get_texture_format_features(format);
     let depth_feat = adapter.get_texture_format_features(wgpu::TextureFormat::Depth24PlusStencil8);

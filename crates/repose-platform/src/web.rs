@@ -590,6 +590,10 @@ impl ApplicationHandler<()> for App {
                     let sf = window_for_async.scale_factor() as f32;
                     b.configure_surface(s.width, s.height);
                     b.set_pixels_per_point(sf);
+                    repose_render_wgpu::offscreen::set_shared_device(
+                        b.device.clone(),
+                        b.queue.clone(),
+                    );
                     *backend_cell.borrow_mut() = Some(b);
                     window_for_async.request_redraw();
                     log::info!("WGPU backend initialized");

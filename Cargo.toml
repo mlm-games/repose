@@ -59,6 +59,7 @@ swash = "0.2"
 
 android_logger = "0.15"
 web-time = "1"
+web-workers = "0.3"
 rustc-hash = "2.1"
 rapidhash = "4.5"
 webbrowser = "1.2"

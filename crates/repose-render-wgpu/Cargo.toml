@@ -18,6 +18,7 @@ log = { workspace = true }
 anyhow = { workspace = true }
 bytemuck = { workspace = true }
 pollster = { workspace = true }
+web-workers.workspace = true
 image = { version = "0.25", default-features = false, features = [
     "png",
     "jpeg",

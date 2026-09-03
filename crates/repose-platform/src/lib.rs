@@ -649,6 +649,10 @@ pub fn run_desktop_app_with_config(
                         ) {
                             Ok(mut b) => {
                                 b.set_pixels_per_point(sf);
+                                repose_render_wgpu::offscreen::set_shared_device(
+                                    b.device.clone(),
+                                    b.queue.clone(),
+                                );
                                 self.backend = Some(b);
                                 set_app_window(w.clone());
                                 self.window = Some(w);
@@ -1322,7 +1326,13 @@ pub fn run_desktop_app_with_config(
                     self.msaa_samples,
                     self.present_mode,
                 ) {
-                    Ok(b) => self.backend = Some(b),
+                    Ok(b) => {
+                        repose_render_wgpu::offscreen::set_shared_device(
+                            b.device.clone(),
+                            b.queue.clone(),
+                        );
+                        self.backend = Some(b)
+                    }
                     Err(e) => log::error!("about_to_wait: failed to recreate backend: {e:?}"),
                 }
             }
