@@ -240,6 +240,34 @@ impl ViewTree {
                 break;
             }
         }
+
+        let needs_scope_invalidate = self
+            .nodes
+            .get(id)
+            .map(|n| {
+                n.modifier.transform.is_some()
+                    || n.modifier.alpha.is_some()
+                    || n.modifier.graphics_layer.is_some()
+            })
+            .unwrap_or(false);
+        if needs_scope_invalidate {
+            // Walk subtree to find descendant scope roots and mark them dirty.
+            let mut stack = vec![id];
+            while let Some(cur) = stack.pop() {
+                if let Some(node) = self.nodes.get(cur) {
+                    for &child in &node.children {
+                        if let Some(child_node) = self.nodes.get(child) {
+                            if child_node.scope_key.is_some() {
+                                self.dirty.insert(child);
+                                // Also dirty its ancestors already handled, but ensure
+                                // scope's own dirty for `sync_scope_trees` and `paint` cache.
+                            }
+                            stack.push(child);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Update the tree from a new View, performing incremental reconciliation.

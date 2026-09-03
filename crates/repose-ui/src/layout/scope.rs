@@ -99,6 +99,36 @@ impl LayoutEngine {
                 changed = true;
             }
 
+            if !changed {
+                let root_ids: Vec<NodeId> = scope_root_map
+                    .iter()
+                    .filter(|(_, k)| k.as_str() == key)
+                    .map(|(id, _)| *id)
+                    .collect();
+                for &root_id in &root_ids {
+                    let mut cur = self.tree.get(root_id).and_then(|n| n.parent);
+                    let mut ancestor_dirty_with_transform = false;
+                    while let Some(pid) = cur {
+                        if dirty_nodes.contains(&pid) {
+                            if let Some(pnode) = self.tree.get(pid) {
+                                if pnode.modifier.transform.is_some()
+                                    || pnode.modifier.alpha.is_some()
+                                    || pnode.modifier.graphics_layer.is_some()
+                                {
+                                    ancestor_dirty_with_transform = true;
+                                    break;
+                                }
+                            }
+                        }
+                        cur = self.tree.get(pid).and_then(|n| n.parent);
+                    }
+                    if ancestor_dirty_with_transform {
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+
             // Ensure scope root exists
             let root_ids: Vec<NodeId> = scope_root_map
                 .iter()
