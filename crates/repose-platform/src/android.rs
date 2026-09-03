@@ -359,7 +359,7 @@ pub fn run_android_app_with_options(
                 }
 
                 WindowEvent::ModifiersChanged(new_mods) => {
-                    rc::update_modifiers(&mut self.rt.modifiers, &new_mods.state());
+                    crate::runner_common::on_modifiers_changed(&mut self.rt, &new_mods.state());
                 }
 
                 // Touch handling (Android primary). Scroll / pinch / swipe
@@ -466,11 +466,9 @@ pub fn run_android_app_with_options(
                     }
                 }
 
-                // Basic keyboard support (hardware keyboards / Tab focus / Android soft keyboard fallback)
                 WindowEvent::KeyboardInput {
                     event: key_event, ..
                 } => {
-                    // DO NOT REMOVE, USE FOR TESTING: log ALL keyboard events to see what's arriving from Android keyboard
                     log::info!(
                         "KeyboardInput: physical_key={:?}, logical_key={:?}, text={:?}, state={:?}, repeat={}",
                         key_event.physical_key,
@@ -479,33 +477,16 @@ pub fn run_android_app_with_options(
                         key_event.state,
                         key_event.repeat
                     );
-
-                    // Route everything through the runtime: focus-chain dispatch,
-                    // deletion/navigation keys, Enter submit/newline, Space/Enter
-                    // activation, and composed soft-keyboard text.
-                    let mapped_key = rc::map_key(key_event.physical_key, &self.rt.modifiers);
-                    let utf16 = match mapped_key {
-                        repose_core::input::Key::Character(c) => c as u16,
-                        _ => 0,
-                    };
-                    let ke = repose_core::input::KeyEvent {
-                        key: mapped_key,
-                        modifiers: self.rt.modifiers,
-                        is_repeat: key_event.repeat,
-                        event_type: if key_event.state == ElementState::Pressed {
-                            repose_core::input::KeyEventType::Down
-                        } else {
-                            repose_core::input::KeyEventType::Up
-                        },
-                        utf16_code_point: utf16,
-                    };
-                    if self.rt.handle_key_with_text(&ke, key_event.text.as_deref()) {
+                    let mut no_inspector: Option<repose_devtools::Inspector> = None;
+                    if crate::runner_common::on_keyboard_input(
+                        &mut self.rt,
+                        &key_event,
+                        &mut no_inspector,
+                    ) {
                         self.dirty = true;
                         self.request_redraw();
                         return;
                     }
-
-                    // Back key / Escape handling (optional, should probably handle this via rlobkit)
                     if key_event.state == ElementState::Pressed && !key_event.repeat {
                         match key_event.physical_key {
                             PhysicalKey::Code(KeyCode::Escape)
@@ -517,18 +498,8 @@ pub fn run_android_app_with_options(
                     }
                 }
 
-                // IME (Preedit/Commit)
                 WindowEvent::Ime(ime) => {
-                    let ime_event = match &ime {
-                        Ime::Enabled => repose_core::input::ImeEvent::Start,
-                        Ime::Preedit(text, cursor) => repose_core::input::ImeEvent::Update {
-                            text: text.clone(),
-                            cursor: cursor.map(|(a, b)| (a as usize, b as usize)),
-                        },
-                        Ime::Commit(text) => repose_core::input::ImeEvent::Commit(text.clone()),
-                        Ime::Disabled => repose_core::input::ImeEvent::Cancel,
-                    };
-                    self.rt.handle_ime(&ime_event);
+                    crate::runner_common::on_ime(&mut self.rt, &ime);
                     if let Some(win) = &self.window {
                         self.update_ime_cursor_area(win);
                     }

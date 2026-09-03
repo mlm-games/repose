@@ -140,7 +140,6 @@ pub fn set_close_to_tray(enabled: bool) {
 /// Helper: ensure caret visibility - now in `repose_ui::textfield::tf_ensure_visible_in_rect`.
 pub use repose_ui::textfield::tf_ensure_visible_in_rect;
 
-use common::winit_key_to_repose;
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 use common::map_cursor;
 
@@ -636,16 +635,12 @@ pub fn run_desktop_app_with_config(
                 }
 
                 WindowEvent::MouseWheel { delta, .. } => {
-                    let (dx_px, dy_px) = match delta {
-                        MouseScrollDelta::LineDelta(x, y) => {
-                            let unit_px = dp_to_px(60.0);
-                            (-(x * unit_px), -(y * unit_px))
-                        }
-                        MouseScrollDelta::PixelDelta(lp) => (-(lp.x as f32), -(lp.y as f32)),
-                    };
-                    log::debug!("MouseWheel: dx={}, dy={}", dx_px, dy_px);
-
-                    if self.rt.handle_scroll(Vec2 { x: dx_px, y: dy_px }) {
+                    let scale = self
+                        .window
+                        .as_ref()
+                        .map(|w| w.scale_factor() as f32)
+                        .unwrap_or(1.0);
+                    if crate::runner_common::on_mouse_wheel(&mut self.rt, delta, scale) {
                         self.request_redraw();
                     }
                 }
@@ -841,40 +836,17 @@ pub fn run_desktop_app_with_config(
                 }
 
                 WindowEvent::ModifiersChanged(new_mods) => {
-                    let state = new_mods.state();
-                    self.rt.modifiers.shift = state.shift_key();
-                    self.rt.modifiers.ctrl = state.control_key();
-                    self.rt.modifiers.alt = state.alt_key();
-                    self.rt.modifiers.meta = state.super_key();
-                    self.rt.modifiers.command = if cfg!(target_os = "macos") {
-                        self.rt.modifiers.meta
-                    } else {
-                        self.rt.modifiers.ctrl
-                    };
+                    crate::runner_common::on_modifiers_changed(&mut self.rt, &new_mods.state());
                 }
 
                 WindowEvent::KeyboardInput {
                     event: key_event, ..
                 } => {
-                    // Inspector hotkey: Ctrl+Shift+I
-                    if key_event.state == ElementState::Pressed
-                        && !key_event.repeat
-                        && self.rt.modifiers.ctrl
-                        && self.rt.modifiers.shift
-                        && key_event.physical_key == PhysicalKey::Code(KeyCode::KeyI)
-                        && let Some(inspector) = &mut self.inspector
-                    {
-                        inspector.hud.toggle_inspector();
-                        self.request_redraw();
-                        return;
-                    }
-
-                    // --- Delegate all generic keyboard dispatch to the runtime ---
-                    // (focus-chain dispatch, shortcuts, single-char input, and
-                    // winit's composed `key_event.text` for international layouts).
-                    let mapped = rc::map_key(key_event.physical_key, &self.rt.modifiers);
-                    let ke = winit_key_to_repose(&key_event, &mapped, &self.rt.modifiers);
-                    if self.rt.handle_key_with_text(&ke, key_event.text.as_deref()) {
+                    if crate::runner_common::on_keyboard_input(
+                        &mut self.rt,
+                        &key_event,
+                        &mut self.inspector,
+                    ) {
                         self.request_redraw();
                         return;
                     }
@@ -916,19 +888,7 @@ pub fn run_desktop_app_with_config(
                 }
 
                 WindowEvent::Ime(ime) => {
-                    // Translate winit IME events into runtime events; the
-                    // runtime owns the composition state + notify callbacks.
-                    let ime_event = match ime {
-                        winit::event::Ime::Enabled => repose_core::input::ImeEvent::Start,
-                        winit::event::Ime::Preedit(text, cursor) => {
-                            repose_core::input::ImeEvent::Update { text, cursor }
-                        }
-                        winit::event::Ime::Commit(text) => {
-                            repose_core::input::ImeEvent::Commit(text)
-                        }
-                        winit::event::Ime::Disabled => repose_core::input::ImeEvent::Cancel,
-                    };
-                    self.rt.handle_ime(&ime_event);
+                    crate::runner_common::on_ime(&mut self.rt, &ime);
                     self.request_redraw();
                 }
 

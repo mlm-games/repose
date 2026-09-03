@@ -643,7 +643,7 @@ impl ApplicationHandler<()> for App {
             }
 
             WindowEvent::ModifiersChanged(new_mods) => {
-                rc::update_modifiers(&mut self.rt.modifiers, &new_mods.state());
+                crate::runner_common::on_modifiers_changed(&mut self.rt, &new_mods.state());
             }
 
             WindowEvent::CursorMoved { position, .. } => {
@@ -652,26 +652,7 @@ impl ApplicationHandler<()> for App {
                     x: position.x as f32,
                     y: position.y as f32,
                 };
-                self.rt.handle_pointer_move(pos);
-
-                // Inspector hover (web).
-                if let (Some(inspector), Some(f)) = (&mut self.inspector, &self.rt.frame_cache)
-                    && inspector.hud.inspector_enabled
-                {
-                    let hit = f.hit_regions.iter().find(|h| h.rect.contains(pos));
-                    let hover_rect = hit.map(|h| h.rect);
-                    let hover_info = hit.and_then(|h| {
-                        f.semantics_nodes.iter().find(|s| s.id == h.id).map(|s| {
-                            repose_devtools::HoveredInfo {
-                                id: s.id,
-                                role: format!("{:?}", s.role),
-                                label: s.label.clone(),
-                            }
-                        })
-                    });
-                    inspector.hud.set_hovered(hover_rect, hover_info);
-                }
-
+                crate::runner_common::on_cursor_moved(&mut self.rt, pos, &mut self.inspector);
                 self.request_redraw();
             }
 
@@ -683,14 +664,7 @@ impl ApplicationHandler<()> for App {
 
             WindowEvent::MouseWheel { delta, .. } => {
                 let scale = self.scale(&window);
-                let (dx_px, dy_px) = match delta {
-                    MouseScrollDelta::LineDelta(x, y) => {
-                        let unit_px = 60.0 * scale;
-                        (-(x * unit_px), -(y * unit_px))
-                    }
-                    MouseScrollDelta::PixelDelta(p) => (-(p.x as f32), -(p.y as f32)),
-                };
-                if self.rt.handle_scroll(Vec2 { x: dx_px, y: dy_px }) {
+                if crate::runner_common::on_mouse_wheel(&mut self.rt, delta, scale) {
                     self.request_redraw();
                 }
             }
@@ -828,56 +802,18 @@ impl ApplicationHandler<()> for App {
             WindowEvent::KeyboardInput {
                 event: key_event, ..
             } => {
-                // Toggle devtools inspector with Ctrl+Shift+I.
-                if key_event.state == ElementState::Pressed
-                    && !key_event.repeat
-                    && key_event.physical_key == PhysicalKey::Code(KeyCode::KeyI)
-                    && self.rt.modifiers.ctrl
-                    && self.rt.modifiers.shift
-                    && let Some(inspector) = &mut self.inspector
-                {
-                    inspector.hud.toggle_inspector();
-                    self.request_redraw();
-                    return;
-                }
-
-                // Convert to KeyEvent for runtime dispatch
-                let mapped_key = rc::map_key(key_event.physical_key, &self.rt.modifiers);
-                let utf16 = match mapped_key {
-                    repose_core::input::Key::Character(c) => c as u16,
-                    _ => 0,
-                };
-                let ev_type = if key_event.state == ElementState::Pressed {
-                    repose_core::input::KeyEventType::Down
-                } else {
-                    repose_core::input::KeyEventType::Up
-                };
-
-                let ke = repose_core::input::KeyEvent {
-                    key: mapped_key,
-                    modifiers: self.rt.modifiers,
-                    is_repeat: key_event.repeat,
-                    event_type: ev_type,
-                    utf16_code_point: utf16,
-                };
-
-                if self.rt.handle_key_with_text(&ke, key_event.text.as_deref()) {
+                if crate::runner_common::on_keyboard_input(
+                    &mut self.rt,
+                    &key_event,
+                    &mut self.inspector,
+                ) {
                     self.request_redraw();
                     return;
                 }
             }
 
             WindowEvent::Ime(ime) => {
-                let ime_event = match &ime {
-                    Ime::Enabled => repose_core::input::ImeEvent::Start,
-                    Ime::Preedit(text, cursor) => repose_core::input::ImeEvent::Update {
-                        text: text.clone(),
-                        cursor: cursor.map(|(a, b)| (a as usize, b as usize)),
-                    },
-                    Ime::Commit(text) => repose_core::input::ImeEvent::Commit(text.clone()),
-                    Ime::Disabled => repose_core::input::ImeEvent::Cancel,
-                };
-                self.rt.handle_ime(&ime_event);
+                crate::runner_common::on_ime(&mut self.rt, &ime);
             }
 
             WindowEvent::RedrawRequested => {
