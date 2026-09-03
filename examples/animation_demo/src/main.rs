@@ -30,6 +30,9 @@ fn app(s: &mut Scheduler, _rc: &RenderContext) -> View {
         )))
     });
 
+    repose_core::animation_driver::touch("demo_color");
+    repose_core::animation_driver::touch("demo_size");
+
     // Register with AnimationDriver once (callbacks persist - Rust ownership
     // model means keys replaced on re-register, stale entries drop naturally).
     if !(*registered.borrow()) {
