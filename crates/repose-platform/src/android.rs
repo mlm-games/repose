@@ -1,5 +1,5 @@
 use crate::common as rc;
-use crate::common_web as rc_web;
+
 use crate::render::RenderContext;
 use crate::*;
 
@@ -166,7 +166,7 @@ pub fn run_android_app_with_options(
                 .map_or(false, |id| self.rt.is_textfield(id));
             let (purpose, auto_correct, capitalization) = self.rt.focused_keyboard_hints();
 
-            rc_web::set_ime_for_textfield_ex(win, allow, purpose, auto_correct, capitalization);
+            rc::set_ime_for_textfield_ex(win, allow, purpose, auto_correct, capitalization);
 
             if allow {
                 self.update_ime_cursor_area(win);
@@ -225,12 +225,7 @@ pub fn run_android_app_with_options(
         }
 
         fn sync_window_size(&mut self, size: PhysicalSize<u32>, scale: f32) {
-            self.rt
-                .set_viewport_and_scale(size.width, size.height, scale);
-            if let Some(b) = &mut self.backend {
-                b.configure_surface(size.width, size.height);
-                b.set_pixels_per_point(scale);
-            }
+            rc::sync_viewport(&mut self.rt, &mut self.backend, size, scale);
             // Recompute IME inset estimate when window size changes
             self.update_ime_inset();
         }
@@ -259,7 +254,7 @@ pub fn run_android_app_with_options(
         fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
             if self.rt.dispatch_action(action) {
                 if let Some(win) = &self.window {
-                    rc_web::set_ime_for_textfield(
+                    rc::set_ime_for_textfield(
                         win,
                         self.rt
                             .sched
@@ -311,15 +306,7 @@ pub fn run_android_app_with_options(
                             );
                             self.backend = Some(b);
                             self.window = Some(w);
-                            self.clipboard = clipawl::Clipboard::new().ok();
-                            repose_core::clipboard::set_clipboard_read_fn(Box::new(|| {
-                                clipawl::blocking::read().ok()
-                            }));
-                            repose_core::clipboard::set_clipboard_fn(Box::new(|text| {
-                                if let Ok(cb) = clipawl::Clipboard::new() {
-                                    let _ = pollster::block_on(cb.write(text));
-                                }
-                            }));
+                            self.clipboard = rc::setup_clipboard();
                         }
                         Err(e) => {
                             log::error!("WGPU backend init failed: {e:?}");
@@ -365,103 +352,82 @@ pub fn run_android_app_with_options(
                 // Touch handling (Android primary). Scroll / pinch / swipe
                 // recognition lives in common.rs, shared with web + desktop.
                 WindowEvent::Touch(t) => {
-                    let pos_px = (t.location.x as f32, t.location.y as f32);
-                    let tid = t.id;
-
-                    match t.phase {
-                        winit::event::TouchPhase::Started => {
-                            let focused =
-                                self.touch_gestures.touch_started(&mut self.rt, tid, pos_px);
-
-                            // Platform-specific IME setup for focused textfields
-                            if let Some(fid) = focused
-                                && self.is_textfield(fid)
+                    // Started needs Android-specific IME cursor area handling..
+                    if t.phase == winit::event::TouchPhase::Started {
+                        let pos_px = (t.location.x as f32, t.location.y as f32);
+                        let focused = self
+                            .touch_gestures
+                            .touch_started(&mut self.rt, t.id, pos_px);
+                        if let Some(fid) = focused
+                            && self.is_textfield(fid)
+                        {
+                            if let Some(win) = &self.window
+                                && let Some(f) = &self.rt.frame_cache
+                                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
                             {
-                                if let Some(win) = &self.window
-                                    && let Some(f) = &self.rt.frame_cache
-                                    && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
-                                {
-                                    let sf = win.scale_factor() as f32;
-                                    rc_web::set_ime_for_textfield_ex(
-                                        win,
-                                        true,
-                                        hit.keyboard_type.ime_purpose_hint(),
-                                        hit.auto_correct.unwrap_or(true),
-                                        hit.capitalization,
-                                    );
-                                    win.set_ime_cursor_area(
-                                        PhysicalPosition::new(
-                                            (hit.rect.x * sf) as i32,
-                                            (hit.rect.y * sf) as i32,
-                                        ),
-                                        PhysicalSize::new(
-                                            (hit.rect.w * sf) as u32,
-                                            (hit.rect.h * sf) as u32,
-                                        ),
-                                    );
-                                }
-                            } else {
-                                // Click outside - no focus, drop IME
-                                if let Some(win) = &self.window {
-                                    win.set_ime_allowed(false);
-                                }
+                                let sf = win.scale_factor() as f32;
+                                rc::set_ime_for_textfield_ex(
+                                    win,
+                                    true,
+                                    hit.keyboard_type.ime_purpose_hint(),
+                                    hit.auto_correct.unwrap_or(true),
+                                    hit.capitalization,
+                                );
+                                win.set_ime_cursor_area(
+                                    PhysicalPosition::new(
+                                        (hit.rect.x * sf) as i32,
+                                        (hit.rect.y * sf) as i32,
+                                    ),
+                                    PhysicalSize::new(
+                                        (hit.rect.w * sf) as u32,
+                                        (hit.rect.h * sf) as u32,
+                                    ),
+                                );
                             }
-
-                            self.dirty = true;
-                            self.request_redraw();
+                        } else if let Some(win) = &self.window {
+                            win.set_ime_allowed(false);
                         }
-
-                        winit::event::TouchPhase::Moved => {
-                            let scale = self.scale();
-                            let (mut dirty, pinch, pan) =
-                                self.touch_gestures
-                                    .touch_moved(&mut self.rt, tid, pos_px, scale);
-
-                            if let Some((delta_scale, center)) = pinch
-                                && self.dispatch_action(Action::Gesture(Gesture::PinchWithCenter {
+                        self.dirty = true;
+                        self.request_redraw();
+                    } else {
+                        let scale = self.scale();
+                        let r = crate::runner_common::handle_touch_raw(
+                            &mut self.rt,
+                            &mut self.touch_gestures,
+                            &t,
+                            scale,
+                        );
+                        let mut dirty = r.dirty;
+                        if let Some((delta_scale, center)) = r.pinch {
+                            if self.dispatch_action(repose_core::shortcuts::Action::Gesture(
+                                repose_core::shortcuts::Gesture::PinchWithCenter {
                                     delta_scale,
                                     center,
-                                }))
-                            {
+                                },
+                            )) {
                                 dirty = true;
-                            }
-                            if let Some(delta) = pan
-                                && self.dispatch_action(Action::Gesture(Gesture::Pan { delta }))
-                            {
-                                dirty = true;
-                            }
-
-                            if dirty {
-                                self.dirty = true;
-                                self.request_redraw();
                             }
                         }
-
-                        winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
-                            let cancelled = t.phase == winit::event::TouchPhase::Cancelled;
-                            let swipe_right = self.touch_gestures.touch_ended(
-                                &mut self.rt,
-                                tid,
-                                pos_px,
-                                cancelled,
-                            );
-
-                            let mut dirty = false;
-                            if let Some(right) = swipe_right {
-                                let g = if right {
-                                    Gesture::SwipeRight
-                                } else {
-                                    Gesture::SwipeLeft
-                                };
-                                if self.dispatch_action(Action::Gesture(g)) {
-                                    dirty = true;
-                                }
+                        if let Some(delta) = r.pan {
+                            if self.dispatch_action(repose_core::shortcuts::Action::Gesture(
+                                repose_core::shortcuts::Gesture::Pan { delta },
+                            )) {
+                                dirty = true;
                             }
-
-                            if dirty {
-                                self.dirty = true;
-                                self.request_redraw();
+                        }
+                        if let Some(right) = r.swipe_right {
+                            let g = if right {
+                                repose_core::shortcuts::Gesture::SwipeRight
+                            } else {
+                                repose_core::shortcuts::Gesture::SwipeLeft
+                            };
+                            if self.dispatch_action(repose_core::shortcuts::Action::Gesture(g)) {
+                                dirty = true;
                             }
+                        }
+                        if dirty {
+                            self.dirty = true;
+                            self.request_redraw();
                         }
                     }
                 }

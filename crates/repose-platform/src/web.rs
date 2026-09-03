@@ -1,6 +1,6 @@
 //! Web runner (wasm32) using winit + repose-render-wgpu (async init).
 use crate::common as rc;
-use crate::common_web as rc_web;
+
 use crate::render::RenderContext;
 use crate::*;
 
@@ -316,11 +316,8 @@ impl App {
         let s = window.inner_size();
         let sf = window.scale_factor() as f32;
         if (s.width, s.height) != self.rt.sched.size {
-            self.rt.set_viewport_and_scale(s.width, s.height, sf);
-            if let Some(b) = self.backend.borrow_mut().as_mut() {
-                b.configure_surface(s.width, s.height);
-                b.set_pixels_per_point(sf);
-            }
+            let mut backend = self.backend.borrow_mut();
+            rc::sync_viewport(&mut self.rt, &mut *backend, s, sf);
         }
     }
 
@@ -365,7 +362,7 @@ impl App {
 
     fn dispatch_action(&mut self, window: &Window, action: repose_core::shortcuts::Action) -> bool {
         if self.rt.dispatch_action(action.clone()) {
-            rc_web::set_ime_for_textfield(
+            rc::set_ime_for_textfield(
                 window,
                 self.rt
                     .sched
@@ -691,7 +688,7 @@ impl ApplicationHandler<()> for App {
                             if let Some(f) = &self.rt.frame_cache
                                 && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
                             {
-                                rc_web::set_ime_for_textfield_ex(
+                                rc::set_ime_for_textfield_ex(
                                     &window,
                                     self.is_textfield(fid),
                                     hit.keyboard_type.ime_purpose_hint(),
@@ -700,7 +697,7 @@ impl ApplicationHandler<()> for App {
                                 );
                             }
                         } else {
-                            rc_web::set_ime_for_textfield(&window, false);
+                            rc::set_ime_for_textfield(&window, false);
                         }
 
                         if matches!(mapped, PointerButton::Tertiary)
@@ -723,78 +720,67 @@ impl ApplicationHandler<()> for App {
             }
 
             WindowEvent::Touch(t) => {
-                use repose_core::shortcuts::{Action, Gesture};
-
-                let pos_px = (t.location.x as f32, t.location.y as f32);
-                let tid = t.id;
-
-                match t.phase {
-                    TouchPhase::Started => {
-                        let focused = self.touch_gestures.touch_started(&mut self.rt, tid, pos_px);
-
-                        // Platform-specific IME setup for focused textfields
-                        if let Some(fid) = focused
-                            && self.is_textfield(fid)
-                        {
+                let scale = self.scale(&window);
+                if t.phase == winit::event::TouchPhase::Started {
+                    let pos_px = (t.location.x as f32, t.location.y as f32);
+                    let focused = self
+                        .touch_gestures
+                        .touch_started(&mut self.rt, t.id, pos_px);
+                    if let Some(fid) = focused {
+                        if self.is_textfield(fid) {
                             let (purpose, ac, cap) = self.rt.focused_keyboard_hints();
-                            rc_web::set_ime_for_textfield_ex(&window, true, purpose, ac, cap);
+                            rc::set_ime_for_textfield_ex(&window, true, purpose, ac, cap);
                         } else {
-                            rc_web::set_ime_for_textfield(&window, false);
+                            rc::set_ime_for_textfield(&window, false);
                         }
-
-                        self.request_redraw();
+                    } else {
+                        rc::set_ime_for_textfield(&window, false);
                     }
-
-                    TouchPhase::Moved => {
-                        let scale = self.scale(&window);
-                        let (mut dirty, pinch, pan) =
-                            self.touch_gestures
-                                .touch_moved(&mut self.rt, tid, pos_px, scale);
-
-                        if let Some((delta_scale, center)) = pinch
-                            && self.dispatch_action(
-                                &window,
-                                Action::Gesture(Gesture::PinchWithCenter {
+                    self.request_redraw();
+                } else {
+                    let r = crate::runner_common::handle_touch_raw(
+                        &mut self.rt,
+                        &mut self.touch_gestures,
+                        &t,
+                        scale,
+                    );
+                    let mut dirty = r.dirty;
+                    if let Some((delta_scale, center)) = r.pinch {
+                        if self.dispatch_action(
+                            &window,
+                            repose_core::shortcuts::Action::Gesture(
+                                repose_core::shortcuts::Gesture::PinchWithCenter {
                                     delta_scale,
                                     center,
-                                }),
-                            )
-                        {
+                                },
+                            ),
+                        ) {
                             dirty = true;
-                        }
-                        if let Some(delta) = pan
-                            && self
-                                .dispatch_action(&window, Action::Gesture(Gesture::Pan { delta }))
-                        {
-                            dirty = true;
-                        }
-
-                        if dirty {
-                            self.request_redraw();
                         }
                     }
-
-                    TouchPhase::Ended | TouchPhase::Cancelled => {
-                        let cancelled = t.phase == TouchPhase::Cancelled;
-                        let swipe_right =
-                            self.touch_gestures
-                                .touch_ended(&mut self.rt, tid, pos_px, cancelled);
-
-                        let mut dirty = false;
-                        if let Some(right) = swipe_right {
-                            let g = if right {
-                                Gesture::SwipeRight
-                            } else {
-                                Gesture::SwipeLeft
-                            };
-                            if self.dispatch_action(&window, Action::Gesture(g)) {
-                                dirty = true;
-                            }
+                    if let Some(delta) = r.pan {
+                        if self.dispatch_action(
+                            &window,
+                            repose_core::shortcuts::Action::Gesture(
+                                repose_core::shortcuts::Gesture::Pan { delta },
+                            ),
+                        ) {
+                            dirty = true;
                         }
-
-                        if dirty {
-                            self.request_redraw();
+                    }
+                    if let Some(right) = r.swipe_right {
+                        let g = if right {
+                            repose_core::shortcuts::Gesture::SwipeRight
+                        } else {
+                            repose_core::shortcuts::Gesture::SwipeLeft
+                        };
+                        if self.dispatch_action(&window, repose_core::shortcuts::Action::Gesture(g))
+                        {
+                            dirty = true;
                         }
+                    }
+                    if dirty {
+                        self.request_redraw();
                     }
                 }
             }
@@ -869,7 +855,7 @@ impl ApplicationHandler<()> for App {
 
                 if !output.wants_keyboard && self.rt.sched.focused.is_some() && self.rt.ime_preedit
                 {
-                    rc_web::set_ime_for_textfield(&window, false);
+                    rc::set_ime_for_textfield(&window, false);
                     self.rt.ime_preedit = false;
                 }
 

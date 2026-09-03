@@ -1,12 +1,10 @@
-//! Shim: TouchGestureState lives in `repose-app::touch_gesture`.
-//! Platform-specific winit helpers remain here until fully moved to `repose-app`.
-
 #[allow(unused_imports)]
 pub use repose_app::MultiTouchDelta;
 pub use repose_app::TouchGestureState;
 
 use repose_core::input::Modifiers;
 use repose_core::runtime::Frame;
+use repose_core::{RenderBackend, Vec2};
 
 pub(crate) fn request_redraw(window: &Option<std::sync::Arc<winit::window::Window>>) {
     if let Some(w) = window {
@@ -14,9 +12,139 @@ pub(crate) fn request_redraw(window: &Option<std::sync::Arc<winit::window::Windo
     }
 }
 
+/// Setup global clipboard read/write fns for desktop/android (blocking clipawl).
+/// Returns the platform clipboard handle for primary-selection use.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn setup_clipboard() -> Option<clipawl::Clipboard> {
+    let cb = clipawl::Clipboard::new().ok();
+    repose_core::clipboard::set_clipboard_read_fn(Box::new(|| clipawl::blocking::read().ok()));
+    repose_core::clipboard::set_clipboard_fn(Box::new(|text| {
+        if let Err(e) = clipawl::blocking::write(text) {
+            eprintln!("clipboard write error: {e}");
+        }
+    }));
+    repose_core::clipboard::set_primary_fn(Box::new(|text| {
+        let mut opts = clipawl::ClipboardOptions::default();
+        opts.linux.selection = clipawl::LinuxSelection::Primary;
+        match clipawl::Clipboard::new_with_options(opts) {
+            Ok(cb) => {
+                if let Err(e) = pollster::block_on(cb.write(text)) {
+                    eprintln!("primary selection write error: {e}");
+                }
+            }
+            Err(e) => eprintln!("primary clipboard init error: {e}"),
+        }
+    }));
+    cb
+}
+
+/// Configure wgpu surface and scale for a window size change (shared).
+pub fn sync_viewport(
+    rt: &mut repose_app::ReposeRuntime,
+    backend: &mut Option<repose_render_wgpu::WgpuBackend>,
+    size: winit::dpi::PhysicalSize<u32>,
+    scale: f32,
+) {
+    rt.set_viewport_and_scale(size.width, size.height, scale);
+    if let Some(b) = backend {
+        b.configure_surface(size.width, size.height);
+        b.set_pixels_per_point(scale);
+    }
+}
+
+/// Shared helper used by platform runners to sync IME state for focused textfields.
+#[allow(dead_code)]
+pub fn sync_ime_for_focused(
+    window: &winit::window::Window,
+    rt: &repose_app::ReposeRuntime,
+    frame: &repose_core::runtime::Frame,
+) {
+    let Some(fid) = rt.sched.focused else {
+        set_ime_for_textfield(window, false);
+        return;
+    };
+    let Some(hit) = frame.hit_regions.iter().find(|h| h.id == fid) else {
+        set_ime_for_textfield(window, false);
+        return;
+    };
+    set_ime_for_textfield_ex(
+        window,
+        true,
+        hit.keyboard_type.ime_purpose_hint(),
+        hit.auto_correct.unwrap_or(true),
+        hit.capitalization,
+    );
+    let sf = window.scale_factor();
+    window.set_ime_cursor_area(
+        winit::dpi::LogicalPosition::new(hit.rect.x as f64 / sf, hit.rect.y as f64 / sf),
+        winit::dpi::LogicalSize::new(hit.rect.w as f64 / sf, hit.rect.h as f64 / sf),
+    );
+}
+
+/// Whether a compose is needed based on dirty/frame/present flags.
+// Used by `about_to_wait` in desktop/android/web.
+#[allow(dead_code)]
+pub fn needs_compose(
+    dirty: bool,
+    frame_requested: bool,
+    present_requested: bool,
+    has_frame: bool,
+    continuous: bool,
+    animation_active: bool,
+    wakeup_due: bool,
+) -> bool {
+    continuous
+        || dirty
+        || frame_requested
+        || (present_requested && has_frame)
+        || animation_active
+        || wakeup_due
+}
+
 #[allow(dead_code)]
 pub(crate) fn is_textfield_in_frame(frame_cache: &Option<Frame>, id: u64) -> bool {
     repose_app::is_textfield_in_frame_cache(frame_cache, id)
+}
+
+/// Extracts file-drop payload and dispatch to the hit region's `on_drop`.
+#[allow(dead_code)]
+pub fn dispatch_file_drop(
+    frame: &Frame,
+    pos: Vec2,
+    paths: Vec<std::path::PathBuf>,
+    modifiers: Modifiers,
+) -> bool {
+    let mut files = Vec::new();
+    for p in paths {
+        let name = p
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file")
+            .to_string();
+        files.push(repose_core::dnd::DroppedFile {
+            name,
+            path: Some(p),
+        });
+    }
+    let payload: repose_core::dnd::DragPayload =
+        std::rc::Rc::new(repose_core::dnd::DroppedFiles { files });
+    let Some(target_id) = repose_core::dnd::dnd_target_id_at(frame, pos) else {
+        return false;
+    };
+    let Some(hit) = frame.hit_regions.iter().find(|h| h.id == target_id) else {
+        return false;
+    };
+    let Some(cb) = &hit.on_drop else {
+        return false;
+    };
+    cb(repose_core::dnd::DropEvent {
+        source_id: 0,
+        target_id,
+        position: pos,
+        modifiers,
+        payload,
+    });
+    true
 }
 
 pub(crate) fn update_modifiers(modifiers: &mut Modifiers, state: &winit::keyboard::ModifiersState) {

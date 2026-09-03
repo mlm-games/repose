@@ -62,7 +62,56 @@ pub fn map_mouse_button(btn: winit::event::MouseButton) -> Option<PointerButton>
     }
 }
 
-/// `dispatch` is called for pinch/pan/swipe gestures (usually `self.dispatch_action`).
+/// Raw touch result without dispatch - caller handles `dispatch_action` to avoid double-borrow.
+pub struct TouchResult {
+    pub dirty: bool,
+    pub pinch: Option<(f32, Vec2)>,
+    pub pan: Option<Vec2>,
+    pub swipe_right: Option<bool>,
+}
+
+pub fn handle_touch_raw(
+    rt: &mut ReposeRuntime,
+    touch_gestures: &mut TouchGestureState,
+    t: &Touch,
+    scale: f32,
+) -> TouchResult {
+    let pos_px = (t.location.x as f32, t.location.y as f32);
+    let tid = t.id;
+    match t.phase {
+        winit::event::TouchPhase::Started => {
+            touch_gestures.touch_started(rt, tid, pos_px);
+            TouchResult {
+                dirty: true,
+                pinch: None,
+                pan: None,
+                swipe_right: None,
+            }
+        }
+        winit::event::TouchPhase::Moved => {
+            let (dirty, pinch, pan) = touch_gestures.touch_moved(rt, tid, pos_px, scale);
+            TouchResult {
+                dirty,
+                pinch,
+                pan,
+                swipe_right: None,
+            }
+        }
+        winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
+            let cancelled = t.phase == winit::event::TouchPhase::Cancelled;
+            let swipe_right = touch_gestures.touch_ended(rt, tid, pos_px, cancelled);
+            TouchResult {
+                dirty: false,
+                pinch: None,
+                pan: None,
+                swipe_right,
+            }
+        }
+    }
+}
+
+/// HACK: Legacy wrapper that dispatches gestures inline (use `handle_touch_raw` when caller
+/// needs to avoid double-borrow of `self` containing `rt`).
 pub fn on_touch(
     rt: &mut ReposeRuntime,
     touch_gestures: &mut TouchGestureState,
@@ -70,47 +119,61 @@ pub fn on_touch(
     scale: f32,
     mut dispatch: impl FnMut(Action) -> bool,
 ) -> bool {
-    let pos_px = (t.location.x as f32, t.location.y as f32);
-    let tid = t.id;
-    match t.phase {
-        winit::event::TouchPhase::Started => {
-            touch_gestures.touch_started(rt, tid, pos_px);
-            true
-        }
-        winit::event::TouchPhase::Moved => {
-            let (mut dirty, pinch, pan) = touch_gestures.touch_moved(rt, tid, pos_px, scale);
-            if let Some((delta_scale, center)) = pinch {
-                if dispatch(Action::Gesture(Gesture::PinchWithCenter {
-                    delta_scale,
-                    center,
-                })) {
-                    dirty = true;
-                }
-            }
-            if let Some(delta) = pan {
-                if dispatch(Action::Gesture(Gesture::Pan { delta })) {
-                    dirty = true;
-                }
-            }
-            dirty
-        }
-        winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
-            let cancelled = t.phase == winit::event::TouchPhase::Cancelled;
-            let swipe_right = touch_gestures.touch_ended(rt, tid, pos_px, cancelled);
-            let mut dirty = false;
-            if let Some(right) = swipe_right {
-                let g = if right {
-                    Gesture::SwipeRight
-                } else {
-                    Gesture::SwipeLeft
-                };
-                if dispatch(Action::Gesture(g)) {
-                    dirty = true;
-                }
-            }
-            dirty
+    let r = handle_touch_raw(rt, touch_gestures, t, scale);
+    let mut dirty = r.dirty;
+    if let Some((delta_scale, center)) = r.pinch {
+        if dispatch(Action::Gesture(Gesture::PinchWithCenter {
+            delta_scale,
+            center,
+        })) {
+            dirty = true;
         }
     }
+    if let Some(delta) = r.pan {
+        if dispatch(Action::Gesture(Gesture::Pan { delta })) {
+            dirty = true;
+        }
+    }
+    if let Some(right) = r.swipe_right {
+        let g = if right {
+            Gesture::SwipeRight
+        } else {
+            Gesture::SwipeLeft
+        };
+        if dispatch(Action::Gesture(g)) {
+            dirty = true;
+        }
+    }
+    dirty
+}
+
+/// Touch handler that also syncs IME for focused textfields (web/android).
+/// Returns whether a redraw is needed. Probably shared for desktop once winit unifies touch.
+pub fn on_touch_with_ime(
+    rt: &mut ReposeRuntime,
+    touch_gestures: &mut TouchGestureState,
+    t: &Touch,
+    scale: f32,
+    window: &winit::window::Window,
+    dispatch: impl FnMut(Action) -> bool,
+) -> bool {
+    let pos_px = (t.location.x as f32, t.location.y as f32);
+    let tid = t.id;
+    if t.phase == winit::event::TouchPhase::Started {
+        let focused = touch_gestures.touch_started(rt, tid, pos_px);
+        if let Some(fid) = focused {
+            if rt.is_textfield(fid) {
+                let (purpose, ac, cap) = rt.focused_keyboard_hints();
+                crate::common::set_ime_for_textfield_ex(window, true, purpose, ac, cap);
+            } else {
+                crate::common::set_ime_for_textfield(window, false);
+            }
+        } else {
+            crate::common::set_ime_for_textfield(window, false);
+        }
+        return true;
+    }
+    on_touch(rt, touch_gestures, t, scale, dispatch)
 }
 
 /// Shared inspector toggle + runtime dispatch.

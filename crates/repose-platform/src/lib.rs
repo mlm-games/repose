@@ -2,7 +2,6 @@
 use crate::a11y::ReposeActionHandler;
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 use accesskit_winit::Adapter;
-use repose_core::locals::dp_to_px;
 use repose_core::*;
 use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -17,13 +16,11 @@ pub mod web;
 
 pub mod a11y;
 mod common;
-mod common_web;
 pub mod render;
 pub mod runner_common;
 pub mod window_v2;
 
 use common as rc;
-use common_web as rc_web;
 
 pub use render::{ImageHandleGuard, RenderCommand, RenderContext};
 
@@ -167,7 +164,7 @@ pub fn run_desktop_app_with_config(
 ) -> anyhow::Result<()> {
     use winit::application::ApplicationHandler;
     use winit::dpi::{LogicalPosition, LogicalSize, PhysicalSize};
-    use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+    use winit::event::{ElementState, MouseButton, WindowEvent};
     use winit::event_loop::EventLoop;
     use winit::keyboard::{KeyCode, PhysicalKey};
     use winit::window::{Window, WindowAttributes};
@@ -328,7 +325,7 @@ pub fn run_desktop_app_with_config(
         fn dispatch_action(&mut self, action: repose_core::shortcuts::Action) -> bool {
             if self.rt.dispatch_action(action) {
                 if let Some(win) = &self.window {
-                    rc_web::set_ime_for_textfield(
+                    rc::set_ime_for_textfield(
                         win,
                         self.rt
                             .sched
@@ -385,34 +382,7 @@ pub fn run_desktop_app_with_config(
 
     impl ApplicationHandler<()> for App {
         fn resumed(&mut self, el: &winit::event_loop::ActiveEventLoop) {
-            self.clipboard = clipawl::Clipboard::new()
-                .map_err(|e| {
-                    eprintln!("clipawl clipboard init failed: {e}");
-                    e
-                })
-                .ok();
-            repose_core::clipboard::set_clipboard_read_fn(Box::new(|| {
-                clipawl::blocking::read().ok()
-            }));
-            // Register for SelectableText (Ctrl+C) - use blocking API directly
-            repose_core::clipboard::set_clipboard_fn(Box::new(move |text| {
-                if let Err(e) = clipawl::blocking::write(text) {
-                    eprintln!("clipboard write error: {e}");
-                }
-            }));
-
-            repose_core::clipboard::set_primary_fn(Box::new(|text| {
-                let mut opts = clipawl::ClipboardOptions::default();
-                opts.linux.selection = clipawl::LinuxSelection::Primary;
-                match clipawl::Clipboard::new_with_options(opts) {
-                    Ok(cb) => {
-                        if let Err(e) = pollster::block_on(cb.write(text)) {
-                            eprintln!("primary selection write error: {e}");
-                        }
-                    }
-                    Err(e) => eprintln!("primary clipboard init error: {e}"),
-                }
-            }));
+            self.clipboard = rc::setup_clipboard();
 
             if self.window.is_none() {
                 match el.create_window(
@@ -514,7 +484,7 @@ pub fn run_desktop_app_with_config(
                     self.hovered_files.clear();
 
                     if let Some(w) = &self.window {
-                        rc_web::set_ime_for_textfield(w, false);
+                        rc::set_ime_for_textfield(w, false);
                     }
 
                     self.request_redraw();
@@ -570,11 +540,7 @@ pub fn run_desktop_app_with_config(
                         .as_ref()
                         .map(|w| w.scale_factor() as f32)
                         .unwrap_or(1.0);
-                    self.rt.set_viewport_and_scale(size.width, size.height, sf);
-                    if let Some(b) = self.backend.as_mut() {
-                        b.configure_surface(size.width, size.height);
-                        b.set_pixels_per_point(sf);
-                    }
+                    rc::sync_viewport(&mut self.rt, &mut self.backend, size, sf);
                     if let Some(w) = &self.window {
                         let sf = w.scale_factor() as f32;
                         let dp_w = size.width as f32 / sf;
@@ -670,7 +636,7 @@ pub fn run_desktop_app_with_config(
                                 && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
                             {
                                 let sf = win.scale_factor();
-                                rc_web::set_ime_for_textfield_ex(
+                                rc::set_ime_for_textfield_ex(
                                     win,
                                     true,
                                     hit.keyboard_type.ime_purpose_hint(),
@@ -692,7 +658,7 @@ pub fn run_desktop_app_with_config(
                             // Click outside - no focus result from runtime, drop IME
                             if result.focused.is_none() && self.rt.ime_preedit {
                                 if let Some(win) = &self.window {
-                                    rc_web::set_ime_for_textfield(win, false);
+                                    rc::set_ime_for_textfield(win, false);
                                 }
                                 self.rt.ime_preedit = false;
                             }
@@ -764,74 +730,47 @@ pub fn run_desktop_app_with_config(
                 }
 
                 WindowEvent::Touch(t) => {
-                    let pos_px = (t.location.x as f32, t.location.y as f32);
-                    let tid = t.id;
                     let scale = self
                         .window
                         .as_ref()
                         .map(|w| w.scale_factor() as f32)
                         .unwrap_or(1.0);
-
-                    match t.phase {
-                        winit::event::TouchPhase::Started => {
-                            self.touch_gestures.touch_started(&mut self.rt, tid, pos_px);
-                            self.request_redraw();
+                    let r = crate::runner_common::handle_touch_raw(
+                        &mut self.rt,
+                        &mut self.touch_gestures,
+                        &t,
+                        scale,
+                    );
+                    let mut dirty = r.dirty;
+                    if let Some((delta_scale, center)) = r.pinch {
+                        if self.dispatch_action(repose_core::shortcuts::Action::Gesture(
+                            repose_core::shortcuts::Gesture::PinchWithCenter {
+                                delta_scale,
+                                center,
+                            },
+                        )) {
+                            dirty = true;
                         }
-
-                        winit::event::TouchPhase::Moved => {
-                            let (mut dirty, pinch, pan) =
-                                self.touch_gestures
-                                    .touch_moved(&mut self.rt, tid, pos_px, scale);
-
-                            if let Some((delta_scale, center)) = pinch
-                                && self.dispatch_action(repose_core::shortcuts::Action::Gesture(
-                                    repose_core::shortcuts::Gesture::PinchWithCenter {
-                                        delta_scale,
-                                        center,
-                                    },
-                                ))
-                            {
-                                dirty = true;
-                            }
-                            if let Some(delta) = pan
-                                && self.dispatch_action(repose_core::shortcuts::Action::Gesture(
-                                    repose_core::shortcuts::Gesture::Pan { delta },
-                                ))
-                            {
-                                dirty = true;
-                            }
-
-                            if dirty {
-                                self.request_redraw();
-                            }
+                    }
+                    if let Some(delta) = r.pan {
+                        if self.dispatch_action(repose_core::shortcuts::Action::Gesture(
+                            repose_core::shortcuts::Gesture::Pan { delta },
+                        )) {
+                            dirty = true;
                         }
-
-                        winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
-                            let cancelled = t.phase == winit::event::TouchPhase::Cancelled;
-                            let swipe_right = self.touch_gestures.touch_ended(
-                                &mut self.rt,
-                                tid,
-                                pos_px,
-                                cancelled,
-                            );
-
-                            use repose_core::shortcuts::{Action, Gesture};
-                            let mut dirty = false;
-                            if let Some(right) = swipe_right {
-                                let g = if right {
-                                    Gesture::SwipeRight
-                                } else {
-                                    Gesture::SwipeLeft
-                                };
-                                if self.dispatch_action(Action::Gesture(g)) {
-                                    dirty = true;
-                                }
-                            }
-
-                            if dirty {
-                                self.request_redraw();
-                            }
+                    }
+                    if let Some(right) = r.swipe_right {
+                        let g = if right {
+                            repose_core::shortcuts::Gesture::SwipeRight
+                        } else {
+                            repose_core::shortcuts::Gesture::SwipeLeft
+                        };
+                        if self.dispatch_action(repose_core::shortcuts::Action::Gesture(g)) {
+                            dirty = true;
                         }
+                    }
+                    if dirty {
+                        self.request_redraw();
                     }
                 }
 
@@ -960,7 +899,7 @@ pub fn run_desktop_app_with_config(
 
                     // Apply IME keyboard hints
                     if output.platform.ime_allowed {
-                        rc_web::set_ime_for_textfield_ex(
+                        rc::set_ime_for_textfield_ex(
                             win,
                             true,
                             output.platform.ime_purpose,
@@ -974,7 +913,7 @@ pub fn run_desktop_app_with_config(
                             );
                         }
                     } else if self.rt.ime_preedit {
-                        rc_web::set_ime_for_textfield_ex(
+                        rc::set_ime_for_textfield_ex(
                             win,
                             false,
                             repose_core::ImePurposeHint::Normal,
@@ -990,7 +929,7 @@ pub fn run_desktop_app_with_config(
                         && self.rt.sched.focused.is_none()
                         && self.rt.ime_preedit
                     {
-                        rc_web::set_ime_for_textfield(win, false);
+                        rc::set_ime_for_textfield(win, false);
                         self.rt.ime_preedit = false;
                     }
 
