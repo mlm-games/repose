@@ -189,6 +189,6 @@ Consider donating if you'd like to support it's development. Open an issue or a 
 
 ## License
 
-MPL-2.0 - see [LICENSE](LICENSE).
+MPL-2.0
 
 See [LICENSE](LICENSE) for more info.
