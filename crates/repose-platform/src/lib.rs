@@ -4,9 +4,8 @@ use crate::a11y::ReposeActionHandler;
 use accesskit_winit::Adapter;
 use repose_core::locals::dp_to_px;
 use repose_core::*;
-use repose_ui::textfield::{TF_FONT_DP, TF_PADDING_X_DP, TextMeasureConfig, measure_text};
 use std::cell::Cell;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use web_time::Instant;
 
@@ -20,6 +19,7 @@ pub mod a11y;
 mod common;
 mod common_web;
 pub mod render;
+pub mod runner_common;
 pub mod window_v2;
 
 use common as rc;
@@ -45,128 +45,29 @@ static CLOSE_TO_TRAY: AtomicBool = AtomicBool::new(false);
 #[cfg(not(target_arch = "wasm32"))]
 static EVENT_LOOP_PROXY: OnceLock<winit::event_loop::EventLoopProxy<()>> = OnceLock::new();
 
-thread_local! {
-    /// Called at the start of every RedrawRequested, *before* compose vs present.
-    /// Intended for media sinks that must upload textures without forcing a full recompose.
-    /// Not `Send`: always runs on the UI/event-loop thread.
-    static PRE_REDRAW: std::cell::RefCell<Option<Box<dyn FnMut(&RenderContext)>>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-/// Register a UI-thread callback invoked once per redraw, before compose/present.
-/// Replaces any previous callback. Pass `None` to clear.
-pub fn set_pre_redraw(cb: Option<Box<dyn FnMut(&RenderContext)>>) {
-    PRE_REDRAW.with(|c| *c.borrow_mut() = cb);
-}
-
-pub(crate) fn run_pre_redraw(ctx: &RenderContext) {
-    PRE_REDRAW.with(|c| {
-        if let Some(cb) = c.borrow_mut().as_mut() {
-            cb(ctx);
-        }
-    });
-}
-
 /// Optional callback invoked on every AboutToWait, regardless of redraw state.
-/// Used for draining cross-thread commands (e.g. tray toggles) that must be
-/// processed even when the window is hidden.
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 static ABOUT_TO_WAIT_CALLBACK: Mutex<Option<Box<dyn Fn() + Send>>> = Mutex::new(None);
 
-static DEEPLINK_CB: Mutex<Option<Box<dyn Fn(Vec<u8>) + Send>>> = Mutex::new(None);
-static PENDING_DEEPLINKS: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
+pub use repose_app::lifecycle::{
+    AppLifecycle, current_lifecycle, process_deeplinks, process_lifecycle, run_pre_redraw,
+    set_on_deeplink, set_on_lifecycle, set_pre_redraw,
+};
 
-/// Coarse application lifecycle state, derived from the runner's
-/// `suspended` or `resumed` callbacks (eg. Android activity pause/resume).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AppLifecycle {
-    /// Surface available and the activity is interactive (after `resumed`).
-    Foreground,
-    /// Surface torn down / activity no longer interactive (after `suspended`).
-    Background,
-}
-
-// 0 = unknown, 1 = Foreground, 2 = Background
-static CURRENT_LIFECYCLE: AtomicU8 = AtomicU8::new(0);
-static LIFECYCLE_CB: Mutex<Option<Box<dyn Fn(AppLifecycle) + Send>>> = Mutex::new(None);
-#[cfg(target_os = "android")]
-static PENDING_LIFECYCLE: Mutex<Vec<AppLifecycle>> = Mutex::new(Vec::new());
-
-/// Register a callback for coarse app lifecycle (foreground/background).
-///
-/// Safe to call from any thread. Deliveries are coalesced to the latest state
-/// and dispatched on the UI loop via `about_to_wait` (same pattern as deeplinks).
-pub fn set_on_lifecycle(callback: Box<dyn Fn(AppLifecycle) + Send>) {
-    *LIFECYCLE_CB.lock().unwrap() = Some(callback);
-}
-
-/// Current lifecycle state, if the runner has reported one yet.
-pub fn current_lifecycle() -> Option<AppLifecycle> {
-    match CURRENT_LIFECYCLE.load(Ordering::Relaxed) {
-        1 => Some(AppLifecycle::Foreground),
-        2 => Some(AppLifecycle::Background),
-        _ => None,
-    }
-}
-
-/// Queue a lifecycle transition and wake the UI loop. Called by platform runners
-/// (e.g. from `suspended` / `resumed`), which already run on the UI thread.
+/// Queue a lifecycle transition and wake the UI loop. Thin wrapper over `repose_app`.
 #[cfg(target_os = "android")]
 pub(crate) fn push_lifecycle(state: AppLifecycle) {
-    let code = match state {
-        AppLifecycle::Foreground => 1,
-        AppLifecycle::Background => 2,
-    };
-    CURRENT_LIFECYCLE.store(code, Ordering::Relaxed);
-    PENDING_LIFECYCLE.lock().unwrap().push(state);
+    repose_app::lifecycle::push_lifecycle(state);
     #[cfg(not(target_arch = "wasm32"))]
     wake_event_loop();
 }
 
-/// Drain queued lifecycle transitions and dispatch the latest to the callback.
-/// Called from each platform runner's `about_to_wait` handler.
-#[cfg(target_os = "android")]
-pub(crate) fn process_lifecycle() {
-    let batch = std::mem::take(&mut *PENDING_LIFECYCLE.lock().unwrap());
-    if batch.is_empty() {
-        return;
-    }
-    // Coalesce to the last state if multiple transitions fired in one pump.
-    if let Some(last) = batch.last().copied()
-        && let Some(cb) = LIFECYCLE_CB.lock().unwrap().as_ref()
-    {
-        cb(last);
-    }
-}
-
-/// Register a callback to receive deeplink payloads (raw bytes)
-pub fn set_on_deeplink(callback: Box<dyn Fn(Vec<u8>) + Send>) {
-    *DEEPLINK_CB.lock().unwrap() = Some(callback);
-}
-
-/// Push a deeplink payload from any thread (JNI callback, CLI watcher, etc).
+/// Push a deeplink payload and wake the UI loop. Thin wrapper over `repose_app`.
 pub fn push_deeplink(data: Vec<u8>) {
-    PENDING_DEEPLINKS.lock().unwrap().push(data);
+    repose_app::lifecycle::push_deeplink(data);
     #[cfg(not(target_arch = "wasm32"))]
     if let Some(proxy) = EVENT_LOOP_PROXY.get() {
         let _ = proxy.send_event(());
-    }
-}
-
-/// Drain queued deeplinks and dispatch them to the registered callback.
-/// Called from each platform runner's `about_to_wait` handler.
-pub(crate) fn process_deeplinks() {
-    let mut queue = PENDING_DEEPLINKS.lock().unwrap();
-    if queue.is_empty() {
-        return;
-    }
-    let batch = std::mem::take(&mut *queue);
-    drop(queue);
-
-    if let Some(cb) = DEEPLINK_CB.lock().unwrap().as_ref() {
-        for data in batch {
-            cb(data);
-        }
     }
 }
 
@@ -236,106 +137,14 @@ pub fn set_close_to_tray(enabled: bool) {
     CLOSE_TO_TRAY.store(enabled, Ordering::Relaxed);
 }
 
-/// Helper: ensure caret visibility for a TextFieldState inside a given rect (px).
-pub fn tf_ensure_visible_in_rect(state: &mut repose_ui::TextFieldState, inner_rect: Rect) {
-    let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
-    let m = measure_text(&state.text, font_px, TextMeasureConfig::default());
-    let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
-    state.ensure_caret_visible(
-        caret_x_px,
-        inner_rect.w - 2.0 * dp_to_px(TF_PADDING_X_DP),
-        dp_to_px(2.0),
-    );
-}
+/// Helper: ensure caret visibility - now in `repose_ui::textfield::tf_ensure_visible_in_rect`.
+pub use repose_ui::textfield::tf_ensure_visible_in_rect;
 
-/// Convert a winit `KeyEvent` + mapped `Key` + modifiers into a repose `KeyEvent`.
-fn winit_key_to_repose(
-    ev: &winit::event::KeyEvent,
-    mapped_key: &repose_core::input::Key,
-    mods: &repose_core::input::Modifiers,
-) -> repose_core::input::KeyEvent {
-    let utf16 = match mapped_key {
-        repose_core::input::Key::Character(c) => *c as u16,
-        _ => 0,
-    };
-    repose_core::input::KeyEvent {
-        key: mapped_key.clone(),
-        modifiers: *mods,
-        is_repeat: ev.repeat,
-        event_type: if ev.state == winit::event::ElementState::Pressed {
-            repose_core::input::KeyEventType::Down
-        } else {
-            repose_core::input::KeyEventType::Up
-        },
-        utf16_code_point: utf16,
-    }
-}
-
+use common::winit_key_to_repose;
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
-fn map_cursor(c: repose_core::CursorIcon) -> winit::window::CursorIcon {
-    use winit::window::CursorIcon as W;
-    match c {
-        repose_core::CursorIcon::Default => W::Default,
-        repose_core::CursorIcon::Pointer => W::Pointer,
-        repose_core::CursorIcon::Text => W::Text,
-        repose_core::CursorIcon::EwResize => W::EwResize,
-        repose_core::CursorIcon::NsResize => W::NsResize,
-        repose_core::CursorIcon::Grab => W::Grab,
-        repose_core::CursorIcon::Grabbing => W::Grabbing,
-    }
-}
+use common::map_cursor;
 
-/// Options common to all platforms.
-#[derive(Clone, Copy, Debug)]
-pub struct ReposeOptions {
-    /// MSAA sample count for the UI surface pass. The renderer falls back to
-    /// the largest supported count <= this value.
-    pub msaa_samples: u32,
-    /// CPU-side frame rate cap. `None` = uncapped: redraws are issued as fast
-    /// as the event loop allows (the GPU may still vsync via the present
-    /// mode). eg: `Some(60.0)`, `Some(30.0)`.
-    pub max_fps: Option<f32>,
-    /// Preferred GPU present mode for the swapchain.
-    pub present_mode: PresentModePref,
-}
-
-impl Default for ReposeOptions {
-    fn default() -> Self {
-        Self {
-            msaa_samples: 4,
-            max_fps: None,
-            present_mode: PresentModePref::Auto,
-        }
-    }
-}
-
-/// Configuration for [`run_desktop_app`].
-///
-/// Uses [`Default`] so new options can be added without breaking existing
-/// callers. Configure via struct update syntax, e.g.
-/// `AppConfig { window_title: "My Game".into(), ..Default::default() }`.
-#[derive(Clone, Debug)]
-pub struct AppConfig {
-    /// Common options shared with other platforms.
-    pub common: ReposeOptions,
-    /// Window title.
-    pub window_title: String,
-    /// Initial window size in physical pixels.
-    pub window_size: (u32, u32),
-    /// Enable the devtools inspector (hover + HUD). Disable for release builds.
-    pub enable_inspector: bool,
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            common: ReposeOptions::default(),
-            window_title: "Repose".to_string(),
-            window_size: (1280, 800),
-            enable_inspector: true,
-        }
-    }
-}
+pub use repose_app::{AndroidOptions, AppConfig, ReposeOptions};
 
 /// Run a desktop app with default [`AppConfig`].
 ///

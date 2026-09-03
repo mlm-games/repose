@@ -2288,10 +2288,22 @@ fn dispatch_hover_change_bubbled(
     }
 }
 
-fn is_textfield_in_frame(f: &Frame, id: u64) -> bool {
+pub fn is_textfield_in_frame(f: &Frame, id: u64) -> bool {
     f.semantics_nodes
         .iter()
         .any(|n| n.id == id && n.role == repose_core::semantics::Role::TextField)
+}
+
+pub fn is_textfield_in_frame_cache(frame_cache: &Option<Frame>, id: u64) -> bool {
+    if let Some(f) = frame_cache {
+        is_textfield_in_frame(f, id)
+    } else {
+        false
+    }
+}
+
+pub fn hit_index_by_id(frame: &Frame, id: u64) -> Option<usize> {
+    frame.hit_regions.iter().position(|h| h.id == id)
 }
 
 fn is_multiline_id(f: &Frame, id: u64) -> bool {

@@ -2389,3 +2389,17 @@ mod tests {
         assert!(backspace.try_merge(&selection).is_none());
     }
 }
+
+/// Ensure caret visibility for a TextFieldState inside a given rect (px).
+/// Extracted from `repose-platform::tf_ensure_visible_in_rect` for better layering.
+pub fn tf_ensure_visible_in_rect(state: &mut TextFieldState, inner_rect: repose_core::Rect) {
+    use crate::textfield::{TF_FONT_DP, TF_PADDING_X_DP, TextMeasureConfig, measure_text};
+    let font_px = repose_core::locals::dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+    let m = measure_text(&state.text, font_px, TextMeasureConfig::default());
+    let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
+    state.ensure_caret_visible(
+        caret_x_px,
+        inner_rect.w - 2.0 * repose_core::locals::dp_to_px(TF_PADDING_X_DP),
+        repose_core::locals::dp_to_px(2.0),
+    );
+}

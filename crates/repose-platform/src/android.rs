@@ -18,32 +18,7 @@ use winit::platform::android::EventLoopBuilderExtAndroid;
 use winit::platform::android::activity::AndroidApp;
 use winit::window::{Window, WindowAttributes};
 
-#[derive(Clone, Copy, Debug)]
-pub struct AndroidOptions {
-    /// If true, runner keeps requesting frames (good for animations, costs battery).
-    pub continuous_redraw: bool,
-
-    /// IME (soft keyboard) inset height in physical pixels.
-    /// When the keyboard opens on Android, `set_ime_inset()` is called with this value.
-    /// If `None`, the runner estimates ~40% of the window's shorter dimension.
-    pub ime_height_px: Option<f32>,
-
-    /// Common options shared with other platforms.
-    pub common: ReposeOptions,
-}
-
-impl Default for AndroidOptions {
-    fn default() -> Self {
-        Self {
-            // Reactive by default (egui-style): frames are only requested on
-            // demand (dirty, caret blink, running animations). Set this to true
-            // only for always-animating UIs that want to burn battery.
-            continuous_redraw: false,
-            ime_height_px: None,
-            common: ReposeOptions::default(),
-        }
-    }
-}
+pub use repose_app::AndroidOptions;
 
 /// Runtime override for [`AndroidOptions::continuous_redraw`].
 ///
