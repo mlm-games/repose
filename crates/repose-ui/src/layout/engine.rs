@@ -139,7 +139,11 @@ impl LayoutEngine {
                 if let Ok(mut style) = self.taffy.style(taffy_root).cloned() {
                     style.size.width = length(size_px.0 as f32);
                     style.size.height = length(size_px.1 as f32);
-                    let _ = self.taffy.set_style(taffy_root, style);
+                    if let Err(e) = self.taffy.set_style(taffy_root, style) {
+                        log::error!("taffy set_style failed for root: {e:?}");
+                    }
+                } else {
+                    log::error!("taffy root style missing for {:?}", taffy_root);
                 }
 
                 let available = taffy::geometry::Size {
@@ -305,37 +309,72 @@ impl LayoutEngine {
     }
 
     pub(crate) fn layout_for_node(&self, node_id: NodeId) -> taffy::prelude::Layout {
-        // Scope root nodes: use the root tree layout (has correct position + size after flexbox resolve).
-        // Their children use the scope tree layout (positions relative to scope root).
+        fn fallback() -> taffy::prelude::Layout {
+            log::error!("layout_for_node: missing taffy layout, returning zero rect");
+            taffy::prelude::Layout {
+                size: taffy::geometry::Size {
+                    width: 0.0,
+                    height: 0.0,
+                },
+                location: taffy::geometry::Point { x: 0.0, y: 0.0 },
+                ..Default::default()
+            }
+        }
         if self.scope_root_map.contains_key(&node_id) {
             if let Some(&tid) = self.taffy_map.get(&node_id) {
-                return *self.taffy.layout(tid).unwrap();
+                if let Ok(l) = self.taffy.layout(tid) {
+                    return *l;
+                }
+                log::error!(
+                    "layout_for_node: taffy layout missing for scope root {:?}",
+                    node_id
+                );
+                return fallback();
             }
-            // Nested scope root: the enclosing scope positions it via a leaf
-            // marker; inherit that layout so the subtree paints at the right
-            // spot instead of the nested scope's origin.
             if let Some(parent_id) = self.tree.get(node_id).and_then(|n| n.parent)
                 && let Some(outer_key) = self.node_to_scope.get(&parent_id)
                 && let Some(st) = self.scope_trees.get(outer_key)
                 && let Some(&tid) = st.taffy_map.get(&node_id)
             {
-                return *st.taffy.layout(tid).unwrap();
+                if let Ok(l) = st.taffy.layout(tid) {
+                    return *l;
+                }
             }
             if let Some(key) = self.node_to_scope.get(&node_id)
                 && let Some(st) = self.scope_trees.get(key)
                 && let Some(&tid) = st.taffy_map.get(&node_id)
             {
-                return *st.taffy.layout(tid).unwrap();
+                if let Ok(l) = st.taffy.layout(tid) {
+                    return *l;
+                }
             }
+            return fallback();
         }
         if let Some(key) = self.node_to_scope.get(&node_id)
             && let Some(st) = self.scope_trees.get(key)
         {
-            let tid = st.taffy_map[&node_id];
-            return *st.taffy.layout(tid).unwrap();
+            if let Some(&tid) = st.taffy_map.get(&node_id) {
+                if let Ok(l) = st.taffy.layout(tid) {
+                    return *l;
+                }
+                log::error!(
+                    "layout_for_node: scope taffy layout missing for {:?}",
+                    node_id
+                );
+                return fallback();
+            }
+            log::error!("layout_for_node: scope taffy_map missing for {:?}", node_id);
+            return fallback();
         }
-        let tid = self.taffy_map[&node_id];
-        *self.taffy.layout(tid).unwrap()
+        if let Some(&tid) = self.taffy_map.get(&node_id) {
+            if let Ok(l) = self.taffy.layout(tid) {
+                return *l;
+            }
+            log::error!("layout_for_node: taffy layout missing for {:?}", node_id);
+        } else {
+            log::error!("layout_for_node: taffy_map missing for {:?}", node_id);
+        }
+        fallback()
     }
 
     pub(crate) fn ensure_view_id(&mut self, node_id: NodeId) -> u64 {

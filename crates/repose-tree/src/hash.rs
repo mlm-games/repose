@@ -65,7 +65,7 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             font_family.hash(hasher);
             text.hash(hasher);
             hash_color(color, hasher);
-            ((font_size * 100.0) as u32).hash(hasher);
+            hash_f32(*font_size, hasher);
             soft_wrap.hash(hasher);
             max_lines.hash(hasher);
             hash_text_overflow(overflow, hasher);
@@ -77,8 +77,8 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             if let Some(c) = &text_decoration.color {
                 hash_color(c, hasher);
             }
-            ((letter_spacing * 100.0) as u32).hash(hasher);
-            ((line_height * 100.0) as u32).hash(hasher);
+            hash_f32(*letter_spacing, hasher);
+            hash_f32(*line_height, hasher);
             font_variation_settings.hash(hasher);
             if let Some(annos) = annotations {
                 annos.len().hash(hasher);
@@ -89,7 +89,7 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
                         hash_color(c, hasher);
                     }
                     if let Some(fs) = span.style.font_size {
-                        ((fs * 100.0) as u32).hash(hasher);
+                        hash_f32(fs, hasher);
                     }
                 }
             }
@@ -114,53 +114,63 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
     }
 }
 
+fn hash_f32(v: f32, hasher: &mut impl Hasher) {
+    let mut bits = v.to_bits();
+    if bits == 0x8000_0000 {
+        bits = 0;
+    }
+    if v.is_nan() {
+        bits = 0x7FC0_0000;
+    }
+    bits.hash(hasher);
+}
+fn hash_opt_f32(v: Option<f32>, hasher: &mut impl Hasher) {
+    match v {
+        Some(x) => {
+            1u8.hash(hasher);
+            hash_f32(x, hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+}
+
 fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     // Size
     if let Some(s) = &m.size {
-        ((s.width * 100.0) as i32).hash(hasher);
-        ((s.height * 100.0) as i32).hash(hasher);
+        hash_f32(s.width, hasher);
+        hash_f32(s.height, hasher);
     }
-    m.width.map(|w| (w * 100.0) as i32).hash(hasher);
-    m.height.map(|h| (h * 100.0) as i32).hash(hasher);
+    hash_opt_f32(m.width, hasher);
+    hash_opt_f32(m.height, hasher);
     if let Some(s) = &m.required_size {
-        ((s.width * 100.0) as i32).hash(hasher);
-        ((s.height * 100.0) as i32).hash(hasher);
+        hash_f32(s.width, hasher);
+        hash_f32(s.height, hasher);
     }
-    m.required_min_width
-        .map(|v| (v * 100.0) as i32)
-        .hash(hasher);
-    m.required_max_width
-        .map(|v| (v * 100.0) as i32)
-        .hash(hasher);
-    m.required_min_height
-        .map(|v| (v * 100.0) as i32)
-        .hash(hasher);
-    m.required_max_height
-        .map(|v| (v * 100.0) as i32)
-        .hash(hasher);
-    m.default_min_width.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.default_min_height
-        .map(|v| (v * 100.0) as i32)
-        .hash(hasher);
-    m.fill_max.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.fill_max_w.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.fill_max_h.map(|v| (v * 100.0) as i32).hash(hasher);
+    hash_opt_f32(m.required_min_width, hasher);
+    hash_opt_f32(m.required_max_width, hasher);
+    hash_opt_f32(m.required_min_height, hasher);
+    hash_opt_f32(m.required_max_height, hasher);
+    hash_opt_f32(m.default_min_width, hasher);
+    hash_opt_f32(m.default_min_height, hasher);
+    hash_opt_f32(m.fill_max, hasher);
+    hash_opt_f32(m.fill_max_w, hasher);
+    hash_opt_f32(m.fill_max_h, hasher);
     m.repaint_boundary.hash(hasher);
 
     // Padding
-    m.padding.map(|p| (p * 100.0) as i32).hash(hasher);
+    hash_opt_f32(m.padding, hasher);
     if let Some(pv) = &m.padding_values {
-        ((pv.left * 100.0) as i32).hash(hasher);
-        ((pv.right * 100.0) as i32).hash(hasher);
-        ((pv.top * 100.0) as i32).hash(hasher);
-        ((pv.bottom * 100.0) as i32).hash(hasher);
+        hash_f32(pv.left, hasher);
+        hash_f32(pv.right, hasher);
+        hash_f32(pv.top, hasher);
+        hash_f32(pv.bottom, hasher);
     }
 
     // Min/max size
-    m.min_width.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.min_height.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.max_width.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.max_height.map(|v| (v * 100.0) as i32).hash(hasher);
+    hash_opt_f32(m.min_width, hasher);
+    hash_opt_f32(m.min_height, hasher);
+    hash_opt_f32(m.max_width, hasher);
+    hash_opt_f32(m.max_height, hasher);
 
     // Background
     if let Some(bg) = &m.background {
@@ -169,17 +179,17 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
 
     // Border
     if let Some(b) = &m.border {
-        ((b.width * 100.0) as i32).hash(hasher);
+        hash_f32(b.width, hasher);
         hash_color(&b.color, hasher);
         for &r in &b.radius {
-            ((r * 100.0) as i32).hash(hasher);
+            hash_f32(r, hasher);
         }
     }
 
     // Flex
-    m.flex_grow.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.flex_shrink.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.flex_basis.map(|v| (v * 100.0) as i32).hash(hasher);
+    hash_opt_f32(m.flex_grow, hasher);
+    hash_opt_f32(m.flex_shrink, hasher);
+    hash_opt_f32(m.flex_basis, hasher);
     m.flex_wrap.map(|v| std::mem::discriminant(&v)).hash(hasher);
     m.flex_dir.map(|v| std::mem::discriminant(&v)).hash(hasher);
     m.align_self
@@ -198,48 +208,48 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     // Clip
     if let Some(r) = &m.clip_rounded {
         for &v in r {
-            ((v * 100.0) as i32).hash(hasher);
+            hash_f32(v, hasher);
         }
     }
 
     // Transform
     if let Some(t) = &m.transform {
-        ((t.translate_x * 100.0) as i32).hash(hasher);
-        ((t.translate_y * 100.0) as i32).hash(hasher);
-        ((t.scale_x * 100.0) as i32).hash(hasher);
-        ((t.scale_y * 100.0) as i32).hash(hasher);
-        ((t.rotate * 1000.0) as i32).hash(hasher);
+        hash_f32(t.translate_x, hasher);
+        hash_f32(t.translate_y, hasher);
+        hash_f32(t.scale_x, hasher);
+        hash_f32(t.scale_y, hasher);
+        hash_f32(t.rotate, hasher);
     }
 
     // Alpha
-    m.alpha.map(|a| (a * 255.0) as u8).hash(hasher);
+    hash_opt_f32(m.alpha, hasher);
 
     // Position
     m.position_type
         .map(|v| std::mem::discriminant(&v))
         .hash(hasher);
-    m.offset_left.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.offset_right.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.offset_top.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.offset_bottom.map(|v| (v * 100.0) as i32).hash(hasher);
+    hash_opt_f32(m.offset_left, hasher);
+    hash_opt_f32(m.offset_right, hasher);
+    hash_opt_f32(m.offset_top, hasher);
+    hash_opt_f32(m.offset_bottom, hasher);
 
     // Grid
     if let Some(g) = &m.grid {
         g.columns.hash(hasher);
-        ((g.row_gap * 100.0) as i32).hash(hasher);
-        ((g.column_gap * 100.0) as i32).hash(hasher);
+        hash_f32(g.row_gap, hasher);
+        hash_f32(g.column_gap, hasher);
     }
     m.grid_col_span.hash(hasher);
     m.grid_row_span.hash(hasher);
 
     // Aspect ratio
-    m.aspect_ratio.map(|v| (v * 100.0) as i32).hash(hasher);
+    hash_opt_f32(m.aspect_ratio, hasher);
     m.intrinsic_width.hash(hasher);
     m.intrinsic_height.hash(hasher);
 
     // Z-index
-    ((m.z_index * 100.0) as i32).hash(hasher);
-    m.render_z_index.map(|v| (v * 100.0) as i32).hash(hasher);
+    hash_f32(m.z_index, hasher);
+    hash_opt_f32(m.render_z_index, hasher);
     m.input_blocker.hash(hasher);
 
     // Clickable
@@ -282,22 +292,22 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     }
 
     // Gaps & margins
-    m.gap.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.row_gap.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.column_gap.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.margin_top.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.margin_left.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.margin_right.map(|v| (v * 100.0) as i32).hash(hasher);
-    m.margin_bottom.map(|v| (v * 100.0) as i32).hash(hasher);
+    hash_opt_f32(m.gap, hasher);
+    hash_opt_f32(m.row_gap, hasher);
+    hash_opt_f32(m.column_gap, hasher);
+    hash_opt_f32(m.margin_top, hasher);
+    hash_opt_f32(m.margin_left, hasher);
+    hash_opt_f32(m.margin_right, hasher);
+    hash_opt_f32(m.margin_bottom, hasher);
 
     // Layers / custom paint / custom layout
-    m.graphics_layer.map(|a| (a * 255.0) as u8).hash(hasher);
+    hash_opt_f32(m.graphics_layer, hasher);
     m.painter.is_some().hash(hasher);
     m.paint_callback.is_some().hash(hasher);
     m.layout.is_some().hash(hasher);
     if let Some(sh) = &m.shadow {
-        ((sh.blur_radius * 100.0) as i32).hash(hasher);
-        ((sh.offset_y * 100.0) as i32).hash(hasher);
+        hash_f32(sh.blur_radius, hasher);
+        hash_f32(sh.offset_y, hasher);
         hash_color(&sh.color, hasher);
     }
 
@@ -339,10 +349,10 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     }
 
     if let Some(se) = &m.state_elevation {
-        ((se.default * 100.0) as i32).hash(hasher);
-        ((se.hovered * 100.0) as i32).hash(hasher);
-        ((se.pressed * 100.0) as i32).hash(hasher);
-        ((se.disabled * 100.0) as i32).hash(hasher);
+        hash_f32(se.default, hasher);
+        hash_f32(se.hovered, hasher);
+        hash_f32(se.pressed, hasher);
+        hash_f32(se.disabled, hasher);
     }
 
     if let Some(spec) = &m.animate_content_size {
@@ -360,8 +370,8 @@ fn hash_animation_spec(spec: &AnimationSpec, hasher: &mut impl Hasher) {
     hash_easing(&spec.easing, hasher);
     spec.delay.as_millis().hash(hasher);
     if let Some(spring) = &spec.spring {
-        ((spring.damping_ratio * 100.0) as i32).hash(hasher);
-        ((spring.stiffness * 100.0) as i32).hash(hasher);
+        hash_f32(spring.damping_ratio, hasher);
+        hash_f32(spring.stiffness, hasher);
     }
     if let Some(repeat) = &spec.repeat {
         repeat.iterations.hash(hasher);
@@ -373,7 +383,7 @@ fn hash_animation_spec(spec: &AnimationSpec, hasher: &mut impl Hasher) {
 fn hash_easing(easing: &Easing, hasher: &mut impl Hasher) {
     std::mem::discriminant(easing).hash(hasher);
     if let Easing::SpringCrit { omega } = easing {
-        ((omega * 100.0) as i32).hash(hasher);
+        hash_f32(*omega, hasher);
     }
 }
 
@@ -394,10 +404,10 @@ fn hash_brush(b: &Brush, hasher: &mut impl Hasher) {
             start_color,
             end_color,
         } => {
-            ((start.x * 100.0) as i32).hash(hasher);
-            ((start.y * 100.0) as i32).hash(hasher);
-            ((end.x * 100.0) as i32).hash(hasher);
-            ((end.y * 100.0) as i32).hash(hasher);
+            hash_f32(start.x, hasher);
+            hash_f32(start.y, hasher);
+            hash_f32(end.x, hasher);
+            hash_f32(end.y, hasher);
             hash_color(start_color, hasher);
             hash_color(end_color, hasher);
         }

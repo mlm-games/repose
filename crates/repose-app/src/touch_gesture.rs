@@ -32,8 +32,12 @@ impl PinchType {
     fn classify(touches: &BTreeMap<u64, (f32, f32)>) -> Self {
         if touches.len() == 2 {
             let mut it = touches.values();
-            let a = *it.next().unwrap();
-            let b = *it.next().unwrap();
+            let Some(a) = it.next().copied() else {
+                return Self::Proportional;
+            };
+            let Some(b) = it.next().copied() else {
+                return Self::Proportional;
+            };
             let dx = (a.0 - b.0).abs();
             let dy = (a.1 - b.1).abs();
             if dx > 3.0 * dy {
@@ -118,7 +122,9 @@ impl TouchGestureState {
             avg_distance += (dx * dx + dy * dy).sqrt();
         }
         avg_distance *= n_recip;
-        let first = self.active_touches.values().next().unwrap();
+        let Some(first) = self.active_touches.values().next().copied() else {
+            return None;
+        };
         let heading = (avg_pos.x - first.0).atan2(avg_pos.y - first.1);
         Some(DynGestureState {
             avg_distance: avg_distance.max(1.0),

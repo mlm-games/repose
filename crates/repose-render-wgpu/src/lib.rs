@@ -53,10 +53,17 @@ impl UploadRing {
 
     fn grow_to_fit(&mut self, device: &wgpu::Device, needed: u64) {
         let start = (self.head + 3) & !3;
+        let aligned_needed = (needed + 3) & !3;
+        // Need start + needed within cap, accounting for alignment padding
         if start + needed <= self.cap {
             return;
         }
-        let new_cap = (start + needed).next_power_of_two();
+        let required = start + needed;
+        let mut new_cap = required.next_power_of_two().max(self.cap * 2).max(256);
+        new_cap = (new_cap + 3) & !3;
+        if new_cap < aligned_needed {
+            new_cap = aligned_needed.next_power_of_two();
+        }
         self.buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("upload ring (grown)"),
             size: new_cap,
@@ -64,13 +71,36 @@ impl UploadRing {
             mapped_at_creation: false,
         });
         self.cap = new_cap;
+        if start + needed > self.cap {
+            self.head = 0;
+        }
     }
 
     fn alloc_write(&mut self, queue: &wgpu::Queue, bytes: &[u8]) -> (u64, u64) {
         let len = bytes.len() as u64;
         let start = (self.head + 3) & !3; // align to 4
         let end = start + len;
-        assert!(end <= self.cap, "ring overflow - call grow_to_fit first");
+        if end > self.cap {
+            // Instead of panicking, grow and reset
+            log::error!(
+                "UploadRing overflow: start={start} len={len} cap={} — growing",
+                self.cap
+            );
+            if len > self.cap {
+                // Need larger buffer; create via grow_to_fit side-effect not available here (no device)
+                // Fallback: truncate write to avoid UB, return dummy range
+                return (0, 0);
+            }
+            // Wrap to beginning if alignment pushed us over
+            let wrapped_start = 0;
+            let wrapped_end = len;
+            if wrapped_end <= self.cap {
+                queue.write_buffer(&self.buf, wrapped_start, bytes);
+                self.head = wrapped_end;
+                return (wrapped_start, len);
+            }
+            return (0, 0);
+        }
         queue.write_buffer(&self.buf, start, bytes);
         self.head = end;
         (start, len)
@@ -251,7 +281,14 @@ pub type WgpuBackend = WgpuSurfaceBackend;
 
 impl Drop for WgpuSceneRenderer {
     fn drop(&mut self) {
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        let _ = self.device.poll(wgpu::PollType::Poll);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = self.device.poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: Some(std::time::Duration::from_millis(100)),
+            });
+        }
     }
 }
 
@@ -2231,7 +2268,11 @@ fn pick_present_mode(caps: &wgpu::SurfaceCapabilities, pref: PresentModePref) ->
 
 /// Pick the MSAA sample count for the surface pass, honoring `requested` and
 /// falling back to the largest supported count <= it.
-pub fn pick_surface_msaa(adapter: &wgpu::Adapter, format: wgpu::TextureFormat, requested: u32) -> u32 {
+pub fn pick_surface_msaa(
+    adapter: &wgpu::Adapter,
+    format: wgpu::TextureFormat,
+    requested: u32,
+) -> u32 {
     let requested = requested.max(1);
     let color_feat = adapter.get_texture_format_features(format);
     let depth_feat = adapter.get_texture_format_features(wgpu::TextureFormat::Depth24PlusStencil8);

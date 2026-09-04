@@ -456,20 +456,98 @@ impl ApplicationHandler<()> for App {
             .with_focusable(true);
 
         if let Some(id) = self.options.canvas_id.clone() {
-            let document = web_sys::window()
-                .and_then(|w| w.document())
-                .expect("No document");
-            let canvas = document
-                .get_element_by_id(&id)
-                .unwrap_or_else(|| panic!("Canvas id '{id}' not found"))
-                .dyn_into::<web_sys::HtmlCanvasElement>()
-                .expect("Element is not a canvas");
+            let Some(window_obj) = web_sys::window() else {
+                log::error!("No window object for canvas lookup");
+                return;
+            };
+            let Some(document) = window_obj.document() else {
+                log::error!("No document for canvas lookup");
+                return;
+            };
+            let Some(elem) = document.get_element_by_id(&id) else {
+                log::error!("Canvas id '{id}' not found — falling back to auto-create");
+                attrs = attrs.with_canvas(None).with_append(true);
+                let window = match el.create_window(attrs) {
+                    Ok(w) => Arc::new(w),
+                    Err(e) => {
+                        log::error!("create_window failed: {e:?}");
+                        return;
+                    }
+                };
+                self.inject_fullscreen_css_if_needed(&window);
+                if let Some(canvas) = window.canvas() {
+                    let _ = canvas.focus();
+                }
+                self.ensure_fullscreen_size(&window);
+                self.sync_size_from_window(&window);
+                self.window = Some(window.clone());
+                // continue with backend init below — re-use same path
+                let backend_cell = self.backend.clone();
+                let window_for_async = window.clone();
+                let msaa_samples = self.options.common.msaa_samples;
+                let present_mode = self.options.common.present_mode;
+                spawn_local(async move {
+                    match repose_render_wgpu::WgpuBackend::new_async_with_options(
+                        window_for_async.clone(),
+                        msaa_samples,
+                        present_mode,
+                    )
+                    .await
+                    {
+                        Ok(mut b) => {
+                            let s = window_for_async.inner_size();
+                            let sf = window_for_async.scale_factor() as f32;
+                            b.configure_surface(s.width, s.height);
+                            b.set_pixels_per_point(sf);
+                            repose_render_wgpu::offscreen::set_shared_device(
+                                b.device.clone(),
+                                b.queue.clone(),
+                            );
+                            *backend_cell.borrow_mut() = Some(b);
+                            window_for_async.request_redraw();
+                            log::info!("WGPU backend initialized");
+                        }
+                        Err(e) => log::error!("WGPU init failed: {e:?}"),
+                    }
+                });
+                repose_core::clipboard::set_clipboard_read_fn(Box::new(|| None));
+                repose_core::clipboard::set_clipboard_fn(Box::new(|text| {
+                    let text = text.to_string();
+                    spawn_local(async move {
+                        if let Ok(cb) = clipawl::Clipboard::new() {
+                            let _ = cb.write(&text).await;
+                        }
+                    });
+                }));
+                self.request_redraw();
+                return;
+            };
+            let Ok(canvas) = elem.dyn_into::<web_sys::HtmlCanvasElement>() else {
+                log::error!("Element id '{id}' is not a canvas — falling back");
+                attrs = attrs.with_canvas(None).with_append(true);
+                let window = match el.create_window(attrs) {
+                    Ok(w) => Arc::new(w),
+                    Err(e) => {
+                        log::error!("create_window failed: {e:?}");
+                        return;
+                    }
+                };
+                self.window = Some(window.clone());
+                self.request_redraw();
+                return;
+            };
             attrs = attrs.with_canvas(Some(canvas)).with_append(false);
         } else {
             attrs = attrs.with_canvas(None).with_append(true);
         }
 
-        let window = Arc::new(el.create_window(attrs).expect("create_window failed"));
+        let window = match el.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                log::error!("create_window failed: {e:?}");
+                return;
+            }
+        };
         self.inject_fullscreen_css_if_needed(&window);
 
         if let Some(canvas) = window.canvas() {

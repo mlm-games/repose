@@ -20,7 +20,32 @@ fn next_id() -> usize {
     NEXT_ID.with(|c| {
         let mut v = c.borrow_mut();
         let id = *v;
-        *v += 1;
+        *v = v.wrapping_add(1);
+        if *v == 0 {
+            *v = 1;
+        }
+        let reg_has = REGISTRY.with(|r| r.borrow().contains_key(&id));
+        if reg_has {
+            let mut candidate = id.wrapping_add(1);
+            if candidate == 0 {
+                candidate = 1;
+            }
+            while REGISTRY.with(|r| r.borrow().contains_key(&candidate)) {
+                candidate = candidate.wrapping_add(1);
+                if candidate == 0 {
+                    candidate = 1;
+                }
+                // Avoid infinite loop if registry full (should not happen)
+                if candidate == id {
+                    break;
+                }
+            }
+            *v = candidate.wrapping_add(1);
+            if *v == 0 {
+                *v = 1;
+            }
+            return candidate;
+        }
         id
     })
 }

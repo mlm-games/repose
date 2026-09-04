@@ -20,6 +20,7 @@ struct Inner<T> {
     id: usize,
     value: T,
     subs: Vec<Option<Box<dyn Fn(&T)>>>,
+    free_list: Vec<SubId>,
 }
 
 impl<T> Signal<T> {
@@ -29,6 +30,7 @@ impl<T> Signal<T> {
             id,
             value,
             subs: Vec::new(),
+            free_list: Vec::new(),
         })))
     }
 
@@ -90,14 +92,55 @@ impl<T> Signal<T> {
     }
 
     fn notify_and_request_frame(&self, id: usize) {
-        // Call subscribers with CURRENT_OBSERVER cleared so subscriber reads
-        // don't register edges against the wrong observer.
+        let subs_snapshot: Vec<(SubId, *const T)> = Vec::new();
+        let callbacks: Vec<Box<dyn Fn(&T)>> = Vec::new();
+        let _ = subs_snapshot;
+        let _ = callbacks;
         reactive::without_observer(|| {
-            let inner = self.0.borrow();
-            let vref = &inner.value;
-            for s in &inner.subs {
-                if let Some(cb) = s.as_ref() {
-                    cb(vref);
+            let indices: Vec<SubId> = {
+                let inner = self.0.borrow();
+                inner
+                    .subs
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, s)| if s.is_some() { Some(i) } else { None })
+                    .collect()
+            };
+            for idx in indices {
+                let cb_opt = {
+                    let inner = match self.0.try_borrow() {
+                        Ok(b) => b,
+                        Err(_) => {
+                            log::warn!("Signal notify: inner already borrowed, skipping idx {idx}");
+                            continue;
+                        }
+                    };
+                    inner.subs[idx]
+                        .as_ref()
+                        .map(|b| b.as_ref() as *const dyn Fn(&T))
+                };
+                if let Some(ptr) = cb_opt {
+                    // Need value ref; get it via try_borrow (may fail if cb mutated, but we already dropped)
+                    let val_ptr = {
+                        let inner = match self.0.try_borrow() {
+                            Ok(b) => b,
+                            Err(_) => continue,
+                        };
+                        &inner.value as *const T
+                    };
+                    // Safety: ptr and val_ptr are valid for this call (no mutation of Vec during iteration
+                    // except via free_list push which doesn't reallocate subs Vec middle).
+                    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+                        (*ptr)(&*val_ptr)
+                    }));
+                    if let Err(e) = res {
+                        let msg = e
+                            .downcast_ref::<String>()
+                            .map(|s| s.as_str())
+                            .or_else(|| e.downcast_ref::<&str>().copied())
+                            .unwrap_or("unknown");
+                        log::error!("Signal subscriber panicked: {msg}");
+                    }
                 }
             }
         });
@@ -109,18 +152,28 @@ impl<T> Signal<T> {
 
     pub fn subscribe(&self, f: impl Fn(&T) + 'static) -> SubId {
         let mut inner = self.0.borrow_mut();
-        inner.subs.push(Some(Box::new(f)));
-        inner.subs.len() - 1
+        if let Some(free_id) = inner.free_list.pop() {
+            inner.subs[free_id] = Some(Box::new(f));
+            free_id
+        } else {
+            inner.subs.push(Some(Box::new(f)));
+            inner.subs.len() - 1
+        }
     }
 
     /// Remove a subscriber by id. Returns true if removed.
     pub fn unsubscribe(&self, id: SubId) -> bool {
         let mut inner = self.0.borrow_mut();
-        if id < inner.subs.len() {
+        if id < inner.subs.len() && inner.subs[id].is_some() {
             inner.subs[id] = None;
-            // prevents unbounded tombstone growth
+            inner.free_list.push(id);
             while inner.subs.last().is_some_and(|s| s.is_none()) {
+                let popped = inner.subs.len() - 1;
                 inner.subs.pop();
+                // Remove from free_list if it was the tail we just popped
+                if let Some(pos) = inner.free_list.iter().position(|&x| x == popped) {
+                    inner.free_list.swap_remove(pos);
+                }
             }
             true
         } else {

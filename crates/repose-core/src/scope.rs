@@ -81,13 +81,28 @@ impl Scope {
         // Dispose children first
         let children = std::mem::take(&mut *self.inner.children.borrow_mut());
         for child in children {
-            child.dispose();
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| child.dispose()));
+            if let Err(e) = res {
+                let msg = e
+                    .downcast_ref::<String>()
+                    .map(|s| s.as_str())
+                    .or_else(|| e.downcast_ref::<&str>().copied())
+                    .unwrap_or("unknown");
+                log::error!("Scope child dispose panicked: {msg}");
+            }
         }
 
-        // Run disposers
         let disposers = std::mem::take(&mut *self.inner.disposers.borrow_mut());
         for disposer in disposers {
-            disposer();
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| disposer()));
+            if let Err(e) = res {
+                let msg = e
+                    .downcast_ref::<String>()
+                    .map(|s| s.as_str())
+                    .or_else(|| e.downcast_ref::<&str>().copied())
+                    .unwrap_or("unknown");
+                log::error!("Scope disposer panicked: {msg}");
+            }
         }
     }
 }
@@ -146,12 +161,30 @@ impl Drop for ScopeInner {
         }
         let children = std::mem::take(&mut *self.children.borrow_mut());
         for child in children {
-            drop(child);
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(child)));
+            if let Err(e) = res {
+                log::error!(
+                    "ScopeInner drop child panicked: {}",
+                    e.downcast_ref::<String>()
+                        .map(|s| s.as_str())
+                        .or_else(|| e.downcast_ref::<&str>().copied())
+                        .unwrap_or("unknown")
+                );
+            }
         }
 
         let disposers = std::mem::take(&mut *self.disposers.borrow_mut());
         for disposer in disposers {
-            disposer();
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| disposer()));
+            if let Err(e) = res {
+                log::error!(
+                    "ScopeInner drop disposer panicked: {}",
+                    e.downcast_ref::<String>()
+                        .map(|s| s.as_str())
+                        .or_else(|| e.downcast_ref::<&str>().copied())
+                        .unwrap_or("unknown")
+                );
+            }
         }
     }
 }

@@ -1,4 +1,7 @@
-use std::sync::{Mutex, atomic::{AtomicU8, Ordering}};
+use std::sync::{
+    Mutex,
+    atomic::{AtomicU8, Ordering},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AppLifecycle {
@@ -31,7 +34,7 @@ pub fn run_pre_redraw(ctx: &repose_core::RenderContext) {
 }
 
 pub fn set_on_lifecycle(callback: Box<dyn Fn(AppLifecycle) + Send>) {
-    *LIFECYCLE_CB.lock().unwrap() = Some(callback);
+    *LIFECYCLE_CB.lock().unwrap_or_else(|e| e.into_inner()) = Some(callback);
 }
 
 pub fn current_lifecycle() -> Option<AppLifecycle> {
@@ -48,39 +51,71 @@ pub fn push_lifecycle(state: AppLifecycle) {
         AppLifecycle::Background => 2,
     };
     CURRENT_LIFECYCLE.store(code, Ordering::Relaxed);
-    PENDING_LIFECYCLE.lock().unwrap().push(state);
+    PENDING_LIFECYCLE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(state);
 }
 
 pub fn process_lifecycle() {
-    let batch = std::mem::take(&mut *PENDING_LIFECYCLE.lock().unwrap());
+    let batch = std::mem::take(&mut *PENDING_LIFECYCLE.lock().unwrap_or_else(|e| e.into_inner()));
     if batch.is_empty() {
         return;
     }
-    if let Some(last) = batch.last().copied()
-        && let Some(cb) = LIFECYCLE_CB.lock().unwrap().as_ref()
+    if let Some(cb) = LIFECYCLE_CB
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
     {
-        cb(last);
+        for state in batch {
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cb(state)));
+            if let Err(e) = res {
+                log::error!(
+                    "lifecycle callback panicked: {}",
+                    e.downcast_ref::<String>()
+                        .map(|s| s.as_str())
+                        .or_else(|| e.downcast_ref::<&str>().copied())
+                        .unwrap_or("unknown")
+                );
+            }
+        }
     }
 }
 
 pub fn set_on_deeplink(callback: Box<dyn Fn(Vec<u8>) + Send>) {
-    *DEEPLINK_CB.lock().unwrap() = Some(callback);
+    *DEEPLINK_CB.lock().unwrap_or_else(|e| e.into_inner()) = Some(callback);
 }
 
 pub fn push_deeplink(data: Vec<u8>) {
-    PENDING_DEEPLINKS.lock().unwrap().push(data);
+    PENDING_DEEPLINKS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(data);
 }
 
 pub fn process_deeplinks() {
-    let mut queue = PENDING_DEEPLINKS.lock().unwrap();
+    let mut queue = PENDING_DEEPLINKS.lock().unwrap_or_else(|e| e.into_inner());
     if queue.is_empty() {
         return;
     }
     let batch = std::mem::take(&mut *queue);
     drop(queue);
-    if let Some(cb) = DEEPLINK_CB.lock().unwrap().as_ref() {
+    if let Some(cb) = DEEPLINK_CB
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+    {
         for data in batch {
-            cb(data);
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cb(data.clone())));
+            if let Err(e) = res {
+                log::error!(
+                    "deeplink callback panicked: {}",
+                    e.downcast_ref::<String>()
+                        .map(|s| s.as_str())
+                        .or_else(|| e.downcast_ref::<&str>().copied())
+                        .unwrap_or("unknown")
+                );
+            }
         }
     }
 }

@@ -7,6 +7,7 @@ use crate::{
 };
 use repose_core::{Modifier, Rect, SubcomposeScope, View, ViewId, ViewKind};
 use rustc_hash::{FxHashMap, FxHashSet};
+use slotmap::Key;
 use slotmap::SlotMap;
 use smallvec::SmallVec;
 use std::sync::Arc;
@@ -312,11 +313,17 @@ impl ViewTree {
     ) -> NodeId {
         let content_hash = hash_view_content(view);
 
-        let old_hash = self
-            .nodes
-            .get(node_id)
-            .expect("reconcile_node: node not found")
-            .content_hash;
+        let old_hash = match self.nodes.get(node_id) {
+            Some(n) => n.content_hash,
+            None => {
+                log::error!(
+                    "reconcile_node: node {:?} not found (GC race) — creating fresh",
+                    node_id
+                );
+                // Fallback: treat as new node
+                return self.create_node(view, parent, depth, index_in_parent, ctx);
+            }
+        };
         let content_changed = old_hash != content_hash;
 
         if content_changed {
@@ -337,10 +344,10 @@ impl ViewTree {
 
         let subtree_changed;
         {
-            let node = self
-                .nodes
-                .get_mut(node_id)
-                .expect("reconcile_node: node not found");
+            let Some(node) = self.nodes.get_mut(node_id) else {
+                log::error!("reconcile_node: node {:?} vanished mid-reconcile", node_id);
+                return node_id;
+            };
 
             node.parent = parent;
             node.depth = depth;
@@ -416,14 +423,40 @@ impl ViewTree {
             if let Some(key) = new_child.modifier.key
                 && !new_seen_keys.insert(key)
             {
-                panic!(
-                    "reconcile_children: duplicate modifier.key={} in children of node {:?}.\n\
-                         Two sibling views share the same key. Each view passed to a layout \
-                         must have a unique modifier.key. For lazy layouts (LazyColumn, LazyRow, \
-                         etc.), ensure `get_key` returns a unique key for each item by hashing \
-                         the full item identity.",
-                    key, parent_id,
+                log::error!(
+                    "reconcile_children: duplicate modifier.key={} in children of node {:?} — deduplicating (suffixing). Ensure get_key returns unique keys.",
+                    key,
+                    parent_id
                 );
+                let mut deduped = new_child.clone();
+                let salt = (key.wrapping_mul(0x9E3779B97F4A7C15)
+                    ^ (i as u64).wrapping_add(0xBF58476D1CE4E5B9))
+                .wrapping_add(parent_id.data().as_ffi() as u64);
+                deduped.modifier.key = Some(salt);
+                let deduped_ref = deduped;
+                let idx = i as u32;
+                let child_id = if let Some(k) = deduped_ref.modifier.key {
+                    if let Some(&existing_id) = keyed_children.get(&k) {
+                        used_nodes.insert(existing_id);
+                        self.reconcile_node(
+                            existing_id,
+                            &deduped_ref,
+                            Some(parent_id),
+                            child_depth,
+                            idx,
+                            ctx,
+                        )
+                    } else {
+                        self.create_node(&deduped_ref, Some(parent_id), child_depth, idx, ctx)
+                    }
+                } else {
+                    self.create_node(&deduped_ref, Some(parent_id), child_depth, idx, ctx)
+                };
+                new_child_ids.push(child_id);
+                if let Some(node) = self.nodes.get(child_id) {
+                    new_subtree_hashes.push(node.subtree_hash);
+                }
+                continue;
             }
             let idx = i as u32;
             let child_id = if let Some(key) = new_child.modifier.key {

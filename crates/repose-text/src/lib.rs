@@ -27,7 +27,9 @@ pub fn current_frame() -> u64 {
 }
 
 pub fn take_fallback_dirty() -> bool {
-    FALLBACK_DIRTY.swap(false, Ordering::Relaxed)
+    // NOTE: concurrent store(true) either before or after swap will be preserved
+    // If it happens after swap, next call will return true. So swap is fine, keep simple but use SeqCst to ensure ordering
+    FALLBACK_DIRTY.swap(false, Ordering::SeqCst)
 }
 
 const GLYPH_CACHE_CAP: usize = 4096;
@@ -42,42 +44,98 @@ fn metrics_cache() -> &'static Mutex<Lru<(u64, u32, u64, u16, u8, i32, u64), Tex
 
 struct Lru<K, V> {
     map: RapidHashMap<K, V>,
+    ticks: RapidHashMap<K, u64>,
     order: VecDeque<K>,
     cap: usize,
+    tick_counter: u64,
 }
 impl<K: std::hash::Hash + Eq + Clone, V> Lru<K, V> {
     fn new(cap: usize) -> Self {
         Self {
             map: RapidHashMap::new(),
+            ticks: RapidHashMap::new(),
             order: VecDeque::new(),
             cap,
+            tick_counter: 0,
         }
     }
     fn get(&mut self, k: &K) -> Option<&V> {
-        if self.map.contains_key(k)
-            && let Some(pos) = self.order.iter().position(|x| x == k)
-        {
-            let key = self.order.remove(pos).unwrap();
-            self.order.push_back(key);
+        if self.map.contains_key(k) {
+            self.tick_counter = self.tick_counter.wrapping_add(1);
+            self.ticks.insert(k.clone(), self.tick_counter);
+            // For correctness with existing clear(), we keep order in sync via tick map.
+            // To keep order VecDeque consistent without O(n), we push new entry and skip stale on pop
+            self.order.push_back(k.clone());
+            if self.order.len() > self.cap * 3 {
+                let mut pairs: Vec<(K, u64)> = self
+                    .ticks
+                    .iter()
+                    .map(|(kk, tt)| (kk.clone(), *tt))
+                    .collect();
+                pairs.sort_by_key(|(_, t)| *t);
+                self.order.clear();
+                for (kk, _) in pairs {
+                    self.order.push_back(kk);
+                }
+            }
         }
         self.map.get(k)
     }
     fn put(&mut self, k: K, v: V) {
-        if self.map.contains_key(&k) {
-            self.map.insert(k.clone(), v);
-            if let Some(pos) = self.order.iter().position(|x| x == &k) {
-                let key = self.order.remove(pos).unwrap();
-                self.order.push_back(key);
+        self.tick_counter = self.tick_counter.wrapping_add(1);
+        let is_new = !self.map.contains_key(&k);
+        self.map.insert(k.clone(), v);
+        self.ticks.insert(k.clone(), self.tick_counter);
+        if is_new {
+            self.order.push_back(k.clone());
+        } else {
+            self.order.push_back(k);
+        }
+        while self.map.len() > self.cap {
+            let victim = {
+                let mut min_key: Option<K> = None;
+                let mut min_tick = u64::MAX;
+                for (kk, tt) in &self.ticks {
+                    if *tt < min_tick {
+                        min_tick = *tt;
+                        min_key = Some(kk.clone());
+                    }
+                }
+                min_key
+            };
+            if let Some(victim) = victim {
+                self.map.remove(&victim);
+                self.ticks.remove(&victim);
+                if let Some(pos) = self.order.iter().position(|x| x == &victim) {
+                    self.order.remove(pos);
+                }
+            } else {
+                break;
             }
-            return;
         }
-        if self.map.len() >= self.cap
-            && let Some(old) = self.order.pop_front()
-        {
-            self.map.remove(&old);
+        if self.order.len() > self.cap * 2 {
+            let mut seen = std::collections::HashSet::new();
+            let mut compacted = VecDeque::new();
+            // Keep only last occurrence per key, in tick order
+            let mut pairs: Vec<(K, u64)> = self
+                .ticks
+                .iter()
+                .map(|(kk, tt)| (kk.clone(), *tt))
+                .collect();
+            pairs.sort_by_key(|(_, t)| *t);
+            for (kk, _) in pairs {
+                if seen.insert(kk.clone()) {
+                    compacted.push_back(kk);
+                }
+            }
+            self.order = compacted;
         }
-        self.order.push_back(k.clone());
-        self.map.insert(k, v);
+    }
+    fn clear_both(&mut self) {
+        self.map.clear();
+        self.ticks.clear();
+        self.order.clear();
+        self.tick_counter = 0;
     }
 }
 
@@ -349,20 +407,24 @@ pub fn register_font_data(bytes: &[u8]) {
 
 pub(crate) fn clear_caches_for_fallback() {
     if let Some(c) = METRICS_LRU.get() {
-        c.lock().unwrap().map.clear();
-        c.lock().unwrap().order.clear();
+        if let Ok(mut g) = c.lock() {
+            g.clear_both();
+        }
     }
     if let Some(c) = WRAP_LRU.get() {
-        c.lock().unwrap().map.clear();
-        c.lock().unwrap().order.clear();
+        if let Ok(mut g) = c.lock() {
+            g.clear_both();
+        }
     }
     if let Some(c) = WRAP_RANGES_LRU.get() {
-        c.lock().unwrap().map.clear();
-        c.lock().unwrap().order.clear();
+        if let Ok(mut g) = c.lock() {
+            g.clear_both();
+        }
     }
     if let Some(c) = ELLIP_LRU.get() {
-        c.lock().unwrap().map.clear();
-        c.lock().unwrap().order.clear();
+        if let Ok(mut g) = c.lock() {
+            g.clear_both();
+        }
     }
     // Also bump frame counter to signal stale
     bump_frame_for_fallback();

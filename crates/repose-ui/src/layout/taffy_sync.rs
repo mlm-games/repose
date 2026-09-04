@@ -38,9 +38,25 @@ impl LayoutEngine {
             .collect();
 
         let t = if child_tids.is_empty() {
-            taffy.new_leaf_with_context(style, ctx).unwrap()
+            match taffy.new_leaf_with_context(style, ctx) {
+                Ok(id) => id,
+                Err(e) => {
+                    log::error!("taffy new_leaf failed: {e:?} — returning fallback leaf");
+                    taffy
+                        .new_leaf_with_context(taffy::Style::default(), NodeContext::Container)
+                        .unwrap_or_else(|_| panic!("fallback taffy leaf failed: {e:?}"))
+                }
+            }
         } else {
-            let t = taffy.new_with_children(style, &child_tids).unwrap();
+            let t = match taffy.new_with_children(style, &child_tids) {
+                Ok(id) => id,
+                Err(e) => {
+                    log::error!("taffy new_with_children failed: {e:?} — falling back to leaf");
+                    taffy
+                        .new_leaf_with_context(taffy::Style::default(), NodeContext::Container)
+                        .unwrap_or_else(|_| panic!("fallback taffy leaf failed: {e:?}"))
+                }
+            };
             let _ = taffy.set_node_context(t, Some(ctx));
             t
         };
@@ -128,7 +144,15 @@ impl LayoutEngine {
                 s.padding = taffy::geometry::Rect::zero();
                 (s, self.context_from_node(node))
             };
-            let t_id = self.taffy.new_leaf_with_context(style, ctx).unwrap();
+            let t_id = match self.taffy.new_leaf_with_context(style, ctx) {
+                Ok(id) => id,
+                Err(e) => {
+                    log::error!("taffy new_leaf (scope root) failed: {e:?}");
+                    self.taffy
+                        .new_leaf_with_context(taffy::Style::default(), NodeContext::Container)
+                        .unwrap_or_else(|_| panic!("fallback leaf failed: {e:?}"))
+                }
+            };
             self.taffy_map.insert(node_id, t_id);
             self.reverse_map.insert(t_id, node_id);
             self.stats.taffy_created += 1;
@@ -180,12 +204,25 @@ impl LayoutEngine {
             .collect();
 
         let t_id = if child_taffy_ids.is_empty() {
-            self.taffy.new_leaf_with_context(style, ctx).unwrap()
+            match self.taffy.new_leaf_with_context(style, ctx) {
+                Ok(id) => id,
+                Err(e) => {
+                    log::error!("taffy new_leaf failed: {e:?}");
+                    self.taffy
+                        .new_leaf_with_context(taffy::Style::default(), NodeContext::Container)
+                        .unwrap_or_else(|_| panic!("fallback failed: {e:?}"))
+                }
+            }
         } else {
-            let t = self
-                .taffy
-                .new_with_children(style, &child_taffy_ids)
-                .unwrap();
+            let t = match self.taffy.new_with_children(style, &child_taffy_ids) {
+                Ok(id) => id,
+                Err(e) => {
+                    log::error!("taffy new_with_children failed: {e:?}");
+                    self.taffy
+                        .new_leaf_with_context(taffy::Style::default(), NodeContext::Container)
+                        .unwrap_or_else(|_| panic!("fallback failed: {e:?}"))
+                }
+            };
             let _ = self.taffy.set_node_context(t, Some(ctx));
             self.make_children_absolute(is_zstack, &child_taffy_ids);
             if let Some(axis) = scroll_axis {

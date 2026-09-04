@@ -810,10 +810,13 @@ impl AnimatedValue<f32> {
             self.progress = 0.0;
             self.velocity = 0.0;
             self.start_time = None;
+            self.current = self.start;
             return false;
         }
 
-        self.current = self.start.interpolate(&self.target, self.progress);
+        // Clamp progress to avoid runaway extrapolation for non-f32 interpolations (shouldn't happen as this is f32-only).
+        let clamped = self.progress.clamp(-1e6, 1e6);
+        self.current = self.start + clamped;
         true
     }
 }

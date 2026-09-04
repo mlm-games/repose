@@ -95,9 +95,10 @@ impl Transform {
     }
 
     pub fn apply_to_point(&self, p: Vec2) -> Vec2 {
-        // Apply in order: scale, rotate, translate
-        let mut x = p.x * self.scale_x;
-        let mut y = p.y * self.scale_y;
+        let ox = self.origin_x;
+        let oy = self.origin_y;
+        let mut x = (p.x - ox) * self.scale_x;
+        let mut y = (p.y - oy) * self.scale_y;
 
         if self.rotate != 0.0 {
             let cos = self.rotate.cos();
@@ -109,12 +110,14 @@ impl Transform {
         }
 
         Vec2 {
-            x: x + self.translate_x,
-            y: y + self.translate_y,
+            x: x + ox + self.translate_x,
+            y: y + oy + self.translate_y,
         }
     }
 
     pub fn apply_to_rect(&self, r: Rect) -> Rect {
+        let ox = r.x + r.w * self.origin_x;
+        let oy = r.y + r.h * self.origin_y;
         let corners = [
             Vec2 { x: r.x, y: r.y },
             Vec2 {
@@ -135,11 +138,22 @@ impl Transform {
         let mut max_x = f32::MIN;
         let mut max_y = f32::MIN;
         for c in corners {
-            let p = self.apply_to_point(c);
-            min_x = min_x.min(p.x);
-            min_y = min_y.min(p.y);
-            max_x = max_x.max(p.x);
-            max_y = max_y.max(p.y);
+            let mut x = (c.x - ox) * self.scale_x;
+            let mut y = (c.y - oy) * self.scale_y;
+            if self.rotate != 0.0 {
+                let cos = self.rotate.cos();
+                let sin = self.rotate.sin();
+                let nx = x * cos - y * sin;
+                let ny = x * sin + y * cos;
+                x = nx;
+                y = ny;
+            }
+            x += ox + self.translate_x;
+            y += oy + self.translate_y;
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
         }
         Rect {
             x: min_x,

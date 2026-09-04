@@ -83,7 +83,9 @@ pub fn set_event_loop_proxy(proxy: winit::event_loop::EventLoopProxy<()>) {
 /// Register a callback invoked on every AboutToWait (used for draining tray commands).
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn set_about_to_wait_callback(cb: Box<dyn Fn() + Send>) {
-    *ABOUT_TO_WAIT_CALLBACK.lock().unwrap() = Some(cb);
+    *ABOUT_TO_WAIT_CALLBACK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = Some(cb);
 }
 
 /// Wake the winit event loop from another thread (e.g. tray's GTK thread, JNI callback).
@@ -233,7 +235,7 @@ pub fn run_desktop_app_with_config(
 
     impl App {
         fn process_a11y_actions(&mut self) {
-            let mut actions = self.a11y_actions.lock().unwrap();
+            let mut actions = self.a11y_actions.lock().unwrap_or_else(|e| e.into_inner());
             if actions.is_empty() {
                 return;
             }
@@ -457,8 +459,8 @@ pub fn run_desktop_app_with_config(
             event: WindowEvent,
         ) {
             // Process AccessKit events first!
-            if let Some(adapter) = &mut self.accesskit_adapter {
-                adapter.process_event(self.window.as_ref().unwrap(), &event);
+            if let (Some(adapter), Some(window)) = (&mut self.accesskit_adapter, &self.window) {
+                adapter.process_event(window, &event);
             }
 
             match event {
@@ -938,8 +940,8 @@ pub fn run_desktop_app_with_config(
                     let build_layout_ms = (Instant::now() - t0).as_secs_f32() * 1000.0;
 
                     // UPDATE ACCESSIBILITY TREE
-                    if let Some(adapter) = &mut self.accesskit_adapter {
-                        let win = self.window.as_ref().unwrap();
+                    if let (Some(adapter), Some(win)) = (&mut self.accesskit_adapter, &self.window)
+                    {
                         let scale = win.scale_factor();
                         if let Some(update) = self.a11y_tree.update(
                             &frame.semantics_nodes,
@@ -987,7 +989,9 @@ pub fn run_desktop_app_with_config(
                     self.process_render_commands();
 
                     // Now borrow backend mutably only for the frame() call
-                    let win = self.window.as_ref().unwrap();
+                    let Some(win) = self.window.as_ref() else {
+                        return;
+                    };
                     let scale = win.scale_factor() as f32;
                     if let Some(backend) = self.backend.as_mut() {
                         backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
@@ -1016,8 +1020,21 @@ pub fn run_desktop_app_with_config(
             // Process cross-thread commands (e.g. tray toggles, deeplinks) before any
             // redraw check, so hide/show commands work even when hidden
             #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
-            if let Some(cb) = ABOUT_TO_WAIT_CALLBACK.lock().unwrap().as_ref() {
-                cb();
+            if let Some(cb) = ABOUT_TO_WAIT_CALLBACK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
+            {
+                let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cb()));
+                if let Err(e) = res {
+                    log::error!(
+                        "ABOUT_TO_WAIT_CALLBACK panicked: {}",
+                        e.downcast_ref::<String>()
+                            .map(|s| s.as_str())
+                            .or_else(|| e.downcast_ref::<&str>().copied())
+                            .unwrap_or("unknown")
+                    );
+                }
             }
             process_deeplinks();
 

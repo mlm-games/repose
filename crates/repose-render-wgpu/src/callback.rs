@@ -38,20 +38,10 @@ use std::sync::Arc;
 use repose_core::{PaintCallbackInfo, PaintCallbackPayload, Rect};
 
 /// Type-map for callback-shared wgpu resources (pipelines, buffers, etc.).
-#[cfg(not(target_arch = "wasm32"))]
 type AnyBox = Box<dyn std::any::Any + Send + Sync>;
-#[cfg(target_arch = "wasm32")]
-type AnyBox = Box<dyn std::any::Any>;
 
-#[cfg(not(target_arch = "wasm32"))]
 pub trait MaybeSendSync: Send + Sync + 'static {}
-#[cfg(not(target_arch = "wasm32"))]
 impl<T: Send + Sync + 'static> MaybeSendSync for T {}
-
-#[cfg(target_arch = "wasm32")]
-pub trait MaybeSendSync: 'static {}
-#[cfg(target_arch = "wasm32")]
-impl<T: 'static> MaybeSendSync for T {}
 
 #[derive(Default)]
 pub struct CallbackResources {
