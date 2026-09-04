@@ -91,6 +91,74 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
                     if let Some(fs) = span.style.font_size {
                         hash_f32(fs, hasher);
                     }
+                    if let Some(fw) = span.style.font_weight {
+                        fw.hash(hasher);
+                    }
+                    if let Some(fam) = &span.style.font_family {
+                        fam.hash(hasher);
+                    }
+                    if let Some(fs) = span.style.font_style {
+                        fs.hash(hasher);
+                    }
+                    if let Some(ls) = span.style.letter_spacing {
+                        hash_f32(ls, hasher);
+                    }
+                    if let Some(lh) = span.style.line_height {
+                        hash_f32(lh, hasher);
+                    }
+                    if let Some(bg) = &span.style.background {
+                        hash_color(bg, hasher);
+                    }
+                    if let Some(td) = &span.style.text_decoration {
+                        td.underline.hash(hasher);
+                        td.strikethrough.hash(hasher);
+                    }
+                    if let Some(bs) = &span.style.baseline_shift {
+                        hash_f32(bs.0, hasher);
+                    }
+                    if let Some(ds) = &span.style.draw_style {
+                        match ds {
+                            repose_core::DrawStyle::Fill => 0u8.hash(hasher),
+                            repose_core::DrawStyle::Stroke {
+                                width,
+                                cap,
+                                join,
+                                miter,
+                                path_effect,
+                            } => {
+                                1u8.hash(hasher);
+                                hash_f32(*width, hasher);
+                                (*cap as u8).hash(hasher);
+                                (*join as u8).hash(hasher);
+                                hash_f32(*miter, hasher);
+                                if let Some(pe) = path_effect {
+                                    match pe {
+                                        repose_core::PathEffect::Corner { radius } => {
+                                            0u8.hash(hasher);
+                                            hash_f32(*radius, hasher);
+                                        }
+                                        repose_core::PathEffect::Dash { intervals, phase } => {
+                                            1u8.hash(hasher);
+                                            intervals.len().hash(hasher);
+                                            for v in intervals {
+                                                hash_f32(*v, hasher);
+                                            }
+                                            hash_f32(*phase, hasher);
+                                        }
+                                    }
+                                } else {
+                                    2u8.hash(hasher);
+                                }
+                            }
+                        }
+                    }
+                    hash_f32(span.style.alpha, hasher);
+                    if let Some(fvs) = &span.style.font_variation_settings {
+                        fvs.hash(hasher);
+                    }
+                    if let Some(url) = &span.url {
+                        url.hash(hasher);
+                    }
                 }
             }
         }

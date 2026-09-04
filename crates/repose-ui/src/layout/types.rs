@@ -170,6 +170,7 @@ pub(crate) enum NodeContext {
         letter_spacing: f32,
         line_height: f32,
         font_variation_settings: Option<Arc<str>>,
+        annotations: Option<Arc<[TextSpan]>>,
     },
     Container,
     ScrollContainer,
@@ -187,4 +188,7 @@ pub(crate) struct TextLayout {
     pub(crate) line_h_px: f32,
     /// Pre-measured width per line, in the same order as `lines`.
     pub(crate) line_widths: Vec<f32>,
+    /// Per-line height in px (accounts for larger annotated font sizes, baseline shifts, stroke).
+    /// Uniform fallback is `line_h_px` when empty.
+    pub(crate) line_heights: Vec<f32>,
 }

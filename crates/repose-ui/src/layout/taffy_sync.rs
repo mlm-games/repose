@@ -743,6 +743,7 @@ impl LayoutEngine {
                 letter_spacing,
                 line_height,
                 font_variation_settings,
+                annotations,
                 ..
             } => NodeContext::Text {
                 text: text.clone(),
@@ -756,6 +757,7 @@ impl LayoutEngine {
                 letter_spacing: *letter_spacing,
                 line_height: *line_height,
                 font_variation_settings: font_variation_settings.clone(),
+                annotations: annotations.clone(),
             },
             ViewKind::Expander { .. } => NodeContext::Container,
             ViewKind::OverlayHost => NodeContext::Container,

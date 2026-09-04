@@ -932,41 +932,74 @@ impl LayoutEngine {
                             .and_then(|st| st.text_cache.get(&node_id))
                     })
                 });
-                let (size_px, line_h_px, lines, line_ranges, line_widths) = if let Some(tl) = tl {
-                    (
-                        tl.size_px,
-                        tl.line_h_px,
-                        tl.lines.clone(),
-                        Some(tl.line_ranges.clone()),
-                        Some(tl.line_widths.clone()),
-                    )
-                } else {
-                    let px = font_px(*font_size);
-                    let lh = if *line_height > 0.0 {
-                        font_px(*line_height)
+                let (size_px, line_h_px, lines, line_ranges, line_widths, line_heights) =
+                    if let Some(tl) = tl {
+                        (
+                            tl.size_px,
+                            tl.line_h_px,
+                            tl.lines.clone(),
+                            Some(tl.line_ranges.clone()),
+                            Some(tl.line_widths.clone()),
+                            if tl.line_heights.is_empty() {
+                                None
+                            } else {
+                                Some(tl.line_heights.clone())
+                            },
+                        )
                     } else {
-                        px
+                        let px = font_px(*font_size);
+                        let lh = if *line_height > 0.0 {
+                            font_px(*line_height)
+                        } else {
+                            px
+                        };
+                        (px, lh, vec![text.clone()], None, None, None)
                     };
-                    (px, lh, vec![text.clone()], None, None)
+                let total_h = if let Some(ref hs) = line_heights {
+                    hs.iter().copied().sum()
+                } else {
+                    lines.len() as f32 * line_h_px
                 };
-                let total_h = lines.len() as f32 * line_h_px;
                 let need_v_clip =
                     total_h > content_rect.h + 0.5 && *overflow != TextOverflow::Visible;
 
                 let need_clip =
                     *overflow != TextOverflow::Visible && (need_v_clip || content_rect.w > 0.0);
                 if need_clip {
+                    let clip_rect = repose_core::Rect {
+                        x: content_rect.x,
+                        y: content_rect.y - 1.0,
+                        w: content_rect.w,
+                        h: content_rect.h + 3.0,
+                    };
                     scene.nodes.push(SceneNode::PushClip {
-                        rect: content_rect,
+                        rect: clip_rect,
                         radius: [0.0; 4],
                         op: crate::ClipOp::Intersect,
                     });
                 }
 
                 let has_annotations = annotations.as_ref().map(|a| !a.is_empty()).unwrap_or(false);
+                let line_y_offsets: Vec<f32> = if let Some(ref hs) = line_heights {
+                    let mut offs = Vec::with_capacity(hs.len());
+                    let mut acc = 0.0f32;
+                    for &h in hs {
+                        offs.push(acc);
+                        acc += h;
+                    }
+                    offs
+                } else {
+                    (0..lines.len()).map(|i| i as f32 * line_h_px).collect()
+                };
+                let line_h_for = |idx: usize| -> f32 {
+                    if let Some(ref hs) = line_heights {
+                        hs.get(idx).copied().unwrap_or(line_h_px)
+                    } else {
+                        line_h_px
+                    }
+                };
 
                 if has_annotations {
-                    // Emit one SceneNode::Text per styled segment per line
                     let annos = annotations.as_ref().unwrap();
                     for (i, ln) in lines.iter().enumerate() {
                         let line_start = line_ranges
@@ -1157,6 +1190,8 @@ impl LayoutEngine {
                             _ => 0.0,
                         };
                         let mut seg_x = content_rect.x + align_x_offset;
+                        let line_y = content_rect.y + line_y_offsets[i];
+                        let cur_line_h = line_h_for(i);
                         for info in &segments {
                             let seg_text = &text[info.start..info.end];
                             if seg_text.is_empty() {
@@ -1164,9 +1199,9 @@ impl LayoutEngine {
                             }
                             let seg_rect = repose_core::Rect {
                                 x: seg_x,
-                                y: content_rect.y + i as f32 * line_h_px,
+                                y: line_y,
                                 w: info.w,
-                                h: line_h_px,
+                                h: cur_line_h,
                             };
                             let seg_color = if info.alpha > 0.0 {
                                 mul_alpha_color(info.color, info.alpha)
@@ -1178,7 +1213,7 @@ impl LayoutEngine {
                                     x: seg_x,
                                     y: seg_rect.y,
                                     w: info.w,
-                                    h: line_h_px,
+                                    h: cur_line_h,
                                 };
                                 scene.nodes.push(SceneNode::Rect {
                                     rect: bg_rect,
@@ -1270,9 +1305,9 @@ impl LayoutEngine {
                         };
                         let seg_rect = repose_core::Rect {
                             x: align_x(line_w),
-                            y: content_rect.y + i as f32 * line_h_px,
+                            y: content_rect.y + line_y_offsets[i],
                             w: content_rect.w,
-                            h: line_h_px,
+                            h: line_h_for(i),
                         };
                         scene.nodes.push(SceneNode::Text {
                             rect: seg_rect,

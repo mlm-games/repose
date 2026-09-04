@@ -1,6 +1,6 @@
 use super::{IntrinsicSizeMode, LayoutEngine};
 use crate::Interactions;
-use crate::{Box as RBox, Column, Text, ViewExt};
+use crate::{Box as RBox, Column, Text, TextStyle, ViewExt};
 use repose_core::*;
 use std::collections::HashMap;
 
@@ -773,6 +773,80 @@ mod layer_tests {
             "negative alpha should clamp to 0.0"
         );
     }
+}
+
+#[test]
+fn test_annotated_text_large_font_not_clipped() {
+    use repose_core::SpanStyle;
+    let big = SpanStyle::default().font_size(24.0);
+    let anno = build_annotated_string(|b| {
+        b.push("Normal ");
+        b.push_with_style("Big", big.clone());
+        b.push(" normal");
+    });
+    let v = crate::AnnotatedText(anno).size(14.0);
+    let mut eng = make_engine();
+    let (w_anno, h_anno) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
+    let (w_base, h_base) = eng.intrinsic_size(
+        &crate::Text("Normal Big normal").size(14.0),
+        IntrinsicSizeMode::MaxContent,
+    );
+    assert!(
+        w_anno > w_base,
+        "annotated big span should be wider: anno={} base={}",
+        w_anno,
+        w_base
+    );
+    assert!(
+        h_anno >= 24.0 - 1.0,
+        "height must fit 24dp big span, got {}",
+        h_anno
+    );
+    assert!(
+        h_anno > h_base,
+        "height with big span should exceed base 14dp line"
+    );
+}
+
+#[test]
+fn test_annotated_stroke_expands_bounds() {
+    use repose_core::{DrawStyle, SpanStyle};
+    let s = SpanStyle::default()
+        .draw_style(DrawStyle::stroke(0.1))
+        .font_size(20.0);
+    let anno = build_annotated_string(|b| {
+        b.push_with_style("Stroked", s);
+    });
+    let v = crate::AnnotatedText(anno).size(16.0);
+    let mut eng = make_engine();
+    let (w, h) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
+    let (w0, h0) = eng.intrinsic_size(
+        &crate::Text("Stroked").size(16.0),
+        IntrinsicSizeMode::MaxContent,
+    );
+    assert!(w > w0, "stroke should expand width");
+    assert!(h > h0, "stroke should expand height");
+}
+
+#[test]
+fn test_annotated_superscript_expands_height() {
+    use repose_core::{BaselineShift, SpanStyle};
+    let sp = SpanStyle::default()
+        .font_size(14.0)
+        .baseline_shift(BaselineShift::Superscript);
+    let anno = build_annotated_string(|b| {
+        b.push("a");
+        b.push_with_style("super", sp);
+        b.push("b");
+    });
+    let v = crate::AnnotatedText(anno).size(16.0);
+    let mut eng = make_engine();
+    let (_, h) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
+    assert!(
+        h > 16.0,
+        "superscript should increase measured height, got {}",
+        h
+    );
 }
 
 #[cfg(test)]

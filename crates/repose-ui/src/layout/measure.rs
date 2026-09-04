@@ -7,6 +7,7 @@ use repose_tree::{NodeId, ViewTree};
 use rustc_hash::FxHashMap;
 use taffy::TaffyTree;
 use taffy::prelude::*;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::textfield::{TextMeasureConfig, measure_text};
 
@@ -213,7 +214,9 @@ impl LayoutEngine {
                 letter_spacing,
                 line_height,
                 font_variation_settings,
+                annotations,
             }) => {
+                let has_annotations = annotations.as_ref().is_some_and(|a| !a.is_empty());
                 let size_px_val = font_px(*font_dp);
                 let lh = if *line_height > 0.0 {
                     font_px(*line_height)
@@ -227,27 +230,110 @@ impl LayoutEngine {
                 } else {
                     0
                 };
-                let max_content_w = measure_text(
-                    text,
-                    size_px_val,
-                    TextMeasureConfig {
-                        font_family: *font_family,
-                        font_weight: fw,
-                        font_style: fs,
-                        letter_spacing: *letter_spacing,
-                        ..Default::default()
-                    },
-                )
-                .positions
-                .last()
-                .copied()
-                .unwrap_or(0.0)
-                .max(0.0);
 
-                let mut min_content_w = 0.0f32;
-                for w in text.split_whitespace() {
-                    let ww = measure_text(
-                        w,
+                let annotated_width = |start_b: usize, end_b: usize| -> f32 {
+                    if !has_annotations || start_b >= end_b {
+                        return measure_text(
+                            &text[start_b..end_b],
+                            size_px_val,
+                            TextMeasureConfig {
+                                font_family: *font_family,
+                                font_weight: fw,
+                                font_style: fs,
+                                letter_spacing: *letter_spacing,
+                                ..Default::default()
+                            },
+                        )
+                        .positions
+                        .last()
+                        .copied()
+                        .unwrap_or(0.0);
+                    }
+                    let annos = annotations.as_ref().unwrap();
+                    let mut width = 0.0f32;
+                    let mut cursor = start_b;
+                    for span in annos.iter().filter(|s| s.start < end_b && s.end > start_b) {
+                        let seg_start = span.start.max(start_b);
+                        let seg_end = span.end.min(end_b);
+                        if seg_start > cursor {
+                            let seg_text = &text[cursor..seg_start];
+                            if !seg_text.is_empty() {
+                                width += measure_text(
+                                    seg_text,
+                                    size_px_val,
+                                    TextMeasureConfig {
+                                        font_family: *font_family,
+                                        font_weight: fw,
+                                        font_style: fs,
+                                        letter_spacing: *letter_spacing,
+                                        ..Default::default()
+                                    },
+                                )
+                                .positions
+                                .last()
+                                .copied()
+                                .unwrap_or(0.0);
+                            }
+                        }
+                        let seg_text = &text[seg_start..seg_end];
+                        if !seg_text.is_empty() {
+                            let seg_font_dp = span.style.font_size.unwrap_or(*font_dp);
+                            let seg_px = font_px(seg_font_dp);
+                            let seg_fw = span.style.font_weight.unwrap_or(font_weight.0);
+                            let seg_fs = span.style.font_style.unwrap_or(fs);
+                            let seg_ls = span.style.letter_spacing.unwrap_or(*letter_spacing);
+                            let seg_family = span.style.font_family.or(*font_family);
+                            width += measure_text(
+                                seg_text,
+                                seg_px,
+                                TextMeasureConfig {
+                                    font_family: seg_family,
+                                    font_weight: seg_fw,
+                                    font_style: seg_fs,
+                                    letter_spacing: seg_ls,
+                                    ..Default::default()
+                                },
+                            )
+                            .positions
+                            .last()
+                            .copied()
+                            .unwrap_or(0.0);
+                            if let Some(repose_core::DrawStyle::Stroke { width: sw, .. }) =
+                                &span.style.draw_style
+                            {
+                                width += *sw * seg_px;
+                            }
+                        }
+                        cursor = seg_end;
+                    }
+                    if cursor < end_b {
+                        let seg_text = &text[cursor..end_b];
+                        if !seg_text.is_empty() {
+                            width += measure_text(
+                                seg_text,
+                                size_px_val,
+                                TextMeasureConfig {
+                                    font_family: *font_family,
+                                    font_weight: fw,
+                                    font_style: fs,
+                                    letter_spacing: *letter_spacing,
+                                    ..Default::default()
+                                },
+                            )
+                            .positions
+                            .last()
+                            .copied()
+                            .unwrap_or(0.0);
+                        }
+                    }
+                    width
+                };
+
+                let max_content_w = if has_annotations {
+                    annotated_width(0, text.len())
+                } else {
+                    measure_text(
+                        text,
                         size_px_val,
                         TextMeasureConfig {
                             font_family: *font_family,
@@ -260,11 +346,49 @@ impl LayoutEngine {
                     .positions
                     .last()
                     .copied()
-                    .unwrap_or(0.0);
-                    min_content_w = min_content_w.max(ww);
-                }
-                if min_content_w <= 0.0 {
-                    min_content_w = max_content_w;
+                    .unwrap_or(0.0)
+                    .max(0.0)
+                };
+
+                let mut min_content_w = 0.0f32;
+                if has_annotations {
+                    let mut byte_offset = 0usize;
+                    for token in text.split_word_bounds() {
+                        let tok_start = byte_offset;
+                        let tok_end = tok_start + token.len();
+                        byte_offset = tok_end;
+                        let trimmed = token.trim();
+                        if trimmed.is_empty() {
+                            continue;
+                        }
+                        let ww = annotated_width(tok_start, tok_end);
+                        min_content_w = min_content_w.max(ww);
+                    }
+                    if min_content_w <= 0.0 {
+                        min_content_w = max_content_w;
+                    }
+                } else {
+                    for w in text.split_whitespace() {
+                        let ww = measure_text(
+                            w,
+                            size_px_val,
+                            TextMeasureConfig {
+                                font_family: *font_family,
+                                font_weight: fw,
+                                font_style: fs,
+                                letter_spacing: *letter_spacing,
+                                ..Default::default()
+                            },
+                        )
+                        .positions
+                        .last()
+                        .copied()
+                        .unwrap_or(0.0);
+                        min_content_w = min_content_w.max(ww);
+                    }
+                    if min_content_w <= 0.0 {
+                        min_content_w = max_content_w;
+                    }
                 }
 
                 let wrap_w_px = if let Some(w) = known.width.filter(|w| *w > 0.5) {
@@ -280,37 +404,170 @@ impl LayoutEngine {
 
                 let fvs = font_variation_settings.as_deref();
                 let (lines, line_ranges): (Vec<String>, Vec<(usize, usize)>) = if *soft_wrap {
-                    let (ranges, truncated) = repose_text::wrap_line_ranges(
-                        text,
-                        size_px_val,
-                        wrap_w_px,
-                        *max_lines,
-                        true,
-                        fw,
-                        fs,
-                        *letter_spacing,
-                        fvs,
-                    );
-                    let mut lns: Vec<String> = ranges
-                        .iter()
-                        .map(|&(s, e)| text[s..e].to_string())
-                        .collect();
-                    if truncated
-                        && matches!(overflow, TextOverflow::Ellipsis)
-                        && let Some(last) = lns.last_mut()
-                    {
-                        let with_tail = format!("{}…", last);
-                        *last = repose_text::ellipsize_line(
-                            &with_tail,
+                    if has_annotations {
+                        let width_of = |s: usize, e: usize| annotated_width(s, e);
+                        if max_content_w <= wrap_w_px + 0.5 {
+                            (vec![text.clone()], vec![(0, text.len())])
+                        } else {
+                            let mut all_ranges: Vec<(usize, usize)> = Vec::new();
+                            let mut truncated = false;
+                            let mut line0_start = 0usize;
+                            let max_lines_remaining =
+                                |out_len: usize| max_lines.map(|ml| ml.saturating_sub(out_len));
+                            let wrap_hard =
+                                |start: usize,
+                                 end: usize,
+                                 max_lines_opt: Option<usize>,
+                                 width_of: &dyn Fn(usize, usize) -> f32|
+                                 -> (Vec<(usize, usize)>, bool) {
+                                    if start >= end {
+                                        return (vec![(start, start)], false);
+                                    }
+                                    if width_of(start, end) <= wrap_w_px + 0.5 {
+                                        return (vec![(start, end)], false);
+                                    }
+                                    let mut out = Vec::new();
+                                    let mut line_start = start;
+                                    let mut best_break = line_start;
+                                    let mut unconsumed_start = start;
+                                    let mut t = false;
+                                    for tok in text[line_start..end].split_word_bounds() {
+                                        let tok_abs_start = unconsumed_start;
+                                        let tok_abs_end = tok_abs_start + tok.len();
+                                        unconsumed_start = tok_abs_end;
+                                        let w = width_of(line_start, tok_abs_end);
+                                        if w <= wrap_w_px + 0.5 {
+                                            best_break = tok_abs_end;
+                                            continue;
+                                        }
+                                        if best_break > line_start {
+                                            out.push((line_start, best_break));
+                                            line_start = best_break;
+                                        } else {
+                                            let mut cut = tok_abs_start;
+                                            for (ofs, g) in tok.grapheme_indices(true) {
+                                                let next = tok_abs_start + ofs + g.len();
+                                                if width_of(line_start, next) <= wrap_w_px + 0.5 {
+                                                    cut = next;
+                                                } else {
+                                                    break;
+                                                }
+                                            }
+                                            if cut == line_start {
+                                                if let Some((ofs, gr)) =
+                                                    tok.grapheme_indices(true).next()
+                                                {
+                                                    cut = tok_abs_start + ofs + gr.len();
+                                                }
+                                            }
+                                            out.push((line_start, cut));
+                                            line_start = cut;
+                                        }
+                                        if let Some(ml) = max_lines_opt
+                                            && out.len() >= ml
+                                        {
+                                            t = true;
+                                            break;
+                                        }
+                                        best_break = line_start;
+                                    }
+                                    if !t
+                                        && line_start < end
+                                        && max_lines_opt.is_none_or(|ml| out.len() < ml)
+                                    {
+                                        out.push((line_start, end));
+                                    }
+                                    (out, t)
+                                };
+                            for (i, ch) in text.char_indices() {
+                                if ch == '\n' {
+                                    let (mut ranges, tr) = wrap_hard(
+                                        line0_start,
+                                        i,
+                                        max_lines_remaining(all_ranges.len()),
+                                        &width_of,
+                                    );
+                                    all_ranges.append(&mut ranges);
+                                    if tr {
+                                        truncated = true;
+                                        break;
+                                    }
+                                    line0_start = i + 1;
+                                    if let Some(ml) = max_lines
+                                        && all_ranges.len() >= *ml
+                                    {
+                                        truncated = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if !truncated {
+                                let (mut ranges, tr) = wrap_hard(
+                                    line0_start,
+                                    text.len(),
+                                    max_lines_remaining(all_ranges.len()),
+                                    &width_of,
+                                );
+                                all_ranges.append(&mut ranges);
+                                truncated = tr;
+                            }
+                            if all_ranges.is_empty() {
+                                all_ranges.push((0, 0));
+                            }
+                            let mut lns: Vec<String> = all_ranges
+                                .iter()
+                                .map(|&(s, e)| text[s..e].to_string())
+                                .collect();
+                            if truncated
+                                && matches!(overflow, TextOverflow::Ellipsis)
+                                && let Some(last) = lns.last_mut()
+                            {
+                                let with_tail = format!("{}…", last);
+                                *last = repose_text::ellipsize_line(
+                                    &with_tail,
+                                    size_px_val,
+                                    wrap_w_px,
+                                    fw,
+                                    fs,
+                                    *letter_spacing,
+                                    fvs,
+                                );
+                            }
+                            (lns, all_ranges)
+                        }
+                    } else {
+                        let (ranges, truncated) = repose_text::wrap_line_ranges(
+                            text,
                             size_px_val,
                             wrap_w_px,
+                            *max_lines,
+                            true,
                             fw,
                             fs,
                             *letter_spacing,
                             fvs,
                         );
+                        let mut lns: Vec<String> = ranges
+                            .iter()
+                            .map(|&(s, e)| text[s..e].to_string())
+                            .collect();
+                        if truncated
+                            && matches!(overflow, TextOverflow::Ellipsis)
+                            && let Some(last) = lns.last_mut()
+                        {
+                            let with_tail = format!("{}…", last);
+                            *last = repose_text::ellipsize_line(
+                                &with_tail,
+                                size_px_val,
+                                wrap_w_px,
+                                fw,
+                                fs,
+                                *letter_spacing,
+                                fvs,
+                            );
+                        }
+                        (lns, ranges)
                     }
-                    (lns, ranges)
                 } else if matches!(overflow, TextOverflow::Ellipsis) {
                     let elided = repose_text::ellipsize_line(
                         text,
@@ -328,27 +585,83 @@ impl LayoutEngine {
                     (vec![text.clone()], vec![(0, len)])
                 };
 
-                let line_widths: Vec<f32> = lines
-                    .iter()
-                    .map(|line| {
-                        measure_text(
-                            line,
-                            size_px_val,
-                            TextMeasureConfig {
-                                font_family: *font_family,
-                                font_weight: fw,
-                                font_style: fs,
-                                letter_spacing: *letter_spacing,
-                                ..Default::default()
-                            },
-                        )
-                        .positions
-                        .last()
-                        .copied()
-                        .unwrap_or(0.0)
-                    })
-                    .collect();
+                let (line_widths, line_heights): (Vec<f32>, Vec<f32>) = if has_annotations {
+                    let annos = annotations.as_ref().unwrap();
+                    let mut widths = Vec::with_capacity(lines.len());
+                    let mut heights = Vec::with_capacity(lines.len());
+                    for (idx, _) in lines.iter().enumerate() {
+                        let (s, e) = line_ranges[idx];
+                        let w = annotated_width(s, e);
+                        widths.push(w);
+                        let mut max_h = line_h_px_val;
+                        for span in annos.iter().filter(|sp| sp.start < e && sp.end > s) {
+                            let seg_font_dp = span.style.font_size.unwrap_or(*font_dp);
+                            let seg_px = font_px(seg_font_dp);
+                            let seg_line_h = if let Some(lh) = span.style.line_height {
+                                if lh > 0.0 { font_px(lh) } else { seg_px }
+                            } else if *line_height > 0.0 {
+                                font_px(*line_height)
+                            } else {
+                                seg_px
+                            };
+                            let baseline = span
+                                .style
+                                .baseline_shift
+                                .map(|b| b.0 * seg_px)
+                                .unwrap_or(0.0);
+                            let stroke_expand =
+                                if let Some(repose_core::DrawStyle::Stroke { width, .. }) =
+                                    &span.style.draw_style
+                                {
+                                    *width * seg_px * 0.5
+                                } else {
+                                    0.0
+                                };
+                            let top = baseline.min(0.0) - stroke_expand - 2.0;
+                            let bottom = baseline.max(0.0) + seg_line_h + stroke_expand + 6.0;
+                            let seg_h = bottom - top;
+                            max_h = max_h.max(seg_h);
+                            max_h = max_h.max(seg_px + baseline.abs() + stroke_expand * 2.0 + 8.0);
+                        }
+                        heights.push(max_h);
+                    }
+                    (widths, heights)
+                } else {
+                    let ws: Vec<f32> = lines
+                        .iter()
+                        .map(|line| {
+                            measure_text(
+                                line,
+                                size_px_val,
+                                TextMeasureConfig {
+                                    font_family: *font_family,
+                                    font_weight: fw,
+                                    font_style: fs,
+                                    letter_spacing: *letter_spacing,
+                                    ..Default::default()
+                                },
+                            )
+                            .positions
+                            .last()
+                            .copied()
+                            .unwrap_or(0.0)
+                        })
+                        .collect();
+                    let regular_line_h = line_h_px_val + 8.0;
+                    let hs = vec![regular_line_h; lines.len()];
+                    (ws, hs)
+                };
                 let max_line_w = line_widths.iter().copied().fold(0.0f32, f32::max);
+                let cache_line_h = if has_annotations {
+                    line_heights.iter().copied().fold(0.0f32, f32::max)
+                } else {
+                    line_h_px_val + 8.0
+                };
+                let total_h: f32 = if has_annotations {
+                    line_heights.iter().copied().sum()
+                } else {
+                    cache_line_h * lines.len().max(1) as f32
+                };
 
                 if let Some(node_id) = reverse_map.get(&taffy_node) {
                     text_cache.insert(
@@ -357,14 +670,19 @@ impl LayoutEngine {
                             lines: lines.clone(),
                             line_ranges,
                             size_px: size_px_val,
-                            line_h_px: line_h_px_val,
+                            line_h_px: cache_line_h,
                             line_widths,
+                            line_heights: if has_annotations {
+                                line_heights.clone()
+                            } else {
+                                vec![]
+                            },
                         },
                     );
                 }
                 taffy::geometry::Size {
                     width: max_line_w,
-                    height: line_h_px_val * lines.len().max(1) as f32,
+                    height: total_h,
                 }
             }
             Some(NodeContext::TextInput { multiline }) => {
