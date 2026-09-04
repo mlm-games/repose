@@ -6,6 +6,7 @@ use skrifa::outline::OutlinePen;
 
 pub mod fallback;
 pub mod fallback_data;
+pub mod unresolved;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
@@ -350,6 +351,28 @@ fn init_engine_sync() -> Engine {
     }
 
     let mut font_cx = provider.new_parley_context();
+    // On wasm, bundled Symbols2 is NOT added to generic families by font-awl (bundled.rs only sets generic for OpenSans).
+    // Without this, "sans-serif" text like Text("★") has no fallback to Symbols2 and renders as .notdef (gid 0).
+    // Add Symbols2 to SansSerif generic at init so explicit fallback stacks and generic fallback both work.
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(info) = font_cx.collection.family_by_name("Noto Sans Symbols 2") {
+            let id = info.id();
+            let mut existing: Vec<parley::fontique::FamilyId> = font_cx
+                .collection
+                .generic_families(parley::fontique::GenericFamily::SansSerif)
+                .collect();
+            if !existing.contains(&id) {
+                existing.push(id);
+                font_cx.collection.set_generic_families(
+                    parley::fontique::GenericFamily::SansSerif,
+                    existing.into_iter(),
+                );
+            }
+        }
+        // Also ensure Emoji generic exists (may be empty initially, but keep for layered fallback).
+        // No-op if already set.
+    }
     let layout_cx = parley::LayoutContext::new();
 
     static MATERIAL_SYMBOLS_TTF: &[u8] = include_bytes!("assets/MaterialSymbolsOutlined.ttf");
@@ -396,13 +419,97 @@ fn engine() -> &'static Mutex<Engine> {
 pub fn register_font_data(bytes: &[u8]) {
     let mut eng = engine().lock().unwrap();
     let blob: parley::fontique::Blob<u8> = bytes.to_vec().into();
-    eng.font_cx.collection.register_fonts(blob.clone(), None);
+    let families = eng.font_cx.collection.register_fonts(blob.clone(), None);
+    if let Some(name) = font_family_name(bytes) {
+        if name.starts_with("Noto Color Emoji") {
+            let ids: Vec<parley::fontique::FamilyId> =
+                families.iter().map(|(fid, _)| *fid).collect();
+            // Append to existing Emoji generic (preserve OpenSans etc.)
+            let mut existing: Vec<parley::fontique::FamilyId> = eng
+                .font_cx
+                .collection
+                .generic_families(parley::fontique::GenericFamily::Emoji)
+                .collect();
+            for id in ids.clone() {
+                if !existing.contains(&id) {
+                    existing.push(id);
+                }
+            }
+            eng.font_cx
+                .collection
+                .set_generic_families(parley::fontique::GenericFamily::Emoji, existing.into_iter());
+            // Also register explicit family name via fallback stack, but generic ensures coverage
+        } else if name.starts_with("Noto Sans Symbols") {
+            let ids: Vec<parley::fontique::FamilyId> =
+                families.iter().map(|(fid, _)| *fid).collect();
+            // Symbols should be reachable from SansSerif text like carousel "★"
+            let mut existing: Vec<parley::fontique::FamilyId> = eng
+                .font_cx
+                .collection
+                .generic_families(parley::fontique::GenericFamily::SansSerif)
+                .collect();
+            for id in ids.clone() {
+                if !existing.contains(&id) {
+                    existing.push(id);
+                }
+            }
+            eng.font_cx.collection.set_generic_families(
+                parley::fontique::GenericFamily::SansSerif,
+                existing.into_iter(),
+            );
+        }
+    }
+    // Clear source cache so next layout re-resolves fonts (mirrors Compose invalidation)
+    eng.font_cx.source_cache = parley::fontique::SourceCache::default();
     if let Some(provider_lock) = FONT_PROVIDER.get() {
         let mut p = provider_lock.lock().unwrap();
-        p.collection_mut().register_fonts(blob, None);
+        let families2 = p.collection_mut().register_fonts(blob, None);
+        // Mirror generic setup for provider's collection as well (used for new contexts)
+        if let Some(name) = font_family_name(bytes) {
+            if name.starts_with("Noto Color Emoji") {
+                let ids: Vec<parley::fontique::FamilyId> =
+                    families2.iter().map(|(fid, _)| *fid).collect();
+                let mut existing: Vec<parley::fontique::FamilyId> = p
+                    .collection_mut()
+                    .generic_families(parley::fontique::GenericFamily::Emoji)
+                    .collect();
+                for id in ids.clone() {
+                    if !existing.contains(&id) {
+                        existing.push(id);
+                    }
+                }
+                p.collection_mut().set_generic_families(
+                    parley::fontique::GenericFamily::Emoji,
+                    existing.into_iter(),
+                );
+            } else if name.starts_with("Noto Sans Symbols") {
+                let ids: Vec<parley::fontique::FamilyId> =
+                    families2.iter().map(|(fid, _)| *fid).collect();
+                let mut existing: Vec<parley::fontique::FamilyId> = p
+                    .collection_mut()
+                    .generic_families(parley::fontique::GenericFamily::SansSerif)
+                    .collect();
+                for id in ids.clone() {
+                    if !existing.contains(&id) {
+                        existing.push(id);
+                    }
+                }
+                p.collection_mut().set_generic_families(
+                    parley::fontique::GenericFamily::SansSerif,
+                    existing.into_iter(),
+                );
+            }
+        }
     }
     // Invalidate caches so text with newly available glyphs will relayout
     clear_caches_for_fallback();
+    // Notify unresolved registry (mirrors Compose: fontFamilyResolver.preload + onNewFontInstalled)
+    #[cfg(target_arch = "wasm32")]
+    {
+        // Re-invalidate via registry to trigger ParagraphLayouter-style listeners
+        // (wasm_fallback also does this; double-clear is safe)
+        crate::unresolved::web_unresolved_registry().on_new_font_installed();
+    }
 }
 
 pub(crate) fn clear_caches_for_fallback() {
@@ -480,6 +587,7 @@ fn key_from_pair(font_id: u64, glyph_id: u16) -> GlyphKey {
 fn collect_unresolved_codepoints(layout: &parley::Layout<()>, text: &str) -> Vec<u32> {
     use parley::layout::PositionedLayoutItem;
     let mut out = Vec::new();
+    let mut total_glyphs: usize = 0;
     for line in layout.lines() {
         for item in line.items() {
             let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
@@ -488,7 +596,9 @@ fn collect_unresolved_codepoints(layout: &parley::Layout<()>, text: &str) -> Vec
             let run = glyph_run.run();
             // parley clusters already grouped by text; if glyph id==0 => missing
             for cluster in run.clusters() {
-                let has_missing = cluster.glyphs().any(|g| g.id == 0);
+                let glyphs: Vec<_> = cluster.glyphs().collect();
+                total_glyphs += glyphs.len();
+                let has_missing = glyphs.iter().any(|g| g.id == 0);
                 if has_missing {
                     let range = cluster.text_range();
                     // slice may be invalid if out of bounds? clamp
@@ -501,6 +611,15 @@ fn collect_unresolved_codepoints(layout: &parley::Layout<()>, text: &str) -> Vec
                     if range.start == range.end {
                         // try to guess from glyph? skip
                     }
+                }
+            }
+        }
+    }
+    if out.is_empty() && !text.is_empty() && total_glyphs == 0 {
+        if text.chars().any(|c| !c.is_whitespace()) {
+            for ch in text.chars() {
+                if !ch.is_whitespace() && ch != '\n' && ch != '\r' && ch != '\t' {
+                    out.push(ch as u32);
                 }
             }
         }
@@ -551,28 +670,101 @@ fn shape_line_inner(
     }
 
     if let Some(family) = font_family {
-        use parley::style::{FontFamilyName, GenericFamily};
-        let names: &[FontFamilyName] = match family {
-            "monospace" => &[
-                FontFamilyName::named("JetBrains Mono"),
-                GenericFamily::Monospace.into(),
-            ],
-            "sans-serif" => &[
-                FontFamilyName::named("Open Sans"),
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            use parley::style::{FontFamilyName, GenericFamily};
+            let names: &[FontFamilyName] = match family {
+                "monospace" => &[
+                    FontFamilyName::named("JetBrains Mono"),
+                    GenericFamily::Monospace.into(),
+                ],
+                "sans-serif" => &[
+                    FontFamilyName::named("Open Sans"),
+                    GenericFamily::SansSerif.into(),
+                ],
+                "emoji" => &[
+                    FontFamilyName::named("Noto Color Emoji"),
+                    GenericFamily::Emoji.into(),
+                ],
+                "serif" => &[GenericFamily::Serif.into()],
+                "cursive" => &[GenericFamily::Cursive.into()],
+                "fantasy" => &[GenericFamily::Fantasy.into()],
+                "system-ui" => &[GenericFamily::SystemUi.into()],
+                "math" => &[GenericFamily::Math.into()],
+                _ => &[FontFamilyName::named(family)],
+            };
+            builder.push(names, 0..text.len());
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            use parley::style::{FontFamilyName, GenericFamily};
+            let names: &[FontFamilyName] = match family {
+                "monospace" => &[
+                    FontFamilyName::named("JetBrains Mono"),
+                    GenericFamily::Monospace.into(),
+                    GenericFamily::SansSerif.into(),
+                    FontFamilyName::named("Noto Sans Symbols 2"),
+                    FontFamilyName::named("Noto Sans Symbols2"),
+                    FontFamilyName::named("Noto Sans Symbols"),
+                ],
+                "sans-serif" => &[
+                    FontFamilyName::named("Open Sans"),
+                    GenericFamily::SansSerif.into(),
+                    GenericFamily::Emoji.into(),
+                    FontFamilyName::named("Noto Color Emoji"),
+                    FontFamilyName::named("Noto Sans Symbols 2"),
+                    FontFamilyName::named("Noto Sans Symbols2"),
+                    FontFamilyName::named("Noto Sans Symbols"),
+                ],
+                "emoji" => &[
+                    FontFamilyName::named("Noto Color Emoji"),
+                    GenericFamily::Emoji.into(),
+                    GenericFamily::SansSerif.into(),
+                    FontFamilyName::named("Noto Sans Symbols 2"),
+                ],
+                "serif" => &[
+                    GenericFamily::Serif.into(),
+                    GenericFamily::SansSerif.into(),
+                    FontFamilyName::named("Noto Sans Symbols 2"),
+                ],
+                "cursive" => &[
+                    GenericFamily::Cursive.into(),
+                    GenericFamily::SansSerif.into(),
+                    FontFamilyName::named("Noto Sans Symbols 2"),
+                ],
+                "fantasy" => &[
+                    GenericFamily::Fantasy.into(),
+                    GenericFamily::SansSerif.into(),
+                    FontFamilyName::named("Noto Sans Symbols 2"),
+                ],
+                "system-ui" => &[
+                    GenericFamily::SystemUi.into(),
+                    GenericFamily::SansSerif.into(),
+                    FontFamilyName::named("Noto Sans Symbols 2"),
+                ],
+                "math" => &[
+                    GenericFamily::Math.into(),
+                    GenericFamily::SansSerif.into(),
+                    FontFamilyName::named("Noto Sans Symbols 2"),
+                ],
+                _ => &[FontFamilyName::named(family)],
+            };
+            builder.push(names, 0..text.len());
+        }
+    } else {
+        #[cfg(target_arch = "wasm32")]
+        {
+            use parley::style::{FontFamilyName, GenericFamily};
+            let fallback: &[FontFamilyName] = &[
                 GenericFamily::SansSerif.into(),
-            ],
-            "emoji" => &[
-                FontFamilyName::named("Noto Color Emoji"),
                 GenericFamily::Emoji.into(),
-            ],
-            "serif" => &[GenericFamily::Serif.into()],
-            "cursive" => &[GenericFamily::Cursive.into()],
-            "fantasy" => &[GenericFamily::Fantasy.into()],
-            "system-ui" => &[GenericFamily::SystemUi.into()],
-            "math" => &[GenericFamily::Math.into()],
-            _ => &[FontFamilyName::named(family)],
-        };
-        builder.push(names, 0..text.len());
+                FontFamilyName::named("Noto Color Emoji"),
+                FontFamilyName::named("Noto Sans Symbols 2"),
+                FontFamilyName::named("Noto Sans Symbols2"),
+                FontFamilyName::named("Noto Sans Symbols"),
+            ];
+            builder.push(fallback, 0..text.len());
+        }
     }
 
     let mut layout = builder.build(text);
@@ -582,14 +774,12 @@ fn shape_line_inner(
         parley::AlignmentOptions::default(),
     );
 
-    // Detect unresolved codepoints for web fallback (tofu = gid 0)
     #[cfg(target_arch = "wasm32")]
     {
         let unresolved = collect_unresolved_codepoints(&layout, text);
         if !unresolved.is_empty() {
-            crate::fallback::wasm_fallback::submit_unresolved(unresolved);
-            // Ensure background task is running
             crate::fallback::wasm_fallback::ensure_fallback_initialized();
+            crate::unresolved::web_unresolved_registry().add_unresolved_vec(unresolved);
         }
     }
 
@@ -852,28 +1042,101 @@ pub fn metrics_for_textfield(
         ));
     }
     if let Some(family) = font_family {
-        use parley::style::{FontFamilyName, GenericFamily};
-        let names: &[FontFamilyName] = match family {
-            "monospace" => &[
-                FontFamilyName::named("JetBrains Mono"),
-                GenericFamily::Monospace.into(),
-            ],
-            "sans-serif" => &[
-                FontFamilyName::named("Open Sans"),
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            use parley::style::{FontFamilyName, GenericFamily};
+            let names: &[FontFamilyName] = match family {
+                "monospace" => &[
+                    FontFamilyName::named("JetBrains Mono"),
+                    GenericFamily::Monospace.into(),
+                ],
+                "sans-serif" => &[
+                    FontFamilyName::named("Open Sans"),
+                    GenericFamily::SansSerif.into(),
+                ],
+                "emoji" => &[
+                    FontFamilyName::named("Noto Color Emoji"),
+                    GenericFamily::Emoji.into(),
+                ],
+                "serif" => &[GenericFamily::Serif.into()],
+                "cursive" => &[GenericFamily::Cursive.into()],
+                "fantasy" => &[GenericFamily::Fantasy.into()],
+                "system-ui" => &[GenericFamily::SystemUi.into()],
+                "math" => &[GenericFamily::Math.into()],
+                _ => &[FontFamilyName::named(family)],
+            };
+            builder.push(names, 0..text.len());
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            use parley::style::{FontFamilyName, GenericFamily};
+            let names: &[FontFamilyName] = match family {
+                "monospace" => &[
+                    FontFamilyName::named("JetBrains Mono"),
+                    GenericFamily::Monospace.into(),
+                    GenericFamily::SansSerif.into(),
+                    FontFamilyName::named("Noto Sans Symbols 2"),
+                    FontFamilyName::named("Noto Sans Symbols2"),
+                    FontFamilyName::named("Noto Sans Symbols"),
+                ],
+                "sans-serif" => &[
+                    FontFamilyName::named("Open Sans"),
+                    GenericFamily::SansSerif.into(),
+                    GenericFamily::Emoji.into(),
+                    FontFamilyName::named("Noto Color Emoji"),
+                    FontFamilyName::named("Noto Sans Symbols 2"),
+                    FontFamilyName::named("Noto Sans Symbols2"),
+                    FontFamilyName::named("Noto Sans Symbols"),
+                ],
+                "emoji" => &[
+                    FontFamilyName::named("Noto Color Emoji"),
+                    GenericFamily::Emoji.into(),
+                    GenericFamily::SansSerif.into(),
+                    FontFamilyName::named("Noto Sans Symbols 2"),
+                ],
+                "serif" => &[
+                    GenericFamily::Serif.into(),
+                    GenericFamily::SansSerif.into(),
+                    FontFamilyName::named("Noto Sans Symbols 2"),
+                ],
+                "cursive" => &[
+                    GenericFamily::Cursive.into(),
+                    GenericFamily::SansSerif.into(),
+                    FontFamilyName::named("Noto Sans Symbols 2"),
+                ],
+                "fantasy" => &[
+                    GenericFamily::Fantasy.into(),
+                    GenericFamily::SansSerif.into(),
+                    FontFamilyName::named("Noto Sans Symbols 2"),
+                ],
+                "system-ui" => &[
+                    GenericFamily::SystemUi.into(),
+                    GenericFamily::SansSerif.into(),
+                    FontFamilyName::named("Noto Sans Symbols 2"),
+                ],
+                "math" => &[
+                    GenericFamily::Math.into(),
+                    GenericFamily::SansSerif.into(),
+                    FontFamilyName::named("Noto Sans Symbols 2"),
+                ],
+                _ => &[FontFamilyName::named(family)],
+            };
+            builder.push(names, 0..text.len());
+        }
+    } else {
+        #[cfg(target_arch = "wasm32")]
+        {
+            use parley::style::{FontFamilyName, GenericFamily};
+            let fallback: &[FontFamilyName] = &[
                 GenericFamily::SansSerif.into(),
-            ],
-            "emoji" => &[
-                FontFamilyName::named("Noto Color Emoji"),
                 GenericFamily::Emoji.into(),
-            ],
-            "serif" => &[GenericFamily::Serif.into()],
-            "cursive" => &[GenericFamily::Cursive.into()],
-            "fantasy" => &[GenericFamily::Fantasy.into()],
-            "system-ui" => &[GenericFamily::SystemUi.into()],
-            "math" => &[GenericFamily::Math.into()],
-            _ => &[FontFamilyName::named(family)],
-        };
-        builder.push(names, 0..text.len());
+                FontFamilyName::named("Noto Color Emoji"),
+                FontFamilyName::named("Noto Sans Symbols 2"),
+                FontFamilyName::named("Noto Sans Symbols2"),
+                FontFamilyName::named("Noto Sans Symbols"),
+            ];
+            builder.push(fallback, 0..text.len());
+        }
     }
 
     let mut layout = builder.build(text);
@@ -887,7 +1150,8 @@ pub fn metrics_for_textfield(
     {
         let unresolved = collect_unresolved_codepoints(&layout, text);
         if !unresolved.is_empty() {
-            crate::fallback::wasm_fallback::submit_unresolved(unresolved);
+            crate::fallback::wasm_fallback::ensure_fallback_initialized();
+            crate::unresolved::web_unresolved_registry().add_unresolved_vec(unresolved);
         }
     }
 
