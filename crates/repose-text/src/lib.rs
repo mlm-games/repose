@@ -17,6 +17,7 @@ use std::{
 use unicode_segmentation::UnicodeSegmentation;
 
 static FRAME_COUNTER: AtomicU64 = AtomicU64::new(0);
+static FONT_GENERATION: AtomicU64 = AtomicU64::new(0);
 static FALLBACK_DIRTY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn begin_frame() {
@@ -25,6 +26,10 @@ pub fn begin_frame() {
 
 pub fn current_frame() -> u64 {
     FRAME_COUNTER.load(Ordering::Relaxed)
+}
+
+pub fn font_generation() -> u64 {
+    FONT_GENERATION.load(Ordering::Relaxed)
 }
 
 pub fn take_fallback_dirty() -> bool {
@@ -420,44 +425,67 @@ pub fn register_font_data(bytes: &[u8]) {
     let mut eng = engine().lock().unwrap();
     let blob: parley::fontique::Blob<u8> = bytes.to_vec().into();
     let families = eng.font_cx.collection.register_fonts(blob.clone(), None);
+    // Detect family type: font_family_name fails for woff2 (skrifa needs decompressed), so fallback to registered family names
+    let mut is_emoji = false;
+    let mut is_symbols = false;
     if let Some(name) = font_family_name(bytes) {
         if name.starts_with("Noto Color Emoji") {
-            let ids: Vec<parley::fontique::FamilyId> =
-                families.iter().map(|(fid, _)| *fid).collect();
-            // Append to existing Emoji generic (preserve OpenSans etc.)
-            let mut existing: Vec<parley::fontique::FamilyId> = eng
-                .font_cx
-                .collection
-                .generic_families(parley::fontique::GenericFamily::Emoji)
-                .collect();
-            for id in ids.clone() {
-                if !existing.contains(&id) {
-                    existing.push(id);
-                }
-            }
-            eng.font_cx
-                .collection
-                .set_generic_families(parley::fontique::GenericFamily::Emoji, existing.into_iter());
-            // Also register explicit family name via fallback stack, but generic ensures coverage
+            is_emoji = true;
         } else if name.starts_with("Noto Sans Symbols") {
-            let ids: Vec<parley::fontique::FamilyId> =
-                families.iter().map(|(fid, _)| *fid).collect();
-            // Symbols should be reachable from SansSerif text like carousel "★"
-            let mut existing: Vec<parley::fontique::FamilyId> = eng
-                .font_cx
-                .collection
-                .generic_families(parley::fontique::GenericFamily::SansSerif)
-                .collect();
-            for id in ids.clone() {
-                if !existing.contains(&id) {
-                    existing.push(id);
+            is_symbols = true;
+        }
+    }
+    if !is_emoji && !is_symbols {
+        for (fid, _) in &families {
+            if let Some(fname) = eng.font_cx.collection.family_name(*fid) {
+                if fname.starts_with("Noto Color Emoji") {
+                    is_emoji = true;
+                }
+                if fname.starts_with("Noto Sans Symbols") {
+                    is_symbols = true;
+                }
+            } else if let Some(info) = eng.font_cx.collection.family(*fid) {
+                let fname = info.name();
+                if fname.starts_with("Noto Color Emoji") {
+                    is_emoji = true;
+                }
+                if fname.starts_with("Noto Sans Symbols") {
+                    is_symbols = true;
                 }
             }
-            eng.font_cx.collection.set_generic_families(
-                parley::fontique::GenericFamily::SansSerif,
-                existing.into_iter(),
-            );
         }
+    }
+    if is_emoji {
+        let ids: Vec<parley::fontique::FamilyId> = families.iter().map(|(fid, _)| *fid).collect();
+        let mut existing: Vec<parley::fontique::FamilyId> = eng
+            .font_cx
+            .collection
+            .generic_families(parley::fontique::GenericFamily::Emoji)
+            .collect();
+        for id in ids.clone() {
+            if !existing.contains(&id) {
+                existing.push(id);
+            }
+        }
+        eng.font_cx
+            .collection
+            .set_generic_families(parley::fontique::GenericFamily::Emoji, existing.into_iter());
+    } else if is_symbols {
+        let ids: Vec<parley::fontique::FamilyId> = families.iter().map(|(fid, _)| *fid).collect();
+        let mut existing: Vec<parley::fontique::FamilyId> = eng
+            .font_cx
+            .collection
+            .generic_families(parley::fontique::GenericFamily::SansSerif)
+            .collect();
+        for id in ids.clone() {
+            if !existing.contains(&id) {
+                existing.push(id);
+            }
+        }
+        eng.font_cx.collection.set_generic_families(
+            parley::fontique::GenericFamily::SansSerif,
+            existing.into_iter(),
+        );
     }
     // Clear source cache so next layout re-resolves fonts (mirrors Compose invalidation)
     eng.font_cx.source_cache = parley::fontique::SourceCache::default();
@@ -465,40 +493,36 @@ pub fn register_font_data(bytes: &[u8]) {
         let mut p = provider_lock.lock().unwrap();
         let families2 = p.collection_mut().register_fonts(blob, None);
         // Mirror generic setup for provider's collection as well (used for new contexts)
-        if let Some(name) = font_family_name(bytes) {
-            if name.starts_with("Noto Color Emoji") {
-                let ids: Vec<parley::fontique::FamilyId> =
-                    families2.iter().map(|(fid, _)| *fid).collect();
-                let mut existing: Vec<parley::fontique::FamilyId> = p
-                    .collection_mut()
-                    .generic_families(parley::fontique::GenericFamily::Emoji)
-                    .collect();
-                for id in ids.clone() {
-                    if !existing.contains(&id) {
-                        existing.push(id);
-                    }
+        if is_emoji {
+            let ids: Vec<parley::fontique::FamilyId> =
+                families2.iter().map(|(fid, _)| *fid).collect();
+            let mut existing: Vec<parley::fontique::FamilyId> = p
+                .collection_mut()
+                .generic_families(parley::fontique::GenericFamily::Emoji)
+                .collect();
+            for id in ids.clone() {
+                if !existing.contains(&id) {
+                    existing.push(id);
                 }
-                p.collection_mut().set_generic_families(
-                    parley::fontique::GenericFamily::Emoji,
-                    existing.into_iter(),
-                );
-            } else if name.starts_with("Noto Sans Symbols") {
-                let ids: Vec<parley::fontique::FamilyId> =
-                    families2.iter().map(|(fid, _)| *fid).collect();
-                let mut existing: Vec<parley::fontique::FamilyId> = p
-                    .collection_mut()
-                    .generic_families(parley::fontique::GenericFamily::SansSerif)
-                    .collect();
-                for id in ids.clone() {
-                    if !existing.contains(&id) {
-                        existing.push(id);
-                    }
-                }
-                p.collection_mut().set_generic_families(
-                    parley::fontique::GenericFamily::SansSerif,
-                    existing.into_iter(),
-                );
             }
+            p.collection_mut()
+                .set_generic_families(parley::fontique::GenericFamily::Emoji, existing.into_iter());
+        } else if is_symbols {
+            let ids: Vec<parley::fontique::FamilyId> =
+                families2.iter().map(|(fid, _)| *fid).collect();
+            let mut existing: Vec<parley::fontique::FamilyId> = p
+                .collection_mut()
+                .generic_families(parley::fontique::GenericFamily::SansSerif)
+                .collect();
+            for id in ids.clone() {
+                if !existing.contains(&id) {
+                    existing.push(id);
+                }
+            }
+            p.collection_mut().set_generic_families(
+                parley::fontique::GenericFamily::SansSerif,
+                existing.into_iter(),
+            );
         }
     }
     // Invalidate caches so text with newly available glyphs will relayout
@@ -539,6 +563,7 @@ pub(crate) fn clear_caches_for_fallback() {
 
 pub(crate) fn bump_frame_for_fallback() {
     FRAME_COUNTER.fetch_add(1, Ordering::Relaxed);
+    FONT_GENERATION.fetch_add(1, Ordering::Relaxed);
     FALLBACK_DIRTY.store(true, Ordering::Relaxed);
 }
 
@@ -777,9 +802,22 @@ fn shape_line_inner(
     #[cfg(target_arch = "wasm32")]
     {
         let unresolved = collect_unresolved_codepoints(&layout, text);
+        // Filter out PUA (Material Symbols etc. E000-F8FF, F0000-FFFFD, 100000-10FFFD) - they are bundled via MaterialSymbolsOutlined.ttf, not Noto fallback
+        let unresolved: Vec<u32> = unresolved
+            .into_iter()
+            .filter(|cp| {
+                !((0xE000..=0xF8FF).contains(cp)
+                    || (0xF0000..=0xFFFFD).contains(cp)
+                    || (0x100000..=0x10FFFD).contains(cp))
+            })
+            .collect();
         if !unresolved.is_empty() {
-            crate::fallback::wasm_fallback::ensure_fallback_initialized();
-            crate::unresolved::web_unresolved_registry().add_unresolved_vec(unresolved);
+            let reg = crate::unresolved::web_unresolved_registry();
+            let is_new = unresolved.iter().any(|cp| !reg.contains(*cp));
+            if is_new {
+                crate::fallback::wasm_fallback::ensure_fallback_initialized();
+                reg.add_unresolved_vec(unresolved);
+            }
         }
     }
 
@@ -1149,9 +1187,21 @@ pub fn metrics_for_textfield(
     #[cfg(target_arch = "wasm32")]
     {
         let unresolved = collect_unresolved_codepoints(&layout, text);
+        let unresolved: Vec<u32> = unresolved
+            .into_iter()
+            .filter(|cp| {
+                !((0xE000..=0xF8FF).contains(cp)
+                    || (0xF0000..=0xFFFFD).contains(cp)
+                    || (0x100000..=0x10FFFD).contains(cp))
+            })
+            .collect();
         if !unresolved.is_empty() {
-            crate::fallback::wasm_fallback::ensure_fallback_initialized();
-            crate::unresolved::web_unresolved_registry().add_unresolved_vec(unresolved);
+            let reg = crate::unresolved::web_unresolved_registry();
+            let is_new = unresolved.iter().any(|cp| !reg.contains(*cp));
+            if is_new {
+                crate::fallback::wasm_fallback::ensure_fallback_initialized();
+                reg.add_unresolved_vec(unresolved);
+            }
         }
     }
 

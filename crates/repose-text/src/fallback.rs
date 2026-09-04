@@ -461,6 +461,7 @@ pub mod wasm_fallback {
     thread_local! {
         static GLOBAL: Rc<RefCell<WebFallbackFontDownloader>> = Rc::new(RefCell::new(WebFallbackFontDownloader::new()));
         static INSTALLED: RefCell<bool> = const { RefCell::new(false) };
+        static LISTENER_KEEP: RefCell<Option<std::sync::Arc<dyn crate::unresolved::UnresolvedListener>>> = const { RefCell::new(None) };
     }
 
     struct WebFallbackFontDownloader {
@@ -559,7 +560,9 @@ pub mod wasm_fallback {
 
         let listener: std::sync::Arc<dyn crate::unresolved::UnresolvedListener> =
             std::sync::Arc::new(RegistryListener);
-        crate::unresolved::web_unresolved_registry().add_listener(listener);
+        crate::unresolved::web_unresolved_registry().add_listener(listener.clone());
+        // so Weak in registry doesn't die (was a bug prev.: listener dropped after fn)
+        LISTENER_KEEP.with(|c| *c.borrow_mut() = Some(listener));
     }
 
     async fn run_loop(global: Rc<RefCell<WebFallbackFontDownloader>>) {
@@ -627,7 +630,8 @@ pub mod wasm_fallback {
                 let lang = web_sys::window()
                     .and_then(|w| w.navigator().language())
                     .unwrap_or_else(|| "en".to_string());
-                mgr.downloader.get_fonts_to_download(&batch, &lang)
+                let res = mgr.downloader.get_fonts_to_download(&batch, &lang);
+                res
             };
 
             if fonts_to_download.is_empty() {
@@ -639,29 +643,35 @@ pub mod wasm_fallback {
             let mut any_success = false;
             let mut all_failed = true;
 
+            use std::collections::HashSet;
+            let mut seen_urls: HashSet<String> = HashSet::new();
             for font in &fonts_to_download {
-                let url = format!("{}{}", FONT_FALLBACK_BASE_URL, font.url);
+                let url = if font.name.starts_with("Noto Color Emoji") {
+                    // HACK: Use full ttf from jsDelivr (CORS, 10MB) instead of gstatic woff2 subsets (woff2 decode not supported by fontique/read-fonts)
+                    "https://cdn.jsdelivr.net/gh/googlefonts/noto-emoji@main/fonts/NotoColorEmoji.ttf".to_string()
+                } else {
+                    format!("{}{}", FONT_FALLBACK_BASE_URL, font.url)
+                };
+                if !seen_urls.insert(url.clone()) {
+                    continue;
+                }
                 match fetch_bytes(&url).await {
                     Ok(bytes) => {
                         successes.push(bytes);
                         any_success = true;
                         all_failed = false;
                     }
-                    Err(e) => {
-                        log::warn!("Failed to download fallback font [{}]: {:?}", url, e);
-                    }
+                    Err(_) => {}
                 }
             }
 
             if all_failed && !any_success {
-                // errorCount 0 -> pause 0s, 1->5s, 2->10s...
                 let backoff = {
                     let mut mgr = global.borrow_mut();
                     let pause = mgr.error_count * 5;
                     mgr.error_count += 1;
                     pause
                 };
-                log::warn!("Fallback download failed, retry in {}s", backoff);
                 // Non-blocking retry like compose scope.launch { delay(pause); submit(batch) }
                 let batch_clone = batch.clone();
                 wasm_bindgen_futures::spawn_local(async move {
@@ -706,7 +716,12 @@ pub mod wasm_fallback {
     }
 
     async fn fetch_bytes(url: &str) -> Result<Vec<u8>, JsValue> {
-        let request = Request::new_with_str(url)?;
+        // Use RequestInit with CORS mode so cross-origin fetch to fonts.gstatic.com
+        let mut opts = web_sys::RequestInit::new();
+        opts.set_method("GET");
+        opts.set_mode(web_sys::RequestMode::Cors);
+        opts.set_cache(web_sys::RequestCache::Default);
+        let request = Request::new_with_str_and_init(url, &opts)?;
         let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
         let resp_value = JsFuture::from(window.fetch_with_request(&request)).await?;
         let resp: Response = resp_value.dyn_into().unwrap();
@@ -718,7 +733,8 @@ pub mod wasm_fallback {
         }
         let buffer = JsFuture::from(resp.array_buffer()?).await?;
         let arr = js_sys::Uint8Array::new(&buffer);
-        Ok(arr.to_vec())
+        let bytes = arr.to_vec();
+        Ok(bytes)
     }
 
     // Public API for init

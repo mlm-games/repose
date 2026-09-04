@@ -397,6 +397,8 @@ impl LayoutEngine {
             locals::TextDirection::Rtl => 1u8,
         };
         dir_u8.hash(&mut h);
+        // For font fallback generation (ex: emoji loaded dynamically)
+        repose_text::font_generation().hash(&mut h);
 
         h.finish()
     }

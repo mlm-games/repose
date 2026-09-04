@@ -25,5 +25,5 @@ unicode-segmentation = { workspace = true }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
-web-sys = { workspace = true, features = ["Window", "Navigator", "Request", "Response", "Headers"] }
+web-sys = { workspace = true, features = ["Window", "Navigator", "Request", "RequestInit", "RequestMode", "RequestCache", "Response", "Headers"] }
 js-sys = "0.3"

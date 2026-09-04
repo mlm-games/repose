@@ -68,7 +68,8 @@ impl UnresolvedSymbolsRegistry {
             }
             inner.listeners.retain(|w| w.upgrade().is_some());
             let live: Vec<_> = inner.listeners.iter().filter_map(|w| w.upgrade()).collect();
-            (inner.unresolved.clone(), live)
+            let snap = inner.unresolved.clone();
+            (snap, live)
         };
         for l in listeners {
             l.on_unresolved_codepoints(&snapshot);
@@ -93,6 +94,15 @@ impl UnresolvedSymbolsRegistry {
 
     pub fn unresolved_len(&self) -> usize {
         self.inner.lock().unwrap().unresolved.len()
+    }
+
+    pub fn contains(&self, cp: u32) -> bool {
+        self.inner.lock().unwrap().unresolved.contains(&cp)
+    }
+
+    pub fn has_any(&self, cps: &[u32]) -> bool {
+        let inner = self.inner.lock().unwrap();
+        cps.iter().any(|cp| inner.unresolved.contains(cp))
     }
 }
 
