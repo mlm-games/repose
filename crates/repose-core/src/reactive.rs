@@ -175,7 +175,7 @@ pub fn signal_changed(sig: SignalId) {
                     g = new_g;
                 }
                 Err(_) => {
-                    log::error!("GRAPH poisoned after observer {obs} panic — resetting");
+                    log::error!("GRAPH poisoned after observer {obs} panic - resetting");
                     *gcell.borrow_mut() = DepGraph::default();
                     break;
                 }

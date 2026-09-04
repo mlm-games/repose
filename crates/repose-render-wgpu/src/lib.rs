@@ -83,7 +83,7 @@ impl UploadRing {
         if end > self.cap {
             // Instead of panicking, grow and reset
             log::error!(
-                "UploadRing overflow: start={start} len={len} cap={} — growing",
+                "UploadRing overflow: start={start} len={len} cap={} - growing",
                 self.cap
             );
             if len > self.cap {

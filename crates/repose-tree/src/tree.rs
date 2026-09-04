@@ -317,7 +317,7 @@ impl ViewTree {
             Some(n) => n.content_hash,
             None => {
                 log::error!(
-                    "reconcile_node: node {:?} not found (GC race) — creating fresh",
+                    "reconcile_node: node {:?} not found (GC race) - creating fresh",
                     node_id
                 );
                 // Fallback: treat as new node
@@ -453,7 +453,7 @@ impl ViewTree {
                 && !new_seen_keys.insert(key)
             {
                 log::error!(
-                    "reconcile_children: duplicate modifier.key={} in children of node {:?} — deduplicating (suffixing). Ensure get_key returns unique keys.",
+                    "reconcile_children: duplicate modifier.key={} in children of node {:?} - deduplicating (suffixing). Ensure get_key returns unique keys.",
                     key,
                     parent_id
                 );

@@ -257,8 +257,7 @@ pub fn screen() -> View {
             "Screen-space overlay",
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
                 Hint(
-                    "draw_vector_overlay draws in final device pixels with no world transform — the \
-                     right tool for playheads, handles, and rubber-band selectors.",
+                    "draw_vector_overlay draws in final device pixels with no world transform, applicable for playheads, handles, and rubber-band selectors.",
                 ),
                 Canvas(
                     Modifier::new()

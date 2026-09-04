@@ -41,7 +41,7 @@ impl LayoutEngine {
             match taffy.new_leaf_with_context(style, ctx) {
                 Ok(id) => id,
                 Err(e) => {
-                    log::error!("taffy new_leaf failed: {e:?} — returning fallback leaf");
+                    log::error!("taffy new_leaf failed: {e:?} - returning fallback leaf");
                     taffy
                         .new_leaf_with_context(taffy::Style::default(), NodeContext::Container)
                         .unwrap_or_else(|_| panic!("fallback taffy leaf failed: {e:?}"))
@@ -51,7 +51,7 @@ impl LayoutEngine {
             let t = match taffy.new_with_children(style, &child_tids) {
                 Ok(id) => id,
                 Err(e) => {
-                    log::error!("taffy new_with_children failed: {e:?} — falling back to leaf");
+                    log::error!("taffy new_with_children failed: {e:?} - falling back to leaf");
                     taffy
                         .new_leaf_with_context(taffy::Style::default(), NodeContext::Container)
                         .unwrap_or_else(|_| panic!("fallback taffy leaf failed: {e:?}"))

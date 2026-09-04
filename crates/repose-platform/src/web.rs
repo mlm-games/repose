@@ -465,7 +465,7 @@ impl ApplicationHandler<()> for App {
                 return;
             };
             let Some(elem) = document.get_element_by_id(&id) else {
-                log::error!("Canvas id '{id}' not found — falling back to auto-create");
+                log::error!("Canvas id '{id}' not found - falling back to auto-create");
                 attrs = attrs.with_canvas(None).with_append(true);
                 let window = match el.create_window(attrs) {
                     Ok(w) => Arc::new(w),
@@ -481,7 +481,6 @@ impl ApplicationHandler<()> for App {
                 self.ensure_fullscreen_size(&window);
                 self.sync_size_from_window(&window);
                 self.window = Some(window.clone());
-                // continue with backend init below — re-use same path
                 let backend_cell = self.backend.clone();
                 let window_for_async = window.clone();
                 let msaa_samples = self.options.common.msaa_samples;
@@ -523,7 +522,7 @@ impl ApplicationHandler<()> for App {
                 return;
             };
             let Ok(canvas) = elem.dyn_into::<web_sys::HtmlCanvasElement>() else {
-                log::error!("Element id '{id}' is not a canvas — falling back");
+                log::error!("Element id '{id}' is not a canvas - falling back");
                 attrs = attrs.with_canvas(None).with_append(true);
                 let window = match el.create_window(attrs) {
                     Ok(w) => Arc::new(w),

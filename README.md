@@ -14,20 +14,20 @@ Useful for simple apps (though aiming for bigger ones in the future), and for de
 
 ## Features
 
-- **Declarative composition** — `View` functions, reactive `Signal`s, `remember` / `remember_mutable`, derived state (`produce_state`), effects, and composition locals
-- **Cross-platform runners** — Desktop (winit), Android (native activity), WebAssembly (canvas + WGPU/WebGL)
-- **Layout** — Flexbox and Grid via [Taffy](https://github.com/DioxusLabs/taffy); modifiers for padding, gaps, alignment, clipping, borders, etc.
-- **GPU rendering** — Rectangles, rounded clips, borders, ellipses, text, and images through a WGPU backend (atlases + pipelines)
-- **Text** — Shaping, metrics, wrapping/ellipsis with caching (`repose-text` / Parley + font stack)
-- **Input** — Pointer events, scrolling, focus traversal, IME, gestures
-- **Widgets & building blocks** — Text, buttons, text fields, checkbox, switch, slider, `ScrollArea`, `LazyColumn` / lazy lists, pager, overlays & snackbars, color picker, selection, subcompose
-- **Material-inspired components** — Material 3-style controls, ripples, symbols/icons (`repose-material`)
-- **Navigation** — Typed back-stack navigation with transitions (`repose-navigation`)
-- **Canvas** — Custom painting surface (`repose-canvas`)
-- **Docking** — Dockable panels (`repose-docking`)
-- **Accessibility** — AccessKit on desktop + semantic node pipeline
-- **DevTools** — Inspector overlay (Ctrl+Shift+I)
-- **Animation** — Runtime animation clock and helpers
+- **Declarative composition** - `View` functions, reactive `Signal`s, `remember` / `remember_mutable`, derived state (`produce_state`), effects, and composition locals
+- **Cross-platform runners** - Desktop (winit), Android (native activity), WebAssembly (canvas + WGPU/WebGL)
+- **Layout** - Flexbox and Grid via [Taffy](https://github.com/DioxusLabs/taffy); modifiers for padding, gaps, alignment, clipping, borders, etc.
+- **GPU rendering** - Rectangles, rounded clips, borders, ellipses, text, and images through a WGPU backend (atlases + pipelines)
+- **Text** - Shaping, metrics, wrapping/ellipsis with caching (`repose-text` / Parley + font stack)
+- **Input** - Pointer events, scrolling, focus traversal, IME, gestures
+- **Widgets & building blocks** - Text, buttons, text fields, checkbox, switch, slider, `ScrollArea`, `LazyColumn` / lazy lists, pager, overlays & snackbars, color picker, selection, subcompose
+- **Material-inspired components** - Material 3-style controls, ripples, symbols/icons (`repose-material`)
+- **Navigation** - Typed back-stack navigation with transitions (`repose-navigation`)
+- **Canvas** - Custom painting surface (`repose-canvas`)
+- **Docking** - Dockable panels (`repose-docking`)
+- **Accessibility** - AccessKit on desktop + semantic node pipeline
+- **DevTools** - Inspector overlay (Ctrl+Shift+I)
+- **Animation** - Runtime animation clock and helpers
 
 ### Non-Goals
 

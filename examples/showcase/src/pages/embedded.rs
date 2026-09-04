@@ -226,7 +226,7 @@ pub fn screen() -> View {
         Section(
             "Interactive 3D (wgpu callback)",
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
-                Hint("Drag in any direction (directly scooped from egui, though bottom-up rotation doesn't work as intended) horizontal = yaw, vertical = pitch. prepare uploads vec2 uniform, paint draws with perspective + per-vertex gradient. Viewport = layout rect.")
+                Hint("Drag in any direction (directly scooped from egui, though bottom-up rotation wouldn't work as intended for the same reason) horizontal = yaw, vertical = pitch. prepare uploads vec2 uniform, paint draws with perspective + per-vertex gradient. Viewport = layout rect.")
                     .color(theme().on_surface_variant)
                     .size(12.0),
                 Row(Modifier::new().gap(sp::SM)).child((
@@ -275,23 +275,6 @@ pub fn screen() -> View {
                             }
                         }),
                     payload,
-                ),
-                Text("Code:")
-                    .color(theme().on_surface_variant)
-                    .size(11.0),
-                Box(Modifier::new()
-                    .background(theme().surface_container)
-                    .padding(sp::SM)
-                    .clip_rounded(8.0)
-                ).child(
-                    Text(r#"let angle = remember_mutable(|| Vec2{x:0.,y:0.});
-let is_dragging = remember_mutable(|| false);
-let payload = { let a=*angle.get(); Callback::new(DemoTriangle{angle:a}) };
-Embedded(Modifier::new().size(560.0,220.0)
-    .on_pointer_down(|ev|{ is_dragging.set(true); drag_pos.set(ev.position) })
-    .on_pointer_up(|_| is_dragging.set(false))
-    .on_pointer_move(|ev| if *is_dragging.get() { angle.update(|a|{a.x+=dx*0.01; a.y=(a.y+dy*0.01).clamp(-1.3,1.3)}) }),
-    payload)"#)
                 ),
             )),
         ),
