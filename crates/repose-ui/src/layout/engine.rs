@@ -46,10 +46,15 @@ impl LayoutEngine {
             self.text_cache.clear();
         }
 
-        // 1. Update tree
         let density_scale = locals::effective_density_scale();
-        let max_w_dp = size_px.0 as f32 / density_scale;
-        let max_h_dp = size_px.1 as f32 / density_scale;
+        let mut max_w_dp = size_px.0 as f32 / density_scale;
+        let mut max_h_dp = size_px.1 as f32 / density_scale;
+        if !max_w_dp.is_finite() || max_w_dp < 10.0 {
+            max_w_dp = 1280.0;
+        }
+        if !max_h_dp.is_finite() || max_h_dp < 10.0 {
+            max_h_dp = 800.0;
+        }
         self.tree
             .set_subcompose_scope(repose_core::SubcomposeScope::new(
                 0.0, max_w_dp, 0.0, max_h_dp,
@@ -63,23 +68,15 @@ impl LayoutEngine {
         // 2. Determine layout need
         let size_changed = self.last_size_px != Some(size_px);
         // 2a. Publish the current window size class as a default local so that
-        //     `window_size_class()` returns an up-to-date value even outside
-        //     a `with_window_size_class { ... }` scope. We only touch the
-        //     default when it actually changes to keep the lock uncontended.
-        // Reuse the same effective density_scale computed above (do not shadow)
-        let class = locals::calculate_window_size_class(size_px.0, size_px.1, density_scale);
+        let class = locals::calculate_window_size_class(
+            (max_w_dp * density_scale) as u32,
+            (max_h_dp * density_scale) as u32,
+            density_scale,
+        );
         if class != locals::window_size_class() {
             locals::set_window_size_class_default(class);
         }
-        let inv_density = if density_scale > 0.0 {
-            1.0 / density_scale
-        } else {
-            1.0
-        };
-        locals::set_window_container_size(
-            size_px.0 as f32 * inv_density,
-            size_px.1 as f32 * inv_density,
-        );
+        locals::set_window_container_size(max_w_dp, max_h_dp);
         let has_tree_mutation =
             !self.tree.dirty_nodes().is_empty() || !self.tree.removed_ids.is_empty();
         let mut need_layout =

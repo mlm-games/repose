@@ -349,14 +349,16 @@ impl LayoutEngine {
             };
             let mut new_cs = cs.clone();
             new_cs.flex_shrink = 0.0;
-            // Width always fills the scroll container.
-            new_cs.min_size.width = percent(1.0_f32);
+            if new_cs.min_size.width.is_auto() {
+                new_cs.min_size.width = percent(1.0_f32);
+            }
             // NOTE: Only the last child gets min-height so short pages still fill
             // the viewport. For vertical scroll this fill is only applied when the
             // container is a real viewport (definite/filled height); a content-sized
             // scroller (e.g. a `max_height` card grid) resolves the percentage against
             // its own content height and would over-stretch the last item, so it is
             // left sized to its content instead.
+
             if last == Some(child_tid)
                 && (axis != ScrollAxis::Vertical || viewport_main_is_definite)
             {

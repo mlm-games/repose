@@ -3,9 +3,11 @@
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use std::cell::RefCell;
+
 use repose_core::*;
 use repose_ui::overlay::OverlayHandle;
-use repose_ui::{Box, Column, ViewExt, ZStack};
+use repose_ui::{Box, Column, ViewExt, ZStack, box_with_constraints_with_key};
 use web_time::Duration;
 
 use super::AlertDialogDefaults;
@@ -94,6 +96,7 @@ fn preferred_dialog_width_dp(container_w: f32, container_h: f32) -> f32 {
     }
 }
 
+#[allow(dead_code)]
 fn dialog_available_bounds(
     use_platform_default_width: bool,
     use_platform_insets: bool,
@@ -188,7 +191,15 @@ pub fn Dialog(
     let scroll_state: Rc<repose_core::scroll::ScrollState> =
         remember_with_key(state.key("scroll"), repose_core::scroll::ScrollState::new);
 
-    // Animated scale/alpha for enter/exit
+    let platform_state: Rc<RefCell<(f32, f32, PaddingValues)>> =
+        remember_with_key(state.key("plat"), || {
+            RefCell::new((
+                super::DialogDefaults::MAX_WIDTH,
+                800.0,
+                PaddingValues::default(),
+            ))
+        });
+
     let spec = AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn);
     let anim = remember_state_with_key(state.key("anim"), || AnimatedValue::new(0.0, spec));
     let last_target = remember_state_with_key(state.key("atarget"), || f32::NAN);
@@ -221,74 +232,10 @@ pub fn Dialog(
                 let props = props.clone();
                 let scroll_state = scroll_state.clone();
                 move || {
-                    let progress = *anim.borrow().get();
-                    let alpha = progress.min(1.0);
-                    let scale = 0.8 + 0.2 * progress;
-                    let th = theme();
-                    let content = current_content.borrow().clone();
-                    let p = props.borrow().clone();
-
-                    // Recomputed every frame → correct after resize / IME / insets.
-                    let (platform_max_w, platform_max_h, inset_pad) = dialog_available_bounds(
-                        p.use_platform_default_width,
-                        p.use_platform_insets,
-                    );
-
-                    let dialog_mod = clamp_dialog_modifier(
-                        Modifier::new()
-                            .min_width(super::DialogDefaults::MIN_WIDTH)
-                            .max_width(super::DialogDefaults::MAX_WIDTH)
-                            .then(modifier.clone())
-                            .justify_content(JustifyContent::CENTER)
-                            .background(th.surface_container_high)
-                            .clip_rounded(th.shapes.extra_large)
-                            .alpha(alpha)
-                            .scale(scale)
-                            .focus_group()
-                            .clickable()
-                            .focusable(false)
-                            .on_key_event({
-                                let s = state.clone();
-                                let props = props.clone();
-                                move |ke| {
-                                    use repose_core::input::{Key, KeyEventType};
-                                    if ke.key == Key::Escape && ke.event_type == KeyEventType::Down
-                                    {
-                                        let (dismiss, cb) = {
-                                            let p = props.borrow();
-                                            (p.dismiss_on_back_press, p.on_dismiss_request.clone())
-                                        };
-                                        if dismiss {
-                                            if let Some(cb) = cb {
-                                                cb();
-                                            } else {
-                                                s.dismiss();
-                                            }
-                                            return true;
-                                        }
-                                    }
-                                    false
-                                }
-                            }),
-                        platform_max_w,
-                        platform_max_h,
-                    );
-
-                    // Scroll when content exceeds the clamped height (dropdown pattern).
-                    let axis_binding = match scroll_state.to_binding() {
-                        repose_core::scroll::ScrollBinding::Vertical(a) => a,
-                        _ => unreachable!(),
-                    };
-                    let scrollable_body = Box(Modifier::new()
-                        .fill_max_width()
-                        .max_height(platform_max_h)
-                        .vertical_scroll(axis_binding))
-                    .child(content);
-
-                    let dialog = Box(dialog_mod).child(scrollable_body);
-
+                    let progress_outer = *anim.borrow().get();
+                    let alpha_outer = progress_outer.min(1.0);
                     let scrim_color = AlertDialogDefaults::scrim_color();
-                    let scrim_alpha = (scrim_color.3 as f32 / 255.0) * alpha;
+                    let scrim_alpha = (scrim_color.3 as f32 / 255.0) * alpha_outer;
                     let scrim = Box(Modifier::new()
                         .fill_max_size()
                         .background(scrim_color.with_alpha_f32(scrim_alpha.clamp(0.0, 1.0)))
@@ -313,16 +260,132 @@ pub fn Dialog(
                             }
                         }));
 
-                    // Center inside the safe area (insets as padding), not the raw window.
+                    let p_for_measure = props.clone();
+                    let platform_state_for_measure = platform_state.clone();
+                    let props_snap = p_for_measure.borrow().clone();
+                    let insets_snap = window_insets();
+                    let measure_key = {
+                        use std::hash::{Hash, Hasher};
+                        let mut h = std::collections::hash_map::DefaultHasher::new();
+                        props_snap.use_platform_default_width.hash(&mut h);
+                        props_snap.use_platform_insets.hash(&mut h);
+                        insets_snap.left.to_bits().hash(&mut h);
+                        insets_snap.right.to_bits().hash(&mut h);
+                        insets_snap.top.to_bits().hash(&mut h);
+                        insets_snap.bottom.to_bits().hash(&mut h);
+                        insets_snap.ime_bottom.to_bits().hash(&mut h);
+                        h.finish()
+                    };
+                    let measure = box_with_constraints_with_key(
+                        measure_key,
+                        Modifier::new().fill_max_size().hit_passthrough(),
+                        move |scope| {
+                            let p = p_for_measure.borrow().clone();
+                            let mut pad = PaddingValues::default();
+                            if p.use_platform_insets {
+                                let insets = window_insets();
+                                pad.left = px_to_dp(insets.left);
+                                pad.right = px_to_dp(insets.right);
+                                pad.top = px_to_dp(insets.top);
+                                pad.bottom = px_to_dp(insets.bottom) + px_to_dp(insets.ime_bottom);
+                            }
+                            let win_w = if scope.max_width.is_finite() && scope.max_width > 10.0 {
+                                scope.max_width
+                            } else {
+                                1280.0
+                            };
+                            let win_h = if scope.max_height.is_finite() && scope.max_height > 10.0 {
+                                scope.max_height
+                            } else {
+                                800.0
+                            };
+                            let avail_w = (win_w - pad.left - pad.right).max(0.0);
+                            let avail_h = (win_h - pad.top - pad.bottom).max(0.0);
+                            let platform_max_w = if p.use_platform_default_width {
+                                preferred_dialog_width_dp(win_w, win_h)
+                                    .min(avail_w)
+                                    .min(super::DialogDefaults::MAX_WIDTH)
+                            } else {
+                                avail_w.min(super::DialogDefaults::MAX_WIDTH)
+                            };
+                            *platform_state_for_measure.borrow_mut() =
+                                (platform_max_w, avail_h, pad);
+                            Box(Modifier::new().size(0.0, 0.0))
+                        },
+                    );
+
+                    let content = current_content.borrow().clone();
+                    let progress = *anim.borrow().get();
+                    let alpha = progress.min(1.0);
+                    let scale = 0.8 + 0.2 * progress;
+                    let th = theme();
+
+                    let (platform_max_w, platform_max_h, pad) = *platform_state.borrow();
+
+                    let dialog_mod = clamp_dialog_modifier(
+                        Modifier::new()
+                            .min_width(super::DialogDefaults::MIN_WIDTH)
+                            .max_width(super::DialogDefaults::MAX_WIDTH)
+                            .then(modifier.clone())
+                            .justify_content(JustifyContent::CENTER)
+                            .background(th.surface_container_high)
+                            .clip_rounded(th.shapes.extra_large)
+                            .alpha(alpha)
+                            .scale(scale)
+                            .focus_group()
+                            .clickable()
+                            .focusable(false)
+                            .on_key_event({
+                                let s = state.clone();
+                                let props2 = props.clone();
+                                move |ke| {
+                                    use repose_core::input::{Key, KeyEventType};
+                                    if ke.key == Key::Escape && ke.event_type == KeyEventType::Down
+                                    {
+                                        let (dismiss, cb) = {
+                                            let p = props2.borrow();
+                                            (p.dismiss_on_back_press, p.on_dismiss_request.clone())
+                                        };
+                                        if dismiss {
+                                            if let Some(cb) = cb {
+                                                cb();
+                                            } else {
+                                                s.dismiss();
+                                            }
+                                            return true;
+                                        }
+                                    }
+                                    false
+                                }
+                            }),
+                        platform_max_w,
+                        platform_max_h,
+                    );
+
+                    let axis_binding = match scroll_state.to_binding() {
+                        repose_core::scroll::ScrollBinding::Vertical(a) => a,
+                        _ => unreachable!(),
+                    };
+                    let scrollable_body = Box(Modifier::new()
+                        .fill_max_width()
+                        .max_height(platform_max_h)
+                        .vertical_scroll(axis_binding))
+                    .child(content);
+
+                    let dialog = Box(dialog_mod).child(scrollable_body);
+
+                    let dialog_container = Box(Modifier::new()
+                        .fill_max_size()
+                        .padding_values(pad)
+                        .justify_content(JustifyContent::CENTER)
+                        .align_items(AlignItems::CENTER)
+                        .hit_passthrough())
+                    .child(dialog);
+
                     ZStack(Modifier::new().fill_max_size().absolute()).child((
                         scrim,
-                        Box(Modifier::new()
-                            .fill_max_size()
-                            .padding_values(inset_pad)
-                            .justify_content(JustifyContent::CENTER)
-                            .align_items(AlignItems::CENTER)
-                            .hit_passthrough())
-                        .child(dialog),
+                        measure,
+                        dialog_container,
                     ))
                 }
             });

@@ -405,7 +405,9 @@ impl ViewTree {
 
         for &child_id in &old_children {
             if let Some(node) = self.nodes.get(child_id) {
-                if let Some(key) = node.user_key {
+                if matches!(node.kind, ViewKind::SubcomposeLayout { .. }) {
+                    unkeyed_children.push(child_id);
+                } else if let Some(key) = node.user_key {
                     keyed_children.insert(key, child_id);
                 } else {
                     unkeyed_children.push(child_id);
@@ -420,6 +422,33 @@ impl ViewTree {
         let mut new_seen_keys: FxHashSet<u64> = FxHashSet::default();
 
         for (i, new_child) in new_children.iter().enumerate() {
+            let is_subcompose = matches!(new_child.kind, ViewKind::SubcomposeLayout { .. });
+            if is_subcompose {
+                if let Some(key) = new_child.modifier.key {
+                    new_seen_keys.insert(key);
+                }
+                let idx = i as u32;
+                let child_id = if unkeyed_index < unkeyed_children.len() {
+                    let existing_id = unkeyed_children[unkeyed_index];
+                    unkeyed_index += 1;
+                    used_nodes.insert(existing_id);
+                    self.reconcile_node(
+                        existing_id,
+                        new_child,
+                        Some(parent_id),
+                        child_depth,
+                        idx,
+                        ctx,
+                    )
+                } else {
+                    self.create_node(new_child, Some(parent_id), child_depth, idx, ctx)
+                };
+                new_child_ids.push(child_id);
+                if let Some(node) = self.nodes.get(child_id) {
+                    new_subtree_hashes.push(node.subtree_hash);
+                }
+                continue;
+            }
             if let Some(key) = new_child.modifier.key
                 && !new_seen_keys.insert(key)
             {

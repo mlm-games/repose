@@ -3046,6 +3046,7 @@ version = "0.28.16"
 dependencies = [
  "repose-core",
  "repose-text",
+ "repose-tree",
  "repose-ui",
  "web-time",
 ]
