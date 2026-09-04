@@ -44,8 +44,19 @@ pub fn animate_f32_from(
 
         *a.get()
     } else {
+        let needs_reregister = !animation_driver::is_registered(&anim_key) && a.is_animating();
+        let cur = *a.get();
         drop(lt);
-        *a.get()
+        drop(a);
+        if needs_reregister {
+            let reg_anim = anim.clone();
+            animation_driver::register(
+                anim_key,
+                Rc::new(RefCell::new(move || reg_anim.borrow_mut().update())),
+            );
+            request_frame();
+        }
+        cur
     }
 }
 
@@ -91,8 +102,22 @@ macro_rules! animate_from_impl {
 
                 *a.get()
             } else {
+                let needs_reregister =
+                    !repose_core::animation_driver::is_registered(&anim_key) && a.is_animating();
+                let cur = *a.get();
                 drop(lt);
-                *a.get()
+                drop(a);
+                if needs_reregister {
+                    let reg_anim = anim.clone();
+                    repose_core::animation_driver::register(
+                        anim_key,
+                        std::rc::Rc::new(std::cell::RefCell::new(move || {
+                            reg_anim.borrow_mut().update()
+                        })),
+                    );
+                    repose_core::request_frame();
+                }
+                cur
             }
         }
     };
