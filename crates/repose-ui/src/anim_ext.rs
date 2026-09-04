@@ -1226,6 +1226,21 @@ pub fn AnimatedVisibility(visible: bool, content: View, config: AnimatedVisibili
     let old_content = remember_with_key(format!("av_old:{key}"), || RefCell::new(None::<View>));
     let version = remember_with_key(format!("av_ver:{key}"), || RefCell::new(0u64));
     let prev = remember_with_key(format!("av_prev:{key}"), || RefCell::new(visible));
+    let prev_content_hash =
+        remember_with_key(format!("av_content_hash:{key}"), || RefCell::new(0u64));
+
+    let cur_hash = {
+        let mut h = DefaultHasher::new();
+        format!("{:?}", content).hash(&mut h);
+        h.finish()
+    };
+    if cur_hash != *prev_content_hash.borrow() {
+        if *prev.borrow() == visible && visible {
+            // Content changed while staying visible.
+            *version.borrow_mut() += 1;
+        }
+        *prev_content_hash.borrow_mut() = cur_hash;
+    }
 
     // Detect transition
     if *prev.borrow() != visible {
