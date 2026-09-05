@@ -190,6 +190,7 @@ impl LayoutEngine {
         if let Some(&t_id) = st.taffy_map.get(&node_id) {
             let _ = st.taffy.set_style(t_id, style);
             let _ = st.taffy.set_node_context(t_id, Some(ctx));
+            let _ = st.taffy.mark_dirty(t_id);
             let _ = st.taffy.set_children(t_id, &child_tids);
             if is_root {
                 st.root_taffy_id = Some(t_id);

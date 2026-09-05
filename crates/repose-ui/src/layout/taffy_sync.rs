@@ -281,6 +281,7 @@ impl LayoutEngine {
 
         let _ = self.taffy.set_style(taffy_id, new_style);
         let _ = self.taffy.set_node_context(taffy_id, Some(new_ctx));
+        let _ = self.taffy.mark_dirty(taffy_id);
 
         // If this node's parent is a ZStack, style_from_node just set
         // position back to Relative (the default), clobbering the

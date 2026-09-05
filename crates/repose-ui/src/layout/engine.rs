@@ -119,6 +119,35 @@ impl LayoutEngine {
             }
         }
 
+        if has_tree_mutation {
+            let dirty: Vec<NodeId> = self.tree.dirty_nodes().iter().copied().collect();
+            for nid in dirty {
+                if self.text_cache.contains_key(&nid) {
+                    if let Some(&tid) = self.taffy_map.get(&nid) {
+                        let _ = self.taffy.mark_dirty(tid);
+                    }
+                    self.text_cache.remove(&nid);
+                }
+                for st in self.scope_trees.values_mut() {
+                    if st.text_cache.contains_key(&nid) {
+                        if let Some(&tid) = st.taffy_map.get(&nid) {
+                            let _ = st.taffy.mark_dirty(tid);
+                        }
+                        st.text_cache.remove(&nid);
+                    }
+                }
+                if let Some(&tid) = self.taffy_map.get(&nid) {
+                    let _ = self.taffy.mark_dirty(tid);
+                }
+                for st in self.scope_trees.values_mut() {
+                    if let Some(&tid) = st.taffy_map.get(&nid) {
+                        let _ = st.taffy.mark_dirty(tid);
+                    }
+                }
+                self.paint_cache.remove(&nid);
+            }
+        }
+
         // Helpers
         let px = |dp_val: f32| dp_to_px(dp_val);
         let font_px = |dp_font: f32| dp_to_px(dp_font) * locals::text_scale().0;

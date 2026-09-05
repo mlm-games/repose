@@ -206,7 +206,7 @@ where
     if is_new {
         let old_ver = *version.borrow();
         let mut prev_view = content(prev.borrow().clone());
-        prev_view.scope_key = Some(format!("cf_{key}_old_v{old_ver}"));
+        prev_view.scope_key = None;
         prev_view.modifier.repaint_boundary = true;
         old_content.borrow_mut().replace(prev_view);
         prev.borrow_mut().clone_from(&target);
@@ -215,7 +215,7 @@ where
 
     let v = *version.borrow();
     let mut new_view = content(target.clone());
-    new_view.scope_key = Some(format!("cf_{key}_v{v}"));
+    new_view.scope_key = None;
     new_view.modifier.repaint_boundary = true;
 
     // Exit: versioned key ensures fresh animation state per transition.
@@ -450,7 +450,7 @@ where
     if is_new {
         let old_ver = *version.borrow();
         let mut prev_view = content(prev.borrow().clone());
-        prev_view.scope_key = Some(format!("ac_{key}_old_v{old_ver}"));
+        prev_view.scope_key = None;
         prev_view.modifier.repaint_boundary = true;
         old_content.borrow_mut().replace(prev_view);
         prev.borrow_mut().clone_from(&target_state);
@@ -459,7 +459,7 @@ where
 
     let v = *version.borrow();
     let mut new_view = content(target_state.clone());
-    new_view.scope_key = Some(format!("ac_{key}_v{v}"));
+    new_view.scope_key = None;
     new_view.modifier.repaint_boundary = true;
     let mut new_view = apply_enter(&key, v, &enter, &spec, new_view);
     new_view.modifier.key = Some(transition_child_key(&key, v, "ac_enter"));
@@ -1226,28 +1226,13 @@ pub fn AnimatedVisibility(visible: bool, content: View, config: AnimatedVisibili
     let old_content = remember_with_key(format!("av_old:{key}"), || RefCell::new(None::<View>));
     let version = remember_with_key(format!("av_ver:{key}"), || RefCell::new(0u64));
     let prev = remember_with_key(format!("av_prev:{key}"), || RefCell::new(visible));
-    let prev_content_hash =
-        remember_with_key(format!("av_content_hash:{key}"), || RefCell::new(0u64));
-
-    let cur_hash = {
-        let mut h = DefaultHasher::new();
-        format!("{:?}", content).hash(&mut h);
-        h.finish()
-    };
-    if cur_hash != *prev_content_hash.borrow() {
-        if *prev.borrow() == visible && visible {
-            // Content changed while staying visible.
-            *version.borrow_mut() += 1;
-        }
-        *prev_content_hash.borrow_mut() = cur_hash;
-    }
 
     // Detect transition
     if *prev.borrow() != visible {
         if !visible {
             // Going hidden: capture current content for exit animation
             let mut captured = content.clone();
-            captured.scope_key = Some(format!("av_{key}_old"));
+            captured.scope_key = None;
             captured.modifier.repaint_boundary = true;
             old_content.borrow_mut().replace(captured);
         } else {
@@ -1279,7 +1264,7 @@ pub fn AnimatedVisibility(visible: bool, content: View, config: AnimatedVisibili
 
     if visible {
         let mut content = content;
-        content.scope_key = Some(format!("av_{key}_content"));
+        content.scope_key = None;
         content.modifier.repaint_boundary = true;
         let mut entering = if v > 0 {
             apply_enter_inflow(&key, v, &enter, &spec, content)
