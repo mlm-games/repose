@@ -939,4 +939,163 @@ mod shadow_tests {
         let m0 = Modifier::new().elevation(0.0);
         assert!(m0.shadow.is_none(), "elevation(0) should not set shadow");
     }
+
+    #[test]
+    fn test_zstack_unkeyed_text_reuse_no_stale() {
+        use crate::{Column, ZStack};
+        let bigname_at = |label: &str, gx: f32, gy: f32| {
+            Column(
+                Modifier::new()
+                    .fill_max_size()
+                    .padding_values(PaddingValues {
+                        left: gx - 60.0,
+                        top: gy - 11.0,
+                        right: 0.0,
+                        bottom: 0.0,
+                    }),
+            )
+            .child(
+                Column(
+                    Modifier::new()
+                        .width(120.0)
+                        .height(22.0)
+                        .justify_content(JustifyContent::CENTER)
+                        .align_items(AlignItems::CENTER),
+                )
+                .child(Text(label.to_string()).size(10.0).font_family("Silkscreen")),
+            )
+        };
+        let normal_at = |label: String, gx: f32, gy: f32| {
+            Column(
+                Modifier::new()
+                    .fill_max_size()
+                    .padding_values(PaddingValues {
+                        left: gx,
+                        top: gy,
+                        right: 0.0,
+                        bottom: 0.0,
+                    }),
+            )
+            .child(
+                Column(Modifier::new().width(200.0).height(16.0))
+                    .child(Text(label).size(7.0).font_family("Silkscreen")),
+            )
+        };
+        let hitbox_at = |x: f32, y: f32| {
+            Column(
+                Modifier::new()
+                    .fill_max_size()
+                    .padding_values(PaddingValues {
+                        left: x,
+                        top: y,
+                        right: 0.0,
+                        bottom: 0.0,
+                    }),
+            )
+            .child(Column(
+                Modifier::new()
+                    .width(24.0)
+                    .height(16.0)
+                    .clickable()
+                    .on_click(|| {}),
+            ))
+        };
+        let make_page = |page: u8| {
+            let mut layers: Vec<View> = Vec::new();
+            layers.push(Column(
+                Modifier::new()
+                    .fill_max_size()
+                    .background(Color::from_rgba(0, 0, 0, 230)),
+            ));
+            if page == 0 {
+                for i in 0..4 {
+                    let gy = 56.0 + i as f32 * 20.0;
+                    layers.push(normal_at(format!("VOL {}", i), 80.0, gy));
+                    layers.push(normal_at(format!("{}%", 80 + i * 5), 200.0, gy));
+                    layers.push(hitbox_at(40.0, gy - 6.0));
+                    layers.push(hitbox_at(240.0, gy - 6.0));
+                    layers.push(normal_at("<".into(), 44.0, gy));
+                    layers.push(normal_at(">".into(), 252.0, gy));
+                }
+                layers.push(bigname_at("BACK", 160.0, 200.0));
+            } else {
+                for i in 0..6 {
+                    let gy = 48.0 + i as f32 * 18.0;
+                    layers.push(normal_at(format!("V Row {}", i), 80.0, gy));
+                    layers.push(hitbox_at(40.0, gy - 6.0));
+                    layers.push(hitbox_at(240.0, gy - 6.0));
+                }
+                for (j, label) in ["VIEW CREDITS", "PROFILE", "COLOR"].iter().enumerate() {
+                    let gy = 140.0 + j as f32 * 20.0;
+                    layers.push(bigname_at(label, 160.0, gy));
+                }
+                layers.push(bigname_at("BACK", 160.0, 200.0));
+            }
+            ZStack(Modifier::new().fill_max_size()).child(layers)
+        };
+        let mut engine = LayoutEngine::new();
+        let root0 = Column(Modifier::new().fill_max_size()).child(make_page(0));
+        let _ = engine.layout_frame(
+            &root0,
+            (800, 600),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        );
+        let root1 = Column(Modifier::new().fill_max_size()).child(make_page(1));
+        let _ = engine.layout_frame(
+            &root1,
+            (800, 600),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        );
+        let _ = engine.layout_frame(
+            &root0,
+            (800, 600),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        );
+        let (scene, _, _) = engine.layout_frame(
+            &root1,
+            (800, 600),
+            &HashMap::new(),
+            &Interactions::default(),
+            None,
+        );
+        let mut backs: Vec<Rect> = Vec::new();
+        for node in &scene.nodes {
+            if let SceneNode::Text { rect, text, .. } = node {
+                if text.as_ref() == "BACK" {
+                    backs.push(*rect);
+                }
+            }
+        }
+        assert_eq!(backs.len(), 1, "expected 1 BACK, got {:?}", backs);
+        let r = backs[0];
+        assert!(r.x > 100.0 && r.x < 200.0, "BACK x off: {}", r.x);
+        assert!(
+            r.y > 150.0 && r.y < 250.0,
+            "BACK y off: {} rect {:?}",
+            r.y,
+            r
+        );
+        let mut Credits: Vec<Rect> = Vec::new();
+        for node in &scene.nodes {
+            if let SceneNode::Text { rect, text, .. } = node {
+                if text.as_ref() == "VIEW CREDITS" {
+                    Credits.push(*rect);
+                }
+            }
+        }
+        assert_eq!(Credits.len(), 1);
+        let rc = Credits[0];
+        assert!(
+            rc.y > 100.0 && rc.y < 200.0,
+            "VIEW CREDITS y off: {} {:?}",
+            rc.y,
+            rc
+        );
+    }
 }
