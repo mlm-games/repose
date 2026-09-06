@@ -107,7 +107,14 @@ impl Drop for TimerHandle {
 fn insert(due: Due, repeat: Repeat, callback: Callback) -> TimerHandle {
     let id = unique_component_id();
     REGISTRY.with(|r| {
-        r.borrow_mut().insert(id, Entry { due, repeat, callback });
+        r.borrow_mut().insert(
+            id,
+            Entry {
+                due,
+                repeat,
+                callback,
+            },
+        );
     });
     request_frame();
     TimerHandle { id: Some(id) }
@@ -641,7 +648,11 @@ mod tests {
         });
         sleep_ms(30);
         poll();
-        assert_eq!(*ticks.borrow(), 1, "nested poll must not double-fire intervals");
+        assert_eq!(
+            *ticks.borrow(),
+            1,
+            "nested poll must not double-fire intervals"
+        );
     }
 
     #[test]

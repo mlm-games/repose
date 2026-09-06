@@ -177,9 +177,7 @@ impl Route {
             | Route::Text
             | Route::Canvas
             | Route::VectorMesh
-            | Route::Embedded => {
-                RouteGroup::Foundation
-            }
+            | Route::Embedded => RouteGroup::Foundation,
             Route::Lists
             | Route::Grid
             | Route::StaggeredGrid

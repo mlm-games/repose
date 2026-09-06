@@ -1,7 +1,7 @@
 //! Platform runners
-use repose_core::a11y::ReposeActionHandler;
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 use accesskit_winit::Adapter;
+use repose_core::a11y::ReposeActionHandler;
 use repose_core::*;
 use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -170,8 +170,8 @@ pub fn run_desktop_app_with_config(
     use winit::keyboard::{KeyCode, PhysicalKey};
     use winit::window::{Window, WindowAttributes};
 
-    use repose_core::a11y::A11yTree;
     use repose_app::ReposeRuntime;
+    use repose_core::a11y::A11yTree;
 
     struct ReposeActivationHandler {
         initial_tree: Option<accesskit::TreeUpdate>,
