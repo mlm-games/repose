@@ -2,6 +2,7 @@ use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::panic::Location;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use rustc_hash::FxHashMap;
 
@@ -20,6 +21,15 @@ thread_local! {
 
 /// Sentinel value meaning "clear focus entirely".
 pub const CLEAR_FOCUS_MARKER: u64 = u64::MAX;
+
+/// Process-wide unique id for namespacing `remember_with_key` slots
+/// (dialogs, menus, sheets, tooltips, ...).
+static COMPONENT_ID: AtomicU64 = AtomicU64::new(1);
+
+/// Returns a fresh unique component id. See [`COMPONENT_ID`].
+pub fn unique_component_id() -> u64 {
+    COMPONENT_ID.fetch_add(1, Ordering::Relaxed)
+}
 
 pub fn take_focus_request() -> Option<u64> {
     FOCUS_REQUEST.with(|r| r.replace(None))

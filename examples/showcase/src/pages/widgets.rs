@@ -48,7 +48,7 @@ pub fn screen() -> View {
     let tab_index = remember(|| signal(0usize));
     let search_state = remember(SearchBarState::new);
     let tooltip_state = remember(TooltipState::new);
-    let tooltip_state_inner: Rc<TooltipState> = tooltip_state.as_ref().clone();
+    let tooltip_state_inner = tooltip_state.clone();
 
     let th = theme();
 
@@ -295,6 +295,7 @@ pub fn screen() -> View {
                 TooltipBox(
                     "This is a tooltip with the M3 rich style.",
                     tooltip_state_inner.clone(),
+                    Modifier::new(),
                     Box(Modifier::new()
                         .padding(sp::MD)
                         .background(th.surface_container)

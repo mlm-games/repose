@@ -2,7 +2,6 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::animation::AnimationSpec;
 use repose_core::*;
@@ -13,12 +12,9 @@ use repose_ui::{
 
 use super::*;
 
-static BOTTOMSHEET_COUNTER: AtomicU64 = AtomicU64::new(0);
-
 /// Configuration for [`BottomSheet`] / `ModalBottomSheet`.
 #[derive(Clone, Debug)]
 pub struct BottomSheetConfig {
-    pub modifier: Modifier,
     pub container_color: Color,
     pub content_color: Color,
     pub scrim_color: Color,
@@ -36,7 +32,6 @@ pub struct BottomSheetConfig {
 impl Default for BottomSheetConfig {
     fn default() -> Self {
         Self {
-            modifier: Modifier::new(),
             container_color: BottomSheetDefaults::container_color(),
             content_color: BottomSheetDefaults::content_color(),
             scrim_color: BottomSheetDefaults::scrim_color(),
@@ -61,7 +56,7 @@ pub fn BottomSheet(
     config: BottomSheetConfig,
 ) -> View {
     let th = theme();
-    let id = remember(|| BOTTOMSHEET_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let id = remember(unique_component_id);
 
     let opacity = animate_f32_from(
         format!("bs_opacity_{id}"),
@@ -78,8 +73,7 @@ pub fn BottomSheet(
         Box(modifier
             .alpha(opacity)
             .background(config.container_color)
-            .clip_rounded(config.shape_radius)
-            .then(config.modifier))
+            .clip_rounded(config.shape_radius))
         .child(with_content_color(config.content_color, move || content)),
         Box(Modifier::new()
             .width(1.0)

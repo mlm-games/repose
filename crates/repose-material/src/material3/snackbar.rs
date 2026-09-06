@@ -15,7 +15,6 @@ use super::*;
 /// Configuration for [`Snackbar`].
 #[derive(Clone)]
 pub struct SnackbarConfig {
-    pub modifier: Modifier,
     pub container_color: Color,
     pub content_color: Color,
     pub action_color: Color,
@@ -34,7 +33,6 @@ pub struct SnackbarConfig {
 impl std::fmt::Debug for SnackbarConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SnackbarConfig")
-            .field("modifier", &self.modifier)
             .field("container_color", &self.container_color)
             .field("content_color", &self.content_color)
             .field("action_color", &self.action_color)
@@ -56,7 +54,6 @@ impl std::fmt::Debug for SnackbarConfig {
 impl Default for SnackbarConfig {
     fn default() -> Self {
         Self {
-            modifier: Modifier::new(),
             container_color: SnackbarDefaults::container_color(),
             content_color: SnackbarDefaults::content_color(),
             action_color: SnackbarDefaults::action_color(),

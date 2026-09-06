@@ -2,7 +2,6 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
 use repose_ui::{
@@ -16,7 +15,6 @@ use super::*;
 /// Configuration for [`DropdownMenu`].
 #[derive(Clone, Debug)]
 pub struct DropdownMenuConfig {
-    pub modifier: Modifier,
     pub container_color: Color,
     pub item_text_color: Color,
     pub disabled_item_text_color: Color,
@@ -36,7 +34,6 @@ pub struct DropdownMenuConfig {
 impl Default for DropdownMenuConfig {
     fn default() -> Self {
         Self {
-            modifier: Modifier::new(),
             container_color: DropdownMenuDefaults::container_color(),
             item_text_color: DropdownMenuDefaults::item_text_color(),
             disabled_item_text_color: DropdownMenuDefaults::disabled_item_text_color(),
@@ -133,8 +130,6 @@ impl MenuState {
     }
 }
 
-static DROPDOWN_COUNTER: AtomicU64 = AtomicU64::new(0);
-
 const DDM_SCALE_FROM: f32 = 0.8;
 const DDM_VERTICAL_PADDING: f32 = 8.0;
 const DDM_ITEM_H_PAD: f32 = 12.0;
@@ -162,7 +157,7 @@ pub fn DropdownMenu(
     config: DropdownMenuConfig,
 ) -> View {
     let th = theme();
-    let ddm_id = remember(|| DROPDOWN_COUNTER.fetch_add(1, Ordering::Relaxed));
+    let ddm_id = remember(unique_component_id);
     let overlay_guard = remember_with_key(format!("ddm_oguard_{ddm_id}"), || {
         RefCell::new(None::<OverlayGuard>)
     });

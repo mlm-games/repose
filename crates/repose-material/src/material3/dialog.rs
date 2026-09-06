@@ -1,7 +1,6 @@
 #![allow(non_snake_case)]
 
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use std::cell::RefCell;
 
@@ -13,8 +12,6 @@ use web_time::Duration;
 use super::AlertDialogDefaults;
 use super::{DatePicker, DatePickerConfig, DatePickerState};
 use super::{TimePicker, TimePickerConfig, TimePickerState};
-
-static DIALOG_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// State controlling dialog visibility.
 pub struct DialogState {
@@ -32,7 +29,7 @@ impl DialogState {
     pub fn new() -> Self {
         Self {
             visible: signal(false),
-            id: DIALOG_COUNTER.fetch_add(1, Ordering::Relaxed),
+            id: unique_component_id(),
         }
     }
 
@@ -94,40 +91,6 @@ fn preferred_dialog_width_dp(container_w: f32, container_h: f32) -> f32 {
     } else {
         super::DialogDefaults::PREFERRED_WIDTH_COMPACT
     }
-}
-
-#[allow(dead_code)]
-fn dialog_available_bounds(
-    use_platform_default_width: bool,
-    use_platform_insets: bool,
-) -> (f32 /*max_w*/, f32 /*max_h*/, PaddingValues) {
-    let win_w = get_window_container_width().max(0.0);
-    let win_h = get_window_container_height().max(0.0);
-
-    let mut pad = PaddingValues::default();
-    if use_platform_insets {
-        let insets = window_insets();
-        // WindowInsets fields are physical px (see ime_padding / system_bars_padding).
-        pad.left = px_to_dp(insets.left);
-        pad.right = px_to_dp(insets.right);
-        pad.top = px_to_dp(insets.top);
-        pad.bottom = px_to_dp(insets.bottom) + px_to_dp(insets.ime_bottom);
-    }
-
-    let avail_w = (win_w - pad.left - pad.right).max(0.0);
-    let avail_h = (win_h - pad.top - pad.bottom).max(0.0);
-
-    let max_w = if use_platform_default_width {
-        preferred_dialog_width_dp(win_w, win_h)
-            .min(avail_w)
-            .min(super::DialogDefaults::MAX_WIDTH)
-    } else {
-        avail_w.min(super::DialogDefaults::MAX_WIDTH)
-    };
-    // Always keep dialog fully on-screen vertically.
-    let max_h = avail_h;
-
-    (max_w.max(0.0), max_h.max(0.0), pad)
 }
 
 /// After merging caller modifiers, clamp size so the dialog can never escape the viewport.

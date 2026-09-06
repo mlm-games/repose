@@ -60,10 +60,6 @@ impl OverlayHandle {
         self.show_entry(builder, z_index, pass_through)
     }
 
-    pub fn show_builder(&self, builder: Rc<dyn Fn() -> View>) -> u64 {
-        self.show_entry(builder, 0.0, false)
-    }
-
     pub fn show_entry(
         &self,
         builder: Rc<dyn Fn() -> View>,
