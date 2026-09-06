@@ -599,14 +599,12 @@ impl LayoutEngine {
         }
 
         if let Some(sz) = m.required_size {
-            let w = length(px(sz.width.max(0.0)));
-            let h = length(px(sz.height.max(0.0)));
-            s.size.width = w;
-            s.size.height = h;
-            s.min_size.width = w;
-            s.min_size.height = h;
-            s.max_size.width = w;
-            s.max_size.height = h;
+            s.size.width = length(px(sz.width.max(0.0)));
+            s.size.height = length(px(sz.height.max(0.0)));
+            s.min_size.width = length(px(sz.width.max(0.0)));
+            s.min_size.height = length(px(sz.height.max(0.0)));
+            s.max_size.width = length(px(sz.width.max(0.0)));
+            s.max_size.height = length(px(sz.height.max(0.0)));
             width_set = true;
             height_set = true;
         }

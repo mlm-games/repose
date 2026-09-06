@@ -53,7 +53,7 @@ console_log = "1"
 getrandom = "0.3"
 bytemuck = { version = "1.25.0", features = ["derive"] }
 
-taffy = "0.13"
+taffy = "0.14"
 winit = "0.30"
 wgpu = { version = "30", features = ["webgl"] }
 pollster = "1"

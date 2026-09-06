@@ -30,63 +30,72 @@ impl LayoutEngine {
         let _ = taffy.compute_layout_with_measure(
             taffy_root,
             available,
-            |known, avail, taffy_node, ctx, _style| {
-                // Check if this is a scope root marker -> return cached scope size
-                if let Some(&node_id) = reverse_map.get(&taffy_node) {
-                    // Custom layout modifier: delegate measurement to user callback
-                    if let Some(node) = tree.get(node_id)
-                        && let Some(ref layout_cb) = node.modifier.layout
-                    {
-                        let scale = dp_to_px(1.0);
-                        let avail_w = match avail.width {
-                            AvailableSpace::Definite(w) => w / scale,
-                            _ => f32::INFINITY,
-                        };
-                        let avail_h = match avail.height {
-                            AvailableSpace::Definite(h) => h / scale,
-                            _ => f32::INFINITY,
-                        };
-                        let known_w = known.width.map(|w| w / scale).unwrap_or(f32::INFINITY);
-                        let known_h = known.height.map(|h| h / scale).unwrap_or(f32::INFINITY);
-                        let constraints = repose_core::modifier::LayoutConstraints {
-                            min_width: 0.0,
-                            max_width: avail_w.min(known_w),
-                            min_height: 0.0,
-                            max_height: avail_h.min(known_h),
-                        };
-                        let (w_dp, h_dp) = layout_cb(constraints);
-                        return taffy::geometry::Size {
-                            width: w_dp * scale,
-                            height: h_dp * scale,
-                        };
-                    }
-                    if scope_root_map.contains_key(&node_id)
-                        && let Some(key) = node_to_scope.get(&node_id)
-                        && let Some(sz) = Self::compute_scope_layout(
-                            scope_trees,
-                            scope_root_map,
-                            node_to_scope,
+            |inputs, taffy_node, ctx, style| {
+                taffy::compute_leaf_layout(
+                    inputs,
+                    style,
+                    |_, _| 0.0,
+                    |known, avail| {
+                        // Check if this is a scope root marker -> return cached scope size
+                        if let Some(&node_id) = reverse_map.get(&taffy_node) {
+                            // Custom layout modifier: delegate measurement to user callback
+                            if let Some(node) = tree.get(node_id)
+                                && let Some(ref layout_cb) = node.modifier.layout
+                            {
+                                let scale = dp_to_px(1.0);
+                                let avail_w = match avail.width {
+                                    AvailableSpace::Definite(w) => w / scale,
+                                    _ => f32::INFINITY,
+                                };
+                                let avail_h = match avail.height {
+                                    AvailableSpace::Definite(h) => h / scale,
+                                    _ => f32::INFINITY,
+                                };
+                                let known_w =
+                                    known.width.map(|w| w / scale).unwrap_or(f32::INFINITY);
+                                let known_h =
+                                    known.height.map(|h| h / scale).unwrap_or(f32::INFINITY);
+                                let constraints = repose_core::modifier::LayoutConstraints {
+                                    min_width: 0.0,
+                                    max_width: avail_w.min(known_w),
+                                    min_height: 0.0,
+                                    max_height: avail_h.min(known_h),
+                                };
+                                let (w_dp, h_dp) = layout_cb(constraints);
+                                return taffy::geometry::Size {
+                                    width: w_dp * scale,
+                                    height: h_dp * scale,
+                                };
+                            }
+                            if scope_root_map.contains_key(&node_id)
+                                && let Some(key) = node_to_scope.get(&node_id)
+                                && let Some(sz) = Self::compute_scope_layout(
+                                    scope_trees,
+                                    scope_root_map,
+                                    node_to_scope,
+                                    tree,
+                                    font_px,
+                                    px,
+                                    key,
+                                    known,
+                                    avail,
+                                )
+                            {
+                                return sz;
+                            }
+                        }
+                        Self::measure_node(
+                            known,
+                            avail,
+                            taffy_node,
+                            ctx.as_deref(),
+                            text_cache,
+                            reverse_map,
                             tree,
                             font_px,
                             px,
-                            key,
-                            known,
-                            avail,
                         )
-                    {
-                        return sz;
-                    }
-                }
-                Self::measure_node(
-                    known,
-                    avail,
-                    taffy_node,
-                    ctx.as_deref(),
-                    text_cache,
-                    reverse_map,
-                    tree,
-                    font_px,
-                    px,
+                    },
                 )
             },
         );
@@ -140,34 +149,41 @@ impl LayoutEngine {
         let _ = st_taffy.compute_layout_with_measure(
             root_tid,
             scope_avail,
-            |known2, avail2, tn, ctx2, _style2| {
-                if let Some(&nid) = st_rev.get(&tn)
-                    && scope_root_map.contains_key(&nid)
-                    && let Some(nested_key) = node_to_scope.get(&nid)
-                    && let Some(sz) = Self::compute_scope_layout(
-                        scope_trees,
-                        scope_root_map,
-                        node_to_scope,
-                        tree,
-                        font_px,
-                        px,
-                        nested_key,
-                        known2,
-                        avail2,
-                    )
-                {
-                    return sz;
-                }
-                Self::measure_node(
-                    known2,
-                    avail2,
-                    tn,
-                    ctx2.as_deref(),
-                    &mut st_tc,
-                    &st_rev,
-                    tree,
-                    font_px,
-                    px,
+            |inputs, tn, ctx2, style2| {
+                taffy::compute_leaf_layout(
+                    inputs,
+                    style2,
+                    |_, _| 0.0,
+                    |known2, avail2| {
+                        if let Some(&nid) = st_rev.get(&tn)
+                            && scope_root_map.contains_key(&nid)
+                            && let Some(nested_key) = node_to_scope.get(&nid)
+                            && let Some(sz) = Self::compute_scope_layout(
+                                scope_trees,
+                                scope_root_map,
+                                node_to_scope,
+                                tree,
+                                font_px,
+                                px,
+                                nested_key,
+                                known2,
+                                avail2,
+                            )
+                        {
+                            return sz;
+                        }
+                        Self::measure_node(
+                            known2,
+                            avail2,
+                            tn,
+                            ctx2.as_deref(),
+                            &mut st_tc,
+                            &st_rev,
+                            tree,
+                            font_px,
+                            px,
+                        )
+                    },
                 )
             },
         );
@@ -456,9 +472,9 @@ impl LayoutEngine {
                                             if cut == line_start
                                                 && let Some((ofs, gr)) =
                                                     tok.grapheme_indices(true).next()
-                                                {
-                                                    cut = tok_abs_start + ofs + gr.len();
-                                                }
+                                            {
+                                                cut = tok_abs_start + ofs + gr.len();
+                                            }
                                             out.push((line_start, cut));
                                             line_start = cut;
                                         }
