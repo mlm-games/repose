@@ -116,10 +116,7 @@ impl LayoutEngine {
             let hit_ids: FxHashSet<u64> = hits.iter().map(|h| h.id).collect();
             for h in hits.iter_mut() {
                 let mut cur = h.id;
-                loop {
-                    let Some(p) = parent_view.get(&cur).copied().flatten() else {
-                        break;
-                    };
+                while let Some(p) = parent_view.get(&cur).copied().flatten() {
                     if hit_ids.contains(&p) {
                         h.parent = Some(p);
                         break;
@@ -476,9 +473,9 @@ impl LayoutEngine {
                 parent_offset_px,
                 sem_parent,
                 alpha_q,
-                nodes: Arc::new(local_scene.nodes.clone()),
-                hits: Arc::new(local_hits.clone()),
-                sems: Arc::new(local_sems.clone()),
+                nodes: Rc::new(local_scene.nodes.clone()),
+                hits: Rc::new(local_hits.clone()),
+                sems: Rc::new(local_sems.clone()),
             };
             self.paint_cache.insert(node_id, entry);
             scene.nodes.extend(local_scene.nodes);

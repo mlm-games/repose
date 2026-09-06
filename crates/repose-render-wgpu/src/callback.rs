@@ -168,6 +168,8 @@ impl Callback {
     }
 
     /// Create payload without caring about rect (rect is supplied via `SceneNode`).
+    // Public API used downstream; keep the `new` name despite the Arc return.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(callback: impl WgpuCallback + 'static) -> PaintCallbackPayload {
         Arc::new(Self(Box::new(callback)))
     }

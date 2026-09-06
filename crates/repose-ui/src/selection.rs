@@ -17,7 +17,6 @@ use web_time::{Duration, Instant};
 use crate::textfield::{caret_xy_for_byte, index_for_xy_bytes, word_range};
 use crate::{Text, TextStyle};
 
-const DOUBLE_TAP_MS: u64 = 300;
 const TRIPLE_TAP_MS: u64 = 500;
 const TAP_SLOP_PX: f32 = 12.0;
 
@@ -110,10 +109,9 @@ fn make_selectable(
             if let (Some(t), Some(p)) = (*last_tap_time.borrow(), *last_tap_pos.borrow()) {
                 let dt = now.saturating_duration_since(t);
                 let dist = ((pos.0 - p.0).powi(2) + (pos.1 - p.1).powi(2)).sqrt();
-                if dt < Duration::from_millis(DOUBLE_TAP_MS) && dist < TAP_SLOP_PX {
-                    count = count.saturating_add(1);
-                    is_multi = true;
-                } else if dt < Duration::from_millis(TRIPLE_TAP_MS) && dist < TAP_SLOP_PX {
+                // Taps within the triple-tap timeout keep
+                // incrementing (double-tap is the fast path of the same window).
+                if dt < Duration::from_millis(TRIPLE_TAP_MS) && dist < TAP_SLOP_PX {
                     count = count.saturating_add(1);
                     is_multi = true;
                 } else {

@@ -1198,14 +1198,14 @@ where
 
     let top_padding_dp = px_to_dp(padding_top_px).max(0.0);
     if top_padding_dp > 0.0 {
-        for col in 0..columns {
-            col_children[col].push(crate::Box(
+        for col_child in col_children.iter_mut() {
+            col_child.push(crate::Box(
                 Modifier::new().fill_max_width().height(top_padding_dp),
             ));
         }
     }
 
-    for col in 0..columns {
+    for (col, col_child) in col_children.iter_mut().enumerate() {
         let mut prev_y = padding_top_px;
         for (i, p) in placements.iter().enumerate() {
             if p.col != col || i < first_idx || i >= last_idx {
@@ -1213,7 +1213,7 @@ where
             }
             let spacer_y = (p.y_px + padding_top_px) - prev_y;
             if spacer_y > 0.0 {
-                col_children[col].push(crate::Box(
+                col_child.push(crate::Box(
                     Modifier::new()
                         .fill_max_width()
                         .height(px_to_dp(spacer_y).max(0.0)),
@@ -1226,14 +1226,14 @@ where
                 let in_view =
                     vis_bot > scroll_offset_px && vis_top < scroll_offset_px + viewport_height_px;
                 if in_view {
-                    col_children[col].push(scope_item(
+                    col_child.push(scope_item(
                         crate::Box(Modifier::new().fill_max_width().height(h_dp))
                             .child(item_builder(item.clone(), i)),
                         i as u64,
                         state_id,
                     ));
                 } else {
-                    col_children[col]
+                    col_child
                         .push(crate::Box(Modifier::new().fill_max_width().height(h_dp)));
                 }
             }
@@ -1241,7 +1241,7 @@ where
         }
         let remaining = total_content_height_px - prev_y;
         if remaining > 0.0 {
-            col_children[col].push(crate::Box(
+            col_child.push(crate::Box(
                 Modifier::new()
                     .fill_max_width()
                     .height(px_to_dp(remaining).max(0.0)),
@@ -1251,8 +1251,8 @@ where
 
     let bottom_padding_dp = px_to_dp(content_padding.bottom).max(0.0);
     if bottom_padding_dp > 0.0 {
-        for col in 0..columns {
-            col_children[col].push(crate::Box(
+        for col_child in col_children.iter_mut() {
+            col_child.push(crate::Box(
                 Modifier::new().fill_max_width().height(bottom_padding_dp),
             ));
         }

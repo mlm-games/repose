@@ -158,9 +158,7 @@ pub fn PullToRefresh(
     } else {
         spinner_rotation_rad
     };
-    let alpha = if refreshing {
-        1.0
-    } else if distance_fraction >= 1.0 {
+    let alpha = if refreshing || distance_fraction >= 1.0 {
         1.0
     } else {
         0.3

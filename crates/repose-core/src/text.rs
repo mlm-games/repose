@@ -377,11 +377,9 @@ impl TextLayoutResult {
     }
 
     pub fn get_word_boundary(&self, _offset: usize) -> super::TextRange {
-        // Simple word boundary: extend to spaces or line boundaries
-        let text = ""; // We don't store the full text in layout result
-        let start = if text.is_empty() { 0 } else { 0 };
-        let end = if text.is_empty() { 0 } else { 0 };
-        super::TextRange::new(start, end)
+        // Stub: layout results don't retain the full text, so real word
+        // boundaries can't be computed yet.
+        super::TextRange::new(0, 0)
     }
 
     pub fn get_paragraph_direction(&self, _offset: usize) -> u8 {

@@ -432,9 +432,10 @@ impl LayoutEngine {
         _font_px: &dyn Fn(f32) -> f32,
     ) -> taffy::Style {
         let px = |dp_val: f32| dp_to_px(dp_val);
-        let mut s = taffy::Style::default();
-
-        s.display = Display::Flex;
+        let mut s = taffy::Style {
+            display: Display::Flex,
+            ..Default::default()
+        };
         match kind {
             ViewKind::Row => {
                 s.flex_direction = if locals::text_direction() == locals::TextDirection::Rtl {

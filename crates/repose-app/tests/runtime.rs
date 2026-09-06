@@ -18,20 +18,22 @@ const TF_ID: u64 = 100;
 const BTN_ID: u64 = 200;
 
 fn textfield_frame(id: u64) -> Frame {
-    let mut hr = HitRegion::default();
-    hr.id = id;
-    hr.rect = Rect {
-        x: 0.0,
-        y: 0.0,
-        w: 200.0,
-        h: 30.0,
+    let hr = HitRegion {
+        id,
+        rect: Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 200.0,
+            h: 30.0,
+        },
+        focusable: true,
+        tf_state_key: Some(id),
+        tf_multiline: false,
+        tf_enabled: true,
+        tf_read_only: false,
+        cursor: Some(CursorIcon::Text),
+        ..Default::default()
     };
-    hr.focusable = true;
-    hr.tf_state_key = Some(id);
-    hr.tf_multiline = false;
-    hr.tf_enabled = true;
-    hr.tf_read_only = false;
-    hr.cursor = Some(CursorIcon::Text);
 
     let rect = hr.rect;
     let sem = SemNode {
@@ -78,19 +80,21 @@ fn escape_not_consumed_when_idle() {
 #[test]
 fn release_reports_clicked_id() {
     let mut rt = ReposeRuntime::new();
-    let mut hr = HitRegion::default();
-    hr.id = BTN_ID;
-    hr.rect = Rect {
-        x: 0.0,
-        y: 0.0,
-        w: 50.0,
-        h: 50.0,
-    };
     let clicked = Rc::new(RefCell::new(false));
     let clicked_cb = clicked.clone();
-    hr.on_click = Some(Rc::new(move || {
-        *clicked_cb.borrow_mut() = true;
-    }));
+    let hr = HitRegion {
+        id: BTN_ID,
+        rect: Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 50.0,
+            h: 50.0,
+        },
+        on_click: Some(Rc::new(move || {
+            *clicked_cb.borrow_mut() = true;
+        })),
+        ..Default::default()
+    };
     let frame = Frame {
         scene: Scene::default(),
         hit_regions: vec![hr],
@@ -117,15 +121,17 @@ fn release_reports_clicked_id() {
 #[test]
 fn release_click_off_target_reports_nothing() {
     let mut rt = ReposeRuntime::new();
-    let mut hr = HitRegion::default();
-    hr.id = BTN_ID;
-    hr.rect = Rect {
-        x: 0.0,
-        y: 0.0,
-        w: 50.0,
-        h: 50.0,
+    let hr = HitRegion {
+        id: BTN_ID,
+        rect: Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 50.0,
+            h: 50.0,
+        },
+        on_click: Some(Rc::new(|| {})),
+        ..Default::default()
     };
-    hr.on_click = Some(Rc::new(|| {}));
     let frame = Frame {
         scene: Scene::default(),
         hit_regions: vec![hr],
@@ -153,17 +159,19 @@ fn button_frame(
     on_double_click: Option<Rc<dyn Fn()>>,
     on_long_click: Option<Rc<dyn Fn()>>,
 ) -> Frame {
-    let mut hr = HitRegion::default();
-    hr.id = id;
-    hr.rect = Rect {
-        x: 0.0,
-        y: 0.0,
-        w: 100.0,
-        h: 50.0,
+    let hr = HitRegion {
+        id,
+        rect: Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 100.0,
+            h: 50.0,
+        },
+        on_click,
+        on_double_click,
+        on_long_click,
+        ..Default::default()
     };
-    hr.on_click = on_click;
-    hr.on_double_click = on_double_click;
-    hr.on_long_click = on_long_click;
     Frame {
         scene: Scene::default(),
         hit_regions: vec![hr],

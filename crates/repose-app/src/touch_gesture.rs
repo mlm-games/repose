@@ -14,43 +14,8 @@ struct DynGestureState {
 
 #[derive(Clone, Debug)]
 struct GestureState {
-    start_time: f64,
-    start_pointer_pos: Vec2,
-    pinch_type: PinchType,
     previous: Option<DynGestureState>,
     current: DynGestureState,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PinchType {
-    Horizontal,
-    Vertical,
-    Proportional,
-}
-
-impl PinchType {
-    fn classify(touches: &BTreeMap<u64, (f32, f32)>) -> Self {
-        if touches.len() == 2 {
-            let mut it = touches.values();
-            let Some(a) = it.next().copied() else {
-                return Self::Proportional;
-            };
-            let Some(b) = it.next().copied() else {
-                return Self::Proportional;
-            };
-            let dx = (a.0 - b.0).abs();
-            let dy = (a.1 - b.1).abs();
-            if dx > 3.0 * dy {
-                Self::Horizontal
-            } else if dy > 3.0 * dx {
-                Self::Vertical
-            } else {
-                Self::Proportional
-            }
-        } else {
-            Self::Proportional
-        }
-    }
 }
 
 pub struct MultiTouchDelta {
@@ -122,9 +87,7 @@ impl TouchGestureState {
             avg_distance += (dx * dx + dy * dy).sqrt();
         }
         avg_distance *= n_recip;
-        let Some(first) = self.active_touches.values().next().copied() else {
-            return None;
-        };
+        let first = self.active_touches.values().next().copied()?;
         let heading = (avg_pos.x - first.0).atan2(avg_pos.y - first.1);
         Some(DynGestureState {
             avg_distance: avg_distance.max(1.0),
@@ -133,7 +96,7 @@ impl TouchGestureState {
         })
     }
 
-    fn update_gesture(&mut self, time: f64, pointer_pos: Option<Vec2>, added_or_removed: bool) {
+    fn update_gesture(&mut self, pointer_pos: Option<Vec2>, added_or_removed: bool) {
         if let Some(dyn_state) = self.calc_dynamic_state() {
             if let Some(state) = &mut self.gesture_state {
                 state.previous = Some(state.current);
@@ -145,11 +108,8 @@ impl TouchGestureState {
                     self.accum_zoom = 1.0;
                     self.accum_rotation = 0.0;
                 }
-            } else if let Some(pointer_pos) = pointer_pos {
+            } else if pointer_pos.is_some() {
                 self.gesture_state = Some(GestureState {
-                    start_time: time,
-                    start_pointer_pos: pointer_pos,
-                    pinch_type: PinchType::classify(&self.active_touches),
                     previous: None,
                     current: dyn_state,
                 });
@@ -212,8 +172,7 @@ impl TouchGestureState {
             self.pending_primary = Some((pos, web_time::Instant::now(), tid));
             self.primary_press_dispatched = false;
             if self.active_touches.len() >= 2 {
-                let time = web_time::Instant::now().elapsed().as_secs_f64();
-                self.update_gesture(time, Some(pos), true);
+                self.update_gesture(Some(pos), true);
             }
             return None;
         }
@@ -225,12 +184,11 @@ impl TouchGestureState {
             self.primary_press_dispatched = false;
         }
         if self.active_touches.len() >= 2 {
-            let time = web_time::Instant::now().elapsed().as_secs_f64();
             let pointer_pos = self
                 .primary_touch_id
                 .and_then(|pid| self.active_touches.get(&pid).copied())
                 .map(|(x, y)| Vec2 { x, y });
-            self.update_gesture(time, pointer_pos, true);
+            self.update_gesture(pointer_pos, true);
         }
         None
     }
@@ -253,12 +211,11 @@ impl TouchGestureState {
         self.active_touches.insert(tid, pos_px);
 
         if self.active_touches.len() >= 2 {
-            let time = web_time::Instant::now().elapsed().as_secs_f64();
             let pointer_pos = self
                 .primary_touch_id
                 .and_then(|pid| self.active_touches.get(&pid).copied())
                 .map(|(x, y)| Vec2 { x, y });
-            self.update_gesture(time, pointer_pos, false);
+            self.update_gesture(pointer_pos, false);
             if let Some((raw_pan, raw_zoom, _raw_rot, center)) = self.multi_touch_delta() {
                 let centroid_size = self
                     .gesture_state
@@ -390,12 +347,11 @@ impl TouchGestureState {
 
         self.active_touches.remove(&tid);
         if self.active_touches.len() >= 2 {
-            let time = web_time::Instant::now().elapsed().as_secs_f64();
             let pointer_pos = self
                 .primary_touch_id
                 .and_then(|pid| self.active_touches.get(&pid).copied())
                 .map(|(x, y)| Vec2 { x, y });
-            self.update_gesture(time, pointer_pos, true);
+            self.update_gesture(pointer_pos, true);
         } else {
             self.gesture_state = None;
             self.past_touch_slop = false;

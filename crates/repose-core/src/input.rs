@@ -179,10 +179,6 @@ pub enum InputEvent {
     Ime(ImeEvent),
 }
 
-///
-
-///
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum InputMode {
     #[default]

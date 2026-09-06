@@ -2078,11 +2078,9 @@ where
 
     let frame = sched.repose(
         {
-            let scale = scale;
             move |s: &mut Scheduler| with_density(Density { scale }, || (root_fn)(s))
         },
         {
-            let hover_id = hover_id;
             let hover_ancestors = hover_ancestors.clone();
             let pressed_ids = pressed_ids.clone();
             move |view, _size| {
@@ -2105,74 +2103,6 @@ where
     }
 
     frame
-}
-
-/// Fire enter/leave callbacks when the hovered region changes, updating
-/// `hover_id`.
-fn dispatch_hover_change(
-    frame: Option<&Frame>,
-    leave_map: &HashMap<u64, (f32, f32, f32, f32, Rc<dyn Fn(PointerEvent)>)>,
-    hover_id: &mut Option<u64>,
-    new_hover: Option<u64>,
-    pos: Vec2,
-    modifiers: Modifiers,
-) {
-    if new_hover == *hover_id {
-        return;
-    }
-
-    // --- Leave previous (ALWAYS if we still know how) ---
-    if let Some(prev_id) = *hover_id {
-        let leave_info = leave_map.get(&prev_id).cloned().or_else(|| {
-            frame.and_then(|f| {
-                f.hit_regions
-                    .iter()
-                    .find(|h| h.id == prev_id)
-                    .and_then(|h| {
-                        h.on_pointer_leave
-                            .as_ref()
-                            .map(|cb| (h.rect.x, h.rect.y, h.rect.w, h.rect.h, cb.clone()))
-                    })
-            })
-        });
-        if let Some((rx, ry, _rw, _rh, cb)) = leave_info {
-            let mut pe = PointerEvent::new(
-                PointerId(0),
-                PointerKind::Mouse,
-                PointerEventKind::Leave,
-                pos,
-                1.0,
-                modifiers,
-            );
-            pe.origin = Vec2 { x: rx, y: ry };
-            pe.position = pe.position - pe.origin;
-            cb(pe);
-        }
-    }
-
-    // --- Enter new ---
-    if let Some(f) = frame
-        && let Some(hid) = new_hover
-        && let Some(h) = f.hit_regions.iter().find(|h| h.id == hid)
-        && let Some(cb) = &h.on_pointer_enter
-    {
-        let mut pe = PointerEvent::new(
-            PointerId(0),
-            PointerKind::Mouse,
-            PointerEventKind::Enter,
-            pos,
-            1.0,
-            modifiers,
-        );
-        pe.origin = Vec2 {
-            x: h.rect.x,
-            y: h.rect.y,
-        };
-        pe.position = pe.position - pe.origin;
-        cb(pe);
-    }
-
-    *hover_id = new_hover;
 }
 
 fn hover_chain_for(frame: Option<&Frame>, hover: Option<u64>) -> std::collections::HashSet<u64> {

@@ -141,12 +141,9 @@ pub(crate) fn with_button_semantics(m: Modifier, enabled: bool) -> Modifier {
 /// composes. Repose `Text`/`Icon` bake color at construction, so an eager `View`
 /// passed into IconButton never sees `with_content_color`.
 pub(crate) fn force_content_color_on_view(view: &mut View, to: Color) {
-    match &mut view.kind {
-        ViewKind::Text { color, .. } => {
-            *color = to;
-        }
-        // Material icons are font glyphs (Text). Leave Image tints alone.
-        _ => {}
+    // Material icons are font glyphs (Text). Leave Image tints alone.
+    if let ViewKind::Text { color, .. } = &mut view.kind {
+        *color = to;
     }
     for child in &mut view.children {
         force_content_color_on_view(child, to);

@@ -487,7 +487,6 @@ pub fn WindowHost(
             };
 
             let title_bar = {
-                let window_id = window_id;
                 let actions = window_actions.clone();
                 let close_enabled = window_closable;
                 let close_state = state.clone();
@@ -615,7 +614,6 @@ pub fn WindowHost(
                 let content_builder = window_content.clone();
                 let focus_cb = {
                     let state = state.clone();
-                    let window_id = window_id;
                     Rc::new(move || {
                         state.borrow_mut().bring_to_front(window_id);
                         request_frame();

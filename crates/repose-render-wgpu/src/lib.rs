@@ -3397,7 +3397,7 @@ impl WgpuSceneRenderer {
 
     /// Set pixels per point (DPI scale) for callback `ScreenDescriptor` / `PaintCallbackInfo`.
     pub fn set_pixels_per_point(&mut self, ppp: f32) {
-        self.pixels_per_point = ppp.max(0.5).min(8.0);
+        self.pixels_per_point = ppp.clamp(0.5, 8.0);
     }
 
     /// Enable or disable linear working-space rendering.

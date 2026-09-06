@@ -18,7 +18,7 @@ pub trait IndicationDrawNode {
 }
 
 /// A debug indication that draws colored overlays for hover/press/focus.
-#[deprecated]
+#[deprecated(note = "Debug-only helper, expect removal in a future release")]
 #[derive(Clone, Debug)]
 pub struct DebugIndication {
     pub press_color: crate::Color,
@@ -26,6 +26,7 @@ pub struct DebugIndication {
     pub focus_color: crate::Color,
 }
 
+#[allow(deprecated)]
 impl Default for DebugIndication {
     fn default() -> Self {
         Self {
@@ -36,8 +37,10 @@ impl Default for DebugIndication {
     }
 }
 
+#[allow(deprecated)]
 impl Indication for DebugIndication {}
 
+#[allow(deprecated)]
 impl IndicationNodeFactory for DebugIndication {
     fn create(&self, interaction_source: &InteractionSource) -> Box<dyn IndicationDrawNode> {
         Box::new(DebugIndicationDrawNode {

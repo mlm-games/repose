@@ -530,7 +530,7 @@ fn render_node(
 
 fn render_tabs(
     node_id: u64,
-    tabs: &Vec<PanelId>,
+    tabs: &[PanelId],
     active: Option<PanelId>,
     registry: &Rc<HashMap<PanelId, DockPanel>>,
     dock: &DockHandle,

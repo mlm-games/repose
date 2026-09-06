@@ -141,9 +141,9 @@ pub(crate) struct PaintCacheEntry {
     pub(crate) parent_offset_px: (f32, f32),
     pub(crate) sem_parent: Option<u64>,
     pub(crate) alpha_q: u8,
-    pub(crate) nodes: Arc<Vec<SceneNode>>,
-    pub(crate) hits: Arc<Vec<HitRegion>>,
-    pub(crate) sems: Arc<Vec<SemNode>>,
+    pub(crate) nodes: Rc<Vec<SceneNode>>,
+    pub(crate) hits: Rc<Vec<HitRegion>>,
+    pub(crate) sems: Rc<Vec<SemNode>>,
 }
 
 /// Selects the intrinsic sizing mode for [`LayoutEngine::intrinsic_size`].

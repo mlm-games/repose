@@ -1218,6 +1218,8 @@ mod tests {
     }
 
     #[test]
+    // Test-only: the view is shared across closures on one thread; Arc is structural.
+    #[allow(clippy::arc_with_non_send_sync)]
     fn test_subcompose_nested_layouts_inherit_narrowed_scope() {
         let mut tree = ViewTree::new();
         tree.set_subcompose_scope(SubcomposeScope::new(0.0, 1000.0, 0.0, 1000.0));
