@@ -1,5 +1,5 @@
 //! Platform runners
-use crate::a11y::ReposeActionHandler;
+use repose_core::a11y::ReposeActionHandler;
 #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 use accesskit_winit::Adapter;
 use repose_core::*;
@@ -14,7 +14,6 @@ pub mod android;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
 
-pub mod a11y;
 mod common;
 pub mod render;
 pub mod runner_common;
@@ -171,7 +170,7 @@ pub fn run_desktop_app_with_config(
     use winit::keyboard::{KeyCode, PhysicalKey};
     use winit::window::{Window, WindowAttributes};
 
-    use crate::a11y::A11yTree;
+    use repose_core::a11y::A11yTree;
     use repose_app::ReposeRuntime;
 
     struct ReposeActivationHandler {
