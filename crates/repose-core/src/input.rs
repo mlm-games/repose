@@ -177,6 +177,80 @@ pub enum InputEvent {
     Key(KeyEvent),
     Text(TextInputEvent),
     Ime(ImeEvent),
+    Gamepad(GamepadEvent),
+}
+
+/// Opaque gamepad handle. Backend-local index, stable for the connection
+/// lifetime. Survives across frames; invalid after [`GamepadEvent::Disconnected`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct GamepadId(pub u32);
+
+/// Standard-layout buttons (SDL gamecontroller mapping positions).
+/// Backends translate hardware codes to these; unknown buttons are dropped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum GamepadButton {
+    /// Bottom face button (A / Cross). UI default: activate.
+    South,
+    /// Right face button (B / Circle). UI default: back.
+    East,
+    /// Left face button (X / Square).
+    West,
+    /// Top face button (Y / Triangle).
+    North,
+    Start,
+    Select,
+    LeftShoulder,
+    RightShoulder,
+    LeftStick,
+    RightStick,
+    DPadUp,
+    DPadDown,
+    DPadLeft,
+    DPadRight,
+}
+
+/// Analog axes, normalized to -1.0..=1.0. Triggers report 0.0..=1.0.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum GamepadAxis {
+    LeftStickX,
+    LeftStickY,
+    RightStickX,
+    RightStickY,
+    LeftTrigger,
+    RightTrigger,
+}
+
+#[derive(Clone, Debug)]
+pub enum GamepadEvent {
+    Connected {
+        id: GamepadId,
+        name: String,
+    },
+    Disconnected {
+        id: GamepadId,
+    },
+    Button {
+        id: GamepadId,
+        button: GamepadButton,
+        pressed: bool,
+    },
+    Axis {
+        id: GamepadId,
+        axis: GamepadAxis,
+        /// -1.0..=1.0 (sticks) or 0.0..=1.0 (triggers). Backends deadzone.
+        value: f32,
+    },
+}
+
+impl GamepadEvent {
+    pub fn id(&self) -> GamepadId {
+        match *self {
+            GamepadEvent::Connected { id, .. } => id,
+            GamepadEvent::Disconnected { id } => id,
+            GamepadEvent::Button { id, .. } => id,
+            GamepadEvent::Axis { id, .. } => id,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]

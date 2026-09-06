@@ -4,8 +4,8 @@ use std::rc::Rc;
 
 use repose_core::dnd;
 use repose_core::input::{
-    ImeEvent, Key, KeyEvent, KeyEventType, Modifiers, PointerButton, PointerEvent,
-    PointerEventKind, PointerId, PointerKind,
+    GamepadAxis, GamepadButton, GamepadEvent, ImeEvent, Key, KeyEvent, KeyEventType, Modifiers,
+    PointerButton, PointerEvent, PointerEventKind, PointerId, PointerKind,
 };
 use repose_core::locals::{Density, dp_to_px, set_density_default, with_density};
 use repose_core::runtime::{Frame, Scheduler};
@@ -193,6 +193,27 @@ pub struct ReposeRuntime {
     cursor: Option<CursorIcon>,
 
     pub textfield_states: HashMap<u64, Rc<RefCell<TextFieldState>>>,
+    /// Connected gamepads by backend id: display name plus live button/axis
+    /// state. Fed by [`ReposeRuntime::handle_gamepad`].
+    pub gamepads: HashMap<u32, GamepadPad>,
+}
+
+/// Live state of one connected gamepad, mirrored from [`GamepadEvent`]s.
+#[derive(Clone, Debug, Default)]
+pub struct GamepadPad {
+    pub name: String,
+    pub pressed: HashSet<GamepadButton>,
+    pub axes: HashMap<GamepadAxis, f32>,
+}
+
+impl GamepadPad {
+    pub fn button(&self, button: GamepadButton) -> bool {
+        self.pressed.contains(&button)
+    }
+
+    pub fn axis(&self, axis: GamepadAxis) -> f32 {
+        self.axes.get(&axis).copied().unwrap_or(0.0)
+    }
 }
 
 impl ReposeRuntime {
@@ -224,6 +245,7 @@ impl ReposeRuntime {
             frame_cache: None,
             cursor: None,
             textfield_states: HashMap::new(),
+            gamepads: HashMap::new(),
         }
     }
 
@@ -848,17 +870,17 @@ impl ReposeRuntime {
         // Long-press resolution: `poll_long_press` normally fires on timeout when held.
         if let Some((lid, t0, _, _)) = self.long_press.take()
             && Some(lid) == self.capture_id
-                && t0.elapsed().as_millis() >= LONG_PRESS_MS
-                && let Some(hit) = f.hit_regions.iter().find(|h| h.id == lid && !h.disabled)
-                && let Some(cb) = &hit.on_long_click
-            {
-                cb();
-                self.suppress_next_click = true;
-                self.pending_click = None;
-                result.clicked_id = Some(lid);
-                result.needs_a11y_announce = true;
-                result.consumed = true;
-            }
+            && t0.elapsed().as_millis() >= LONG_PRESS_MS
+            && let Some(hit) = f.hit_regions.iter().find(|h| h.id == lid && !h.disabled)
+            && let Some(cb) = &hit.on_long_click
+        {
+            cb();
+            self.suppress_next_click = true;
+            self.pending_click = None;
+            result.clicked_id = Some(lid);
+            result.needs_a11y_announce = true;
+            result.consumed = true;
+        }
 
         if self.double_candidate.is_none()
             && !self.suppress_next_click
@@ -1239,13 +1261,14 @@ impl ReposeRuntime {
                         };
 
                         if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
-                            && let Some(src) = &hit.interaction_source {
-                                let local = Vec2 {
-                                    x: hit.rect.w * 0.5,
-                                    y: hit.rect.h * 0.5,
-                                };
-                                src.to_mutable().emit(Interaction::new_press(local));
-                            }
+                            && let Some(src) = &hit.interaction_source
+                        {
+                            let local = Vec2 {
+                                x: hit.rect.w * 0.5,
+                                y: hit.rect.h * 0.5,
+                            };
+                            src.to_mutable().emit(Interaction::new_press(local));
+                        }
 
                         request_frame();
                         return true;
@@ -1272,10 +1295,9 @@ impl ReposeRuntime {
                             let pid = src.collect_last_press_id().unwrap_or(0);
                             src.to_mutable().emit(Interaction::Release(pid));
                         }
-                        if !long_fired
-                            && let Some(cb) = &hit.on_click {
-                                cb();
-                            }
+                        if !long_fired && let Some(cb) = &hit.on_click {
+                            cb();
+                        }
                     }
                     request_frame();
                     return true;
@@ -1910,6 +1932,76 @@ impl ReposeRuntime {
         request_frame();
     }
 
+    /// Process a gamepad event: mirror connection/button/axis state into
+    /// [`ReposeRuntime::gamepads`]. Sticks, shoulders and face extras stay raw
+    /// gameplay input for the game to read from [`ReposeRuntime::gamepads`].
+    ///
+    /// Returns `true` when the event drove UI navigation.
+    pub fn handle_gamepad(&mut self, event: &GamepadEvent) -> bool {
+        match event {
+            GamepadEvent::Connected { id, name } => {
+                self.gamepads.insert(
+                    id.0,
+                    GamepadPad {
+                        name: name.clone(),
+                        ..GamepadPad::default()
+                    },
+                );
+                request_frame();
+                return false;
+            }
+            GamepadEvent::Disconnected { id } => {
+                self.gamepads.remove(&id.0);
+                request_frame();
+                return false;
+            }
+            GamepadEvent::Button {
+                id,
+                button,
+                pressed,
+            } => {
+                if let Some(pad) = self.gamepads.get_mut(&id.0) {
+                    if *pressed {
+                        pad.pressed.insert(*button);
+                    } else {
+                        pad.pressed.remove(button);
+                    }
+                }
+                if *pressed {
+                    let _ = repose_core::request_input_mode(repose_core::InputMode::Keyboard);
+                }
+                let key = match button {
+                    GamepadButton::South => Key::Space,
+                    GamepadButton::East => Key::Escape,
+                    GamepadButton::Start => Key::Enter,
+                    GamepadButton::DPadUp => Key::ArrowUp,
+                    GamepadButton::DPadDown => Key::ArrowDown,
+                    GamepadButton::DPadLeft => Key::ArrowLeft,
+                    GamepadButton::DPadRight => Key::ArrowRight,
+                    _ => return false,
+                };
+                let synthetic = KeyEvent {
+                    key,
+                    modifiers: self.modifiers,
+                    is_repeat: false,
+                    event_type: if *pressed {
+                        KeyEventType::Down
+                    } else {
+                        KeyEventType::Up
+                    },
+                    utf16_code_point: 0,
+                };
+                return self.handle_key(&synthetic);
+            }
+            GamepadEvent::Axis { id, axis, value } => {
+                if let Some(pad) = self.gamepads.get_mut(&id.0) {
+                    pad.axes.insert(*axis, *value);
+                }
+                return false;
+            }
+        }
+    }
+
     /// Process a key event with an optional host-composed `text` payload
     /// (winit `key_event.text`, Android soft-keyboard text, ...).
     ///
@@ -2077,9 +2169,7 @@ where
     let current_focused = sched.focused;
 
     let frame = sched.repose(
-        {
-            move |s: &mut Scheduler| with_density(Density { scale }, || (root_fn)(s))
-        },
+        { move |s: &mut Scheduler| with_density(Density { scale }, || (root_fn)(s)) },
         {
             let hover_ancestors = hover_ancestors.clone();
             let pressed_ids = pressed_ids.clone();
@@ -2353,4 +2443,44 @@ fn dispatch_scroll(
         }
     }
     (false, scroll_capture)
+}
+
+#[cfg(test)]
+mod gamepad_tests {
+    use super::*;
+    use repose_core::input::{GamepadAxis, GamepadButton, GamepadEvent, GamepadId};
+
+    #[test]
+    fn gamepad_state_mirrors_connection_and_inputs() {
+        let mut rt = ReposeRuntime::new();
+        rt.handle_gamepad(&GamepadEvent::Connected {
+            id: GamepadId(0),
+            name: "Pad".to_string(),
+        });
+        assert_eq!(rt.gamepads.len(), 1);
+
+        rt.handle_gamepad(&GamepadEvent::Button {
+            id: GamepadId(0),
+            button: GamepadButton::West,
+            pressed: true,
+        });
+        assert!(rt.gamepads[&0].button(GamepadButton::West));
+
+        rt.handle_gamepad(&GamepadEvent::Axis {
+            id: GamepadId(0),
+            axis: GamepadAxis::LeftStickX,
+            value: 0.5,
+        });
+        assert_eq!(rt.gamepads[&0].axis(GamepadAxis::LeftStickX), 0.5);
+
+        rt.handle_gamepad(&GamepadEvent::Button {
+            id: GamepadId(0),
+            button: GamepadButton::West,
+            pressed: false,
+        });
+        assert!(!rt.gamepads[&0].button(GamepadButton::West));
+
+        rt.handle_gamepad(&GamepadEvent::Disconnected { id: GamepadId(0) });
+        assert!(rt.gamepads.is_empty());
+    }
 }

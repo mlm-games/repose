@@ -57,6 +57,7 @@ taffy = "0.14"
 winit = "0.30"
 wgpu = { version = "30", features = ["webgl"] }
 pollster = "1"
+gilrs = "0.11"
 
 accesskit = "0.25"
 accesskit_winit = "0.34"

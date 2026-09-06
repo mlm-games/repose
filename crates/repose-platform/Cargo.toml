@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 description = "Platform runners (winit Desktop, Android and Web)"
 
+[features]
+# Gamepad hardware polling..
+gamepad = ["dep:gilrs"]
+
 [dependencies]
 repose-app.workspace = true
 repose-core = { workspace = true, features = ["accesskit"] }
@@ -23,6 +27,7 @@ rustc-hash = { workspace = true }
 [target.'cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))'.dependencies]
 winit = { workspace = true }
 accesskit_winit = { workspace = true }
+gilrs = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 winit = { workspace = true, features = ["android-native-activity"] }
@@ -31,6 +36,7 @@ accesskit_winit = { workspace = true }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
+gilrs = { workspace = true, optional = true }
 web-sys = { workspace = true }
 repose-text = { workspace = true }
 winit = { workspace = true, features = ["rwh_05"] }

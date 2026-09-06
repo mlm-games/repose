@@ -15,6 +15,7 @@ pub mod android;
 pub mod web;
 
 mod common;
+pub mod gamepad;
 pub mod render;
 pub mod runner_common;
 pub mod window_v2;
@@ -230,6 +231,8 @@ pub fn run_desktop_app_with_config(
 
         // Shared touch-scroll / pinch / swipe gesture state (touchscreens)
         touch_gestures: rc::TouchGestureState,
+
+        gamepad: Option<Box<dyn gamepad::GamepadBackend>>,
     }
 
     impl App {
@@ -314,6 +317,8 @@ pub fn run_desktop_app_with_config(
                 last_window_theme: None,
                 redraw_requested: Cell::new(false),
                 touch_gestures: rc::TouchGestureState::default(),
+                gamepad: gamepad::create_backend()
+                    .map(|b| Box::new(b) as Box<dyn gamepad::GamepadBackend>),
             }
         }
 
@@ -749,15 +754,17 @@ pub fn run_desktop_app_with_config(
                                 delta_scale,
                                 center,
                             },
-                        )) {
-                            dirty = true;
-                        }
+                        ))
+                    {
+                        dirty = true;
+                    }
                     if let Some(delta) = r.pan
                         && self.dispatch_action(repose_core::shortcuts::Action::Gesture(
                             repose_core::shortcuts::Gesture::Pan { delta },
-                        )) {
-                            dirty = true;
-                        }
+                        ))
+                    {
+                        dirty = true;
+                    }
                     if let Some(right) = r.swipe_right {
                         let g = if right {
                             repose_core::shortcuts::Gesture::SwipeRight
@@ -1035,8 +1042,12 @@ pub fn run_desktop_app_with_config(
             }
             process_deeplinks();
 
-            // On Wayland, wgpu creates an xdg_surface from the winit window and it shouldn't be recreated with a new id?
-            // It doesn't take a lot of resources anyway, so let the backend be present.
+            if let Some(backend) = &mut self.gamepad {
+                for ev in backend.poll() {
+                    self.rt.handle_gamepad(&ev);
+                }
+            }
+
             #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
             if WINDOW_VISIBLE.load(Ordering::Relaxed)
                 && self.backend.is_none()
