@@ -886,7 +886,7 @@ pub fn set_window_container_width(w: f32) {
     repose_core::locals::set_window_container_width(w);
 }
 
-/// M3 Expanded Full‑Screen Search Bar -> rendered in an overlay covering the
+/// M3 Expanded Full-Screen Search Bar -> rendered in an overlay covering the
 /// entire window. Uses the state's own `progress()` for animation.
 /// Equivalent to CK's `ExpandedFullScreenSearchBar(state, inputField, ...)`.
 pub fn ExpandedFullScreenSearchBar(

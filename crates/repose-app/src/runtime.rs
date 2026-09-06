@@ -1972,24 +1972,17 @@ impl ReposeRuntime {
             .next_blink_deadline()
     }
 
-    /// Centralized wakeup helper for platform runners (caret, snackbar, debounce, etc.).
+    /// Centralized wakeup helper for platform runners (caret, snackbar, timers, etc.).
+    /// Debounced entries live on the shared timer queue, so `timer` covers them.
     pub fn next_wakeup_deadline(&self) -> Option<web_time::Instant> {
-        let mut earliest = self.next_caret_blink_deadline();
-        let snack = repose_ui::overlay::SnackbarController::next_deadline();
-        earliest = match (earliest, snack) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (Some(a), None) => Some(a),
-            (None, Some(b)) => Some(b),
-            (None, None) => None,
-        };
-        let debounce = repose_core::debounce::next_deadline();
-        earliest = match (earliest, debounce) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (Some(a), None) => Some(a),
-            (None, Some(b)) => Some(b),
-            (None, None) => None,
-        };
-        earliest
+        [
+            self.next_caret_blink_deadline(),
+            repose_ui::overlay::SnackbarController::next_deadline(),
+            repose_core::timer::next_deadline(),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 
     /// Whether a scheduled wakeup is due at `now` (deadline <= now).
@@ -2014,10 +2007,12 @@ impl ReposeRuntime {
         self.next_wakeup_deadline().unwrap_or(now + idle_cap)
     }
 
-    /// Tick host-facing overlays (snackbar timeouts) + debounce. Call once per redraw.
+    /// Tick host-facing overlays (snackbar timeouts) and timers (including
+    /// debounced entries, which live on the shared timer queue).
+    /// Call once per redraw.
     pub fn tick_overlays(&self) {
         repose_ui::overlay::SnackbarController::tick_all();
-        repose_core::debounce::poll();
+        repose_core::timer::poll();
     }
 
     /// Get the cursor suggestion (set during pointer-move handling).

@@ -1,103 +1,21 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use web_time::{Duration, Instant};
 
-use crate::{Signal, reactive, request_frame, signal};
+use crate::{Signal, reactive, signal, timer};
 
-thread_local! {
-    static REGISTRY: RefCell<HashMap<usize, Entry>> = RefCell::new(HashMap::new());
-    static NEXT_ID: RefCell<usize> = const { RefCell::new(1usize) };
-}
-
-struct Entry {
-    deadline: Instant,
-    callback: Rc<dyn Fn()>,
-}
-
-fn next_id() -> usize {
-    NEXT_ID.with(|c| {
-        let mut v = c.borrow_mut();
-        let id = *v;
-        *v = v.wrapping_add(1);
-        if *v == 0 {
-            *v = 1;
-        }
-        let reg_has = REGISTRY.with(|r| r.borrow().contains_key(&id));
-        if reg_has {
-            let mut candidate = id.wrapping_add(1);
-            if candidate == 0 {
-                candidate = 1;
-            }
-            while REGISTRY.with(|r| r.borrow().contains_key(&candidate)) {
-                candidate = candidate.wrapping_add(1);
-                if candidate == 0 {
-                    candidate = 1;
-                }
-                // Avoid infinite loop if registry full (should not happen)
-                if candidate == id {
-                    break;
-                }
-            }
-            *v = candidate.wrapping_add(1);
-            if *v == 0 {
-                *v = 1;
-            }
-            return candidate;
-        }
-        id
-    })
-}
-
-/// Earliest debounced deadline, if any. Used by `ReposeRuntime::next_wakeup_deadline`
-/// so `platform` can `WaitUntil` without knowing about debounce.
+/// Earliest deadline across the shared timer queue (timers + debounces).
+/// Kept for compatibility; `ReposeRuntime::next_wakeup_deadline` reads
+/// `timer::next_deadline` directly.
 pub fn next_deadline() -> Option<Instant> {
-    REGISTRY.with(|r| r.borrow().values().map(|e| e.deadline).min())
+    timer::next_deadline()
 }
 
-/// Fire all debounced callbacks whose deadline is due. Called from
-/// `ReposeRuntime::tick_overlays` (each frame) - ensures `request_frame` wakeup
-/// at `deadline` actually propagates the value.
+/// Kept for compatibility; `ReposeRuntime::tick_overlays` already polls the
+/// shared queue via `timer::poll`, which also covers debounced entries.
 pub fn poll() {
-    let now = Instant::now();
-    let due: Vec<Rc<dyn Fn()>> = REGISTRY.with(|r| {
-        let mut reg = r.borrow_mut();
-        let mut due = Vec::new();
-        let mut to_remove = Vec::new();
-        for (id, entry) in reg.iter() {
-            if entry.deadline <= now {
-                due.push(entry.callback.clone());
-                to_remove.push(*id);
-            }
-        }
-        for id in to_remove {
-            reg.remove(&id);
-        }
-        due
-    });
-    for cb in due {
-        cb();
-    }
-}
-
-fn schedule(id: usize, deadline: Instant, cb: Rc<dyn Fn()>) {
-    REGISTRY.with(|r| {
-        r.borrow_mut().insert(
-            id,
-            Entry {
-                deadline,
-                callback: cb,
-            },
-        );
-    });
-    request_frame();
-}
-
-fn cancel(id: usize) {
-    REGISTRY.with(|r| {
-        r.borrow_mut().remove(&id);
-    });
+    timer::poll();
 }
 
 /// Debounce `source` by `delay`. Returns a new `Signal<T>` that follows `source`
@@ -119,27 +37,25 @@ where
     let pending: Rc<RefCell<Option<T>>> = Rc::new(RefCell::new(None));
     let delay_c = delay;
 
-    // unique id for this debounced instance
-    let id = next_id();
+    // Owned scheduling slot on the shared timer queue. Reassigning drops the
+    // previous handle, which cancels it: the reschedule that makes debounce.
+    let slot: Rc<RefCell<Option<timer::TimerHandle>>> = Rc::new(RefCell::new(None));
 
     let obs_id = reactive::new_observer({
         let source = source.clone();
-        let out_clone2 = out_clone.clone();
-        let pending2 = pending.clone();
+        let slot = slot.clone();
         move || {
             let v = source.get();
             // already equal to pending/out? still reschedule to debounce
-            *pending2.borrow_mut() = Some(v.clone());
-            let deadline = Instant::now() + delay_c;
-            let out_c = out_clone2.clone();
-            let pending_c = pending2.clone();
-            let cb: Rc<dyn Fn()> = Rc::new(move || {
+            *pending.borrow_mut() = Some(v.clone());
+            let out_c = out_clone.clone();
+            let pending_c = pending.clone();
+            *slot.borrow_mut() = Some(timer::delay(delay_c, move || {
                 if let Some(val) = pending_c.borrow_mut().take() {
                     // only set if changed to avoid extra frame
                     out_c.set_neq(val);
                 }
-            });
-            schedule(id, deadline, cb);
+            }));
         }
     });
 
@@ -150,7 +66,8 @@ where
     crate::scoped_effect(move || {
         crate::on_unmount(move || {
             reactive::remove_observer(obs_id);
-            cancel(id);
+            // Dropping the handle cancels the pending firing.
+            *slot.borrow_mut() = None;
         })
     });
 

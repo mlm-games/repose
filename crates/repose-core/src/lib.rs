@@ -133,6 +133,8 @@ pub mod state;
 pub mod tests;
 pub mod text;
 
+pub mod timer;
+
 #[cfg(feature = "accesskit")]
 pub mod a11y;
 pub mod view;

@@ -230,7 +230,7 @@ enum SnackbarPhase {
 
 struct ActiveSnackbar {
     /// Owns the overlay entry; clearing `active` dismisses the entry via drop.
-    /// Never read by name — its `Drop` impl is the whole point.
+    /// Never read by name: its `Drop` impl is the whole point.
     #[allow(dead_code)]
     guard: OverlayGuard,
     message: String,

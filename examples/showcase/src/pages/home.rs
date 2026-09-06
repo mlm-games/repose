@@ -43,9 +43,34 @@ fn platform_status() -> View {
     let insets = window_insets();
     let th = theme();
 
+    let uptime_s = remember(|| signal(0u64));
+    let _uptime_tick = remember(|| {
+        let uptime_s = uptime_s.clone();
+        repose_core::timer::interval(web_time::Duration::from_secs(1), move || {
+            uptime_s.update(|n| *n += 1)
+        })
+    });
+    let greeted = remember(|| signal(false));
+    let _greet_once = remember(|| {
+        let greeted = greeted.clone();
+        repose_core::timer::delay(web_time::Duration::from_millis(1500), move || {
+            greeted.set(true)
+        })
+    });
+
     #[allow(unused_mut)]
     let mut rows: Vec<View> = vec![
         status_row("Lifecycle", lifecycle, th.primary),
+        status_row("Uptime", &format!("{} s", uptime_s.get()), th.on_surface),
+        status_row(
+            "Timers",
+            if greeted.get() {
+                "delay(1.5s) fired"
+            } else {
+                "waiting for delay(1.5s)..."
+            },
+            th.on_surface,
+        ),
         status_row(
             "Insets (px)",
             &format!(
