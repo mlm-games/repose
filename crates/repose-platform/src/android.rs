@@ -76,6 +76,10 @@ pub fn run_android_app_with_options(
         // redraw control
         dirty: bool,
 
+        /// Buttons arrive as native keycodes, axes have no source yet.
+        #[cfg(feature = "gamepad")]
+        gamepad: crate::gamepad::AndroidBackend,
+
         /// True while the Activity surface is usable (between resumed and suspended).
         surface_active: bool,
         /// App-level foreground-ish flag (mirrors the last lifecycle transition).
@@ -107,6 +111,8 @@ pub fn run_android_app_with_options(
 
                 ime_visible: false,
                 dirty: true,
+                #[cfg(feature = "gamepad")]
+                gamepad: crate::gamepad::create_android_backend().expect("android gamepad backend"),
                 surface_active: false,
                 in_foreground: false,
 
@@ -435,6 +441,24 @@ pub fn run_android_app_with_options(
                 WindowEvent::KeyboardInput {
                     event: key_event, ..
                 } => {
+                    // Controller buttons arrive as native Android keycodes
+                    // (winit maps AKEYCODE_BUTTON_* to Unidentified).
+                    #[cfg(feature = "gamepad")]
+                    if let PhysicalKey::Unidentified(winit::keyboard::NativeKeyCode::Android(
+                        code,
+                    )) = key_event.physical_key
+                    {
+                        let pressed = key_event.state == ElementState::Pressed;
+                        let events = self.gamepad.key_button(code, pressed);
+                        if !events.is_empty() {
+                            for ev in events {
+                                self.rt.handle_gamepad(&ev);
+                            }
+                            self.dirty = true;
+                            self.request_redraw();
+                            return;
+                        }
+                    }
                     log::info!(
                         "KeyboardInput: physical_key={:?}, logical_key={:?}, text={:?}, state={:?}, repeat={}",
                         key_event.physical_key,
