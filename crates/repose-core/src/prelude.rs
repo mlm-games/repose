@@ -55,6 +55,6 @@ pub use crate::view::{
     ViewKind,
 };
 pub use taffy::{
-    AlignContent, AlignItems, AlignSelf, FlexDirection, FlexWrap, JustifyContent, JustifyItems,
-    JustifySelf,
+    AlignContent, AlignItems, AlignSelf, Contain, FlexDirection, FlexWrap, JustifyContent,
+    JustifyItems, JustifySelf,
 };

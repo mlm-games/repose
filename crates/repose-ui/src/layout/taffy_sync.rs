@@ -484,8 +484,14 @@ impl LayoutEngine {
         if let Some(b) = m.flex_basis {
             s.flex_basis = length(px(b.max(0.0)));
         }
+        if m.flex_basis_content {
+            s.flex_basis = taffy::Dimension::content();
+        }
         if let Some(w) = m.flex_wrap {
             s.flex_wrap = w;
+        }
+        if let Some(n) = m.flex_line_count {
+            s.flex_line_count = n.max(1);
         }
         if let Some(d) = m.flex_dir {
             s.flex_direction = d;
@@ -560,6 +566,11 @@ impl LayoutEngine {
             };
         }
 
+        // CSS containment (taffy 0.14): independent formatting context.
+        if let Some(c) = m.contain {
+            s.contain = c;
+        }
+
         if let Some(pv) = m.padding_values {
             s.padding = taffy::geometry::Rect {
                 left: length(px(pv.left)),
@@ -596,6 +607,33 @@ impl LayoutEngine {
         if let Some(h) = m.height {
             s.size.height = length(px(h.max(0.0)));
             height_set = true;
+        }
+        // Intrinsic / fit-content sizing keywords (taffy 0.14). These revive
+        // the previously unmapped `intrinsic_*` modifiers via min/max-content.
+        // Explicit width/height above take precedence.
+        if !width_set {
+            if let Some(mode) = m.intrinsic_width {
+                s.size.width = match mode {
+                    repose_core::IntrinsicSize::Min => taffy::Dimension::min_content(),
+                    repose_core::IntrinsicSize::Max => taffy::Dimension::max_content(),
+                };
+                width_set = true;
+            } else if let Some(limit) = m.fit_content_width {
+                s.size.width = taffy::Dimension::fit_content_px(px(limit.max(0.0)));
+                width_set = true;
+            }
+        }
+        if !height_set {
+            if let Some(mode) = m.intrinsic_height {
+                s.size.height = match mode {
+                    repose_core::IntrinsicSize::Min => taffy::Dimension::min_content(),
+                    repose_core::IntrinsicSize::Max => taffy::Dimension::max_content(),
+                };
+                height_set = true;
+            } else if let Some(limit) = m.fit_content_height {
+                s.size.height = taffy::Dimension::fit_content_px(px(limit.max(0.0)));
+                height_set = true;
+            }
         }
 
         if let Some(sz) = m.required_size {

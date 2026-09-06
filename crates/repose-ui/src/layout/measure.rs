@@ -31,7 +31,9 @@ impl LayoutEngine {
             taffy_root,
             available,
             |inputs, taffy_node, ctx, style| {
-                taffy::compute_leaf_layout(
+                // Snapshot text identity for baseline synthesis below.
+                let baseline_key = Self::text_baseline_key(ctx.as_deref());
+                let out = taffy::compute_leaf_layout(
                     inputs,
                     style,
                     |_, _| 0.0,
@@ -96,6 +98,14 @@ impl LayoutEngine {
                             px,
                         )
                     },
+                );
+                Self::attach_text_baselines(
+                    out,
+                    baseline_key,
+                    taffy_node,
+                    reverse_map,
+                    text_cache,
+                    font_px,
                 )
             },
         );
@@ -150,7 +160,8 @@ impl LayoutEngine {
             root_tid,
             scope_avail,
             |inputs, tn, ctx2, style2| {
-                taffy::compute_leaf_layout(
+                let baseline_key = Self::text_baseline_key(ctx2.as_deref());
+                let out = taffy::compute_leaf_layout(
                     inputs,
                     style2,
                     |_, _| 0.0,
@@ -184,7 +195,8 @@ impl LayoutEngine {
                             px,
                         )
                     },
-                )
+                );
+                Self::attach_text_baselines(out, baseline_key, tn, &st_rev, &st_tc, font_px)
             },
         );
 
@@ -204,6 +216,78 @@ impl LayoutEngine {
         }
         scope_trees.insert(key.to_string(), st);
         None
+    }
+
+    /// Identity key for baseline synthesis: (family, weight, font dp).
+    /// `None` for non-text nodes (taffy synthesizes container baselines
+    /// from baseline-carrying descendants itself).
+    fn text_baseline_key(ctx: Option<&NodeContext>) -> Option<(Option<&str>, u16, f32)> {
+        match ctx {
+            Some(NodeContext::Text {
+                font_family,
+                font_weight,
+                font_dp,
+                ..
+            }) => Some((*font_family, font_weight.0, *font_dp)),
+            _ => None,
+        }
+    }
+
+    /// Attach real first/last baselines for text leaves so native
+    /// `AlignItems::Baseline` alignment works (taffy 0.14 synthesizes
+    /// `Baselines::NONE` for measured leaves otherwise).
+    ///
+    /// First baseline = half-leading top extra + font ascent; last baseline
+    /// adds the preceding lines' heights. Both derive from the measured
+    /// [`TextLayout`] plus skrifa ascent/descent of the primary font.
+    fn attach_text_baselines(
+        out: taffy::LayoutOutput,
+        key: Option<(Option<&str>, u16, f32)>,
+        taffy_node: taffy::NodeId,
+        reverse_map: &FxHashMap<taffy::NodeId, NodeId>,
+        text_cache: &FxHashMap<NodeId, TextLayout>,
+        font_px: &dyn Fn(f32) -> f32,
+    ) -> taffy::LayoutOutput {
+        let Some((family, weight, font_dp)) = key else {
+            return out;
+        };
+        let px = font_px(font_dp);
+        let (ascent, descent) =
+            repose_text::primary_font_vertical_metrics(family, weight, px);
+        let em = (ascent + descent).max(1.0);
+        let cached = reverse_map
+            .get(&taffy_node)
+            .and_then(|nid| text_cache.get(nid));
+        let (line_count, first_line_h) = match cached {
+            Some(tl) => (
+                tl.lines.len().max(1),
+                tl.line_heights.first().copied().unwrap_or(tl.line_h_px),
+            ),
+            None => (1, px),
+        };
+        // CSS half-leading: (line_height - em) split above/below the em box.
+        let top_extra = ((first_line_h - em) * 0.5).max(0.0);
+        let first = top_extra + ascent;
+        let last = if line_count <= 1 {
+            first
+        } else {
+            let before: f32 = match cached {
+                Some(tl) if tl.line_heights.len() == line_count => {
+                    tl.line_heights[..line_count - 1].iter().sum()
+                }
+                Some(tl) => (line_count - 1) as f32 * tl.line_h_px,
+                None => (line_count - 1) as f32 * first_line_h,
+            };
+            before + top_extra + ascent
+        };
+        taffy::LayoutOutput::from_sizes_and_baselines(
+            out.size,
+            out.scrollable_overflow_rect,
+            taffy::Baselines {
+                first: Some(first),
+                last: Some(last),
+            },
+        )
     }
 
     pub(crate) fn measure_node(

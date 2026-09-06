@@ -12,3 +12,4 @@ smallvec = { workspace = true }
 slotmap = { workspace = true }
 log = { workspace = true }
 rapidhash = { workspace = true }
+taffy = { workspace = true }

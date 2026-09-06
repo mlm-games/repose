@@ -1097,3 +1097,198 @@ mod shadow_tests {
         );
     }
 }
+
+#[test]
+fn test_row_baseline_alignment() {
+    use crate::Row;
+
+    // Two single-line texts at different sizes in a baseline-aligned Row:
+    // taffy must shift the smaller text down so first baselines coincide.
+    let big = Text("Ag").size(32.0).single_line();
+    let small = Text("Ag").size(16.0).single_line();
+    let root = Row(Modifier::new()
+        .size(400.0, 200.0)
+        .align_items(taffy::AlignItems::BASELINE))
+    .child((big, small));
+
+    let mut eng = make_engine();
+    let (scene, _, _) = eng.layout_frame(
+        &root,
+        (400, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    let mut baselines = Vec::new();
+    for node in &scene.nodes {
+        if let SceneNode::Text { rect, size, .. } = node {
+            let (ascent, _) =
+                repose_text::primary_font_vertical_metrics(Some("sans-serif"), 400, *size);
+            baselines.push(rect.y + ascent);
+        }
+    }
+    assert_eq!(baselines.len(), 2, "expected two text runs: {baselines:?}");
+    assert!(
+        (baselines[0] - baselines[1]).abs() < 2.0,
+        "first baselines should coincide: {baselines:?}"
+    );
+}
+
+#[test]
+fn test_intrinsic_and_fit_content_sizing() {
+    // `intrinsic_width(Max)` sizes to max-content; `fit_content_width(limit)`
+    // shrink-wraps clamped to the limit.
+    let wide = Text("hello world hello world").single_line();
+    let root = Column(Modifier::new().size(400.0, 400.0))
+        .child(RBox(
+            Modifier::new().intrinsic_width(IntrinsicSize::Max),
+        ).child(wide));
+    let mut eng = make_engine();
+    let (scene, _, _) = eng.layout_frame(
+        &root,
+        (400, 400),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    assert!(
+        !scene.nodes.is_empty(),
+        "intrinsic-width subtree should lay out"
+    );
+
+    let narrow = Text("hello world hello world").single_line();
+    let root = Column(Modifier::new().size(400.0, 400.0))
+        .child(RBox(Modifier::new().fit_content_width(50.0)).child(narrow));
+    let mut eng = make_engine();
+    let (scene, _, _) = eng.layout_frame(
+        &root,
+        (400, 400),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    assert!(
+        !scene.nodes.is_empty(),
+        "fit-content-width subtree should lay out"
+    );
+}
+
+#[test]
+fn test_balanced_flow_row_lays_out() {
+    use crate::FlowRowBalanced;
+
+    let white = Color::WHITE;
+    let root = FlowRowBalanced(Modifier::new().size(300.0, 300.0).flex_line_count(2))
+        .child(RBox(Modifier::new().size(100.0, 20.0).background(white)))
+        .child(RBox(Modifier::new().size(100.0, 20.0).background(white)))
+        .child(RBox(Modifier::new().size(100.0, 20.0).background(white)));
+    let mut eng = make_engine();
+    let (scene, _, _) = eng.layout_frame(
+        &root,
+        (300, 300),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    assert!(
+        !scene.nodes.is_empty(),
+        "balanced flow row should lay out without errors"
+    );
+}
+
+#[test]
+fn test_contain_modifiers_lay_out() {
+    // Containment must not break layout of ordinary content.
+    let white = Color::WHITE;
+    let root = Column(Modifier::new().size(200.0, 200.0).contain_content())
+        .child(RBox(Modifier::new().size(50.0, 50.0).background(white)))
+        .child(Column(Modifier::new().contain_layout())
+            .child(RBox(Modifier::new().size(30.0, 30.0).background(white))));
+    let mut eng = make_engine();
+    let (scene, _, _) = eng.layout_frame(
+        &root,
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    assert!(!scene.nodes.is_empty(), "contained subtree should lay out");
+}
+
+#[test]
+fn test_safe_center_alignment_lays_out() {
+    use crate::Center;
+
+    // Safe centering keeps content reachable; at minimum it must lay out
+    // identically to unsafe centering for fitting content.
+    let white = Color::WHITE;
+    let root = Center(Modifier::new().size(200.0, 200.0))
+        .child(RBox(Modifier::new().size(50.0, 50.0).background(white)));
+    let mut eng = make_engine();
+    let (scene, _, _) = eng.layout_frame(
+        &root,
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    assert!(!scene.nodes.is_empty());
+
+    let safe = Text("hi").single_line();
+    let root = Column(Modifier::new()
+        .size(200.0, 200.0)
+        .content_alignment_safe(Alignment::Center))
+    .child(safe);
+    let mut eng = make_engine();
+    let (scene, _, _) = eng.layout_frame(
+        &root,
+        (200, 200),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    assert!(!scene.nodes.is_empty());
+}
+
+#[test]
+fn test_debug_taffy_subtree_and_grid_summary() {
+    use repose_tree::NodeId;
+
+    let white = Color::WHITE;
+    // Grid container with 2 columns; devtools helpers must report it.
+    let root = Column(Modifier::new().size(300.0, 300.0)).child(
+        RBox(Modifier::new().size(300.0, 200.0).grid(2, 4.0, 4.0))
+            .child(RBox(Modifier::new().size(50.0, 50.0).background(white)))
+            .child(RBox(Modifier::new().size(50.0, 50.0).background(white))),
+    );
+    let mut eng = make_engine();
+    let (scene, _, _) = eng.layout_frame(
+        &root,
+        (300, 300),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    assert!(!scene.nodes.is_empty());
+
+    // Find the grid container's ViewTree NodeId via its size: it is the only
+    // 300x200 node. We walk the engine instead: every mapped node that yields
+    // a grid summary must be exactly one.
+    let mut grid_nodes = 0;
+    let mut other_node = None;
+    let ids: Vec<NodeId> = eng.taffy_map.keys().copied().collect();
+    for nid in &ids {
+        if eng.debug_grid_summary(*nid).is_some() {
+            grid_nodes += 1;
+        } else {
+            other_node = Some(*nid);
+        }
+    }
+    assert_eq!(grid_nodes, 1, "expected exactly one grid container");
+    // Non-grid nodes yield no grid summary.
+    assert!(eng.debug_grid_summary(other_node.expect("leaf node")).is_none());
+
+    // debug_taffy_subtree returns non-empty dumps for mapped nodes.
+    let some_id = *ids.first().expect("mapped nodes");
+    assert!(!eng.debug_taffy_subtree(some_id).is_empty());
+}

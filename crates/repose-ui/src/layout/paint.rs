@@ -1856,6 +1856,12 @@ impl LayoutEngine {
                         let l = self.layout_for_node(c);
                         ch = ch.max(l.location.y + l.size.height);
                     }
+                    // taffy 0.14: browser-accurate scrollable overflow rect
+                    // (end padding, nested overflow, RTL/start-side). It can
+                    // only extend the manual child walk above, never shrink it.
+                    ch = ch
+                        .max(layout.scrollable_overflow_rect.bottom)
+                        .max(0.0);
                     if let Some(s) = &b.set_content_main {
                         s(ch);
                     }
@@ -1943,6 +1949,10 @@ impl LayoutEngine {
                         let l = self.layout_for_node(c);
                         cw = cw.max(l.location.x + l.size.width);
                     }
+                    // taffy 0.14 scrollable overflow rect: see vertical path.
+                    cw = cw
+                        .max(layout.scrollable_overflow_rect.right)
+                        .max(0.0);
                     if let Some(s) = &b.set_content_main {
                         s(cw);
                     }
@@ -2045,6 +2055,14 @@ impl LayoutEngine {
                             }
                         }
                     }
+                    // taffy 0.14 scrollable overflow rect: catches end padding
+                    // and RTL/start-side overflow the manual walk can miss.
+                    cw = cw
+                        .max(layout.scrollable_overflow_rect.right)
+                        .max(0.0);
+                    ch = ch
+                        .max(layout.scrollable_overflow_rect.bottom)
+                        .max(0.0);
                     if let Some(s) = &b.set_content_width {
                         s(cw);
                     }

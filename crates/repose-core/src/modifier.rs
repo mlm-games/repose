@@ -3,7 +3,9 @@ use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use taffy::{AlignContent, AlignItems, AlignSelf, FlexDirection, FlexWrap, JustifyContent};
+use taffy::{
+    AlignContent, AlignItems, AlignSelf, Contain, FlexDirection, FlexWrap, JustifyContent,
+};
 
 use crate::animation::AnimationSpec;
 use crate::indication::IndicationNodeFactory;
@@ -638,7 +640,14 @@ pub struct Modifier {
     pub flex_grow: Option<f32>,
     pub flex_shrink: Option<f32>,
     pub flex_basis: Option<f32>,
+    /// `flex-basis: content` — size from content, ignoring [`flex_basis`](Self::flex_basis).
+    /// Maps to taffy's `content` keyword (taffy 0.14+).
+    pub flex_basis_content: bool,
     pub flex_wrap: Option<FlexWrap>,
+    /// Minimum number of flex lines for a multi-line container. Items in a
+    /// [`FlexWrap::Balance`] container are balanced into at least this many
+    /// lines (taffy 0.14+, `flexbox_balance`).
+    pub flex_line_count: Option<u16>,
     pub flex_dir: Option<FlexDirection>,
     pub gap: Option<f32>,
     pub row_gap: Option<f32>,
@@ -747,9 +756,22 @@ pub struct Modifier {
     pub margin_bottom: Option<f32>,
     pub aspect_ratio: Option<f32>,
     /// Size this node's width to its min or max intrinsic content size.
+    /// Wired to taffy's `min-content`/`max-content` sizing keywords.
     pub intrinsic_width: Option<IntrinsicSize>,
     /// Size this node's height to its min or max intrinsic content size.
+    /// Wired to taffy's `min-content`/`max-content` sizing keywords.
     pub intrinsic_height: Option<IntrinsicSize>,
+    /// `fit-content(limit)` width in dp: `max(min-content, min(max-content, limit))`.
+    /// Applies when no explicit [`width`](Self::width) is set.
+    pub fit_content_width: Option<f32>,
+    /// `fit-content(limit)` height in dp. Applies when no explicit
+    /// [`height`](Self::height) is set.
+    pub fit_content_height: Option<f32>,
+    /// CSS containment (`contain: layout` / `paint` / `content`, taffy 0.14+).
+    /// Establishes an independent formatting context; useful with
+    /// `repaint_boundary`-style subtrees and virtualized lists.
+    /// Note: `contain: size` is not supported by taffy.
+    pub contain: Option<Contain>,
     pub painter: Option<Rc<dyn Fn(&mut crate::Scene, crate::Rect, f32)>>,
     pub paint_callback: Option<crate::PaintCallbackPayload>,
 
@@ -972,6 +994,26 @@ impl Alignment {
             Self::BottomEnd => (AI::END, JC::END),
         }
     }
+
+    /// Like [`to_flex`](Self::to_flex) but with CSS *safe* alignment:
+    /// overflowing content is aligned from the start edge instead of
+    /// overflowing both edges, so it stays reachable inside scroll
+    /// containers (taffy 0.11+).
+    pub fn to_flex_safe(self) -> (AlignItems, JustifyContent) {
+        use AlignItems as AI;
+        use JustifyContent as JC;
+        match self {
+            Self::TopStart => (AI::SAFE_START, JC::SAFE_START),
+            Self::TopCenter => (AI::SAFE_START, JC::SAFE_CENTER),
+            Self::TopEnd => (AI::SAFE_START, JC::SAFE_END),
+            Self::CenterStart => (AI::SAFE_CENTER, JC::SAFE_START),
+            Self::Center => (AI::SAFE_CENTER, JC::SAFE_CENTER),
+            Self::CenterEnd => (AI::SAFE_CENTER, JC::SAFE_END),
+            Self::BottomStart => (AI::SAFE_END, JC::SAFE_START),
+            Self::BottomCenter => (AI::SAFE_END, JC::SAFE_CENTER),
+            Self::BottomEnd => (AI::SAFE_END, JC::SAFE_END),
+        }
+    }
 }
 
 impl Modifier {
@@ -1186,6 +1228,26 @@ impl Modifier {
         self.flex_wrap = Some(w);
         self
     }
+    /// Balanced wrapping: distribute items evenly across lines instead of
+    /// filling each line greedily (taffy 0.14+, `FlexWrap::Balance`).
+    /// Pair with [`flex_line_count`](Self::flex_line_count) to request a
+    /// minimum number of lines.
+    pub fn flex_wrap_balanced(mut self) -> Self {
+        self.flex_wrap = Some(FlexWrap::Balance);
+        self
+    }
+    /// Minimum number of flex lines; items in a balanced container are
+    /// balanced into at least this many lines.
+    pub fn flex_line_count(mut self, n: u16) -> Self {
+        self.flex_line_count = Some(n.max(1));
+        self
+    }
+    /// `flex-basis: content` — size from content, ignoring any
+    /// [`flex_basis`](Self::flex_basis) value.
+    pub fn flex_basis_content(mut self) -> Self {
+        self.flex_basis_content = true;
+        self
+    }
     pub fn flex_dir(mut self, d: FlexDirection) -> Self {
         self.flex_dir = Some(d);
         self
@@ -1225,6 +1287,14 @@ impl Modifier {
     /// `justify_content` in one call).
     pub fn content_alignment(self, alignment: Alignment) -> Self {
         let (ai, jc) = alignment.to_flex();
+        self.align_items(ai).justify_content(jc)
+    }
+    /// Like [`content_alignment`](Self::content_alignment) but with CSS
+    /// *safe* alignment, so overflowing content stays reachable inside
+    /// scroll containers. Prefer this for centered dialogs and scroll
+    /// content that may exceed the viewport.
+    pub fn content_alignment_safe(self, alignment: Alignment) -> Self {
+        let (ai, jc) = alignment.to_flex_safe();
         self.align_items(ai).justify_content(jc)
     }
     pub fn align_content(mut self, a: AlignContent) -> Self {
@@ -1666,6 +1736,36 @@ impl Modifier {
     }
     pub fn aspect_ratio(mut self, ratio: f32) -> Self {
         self.aspect_ratio = Some(ratio);
+        self
+    }
+    /// `fit-content(limit)` width: shrink-wrap content, clamped to `limit` dp.
+    pub fn fit_content_width(mut self, limit_dp: f32) -> Self {
+        self.fit_content_width = Some(limit_dp.max(0.0));
+        self
+    }
+    /// `fit-content(limit)` height: shrink-wrap content, clamped to `limit` dp.
+    pub fn fit_content_height(mut self, limit_dp: f32) -> Self {
+        self.fit_content_height = Some(limit_dp.max(0.0));
+        self
+    }
+    /// CSS containment. See [`contain`](Self::contain).
+    pub fn contain(mut self, c: Contain) -> Self {
+        self.contain = Some(c);
+        self
+    }
+    /// `contain: layout` — independent formatting context, no baseline.
+    pub fn contain_layout(mut self) -> Self {
+        self.contain = Some(Contain::LAYOUT);
+        self
+    }
+    /// `contain: paint` — independent formatting context.
+    pub fn contain_paint(mut self) -> Self {
+        self.contain = Some(Contain::PAINT);
+        self
+    }
+    /// `contain: content` (`layout` + `paint`).
+    pub fn contain_content(mut self) -> Self {
+        self.contain = Some(Contain::CONTENT);
         self
     }
     /// Size this node's width to its min or max intrinsic content size.

@@ -238,6 +238,9 @@ struct Engine {
     /// Contains (width, height, left, top, content, data).
     glyph_cache:
         HashMap<(u64, u16, u32), (u32, u32, i32, i32, swash::scale::image::Content, Vec<u8>)>,
+    /// Cache of (ascent, descent) in px keyed by
+    /// (family hash, weight, px bits). Used for baseline alignment.
+    ascent_cache: RapidHashMap<(u64, u16, u32), (f32, f32)>,
 }
 
 impl Engine {
@@ -270,6 +273,66 @@ impl Engine {
                 self.glyph_cache.remove(&k);
             }
         }
+    }
+
+    /// Resolve `(ascent, descent)` in px for the primary font matching
+    /// `(family, weight)`, trying named families first and falling back to
+    /// the bundled sans. Returns a `0.8em`/`0.2em` estimate when unresolved.
+    fn resolve_vertical_metrics(
+        &mut self,
+        font_family: Option<&str>,
+        font_weight: u16,
+        px: f32,
+    ) -> (f32, f32) {
+        let mut candidates: Vec<&str> = Vec::new();
+        match font_family {
+            Some("monospace") => candidates.push("JetBrains Mono"),
+            Some("sans-serif") => candidates.push("Open Sans"),
+            Some("emoji") => candidates.push("Noto Color Emoji"),
+            Some(other) => candidates.push(other),
+            None => {}
+        }
+        candidates.push("Open Sans");
+        for name in candidates {
+            if let Some(m) = self.metrics_for_family(name, font_weight, px) {
+                return m;
+            }
+        }
+        (px * 0.8, px * 0.2)
+    }
+
+    /// Best-weight-match `(ascent, descent)` for a named family, or `None`
+    /// when the family (or its data) is unavailable.
+    fn metrics_for_family(
+        &mut self,
+        name: &str,
+        font_weight: u16,
+        px: f32,
+    ) -> Option<(f32, f32)> {
+        let info = self.font_cx.collection.family_by_name(name)?;
+        let target = font_weight as f32;
+        let mut best: Option<(f32, Vec<u8>, u32)> = None;
+        for font in info.fonts() {
+            let dist = (font.weight().value() - target).abs();
+            if best.as_ref().is_some_and(|(bd, _, _)| *bd <= dist) {
+                continue;
+            }
+            let bytes: Vec<u8> = match font.source().kind() {
+                parley::fontique::SourceKind::Memory(blob) => blob.as_ref().to_vec(),
+                #[cfg(not(target_arch = "wasm32"))]
+                parley::fontique::SourceKind::Path(path) => std::fs::read(path).ok()?,
+                #[cfg(target_arch = "wasm32")]
+                parley::fontique::SourceKind::Path(_) => continue,
+            };
+            best = Some((dist, bytes, font.index()));
+        }
+        let (_, bytes, index) = best?;
+        let font = skrifa::FontRef::from_index(&bytes, index).ok()?;
+        let metrics = font.metrics(
+            skrifa::instance::Size::new(px),
+            skrifa::instance::LocationRef::default(),
+        );
+        Some((metrics.ascent.max(0.0), metrics.descent.abs().max(0.0)))
     }
 
     fn raster_placement(
@@ -394,6 +457,7 @@ fn init_engine_sync() -> Engine {
         font_registry: Vec::new(),
         next_font_id: 1,
         glyph_cache: HashMap::new(),
+        ascent_cache: RapidHashMap::new(),
     }
 }
 
@@ -578,6 +642,35 @@ pub fn load_font_file(path: impl AsRef<std::path::Path>) -> std::io::Result<()> 
     let bytes = std::fs::read(path)?;
     register_font_data(&bytes);
     Ok(())
+}
+
+/// Vertical font metrics `(ascent, descent)` in px for the primary font
+/// matching `(font_family, font_weight)`.
+///
+/// Used for text baseline alignment (`AlignItems::Baseline`): the first
+/// baseline of a text block sits `ascent` below the top of its first line's
+/// em box (plus half-leading, applied by the caller). Results are cached.
+/// Falls back to a `0.8em`/`0.2em` estimate when no font resolves.
+pub fn primary_font_vertical_metrics(
+    font_family: Option<&str>,
+    font_weight: u16,
+    px: f32,
+) -> (f32, f32) {
+    if !(px > 0.0) {
+        return (0.0, 0.0);
+    }
+    let key = (
+        font_family.map(fast_hash).unwrap_or(0),
+        font_weight,
+        (px * 100.0) as u32,
+    );
+    let mut eng = engine().lock().unwrap();
+    if let Some(&m) = eng.ascent_cache.get(&key) {
+        return m;
+    }
+    let m = eng.resolve_vertical_metrics(font_family, font_weight, px);
+    eng.ascent_cache.insert(key, m);
+    m
 }
 
 /// Extract the family name from raw font bytes.

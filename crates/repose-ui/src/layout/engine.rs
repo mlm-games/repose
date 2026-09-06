@@ -409,6 +409,70 @@ impl LayoutEngine {
         id
     }
 
+    /// Debug dump of the taffy subtree rooted at `node_id` (styles +
+    /// computed layout), for the devtools inspector. Empty string when the
+    /// node has no taffy node. Backed by taffy's `write_tree`.
+    pub fn debug_taffy_subtree(&self, node_id: NodeId) -> String {
+        let trees: Vec<(&taffy::TaffyTree<NodeContext>, taffy::NodeId)> =
+            if let Some(key) = self.node_to_scope.get(&node_id)
+                && let Some(st) = self.scope_trees.get(key)
+                && let Some(&tid) = st.taffy_map.get(&node_id)
+            {
+                vec![(&st.taffy, tid)]
+            } else if let Some(&tid) = self.taffy_map.get(&node_id) {
+                vec![(&self.taffy, tid)]
+            } else {
+                Vec::new()
+            };
+        let mut out = String::new();
+        for (tree, tid) in trees {
+            let mut buf = Vec::new();
+            if taffy::util::write_tree(&mut buf, tree, tid).is_ok() {
+                out.push_str(&String::from_utf8_lossy(&buf));
+            }
+        }
+        out
+    }
+
+    /// One-line grid summary (track counts, line positions, resolved
+    /// templates) for a grid container, for the devtools inspector.
+    /// `None` when the node is not a grid container with detailed info.
+    /// Requires taffy's `detailed_layout_info` feature (default-on).
+    pub fn debug_grid_summary(&self, node_id: NodeId) -> Option<String> {
+        let tid = if let Some(key) = self.node_to_scope.get(&node_id)
+            && let Some(st) = self.scope_trees.get(key)
+            && let Some(&tid) = st.taffy_map.get(&node_id)
+        {
+            return Self::grid_summary_for(&st.taffy, tid);
+        } else {
+            self.taffy_map.get(&node_id).copied()?
+        };
+        Self::grid_summary_for(&self.taffy, tid)
+    }
+
+    fn grid_summary_for(
+        tree: &taffy::TaffyTree<NodeContext>,
+        tid: taffy::NodeId,
+    ) -> Option<String> {
+        let taffy::tree::DetailedLayoutInfo::Grid(grid) = tree.detailed_layout_info(tid) else {
+            return None;
+        };
+        Some(format!(
+            "grid rows=({} explicit of {} tracks) cols=({} explicit of {} tracks) rows=[{}] cols=[{}] items={}",
+            grid.rows.explicit_tracks,
+            grid.rows.explicit_tracks
+                + grid.rows.negative_implicit_tracks
+                + grid.rows.positive_implicit_tracks,
+            grid.columns.explicit_tracks,
+            grid.columns.explicit_tracks
+                + grid.columns.negative_implicit_tracks
+                + grid.columns.positive_implicit_tracks,
+            grid.grid_template_rows(),
+            grid.grid_template_columns(),
+            grid.items.len(),
+        ))
+    }
+
     pub(crate) fn locals_stamp() -> u64 {
         let mut h = FxHasher::default();
 

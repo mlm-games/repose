@@ -156,6 +156,14 @@ pub fn FlowRow(modifier: Modifier) -> View {
     Row(modifier.flex_wrap(FlexWrap::Wrap))
 }
 
+/// Like [`FlowRow`] but lines are packed to balance their lengths instead of
+/// filling each line greedily (taffy 0.14 `FlexWrap::Balance`). Best for
+/// chip/tag clouds. Pair with [`Modifier::flex_line_count`] to request a
+/// minimum number of lines.
+pub fn FlowRowBalanced(modifier: Modifier) -> View {
+    Row(modifier.flex_wrap_balanced())
+}
+
 /// Flipped container (identical to `Column`).
 /// Deprecated: use `Column` directly.
 #[deprecated = "Use Column instead (identical behavior)"]
@@ -167,6 +175,12 @@ pub fn Stack(modifier: Modifier) -> View {
 /// they exceed the available height. Equivalent to `Column` with `flex_wrap(Wrap)`.
 pub fn FlowColumn(modifier: Modifier) -> View {
     Column(modifier.flex_wrap(FlexWrap::Wrap))
+}
+
+/// Like [`FlowColumn`] but with balanced lines (taffy 0.14
+/// `FlexWrap::Balance`). See [`FlowRowBalanced`].
+pub fn FlowColumnBalanced(modifier: Modifier) -> View {
+    Column(modifier.flex_wrap_balanced())
 }
 
 /// Centers children both axes inside this Box.

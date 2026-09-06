@@ -259,6 +259,8 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     hash_opt_f32(m.flex_shrink, hasher);
     hash_opt_f32(m.flex_basis, hasher);
     m.flex_wrap.map(|v| std::mem::discriminant(&v)).hash(hasher);
+    m.flex_basis_content.hash(hasher);
+    m.flex_line_count.hash(hasher);
     m.flex_dir.map(|v| std::mem::discriminant(&v)).hash(hasher);
     m.align_self
         .map(|v| (v.keyword as u8, v.safety as u8))
@@ -314,6 +316,16 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     hash_opt_f32(m.aspect_ratio, hasher);
     m.intrinsic_width.hash(hasher);
     m.intrinsic_height.hash(hasher);
+    hash_opt_f32(m.fit_content_width, hasher);
+    hash_opt_f32(m.fit_content_height, hasher);
+    // Contain has no Hash impl upstream; map to a discriminant byte.
+    match m.contain {
+        None => 0u8.hash(hasher),
+        Some(c) if c == taffy::Contain::CONTENT => 3u8.hash(hasher),
+        Some(c) if c == taffy::Contain::LAYOUT => 1u8.hash(hasher),
+        Some(c) if c == taffy::Contain::PAINT => 2u8.hash(hasher),
+        Some(_) => 4u8.hash(hasher),
+    }
 
     // Z-index
     hash_f32(m.z_index, hasher);
