@@ -274,6 +274,7 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     m.align_content
         .map(|v| (v.keyword as u8, v.safety as u8))
         .hash(hasher);
+    m.baseline_align.hash(hasher);
 
     // Clip
     if let Some(r) = &m.clip_rounded {

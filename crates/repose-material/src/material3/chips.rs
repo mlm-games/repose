@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::atomic::Ordering;
 
 use repose_core::*;
-use repose_ui::{Box, FlowRow, Row, ViewExt, anim::animate_color};
+use repose_ui::{Box, FlowRow, FlowRowConfig, Row, ViewExt, anim::animate_color};
 
 use super::util::{FILTERCHIP_COUNTER, apply_m3_clickable, with_button_semantics};
 use super::*;
@@ -797,6 +797,7 @@ pub fn chip_group_flow(modifier: Modifier, children: impl repose_ui::IntoChildre
             .gap(8.0)
             .align_items(AlignItems::CENTER)
             .then(modifier),
+        FlowRowConfig::default(),
     )
     .child(children)
 }

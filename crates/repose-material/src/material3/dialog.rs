@@ -343,8 +343,10 @@ pub fn Dialog(
                     let dialog_container = Box(Modifier::new()
                         .fill_max_size()
                         .padding_values(pad)
-                        .justify_content(JustifyContent::CENTER)
-                        .align_items(AlignItems::CENTER)
+                        // Safe centering: an oversized dialog stays reachable
+                        // instead of overflowing past both viewport edges.
+                        .justify_content(JustifyContent::SAFE_CENTER)
+                        .align_items(AlignItems::SAFE_CENTER)
                         .hit_passthrough())
                     .child(dialog);
 

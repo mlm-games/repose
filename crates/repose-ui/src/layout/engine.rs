@@ -189,6 +189,16 @@ impl LayoutEngine {
                     &mut self.scope_trees,
                     &font_px,
                     &px,
+                    &mut self.baseline_map,
+                );
+
+                // Baseline-alignment post-pass for RowScope.align_by_* children.
+                Self::apply_baseline_shifts(
+                    &self.tree,
+                    &self.taffy,
+                    &self.taffy_map,
+                    &self.baseline_map,
+                    &mut self.baseline_shifts,
                 );
 
                 // 4a. Store Taffy-computed sizes for non-scope + scope-root nodes
@@ -286,6 +296,7 @@ impl LayoutEngine {
 
         let mut text_cache: FxHashMap<NodeId, TextLayout> = FxHashMap::default();
         let reverse_map: FxHashMap<taffy::NodeId, NodeId> = FxHashMap::default();
+        let mut baseline_map: FxHashMap<NodeId, (f32, f32)> = FxHashMap::default();
 
         Self::run_measure_pass(
             &mut temp_taffy,
@@ -299,6 +310,7 @@ impl LayoutEngine {
             &mut self.scope_trees,
             &font_px_closure,
             &px_closure,
+            &mut baseline_map,
         );
 
         let layout = temp_taffy.layout(root_tid).ok();
@@ -318,6 +330,8 @@ impl LayoutEngine {
             scope_root_map: FxHashMap::default(),
             node_to_scope: FxHashMap::default(),
             text_cache: FxHashMap::default(),
+            baseline_map: FxHashMap::default(),
+            baseline_shifts: FxHashMap::default(),
             last_size_px: None,
             layout_valid: false,
             paint_cache: FxHashMap::default(),
@@ -335,6 +349,39 @@ impl LayoutEngine {
     }
 
     pub(crate) fn layout_for_node(&self, node_id: NodeId) -> taffy::prelude::Layout {
+        let mut l = self.raw_layout_for_node(node_id);
+        // RowScope baseline-alignment shifts (no-op when absent).
+        if let Some(s) = self.baseline_shift_for(node_id) {
+            l.location.y += s;
+        }
+        l
+    }
+
+    /// Baseline shift for `node_id`, mirroring `raw_layout_for_node`'s
+    /// tree resolution so shifts come from the tree that laid the node out.
+    fn baseline_shift_for(&self, node_id: NodeId) -> Option<f32> {
+        if self.scope_root_map.contains_key(&node_id) {
+            if let Some(&s) = self.baseline_shifts.get(&node_id) {
+                return Some(s);
+            }
+        }
+        if let Some(parent_id) = self.tree.get(node_id).and_then(|n| n.parent)
+            && let Some(outer_key) = self.node_to_scope.get(&parent_id)
+            && let Some(st) = self.scope_trees.get(outer_key)
+            && let Some(&s) = st.baseline_shifts.get(&node_id)
+        {
+            return Some(s);
+        }
+        if let Some(key) = self.node_to_scope.get(&node_id)
+            && let Some(st) = self.scope_trees.get(key)
+            && let Some(&s) = st.baseline_shifts.get(&node_id)
+        {
+            return Some(s);
+        }
+        self.baseline_shifts.get(&node_id).copied()
+    }
+
+    fn raw_layout_for_node(&self, node_id: NodeId) -> taffy::prelude::Layout {
         fn fallback() -> taffy::prelude::Layout {
             log::error!("layout_for_node: missing taffy layout, returning zero rect");
             taffy::prelude::Layout {

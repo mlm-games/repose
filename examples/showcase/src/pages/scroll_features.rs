@@ -30,7 +30,7 @@ fn flow_row_demo() -> View {
     const COLORS: [u32; 6] = [0x4285F4, 0xEA4335, 0x34A853, 0xFBBC05, 0x8E24AA, 0x00BCD4];
     Section(
         "FlowRow - auto-wrapping horizontal layout",
-        FlowRow(Modifier::new().gap(sp::SM).fill_max_width()).child(
+        FlowRow(Modifier::new().gap(sp::SM).fill_max_width(), FlowRowConfig::default()).child(
             (0..25)
                 .map(|i| {
                     let hex = COLORS[i as usize % COLORS.len()];

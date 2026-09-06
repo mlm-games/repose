@@ -26,7 +26,11 @@ impl LayoutEngine {
         scope_trees: &mut HashMap<String, ScopeLayoutTree>,
         font_px: &dyn Fn(f32) -> f32,
         px: &dyn Fn(f32) -> f32,
+        baseline_map: &mut FxHashMap<NodeId, (f32, f32)>,
     ) {
+        // Fresh per compute: attach_text_baselines only inserts, so stale
+        // entries (removed nodes, kind-changed nodes) must not survive.
+        baseline_map.clear();
         let _ = taffy.compute_layout_with_measure(
             taffy_root,
             available,
@@ -106,6 +110,7 @@ impl LayoutEngine {
                     reverse_map,
                     text_cache,
                     font_px,
+                    baseline_map,
                 )
             },
         );
@@ -155,6 +160,8 @@ impl LayoutEngine {
         let mut st_taffy = std::mem::replace(&mut st.taffy, taffy::TaffyTree::new());
         let st_rev = std::mem::take(&mut st.reverse_map);
         let mut st_tc = std::mem::take(&mut st.text_cache);
+        // Fresh per compute (see run_measure_pass): only inserts happen below.
+        st.baseline_map.clear();
 
         let _ = st_taffy.compute_layout_with_measure(
             root_tid,
@@ -196,7 +203,15 @@ impl LayoutEngine {
                         )
                     },
                 );
-                Self::attach_text_baselines(out, baseline_key, tn, &st_rev, &st_tc, font_px)
+                Self::attach_text_baselines(
+                    out,
+                    baseline_key,
+                    tn,
+                    &st_rev,
+                    &st_tc,
+                    font_px,
+                    &mut st.baseline_map,
+                )
             },
         );
 
@@ -204,6 +219,14 @@ impl LayoutEngine {
         st.reverse_map = st_rev;
         st.text_cache = st_tc;
         st.last_constraints = Some((known, avail));
+        // Baseline-alignment post-pass for rows inside this scope tree.
+        Self::apply_baseline_shifts(
+            tree,
+            &st.taffy,
+            &st.taffy_map,
+            &st.baseline_map,
+            &mut st.baseline_shifts,
+        );
         if let Ok(layout) = st.taffy.layout(root_tid) {
             let sz = taffy::geometry::Size {
                 width: layout.size.width,
@@ -216,6 +239,64 @@ impl LayoutEngine {
         }
         scope_trees.insert(key.to_string(), st);
         None
+    }
+
+    /// Baseline-alignment post-pass for one taffy tree (Compose `alignBy`
+    /// semantics): for every `Row` view with `RowScope`-flagged direct
+    /// children present in this tree, shift the flagged children so the
+    /// requested baselines coincide. Non-flagged siblings keep their normal
+    /// cross-axis alignment. Must run after every compute of `taffy`.
+    pub(crate) fn apply_baseline_shifts(
+        tree: &ViewTree,
+        taffy: &TaffyTree<NodeContext>,
+        taffy_map: &FxHashMap<NodeId, taffy::NodeId>,
+        baseline_map: &FxHashMap<NodeId, (f32, f32)>,
+        shifts_out: &mut FxHashMap<NodeId, f32>,
+    ) {
+        // Recomputed from scratch every layout: a child that loses its flag
+        // (or its row) must not keep a stale shift.
+        shifts_out.clear();
+        for (&view_nid, _) in taffy_map.iter() {
+            let Some(node) = tree.get(view_nid) else {
+                continue;
+            };
+            if !matches!(node.kind, ViewKind::Row) {
+                continue;
+            }
+            let mut parts: Vec<(NodeId, f32)> = Vec::new();
+            for &child in node.children.iter() {
+                let Some(cnode) = tree.get(child) else {
+                    continue;
+                };
+                let Some(which) = cnode.modifier.baseline_align else {
+                    continue;
+                };
+                let Some(&ctid) = taffy_map.get(&child) else {
+                    continue;
+                };
+                let Ok(cl) = taffy.layout(ctid) else {
+                    continue;
+                };
+                let Some(&(first, last)) = baseline_map.get(&child) else {
+                    continue;
+                };
+                let b = match which {
+                    BaselineAlign::FirstBaseline => first,
+                    BaselineAlign::LastBaseline => last,
+                };
+                parts.push((child, cl.location.y + b));
+            }
+            if parts.is_empty() {
+                continue;
+            }
+            let target = parts
+                .iter()
+                .map(|(_, yb)| *yb)
+                .fold(f32::NEG_INFINITY, f32::max);
+            for (child, yb) in parts {
+                shifts_out.insert(child, target - yb);
+            }
+        }
     }
 
     /// Identity key for baseline synthesis: (family, weight, font dp).
@@ -247,6 +328,7 @@ impl LayoutEngine {
         reverse_map: &FxHashMap<taffy::NodeId, NodeId>,
         text_cache: &FxHashMap<NodeId, TextLayout>,
         font_px: &dyn Fn(f32) -> f32,
+        baselines_out: &mut FxHashMap<NodeId, (f32, f32)>,
     ) -> taffy::LayoutOutput {
         let Some((family, weight, font_dp)) = key else {
             return out;
@@ -255,9 +337,8 @@ impl LayoutEngine {
         let (ascent, descent) =
             repose_text::primary_font_vertical_metrics(family, weight, px);
         let em = (ascent + descent).max(1.0);
-        let cached = reverse_map
-            .get(&taffy_node)
-            .and_then(|nid| text_cache.get(nid));
+        let nid = reverse_map.get(&taffy_node).copied();
+        let cached = nid.and_then(|nid| text_cache.get(&nid));
         let (line_count, first_line_h) = match cached {
             Some(tl) => (
                 tl.lines.len().max(1),
@@ -280,6 +361,10 @@ impl LayoutEngine {
             };
             before + top_extra + ascent
         };
+        // Record for the RowScope baseline-alignment post-pass.
+        if let Some(nid) = nid {
+            baselines_out.insert(nid, (first, last));
+        }
         taffy::LayoutOutput::from_sizes_and_baselines(
             out.size,
             out.scrollable_overflow_rect,

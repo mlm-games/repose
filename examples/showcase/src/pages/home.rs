@@ -11,7 +11,7 @@ pub fn screen(nav: Navigator<Route>) -> View {
         SectionWith(
             "Featured demos",
             None,
-            FlowRow(Modifier::new().fill_max_width().gap(sp::MD)).child(
+            FlowRow(Modifier::new().fill_max_width().gap(sp::MD), FlowRowConfig::default()).child(
                 Route::FEATURED
                     .iter()
                     .copied()

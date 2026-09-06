@@ -134,7 +134,7 @@ pub fn screen() -> View {
             "Drag tasks",
             Column(Modifier::new().gap(sp::MD)).child((
                 Hint("Grab a card from Backlog and drop it into the target zone below."),
-                FlowRow(Modifier::new().gap(sp::MD)).child((
+                FlowRow(Modifier::new().gap(sp::MD), FlowRowConfig::default()).child((
                     task_card(Task {
                         id: 1,
                         title: "Refine hero layout",

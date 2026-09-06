@@ -1,6 +1,6 @@
 use super::{IntrinsicSizeMode, LayoutEngine};
 use crate::Interactions;
-use crate::{Box as RBox, Column, Text, TextStyle, ViewExt};
+use crate::{Box as RBox, Column, Row, Text, TextStyle, ViewExt, row_scope};
 use repose_core::*;
 use std::collections::HashMap;
 
@@ -1100,16 +1100,15 @@ mod shadow_tests {
 
 #[test]
 fn test_row_baseline_alignment() {
-    use crate::Row;
-
-    // Two single-line texts at different sizes in a baseline-aligned Row:
-    // taffy must shift the smaller text down so first baselines coincide.
-    let big = Text("Ag").size(32.0).single_line();
-    let small = Text("Ag").size(16.0).single_line();
-    let root = Row(Modifier::new()
-        .size(400.0, 200.0)
-        .align_items(taffy::AlignItems::BASELINE))
-    .child((big, small));
+    // Compose-style: the RowScope-flagged children form the baseline group
+    // and coincide; a lone flagged child would define the group alone and
+    // not move, and unflagged siblings keep normal alignment.
+    let root = Row(Modifier::new().size(400.0, 200.0)).child(row_scope(|s| {
+        vec![
+            s.align_by_baseline(Text("Ag").size(32.0).single_line()),
+            s.align_by_baseline(Text("Ag").size(16.0).single_line()),
+        ]
+    }));
 
     let mut eng = make_engine();
     let (scene, _, _) = eng.layout_frame(
@@ -1175,13 +1174,20 @@ fn test_intrinsic_and_fit_content_sizing() {
 
 #[test]
 fn test_balanced_flow_row_lays_out() {
-    use crate::FlowRowBalanced;
+    use crate::{FlowColumnConfig, FlowRowConfig};
 
     let white = Color::WHITE;
-    let root = FlowRowBalanced(Modifier::new().size(300.0, 300.0).flex_line_count(2))
-        .child(RBox(Modifier::new().size(100.0, 20.0).background(white)))
-        .child(RBox(Modifier::new().size(100.0, 20.0).background(white)))
-        .child(RBox(Modifier::new().size(100.0, 20.0).background(white)));
+    let root = crate::FlowRow(
+        Modifier::new().size(300.0, 300.0),
+        FlowRowConfig {
+            balanced: true,
+            min_lines: 2,
+            ..Default::default()
+        },
+    )
+    .child(RBox(Modifier::new().size(100.0, 20.0).background(white)))
+    .child(RBox(Modifier::new().size(100.0, 20.0).background(white)))
+    .child(RBox(Modifier::new().size(100.0, 20.0).background(white)));
     let mut eng = make_engine();
     let (scene, _, _) = eng.layout_frame(
         &root,
@@ -1193,6 +1199,29 @@ fn test_balanced_flow_row_lays_out() {
     assert!(
         !scene.nodes.is_empty(),
         "balanced flow row should lay out without errors"
+    );
+
+    // Same for the vertical variant.
+    let root = crate::FlowColumn(
+        Modifier::new().size(300.0, 300.0),
+        FlowColumnConfig {
+            balanced: true,
+            min_lines: 2,
+            ..Default::default()
+        },
+    )
+    .child(RBox(Modifier::new().size(20.0, 100.0).background(white)));
+    let mut eng = make_engine();
+    let (scene, _, _) = eng.layout_frame(
+        &root,
+        (300, 300),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    assert!(
+        !scene.nodes.is_empty(),
+        "balanced flow column should lay out without errors"
     );
 }
 

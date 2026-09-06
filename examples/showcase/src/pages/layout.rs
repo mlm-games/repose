@@ -89,7 +89,7 @@ pub fn screen() -> View {
             "Drop Shadow (.elevation / .shadow)",
             Column(Modifier::new().padding(20.0).gap(20.0)).child((
                 Hint("Combine graphics_layer with shadow/elevation to render an offscreen-pass Gaussian drop shadow."),
-                FlowRow(Modifier::new().fill_max_width().gap(sp::XL)).child((
+                FlowRow(Modifier::new().fill_max_width().gap(sp::XL), FlowRowConfig::default()).child((
                     shadow_card(
                         Modifier::new().elevation(4.0).background(theme().surface)
                             .border(1.0, theme().outline_variant, 12.0),

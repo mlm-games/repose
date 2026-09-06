@@ -146,22 +146,105 @@ pub fn Row(modifier: Modifier) -> View {
     View::new(0, ViewKind::Row).modifier(modifier)
 }
 
+/// Scope receiver for building `Row` children with row-only capabilities,
+/// mirroring Compose's `RowScope`.
+///
+/// Obtain one only inside [`row_scope`], whose closure signature keeps the
+/// reference from escaping, then attach the returned children to a `Row`:
+/// ```ignore
+/// Row(Modifier::new()).children(row_scope(|s| vec![
+///     s.align_by_baseline(Text("Ag").size(32.0)),
+///     Text("Ag").size(16.0),
+/// ]))
+/// ```
+/// Children built outside a scope (plain `View`s) mix freely with scoped
+/// ones; only `align_by_*` children participate in baseline alignment.
+pub struct RowScope {
+    _private: (),
+}
+
+impl RowScope {
+    /// Align this child by its first text baseline within the `Row`
+    /// (Compose `RowScope.alignByBaseline`). Siblings without a baseline
+    /// request keep their normal cross-axis alignment.
+    pub fn align_by_baseline(&self, view: View) -> View {
+        self.align_by(view, BaselineAlign::FirstBaseline)
+    }
+
+    /// Align this child by its last text baseline within the `Row`
+    /// (Compose `RowScope.alignBy(LastBaseline)`).
+    pub fn align_by_last_baseline(&self, view: View) -> View {
+        self.align_by(view, BaselineAlign::LastBaseline)
+    }
+
+    /// Align this child by the given baseline (Compose `RowScope.alignBy`).
+    pub fn align_by(&self, mut view: View, line: BaselineAlign) -> View {
+        view.modifier.baseline_align = Some(line);
+        view
+    }
+}
+
+/// Run `content` with a [`RowScope`] receiver and collect the children.
+/// The scope reference cannot escape the closure; use the result as (part
+/// of) a `Row`'s children.
+pub fn row_scope<R>(content: impl FnOnce(&RowScope) -> R) -> R {
+    content(&RowScope { _private: () })
+}
+
 pub fn Column(modifier: Modifier) -> View {
     View::new(0, ViewKind::Column).modifier(modifier)
 }
 
-/// A horizontally-oriented flow layout that wraps children to new rows when
-/// they exceed the available width. Equivalent to `Row` with `flex_wrap(Wrap)`.
-pub fn FlowRow(modifier: Modifier) -> View {
-    Row(modifier.flex_wrap(FlexWrap::Wrap))
+/// Configuration for [`FlowRow`]. M3-style config: construct with
+/// `..Default::default()` so future options don't break callers.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FlowRowConfig {
+    /// Pack lines to balance their lengths instead of filling each line
+    /// greedily (taffy 0.14 `FlexWrap::Balance`). Best for chip/tag clouds.
+    pub balanced: bool,
+    /// Minimum number of lines; balanced items spread into at least this
+    /// many lines. `1` (default) leaves the count to layout.
+    pub min_lines: u16,
 }
 
-/// Like [`FlowRow`] but lines are packed to balance their lengths instead of
-/// filling each line greedily (taffy 0.14 `FlexWrap::Balance`). Best for
-/// chip/tag clouds. Pair with [`Modifier::flex_line_count`] to request a
-/// minimum number of lines.
-pub fn FlowRowBalanced(modifier: Modifier) -> View {
-    Row(modifier.flex_wrap_balanced())
+impl Default for FlowRowConfig {
+    fn default() -> Self {
+        Self {
+            balanced: false,
+            min_lines: 1,
+        }
+    }
+}
+
+/// Configuration for [`FlowColumn`]. See [`FlowRowConfig`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FlowColumnConfig {
+    /// Pack lines to balance their lengths (taffy 0.14 `FlexWrap::Balance`).
+    pub balanced: bool,
+    /// Minimum number of lines. `1` (default) leaves the count to layout.
+    pub min_lines: u16,
+}
+
+impl Default for FlowColumnConfig {
+    fn default() -> Self {
+        Self {
+            balanced: false,
+            min_lines: 1,
+        }
+    }
+}
+
+/// A horizontally-oriented flow layout that wraps children to new rows when
+/// they exceed the available width. Equivalent to `Row` with `flex_wrap(Wrap)`.
+/// Tune via [`FlowRowConfig`] (e.g. balanced packing).
+pub fn FlowRow(modifier: Modifier, config: FlowRowConfig) -> View {
+    let mut modifier = modifier.flex_wrap(if config.balanced {
+        FlexWrap::Balance
+    } else {
+        FlexWrap::Wrap
+    });
+    modifier.flex_line_count = Some(config.min_lines.max(1));
+    Row(modifier)
 }
 
 /// Flipped container (identical to `Column`).
@@ -173,20 +256,23 @@ pub fn Stack(modifier: Modifier) -> View {
 
 /// A vertically-oriented flow layout that wraps children to new columns when
 /// they exceed the available height. Equivalent to `Column` with `flex_wrap(Wrap)`.
-pub fn FlowColumn(modifier: Modifier) -> View {
-    Column(modifier.flex_wrap(FlexWrap::Wrap))
-}
-
-/// Like [`FlowColumn`] but with balanced lines (taffy 0.14
-/// `FlexWrap::Balance`). See [`FlowRowBalanced`].
-pub fn FlowColumnBalanced(modifier: Modifier) -> View {
-    Column(modifier.flex_wrap_balanced())
+/// Tune via [`FlowColumnConfig`] (e.g. balanced packing).
+pub fn FlowColumn(modifier: Modifier, config: FlowColumnConfig) -> View {
+    let mut modifier = modifier.flex_wrap(if config.balanced {
+        FlexWrap::Balance
+    } else {
+        FlexWrap::Wrap
+    });
+    modifier.flex_line_count = Some(config.min_lines.max(1));
+    Column(modifier)
 }
 
 /// Centers children both axes inside this Box.
 /// (Compose `Box(contentAlignment = Alignment.Center)`.)
+/// Uses *safe* centering so overflowing content stays reachable inside
+/// scroll containers instead of spilling past both edges.
 pub fn Center(modifier: Modifier) -> View {
-    Box(modifier.content_alignment(Alignment::Center))
+    Box(modifier.content_alignment_safe(Alignment::Center))
 }
 
 pub fn ZStack(modifier: Modifier) -> View {

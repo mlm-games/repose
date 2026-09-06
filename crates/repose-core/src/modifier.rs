@@ -359,6 +359,19 @@ pub enum IntrinsicSize {
     Max,
 }
 
+/// Which text baseline a `Row` child aligns by. Mirrors Compose's
+/// `FirstBaseline` / `LastBaseline` alignment lines.
+///
+/// Set via `RowScope::align_by_baseline` / `align_by_last_baseline`
+/// (or `align_by`) inside a `row_scope` block; only meaningful for direct
+/// children of a `Row`. Siblings without a baseline request keep their
+/// normal alignment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum BaselineAlign {
+    FirstBaseline,
+    LastBaseline,
+}
+
 static PRESS_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 /// A press identifier for linking Press -> Release/Cancel pairs.
@@ -644,9 +657,8 @@ pub struct Modifier {
     /// Maps to taffy's `content` keyword (taffy 0.14+).
     pub flex_basis_content: bool,
     pub flex_wrap: Option<FlexWrap>,
-    /// Minimum number of flex lines for a multi-line container. Items in a
-    /// [`FlexWrap::Balance`] container are balanced into at least this many
-    /// lines (taffy 0.14+, `flexbox_balance`).
+    /// Minimum number of flex lines for a multi-line container (taffy 0.14+).
+    /// Transport for flow config; prefer building flows via `FlowRowConfig`.
     pub flex_line_count: Option<u16>,
     pub flex_dir: Option<FlexDirection>,
     pub gap: Option<f32>,
@@ -767,6 +779,9 @@ pub struct Modifier {
     /// `fit-content(limit)` height in dp. Applies when no explicit
     /// [`height`](Self::height) is set.
     pub fit_content_height: Option<f32>,
+    /// Baseline alignment request for a `Row` child. See [`BaselineAlign`].
+    /// Set via `RowScope` methods; inert under non-`Row` parents.
+    pub baseline_align: Option<BaselineAlign>,
     /// CSS containment (`contain: layout` / `paint` / `content`, taffy 0.14+).
     /// Establishes an independent formatting context; useful with
     /// `repaint_boundary`-style subtrees and virtualized lists.
@@ -1226,20 +1241,6 @@ impl Modifier {
     }
     pub fn flex_wrap(mut self, w: FlexWrap) -> Self {
         self.flex_wrap = Some(w);
-        self
-    }
-    /// Balanced wrapping: distribute items evenly across lines instead of
-    /// filling each line greedily (taffy 0.14+, `FlexWrap::Balance`).
-    /// Pair with [`flex_line_count`](Self::flex_line_count) to request a
-    /// minimum number of lines.
-    pub fn flex_wrap_balanced(mut self) -> Self {
-        self.flex_wrap = Some(FlexWrap::Balance);
-        self
-    }
-    /// Minimum number of flex lines; items in a balanced container are
-    /// balanced into at least this many lines.
-    pub fn flex_line_count(mut self, n: u16) -> Self {
-        self.flex_line_count = Some(n.max(1));
         self
     }
     /// `flex-basis: content` — size from content, ignoring any

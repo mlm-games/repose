@@ -19,6 +19,12 @@ pub(crate) struct ScopeLayoutTree {
     pub(crate) cached_size: Option<taffy::Size<f32>>,
     pub(crate) text_cache: FxHashMap<NodeId, TextLayout>,
     pub(crate) valid: bool,
+    /// Measured (first, last) text baselines by ViewTree NodeId, filled
+    /// during measure. Consumed by the baseline-alignment post-pass.
+    pub(crate) baseline_map: FxHashMap<NodeId, (f32, f32)>,
+    /// Vertical px shifts from baseline alignment, applied in
+    /// `layout_for_node`. Overwritten every layout of this tree.
+    pub(crate) baseline_shifts: FxHashMap<NodeId, f32>,
 }
 
 impl ScopeLayoutTree {
@@ -32,6 +38,8 @@ impl ScopeLayoutTree {
             cached_size: None,
             text_cache: FxHashMap::default(),
             valid: false,
+            baseline_map: FxHashMap::default(),
+            baseline_shifts: FxHashMap::default(),
         }
     }
 }
@@ -58,6 +66,13 @@ pub struct LayoutEngine {
 
     /// Cached text layouts for non-scope nodes (persists across frames).
     pub(crate) text_cache: FxHashMap<NodeId, TextLayout>,
+
+    /// Measured (first, last) text baselines by ViewTree NodeId, filled
+    /// during measure. Consumed by the baseline-alignment post-pass.
+    pub(crate) baseline_map: FxHashMap<NodeId, (f32, f32)>,
+    /// Vertical px shifts from baseline alignment, applied in
+    /// `layout_for_node`. Overwritten every root layout.
+    pub(crate) baseline_shifts: FxHashMap<NodeId, f32>,
 
     /// Last window size used for layout.
     pub(crate) last_size_px: Option<(u32, u32)>,
