@@ -133,22 +133,34 @@ pub fn ModalBottomSheet(
     let th = theme();
     let peek_h = state.peek_height.get().max(config.peek_height);
     let anim_distance = peek_h.max(48.0).max(400.0);
-    let overlay_guard = remember_with_key("mbs_oguard", || RefCell::new(None::<OverlayGuard>));
+    let mbs_id = remember(unique_component_id);
+    let overlay_guard = remember_with_key(format!("mbs_oguard_{mbs_id}"), || {
+        RefCell::new(None::<OverlayGuard>)
+    });
 
     // Fresh content each composition (builder captures content once).
-    let current_content = remember_state_with_key("mbs_c", || Box(Modifier::new()));
+    let current_content =
+        remember_state_with_key(format!("mbs_c_{mbs_id}"), || Box(Modifier::new()));
     *current_content.borrow_mut() = content;
 
+    let current_modifier = remember_state_with_key(format!("mbs_mod_{mbs_id}"), Modifier::new);
+    *current_modifier.borrow_mut() = modifier;
+    let current_config = remember_state_with_key(format!("mbs_cfg_{mbs_id}"), || config.clone());
+    *current_config.borrow_mut() = config;
+
     // Drag state -> offset_at_drag_start is the anim value when the drag began
-    let drag_anchor_y: Rc<RefCell<f32>> = remember_state_with_key("mbs_drag_y", || 0.0);
-    let offset_at_drag_start: Rc<RefCell<f32>> = remember_state_with_key("mbs_drag_base", || 0.0);
-    let is_dragging: Rc<RefCell<bool>> = remember_state_with_key("mbs_drag", || false);
+    let drag_anchor_y: Rc<RefCell<f32>> =
+        remember_state_with_key(format!("mbs_drag_y_{mbs_id}"), || 0.0);
+    let offset_at_drag_start: Rc<RefCell<f32>> =
+        remember_state_with_key(format!("mbs_drag_base_{mbs_id}"), || 0.0);
+    let is_dragging: Rc<RefCell<bool>> =
+        remember_state_with_key(format!("mbs_drag_{mbs_id}"), || false);
 
     // Animated offset: anim_distance px (off-screen) -> 0px (visible)
-    let anim = remember_state_with_key("mbs_anim", || {
+    let anim = remember_state_with_key(format!("mbs_anim_{mbs_id}"), || {
         AnimatedValue::new(anim_distance, theme().motion.spring)
     });
-    let last_target = remember_state_with_key("mbs_anim_target", || f32::NAN);
+    let last_target = remember_state_with_key(format!("mbs_anim_target_{mbs_id}"), || f32::NAN);
     let anim_target = if state.is_visible() {
         0.0
     } else {
@@ -182,13 +194,15 @@ pub fn ModalBottomSheet(
             let builder: Rc<dyn Fn() -> View> = Rc::new({
                 let state = state.clone();
                 let anim = anim.clone();
-                let modifier = modifier.clone();
+                let current_modifier = current_modifier.clone();
                 let current_content = current_content.clone();
+                let current_config = current_config.clone();
                 let drag_anchor_y = drag_anchor_y.clone();
                 let offset_at_drag_start = offset_at_drag_start.clone();
                 let is_dragging = is_dragging.clone();
-                let anim_distance = anim_distance;
                 move || {
+                    let modifier = current_modifier.borrow().clone();
+                    let config = current_config.borrow().clone();
                     let off = *anim.borrow().get();
                     let content = current_content.borrow().clone();
 
@@ -233,7 +247,6 @@ pub fn ModalBottomSheet(
                                 let anim = anim.clone();
                                 let is_dragging = is_dragging.clone();
                                 let state = state.clone();
-                                let anim_distance = anim_distance;
                                 move |_| {
                                     *is_dragging.borrow_mut() = false;
                                     let current_off = *anim.borrow().get();

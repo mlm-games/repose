@@ -6,14 +6,17 @@ use web_time::{Duration, Instant};
 use crate::{Signal, reactive, signal, timer};
 
 /// Earliest deadline across the shared timer queue (timers + debounces).
-/// Kept for compatibility; `ReposeRuntime::next_wakeup_deadline` reads
-/// `timer::next_deadline` directly.
+#[deprecated(
+    note = "Debounced entries live on the shared timer queue, which `ReposeRuntime::tick_overlays` already polls via `timer::poll`. Polling here too would advance frame timers twice per redraw. Use `timer::next_deadline` instead."
+)]
 pub fn next_deadline() -> Option<Instant> {
     timer::next_deadline()
 }
 
-/// Kept for compatibility; `ReposeRuntime::tick_overlays` already polls the
-/// shared queue via `timer::poll`, which also covers debounced entries.
+/// Fires due entries on the shared timer queue.
+#[deprecated(
+    note = "`ReposeRuntime::tick_overlays` already polls the shared queue via `timer::poll`. Calling this too would advance frame timers twice per redraw. Use `timer::poll` instead."
+)]
 pub fn poll() {
     timer::poll();
 }
@@ -62,14 +65,16 @@ where
     // establish initial deps
     reactive::run_observer_now(obs_id);
 
-    // cleanup on unmount (scope drop)
-    crate::scoped_effect(move || {
-        crate::on_unmount(move || {
-            reactive::remove_observer(obs_id);
-            // Dropping the handle cancels the pending firing.
-            *slot.borrow_mut() = None;
-        })
-    });
+    let installed = crate::remember(|| RefCell::new(false));
+    if !*installed.borrow() {
+        *installed.borrow_mut() = true;
+        crate::scoped_effect(move || {
+            crate::on_unmount(move || {
+                reactive::remove_observer(obs_id);
+                *slot.borrow_mut() = None;
+            })
+        });
+    }
 
     out
 }

@@ -151,6 +151,9 @@ pub fn Dialog(
     let props = remember_state_with_key(state.key("p"), || properties.clone());
     *props.borrow_mut() = properties;
 
+    let current_modifier = remember_state_with_key(state.key("m"), Modifier::new);
+    *current_modifier.borrow_mut() = modifier;
+
     let scroll_state: Rc<repose_core::scroll::ScrollState> =
         remember_with_key(state.key("scroll"), repose_core::scroll::ScrollState::new);
 
@@ -190,7 +193,7 @@ pub fn Dialog(
             let builder: Rc<dyn Fn() -> View> = Rc::new({
                 let state = state.clone();
                 let anim = anim.clone();
-                let modifier = modifier.clone();
+                let current_modifier = current_modifier.clone();
                 let current_content = current_content.clone();
                 let props = props.clone();
                 let scroll_state = scroll_state.clone();
@@ -289,7 +292,7 @@ pub fn Dialog(
                         Modifier::new()
                             .min_width(super::DialogDefaults::MIN_WIDTH)
                             .max_width(super::DialogDefaults::MAX_WIDTH)
-                            .then(modifier.clone())
+                            .then(current_modifier.borrow().clone())
                             .justify_content(JustifyContent::CENTER)
                             .background(th.surface_container_high)
                             .clip_rounded(th.shapes.extra_large)

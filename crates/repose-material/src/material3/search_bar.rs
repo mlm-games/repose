@@ -900,9 +900,21 @@ pub fn ExpandedFullScreenSearchBar(
     // Mark as full-screen so AppBarWithSearch can hide the collapsed bar
     state.expands_to_full_screen.set(true);
 
-    let overlay_guard = remember_with_key("efs_oguard", || RefCell::new(None::<OverlayGuard>));
-    let current_content = remember_state_with_key("efs_cc", || Box(Modifier::new()));
+    let efs_id = remember(unique_component_id);
+    let overlay_guard = remember_with_key(format!("efs_oguard_{efs_id}"), || {
+        RefCell::new(None::<OverlayGuard>)
+    });
+    let current_content =
+        remember_state_with_key(format!("efs_cc_{efs_id}"), || Box(Modifier::new()));
     *current_content.borrow_mut() = content;
+
+    let current_modifier = remember_state_with_key(format!("efs_mod_{efs_id}"), Modifier::new);
+    *current_modifier.borrow_mut() = modifier;
+    let current_input =
+        remember_state_with_key(format!("efs_input_{efs_id}"), || input_field.clone());
+    *current_input.borrow_mut() = input_field;
+    let current_config = remember_state_with_key(format!("efs_cfg_{efs_id}"), || config.clone());
+    *current_config.borrow_mut() = config;
 
     let progress = state.progress();
     let _content_alpha = state.content_progress();
@@ -916,13 +928,16 @@ pub fn ExpandedFullScreenSearchBar(
             let focus_requested = Rc::new(Cell::new(false));
             let builder: Rc<dyn Fn() -> View> = Rc::new({
                 let state = state.clone();
-                let modifier = modifier.clone();
-                let input_field = input_field.clone();
+                let current_modifier = current_modifier.clone();
+                let current_input = current_input.clone();
                 let current_content = current_content.clone();
-                let config = config.clone();
+                let current_config = current_config.clone();
                 let input_fr = input_fr.clone();
                 let focus_requested = focus_requested.clone();
                 move || {
+                    let modifier = current_modifier.borrow().clone();
+                    let input_field = current_input.borrow().clone();
+                    let config = current_config.borrow().clone();
                     let progress = state.progress();
                     let content_alpha = state.content_progress();
                     let alpha = progress.clamp(0.0, 1.0);
@@ -1005,9 +1020,21 @@ pub fn ExpandedDockedSearchBar(
     // Docked search bar does NOT expand to full-screen
     state.expands_to_full_screen.set(false);
 
-    let overlay_guard = remember_with_key("eds_oguard", || RefCell::new(None::<OverlayGuard>));
-    let current_content = remember_state_with_key("eds_cc", || Box(Modifier::new()));
+    let eds_id = remember(unique_component_id);
+    let overlay_guard = remember_with_key(format!("eds_oguard_{eds_id}"), || {
+        RefCell::new(None::<OverlayGuard>)
+    });
+    let current_content =
+        remember_state_with_key(format!("eds_cc_{eds_id}"), || Box(Modifier::new()));
     *current_content.borrow_mut() = content;
+
+    let current_modifier = remember_state_with_key(format!("eds_mod_{eds_id}"), Modifier::new);
+    *current_modifier.borrow_mut() = modifier;
+    let current_input =
+        remember_state_with_key(format!("eds_input_{eds_id}"), || input_field.clone());
+    *current_input.borrow_mut() = input_field;
+    let current_config = remember_state_with_key(format!("eds_cfg_{eds_id}"), || config.clone());
+    *current_config.borrow_mut() = config;
 
     let progress = state.progress();
     let _content_alpha = state.content_progress();
@@ -1020,13 +1047,16 @@ pub fn ExpandedDockedSearchBar(
             let focus_requested = Rc::new(Cell::new(false));
             let builder: Rc<dyn Fn() -> View> = Rc::new({
                 let state = state.clone();
-                let modifier = modifier.clone();
-                let input_field = input_field.clone();
+                let current_modifier = current_modifier.clone();
+                let current_input = current_input.clone();
                 let current_content = current_content.clone();
-                let config = config.clone();
+                let current_config = current_config.clone();
                 let input_fr = input_fr.clone();
                 let focus_requested = focus_requested.clone();
                 move || {
+                    let modifier = current_modifier.borrow().clone();
+                    let input_field = current_input.borrow().clone();
+                    let config = current_config.borrow().clone();
                     let progress = state.progress();
                     let content_alpha = state.content_progress();
                     let alpha = progress.clamp(0.0, 1.0);

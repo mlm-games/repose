@@ -43,8 +43,8 @@ thread_local! {
     static REGISTRY: RefCell<HashMap<u64, Entry>> = RefCell::new(HashMap::new());
     /// Redraw counter, advanced by [`poll`]. Basis for [`delay_frames`].
     static FRAME: RefCell<u64> = const { RefCell::new(0) };
-    /// Reentrancy flag: callbacks must not call [`poll`] (nested calls still
-    /// work but don't advance the frame counter).
+    /// Reentrancy flag: [`poll`] ignores reentrant calls (e.g. from inside
+    /// a timer callback), where a nested pass would fire due timers twice.
     static IN_POLL: Cell<bool> = const { Cell::new(false) };
 }
 
@@ -212,23 +212,23 @@ fn saturating_add(t: Instant, d: Duration) -> Instant {
 }
 
 /// Advance the frame counter and fire due timers. Called once per redraw
-/// (from `ReposeRuntime::tick_overlays`). Do not call from timer callbacks;
-/// nested calls are tolerated but skip the frame increment.
+/// (from `ReposeRuntime::tick_overlays`). Reentrant calls, e.g. from inside
+/// a timer callback, are ignored: the outer pass already collected the due
+/// timers, so a nested pass would fire them twice.
 pub fn poll() {
+    if IN_POLL.with(|f| f.replace(true)) {
+        return;
+    }
     struct Guard;
     impl Drop for Guard {
         fn drop(&mut self) {
             IN_POLL.with(|f| f.set(false));
         }
     }
-    let nested = IN_POLL.with(|f| f.replace(true));
     let _guard = Guard;
     let frame = FRAME.with(|f| {
         let mut f = f.borrow_mut();
-        // One count per outer redraw; nested polls reuse the current frame.
-        if !nested {
-            *f = f.wrapping_add(1);
-        }
+        *f = f.wrapping_add(1);
         *f
     });
     let now = Instant::now();
@@ -616,6 +616,32 @@ mod tests {
             );
         }
         panic!("canceller never ran first in 32 trials");
+    }
+
+    #[test]
+    fn reentrant_poll_is_ignored() {
+        reset();
+        let count = Rc::new(RefCell::new(0u32));
+        let count_c = count.clone();
+        let _h = delay(Duration::from_millis(1), move || {
+            *count_c.borrow_mut() += 1;
+            poll();
+        });
+        sleep_ms(20);
+        poll();
+        poll();
+        assert_eq!(*count.borrow(), 1, "nested poll must not refire");
+
+        reset();
+        let ticks = Rc::new(RefCell::new(0u32));
+        let ticks_c = ticks.clone();
+        let _i = interval(Duration::from_millis(5), move || {
+            *ticks_c.borrow_mut() += 1;
+            poll();
+        });
+        sleep_ms(30);
+        poll();
+        assert_eq!(*ticks.borrow(), 1, "nested poll must not double-fire intervals");
     }
 
     #[test]

@@ -165,6 +165,11 @@ pub fn DropdownMenu(
     let scroll_state: Rc<ScrollState> =
         remember_with_key(format!("ddm_scroll_{ddm_id}"), ScrollState::new);
 
+    let current_items = remember_state_with_key(format!("ddm_items_{ddm_id}"), Vec::new);
+    *current_items.borrow_mut() = items;
+    let current_config = remember_state_with_key(format!("ddm_cfg_{ddm_id}"), || config.clone());
+    *current_config.borrow_mut() = config;
+
     let trigger = Box(Modifier::new().on_globally_positioned({
         let tr = trigger_rect.clone();
         move |rect| {
@@ -198,15 +203,16 @@ pub fn DropdownMenu(
     if menu_visible {
         if overlay_guard.borrow().is_none() {
             let anim = anim.clone();
-            let th = th;
-            let items = items.clone();
+            let current_items = current_items.clone();
             let state = state.clone();
-            let config = config.clone();
+            let current_config = current_config.clone();
             let trigger_rect = trigger_rect.clone();
             let scroll_state = scroll_state.clone();
 
             *overlay_guard.borrow_mut() = Some(overlay.show_guard(
                 Rc::new(move || {
+                    let items = current_items.borrow().clone();
+                    let config = current_config.borrow().clone();
                     let p = *anim.borrow().get();
                     let scale = DDM_SCALE_FROM + (1.0 - DDM_SCALE_FROM) * p;
                     let alpha = p;

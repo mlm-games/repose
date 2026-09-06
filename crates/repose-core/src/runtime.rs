@@ -398,7 +398,7 @@ pub fn remember<T: 'static>(init: impl FnOnce() -> T) -> Rc<T> {
     })
 }
 
-/// Key-based remember
+/// Key-based remember.
 pub fn remember_with_key<T: 'static>(key: impl Into<String>, init: impl FnOnce() -> T) -> Rc<T> {
     COMPOSER.with(|c| {
         let mut c = c.borrow_mut();
