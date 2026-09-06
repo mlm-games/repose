@@ -7,7 +7,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use repose_core::animation::AnimationSpec;
 use repose_core::*;
 use repose_ui::{
-    Box, Column, Row, ViewExt, ZStack, anim::animate_f32_from, overlay::OverlayHandle,
+    Box, Column, Row, ViewExt, ZStack, anim::animate_f32_from, overlay::OverlayGuard,
+    overlay::OverlayHandle,
 };
 
 use super::*;
@@ -138,7 +139,7 @@ pub fn ModalBottomSheet(
     let th = theme();
     let peek_h = state.peek_height.get().max(config.peek_height);
     let anim_distance = peek_h.max(48.0).max(400.0);
-    let overlay_id = remember_with_key("mbs_oid", || signal(0u64));
+    let overlay_guard = remember_with_key("mbs_oguard", || RefCell::new(None::<OverlayGuard>));
 
     // Fresh content each composition (builder captures content once).
     let current_content = remember_state_with_key("mbs_c", || Box(Modifier::new()));
@@ -183,7 +184,7 @@ pub fn ModalBottomSheet(
     let sheet_visible = state.is_visible() || offset < anim_distance - 10.0;
 
     if sheet_visible {
-        if overlay_id.get() == 0 {
+        if overlay_guard.borrow().is_none() {
             let builder: Rc<dyn Fn() -> View> = Rc::new({
                 let state = state.clone();
                 let anim = anim.clone();
@@ -294,15 +295,10 @@ pub fn ModalBottomSheet(
                 }
             });
 
-            let id = overlay.show_entry(builder, 900.0, false);
-            overlay_id.set(id);
+            *overlay_guard.borrow_mut() = Some(overlay.show_guard(builder, 900.0, false));
         }
     } else {
-        let prev = overlay_id.get();
-        if prev != 0 {
-            let _ = overlay.dismiss(prev);
-            overlay_id.set(0);
-        }
+        *overlay_guard.borrow_mut() = None;
     }
 
     Box(Modifier::new())

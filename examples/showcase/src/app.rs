@@ -9,7 +9,7 @@ use repose_material::material3;
 use repose_navigation::{
     NavDisplay, NavTransition, Navigator, back, remember_back_stack, renderer,
 };
-use repose_ui::overlay::{OverlayHandle, SnackbarAction, SnackbarController, SnackbarRequest};
+use repose_ui::overlay::{OverlayHandle, SnackbarController};
 use repose_ui::windowing::{WindowHost, WindowManagerState};
 use repose_ui::{Column, ViewExt};
 use serde::{Deserialize, Serialize};
@@ -226,35 +226,16 @@ fn light_theme() -> Theme {
     Theme::default().with_colors(ColorScheme::light())
 }
 
-/// One place that builds the "saved" snackbar. The undo action is shared
-/// between the request and the builder instead of being constructed 3 times.
-fn save_snackbar_request(snackbar: &SnackbarController) -> SnackbarRequest {
-    let undo: Rc<dyn Fn()> = Rc::new({
-        let s = snackbar.clone();
-        move || {
-            log::info!("Snackbar undo");
-            s.dismiss();
-        }
-    });
-    SnackbarRequest {
-        message: "Shortcut saved".into(),
-        action: Some(SnackbarAction {
-            label: "Undo".into(),
-            on_click: undo.clone(),
-        }),
-        duration_ms: 2500,
-        builder: Rc::new(move || {
-            material3::Snackbar(
-                "Shortcut saved",
-                Some(SnackbarAction {
-                    label: "Undo".into(),
-                    on_click: undo.clone(),
-                }),
-                Modifier::new(),
-                material3::SnackbarConfig::default(),
-            )
-        }),
-    }
+/// Shows the "saved" snackbar. Dismissal (timeout, action tap) is owned by
+/// the controller, so the undo callback only needs its own effect.
+fn show_save_snackbar(snackbar: &SnackbarController) {
+    material3::show_simple_snackbar(
+        snackbar,
+        "Shortcut saved",
+        Some("Undo".to_string()),
+        Some(Rc::new(|| log::info!("Snackbar undo"))),
+        2500,
+    );
 }
 
 fn install_save_shortcut(snackbar: SnackbarController, on_fire: Rc<dyn Fn()>) {
@@ -280,7 +261,7 @@ fn install_save_shortcut(snackbar: SnackbarController, on_fire: Rc<dyn Fn()>) {
             log::info!("Shortcut action: {:?}", action);
             if matches!(action, shortcuts::Action::Custom(key) if key.as_ref() == "showcase.save") {
                 on_fire();
-                snackbar.show(save_snackbar_request(&snackbar));
+                show_save_snackbar(&snackbar);
                 true
             } else {
                 false

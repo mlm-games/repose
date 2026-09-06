@@ -1008,7 +1008,7 @@ pub fn run_desktop_app_with_config(
 
                     self.dispatch_file_drop_now();
 
-                    self.rt.tick_overlays(self.last_redraw);
+                    self.rt.tick_overlays();
                     self.last_redraw = Instant::now();
                 }
 

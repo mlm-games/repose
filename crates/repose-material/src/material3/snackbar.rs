@@ -5,8 +5,9 @@ use std::rc::Rc;
 use crate::{Icon, Symbol};
 use repose_core::*;
 use repose_ui::{
-    Box, Column, Row, Spacer, Text, TextStyle, ViewExt, anim::animate_f32_from,
-    overlay::SnackbarAction, overlay::snackbar_is_dismissing,
+    Box, Column, Row, Spacer, Text, TextStyle, ViewExt,
+    anim::animate_f32_from,
+    overlay::{SnackbarAction, SnackbarController, SnackbarRequest},
 };
 
 use super::*;
@@ -76,14 +77,13 @@ pub fn Snackbar(
     action: Option<SnackbarAction>,
     modifier: Modifier,
     config: SnackbarConfig,
+    dismissing: bool,
 ) -> View {
     let msg = message.into();
     let th = theme();
     let bg = config.container_color;
     let fg = config.content_color;
     let action_color = config.action_color;
-
-    let dismissing = snackbar_is_dismissing();
 
     let slide_target = if dismissing { 80.0 } else { 0.0 };
     let slide = animate_f32_from("snackbar_slide", 80.0, slide_target, th.motion.overlay);
@@ -224,4 +224,38 @@ pub fn Snackbar(
         .justify_content(repose_core::JustifyContent::CENTER)
         .then(modifier))
     .child(snackbar)
+}
+
+/// Show a standard text snackbar without hand-building a [`SnackbarRequest`].
+///
+/// The controller owns dismissal (timeout, action tap), so `on_action` only
+/// needs the action's own effect. The rendered view uses [`SnackbarConfig::default()`].
+pub fn show_simple_snackbar(
+    controller: &SnackbarController,
+    message: impl Into<String>,
+    action_label: Option<String>,
+    on_action: Option<Rc<dyn Fn()>>,
+    duration_ms: u32,
+) {
+    let message = message.into();
+    let view_message = message.clone();
+    let action = action_label.map(|label| SnackbarAction {
+        label,
+        on_click: on_action.unwrap_or_else(|| Rc::new(|| {})),
+    });
+    let view_action = action.clone();
+    controller.show(SnackbarRequest {
+        message,
+        action,
+        duration_ms,
+        builder: Rc::new(move |dismissing| {
+            Snackbar(
+                view_message.clone(),
+                view_action.clone(),
+                Modifier::new(),
+                SnackbarConfig::default(),
+                dismissing,
+            )
+        }),
+    });
 }

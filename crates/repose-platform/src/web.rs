@@ -908,9 +908,8 @@ impl ApplicationHandler<()> for App {
                     return;
                 }
 
-                self.rt.tick_overlays(self.last_redraw);
+                self.rt.tick_overlays();
 
-                // Advance animations before composition (Compose pattern)
                 repose_core::animation_driver::tick();
 
                 self.ensure_fullscreen_size(&window);

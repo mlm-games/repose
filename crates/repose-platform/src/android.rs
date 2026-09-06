@@ -503,10 +503,8 @@ pub fn run_android_app_with_options(
                         return;
                     }
 
-                    self.rt.tick_overlays(self.last_redraw);
+                    self.rt.tick_overlays();
 
-                    // Advance animations before composition (Compose pattern).
-                    // `tick()` already calls `request_frame()` if any are running.
                     let animating = repose_core::animation_driver::tick();
 
                     self.process_render_commands();

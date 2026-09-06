@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::cell::RefCell;
 
 use repose_core::*;
-use repose_ui::overlay::OverlayHandle;
+use repose_ui::overlay::{OverlayGuard, OverlayHandle};
 use repose_ui::{Box, Column, ViewExt, ZStack, box_with_constraints_with_key};
 use web_time::Duration;
 
@@ -178,9 +178,9 @@ pub fn Dialog(
     properties: DialogProperties,
     content: View,
 ) -> View {
-    let overlay_id = remember_with_key(state.key("oid"), || signal(0u64));
+    let overlay_guard =
+        remember_with_key(state.key("oguard"), || RefCell::new(None::<OverlayGuard>));
 
-    // RefCell holding the latest content so the overlay builder reads fresh state each frame
     let current_content = remember_state_with_key(state.key("c"), || Box(Modifier::new()));
     *current_content.borrow_mut() = content;
 
@@ -223,7 +223,7 @@ pub fn Dialog(
     let visible = state.is_visible() || progress > 0.01;
 
     if visible {
-        if overlay_id.get() == 0 {
+        if overlay_guard.borrow().is_none() {
             let builder: Rc<dyn Fn() -> View> = Rc::new({
                 let state = state.clone();
                 let anim = anim.clone();
@@ -390,15 +390,10 @@ pub fn Dialog(
                 }
             });
 
-            let id = overlay.show_entry(builder, 900.0, false);
-            overlay_id.set(id);
+            *overlay_guard.borrow_mut() = Some(overlay.show_guard(builder, 900.0, false));
         }
     } else {
-        let prev = overlay_id.get();
-        if prev != 0 {
-            let _ = overlay.dismiss(prev);
-            overlay_id.set(0);
-        }
+        *overlay_guard.borrow_mut() = None;
     }
 
     Box(Modifier::new())

@@ -1,27 +1,20 @@
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::{Rc, Weak};
 
 use repose_core::{Modifier, View, ViewKind, request_frame};
 use web_time::{Duration, Instant};
 
+// Registry of live snackbar controllers, held weakly so a dropped
+// controller stops ticking without explicit teardown. Dead entries are
+// pruned on every read (`tick_all` / `next_deadline`).
 thread_local! {
-    static SNACKBAR_TICKS: RefCell<Vec<Rc<dyn Fn(u32)>>> = RefCell::new(Vec::new());
-    static SNACKBAR_DISMISSING: Cell<bool> = const { Cell::new(false) };
-    static SNACKBAR_REGISTRY: RefCell<Vec<Weak<RefCell<SnackbarState>>>> =
-        RefCell::new(Vec::new());
+    static SNACKBAR_REGISTRY: RefCell<Vec<Weak<SnackbarControllerInner>>> =
+        const { RefCell::new(Vec::new()) };
 }
 
-/// Set whether the current frame's snackbar is in the exit-animation phase.
-/// Called by the overlay builder before rendering the snackbar view.
-pub fn snackbar_set_dismissing(v: bool) {
-    SNACKBAR_DISMISSING.with(|c| c.set(v));
-}
-
-/// Read by the Snackbar component to decide its exit animation target.
-pub fn snackbar_is_dismissing() -> bool {
-    SNACKBAR_DISMISSING.with(|c| c.get())
-}
+/// Duration of the snackbar exit animation before the overlay entry is removed.
+const SNACKBAR_EXIT_ANIM_MS: u64 = 200;
 
 #[derive(Clone)]
 pub struct OverlayHandle {
@@ -90,6 +83,17 @@ impl OverlayHandle {
         id
     }
 
+    /// Show `builder` and return a guard owning the entry. Dropping the
+    /// guard dismisses the entry; see [`OverlayGuard`].
+    pub fn show_guard(
+        &self,
+        builder: Rc<dyn Fn() -> View>,
+        z_index: f32,
+        pass_through: bool,
+    ) -> OverlayGuard {
+        OverlayGuard::show(self, builder, z_index, pass_through)
+    }
+
     pub fn dismiss(&self, id: u64) -> bool {
         let mut inner = self.inner.borrow_mut();
         let before = inner.entries.len();
@@ -136,9 +140,67 @@ impl OverlayHandle {
     }
 }
 
+/// RAII owner of a shown overlay entry.
+///
+/// Dropping the guard dismisses the entry, so callers can't leak entries by
+/// forgetting `dismiss` or mismatching a `0`-sentinel id. The typical shape
+/// is a `remember`-ed `RefCell<Option<OverlayGuard>>`: set it to `Some` when
+/// the overlay should show, back to `None` to hide.
+///
+/// The guard holds only the handle + id (no entry content), so it never
+/// participates in reference cycles with the overlay state.
+#[must_use = "dropping the guard dismisses the overlay entry"]
+pub struct OverlayGuard {
+    handle: OverlayHandle,
+    id: Option<u64>,
+}
+
+impl OverlayGuard {
+    /// Show `builder` on `handle` and own the resulting entry.
+    pub fn show(
+        handle: &OverlayHandle,
+        builder: Rc<dyn Fn() -> View>,
+        z_index: f32,
+        pass_through: bool,
+    ) -> Self {
+        let id = handle.show_entry(builder, z_index, pass_through);
+        Self {
+            handle: handle.clone(),
+            id: Some(id),
+        }
+    }
+
+    /// Entry id, or `None` after [`dismiss`](Self::dismiss).
+    pub fn id(&self) -> Option<u64> {
+        self.id
+    }
+
+    /// Dismiss now instead of at drop. Consuming the guard makes a
+    /// double-dismiss impossible.
+    pub fn dismiss(mut self) {
+        self.dismiss_now();
+    }
+
+    fn dismiss_now(&mut self) {
+        if let Some(id) = self.id.take() {
+            self.handle.dismiss(id);
+        }
+    }
+}
+
+impl Drop for OverlayGuard {
+    fn drop(&mut self) {
+        self.dismiss_now();
+    }
+}
+
 #[derive(Clone)]
 pub struct SnackbarController {
-    inner: Rc<RefCell<SnackbarState>>,
+    inner: Rc<SnackbarControllerInner>,
+}
+
+struct SnackbarControllerInner {
+    state: RefCell<SnackbarState>,
     overlay: OverlayHandle,
 }
 
@@ -153,7 +215,9 @@ pub struct SnackbarRequest {
     pub message: String,
     pub action: Option<SnackbarAction>,
     pub duration_ms: u32,
-    pub builder: Rc<dyn Fn() -> View>,
+    /// Called on every frame with whether the snackbar is in its
+    /// exit-animation phase, so the view can animate out.
+    pub builder: Rc<dyn Fn(bool) -> View>,
 }
 
 struct SnackbarState {
@@ -161,126 +225,132 @@ struct SnackbarState {
     active: Option<ActiveSnackbar>,
 }
 
+/// Lifecycle phase of the visible snackbar. Both phases carry the `Instant`
+/// at which the snackbar leaves the phase (dismiss start, then removal).
+enum SnackbarPhase {
+    Showing { deadline: Instant },
+    Dismissing { deadline: Instant },
+}
+
 struct ActiveSnackbar {
-    id: u64,
+    /// Owns the overlay entry; clearing `active` dismisses the entry via drop.
+    /// Never read by name — its `Drop` impl is the whole point.
+    #[allow(dead_code)]
+    guard: OverlayGuard,
     message: String,
     action: Option<SnackbarAction>,
-    deadline: Instant,
-    dismiss_started: Rc<Cell<bool>>,
-    dismiss_deadline: Option<Instant>,
+    phase: SnackbarPhase,
+}
+
+impl ActiveSnackbar {
+    fn deadline(&self) -> Instant {
+        match self.phase {
+            SnackbarPhase::Showing { deadline } | SnackbarPhase::Dismissing { deadline } => {
+                deadline
+            }
+        }
+    }
+
+    fn is_dismissing(&self) -> bool {
+        matches!(self.phase, SnackbarPhase::Dismissing { .. })
+    }
+
+    /// Idempotent transition into the exit animation.
+    fn start_dismiss(&mut self, now: Instant) {
+        if !self.is_dismissing() {
+            self.phase = SnackbarPhase::Dismissing {
+                deadline: now + Duration::from_millis(SNACKBAR_EXIT_ANIM_MS),
+            };
+            request_frame();
+        }
+    }
 }
 
 impl SnackbarController {
     pub fn new(overlay: OverlayHandle) -> Self {
         let controller = Self {
-            inner: Rc::new(RefCell::new(SnackbarState {
-                queue: VecDeque::new(),
-                active: None,
-            })),
-            overlay,
+            inner: Rc::new(SnackbarControllerInner {
+                state: RefCell::new(SnackbarState {
+                    queue: VecDeque::new(),
+                    active: None,
+                }),
+                overlay,
+            }),
         };
 
-        let tick = {
-            let controller = controller.clone();
-            Rc::new(move |elapsed_ms| controller.tick(elapsed_ms))
-        };
-        SNACKBAR_TICKS.with(|slot| slot.borrow_mut().push(tick));
         SNACKBAR_REGISTRY.with(|reg| reg.borrow_mut().push(Rc::downgrade(&controller.inner)));
         controller
     }
 
-    pub fn tick_for_frame(elapsed_ms: u32) {
-        SNACKBAR_TICKS.with(|ticks| {
-            for cb in ticks.borrow().iter() {
-                cb(elapsed_ms);
-            }
-        });
-    }
-
-    /// Earliest `Instant` when any snackbar needs to wake (dismiss start or
-    /// finish). `None` if no snackbar is active/queued.
-    pub fn next_deadline() -> Option<Instant> {
+    fn live_controllers() -> Vec<Rc<SnackbarControllerInner>> {
         SNACKBAR_REGISTRY.with(|reg| {
             let mut reg = reg.borrow_mut();
-            // prune dead ones
             reg.retain(|w| w.upgrade().is_some());
-            let mut earliest: Option<Instant> = None;
-            for weak in reg.iter() {
-                if let Some(rc) = weak.upgrade() {
-                    let state = rc.borrow();
-                    if let Some(active) = &state.active {
-                        let deadline = if active.dismiss_started.get() {
-                            active.dismiss_deadline.unwrap_or_else(Instant::now)
-                        } else {
-                            active.deadline
-                        };
-                        earliest = Some(match earliest {
-                            Some(e) => e.min(deadline),
-                            None => deadline,
-                        });
-                    } else if let Some(req) = state.queue.front() {
-                        // queued item will activate immediately after current dismisses;
-                        // its deadline is not yet scheduled, so ignore until active.
-                        let _ = req;
-                    }
-                }
-            }
-            earliest
+            reg.iter().filter_map(Weak::upgrade).collect()
         })
     }
 
+    /// Tick all live controllers once. Call once per redraw.
+    pub fn tick_all() {
+        for inner in Self::live_controllers() {
+            Self { inner }.tick();
+        }
+    }
+
+    /// Earliest `Instant` when any snackbar needs to wake (dismiss start or
+    /// finish). `None` if no snackbar is active.
+    pub fn next_deadline() -> Option<Instant> {
+        Self::live_controllers()
+            .iter()
+            .filter_map(|inner| {
+                inner
+                    .state
+                    .borrow()
+                    .active
+                    .as_ref()
+                    .map(ActiveSnackbar::deadline)
+            })
+            .min()
+    }
+
     pub fn show(&self, request: SnackbarRequest) {
-        let mut inner = self.inner.borrow_mut();
-        if let Some(_) = inner.active {
-            inner.queue.push_back(request);
+        if self.inner.state.borrow().active.is_some() {
+            self.inner.state.borrow_mut().queue.push_back(request);
         } else {
-            drop(inner);
             self.activate_next(request);
         }
     }
 
-    pub fn tick(&self, elapsed_ms: u32) {
-        // Keep elapsed_ms path for compat, will be removed eventually.
+    pub fn tick(&self) {
         let now = Instant::now();
-        let mut inner = self.inner.borrow_mut();
-        if let Some(active) = inner.active.as_mut() {
-            if active.dismiss_started.get() {
-                if let Some(dd) = active.dismiss_deadline {
-                    if now >= dd {
-                        self.overlay.dismiss(active.id);
-                        inner.active = None;
+        let mut finished: Option<ActiveSnackbar> = None;
+        {
+            let mut state = self.inner.state.borrow_mut();
+            if let Some(active) = state.active.as_mut() {
+                match active.phase {
+                    SnackbarPhase::Showing { deadline } if now >= deadline => {
+                        active.start_dismiss(now);
                     }
-                } else {
-                    // if deadline missing (should not happen though)
-                    active.dismiss_deadline = Some(now + Duration::from_millis(200));
-                    request_frame();
+                    SnackbarPhase::Dismissing { deadline } if now >= deadline => {
+                        finished = state.active.take();
+                    }
+                    _ => {}
                 }
-            } else if now >= active.deadline || elapsed_ms >= 60_000 {
-                active.dismiss_started.set(true);
-                active.dismiss_deadline = Some(now + Duration::from_millis(200));
-                request_frame();
-            } else {
-                // keep remaining as deadline.
-                let _ = elapsed_ms;
             }
         }
-        drop(inner);
+        drop(finished);
         self.activate_next_if_needed();
     }
 
     pub fn dismiss(&self) {
-        let mut inner = self.inner.borrow_mut();
-        if let Some(active) = inner.active.as_mut()
-            && !active.dismiss_started.get()
-        {
-            active.dismiss_started.set(true);
-            active.dismiss_deadline = Some(Instant::now() + Duration::from_millis(200));
-            request_frame();
+        let now = Instant::now();
+        if let Some(active) = self.inner.state.borrow_mut().active.as_mut() {
+            active.start_dismiss(now);
         }
     }
 
     pub fn current(&self) -> Option<(String, Option<SnackbarAction>)> {
-        let inner = self.inner.borrow();
+        let inner = self.inner.state.borrow();
         inner
             .active
             .as_ref()
@@ -288,30 +358,35 @@ impl SnackbarController {
     }
 
     fn activate_next_if_needed(&self) {
-        let mut inner = self.inner.borrow_mut();
-        if inner.active.is_some() {
+        if self.inner.state.borrow().active.is_some() {
             return;
         }
-        let Some(req) = inner.queue.pop_front() else {
-            return;
-        };
-        drop(inner);
-        self.activate_next(req);
+        let req = self.inner.state.borrow_mut().queue.pop_front();
+        if let Some(req) = req {
+            self.activate_next(req);
+        }
     }
 
     fn activate_next(&self, req: SnackbarRequest) {
-        let mut inner = self.inner.borrow_mut();
-        if inner.active.is_some() {
+        if self.inner.state.borrow().active.is_some() {
             return;
         }
-        let dismiss_flag = Rc::new(Cell::new(false));
-        let flag_for_builder = dismiss_flag.clone();
+        let weak = Rc::downgrade(&self.inner);
         let original_builder = req.builder.clone();
         let wrapped_builder: Rc<dyn Fn() -> View> = Rc::new(move || {
-            snackbar_set_dismissing(flag_for_builder.get());
-            (original_builder)()
+            let dismissing = weak
+                .upgrade()
+                .and_then(|inner| {
+                    inner
+                        .state
+                        .borrow()
+                        .active
+                        .as_ref()
+                        .map(ActiveSnackbar::is_dismissing)
+                })
+                .unwrap_or(false);
+            (original_builder)(dismissing)
         });
-        // action's on_click also dismisses the snackbar
         let action = req.action.map(|a| SnackbarAction {
             on_click: {
                 let original = a.on_click;
@@ -323,15 +398,74 @@ impl SnackbarController {
             },
             label: a.label,
         });
-        let id = self.overlay.show_entry(wrapped_builder, 900.0, true);
+        let guard = OverlayGuard::show(&self.inner.overlay, wrapped_builder, 900.0, true);
         let deadline = Instant::now() + Duration::from_millis(u64::from(req.duration_ms.max(1)));
-        inner.active = Some(ActiveSnackbar {
-            id,
+        self.inner.state.borrow_mut().active = Some(ActiveSnackbar {
+            guard,
             message: req.message,
             action,
-            deadline,
-            dismiss_started: dismiss_flag,
-            dismiss_deadline: None,
+            phase: SnackbarPhase::Showing { deadline },
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_request() -> SnackbarRequest {
+        SnackbarRequest {
+            message: "hi".into(),
+            action: None,
+            duration_ms: 60_000,
+            builder: Rc::new(|_| View::new(0, ViewKind::OverlayHost)),
+        }
+    }
+
+    #[test]
+    fn dropped_controller_is_pruned_from_registry() {
+        {
+            let overlay = OverlayHandle::new();
+            let controller = SnackbarController::new(overlay);
+            controller.show(test_request());
+            SnackbarController::tick_all();
+            assert!(SnackbarController::next_deadline().is_some());
+        }
+        SnackbarController::tick_all();
+        assert!(SnackbarController::next_deadline().is_none());
+    }
+
+    #[test]
+    fn dismiss_schedules_exit_deadline() {
+        let overlay = OverlayHandle::new();
+        let controller = SnackbarController::new(overlay);
+        controller.show(test_request());
+        let before = Instant::now();
+        controller.dismiss();
+        let deadline = SnackbarController::next_deadline().expect("deadline while dismissing");
+        assert!(deadline >= before);
+        assert!(deadline.saturating_duration_since(before) <= Duration::from_millis(500));
+        controller.dismiss();
+        let again = SnackbarController::next_deadline().expect("deadline while dismissing");
+        assert_eq!(deadline, again);
+        drop(controller);
+        SnackbarController::tick_all();
+    }
+
+    #[test]
+    fn guard_drop_dismisses_entry() {
+        let overlay = OverlayHandle::new();
+        let builder: Rc<dyn Fn() -> View> = Rc::new(|| View::new(0, ViewKind::OverlayHost));
+        {
+            let guard = overlay.show_guard(builder.clone(), 5.0, false);
+            assert!(guard.id().is_some());
+            assert_eq!(overlay.inner.borrow().entries.len(), 1);
+            guard.dismiss();
+            assert!(overlay.inner.borrow().entries.is_empty());
+        }
+        let guard = overlay.show_guard(builder, 5.0, false);
+        assert_eq!(overlay.inner.borrow().entries.len(), 1);
+        drop(guard);
+        assert!(overlay.inner.borrow().entries.is_empty());
     }
 }

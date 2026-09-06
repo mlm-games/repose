@@ -9,7 +9,7 @@ use repose_core::text::ImeAction;
 use repose_core::*;
 use repose_ui::{
     BasicTextField, Box, Column, Row, Spacer, Text, TextFieldState, TextStyle, ViewExt, ZStack,
-    anim::animate_f32, overlay::OverlayHandle,
+    anim::animate_f32, overlay::OverlayGuard, overlay::OverlayHandle,
 };
 
 use super::app_bar::WindowInsets;
@@ -900,7 +900,7 @@ pub fn ExpandedFullScreenSearchBar(
     // Mark as full-screen so AppBarWithSearch can hide the collapsed bar
     state.expands_to_full_screen.set(true);
 
-    let overlay_id = remember_with_key("efs_oid", || signal(0u64));
+    let overlay_guard = remember_with_key("efs_oguard", || RefCell::new(None::<OverlayGuard>));
     let current_content = remember_state_with_key("efs_cc", || Box(Modifier::new()));
     *current_content.borrow_mut() = content;
 
@@ -911,7 +911,7 @@ pub fn ExpandedFullScreenSearchBar(
     let visible = expanded || progress > 0.01;
 
     if visible {
-        if overlay_id.get() == 0 {
+        if overlay_guard.borrow().is_none() {
             let input_fr = FocusRequester::new();
             let focus_requested = Rc::new(Cell::new(false));
             let builder: Rc<dyn Fn() -> View> = Rc::new({
@@ -982,15 +982,10 @@ pub fn ExpandedFullScreenSearchBar(
                 }
             });
 
-            let id = overlay.show_entry(builder, 900.0, false);
-            overlay_id.set(id);
+            *overlay_guard.borrow_mut() = Some(overlay.show_guard(builder, 900.0, false));
         }
     } else {
-        let prev = overlay_id.get();
-        if prev != 0 {
-            let _ = overlay.dismiss(prev);
-            overlay_id.set(0);
-        }
+        *overlay_guard.borrow_mut() = None;
     }
 
     Box(Modifier::new())
@@ -1010,7 +1005,7 @@ pub fn ExpandedDockedSearchBar(
     // Docked search bar does NOT expand to full-screen
     state.expands_to_full_screen.set(false);
 
-    let overlay_id = remember_with_key("eds_oid", || signal(0u64));
+    let overlay_guard = remember_with_key("eds_oguard", || RefCell::new(None::<OverlayGuard>));
     let current_content = remember_state_with_key("eds_cc", || Box(Modifier::new()));
     *current_content.borrow_mut() = content;
 
@@ -1020,7 +1015,7 @@ pub fn ExpandedDockedSearchBar(
     let visible = expanded || progress > 0.01;
 
     if visible {
-        if overlay_id.get() == 0 {
+        if overlay_guard.borrow().is_none() {
             let input_fr = FocusRequester::new();
             let focus_requested = Rc::new(Cell::new(false));
             let builder: Rc<dyn Fn() -> View> = Rc::new({
@@ -1112,15 +1107,10 @@ pub fn ExpandedDockedSearchBar(
                 }
             });
 
-            let id = overlay.show_entry(builder, 900.0, false);
-            overlay_id.set(id);
+            *overlay_guard.borrow_mut() = Some(overlay.show_guard(builder, 900.0, false));
         }
     } else {
-        let prev = overlay_id.get();
-        if prev != 0 {
-            let _ = overlay.dismiss(prev);
-            overlay_id.set(0);
-        }
+        *overlay_guard.borrow_mut() = None;
     }
 
     Box(Modifier::new())

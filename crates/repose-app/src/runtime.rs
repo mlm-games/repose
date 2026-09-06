@@ -2014,18 +2014,9 @@ impl ReposeRuntime {
         self.next_wakeup_deadline().unwrap_or(now + idle_cap)
     }
 
-    /// Tick host-facing overlays (snackbar timeouts) + debounce with the elapsed ms since
-    /// the last presented frame. Call once per redraw.
-    pub fn tick_overlays(&self, last_frame: web_time::Instant) {
-        let now = web_time::Instant::now();
-        let ms = now
-            .saturating_duration_since(last_frame)
-            .as_millis()
-            .min(u32::MAX as u128) as u32;
-        if ms > 0 {
-            repose_ui::overlay::SnackbarController::tick_for_frame(ms);
-        }
-        // debounce poll is deadline-based, not elapsed - fire due callbacks
+    /// Tick host-facing overlays (snackbar timeouts) + debounce. Call once per redraw.
+    pub fn tick_overlays(&self) {
+        repose_ui::overlay::SnackbarController::tick_all();
         repose_core::debounce::poll();
     }
 

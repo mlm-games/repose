@@ -1,10 +1,14 @@
 #![allow(non_snake_case)]
 
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use repose_core::*;
-use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt, ZStack, overlay::OverlayHandle};
+use repose_ui::{
+    Box, Column, Row, Text, TextStyle, ViewExt, ZStack, overlay::OverlayGuard,
+    overlay::OverlayHandle,
+};
 
 use super::util::apply_tonal_elevation;
 use super::*;
@@ -159,7 +163,9 @@ pub fn DropdownMenu(
 ) -> View {
     let th = theme();
     let ddm_id = remember(|| DROPDOWN_COUNTER.fetch_add(1, Ordering::Relaxed));
-    let overlay_id = remember_with_key(format!("ddm_oid_{ddm_id}"), || signal(0u64));
+    let overlay_guard = remember_with_key(format!("ddm_oguard_{ddm_id}"), || {
+        RefCell::new(None::<OverlayGuard>)
+    });
     let trigger_rect = remember_state_with_key(format!("ddm_tr_{ddm_id}"), Rect::default);
     let scroll_state: Rc<ScrollState> =
         remember_with_key(format!("ddm_scroll_{ddm_id}"), ScrollState::new);
@@ -195,7 +201,7 @@ pub fn DropdownMenu(
     let menu_visible = state.is_open() || progress > 0.01;
 
     if menu_visible {
-        if overlay_id.get() == 0 {
+        if overlay_guard.borrow().is_none() {
             let anim = anim.clone();
             let th = th;
             let items = items.clone();
@@ -204,7 +210,7 @@ pub fn DropdownMenu(
             let trigger_rect = trigger_rect.clone();
             let scroll_state = scroll_state.clone();
 
-            let id = overlay.show_entry(
+            *overlay_guard.borrow_mut() = Some(overlay.show_guard(
                 Rc::new(move || {
                     let p = *anim.borrow().get();
                     let scale = DDM_SCALE_FROM + (1.0 - DDM_SCALE_FROM) * p;
@@ -277,15 +283,10 @@ pub fn DropdownMenu(
                 }),
                 901.0,
                 false,
-            );
-            overlay_id.set(id);
+            ));
         }
     } else {
-        let prev = overlay_id.get();
-        if prev != 0 {
-            let _ = overlay.dismiss(prev);
-            overlay_id.set(0);
-        }
+        *overlay_guard.borrow_mut() = None;
     }
 
     Box(modifier).child(trigger)
