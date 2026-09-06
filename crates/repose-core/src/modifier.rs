@@ -1416,7 +1416,7 @@ impl Modifier {
     }
 
     pub fn draggable(self, on_drag: impl Fn(Vec2) + 'static) -> Self {
-        let drag_pos = crate::state::remember_mutable(|| Vec2::default());
+        let drag_pos = crate::state::remember_mutable(Vec2::default);
         let is_dragging = crate::state::remember_mutable(|| false);
         let on_drag = Rc::new(on_drag);
         self.on_pointer_down({

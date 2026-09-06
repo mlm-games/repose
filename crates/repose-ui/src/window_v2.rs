@@ -917,7 +917,7 @@ pub fn apply_window_state_to_floating(
             .eval(
                 &state
                     .take_pending_screen()
-                    .unwrap_or_else(WindowScreenProvider::default),
+                    .unwrap_or_default(),
             )
             .id;
         let placement = state
@@ -1024,7 +1024,7 @@ pub fn apply_dialog_state_to_floating(
             .eval(
                 &state
                     .take_pending_screen()
-                    .unwrap_or_else(WindowScreenProvider::default),
+                    .unwrap_or_default(),
             )
             .id;
         state.initialize(screen_id, rect);

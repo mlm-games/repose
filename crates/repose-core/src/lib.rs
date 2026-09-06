@@ -141,7 +141,6 @@ pub mod view;
 
 pub use color::*;
 pub use cursor::*;
-pub use dnd::*;
 pub use effects::*;
 pub use effects_ext::*;
 pub use focus::*;
@@ -151,7 +150,6 @@ pub use frame_clock::{
 };
 pub use geometry::*;
 pub use gesture::*;
-pub use indication::*;
 pub use locals::*;
 pub use modifier::*;
 pub use prelude::*;

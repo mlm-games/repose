@@ -109,14 +109,14 @@ impl TouchGestureState {
         }
         let n_recip = 1.0 / n as f32;
         let mut avg_pos = Vec2 { x: 0.0, y: 0.0 };
-        for (_, (x, y)) in &self.active_touches {
+        for (x, y) in self.active_touches.values() {
             avg_pos.x += *x;
             avg_pos.y += *y;
         }
         avg_pos.x *= n_recip;
         avg_pos.y *= n_recip;
         let mut avg_distance = 0.0;
-        for (_, (x, y)) in &self.active_touches {
+        for (x, y) in self.active_touches.values() {
             let dx = avg_pos.x - *x;
             let dy = avg_pos.y - *y;
             avg_distance += (dx * dx + dy * dy).sqrt();
@@ -157,11 +157,10 @@ impl TouchGestureState {
                 self.accum_pan = Vec2 { x: 0.0, y: 0.0 };
                 self.accum_zoom = 1.0;
                 self.accum_rotation = 0.0;
-                if added_or_removed {
-                    if let Some(s) = &mut self.gesture_state {
+                if added_or_removed
+                    && let Some(s) = &mut self.gesture_state {
                         s.previous = None;
                     }
-                }
             }
         } else {
             self.gesture_state = None;

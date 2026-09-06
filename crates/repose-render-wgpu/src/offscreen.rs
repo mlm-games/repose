@@ -218,7 +218,7 @@ impl OffscreenRenderer {
         self.renderer.device.poll(PollType::wait_indefinitely())?;
         rx.recv_sync()??;
         let mapped = slice.get_mapped_range()?;
-        let out = strip_padding(&*mapped, self.width, self.height, self.padded_bytes_per_row);
+        let out = strip_padding(&mapped, self.width, self.height, self.padded_bytes_per_row);
         drop(mapped);
         self.readback.unmap();
         Ok(out)

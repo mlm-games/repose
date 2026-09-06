@@ -333,11 +333,10 @@ pub fn Slider(
             move |_pe: PointerEvent| {
                 let was = *drag_active.get();
                 drag_active.set(false);
-                if was {
-                    if let Some(ref cb) = on_finished {
+                if was
+                    && let Some(ref cb) = on_finished {
                         (cb)();
                     }
-                }
             }
         })
         .on_pointer_cancel({
@@ -692,11 +691,10 @@ pub fn RangeSlider(
                 let was = *drag_active.get();
                 drag_active.set(false);
                 active_thumb.set(false);
-                if was {
-                    if let Some(ref cb) = on_finished {
+                if was
+                    && let Some(ref cb) = on_finished {
                         (cb)();
                     }
-                }
             }
         })
         .on_pointer_cancel({

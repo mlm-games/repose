@@ -1066,11 +1066,10 @@ mod shadow_tests {
         );
         let mut backs: Vec<Rect> = Vec::new();
         for node in &scene.nodes {
-            if let SceneNode::Text { rect, text, .. } = node {
-                if text.as_ref() == "BACK" {
+            if let SceneNode::Text { rect, text, .. } = node
+                && text.as_ref() == "BACK" {
                     backs.push(*rect);
                 }
-            }
         }
         assert_eq!(backs.len(), 1, "expected 1 BACK, got {:?}", backs);
         let r = backs[0];
@@ -1083,11 +1082,10 @@ mod shadow_tests {
         );
         let mut Credits: Vec<Rect> = Vec::new();
         for node in &scene.nodes {
-            if let SceneNode::Text { rect, text, .. } = node {
-                if text.as_ref() == "VIEW CREDITS" {
+            if let SceneNode::Text { rect, text, .. } = node
+                && text.as_ref() == "VIEW CREDITS" {
                     Credits.push(*rect);
                 }
-            }
         }
         assert_eq!(Credits.len(), 1);
         let rc = Credits[0];

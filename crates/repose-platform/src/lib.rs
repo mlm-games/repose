@@ -331,7 +331,7 @@ pub fn run_desktop_app_with_config(
                         self.rt
                             .sched
                             .focused
-                            .map_or(false, |id| self.rt.is_textfield(id)),
+                            .is_some_and(|id| self.rt.is_textfield(id)),
                     );
                 }
                 return true;
@@ -743,8 +743,8 @@ pub fn run_desktop_app_with_config(
                         scale,
                     );
                     let mut dirty = r.dirty;
-                    if let Some((delta_scale, center)) = r.pinch {
-                        if self.dispatch_action(repose_core::shortcuts::Action::Gesture(
+                    if let Some((delta_scale, center)) = r.pinch
+                        && self.dispatch_action(repose_core::shortcuts::Action::Gesture(
                             repose_core::shortcuts::Gesture::PinchWithCenter {
                                 delta_scale,
                                 center,
@@ -752,14 +752,12 @@ pub fn run_desktop_app_with_config(
                         )) {
                             dirty = true;
                         }
-                    }
-                    if let Some(delta) = r.pan {
-                        if self.dispatch_action(repose_core::shortcuts::Action::Gesture(
+                    if let Some(delta) = r.pan
+                        && self.dispatch_action(repose_core::shortcuts::Action::Gesture(
                             repose_core::shortcuts::Gesture::Pan { delta },
                         )) {
                             dirty = true;
                         }
-                    }
                     if let Some(right) = r.swipe_right {
                         let g = if right {
                             repose_core::shortcuts::Gesture::SwipeRight
@@ -1024,7 +1022,7 @@ pub fn run_desktop_app_with_config(
                 .unwrap_or_else(|e| e.into_inner())
                 .as_ref()
             {
-                let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cb()));
+                let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(cb));
                 if let Err(e) = res {
                     log::error!(
                         "ABOUT_TO_WAIT_CALLBACK panicked: {}",

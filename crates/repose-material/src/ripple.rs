@@ -113,7 +113,7 @@ impl IndicationDrawNode for RippleDrawNode {
         let base_color = self
             .config
             .color
-            .unwrap_or_else(|| repose_core::locals::content_color());
+            .unwrap_or_else(repose_core::locals::content_color);
 
         // M3 state layers (focus, hover) rendered as circles. Drawn even while
         // pressed (Compose draws stateLayer then drawRipples together);

@@ -204,7 +204,7 @@ where
 
     let is_new = *prev.borrow() != target;
     if is_new {
-        let old_ver = *version.borrow();
+        let _old_ver = *version.borrow();
         let mut prev_view = content(prev.borrow().clone());
         prev_view.scope_key = None;
         prev_view.modifier.repaint_boundary = true;
@@ -448,7 +448,7 @@ where
 
     let is_new = *prev.borrow() != target_state;
     if is_new {
-        let old_ver = *version.borrow();
+        let _old_ver = *version.borrow();
         let mut prev_view = content(prev.borrow().clone());
         prev_view.scope_key = None;
         prev_view.modifier.repaint_boundary = true;

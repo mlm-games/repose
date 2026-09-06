@@ -21,8 +21,8 @@ pub fn on_cursor_moved(
     inspector: &mut Option<repose_devtools::Inspector>,
 ) -> Option<repose_core::CursorIcon> {
     let result = rt.handle_pointer_move(pos);
-    if let (Some(inspector), Some(f)) = (inspector, &rt.frame_cache) {
-        if inspector.hud.inspector_enabled {
+    if let (Some(inspector), Some(f)) = (inspector, &rt.frame_cache)
+        && inspector.hud.inspector_enabled {
             let hit = f.hit_regions.iter().find(|h| h.rect.contains(pos));
             let hover_rect = hit.map(|h| h.rect);
             let hover_info = hit.and_then(|h| {
@@ -36,7 +36,6 @@ pub fn on_cursor_moved(
             });
             inspector.hud.set_hovered(hover_rect, hover_info);
         }
-    }
     result.cursor
 }
 
@@ -121,19 +120,17 @@ pub fn on_touch(
 ) -> bool {
     let r = handle_touch_raw(rt, touch_gestures, t, scale);
     let mut dirty = r.dirty;
-    if let Some((delta_scale, center)) = r.pinch {
-        if dispatch(Action::Gesture(Gesture::PinchWithCenter {
+    if let Some((delta_scale, center)) = r.pinch
+        && dispatch(Action::Gesture(Gesture::PinchWithCenter {
             delta_scale,
             center,
         })) {
             dirty = true;
         }
-    }
-    if let Some(delta) = r.pan {
-        if dispatch(Action::Gesture(Gesture::Pan { delta })) {
+    if let Some(delta) = r.pan
+        && dispatch(Action::Gesture(Gesture::Pan { delta })) {
             dirty = true;
         }
-    }
     if let Some(right) = r.swipe_right {
         let g = if right {
             Gesture::SwipeRight
@@ -188,12 +185,10 @@ pub fn on_keyboard_input(
         && rt.modifiers.ctrl
         && rt.modifiers.shift
         && key_event.physical_key == PhysicalKey::Code(KeyCode::KeyI)
-    {
-        if let Some(inspector) = inspector {
+        && let Some(inspector) = inspector {
             inspector.hud.toggle_inspector();
             return true;
         }
-    }
     let mapped = map_key(key_event.physical_key, &rt.modifiers);
     let ke = winit_key_to_repose(key_event, &mapped, &rt.modifiers);
     rt.handle_key_with_text(&ke, key_event.text.as_deref())
@@ -206,7 +201,7 @@ pub fn on_ime(rt: &mut ReposeRuntime, ime: &winit::event::Ime) {
         Ime::Enabled => repose_core::input::ImeEvent::Start,
         Ime::Preedit(text, cursor) => repose_core::input::ImeEvent::Update {
             text: text.clone(),
-            cursor: cursor.map(|(a, b)| (a as usize, b as usize)),
+            cursor: cursor.map(|(a, b)| (a, b)),
         },
         Ime::Commit(text) => repose_core::input::ImeEvent::Commit(text.clone()),
         Ime::Disabled => repose_core::input::ImeEvent::Cancel,

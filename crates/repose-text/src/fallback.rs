@@ -151,6 +151,12 @@ pub struct NotoFontDownloader {
     // Kotlin creates IndexedNotoFont per decode (for each component). For efficiency we create per call.
 }
 
+impl Default for NotoFontDownloader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NotoFontDownloader {
     pub fn new() -> Self {
         Self {

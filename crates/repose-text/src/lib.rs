@@ -537,26 +537,22 @@ pub fn register_font_data(bytes: &[u8]) {
 }
 
 pub(crate) fn clear_caches_for_fallback() {
-    if let Some(c) = METRICS_LRU.get() {
-        if let Ok(mut g) = c.lock() {
+    if let Some(c) = METRICS_LRU.get()
+        && let Ok(mut g) = c.lock() {
             g.clear_both();
         }
-    }
-    if let Some(c) = WRAP_LRU.get() {
-        if let Ok(mut g) = c.lock() {
+    if let Some(c) = WRAP_LRU.get()
+        && let Ok(mut g) = c.lock() {
             g.clear_both();
         }
-    }
-    if let Some(c) = WRAP_RANGES_LRU.get() {
-        if let Ok(mut g) = c.lock() {
+    if let Some(c) = WRAP_RANGES_LRU.get()
+        && let Ok(mut g) = c.lock() {
             g.clear_both();
         }
-    }
-    if let Some(c) = ELLIP_LRU.get() {
-        if let Ok(mut g) = c.lock() {
+    if let Some(c) = ELLIP_LRU.get()
+        && let Ok(mut g) = c.lock() {
             g.clear_both();
         }
-    }
     // Also bump frame counter to signal stale
     bump_frame_for_fallback();
 }

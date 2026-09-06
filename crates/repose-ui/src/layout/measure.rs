@@ -453,13 +453,12 @@ impl LayoutEngine {
                                                     break;
                                                 }
                                             }
-                                            if cut == line_start {
-                                                if let Some((ofs, gr)) =
+                                            if cut == line_start
+                                                && let Some((ofs, gr)) =
                                                     tok.grapheme_indices(true).next()
                                                 {
                                                     cut = tok_abs_start + ofs + gr.len();
                                                 }
-                                            }
                                             out.push((line_start, cut));
                                             line_start = cut;
                                         }

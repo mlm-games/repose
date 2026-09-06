@@ -460,7 +460,7 @@ impl ViewTree {
                 let mut deduped = new_child.clone();
                 let salt = (key.wrapping_mul(0x9E3779B97F4A7C15)
                     ^ (i as u64).wrapping_add(0xBF58476D1CE4E5B9))
-                .wrapping_add(parent_id.data().as_ffi() as u64);
+                .wrapping_add(parent_id.data().as_ffi());
                 deduped.modifier.key = Some(salt);
                 let deduped_ref = deduped;
                 let idx = i as u32;

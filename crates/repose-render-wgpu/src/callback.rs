@@ -95,9 +95,7 @@ impl CallbackResources {
 
     pub fn get_or_insert_with<T: MaybeSendSync + Default>(&mut self) -> &mut T {
         let id = TypeId::of::<T>();
-        if !self.map.contains_key(&id) {
-            self.map.insert(id, Box::new(T::default()));
-        }
+        self.map.entry(id).or_insert_with(|| Box::new(T::default()));
         self.map.get_mut(&id).unwrap().downcast_mut::<T>().unwrap()
     }
 

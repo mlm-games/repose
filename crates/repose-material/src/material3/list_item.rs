@@ -324,12 +324,11 @@ pub fn ListItem(
                 cb();
             }
         });
-        if is_enabled {
-            if let Some(cb) = &on_long_click {
+        if is_enabled
+            && let Some(cb) = &on_long_click {
                 let cb = cb.clone();
                 modifier = modifier.on_long_click(move || cb());
             }
-        }
     }
 
     let wrap_icon = |color: Color, v: View| -> View { with_content_color(color, move || v) };

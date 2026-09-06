@@ -40,18 +40,10 @@ impl Default for AppConfig {
 
 /// Options for the Android runner.
 #[derive(Clone, Copy, Debug)]
+#[derive(Default)]
 pub struct AndroidOptions {
     pub continuous_redraw: bool,
     pub ime_height_px: Option<f32>,
     pub common: ReposeOptions,
 }
 
-impl Default for AndroidOptions {
-    fn default() -> Self {
-        Self {
-            continuous_redraw: false,
-            ime_height_px: None,
-            common: ReposeOptions::default(),
-        }
-    }
-}

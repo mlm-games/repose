@@ -562,7 +562,7 @@ impl ReposeRuntime {
             && f.hit_regions
                 .iter()
                 .find(|h| h.id == lid)
-                .map_or(true, |h| !h.rect.contains(pos))
+                .is_none_or(|h| !h.rect.contains(pos))
         {
             self.long_press = None;
         }
@@ -726,16 +726,13 @@ impl ReposeRuntime {
                 self.pending_click = None;
             }
 
-            match button {
-                PointerButton::Primary => {
-                    self.long_press = if hit.on_long_click.is_some() {
-                        Some((hit.id, web_time::Instant::now(), pos.x, pos.y))
-                    } else {
-                        None
-                    };
-                    self.suppress_next_click = false;
-                }
-                _ => {}
+            if let PointerButton::Primary = button {
+                self.long_press = if hit.on_long_click.is_some() {
+                    Some((hit.id, web_time::Instant::now(), pos.x, pos.y))
+                } else {
+                    None
+                };
+                self.suppress_next_click = false;
             }
 
             if hit.tf_state_key.is_some() || is_textfield_in_frame(f, hit.id) {
@@ -849,8 +846,8 @@ impl ReposeRuntime {
         }
 
         // Long-press resolution: `poll_long_press` normally fires on timeout when held.
-        if let Some((lid, t0, _, _)) = self.long_press.take() {
-            if Some(lid) == self.capture_id
+        if let Some((lid, t0, _, _)) = self.long_press.take()
+            && Some(lid) == self.capture_id
                 && t0.elapsed().as_millis() >= LONG_PRESS_MS
                 && let Some(hit) = f.hit_regions.iter().find(|h| h.id == lid && !h.disabled)
                 && let Some(cb) = &hit.on_long_click
@@ -862,7 +859,6 @@ impl ReposeRuntime {
                 result.needs_a11y_announce = true;
                 result.consumed = true;
             }
-        }
 
         if self.double_candidate.is_none()
             && !self.suppress_next_click
@@ -1101,7 +1097,7 @@ impl ReposeRuntime {
             .hit_regions
             .iter()
             .find(|h| h.id == lid)
-            .map_or(false, |h| h.rect.contains(Vec2 { x: mx, y: my }));
+            .is_some_and(|h| h.rect.contains(Vec2 { x: mx, y: my }));
         if !in_bounds {
             self.long_press = None;
             return;
@@ -1242,15 +1238,14 @@ impl ReposeRuntime {
                             None
                         };
 
-                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid) {
-                            if let Some(src) = &hit.interaction_source {
+                        if let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
+                            && let Some(src) = &hit.interaction_source {
                                 let local = Vec2 {
                                     x: hit.rect.w * 0.5,
                                     y: hit.rect.h * 0.5,
                                 };
                                 src.to_mutable().emit(Interaction::new_press(local));
                             }
-                        }
 
                         request_frame();
                         return true;
@@ -1277,11 +1272,10 @@ impl ReposeRuntime {
                             let pid = src.collect_last_press_id().unwrap_or(0);
                             src.to_mutable().emit(Interaction::Release(pid));
                         }
-                        if !long_fired {
-                            if let Some(cb) = &hit.on_click {
+                        if !long_fired
+                            && let Some(cb) = &hit.on_click {
                                 cb();
                             }
-                        }
                     }
                     request_frame();
                     return true;

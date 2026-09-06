@@ -1519,7 +1519,7 @@ fn swash_to_a8_coverage(content: repose_text::SwashContent, data: &[u8]) -> Opti
         repose_text::SwashContent::Mask => Some(data.to_vec()),
         repose_text::SwashContent::SubpixelMask => {
             let mut out = Vec::with_capacity(data.len() / 4);
-            for px in data.chunks_exact(4) {
+            for px in data.as_chunks::<4>().0 {
                 let r = px[0];
                 let g = px[1];
                 let b = px[2];
@@ -2067,14 +2067,14 @@ impl WgpuSurfaceBackend {
         msaa_samples: u32,
         present_mode: PresentModePref,
     ) -> anyhow::Result<WgpuSurfaceBackend> {
-        let instance: Instance;
+        
 
-        if cfg!(target_arch = "wasm32") {
+        let instance: Instance = if cfg!(target_arch = "wasm32") {
             let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
             desc.backends = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
-            instance = wgpu::util::new_instance_with_webgpu_detection(desc).await;
+            wgpu::util::new_instance_with_webgpu_detection(desc).await
         } else {
-            instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+            wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle())
         };
 
         let surface = instance.create_surface(window.clone())?;
@@ -5290,7 +5290,7 @@ impl WgpuSceneRenderer {
                 }
                 SceneNode::EndLayer { layer_id } => {
                     flush_batch!();
-                    scissor_stack = std::mem::replace(&mut saved_scissor_stack, Vec::new());
+                    scissor_stack = std::mem::take(&mut saved_scissor_stack);
                     root_clip_rect = saved_root_clip_rect;
                     // Finish the layer's pass, start a new one on the previous target.
                     let saved = std::mem::replace(
@@ -5542,11 +5542,10 @@ impl WgpuSceneRenderer {
                     && payload.downcast_ref::<Callback>().is_some()
                 {
                     let ptr = Arc::as_ptr(payload) as *const () as usize;
-                    if seen.insert(ptr) {
-                        if let Ok(cb_arc) = payload.clone().downcast::<Callback>() {
+                    if seen.insert(ptr)
+                        && let Ok(cb_arc) = payload.clone().downcast::<Callback>() {
                             prepare_list.push(cb_arc);
                         }
-                    }
                 }
             }
             if !prepare_list.is_empty() {
@@ -6019,8 +6018,8 @@ impl WgpuSceneRenderer {
 
                     Cmd::Callback { rect, payload } => {
                         if let Some(cb) = payload.downcast_ref::<Callback>() {
-                            let vp_x = rect.x.floor().max(0.0) as f32;
-                            let vp_y = rect.y.floor().max(0.0) as f32;
+                            let vp_x = rect.x.floor().max(0.0);
+                            let vp_y = rect.y.floor().max(0.0);
                             let vp_w = rect.w.ceil().max(1.0);
                             let vp_h = rect.h.ceil().max(1.0);
                             if vp_w > 0.0 && vp_h > 0.0 {

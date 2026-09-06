@@ -109,17 +109,15 @@ impl LayoutEngine {
                     let mut cur = self.tree.get(root_id).and_then(|n| n.parent);
                     let mut ancestor_dirty_with_transform = false;
                     while let Some(pid) = cur {
-                        if dirty_nodes.contains(&pid) {
-                            if let Some(pnode) = self.tree.get(pid) {
-                                if pnode.modifier.transform.is_some()
+                        if dirty_nodes.contains(&pid)
+                            && let Some(pnode) = self.tree.get(pid)
+                                && (pnode.modifier.transform.is_some()
                                     || pnode.modifier.alpha.is_some()
-                                    || pnode.modifier.graphics_layer.is_some()
+                                    || pnode.modifier.graphics_layer.is_some())
                                 {
                                     ancestor_dirty_with_transform = true;
                                     break;
                                 }
-                            }
-                        }
                         cur = self.tree.get(pid).and_then(|n| n.parent);
                     }
                     if ancestor_dirty_with_transform {

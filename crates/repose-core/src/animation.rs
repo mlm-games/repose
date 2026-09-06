@@ -1007,8 +1007,8 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
             self.update_tween()
         };
 
-        if !still {
-            if let Some(repeat) = &self.spec.repeat {
+        if !still
+            && let Some(repeat) = &self.spec.repeat {
                 let maxed = repeat
                     .iterations
                     .is_some_and(|max| self.iteration + 1 >= max);
@@ -1024,7 +1024,6 @@ impl<T: Interpolate + Clone> AnimatedValue<T> {
                     still = true;
                 }
             }
-        }
 
         still
     }

@@ -15,6 +15,12 @@ struct Inner {
     listeners: Vec<Weak<dyn UnresolvedListener>>,
 }
 
+impl Default for UnresolvedSymbolsRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UnresolvedSymbolsRegistry {
     pub fn new() -> Self {
         Self {
@@ -109,13 +115,13 @@ impl UnresolvedSymbolsRegistry {
 static WEB_REGISTRY: OnceLock<UnresolvedSymbolsRegistry> = OnceLock::new();
 
 pub fn web_unresolved_registry() -> &'static UnresolvedSymbolsRegistry {
-    WEB_REGISTRY.get_or_init(|| UnresolvedSymbolsRegistry::new())
+    WEB_REGISTRY.get_or_init(UnresolvedSymbolsRegistry::new)
 }
 
 static GLOBAL_REGISTRY: OnceLock<UnresolvedSymbolsRegistry> = OnceLock::new();
 
 pub fn global_registry() -> &'static UnresolvedSymbolsRegistry {
-    GLOBAL_REGISTRY.get_or_init(|| UnresolvedSymbolsRegistry::new())
+    GLOBAL_REGISTRY.get_or_init(UnresolvedSymbolsRegistry::new)
 }
 
 pub fn get_unresolved_registry() -> Option<&'static UnresolvedSymbolsRegistry> {

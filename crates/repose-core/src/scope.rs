@@ -94,7 +94,7 @@ impl Scope {
 
         let disposers = std::mem::take(&mut *self.inner.disposers.borrow_mut());
         for disposer in disposers {
-            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| disposer()));
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(disposer));
             if let Err(e) = res {
                 let msg = e
                     .downcast_ref::<String>()
@@ -175,7 +175,7 @@ impl Drop for ScopeInner {
 
         let disposers = std::mem::take(&mut *self.disposers.borrow_mut());
         for disposer in disposers {
-            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| disposer()));
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(disposer));
             if let Err(e) = res {
                 log::error!(
                     "ScopeInner drop disposer panicked: {}",

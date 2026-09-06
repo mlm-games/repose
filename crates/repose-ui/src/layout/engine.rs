@@ -361,19 +361,15 @@ impl LayoutEngine {
                 && let Some(outer_key) = self.node_to_scope.get(&parent_id)
                 && let Some(st) = self.scope_trees.get(outer_key)
                 && let Some(&tid) = st.taffy_map.get(&node_id)
-            {
-                if let Ok(l) = st.taffy.layout(tid) {
+                && let Ok(l) = st.taffy.layout(tid) {
                     return *l;
                 }
-            }
             if let Some(key) = self.node_to_scope.get(&node_id)
                 && let Some(st) = self.scope_trees.get(key)
                 && let Some(&tid) = st.taffy_map.get(&node_id)
-            {
-                if let Ok(l) = st.taffy.layout(tid) {
+                && let Ok(l) = st.taffy.layout(tid) {
                     return *l;
                 }
-            }
             return fallback();
         }
         if let Some(key) = self.node_to_scope.get(&node_id)
