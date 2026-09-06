@@ -17,28 +17,21 @@ anyhow = { workspace = true }
 clipawl = { workspace = true, features = ["async-io", "linux-wayland", "linux-x11"] }
 web-time.workspace = true
 pollster = { workspace = true }
-accesskit = "0.24"
+accesskit = { workspace = true }
 rustc-hash = { workspace = true }
 
 [target.'cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))'.dependencies]
 winit = { workspace = true }
-accesskit_winit = "0.33"
+accesskit_winit = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 winit = { workspace = true, features = ["android-native-activity"] }
-accesskit_winit = "0.33"
+accesskit_winit = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
-web-sys = { workspace = true, features = [
-    "DragEvent",
-    "DataTransfer",
-    "FileList",
-    "File",
-    "Location",
-    "Window",
-] }
+web-sys = { workspace = true }
 repose-text = { workspace = true }
 winit = { workspace = true, features = ["rwh_05"] }
 console_error_panic_hook = { workspace = true }

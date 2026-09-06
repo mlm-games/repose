@@ -22,9 +22,6 @@ anyhow = { workspace = true }
 bytemuck = { workspace = true }
 pollster = { workspace = true }
 web-workers.workspace = true
-image = { version = "0.25", default-features = false, features = [
-    "png",
-    "jpeg",
-] }
-lyon_tessellation = "1.0"
-lyon_path = "1.0"
+image = { workspace = true }
+lyon_tessellation = { workspace = true }
+lyon_path = { workspace = true }

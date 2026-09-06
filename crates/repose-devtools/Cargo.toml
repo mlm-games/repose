@@ -7,5 +7,4 @@ description = "Repose developer tools for debugging."
 
 [dependencies]
 repose-core.workspace = true
-log = { workspace = true }
 web-time.workspace = true

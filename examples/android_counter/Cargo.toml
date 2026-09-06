@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 [package.metadata.android]
 package = "com.example.android_counter"
 apk_name = "android_counter"
-target_sdk_version = 34
+target_sdk_version = 35
 min_sdk_version = 26
 build_targets = ["aarch64-linux-android"]
 # runtime_libs = []

@@ -1,8 +1,8 @@
 use font_awl::FontProvider;
-use once_cell::sync::OnceCell;
 use rapidhash::{HashMapExt, RapidHashMap, fast::RapidHasher};
 use skrifa::MetadataProvider;
 use skrifa::outline::OutlinePen;
+use std::sync::OnceLock;
 
 pub mod fallback;
 pub mod fallback_data;
@@ -42,8 +42,8 @@ const GLYPH_CACHE_CAP: usize = 4096;
 const WRAP_CACHE_CAP: usize = 1024;
 const ELLIP_CACHE_CAP: usize = 2048;
 
-static METRICS_LRU: OnceCell<Mutex<Lru<(u64, u32, u64, u16, u8, i32, u64), TextMetrics>>> =
-    OnceCell::new();
+static METRICS_LRU: OnceLock<Mutex<Lru<(u64, u32, u64, u16, u8, i32, u64), TextMetrics>>> =
+    OnceLock::new();
 fn metrics_cache() -> &'static Mutex<Lru<(u64, u32, u64, u16, u8, i32, u64), TextMetrics>> {
     METRICS_LRU.get_or_init(|| Mutex::new(Lru::new(4096)))
 }
@@ -145,16 +145,16 @@ impl<K: std::hash::Hash + Eq + Clone, V> Lru<K, V> {
     }
 }
 
-static WRAP_LRU: OnceCell<
+static WRAP_LRU: OnceLock<
     Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32, u64), (Vec<String>, bool)>>,
-> = OnceCell::new();
+> = OnceLock::new();
 
-static WRAP_RANGES_LRU: OnceCell<
+static WRAP_RANGES_LRU: OnceLock<
     Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32, u64), (Vec<(usize, usize)>, bool)>>,
-> = OnceCell::new();
+> = OnceLock::new();
 
-static ELLIP_LRU: OnceCell<Mutex<Lru<(u64, u32, u32, u16, u8, i32, u64), String>>> =
-    OnceCell::new();
+static ELLIP_LRU: OnceLock<Mutex<Lru<(u64, u32, u32, u16, u8, i32, u64), String>>> =
+    OnceLock::new();
 
 fn wrap_cache()
 -> &'static Mutex<Lru<(u64, u32, u32, u16, bool, u16, u8, i32, u64), (Vec<String>, bool)>> {
@@ -343,9 +343,9 @@ impl Engine {
     }
 }
 
-static ENGINE: OnceCell<Mutex<Engine>> = OnceCell::new();
+static ENGINE: OnceLock<Mutex<Engine>> = OnceLock::new();
 
-pub static FONT_PROVIDER: OnceCell<Mutex<font_awl::Provider>> = OnceCell::new();
+pub static FONT_PROVIDER: OnceLock<Mutex<font_awl::Provider>> = OnceLock::new();
 
 fn init_engine_sync() -> Engine {
     let mut provider = font_awl::Provider::new();
@@ -1669,7 +1669,7 @@ pub fn ellipsize_line(
 }
 
 fn ellipsis_width(px: f32, letter_spacing: f32) -> f32 {
-    static ELLIP_W_LRU: OnceCell<Mutex<Lru<(u32, i32), f32>>> = OnceCell::new();
+    static ELLIP_W_LRU: OnceLock<Mutex<Lru<(u32, i32), f32>>> = OnceLock::new();
     let cache = ELLIP_W_LRU.get_or_init(|| Mutex::new(Lru::new(64)));
     let key = ((px * 100.0) as u32, (letter_spacing * 100.0) as i32);
     if let Some(w) = cache.lock().unwrap().get(&key).copied() {

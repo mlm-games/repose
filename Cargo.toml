@@ -14,13 +14,11 @@ rust-version = "1.98"
 
 [workspace.dependencies]
 anyhow = "1"
-thiserror = "2"
 log = "0.4"
 env_logger = "0.11"
 parking_lot = "0.12"
 smallvec = "1.15"
 slotmap = "1.1"
-bitflags = "2.13"
 unicode-segmentation = "1.13"
 clipawl = { version = "0.4", default-features = false }
 
@@ -43,6 +41,11 @@ web-sys = { version = "0.3", features = [
   "RequestCache",
   "Response",
   "Headers",
+  "DragEvent",
+  "DataTransfer",
+  "FileList",
+  "File",
+  "Location",
 ] }
 js-sys = "0.3"
 console_error_panic_hook = "0.1"
@@ -50,10 +53,20 @@ console_log = "1"
 getrandom = "0.3"
 bytemuck = { version = "1.25.0", features = ["derive"] }
 
-taffy = { version = "0.12", default-features = true }
-winit = { version = "0.30", default-features = true }
+taffy = "0.13"
+winit = "0.30"
 wgpu = { version = "30", features = ["webgl"] }
-pollster = "0.4"
+pollster = "1"
+
+accesskit = "0.25"
+accesskit_winit = "0.34"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+lyon_tessellation = "1.0"
+lyon_path = "1.0"
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
+rlobkit-dialogs = "0.5.3"
 
 font-awl = "0.2"
 parley = { version = "0.11", default-features = false, features = ["std"] }

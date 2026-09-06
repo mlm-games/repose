@@ -1,5 +1,5 @@
 use accesskit::{
-    Action, ActionHandler, ActionRequest, Node, NodeId, Rect, Role, Tree, TreeId, TreeUpdate,
+    Action, ActionHandler, ActionRequest, Node, NodeId, Rect, Role, TreeInfo, TreeId, TreeUpdate,
 };
 use rustc_hash::FxHashMap;
 use std::hash::{Hash, Hasher};
@@ -48,7 +48,7 @@ impl A11yTree {
         let root = Node::new(Role::Window);
         TreeUpdate {
             nodes: vec![(WINDOW_ID, root)],
-            tree: Some(Tree::new(WINDOW_ID)),
+            tree: Some(TreeInfo::new(WINDOW_ID)),
             focus: WINDOW_ID,
             tree_id: TreeId::ROOT,
         }

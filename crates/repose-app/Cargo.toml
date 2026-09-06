@@ -11,4 +11,3 @@ repose-ui.workspace = true
 repose-text.workspace = true
 log = { workspace = true }
 web-time.workspace = true
-rustc-hash.workspace = true

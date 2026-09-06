@@ -12,14 +12,10 @@ serde = []
 accesskit = ["dep:accesskit"]
 
 [dependencies]
-slotmap = { workspace = true }
-smallvec = { workspace = true }
 parking_lot = { workspace = true }
-bitflags = { workspace = true }
 log = { workspace = true }
-thiserror = { workspace = true }
 taffy.workspace = true
 web-time.workspace = true
 repose-macros.workspace = true
 rustc-hash.workspace = true
-accesskit = { version = "0.24", optional = true }
+accesskit = { workspace = true, optional = true }

@@ -8,6 +8,5 @@ description = "Navigation (Nav3-like) for Repose"
 [dependencies]
 repose-core.workspace = true
 repose-ui.workspace = true
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true }
 serde_json = { workspace = true }
-log.workspace = true
