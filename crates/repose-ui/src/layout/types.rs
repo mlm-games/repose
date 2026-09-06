@@ -9,6 +9,19 @@ use repose_tree::{NodeId, TreeStats, ViewTree};
 use rustc_hash::FxHashMap;
 use taffy::TaffyTree;
 
+/// Measured text geometry feeding baseline alignment, by ViewTree NodeId.
+/// `first`/`last` are real baselines (px from the text block top);
+/// `content_h` is the un-stretched content height. Content height matters
+/// because `Row` children default to `stretch`: layout height follows the
+/// row, content height does not, and the grow pass must fit content rather
+/// than stretch slack.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct TextBaselines {
+    pub(crate) first: f32,
+    pub(crate) last: f32,
+    pub(crate) content_h: f32,
+}
+
 pub(crate) struct ScopeLayoutTree {
     pub(crate) taffy: TaffyTree<NodeContext>,
     pub(crate) taffy_map: FxHashMap<NodeId, taffy::NodeId>,
@@ -19,9 +32,9 @@ pub(crate) struct ScopeLayoutTree {
     pub(crate) cached_size: Option<taffy::Size<f32>>,
     pub(crate) text_cache: FxHashMap<NodeId, TextLayout>,
     pub(crate) valid: bool,
-    /// Measured (first, last) text baselines by ViewTree NodeId, filled
-    /// during measure. Consumed by the baseline-alignment post-pass.
-    pub(crate) baseline_map: FxHashMap<NodeId, (f32, f32)>,
+    /// Measured text geometry by ViewTree NodeId, filled during measure.
+    /// Consumed by the baseline-alignment post-pass (and grow pass).
+    pub(crate) baseline_map: FxHashMap<NodeId, TextBaselines>,
     /// Vertical px shifts from baseline alignment, applied in
     /// `layout_for_node`. Overwritten every layout of this tree.
     pub(crate) baseline_shifts: FxHashMap<NodeId, f32>,
@@ -67,9 +80,9 @@ pub struct LayoutEngine {
     /// Cached text layouts for non-scope nodes (persists across frames).
     pub(crate) text_cache: FxHashMap<NodeId, TextLayout>,
 
-    /// Measured (first, last) text baselines by ViewTree NodeId, filled
-    /// during measure. Consumed by the baseline-alignment post-pass.
-    pub(crate) baseline_map: FxHashMap<NodeId, (f32, f32)>,
+    /// Measured text geometry by ViewTree NodeId, filled during measure.
+    /// Consumed by the baseline-alignment post-pass (and grow pass).
+    pub(crate) baseline_map: FxHashMap<NodeId, TextBaselines>,
     /// Vertical px shifts from baseline alignment, applied in
     /// `layout_for_node`. Overwritten every root layout.
     pub(crate) baseline_shifts: FxHashMap<NodeId, f32>,

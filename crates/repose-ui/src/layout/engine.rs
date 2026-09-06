@@ -190,14 +190,7 @@ impl LayoutEngine {
                     &font_px,
                     &px,
                     &mut self.baseline_map,
-                );
-
-                // Baseline-alignment post-pass for RowScope.align_by_* children.
-                Self::apply_baseline_shifts(
-                    &self.tree,
-                    &self.taffy,
                     &self.taffy_map,
-                    &self.baseline_map,
                     &mut self.baseline_shifts,
                 );
 
@@ -296,7 +289,11 @@ impl LayoutEngine {
 
         let mut text_cache: FxHashMap<NodeId, TextLayout> = FxHashMap::default();
         let reverse_map: FxHashMap<taffy::NodeId, NodeId> = FxHashMap::default();
-        let mut baseline_map: FxHashMap<NodeId, (f32, f32)> = FxHashMap::default();
+        let mut baseline_map: FxHashMap<NodeId, TextBaselines> = FxHashMap::default();
+        // Intrinsic queries don't consume shifts; the growth loop needs maps
+        // matching `temp_taffy`, so pass throwaways (no-ops, as today).
+        let empty_map: FxHashMap<NodeId, taffy::NodeId> = FxHashMap::default();
+        let mut dropped_shifts: FxHashMap<NodeId, f32> = FxHashMap::default();
 
         Self::run_measure_pass(
             &mut temp_taffy,
@@ -311,6 +308,8 @@ impl LayoutEngine {
             &font_px_closure,
             &px_closure,
             &mut baseline_map,
+            &empty_map,
+            &mut dropped_shifts,
         );
 
         let layout = temp_taffy.layout(root_tid).ok();
@@ -408,15 +407,17 @@ impl LayoutEngine {
                 && let Some(outer_key) = self.node_to_scope.get(&parent_id)
                 && let Some(st) = self.scope_trees.get(outer_key)
                 && let Some(&tid) = st.taffy_map.get(&node_id)
-                && let Ok(l) = st.taffy.layout(tid) {
-                    return *l;
-                }
+                && let Ok(l) = st.taffy.layout(tid)
+            {
+                return *l;
+            }
             if let Some(key) = self.node_to_scope.get(&node_id)
                 && let Some(st) = self.scope_trees.get(key)
                 && let Some(&tid) = st.taffy_map.get(&node_id)
-                && let Ok(l) = st.taffy.layout(tid) {
-                    return *l;
-                }
+                && let Ok(l) = st.taffy.layout(tid)
+            {
+                return *l;
+            }
             return fallback();
         }
         if let Some(key) = self.node_to_scope.get(&node_id)
@@ -460,17 +461,17 @@ impl LayoutEngine {
     /// computed layout), for the devtools inspector. Empty string when the
     /// node has no taffy node. Backed by taffy's `write_tree`.
     pub fn debug_taffy_subtree(&self, node_id: NodeId) -> String {
-        let trees: Vec<(&taffy::TaffyTree<NodeContext>, taffy::NodeId)> =
-            if let Some(key) = self.node_to_scope.get(&node_id)
-                && let Some(st) = self.scope_trees.get(key)
-                && let Some(&tid) = st.taffy_map.get(&node_id)
-            {
-                vec![(&st.taffy, tid)]
-            } else if let Some(&tid) = self.taffy_map.get(&node_id) {
-                vec![(&self.taffy, tid)]
-            } else {
-                Vec::new()
-            };
+        let trees: Vec<(&taffy::TaffyTree<NodeContext>, taffy::NodeId)> = if let Some(key) =
+            self.node_to_scope.get(&node_id)
+            && let Some(st) = self.scope_trees.get(key)
+            && let Some(&tid) = st.taffy_map.get(&node_id)
+        {
+            vec![(&st.taffy, tid)]
+        } else if let Some(&tid) = self.taffy_map.get(&node_id) {
+            vec![(&self.taffy, tid)]
+        } else {
+            Vec::new()
+        };
         let mut out = String::new();
         for (tree, tid) in trees {
             let mut buf = Vec::new();

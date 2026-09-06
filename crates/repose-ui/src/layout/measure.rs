@@ -26,94 +26,117 @@ impl LayoutEngine {
         scope_trees: &mut HashMap<String, ScopeLayoutTree>,
         font_px: &dyn Fn(f32) -> f32,
         px: &dyn Fn(f32) -> f32,
-        baseline_map: &mut FxHashMap<NodeId, (f32, f32)>,
+        baseline_map: &mut FxHashMap<NodeId, TextBaselines>,
+        taffy_map: &FxHashMap<NodeId, taffy::NodeId>,
+        shifts_out: &mut FxHashMap<NodeId, f32>,
     ) {
-        // Fresh per compute: attach_text_baselines only inserts, so stale
-        // entries (removed nodes, kind-changed nodes) must not survive.
+        // Fresh per layout pass (not per recompute: taffy may serve
+        // unchanged leaves from cache without re-measuring, in which case
+        // their prior entries are still valid — same text, same width).
+        // attach_text_baselines only inserts, so entries for removed or
+        // kind-changed nodes must not survive across passes.
         baseline_map.clear();
-        let _ = taffy.compute_layout_with_measure(
-            taffy_root,
-            available,
-            |inputs, taffy_node, ctx, style| {
-                // Snapshot text identity for baseline synthesis below.
-                let baseline_key = Self::text_baseline_key(ctx.as_deref());
-                let out = taffy::compute_leaf_layout(
-                    inputs,
-                    style,
-                    |_, _| 0.0,
-                    |known, avail| {
-                        // Check if this is a scope root marker -> return cached scope size
-                        if let Some(&node_id) = reverse_map.get(&taffy_node) {
-                            // Custom layout modifier: delegate measurement to user callback
-                            if let Some(node) = tree.get(node_id)
-                                && let Some(ref layout_cb) = node.modifier.layout
-                            {
-                                let scale = dp_to_px(1.0);
-                                let avail_w = match avail.width {
-                                    AvailableSpace::Definite(w) => w / scale,
-                                    _ => f32::INFINITY,
-                                };
-                                let avail_h = match avail.height {
-                                    AvailableSpace::Definite(h) => h / scale,
-                                    _ => f32::INFINITY,
-                                };
-                                let known_w =
-                                    known.width.map(|w| w / scale).unwrap_or(f32::INFINITY);
-                                let known_h =
-                                    known.height.map(|h| h / scale).unwrap_or(f32::INFINITY);
-                                let constraints = repose_core::modifier::LayoutConstraints {
-                                    min_width: 0.0,
-                                    max_width: avail_w.min(known_w),
-                                    min_height: 0.0,
-                                    max_height: avail_h.min(known_h),
-                                };
-                                let (w_dp, h_dp) = layout_cb(constraints);
-                                return taffy::geometry::Size {
-                                    width: w_dp * scale,
-                                    height: h_dp * scale,
-                                };
+        // Compute, then apply baseline alignment (Compose `alignBy`
+        // semantics). Shifts can push children past the row's taffy height,
+        // so overflowing rows grow via `min_size` and we recompute. Bounded:
+        // content heights are stable, so this settles after one recompute
+        // (centered rows may take an extra pass to converge).
+        // (Fresh closure per iteration: borrows must end before the post-pass.)
+        for _ in 0..4 {
+            let _ = taffy.compute_layout_with_measure(
+                taffy_root,
+                available,
+                |inputs, taffy_node, ctx, style| {
+                    // Snapshot text identity for baseline synthesis below.
+                    let baseline_key = Self::text_baseline_key(ctx.as_deref());
+                    let out = taffy::compute_leaf_layout(
+                        inputs,
+                        style,
+                        |_, _| 0.0,
+                        |known, avail| {
+                            // Check if this is a scope root marker -> return cached scope size
+                            if let Some(&node_id) = reverse_map.get(&taffy_node) {
+                                // Custom layout modifier: delegate measurement to user callback
+                                if let Some(node) = tree.get(node_id)
+                                    && let Some(ref layout_cb) = node.modifier.layout
+                                {
+                                    let scale = dp_to_px(1.0);
+                                    let avail_w = match avail.width {
+                                        AvailableSpace::Definite(w) => w / scale,
+                                        _ => f32::INFINITY,
+                                    };
+                                    let avail_h = match avail.height {
+                                        AvailableSpace::Definite(h) => h / scale,
+                                        _ => f32::INFINITY,
+                                    };
+                                    let known_w =
+                                        known.width.map(|w| w / scale).unwrap_or(f32::INFINITY);
+                                    let known_h =
+                                        known.height.map(|h| h / scale).unwrap_or(f32::INFINITY);
+                                    let constraints = repose_core::modifier::LayoutConstraints {
+                                        min_width: 0.0,
+                                        max_width: avail_w.min(known_w),
+                                        min_height: 0.0,
+                                        max_height: avail_h.min(known_h),
+                                    };
+                                    let (w_dp, h_dp) = layout_cb(constraints);
+                                    return taffy::geometry::Size {
+                                        width: w_dp * scale,
+                                        height: h_dp * scale,
+                                    };
+                                }
+                                if scope_root_map.contains_key(&node_id)
+                                    && let Some(key) = node_to_scope.get(&node_id)
+                                    && let Some(sz) = Self::compute_scope_layout(
+                                        scope_trees,
+                                        scope_root_map,
+                                        node_to_scope,
+                                        tree,
+                                        font_px,
+                                        px,
+                                        key,
+                                        known,
+                                        avail,
+                                    )
+                                {
+                                    return sz;
+                                }
                             }
-                            if scope_root_map.contains_key(&node_id)
-                                && let Some(key) = node_to_scope.get(&node_id)
-                                && let Some(sz) = Self::compute_scope_layout(
-                                    scope_trees,
-                                    scope_root_map,
-                                    node_to_scope,
-                                    tree,
-                                    font_px,
-                                    px,
-                                    key,
-                                    known,
-                                    avail,
-                                )
-                            {
-                                return sz;
-                            }
-                        }
-                        Self::measure_node(
-                            known,
-                            avail,
-                            taffy_node,
-                            ctx.as_deref(),
-                            text_cache,
-                            reverse_map,
-                            tree,
-                            font_px,
-                            px,
-                        )
-                    },
-                );
-                Self::attach_text_baselines(
-                    out,
-                    baseline_key,
-                    taffy_node,
-                    reverse_map,
-                    text_cache,
-                    font_px,
-                    baseline_map,
-                )
-            },
-        );
+                            Self::measure_node(
+                                known,
+                                avail,
+                                taffy_node,
+                                ctx.as_deref(),
+                                text_cache,
+                                reverse_map,
+                                tree,
+                                font_px,
+                                px,
+                            )
+                        },
+                    );
+                    Self::attach_text_baselines(
+                        out,
+                        baseline_key,
+                        taffy_node,
+                        reverse_map,
+                        text_cache,
+                        font_px,
+                        baseline_map,
+                    )
+                },
+            );
+            Self::apply_baseline_shifts(tree, taffy, taffy_map, baseline_map, shifts_out);
+            if !Self::grow_rows_for_baseline_overflow(
+                tree,
+                taffy,
+                taffy_map,
+                shifts_out,
+                baseline_map,
+            ) {
+                break;
+            }
+        }
     }
 
     fn compute_scope_layout(
@@ -160,73 +183,86 @@ impl LayoutEngine {
         let mut st_taffy = std::mem::replace(&mut st.taffy, taffy::TaffyTree::new());
         let st_rev = std::mem::take(&mut st.reverse_map);
         let mut st_tc = std::mem::take(&mut st.text_cache);
-        // Fresh per compute (see run_measure_pass): only inserts happen below.
+        // Fresh per layout pass (see run_measure_pass): entries survive
+        // recomputes within this loop, where they are still valid.
         st.baseline_map.clear();
 
-        let _ = st_taffy.compute_layout_with_measure(
-            root_tid,
-            scope_avail,
-            |inputs, tn, ctx2, style2| {
-                let baseline_key = Self::text_baseline_key(ctx2.as_deref());
-                let out = taffy::compute_leaf_layout(
-                    inputs,
-                    style2,
-                    |_, _| 0.0,
-                    |known2, avail2| {
-                        if let Some(&nid) = st_rev.get(&tn)
-                            && scope_root_map.contains_key(&nid)
-                            && let Some(nested_key) = node_to_scope.get(&nid)
-                            && let Some(sz) = Self::compute_scope_layout(
-                                scope_trees,
-                                scope_root_map,
-                                node_to_scope,
+        // Same compute -> align -> grow loop as the main tree (see
+        // run_measure_pass): rows inside scopes grow to fit shifted children.
+        for _ in 0..4 {
+            let _ = st_taffy.compute_layout_with_measure(
+                root_tid,
+                scope_avail,
+                |inputs, tn, ctx2, style2| {
+                    let baseline_key = Self::text_baseline_key(ctx2.as_deref());
+                    let out = taffy::compute_leaf_layout(
+                        inputs,
+                        style2,
+                        |_, _| 0.0,
+                        |known2, avail2| {
+                            if let Some(&nid) = st_rev.get(&tn)
+                                && scope_root_map.contains_key(&nid)
+                                && let Some(nested_key) = node_to_scope.get(&nid)
+                                && let Some(sz) = Self::compute_scope_layout(
+                                    scope_trees,
+                                    scope_root_map,
+                                    node_to_scope,
+                                    tree,
+                                    font_px,
+                                    px,
+                                    nested_key,
+                                    known2,
+                                    avail2,
+                                )
+                            {
+                                return sz;
+                            }
+                            Self::measure_node(
+                                known2,
+                                avail2,
+                                tn,
+                                ctx2.as_deref(),
+                                &mut st_tc,
+                                &st_rev,
                                 tree,
                                 font_px,
                                 px,
-                                nested_key,
-                                known2,
-                                avail2,
                             )
-                        {
-                            return sz;
-                        }
-                        Self::measure_node(
-                            known2,
-                            avail2,
-                            tn,
-                            ctx2.as_deref(),
-                            &mut st_tc,
-                            &st_rev,
-                            tree,
-                            font_px,
-                            px,
-                        )
-                    },
-                );
-                Self::attach_text_baselines(
-                    out,
-                    baseline_key,
-                    tn,
-                    &st_rev,
-                    &st_tc,
-                    font_px,
-                    &mut st.baseline_map,
-                )
-            },
-        );
+                        },
+                    );
+                    Self::attach_text_baselines(
+                        out,
+                        baseline_key,
+                        tn,
+                        &st_rev,
+                        &st_tc,
+                        font_px,
+                        &mut st.baseline_map,
+                    )
+                },
+            );
+            Self::apply_baseline_shifts(
+                tree,
+                &st_taffy,
+                &st.taffy_map,
+                &st.baseline_map,
+                &mut st.baseline_shifts,
+            );
+            if !Self::grow_rows_for_baseline_overflow(
+                tree,
+                &mut st_taffy,
+                &st.taffy_map,
+                &st.baseline_shifts,
+                &st.baseline_map,
+            ) {
+                break;
+            }
+        }
 
         st.taffy = st_taffy;
         st.reverse_map = st_rev;
         st.text_cache = st_tc;
         st.last_constraints = Some((known, avail));
-        // Baseline-alignment post-pass for rows inside this scope tree.
-        Self::apply_baseline_shifts(
-            tree,
-            &st.taffy,
-            &st.taffy_map,
-            &st.baseline_map,
-            &mut st.baseline_shifts,
-        );
         if let Ok(layout) = st.taffy.layout(root_tid) {
             let sz = taffy::geometry::Size {
                 width: layout.size.width,
@@ -250,7 +286,7 @@ impl LayoutEngine {
         tree: &ViewTree,
         taffy: &TaffyTree<NodeContext>,
         taffy_map: &FxHashMap<NodeId, taffy::NodeId>,
-        baseline_map: &FxHashMap<NodeId, (f32, f32)>,
+        baseline_map: &FxHashMap<NodeId, TextBaselines>,
         shifts_out: &mut FxHashMap<NodeId, f32>,
     ) {
         // Recomputed from scratch every layout: a child that loses its flag
@@ -277,12 +313,12 @@ impl LayoutEngine {
                 let Ok(cl) = taffy.layout(ctid) else {
                     continue;
                 };
-                let Some(&(first, last)) = baseline_map.get(&child) else {
+                let Some(&tb) = baseline_map.get(&child) else {
                     continue;
                 };
                 let b = match which {
-                    BaselineAlign::FirstBaseline => first,
-                    BaselineAlign::LastBaseline => last,
+                    BaselineAlign::FirstBaseline => tb.first,
+                    BaselineAlign::LastBaseline => tb.last,
                 };
                 parts.push((child, cl.location.y + b));
             }
@@ -297,6 +333,80 @@ impl LayoutEngine {
                 shifts_out.insert(child, target - yb);
             }
         }
+    }
+
+    /// Grow pass for baseline-aligned rows (Compose parity). Shifts from
+    /// [`apply_baseline_shifts`](Self::apply_baseline_shifts) push flagged
+    /// children down, which can overflow the row's taffy-computed height.
+    /// For rows without an author-fixed height, raise the row's taffy
+    /// `min_size.height` to fit the shifted children; the caller must then
+    /// recompute so parents observe the taller row. Returns true if any
+    /// style changed. Rows with an explicit `size`/`height`/`required_size`/
+    /// `fill_max_h` keep their height (children clip, as in Compose).
+    /// Fit is measured against text *content* height, not layout height:
+    /// `Row` children default to `stretch`, so layout height follows the row
+    /// and would feed the growth back into itself (diverge). Content height
+    /// is stable across recomputes, so top-aligned rows settle after one.
+    /// Must run after `apply_baseline_shifts`, before final layouts are read.
+    pub(crate) fn grow_rows_for_baseline_overflow(
+        tree: &ViewTree,
+        taffy: &mut TaffyTree<NodeContext>,
+        taffy_map: &FxHashMap<NodeId, taffy::NodeId>,
+        shifts: &FxHashMap<NodeId, f32>,
+        baselines: &FxHashMap<NodeId, TextBaselines>,
+    ) -> bool {
+        let mut grew = false;
+        for (&view_nid, &row_tid) in taffy_map.iter() {
+            let Some(node) = tree.get(view_nid) else {
+                continue;
+            };
+            if !matches!(node.kind, ViewKind::Row) {
+                continue;
+            }
+            let m = &node.modifier;
+            if m.size.is_some()
+                || m.height.is_some()
+                || m.required_size.is_some()
+                || m.fill_max_h.is_some()
+            {
+                continue;
+            }
+            let Ok(rl) = taffy.layout(row_tid) else {
+                continue;
+            };
+            let row_h = rl.size.height;
+            let mut need = row_h;
+            for &child in node.children.iter() {
+                let Some(&s) = shifts.get(&child) else {
+                    continue;
+                };
+                if s <= 0.0 {
+                    continue;
+                }
+                let Some(&tb) = baselines.get(&child) else {
+                    continue;
+                };
+                let Some(&ctid) = taffy_map.get(&child) else {
+                    continue;
+                };
+                let Ok(cl) = taffy.layout(ctid) else {
+                    continue;
+                };
+                need = need.max(cl.location.y + s + tb.content_h);
+            }
+            // `rl`/`cl` borrows end above (NLL); the mutation below is safe.
+            if need > row_h + 0.01 {
+                let Ok(style) = taffy.style(row_tid) else {
+                    continue;
+                };
+                let mut style = style.clone();
+                style.min_size.height = length(need);
+                if taffy.set_style(row_tid, style).is_ok() {
+                    grew = true;
+                }
+            }
+        }
+        grew
     }
 
     /// Identity key for baseline synthesis: (family, weight, font dp).
@@ -328,14 +438,13 @@ impl LayoutEngine {
         reverse_map: &FxHashMap<taffy::NodeId, NodeId>,
         text_cache: &FxHashMap<NodeId, TextLayout>,
         font_px: &dyn Fn(f32) -> f32,
-        baselines_out: &mut FxHashMap<NodeId, (f32, f32)>,
+        baselines_out: &mut FxHashMap<NodeId, TextBaselines>,
     ) -> taffy::LayoutOutput {
         let Some((family, weight, font_dp)) = key else {
             return out;
         };
         let px = font_px(font_dp);
-        let (ascent, descent) =
-            repose_text::primary_font_vertical_metrics(family, weight, px);
+        let (ascent, descent) = repose_text::primary_font_vertical_metrics(family, weight, px);
         let em = (ascent + descent).max(1.0);
         let nid = reverse_map.get(&taffy_node).copied();
         let cached = nid.and_then(|nid| text_cache.get(&nid));
@@ -361,9 +470,31 @@ impl LayoutEngine {
             };
             before + top_extra + ascent
         };
-        // Record for the RowScope baseline-alignment post-pass.
+        // Un-stretched content height for the grow pass. `out.size` may
+        // carry a definite known size (e.g. stretched to the row), while the
+        // text cache holds the real measured block height, which is stable
+        // across recomputes. Without this the grow pass feeds stretch slack
+        // back into itself and diverges.
+        let content_h = cached
+            .map(|tl| {
+                let n = tl.lines.len().max(1);
+                if tl.line_heights.len() == n {
+                    tl.line_heights.iter().sum()
+                } else {
+                    n as f32 * tl.line_h_px
+                }
+            })
+            .unwrap_or(out.size.height);
+        // Record for the RowScope baseline-alignment post-pass (+ grow pass).
         if let Some(nid) = nid {
-            baselines_out.insert(nid, (first, last));
+            baselines_out.insert(
+                nid,
+                TextBaselines {
+                    first,
+                    last,
+                    content_h,
+                },
+            );
         }
         taffy::LayoutOutput::from_sizes_and_baselines(
             out.size,

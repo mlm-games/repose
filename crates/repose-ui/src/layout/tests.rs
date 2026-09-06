@@ -1067,9 +1067,10 @@ mod shadow_tests {
         let mut backs: Vec<Rect> = Vec::new();
         for node in &scene.nodes {
             if let SceneNode::Text { rect, text, .. } = node
-                && text.as_ref() == "BACK" {
-                    backs.push(*rect);
-                }
+                && text.as_ref() == "BACK"
+            {
+                backs.push(*rect);
+            }
         }
         assert_eq!(backs.len(), 1, "expected 1 BACK, got {:?}", backs);
         let r = backs[0];
@@ -1083,9 +1084,10 @@ mod shadow_tests {
         let mut Credits: Vec<Rect> = Vec::new();
         for node in &scene.nodes {
             if let SceneNode::Text { rect, text, .. } = node
-                && text.as_ref() == "VIEW CREDITS" {
-                    Credits.push(*rect);
-                }
+                && text.as_ref() == "VIEW CREDITS"
+            {
+                Credits.push(*rect);
+            }
         }
         assert_eq!(Credits.len(), 1);
         let rc = Credits[0];
@@ -1134,14 +1136,91 @@ fn test_row_baseline_alignment() {
 }
 
 #[test]
+fn test_row_baseline_alignment_grows_row() {
+    // Compose parity: aligning a multi-line child's first baseline to a
+    // deep single-line baseline pushes the child's later lines below the
+    // row's natural height, so an auto-sized row must grow to fit them
+    // (a fixed-size row keeps its height and clips instead).
+    let root = Column(Modifier::new()).child((
+        Row(Modifier::new()).child(row_scope(|s| {
+            vec![
+                s.align_by_baseline(Text("Ag").size(64.0).single_line()),
+                s.align_by_baseline(Text("Ag\nAg").size(32.0)),
+            ]
+        })),
+        RBox(Modifier::new().size(400.0, 10.0).background(Color::WHITE)),
+    ));
+    let mut eng = make_engine();
+    let (scene, _, _) = eng.layout_frame(
+        &root,
+        (400, 400),
+        &HashMap::new(),
+        &Interactions::default(),
+        None,
+    );
+    // (baseline, top, bottom, height) per text run; the multi-line child
+    // paints one run per line, so group by font size.
+    let mut big = Vec::new();
+    let mut small = Vec::new();
+    for node in &scene.nodes {
+        if let SceneNode::Text { rect, size, .. } = node {
+            let (ascent, _) =
+                repose_text::primary_font_vertical_metrics(Some("sans-serif"), 400, *size);
+            let run = (rect.y + ascent, rect.y, rect.y + rect.h, rect.h);
+            if *size >= 64.0 {
+                big.push(run);
+            } else {
+                small.push(run);
+            }
+        }
+    }
+    assert_eq!(big.len(), 1, "expected the 64sp run");
+    assert_eq!(small.len(), 2, "expected two 32sp runs, got {small:?}");
+    let first_small_baseline = small.iter().map(|r| r.0).fold(f32::INFINITY, f32::min);
+    assert!(
+        (big[0].0 - first_small_baseline).abs() < 2.5,
+        "first baselines should coincide: {big:?} {small:?}"
+    );
+    let bottom = big
+        .iter()
+        .chain(small.iter())
+        .map(|r| r.2)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let small_top = small.iter().map(|r| r.1).fold(f32::INFINITY, f32::min);
+    let small_bottom = small.iter().map(|r| r.2).fold(f32::NEG_INFINITY, f32::max);
+    let tallest = big[0].3.max(small_bottom - small_top);
+    // The sentinel box sits directly below the row, so its y is the row height.
+    let boxes: Vec<f32> = scene
+        .nodes
+        .iter()
+        .filter_map(|n| match n {
+            SceneNode::Rect { rect, .. } => Some(rect.y),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(boxes.len(), 1, "expected the sentinel box");
+    let row_h = boxes[0];
+    assert!(
+        row_h > tallest,
+        "row should grow beyond its tallest child ({tallest}): {row_h}"
+    );
+    assert!(
+        row_h >= bottom - 1.0,
+        "shifted children must fit inside the row (bottom {bottom}): {row_h}"
+    );
+    assert!(
+        row_h <= bottom + 1.0,
+        "row should grow exactly enough (bottom {bottom}): {row_h}"
+    );
+}
+
+#[test]
 fn test_intrinsic_and_fit_content_sizing() {
     // `intrinsic_width(Max)` sizes to max-content; `fit_content_width(limit)`
     // shrink-wraps clamped to the limit.
     let wide = Text("hello world hello world").single_line();
     let root = Column(Modifier::new().size(400.0, 400.0))
-        .child(RBox(
-            Modifier::new().intrinsic_width(IntrinsicSize::Max),
-        ).child(wide));
+        .child(RBox(Modifier::new().intrinsic_width(IntrinsicSize::Max)).child(wide));
     let mut eng = make_engine();
     let (scene, _, _) = eng.layout_frame(
         &root,
@@ -1231,8 +1310,10 @@ fn test_contain_modifiers_lay_out() {
     let white = Color::WHITE;
     let root = Column(Modifier::new().size(200.0, 200.0).contain_content())
         .child(RBox(Modifier::new().size(50.0, 50.0).background(white)))
-        .child(Column(Modifier::new().contain_layout())
-            .child(RBox(Modifier::new().size(30.0, 30.0).background(white))));
+        .child(
+            Column(Modifier::new().contain_layout())
+                .child(RBox(Modifier::new().size(30.0, 30.0).background(white))),
+        );
     let mut eng = make_engine();
     let (scene, _, _) = eng.layout_frame(
         &root,
@@ -1264,9 +1345,11 @@ fn test_safe_center_alignment_lays_out() {
     assert!(!scene.nodes.is_empty());
 
     let safe = Text("hi").single_line();
-    let root = Column(Modifier::new()
-        .size(200.0, 200.0)
-        .content_alignment_safe(Alignment::Center))
+    let root = Column(
+        Modifier::new()
+            .size(200.0, 200.0)
+            .content_alignment_safe(Alignment::Center),
+    )
     .child(safe);
     let mut eng = make_engine();
     let (scene, _, _) = eng.layout_frame(
@@ -1315,7 +1398,10 @@ fn test_debug_taffy_subtree_and_grid_summary() {
     }
     assert_eq!(grid_nodes, 1, "expected exactly one grid container");
     // Non-grid nodes yield no grid summary.
-    assert!(eng.debug_grid_summary(other_node.expect("leaf node")).is_none());
+    assert!(
+        eng.debug_grid_summary(other_node.expect("leaf node"))
+            .is_none()
+    );
 
     // debug_taffy_subtree returns non-empty dumps for mapped nodes.
     let some_id = *ids.first().expect("mapped nodes");
