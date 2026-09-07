@@ -521,7 +521,7 @@ pub fn run_android_app_with_options(
                         if let (Some(backend), Some(scene)) =
                             (self.backend.as_mut(), scene_opt.as_ref())
                         {
-                            backend.frame(scene, GlyphRasterConfig { px: 18.0 * scale });
+                            backend.frame(scene, GlyphRasterConfig { px: Px(18.0 * scale) });
                         }
                         self.last_redraw = web_time::Instant::now();
                         return;
@@ -570,7 +570,7 @@ pub fn run_android_app_with_options(
                     let Some(backend) = self.backend.as_mut() else {
                         return;
                     };
-                    backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
+                    backend.frame(&scene, GlyphRasterConfig { px: Px(18.0 * scale) });
 
                     self.rt.cache_frame(frame);
                     self.last_redraw = web_time::Instant::now();

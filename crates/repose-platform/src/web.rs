@@ -900,7 +900,7 @@ impl ApplicationHandler<()> for App {
                             self.rt.mouse_pos_px,
                             false,
                         );
-                        backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
+                        backend.frame(&scene, GlyphRasterConfig { px: Px(18.0 * scale) });
                     } else if self.backend.borrow().is_none() {
                         window.request_redraw();
                     }
@@ -947,7 +947,7 @@ impl ApplicationHandler<()> for App {
                         self.rt.mouse_pos_px,
                         false,
                     );
-                    backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
+                    backend.frame(&scene, GlyphRasterConfig { px: Px(18.0 * scale) });
                 }
 
                 self.rt.after_compose(&frame, scale);
