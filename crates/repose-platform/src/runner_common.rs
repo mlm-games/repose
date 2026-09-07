@@ -66,6 +66,7 @@ pub struct TouchResult {
     pub dirty: bool,
     pub pinch: Option<(f32, Vec2)>,
     pub pan: Option<Vec2>,
+    pub rotation: Option<(f32, Vec2)>,
     pub swipe_right: Option<bool>,
 }
 
@@ -84,15 +85,17 @@ pub fn handle_touch_raw(
                 dirty: true,
                 pinch: None,
                 pan: None,
+                rotation: None,
                 swipe_right: None,
             }
         }
         winit::event::TouchPhase::Moved => {
-            let (dirty, pinch, pan) = touch_gestures.touch_moved(rt, tid, pos_px, scale);
+            let (dirty, pinch, pan, rotation) = touch_gestures.touch_moved(rt, tid, pos_px, scale);
             TouchResult {
                 dirty,
                 pinch,
                 pan,
+                rotation,
                 swipe_right: None,
             }
         }
@@ -103,6 +106,7 @@ pub fn handle_touch_raw(
                 dirty: false,
                 pinch: None,
                 pan: None,
+                rotation: None,
                 swipe_right,
             }
         }
@@ -129,6 +133,13 @@ pub fn on_touch(
         }
     if let Some(delta) = r.pan
         && dispatch(Action::Gesture(Gesture::Pan { delta })) {
+            dirty = true;
+        }
+    if let Some((delta_rotation, center)) = r.rotation
+        && dispatch(Action::Gesture(Gesture::Rotate {
+            delta_rotation,
+            center,
+        })) {
             dirty = true;
         }
     if let Some(right) = r.swipe_right {

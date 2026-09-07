@@ -15,6 +15,13 @@ pub enum Gesture {
         delta_scale: f32,
         center: Vec2,
     },
+    /// Two-finger rotation (twist). `delta_rotation` is in radians
+    /// (positive = clockwise in screen space, y-down), `center` is the
+    /// gesture centroid in physical px.
+    Rotate {
+        delta_rotation: f32,
+        center: Vec2,
+    },
     /// 2/3-finger pan (centroid translation). `delta` is in physical px,
     /// positive = content moves right/down (natural scrolling).
     Pan {

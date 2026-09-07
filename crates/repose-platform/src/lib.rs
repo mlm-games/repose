@@ -765,6 +765,16 @@ pub fn run_desktop_app_with_config(
                     {
                         dirty = true;
                     }
+                    if let Some((delta_rotation, center)) = r.rotation
+                        && self.dispatch_action(repose_core::shortcuts::Action::Gesture(
+                            repose_core::shortcuts::Gesture::Rotate {
+                                delta_rotation,
+                                center,
+                            },
+                        ))
+                    {
+                        dirty = true;
+                    }
                     if let Some(right) = r.swipe_right {
                         let g = if right {
                             repose_core::shortcuts::Gesture::SwipeRight
@@ -1056,6 +1066,17 @@ pub fn run_desktop_app_with_config(
                 for ev in backend.poll() {
                     self.rt.handle_gamepad(&ev);
                 }
+                for (id, low, high, duration_ms) in self.rt.take_rumble_requests() {
+                    use repose_core::input::GamepadId;
+                    let gid = GamepadId(id);
+                    if duration_ms == 0 {
+                        backend.stop_rumble(gid);
+                    } else if !backend.set_rumble(gid, low, high, duration_ms) {
+                        log::warn!("gamepad: rumble not supported for pad {id}");
+                    }
+                }
+            } else {
+                self.rt.take_rumble_requests();
             }
 
             #[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]

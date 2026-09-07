@@ -421,6 +421,16 @@ pub fn run_android_app_with_options(
                                 dirty = true;
                             }
                         }
+                        if let Some((delta_rotation, center)) = r.rotation {
+                            if self.dispatch_action(repose_core::shortcuts::Action::Gesture(
+                                repose_core::shortcuts::Gesture::Rotate {
+                                    delta_rotation,
+                                    center,
+                                },
+                            )) {
+                                dirty = true;
+                            }
+                        }
                         if let Some(right) = r.swipe_right {
                             let g = if right {
                                 repose_core::shortcuts::Gesture::SwipeRight
@@ -521,7 +531,12 @@ pub fn run_android_app_with_options(
                         if let (Some(backend), Some(scene)) =
                             (self.backend.as_mut(), scene_opt.as_ref())
                         {
-                            backend.frame(scene, GlyphRasterConfig { px: Px(18.0 * scale) });
+                            backend.frame(
+                                scene,
+                                GlyphRasterConfig {
+                                    px: Px(18.0 * scale),
+                                },
+                            );
                         }
                         self.last_redraw = web_time::Instant::now();
                         return;
@@ -570,7 +585,12 @@ pub fn run_android_app_with_options(
                     let Some(backend) = self.backend.as_mut() else {
                         return;
                     };
-                    backend.frame(&scene, GlyphRasterConfig { px: Px(18.0 * scale) });
+                    backend.frame(
+                        &scene,
+                        GlyphRasterConfig {
+                            px: Px(18.0 * scale),
+                        },
+                    );
 
                     self.rt.cache_frame(frame);
                     self.last_redraw = web_time::Instant::now();
@@ -590,6 +610,24 @@ pub fn run_android_app_with_options(
         fn about_to_wait(&mut self, el: &winit::event_loop::ActiveEventLoop) {
             crate::process_deeplinks();
             crate::process_lifecycle();
+
+            #[cfg(feature = "gamepad")]
+            {
+                use crate::gamepad::GamepadBackend as _;
+                for (id, low, high, duration_ms) in self.rt.take_rumble_requests() {
+                    use repose_core::input::GamepadId;
+                    let gid = GamepadId(id);
+                    if duration_ms == 0 {
+                        self.gamepad.stop_rumble(gid);
+                    } else if !self.gamepad.set_rumble(gid, low, high, duration_ms) {
+                        log::warn!("gamepad: rumble not supported on Android (pad {id})");
+                    }
+                }
+            }
+            #[cfg(not(feature = "gamepad"))]
+            {
+                self.rt.take_rumble_requests();
+            }
 
             if !self.surface_active {
                 return;

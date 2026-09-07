@@ -196,6 +196,8 @@ pub struct ReposeRuntime {
     /// Connected gamepads by backend id: display name plus live button/axis
     /// state. Fed by [`ReposeRuntime::handle_gamepad`].
     pub gamepads: HashMap<u32, GamepadPad>,
+    /// Queued dual-motor rumble requests.
+    pub pending_rumble: Vec<(u32, f32, f32, u32)>,
 }
 
 /// Live state of one connected gamepad, mirrored from [`GamepadEvent`]s.
@@ -246,6 +248,7 @@ impl ReposeRuntime {
             cursor: None,
             textfield_states: HashMap::new(),
             gamepads: HashMap::new(),
+            pending_rumble: Vec::new(),
         }
     }
 
@@ -2000,6 +2003,35 @@ impl ReposeRuntime {
         }
     }
 
+    /// Queue a dual-motor rumble for `id` (SDL-style: low = strong motor,
+    /// high = weak motor, 0.0..=1.0, `duration_ms`). The platform runner
+    /// drains the queue each frame into `GamepadBackend::set_rumble`.
+    /// A `duration_ms` of 0 stops. No-op when the pad is unknown.
+    pub fn request_rumble(
+        &mut self,
+        id: repose_core::input::GamepadId,
+        low_freq: f32,
+        high_freq: f32,
+        duration_ms: u32,
+    ) {
+        self.pending_rumble.push((
+            id.0,
+            low_freq.clamp(0.0, 1.0),
+            high_freq.clamp(0.0, 1.0),
+            duration_ms,
+        ));
+    }
+
+    /// Queue a rumble stop for `id`.
+    pub fn stop_rumble(&mut self, id: repose_core::input::GamepadId) {
+        self.pending_rumble.push((id.0, 0.0, 0.0, 0));
+    }
+
+    /// Drain queued rumble requests (platform runners call this after `poll`).
+    pub fn take_rumble_requests(&mut self) -> Vec<(u32, f32, f32, u32)> {
+        std::mem::take(&mut self.pending_rumble)
+    }
+
     /// Process a key event with an optional host-composed `text` payload
     /// (winit `key_event.text`, Android soft-keyboard text, ...).
     ///
@@ -2486,5 +2518,18 @@ mod gamepad_tests {
 
         rt.handle_gamepad(&GamepadEvent::Disconnected { id: GamepadId(0) });
         assert!(rt.gamepads.is_empty());
+    }
+
+    #[test]
+    fn rumble_requests_queue_and_drain() {
+        let mut rt = ReposeRuntime::new();
+        assert!(rt.take_rumble_requests().is_empty());
+        rt.request_rumble(GamepadId(1), 2.0, -1.0, 150);
+        rt.stop_rumble(GamepadId(1));
+        let reqs = rt.take_rumble_requests();
+        assert_eq!(reqs.len(), 2);
+        assert_eq!(reqs[0], (1, 1.0, 0.0, 150));
+        assert_eq!(reqs[1], (1, 0.0, 0.0, 0));
+        assert!(rt.take_rumble_requests().is_empty());
     }
 }

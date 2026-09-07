@@ -850,4 +850,48 @@ mod focus_trap_tests {
         assert_eq!(fm.move_tab(false), Some(2));
         assert_eq!(fm.move_tab(true), Some(3));
     }
+
+    #[test]
+    fn tab_from_outside_can_enter_group() {
+        let chain = vec![1, 2, 3, 4];
+        let regions = vec![
+            region(1, 0.0, None),
+            region(2, 20.0, Some(9)),
+            region(3, 40.0, Some(9)),
+            region(4, 60.0, None),
+        ];
+        let mut fm = FocusManager::new(chain, Some(1));
+        fm.hit_regions = regions;
+        assert_eq!(fm.move_tab(false), Some(2));
+        let mut fm = FocusManager::new(vec![1, 2, 3, 4], Some(1));
+        fm.hit_regions = vec![
+            region(1, 0.0, None),
+            region(2, 20.0, Some(9)),
+            region(3, 40.0, Some(9)),
+            region(4, 60.0, None),
+        ];
+        assert_eq!(fm.move_tab(true), Some(4));
+    }
+
+    #[test]
+    fn empty_group_never_moves() {
+        let chain = vec![1, 4];
+        let regions = vec![region(1, 0.0, None), region(4, 60.0, None)];
+        let mut fm = FocusManager::new(chain, Some(1));
+        fm.hit_regions = regions.clone();
+        assert_eq!(fm.move_tab(false), Some(4));
+        let chain = vec![1, 2, 4];
+        let regions = vec![
+            region(1, 0.0, None),
+            region(2, 20.0, Some(77)),
+            region(4, 60.0, None),
+        ];
+        let mut fm = FocusManager::new(chain, Some(2));
+        fm.hit_regions = regions;
+        assert_eq!(fm.move_tab(false), Some(2));
+        assert_eq!(
+            spatial_focus_next(&fm.chain, &fm.hit_regions, Some(2), FocusDirection::Right),
+            None
+        );
+    }
 }

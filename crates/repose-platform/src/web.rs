@@ -845,6 +845,19 @@ impl ApplicationHandler<()> for App {
                             dirty = true;
                         }
                     }
+                    if let Some((delta_rotation, center)) = r.rotation {
+                        if self.dispatch_action(
+                            &window,
+                            repose_core::shortcuts::Action::Gesture(
+                                repose_core::shortcuts::Gesture::Rotate {
+                                    delta_rotation,
+                                    center,
+                                },
+                            ),
+                        ) {
+                            dirty = true;
+                        }
+                    }
                     if let Some(right) = r.swipe_right {
                         let g = if right {
                             repose_core::shortcuts::Gesture::SwipeRight
@@ -900,7 +913,12 @@ impl ApplicationHandler<()> for App {
                             self.rt.mouse_pos_px,
                             false,
                         );
-                        backend.frame(&scene, GlyphRasterConfig { px: Px(18.0 * scale) });
+                        backend.frame(
+                            &scene,
+                            GlyphRasterConfig {
+                                px: Px(18.0 * scale),
+                            },
+                        );
                     } else if self.backend.borrow().is_none() {
                         window.request_redraw();
                     }
@@ -947,7 +965,12 @@ impl ApplicationHandler<()> for App {
                         self.rt.mouse_pos_px,
                         false,
                     );
-                    backend.frame(&scene, GlyphRasterConfig { px: Px(18.0 * scale) });
+                    backend.frame(
+                        &scene,
+                        GlyphRasterConfig {
+                            px: Px(18.0 * scale),
+                        },
+                    );
                 }
 
                 self.rt.after_compose(&frame, scale);
@@ -965,7 +988,9 @@ impl ApplicationHandler<()> for App {
 
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         crate::process_deeplinks();
-        // Noto fallback manager may have fetched a font and cleared caches; trigger recompose
+        if !self.rt.take_rumble_requests().is_empty() {
+            log::warn!("gamepad: rumble not supported on web");
+        }
         if repose_text::take_fallback_dirty() {
             self.request_redraw();
         }

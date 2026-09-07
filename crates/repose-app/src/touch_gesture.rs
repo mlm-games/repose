@@ -21,6 +21,7 @@ struct GestureState {
 pub struct MultiTouchDelta {
     pub zoom: f32,
     pub translation: Vec2,
+    pub rotation: f32,
     pub center: Vec2,
     pub num_touches: usize,
 }
@@ -117,10 +118,9 @@ impl TouchGestureState {
                 self.accum_pan = Vec2 { x: 0.0, y: 0.0 };
                 self.accum_zoom = 1.0;
                 self.accum_rotation = 0.0;
-                if added_or_removed
-                    && let Some(s) = &mut self.gesture_state {
-                        s.previous = None;
-                    }
+                if added_or_removed && let Some(s) = &mut self.gesture_state {
+                    s.previous = None;
+                }
             }
         } else {
             self.gesture_state = None;
@@ -199,7 +199,7 @@ impl TouchGestureState {
         tid: u64,
         pos_px: (f32, f32),
         scale: f32,
-    ) -> (bool, Option<(f32, Vec2)>, Option<Vec2>) {
+    ) -> (bool, Option<(f32, Vec2)>, Option<Vec2>, Option<(f32, Vec2)>) {
         rt.mouse_pos_px = pos_px;
         let pos = Vec2 {
             x: pos_px.0,
@@ -208,6 +208,7 @@ impl TouchGestureState {
         let mut dirty = false;
         let mut pinch: Option<(f32, Vec2)> = None;
         let mut pan: Option<Vec2> = None;
+        let mut rotation: Option<(f32, Vec2)> = None;
         self.active_touches.insert(tid, pos_px);
 
         if self.active_touches.len() >= 2 {
@@ -216,7 +217,7 @@ impl TouchGestureState {
                 .and_then(|pid| self.active_touches.get(&pid).copied())
                 .map(|(x, y)| Vec2 { x, y });
             self.update_gesture(pointer_pos, false);
-            if let Some((raw_pan, raw_zoom, _raw_rot, center)) = self.multi_touch_delta() {
+            if let Some((raw_pan, raw_zoom, raw_rot, center)) = self.multi_touch_delta() {
                 let centroid_size = self
                     .gesture_state
                     .as_ref()
@@ -227,17 +228,25 @@ impl TouchGestureState {
                     self.accum_pan.x += raw_pan.x;
                     self.accum_pan.y += raw_pan.y;
                     self.accum_zoom *= raw_zoom;
+                    self.accum_rotation += raw_rot;
                     let zoom_motion = (self.accum_zoom - 1.0).abs() * centroid_size;
+                    let rotation_motion = self.accum_rotation.abs() * centroid_size;
                     let pan_motion = (self.accum_pan.x * self.accum_pan.x
                         + self.accum_pan.y * self.accum_pan.y)
                         .sqrt();
-                    if zoom_motion > touch_slop || pan_motion > touch_slop {
+                    if zoom_motion > touch_slop
+                        || rotation_motion > touch_slop
+                        || pan_motion > touch_slop
+                    {
                         self.past_touch_slop = true;
                     }
                 }
                 if self.past_touch_slop {
                     pinch = Some((raw_zoom, center));
                     pan = Some(raw_pan);
+                    if raw_rot != 0.0 {
+                        rotation = Some((raw_rot, center));
+                    }
                     self.touch_scrolled = true;
                     dirty = true;
                 } else {
@@ -247,11 +256,11 @@ impl TouchGestureState {
             if self.primary_touch_id == Some(tid) {
                 self.prev_touch_px = Some(pos_px);
             }
-            return (dirty, pinch, pan);
+            return (dirty, pinch, pan, rotation);
         }
 
         if self.primary_touch_id != Some(tid) {
-            return (dirty, None, None);
+            return (dirty, None, None, None);
         }
 
         if let Some((pending_pos, pending_instant, _pending_tid)) = self.pending_primary {
@@ -267,7 +276,7 @@ impl TouchGestureState {
                 self.pending_primary = None;
             } else {
                 self.prev_touch_px = Some(pos_px);
-                return (dirty, None, None);
+                return (dirty, None, None, None);
             }
         }
 
@@ -307,7 +316,7 @@ impl TouchGestureState {
         }
 
         self.prev_touch_px = Some(pos_px);
-        (dirty, None, None)
+        (dirty, None, None, None)
     }
 
     pub fn touch_ended(
@@ -387,11 +396,58 @@ impl TouchGestureState {
             x: curr.avg_pos.x - prev.avg_pos.x,
             y: curr.avg_pos.y - prev.avg_pos.y,
         };
+        let rotation = curr.heading - prev.heading;
+        let rotation = rotation.sin().atan2(rotation.cos());
         Some(MultiTouchDelta {
             zoom,
             translation,
+            rotation,
             center: curr.avg_pos,
             num_touches: self.active_touches.len(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn twist_reports_rotation_once_past_slop() {
+        let mut rt = ReposeRuntime::new();
+        let mut g = TouchGestureState::default();
+        g.touch_started(&mut rt, 0, (0.0, 0.0));
+        g.touch_started(&mut rt, 1, (100.0, 0.0));
+        let (_, _, _, rotation) = g.touch_moved(&mut rt, 1, (100.0, 20.0), 1.0);
+        let _ = rotation;
+        let (_, _, _, _) = g.touch_moved(&mut rt, 1, (50.0, 80.0), 1.0);
+        let (dirty, pinch, pan, rotation) = g.touch_moved(&mut rt, 1, (0.0, 100.0), 1.0);
+        assert!(dirty, "twist past slop must mark dirty");
+        assert!(pinch.is_some(), "zoom channel still reported");
+        assert!(pan.is_some(), "pan channel still reported");
+        let (delta_rot, center) = rotation.expect("rotation must be propagated, not dropped");
+        assert!(
+            delta_rot.abs() > 0.1,
+            "expected non-trivial twist, got {delta_rot}"
+        );
+        assert!(center.x.is_finite() && center.y.is_finite());
+        let info = g.multi_touch_info().expect("info mirrors deltas");
+        assert!(info.rotation.abs() > 0.0);
+    }
+
+    #[test]
+    fn pure_pinch_reports_no_rotation_spam() {
+        let mut rt = ReposeRuntime::new();
+        let mut g = TouchGestureState::default();
+        g.touch_started(&mut rt, 0, (0.0, 0.0));
+        g.touch_started(&mut rt, 1, (100.0, 0.0));
+        let (_, _, _, _) = g.touch_moved(&mut rt, 1, (140.0, 0.0), 1.0);
+        let (dirty, pinch, _, rotation) = g.touch_moved(&mut rt, 1, (180.0, 0.0), 1.0);
+        assert!(dirty);
+        assert!(pinch.is_some());
+        assert!(
+            rotation.is_none(),
+            "exact-zero rotation must not spam Rotate gestures"
+        );
     }
 }

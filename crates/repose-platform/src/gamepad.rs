@@ -13,6 +13,23 @@ use repose_core::input::{GamepadAxis, GamepadButton, GamepadEvent, GamepadId};
 /// Hardware poller: drain pending events since the last call.
 pub trait GamepadBackend {
     fn poll(&mut self) -> Vec<GamepadEvent>;
+    /// Start rumble on `id`. Returns `true` when the backend accepted it
+    /// (device connected + FF supported). Default: unsupported.
+    fn set_rumble(
+        &mut self,
+        _id: GamepadId,
+        _low_freq: f32,
+        _high_freq: f32,
+        _duration_ms: u32,
+    ) -> bool {
+        false
+    }
+    /// Stop any active rumble on `id`. Default: no-op.
+    fn stop_rumble(&mut self, _id: GamepadId) {}
+    /// Whether `id` currently supports rumble. Default: false.
+    fn is_rumble_supported(&self, _id: GamepadId) -> bool {
+        false
+    }
 }
 
 /// Stick deadzone applied by all backends before emitting axis events.
@@ -31,13 +48,17 @@ pub(crate) fn apply_stick_deadzone(v: f32) -> f32 {
 #[cfg(all(feature = "gamepad", not(target_os = "android")))]
 pub struct GilrsBackend {
     gilrs: gilrs::Gilrs,
+    ff_effects: std::collections::HashMap<u32, gilrs::ff::Effect>,
 }
 
 #[cfg(all(feature = "gamepad", not(target_os = "android")))]
 impl GilrsBackend {
     pub fn new() -> Option<Self> {
         match gilrs::Gilrs::new() {
-            Ok(gilrs) => Some(Self { gilrs }),
+            Ok(gilrs) => Some(Self {
+                gilrs,
+                ff_effects: std::collections::HashMap::new(),
+            }),
             Err(e) => {
                 log::warn!("gamepad: gilrs init failed ({e}); gamepad input disabled");
                 None
@@ -137,6 +158,91 @@ impl GamepadBackend for GilrsBackend {
             }
         }
         out
+    }
+
+    fn is_rumble_supported(&self, id: GamepadId) -> bool {
+        let want = id.0 as usize;
+        self.gilrs
+            .gamepads()
+            .find(|(gid, _)| usize::from(*gid) == want)
+            .map(|(_, pad)| pad.is_ff_supported())
+            .unwrap_or(false)
+    }
+
+    fn set_rumble(
+        &mut self,
+        id: GamepadId,
+        low_freq: f32,
+        high_freq: f32,
+        duration_ms: u32,
+    ) -> bool {
+        use gilrs::ff::{BaseEffect, BaseEffectType, EffectBuilder, Repeat, Replay, Ticks};
+        let low = low_freq.clamp(0.0, 1.0);
+        let high = high_freq.clamp(0.0, 1.0);
+        if low <= 0.0 && high <= 0.0 {
+            self.stop_rumble(id);
+            return true;
+        }
+        let want = id.0 as usize;
+        let gid = match self
+            .gilrs
+            .gamepads()
+            .find(|(gid, _)| usize::from(*gid) == want)
+            .map(|(gid, _)| gid)
+        {
+            Some(g) => g,
+            None => return false,
+        };
+        if !self
+            .gilrs
+            .connected_gamepad(gid)
+            .map(|p| p.is_ff_supported())
+            .unwrap_or(false)
+        {
+            return false;
+        }
+        let duration = Ticks::from_ms(duration_ms.max(1));
+        let mut builder = EffectBuilder::new();
+        builder
+            .add_effect(BaseEffect {
+                kind: BaseEffectType::Strong {
+                    magnitude: (low * u16::MAX as f32) as u16,
+                },
+                scheduling: Replay {
+                    play_for: duration,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .add_effect(BaseEffect {
+                kind: BaseEffectType::Weak {
+                    magnitude: (high * u16::MAX as f32) as u16,
+                },
+                scheduling: Replay {
+                    play_for: duration,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .repeat(Repeat::For(duration))
+            .gamepads(&[gid]);
+        match builder.finish(&mut self.gilrs) {
+            Ok(effect) => {
+                let _ = effect.play();
+                self.ff_effects.insert(id.0, effect);
+                true
+            }
+            Err(e) => {
+                log::warn!("gamepad: rumble failed for pad {} ({e:?})", id.0);
+                false
+            }
+        }
+    }
+
+    fn stop_rumble(&mut self, id: GamepadId) {
+        if let Some(effect) = self.ff_effects.remove(&id.0) {
+            let _ = effect.stop();
+        }
     }
 }
 
@@ -258,6 +364,14 @@ mod tests {
         assert_eq!(apply_stick_deadzone(-1.0), -1.0);
         let mid = apply_stick_deadzone(0.6);
         assert!((mid - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn rumble_unsupported_by_default() {
+        let mut backend = NoBackend;
+        assert!(!backend.is_rumble_supported(GamepadId(0)));
+        assert!(!backend.set_rumble(GamepadId(0), 1.0, 1.0, 100));
+        backend.stop_rumble(GamepadId(0));
     }
 
     #[cfg(feature = "gamepad")]
