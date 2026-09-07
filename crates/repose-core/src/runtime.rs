@@ -154,26 +154,9 @@ impl FocusManager {
         if self.chain.is_empty() {
             return None;
         }
-        let current_group = self.focused.and_then(|cur| {
-            self.hit_regions
-                .iter()
-                .find(|h| h.id == cur)
-                .and_then(|h| h.focus_group_id)
-        });
-        let next = if let Some(group_id) = current_group {
-            // Build sub-chain of elements in the same focus group
-            let sub_chain: Vec<u64> = self
-                .chain
-                .iter()
-                .copied()
-                .filter(|&id| {
-                    id == group_id
-                        || self
-                            .hit_regions
-                            .iter()
-                            .any(|h| h.id == id && h.focus_group_id == Some(group_id))
-                })
-                .collect();
+        let next = if let Some(sub_chain) =
+            focus_group_chain(&self.chain, &self.hit_regions, self.focused)
+        {
             if sub_chain.is_empty() {
                 return None;
             }
@@ -227,6 +210,30 @@ impl FocusManager {
     }
 }
 
+/// Sub-chain of ids sharing the focused element's focus group.
+/// Returns `None` when focus is outside any group (full chain applies).
+/// Tab and spatial navigation both scope to this so modals trap focus.
+pub fn focus_group_chain(
+    chain: &[u64],
+    hit_regions: &[HitRegion],
+    current: Option<u64>,
+) -> Option<Vec<u64>> {
+    let cur = current?;
+    let group_id = hit_regions.iter().find(|h| h.id == cur)?.focus_group_id?;
+    Some(
+        chain
+            .iter()
+            .copied()
+            .filter(|&id| {
+                id == group_id
+                    || hit_regions
+                        .iter()
+                        .any(|h| h.id == id && h.focus_group_id == Some(group_id))
+            })
+            .collect(),
+    )
+}
+
 /// Find the next focusable element in a given spatial direction.
 ///
 /// Uses the bounding rects from `hit_regions` to determine which element is
@@ -266,6 +273,16 @@ pub fn spatial_focus_next(
     };
 
     let mut best: Option<(u64, f32)> = None;
+
+    // Modal trap: arrows stay inside the focused element's focus group.
+    let scoped: Vec<u64>;
+    let chain: &[u64] = match focus_group_chain(chain, hit_regions, current) {
+        Some(sub) => {
+            scoped = sub;
+            &scoped
+        }
+        None => chain,
+    };
 
     for &id in chain {
         if Some(id) == current {
@@ -767,4 +784,70 @@ pub fn clear_composer() {
     ROOT_SCOPE.with(|rs| {
         *rs.borrow_mut() = None;
     });
+}
+
+#[cfg(test)]
+mod focus_trap_tests {
+    use super::*;
+
+    fn region(id: u64, x: f32, group: Option<u64>) -> HitRegion {
+        HitRegion {
+            id,
+            rect: Rect {
+                x,
+                y: 0.0,
+                w: 10.0,
+                h: 10.0,
+            },
+            focus_group_id: group,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn arrows_stay_inside_group() {
+        // Dialog buttons 2,3 in group 9; background button 4 outside;
+        // outsider 1 sits left of button 2 and would win unconstrained.
+        let chain = vec![1, 2, 3, 4];
+        let regions = vec![
+            region(1, 0.0, None),
+            region(2, 20.0, Some(9)),
+            region(3, 40.0, Some(9)),
+            region(4, 60.0, None),
+        ];
+        assert_eq!(
+            spatial_focus_next(&chain, &regions, Some(2), FocusDirection::Left),
+            None,
+            "outsider 1 is left of 2 but outside the group: trapped"
+        );
+        assert_eq!(
+            spatial_focus_next(&chain, &regions, Some(2), FocusDirection::Right),
+            Some(3)
+        );
+        assert_eq!(
+            spatial_focus_next(&chain, &regions, Some(3), FocusDirection::Left),
+            Some(2)
+        );
+        assert_eq!(
+            spatial_focus_next(&chain, &regions, Some(1), FocusDirection::Right),
+            Some(2),
+            "ungrouped focus still sees the full chain"
+        );
+    }
+
+    #[test]
+    fn tab_cycles_inside_group() {
+        let chain = vec![1, 2, 3, 4];
+        let regions = vec![
+            region(1, 0.0, None),
+            region(2, 20.0, Some(9)),
+            region(3, 40.0, Some(9)),
+            region(4, 60.0, None),
+        ];
+        let mut fm = FocusManager::new(chain, Some(2));
+        fm.hit_regions = regions;
+        assert_eq!(fm.move_tab(false), Some(3));
+        assert_eq!(fm.move_tab(false), Some(2));
+        assert_eq!(fm.move_tab(true), Some(3));
+    }
 }
