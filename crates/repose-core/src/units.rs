@@ -1,12 +1,15 @@
 //! Density-independent (`Dp`), physical pixel (`Px`), and font-scaled (`Sp`) units.
 //!
 //! - `Dp` is a transparent value-class wrapper around `f32`, constructed via
-//!   the [`UnitExt::dp`] extension (`16.0.dp()`), like Compose's `Float.dp`.
-//! - `Sp` mirrors Compose's `TextUnit` Sp type (`10.0.sp()`). Em is omitted:
+//!   the [`UnitExt::dp`] extension (`16.dp()`), like Compose's `Float.dp`.
+//!   `Dp(16.0)` is equivalent; prefer `.dp()` in runtime code and `Dp(..)`
+//!   in `const` contexts (`.dp()` is not `const`).
+//! - `Sp` mirrors Compose's `TextUnit` Sp type (`14.sp()`). Em is omitted:
 //!   repose has no relative-em usage (future addition if needed).
 //! - There is **no `Px` scalar type in Compose** (pixels are bare `Float`);
 //!   `Px` is added here per repo decision so paint/input boundaries are
-//!   explicit instead of unitless `f32`.
+//!   explicit instead of unitless `f32`. App code should not take `Px`
+//!   params (no `padding_px` etc.); `Px` is for scene/canvas/paint/input.
 //! - Conversions are `Density`-scoped in Compose (`Density.Dp.toPx()`).
 //!   The ambient `to_px()` helpers below use the thread-local
 //!   `Density * UiScale` (and `* TextScale` for `Sp`), matching repose's
@@ -645,6 +648,102 @@ impl UnitExt for u32 {
     }
 }
 
+/// Standard conversions so generic code can use `.into()`.
+/// Setters intentionally keep taking `Dp`/`Sp` directly (no `impl Into<Dp>`
+/// params) so call sites stay explicit: `16.dp()` or `Dp(16.0)`.
+impl From<f32> for Dp {
+    #[inline]
+    fn from(v: f32) -> Self {
+        Dp(v)
+    }
+}
+impl From<f64> for Dp {
+    #[inline]
+    fn from(v: f64) -> Self {
+        Dp(v as f32)
+    }
+}
+impl From<i32> for Dp {
+    #[inline]
+    fn from(v: i32) -> Self {
+        Dp(v as f32)
+    }
+}
+impl From<u32> for Dp {
+    #[inline]
+    fn from(v: u32) -> Self {
+        Dp(v as f32)
+    }
+}
+impl From<Dp> for f32 {
+    #[inline]
+    fn from(v: Dp) -> Self {
+        v.0
+    }
+}
+
+impl From<f32> for Sp {
+    #[inline]
+    fn from(v: f32) -> Self {
+        Sp(v)
+    }
+}
+impl From<f64> for Sp {
+    #[inline]
+    fn from(v: f64) -> Self {
+        Sp(v as f32)
+    }
+}
+impl From<i32> for Sp {
+    #[inline]
+    fn from(v: i32) -> Self {
+        Sp(v as f32)
+    }
+}
+impl From<u32> for Sp {
+    #[inline]
+    fn from(v: u32) -> Self {
+        Sp(v as f32)
+    }
+}
+impl From<Sp> for f32 {
+    #[inline]
+    fn from(v: Sp) -> Self {
+        v.0
+    }
+}
+
+impl From<f32> for Px {
+    #[inline]
+    fn from(v: f32) -> Self {
+        Px(v)
+    }
+}
+impl From<f64> for Px {
+    #[inline]
+    fn from(v: f64) -> Self {
+        Px(v as f32)
+    }
+}
+impl From<i32> for Px {
+    #[inline]
+    fn from(v: i32) -> Self {
+        Px(v as f32)
+    }
+}
+impl From<u32> for Px {
+    #[inline]
+    fn from(v: u32) -> Self {
+        Px(v as f32)
+    }
+}
+impl From<Px> for f32 {
+    #[inline]
+    fn from(v: Px) -> Self {
+        v.0
+    }
+}
+
 /// Dp-space 2D offset (Compose `DpOffset`).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct DpOffset {
@@ -807,6 +906,17 @@ mod tests {
         assert_eq!(10i32.dp(), Dp(10.0));
         assert_eq!(14.0f32.sp(), Sp(14.0));
         assert_eq!(2.0f32.px(), Px(2.0));
+    }
+
+    #[test]
+    fn std_from_conversions() {
+        assert_eq!(Dp::from(16.0f32), Dp(16.0));
+        assert_eq!(Dp::from(10i32), Dp(10.0));
+        assert_eq!(Sp::from(14.0f32), Sp(14.0));
+        assert_eq!(Px::from(2.0f32), Px(2.0));
+        assert_eq!(f32::from(Dp(3.0)), 3.0);
+        let v: Dp = 8.0f32.into();
+        assert_eq!(v, Dp(8.0));
     }
 
     #[test]
