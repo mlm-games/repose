@@ -7,15 +7,15 @@ use repose_core::input::{
     GamepadAxis, GamepadButton, GamepadEvent, ImeEvent, Key, KeyEvent, KeyEventType, Modifiers,
     PointerButton, PointerEvent, PointerEventKind, PointerId, PointerKind,
 };
-use repose_core::locals::{Density, dp_to_px, set_density_default, with_density};
+use repose_core::locals::{Density, set_density_default, with_density};
 use repose_core::runtime::{Frame, Scheduler};
 use repose_core::shortcuts::DragAction;
 use repose_core::{
-    CursorIcon, HitRegion, Interaction, RenderContext, Scene, Vec2, View, request_frame,
+    CursorIcon, Dp, HitRegion, Interaction, RenderContext, Scene, Sp, Vec2, View, request_frame,
     take_focus_request,
 };
 use repose_ui::textfield::{
-    TF_FONT_DP, TextFieldState, TextMeasureConfig, caret_xy_for_byte, measure_text,
+    TF_FONT_SP, TextFieldState, TextMeasureConfig, caret_xy_for_byte, measure_text,
 };
 use repose_ui::{Interactions, layout_and_paint};
 
@@ -600,12 +600,12 @@ impl ReposeRuntime {
                 let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
                 let content_x = (pos.x - ox + st.scroll_offset).max(0.0);
                 let content_y = (pos.y - oy + st.scroll_offset_y).max(0.0);
-                let font_size_dp = if hit.tf_font_size_dp != 0.0 {
-                    hit.tf_font_size_dp
+                let font_size_sp = if hit.tf_font_size != Sp::ZERO {
+                    hit.tf_font_size
                 } else {
-                    TF_FONT_DP
+                    TF_FONT_SP
                 };
-                let font_px = dp_to_px(font_size_dp) * repose_core::locals::text_scale().0;
+                let font_px = font_size_sp.to_px().0;
                 let wrap_w = st.inner_width.max(1.0);
                 let idx = if hit.tf_multiline {
                     index_for_xy_bytes_vt(&st, font_px, wrap_w, content_x, content_y)
@@ -779,12 +779,12 @@ impl ReposeRuntime {
                     let (ox, oy) = hit.tf_content_origin.unwrap_or((hit.rect.x, hit.rect.y));
                     let content_x = (pos.x - ox + st.scroll_offset).max(0.0);
                     let content_y = (pos.y - oy + st.scroll_offset_y).max(0.0);
-                    let font_size_dp = if hit.tf_font_size_dp != 0.0 {
-                        hit.tf_font_size_dp
+                    let font_size_sp = if hit.tf_font_size != Sp::ZERO {
+                        hit.tf_font_size
                     } else {
-                        TF_FONT_DP
+                        TF_FONT_SP
                     };
-                    let font_px = dp_to_px(font_size_dp) * repose_core::locals::text_scale().0;
+                    let font_px = font_size_sp.to_px().0;
                     let wrap_w = st.inner_width.max(1.0);
 
                     let idx = if hit.tf_multiline {
@@ -1393,13 +1393,12 @@ impl ReposeRuntime {
                             if is_multiline_id(f, fid)
                                 && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
                             {
-                                let font_size_dp = if hit.tf_font_size_dp != 0.0 {
-                                    hit.tf_font_size_dp
+                                let font_size_sp = if hit.tf_font_size != Sp::ZERO {
+                                    hit.tf_font_size
                                 } else {
-                                    TF_FONT_DP
+                                    TF_FONT_SP
                                 };
-                                let font_px =
-                                    dp_to_px(font_size_dp) * repose_core::locals::text_scale().0;
+                                let font_px = font_size_sp.to_px().0;
                                 let cur = state.caret_index();
                                 let (new_pos, px) = repose_ui::textfield::move_caret_vertical(
                                     &state.text,
@@ -1423,7 +1422,7 @@ impl ReposeRuntime {
                                 );
                                 let iw = state.inner_width;
                                 let ih = state.inner_height;
-                                state.ensure_caret_visible_xy(cx, cy, iw, ih, dp_to_px(2.0));
+                                state.ensure_caret_visible_xy(cx, cy, iw, ih, Dp(2.0).to_px().0);
                                 request_frame();
                                 return true;
                             }
@@ -1432,13 +1431,12 @@ impl ReposeRuntime {
                             if is_multiline_id(f, fid)
                                 && let Some(hit) = f.hit_regions.iter().find(|h| h.id == fid)
                             {
-                                let font_size_dp = if hit.tf_font_size_dp != 0.0 {
-                                    hit.tf_font_size_dp
+                                let font_size_sp = if hit.tf_font_size != Sp::ZERO {
+                                    hit.tf_font_size
                                 } else {
-                                    TF_FONT_DP
+                                    TF_FONT_SP
                                 };
-                                let font_px =
-                                    dp_to_px(font_size_dp) * repose_core::locals::text_scale().0;
+                                let font_px = font_size_sp.to_px().0;
                                 let cur = state.caret_index();
                                 let (new_pos, px) = repose_ui::textfield::move_caret_vertical(
                                     &state.text,
@@ -1462,7 +1460,7 @@ impl ReposeRuntime {
                                 );
                                 let iw = state.inner_width;
                                 let ih = state.inner_height;
-                                state.ensure_caret_visible_xy(cx, cy, iw, ih, dp_to_px(2.0));
+                                state.ensure_caret_visible_xy(cx, cy, iw, ih, Dp(2.0).to_px().0);
                                 request_frame();
                                 return true;
                             }
@@ -2344,12 +2342,18 @@ fn notify_text_change(f: &Frame, id: u64, text: String) {
 }
 
 fn tf_ensure_caret_visible(state: &mut TextFieldState, is_multiline: bool) {
-    let font_px = dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+    let font_px = TF_FONT_SP.to_px().0;
     let wrap_width = state.inner_width;
 
     if is_multiline {
         let (cx, cy, _) = caret_xy_for_byte(&state.text, font_px, wrap_width, state.caret_index());
-        state.ensure_caret_visible_xy(cx, cy, state.inner_width, state.inner_height, dp_to_px(2.0));
+        state.ensure_caret_visible_xy(
+            cx,
+            cy,
+            state.inner_width,
+            state.inner_height,
+            Dp(2.0).to_px().0,
+        );
     } else {
         let caret_idx = state.caret_index();
         let (display, caret_display_off) = if let Some(vt) = &state.visual_transformation {
@@ -2363,7 +2367,7 @@ fn tf_ensure_caret_visible(state: &mut TextFieldState, is_multiline: bool) {
         };
         let m = measure_text(&display, font_px, TextMeasureConfig::default());
         let caret_x_px = m.positions.get(caret_display_off).copied().unwrap_or(0.0);
-        state.ensure_caret_visible(caret_x_px, wrap_width, dp_to_px(2.0));
+        state.ensure_caret_visible(caret_x_px, wrap_width, Dp(2.0).to_px().0);
     }
 }
 

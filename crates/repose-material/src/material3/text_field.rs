@@ -22,10 +22,10 @@ static TF_COUNTER: AtomicU64 = AtomicU64::new(0);
 fn tint_icon(color: Color, icon: Option<View>) -> View {
     match icon {
         Some(v) => Box(Modifier::new().padding_values(PaddingValues {
-            left: 0.0,
-            right: 12.0,
-            top: 0.0,
-            bottom: 0.0,
+            left: Dp(0.0),
+            right: Dp(12.0),
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         }))
         .child(with_content_color(color, move || v)),
         None => Box(Modifier::new()),
@@ -36,10 +36,10 @@ fn tint_icon(color: Color, icon: Option<View>) -> View {
 fn tint_trailing_icon(color: Color, icon: Option<View>) -> View {
     match icon {
         Some(v) => Box(Modifier::new().padding_values(PaddingValues {
-            left: 12.0,
-            right: 0.0,
-            top: 0.0,
-            bottom: 0.0,
+            left: Dp(12.0),
+            right: Dp(0.0),
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         }))
         .child(with_content_color(color, move || v)),
         None => Box(Modifier::new()),
@@ -221,9 +221,9 @@ pub struct TextFieldDefaults;
 
 impl TextFieldDefaults {
     /// Default minimum height for a filled TextField (56dp matches M3 spec).
-    pub const MIN_HEIGHT: f32 = 56.0;
+    pub const MIN_HEIGHT: Dp = Dp(56.0);
     /// Default minimum width for a filled TextField (280dp matches M3 spec).
-    pub const MIN_WIDTH: f32 = 280.0;
+    pub const MIN_WIDTH: Dp = Dp(280.0);
 
     pub fn colors() -> TextFieldColors {
         let th = theme();
@@ -348,7 +348,7 @@ impl Default for OutlinedTextFieldConfig {
 /// ```ignore
 /// let text = remember(|| signal(String::new()));
 /// OutlinedTextField(
-///     Modifier::new().fill_max_width().padding(16.0),
+///     Modifier::new().fill_max_width().padding(Dp(16.0)),
 ///     text.get(),
 ///     { let t = text.clone(); move |v| t.set(v) },
 ///     OutlinedTextFieldConfig {
@@ -520,9 +520,9 @@ fn outlined_field_decoration(
     );
 
     let target_border_w = if config.is_error || is_focused {
-        OutlinedTextFieldDefaults::FOCUSED_BORDER_THICKNESS
+        OutlinedTextFieldDefaults::FOCUSED_BORDER_THICKNESS.0
     } else {
-        OutlinedTextFieldDefaults::UNFOCUSED_BORDER_THICKNESS
+        OutlinedTextFieldDefaults::UNFOCUSED_BORDER_THICKNESS.0
     };
     let border_w = animate_f32(
         format!("otf_bw_{}", anim_key),
@@ -568,8 +568,8 @@ fn outlined_field_decoration(
         th.motion.color,
     );
 
-    // Label font size: 16dp (expanded, inside) -> 12dp (minimized, at border)
-    let label_size = 16.0 - 4.0 * float_t;
+    // Label font size: 16sp (expanded, inside) -> 12sp (minimized, at border)
+    let label_size = Sp(16.0 - 4.0 * float_t);
 
     // Minimized label half-height matches bodySmall line height (~16dp) / 2
     let min_label_half_h: f32 = if has_label { 8.0 } else { 0.0 };
@@ -577,15 +577,19 @@ fn outlined_field_decoration(
     // Label Y: expanded centered within 56dp field -> minimized overlapping top border (-labelHeight/2)
     let label_start_y = (56.0 - 16.0) / 2.0;
     let label_end_y = -min_label_half_h;
-    let label_y = label_start_y - (label_start_y - label_end_y) * float_t;
+    let label_y = Dp(label_start_y - (label_start_y - label_end_y) * float_t);
 
     // Label X: expanded at text-input start (~24dp) -> minimized at border-start (~20dp)
     let label_start_x = if has_label { 24.0 } else { 0.0 };
     let label_end_x = if has_label { 20.0 } else { 0.0 };
-    let label_x = label_start_x - (label_start_x - label_end_x) * float_t;
+    let label_x = Dp(label_start_x - (label_start_x - label_end_x) * float_t);
 
     // Container padding matches reference: 8dp top/bottom with label, 16dp without
-    let (top_pad, bottom_pad) = if has_label { (8.0, 8.0) } else { (16.0, 16.0) };
+    let (top_pad, bottom_pad) = if has_label {
+        (Dp(8.0), Dp(8.0))
+    } else {
+        (Dp(16.0), Dp(16.0))
+    };
 
     let (prefix_color, suffix_color) = if let Some(ref tc) = config.colors {
         (
@@ -645,22 +649,22 @@ fn outlined_field_decoration(
             .color(c)
             .size(th.typography.body_small)
             .modifier(Modifier::new().padding_values(PaddingValues {
-                left: 16.0,
-                right: 16.0,
-                top: 4.0,
-                bottom: 0.0,
+                left: Dp(16.0),
+                right: Dp(16.0),
+                top: Dp(4.0),
+                bottom: Dp(0.0),
             }))
     });
 
     // Outer Stack holds both the clipped content and the unclipped label.
     // The label sits outside the clipped Box so it can extend above the border.
     let label_cutout = label_str.as_ref().map(|lbl| {
-        let font_px = dp_to_px(label_size) * repose_core::locals::text_scale().0;
+        let font_px = label_size.to_px().0;
         let m = measure_text(lbl, font_px, TextMeasureConfig::default());
         let text_width_px = m.positions.last().copied().unwrap_or(0.0);
-        let text_width_dp = px_to_dp(text_width_px);
-        let pad = 1.0;
-        let line_h = 16.0;
+        let text_width_dp = Px(text_width_px).to_dp();
+        let pad = Dp(1.0);
+        let line_h = Dp(16.0);
         (
             label_x - pad,
             label_y - pad,
@@ -684,7 +688,7 @@ fn outlined_field_decoration(
                 let mut bm = Modifier::new()
                     .fill_max_size()
                     .clip_rounded(th.shapes.small)
-                    .border(border_w, border_color, th.shapes.small);
+                    .border(Dp(border_w), border_color, th.shapes.small);
                 if let Some((l, t, r, b)) = label_cutout {
                     bm = bm.clip_rect(l, t, r, b, ClipOp::Difference);
                 }
@@ -693,13 +697,13 @@ fn outlined_field_decoration(
                 Box(Modifier::new()
                     .fill_max_size()
                     .clip_rounded(th.shapes.small)
-                    .border(border_w, border_color, th.shapes.small))
+                    .border(Dp(border_w), border_color, th.shapes.small))
             },
             Row(Modifier::new()
                 .fill_max_size()
                 .padding_values(PaddingValues {
-                    left: 16.0,
-                    right: 16.0,
+                    left: Dp(16.0),
+                    right: Dp(16.0),
                     top: top_pad,
                     bottom: bottom_pad,
                 })
@@ -731,15 +735,15 @@ fn outlined_field_decoration(
             )),
             if let Some(lbl) = label_str {
                 Box(Modifier::new()
-                    .min_width(200.0)
+                    .min_width(Dp(200.0))
                     .padding_values(PaddingValues {
                         left: label_x,
-                        right: 20.0,
-                        top: 0.0,
-                        bottom: 0.0,
+                        right: Dp(20.0),
+                        top: Dp(0.0),
+                        bottom: Dp(0.0),
                     })
                     .absolute()
-                    .offset(Some(0.0), Some(label_y), None, None))
+                    .offset(Some(Dp(0.0)), Some(label_y), None, None))
                 .child(
                     Text(lbl.as_ref().to_string())
                         .color(label_color)
@@ -876,15 +880,15 @@ pub fn TextField(
         th.motion.color,
     );
 
-    let label_size = 16.0 - 4.0 * float_t;
+    let label_size = Sp(16.0 - 4.0 * float_t);
 
     let label_start_y = (56.0 - 16.0) / 2.0;
     let label_end_y = if has_label { 8.0 } else { 0.0 };
-    let label_y = label_start_y - (label_start_y - label_end_y) * float_t;
+    let label_y = Dp(label_start_y - (label_start_y - label_end_y) * float_t);
 
     let label_start_x = if has_label { 24.0 } else { 0.0 };
     let label_end_x = if has_label { 20.0 } else { 0.0 };
-    let label_x = label_start_x - (label_start_x - label_end_x) * float_t;
+    let label_x = Dp(label_start_x - (label_start_x - label_end_x) * float_t);
 
     let tf_placeholder = if has_label {
         if should_float {
@@ -904,7 +908,11 @@ pub fn TextField(
         th.motion.color,
     );
 
-    let (top_pad, bottom_pad) = if has_label { (8.0, 8.0) } else { (16.0, 16.0) };
+    let (top_pad, bottom_pad) = if has_label {
+        (Dp(8.0), Dp(8.0))
+    } else {
+        (Dp(16.0), Dp(16.0))
+    };
 
     let (prefix_color, suffix_color) = if let Some(ref tc) = config.colors {
         (
@@ -964,10 +972,10 @@ pub fn TextField(
             .color(c)
             .size(th.typography.body_small)
             .modifier(Modifier::new().padding_values(PaddingValues {
-                left: 16.0,
-                right: 16.0,
-                top: 4.0,
-                bottom: 0.0,
+                left: Dp(16.0),
+                right: Dp(16.0),
+                top: Dp(4.0),
+                bottom: Dp(0.0),
             }))
     });
 
@@ -1014,8 +1022,8 @@ pub fn TextField(
             Box(Modifier::new()
                 .fill_max_size()
                 .clip_rounded_radii([
-                    0.0,                   // BL
-                    0.0,                   // BR
+                    Dp::ZERO,              // BL
+                    Dp::ZERO,              // BR
                     th.shapes.extra_small, // TR
                     th.shapes.extra_small, // TL
                 ])
@@ -1024,8 +1032,8 @@ pub fn TextField(
             Row(Modifier::new()
                 .fill_max_size()
                 .padding_values(PaddingValues {
-                    left: 16.0,
-                    right: 16.0,
+                    left: Dp(16.0),
+                    right: Dp(16.0),
                     top: top_pad,
                     bottom: bottom_pad,
                 })
@@ -1058,9 +1066,9 @@ pub fn TextField(
             // Bottom indicator line
             Box(Modifier::new()
                 .fill_max_width()
-                .height(indicator_w)
+                .height(Dp(indicator_w))
                 .absolute()
-                .offset(None, None, None, Some(0.0))
+                .offset(None, None, None, Some(Dp(0.0)))
                 .background(indicator_color)),
             // Floating label inside the stack
             if let Some(lbl) = label_str {

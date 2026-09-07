@@ -1,3 +1,4 @@
+use crate::units::{Dp, Px, Sp};
 use crate::{
     BaselineShift, Brush, ClipOp, Color, DrawStyle, FontStyle, FontSynthesis, FontWeight, Modifier,
     Rect, TextAlign, TextDecoration, TextDirection, TextSpan, Transform, Vec2,
@@ -5,27 +6,27 @@ use crate::{
 use std::{fmt::Formatter, rc::Rc, sync::Arc};
 
 /// The constraints that will be passed to a subcomposed child. Values are in
-/// device-independent pixels (dp), matching the units used by `Modifier`.
+/// [`Dp`], matching the units used by `Modifier`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SubcomposeScope {
-    pub min_width: f32,
-    pub max_width: f32,
-    pub min_height: f32,
-    pub max_height: f32,
+    pub min_width: Dp,
+    pub max_width: Dp,
+    pub min_height: Dp,
+    pub max_height: Dp,
 }
 
 impl SubcomposeScope {
     /// A scope with no constraints: unbounded in both dimensions. Use this as
     /// a default when the parent constraints are not yet known.
     pub const UNBOUNDED: Self = Self {
-        min_width: 0.0,
-        max_width: f32::INFINITY,
-        min_height: 0.0,
-        max_height: f32::INFINITY,
+        min_width: Dp(0.0),
+        max_width: Dp(f32::INFINITY),
+        min_height: Dp(0.0),
+        max_height: Dp(f32::INFINITY),
     };
 
-    /// Construct a scope from raw min/max dp values.
-    pub fn new(min_width: f32, max_width: f32, min_height: f32, max_height: f32) -> Self {
+    /// Construct a scope from raw min/max [`Dp`] values.
+    pub fn new(min_width: Dp, max_width: Dp, min_height: Dp, max_height: Dp) -> Self {
         Self {
             min_width,
             max_width,
@@ -36,24 +37,24 @@ impl SubcomposeScope {
 }
 
 /// Scope passed to [`BoxWithConstraints`](crate::prelude::BoxWithConstraints)
-/// content. All values are in dp.
+/// content. All values are in [`Dp`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BoxWithConstraintsScope {
-    pub min_width: f32,
-    pub max_width: f32,
-    pub min_height: f32,
-    pub max_height: f32,
+    pub min_width: Dp,
+    pub max_width: Dp,
+    pub min_height: Dp,
+    pub max_height: Dp,
 }
 
 impl BoxWithConstraintsScope {
     /// `true` if the width is bounded by the parent (i.e. not infinite).
     pub fn has_bounded_width(&self) -> bool {
-        self.max_width.is_finite()
+        self.max_width.0.is_finite()
     }
 
     /// `true` if the height is bounded by the parent (i.e. not infinite).
     pub fn has_bounded_height(&self) -> bool {
-        self.max_height.is_finite()
+        self.max_height.0.is_finite()
     }
 }
 
@@ -98,7 +99,7 @@ pub enum ViewKind {
     Text {
         text: String,
         color: Color,
-        font_size: f32,
+        font_size: Sp,
         soft_wrap: bool,
         max_lines: Option<usize>,
         overflow: TextOverflow,
@@ -108,8 +109,8 @@ pub enum ViewKind {
         font_weight: FontWeight,
         font_style: FontStyle,
         text_decoration: TextDecoration,
-        letter_spacing: f32,
-        line_height: f32,
+        letter_spacing: Sp,
+        line_height: Sp,
         /// URL for clickable link text.
         url: Option<Arc<str>>,
         /// OpenType font variation settings (e.g. "wght 700, opsz 24").
@@ -276,32 +277,35 @@ pub struct PaintCallbackInfo {
 
 pub type PaintCallbackPayload = Arc<dyn std::any::Any + Send + Sync>;
 
+/// Paint-space scene graph. `Rect`/`Vec2` compounds carry physical pixels
+/// (like Compose `Offset`/`Size`/`Rect`); scalar lengths use [`Px`] so the
+/// dp→px boundary is explicit instead of unitless `f32`.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum SceneNode {
     Rect {
         rect: Rect,
         brush: Brush,
-        radius: [f32; 4],
+        radius: [Px; 4],
     },
     Border {
         rect: Rect,
         color: Color,
-        width: f32,
-        radius: [f32; 4],
+        width: Px,
+        radius: [Px; 4],
     },
     Text {
         rect: Rect,
         text: Arc<str>,
         color: Color,
-        size: f32,
+        size: Px,
         font_family: Option<&'static str>,
         text_align: TextAlign,
         font_weight: FontWeight,
         font_style: FontStyle,
         text_decoration: TextDecoration,
-        letter_spacing: f32,
-        line_height: f32,
+        letter_spacing: Px,
+        line_height: Px,
         /// Rarely-tweaked style properties, bundled for ergonomic Default.
         extra_style: TextExtraStyle,
         /// URL for clickable link text.
@@ -316,11 +320,11 @@ pub enum SceneNode {
     EllipseBorder {
         rect: Rect,
         color: Color,
-        width: f32, // screen-space width (px)
+        width: Px,
     },
     PushClip {
         rect: Rect,
-        radius: [f32; 4],
+        radius: [Px; 4],
         op: ClipOp,
     },
     PopClip,
@@ -338,22 +342,22 @@ pub enum SceneNode {
     /// The `elevation` field controls offset and alpha.
     Shadow {
         rect: Rect,
-        radius: [f32; 4],
-        elevation: f32,
+        radius: [Px; 4],
+        elevation: Px,
         color: Color,
     },
     /// Mark the start of a graphics layer: the contained subtree is rendered
     /// into an offscreen texture and then composited back into the parent.
     /// `alpha` is the group-compositing alpha applied at composite time.
-    /// `blur_radius_x` / `blur_radius_y` are the gaussian blur radii in pixels
-    /// applied to the layer before compositing (0.0 = no blur on that axis).
+    /// `blur_radius_x` / `blur_radius_y` are the gaussian blur radii in [`Px`]
+    /// applied to the layer before compositing (zero = no blur on that axis).
     /// `rectangle_edge` true = clamp edge pixels (Rectangle). False = transparent out-of-bounds (Unbounded).
     BeginLayer {
         rect: Rect,
         layer_id: u32,
         alpha: f32,
-        blur_radius_x: f32,
-        blur_radius_y: f32,
+        blur_radius_x: Px,
+        blur_radius_y: Px,
         rectangle_edge: bool,
     },
     /// Closes the graphics layer opened by the matching `BeginLayer`.
@@ -366,8 +370,8 @@ pub enum SceneNode {
     /// optional vertical offset.
     CompositeShadow {
         layer_id: u32,
-        blur_px: f32,
-        offset_px: (f32, f32),
+        blur_px: Px,
+        offset_px: (Px, Px),
         color: Color,
     },
     /// Arc stroke
@@ -375,7 +379,7 @@ pub enum SceneNode {
         rect: Rect,
         start_angle: f32,
         sweep_angle: f32,
-        stroke_width: f32,
+        stroke_width: Px,
         color: Color,
         cap: StrokeCap,
     },
@@ -505,37 +509,37 @@ mod tests {
     #[test]
     fn subcompose_scope_unbounded_has_infinite_max() {
         let s = SubcomposeScope::UNBOUNDED;
-        assert!(!s.max_width.is_finite());
-        assert!(!s.max_height.is_finite());
-        assert_eq!(s.min_width, 0.0);
-        assert_eq!(s.min_height, 0.0);
+        assert!(!s.max_width.0.is_finite());
+        assert!(!s.max_height.0.is_finite());
+        assert_eq!(s.min_width, Dp(0.0));
+        assert_eq!(s.min_height, Dp(0.0));
     }
 
     #[test]
     fn subcompose_scope_new_round_trips() {
-        let s = SubcomposeScope::new(10.0, 200.0, 20.0, 300.0);
-        assert_eq!(s.min_width, 10.0);
-        assert_eq!(s.max_width, 200.0);
-        assert_eq!(s.min_height, 20.0);
-        assert_eq!(s.max_height, 300.0);
+        let s = SubcomposeScope::new(Dp(10.0), Dp(200.0), Dp(20.0), Dp(300.0));
+        assert_eq!(s.min_width, Dp(10.0));
+        assert_eq!(s.max_width, Dp(200.0));
+        assert_eq!(s.min_height, Dp(20.0));
+        assert_eq!(s.max_height, Dp(300.0));
     }
 
     #[test]
     fn box_with_constraints_scope_bounded_predicates() {
         let bounded = BoxWithConstraintsScope {
-            min_width: 0.0,
-            max_width: 360.0,
-            min_height: 0.0,
-            max_height: 640.0,
+            min_width: Dp(0.0),
+            max_width: Dp(360.0),
+            min_height: Dp(0.0),
+            max_height: Dp(640.0),
         };
         assert!(bounded.has_bounded_width());
         assert!(bounded.has_bounded_height());
 
         let unbounded = BoxWithConstraintsScope {
-            min_width: 0.0,
-            max_width: f32::INFINITY,
-            min_height: 0.0,
-            max_height: f32::INFINITY,
+            min_width: Dp(0.0),
+            max_width: Dp(f32::INFINITY),
+            min_height: Dp(0.0),
+            max_height: Dp(f32::INFINITY),
         };
         assert!(!unbounded.has_bounded_width());
         assert!(!unbounded.has_bounded_height());

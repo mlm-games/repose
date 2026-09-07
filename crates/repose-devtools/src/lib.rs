@@ -3,7 +3,7 @@ use std::sync::Arc;
 use web_time::Instant;
 
 use repose_core::{
-    Brush, Color, FontStyle, FontWeight, Rect, Scene, SceneNode, TextAlign, TextDecoration,
+    Brush, Color, FontStyle, FontWeight, Px, Rect, Scene, SceneNode, TextAlign, TextDecoration,
 };
 
 const FPS_HISTORY_LEN: usize = 60;
@@ -106,7 +106,7 @@ impl Hud {
                     h: bar_h,
                 },
                 brush: Brush::Solid(Color::from_hex("#1A1A1ACC")),
-                radius: [4.0; 4],
+                radius: [Px(4.0); 4],
             });
 
             Self::draw_fps_sparkline(
@@ -135,7 +135,7 @@ impl Hud {
                 } else {
                     Color::from_hex("#FF4444")
                 }),
-                radius: [2.0; 4],
+                radius: [Px(2.0); 4],
             });
 
             let mut text_y = bar_y + bar_h + 24.0;
@@ -284,8 +284,8 @@ impl Hud {
             scene.nodes.push(SceneNode::Border {
                 rect: r,
                 color: Color::from_hex("#44AAFF"),
-                width: 2.0,
-                radius: [2.0; 4],
+                width: Px(2.0),
+                radius: [Px(2.0); 4],
             });
         }
 
@@ -293,26 +293,26 @@ impl Hud {
             scene.nodes.push(SceneNode::Border {
                 rect: sel.bounds,
                 color: Color::from_hex("#FFAA00"),
-                width: 2.0,
-                radius: [2.0; 4],
+                width: Px(2.0),
+                radius: [Px(2.0); 4],
             });
         }
     }
 
-    /// Push a single HUD text line.
+    /// Push a single HUD text line (px screen-space overlay).
     fn push_text(scene: &mut Scene, x: f32, y: f32, w: f32, txt: &str, color: &str, size: f32) {
         scene.nodes.push(SceneNode::Text {
             rect: Rect { x, y, w, h: 14.0 },
             text: Arc::<str>::from(txt.to_string()),
             color: Color::from_hex(color),
-            size,
+            size: Px(size),
             font_family: None,
             text_align: TextAlign::Unspecified,
             font_weight: FontWeight::NORMAL,
             font_style: FontStyle::Normal,
             text_decoration: TextDecoration::default(),
-            letter_spacing: 0.0,
-            line_height: 0.0,
+            letter_spacing: Px::ZERO,
+            line_height: Px::ZERO,
             extra_style: Default::default(),
             url: None,
             font_variation_settings: None,
@@ -338,7 +338,7 @@ impl Hud {
         scene.nodes.push(SceneNode::Rect {
             rect: Rect { x, y, w, h },
             brush: Brush::Solid(Color::from_hex("#1A1A1ACC")),
-            radius: [2.0; 4],
+            radius: [Px(2.0); 4],
         });
         let bin_w = w / n as f32;
         let max_fps = 60.0f32.max(history.iter().copied().fold(0.0f32, f32::max));
@@ -362,7 +362,7 @@ impl Hud {
                     h: bh.max(1.0),
                 },
                 brush: Brush::Solid(Color::from_hex(color)),
-                radius: [0.0; 4],
+                radius: [Px::ZERO; 4],
             });
         }
     }

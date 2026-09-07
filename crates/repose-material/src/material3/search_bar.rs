@@ -98,17 +98,17 @@ impl Default for AppBarWithSearchColors {
 pub struct SearchBarConfig {
     pub modifier: Modifier,
     pub colors: SearchBarColors,
-    pub height: f32,
-    pub shape_radius: f32,
-    pub active_shape_radius: f32,
-    pub expanded_width: f32,
-    pub collapsed_width: f32,
-    pub tonal_elevation: f32,
-    pub shadow_elevation: f32,
+    pub height: Dp,
+    pub shape_radius: Dp,
+    pub active_shape_radius: Dp,
+    pub expanded_width: Dp,
+    pub collapsed_width: Dp,
+    pub tonal_elevation: Dp,
+    pub shadow_elevation: Dp,
     pub window_insets: WindowInsets,
     pub content_padding: PaddingValues,
-    pub min_width: f32,
-    pub max_width: f32,
+    pub min_width: Dp,
+    pub max_width: Dp,
 }
 
 impl Default for SearchBarConfig {
@@ -136,9 +136,9 @@ impl Default for SearchBarConfig {
 pub struct ExpandedFullScreenSearchBarConfig {
     pub modifier: Modifier,
     pub colors: SearchBarColors,
-    pub collapsed_shape_radius: f32,
-    pub tonal_elevation: f32,
-    pub shadow_elevation: f32,
+    pub collapsed_shape_radius: Dp,
+    pub tonal_elevation: Dp,
+    pub shadow_elevation: Dp,
     pub window_insets: WindowInsets,
     pub scrim_color: Color,
 }
@@ -162,12 +162,12 @@ impl Default for ExpandedFullScreenSearchBarConfig {
 pub struct ExpandedDockedSearchBarConfig {
     pub modifier: Modifier,
     pub colors: SearchBarColors,
-    pub shape_radius: f32,
-    pub dropdown_shape_radius: f32,
-    pub dropdown_gap_size: f32,
+    pub shape_radius: Dp,
+    pub dropdown_shape_radius: Dp,
+    pub dropdown_gap_size: Dp,
     pub dropdown_scrim_color: Color,
-    pub tonal_elevation: f32,
-    pub shadow_elevation: f32,
+    pub tonal_elevation: Dp,
+    pub shadow_elevation: Dp,
 }
 
 impl Default for ExpandedDockedSearchBarConfig {
@@ -190,10 +190,10 @@ impl Default for ExpandedDockedSearchBarConfig {
 pub struct AppBarWithSearchConfig {
     pub modifier: Modifier,
     pub colors: AppBarWithSearchColors,
-    pub height: f32,
-    pub shape_radius: f32,
-    pub tonal_elevation: f32,
-    pub shadow_elevation: f32,
+    pub height: Dp,
+    pub shape_radius: Dp,
+    pub tonal_elevation: Dp,
+    pub shadow_elevation: Dp,
     pub content_padding: PaddingValues,
     pub window_insets: WindowInsets,
     pub scroll_fraction: f32,
@@ -220,13 +220,13 @@ impl Default for AppBarWithSearchConfig {
 /// Scroll behavior for [`AppBarWithSearch`] -> collapses/expands on scroll.
 pub struct SearchBarScrollBehavior {
     pub collapsed_offset: Signal<f32>,
-    pub height: f32,
-    pub collapsed_height: f32,
+    pub height: Dp,
+    pub collapsed_height: Dp,
     _pending: Rc<Cell<f32>>,
 }
 
 impl SearchBarScrollBehavior {
-    pub fn new(height: f32, collapsed_height: f32) -> Self {
+    pub fn new(height: Dp, collapsed_height: Dp) -> Self {
         Self {
             collapsed_offset: signal(0.0),
             height,
@@ -244,7 +244,7 @@ impl SearchBarScrollBehavior {
         let max_offset = self.height - self.collapsed_height;
         NestedScrollConnection::new().on_pre_scroll(move |delta: Vec2, _source| {
             let cur = offset.get();
-            let new = (cur - delta.y).clamp(-max_offset, 0.0);
+            let new = (cur - delta.y).clamp(-max_offset.0, 0.0);
             let consumed = cur - new;
             offset.set(new);
             request_frame();
@@ -449,7 +449,7 @@ pub fn SearchBarInputField(
 
     let mut input_m = Modifier::new()
         .flex_grow(1.0)
-        .padding(4.0)
+        .padding(Dp(4.0))
         .required_width_in(SearchBarDefaults::MIN_WIDTH, SearchBarDefaults::MAX_WIDTH)
         .required_height_in(SearchBarDefaults::HEIGHT, SearchBarDefaults::HEIGHT)
         .interaction_source(&source)
@@ -592,9 +592,9 @@ pub fn SearchBar(
             focused: th.elevation.level2,
             pressed: th.elevation.level3,
             dragged: th.elevation.level3,
-            disabled: 0.0,
+            disabled: Dp::ZERO,
         })
-        .shadow(config.shadow_elevation, 0.0)
+        .shadow(config.shadow_elevation, Dp::ZERO)
         .padding_values(config.content_padding)
         .on_key_event({
             let s = state.clone();
@@ -632,8 +632,8 @@ pub fn SearchBar(
             .fill_max_size()
             .align_items(AlignItems::CENTER))
         .child((
-            leading_icon.unwrap_or(Box(Modifier::new().size(24.0, 24.0))),
-            Box(Modifier::new().width(8.0).fill_max_height()),
+            leading_icon.unwrap_or(Box(Modifier::new().size(Dp(24.0), Dp(24.0)))),
+            Box(Modifier::new().width(Dp(8.0)).fill_max_height()),
             input_field,
             trailing_icon.unwrap_or(Box(Modifier::new())),
         )),
@@ -660,9 +660,9 @@ pub fn SearchBarWithContent(
     let width = animate_f32(
         "sbwc_w",
         if expanded {
-            config.expanded_width
+            config.expanded_width.0
         } else {
-            config.collapsed_width
+            config.collapsed_width.0
         },
         theme().motion.expand,
     );
@@ -680,11 +680,11 @@ pub fn SearchBarWithContent(
 
     let mut bar_m = modifier
         .clone()
-        .width(width)
+        .width(Dp(width))
         .min_width(config.min_width)
         .max_width(config.max_width)
         .height(config.height)
-        .shadow(config.shadow_elevation, 0.0)
+        .shadow(config.shadow_elevation, Dp::ZERO)
         .padding_values(config.content_padding)
         .on_key_event({
             let cb = on_expanded_change.clone();
@@ -710,8 +710,8 @@ pub fn SearchBarWithContent(
             .fill_max_size()
             .align_items(AlignItems::CENTER))
         .child((
-            leading_icon.unwrap_or(Box(Modifier::new().size(24.0, 24.0))),
-            Box(Modifier::new().width(8.0).fill_max_height()),
+            leading_icon.unwrap_or(Box(Modifier::new().size(Dp(24.0), Dp(24.0)))),
+            Box(Modifier::new().width(Dp(8.0)).fill_max_height()),
             input_field,
             trailing_icon.unwrap_or(Box(Modifier::new())),
         )),
@@ -722,7 +722,7 @@ pub fn SearchBarWithContent(
         Column(modifier).child((
             bar,
             Box(Modifier::new()
-                .width(width)
+                .width(Dp(width))
                 .max_height(SearchBarDefaults::DOCKED_HEIGHT)
                 .alpha(content_alpha)
                 .background(config.colors.container_color)
@@ -771,7 +771,9 @@ pub fn DockedSearchBar(
     let clear_source: Rc<MutableInteractionSource> = remember(MutableInteractionSource::new);
     let clear_btn = if active {
         Box(apply_m3_clickable(
-            Modifier::new().size(24.0, 24.0).clip_rounded(12.0),
+            Modifier::new()
+                .size(Dp(24.0), Dp(24.0))
+                .clip_rounded(Dp(12.0)),
             &clear_source,
             colors.placeholder_color,
             true,
@@ -784,7 +786,7 @@ pub fn DockedSearchBar(
                 }
             },
         ))
-        .child(Text("✕").size(16.0).color(colors.placeholder_color))
+        .child(Text("✕").size(Sp(16.0)).color(colors.placeholder_color))
     } else {
         Box(Modifier::new())
     };
@@ -803,9 +805,9 @@ pub fn DockedSearchBar(
             focused: th.elevation.level2,
             pressed: th.elevation.level3,
             dragged: th.elevation.level3,
-            disabled: 0.0,
+            disabled: Dp::ZERO,
         })
-        .shadow(config.shadow_elevation, 0.0)
+        .shadow(config.shadow_elevation, Dp::ZERO)
         .padding_values(config.content_padding)
         .on_key_event({
             let cb = on_expanded_change.clone();
@@ -830,8 +832,8 @@ pub fn DockedSearchBar(
             .fill_max_size()
             .align_items(AlignItems::CENTER))
         .child((
-            leading_icon.unwrap_or(Box(Modifier::new().size(24.0, 24.0))),
-            Box(Modifier::new().width(12.0).fill_max_height()),
+            leading_icon.unwrap_or(Box(Modifier::new().size(Dp(24.0), Dp(24.0)))),
+            Box(Modifier::new().width(Dp(12.0)).fill_max_height()),
             input_field,
             clear_btn,
         )),
@@ -843,7 +845,7 @@ pub fn DockedSearchBar(
             bar,
             Box(Modifier::new()
                 .min_width(SearchBarDefaults::MIN_WIDTH)
-                .height(content_height)
+                .height(Dp(content_height))
                 .alpha(content_alpha)
                 .clip_rounded(th.shapes.small)
                 .background(colors.container_color)
@@ -853,13 +855,13 @@ pub fn DockedSearchBar(
                     focused: th.elevation.level3,
                     pressed: th.elevation.level3,
                     dragged: th.elevation.level3,
-                    disabled: 0.0,
+                    disabled: Dp::ZERO,
                 }))
             .child(
                 Column(Modifier::new().min_width(SearchBarDefaults::MIN_WIDTH)).child((
                     Box(Modifier::new()
                         .min_width(SearchBarDefaults::MIN_WIDTH)
-                        .height(1.0)
+                        .height(Dp(1.0))
                         .background(colors.divider_color)),
                     content,
                 )),
@@ -958,10 +960,10 @@ pub fn ExpandedFullScreenSearchBar(
                         .fill_max_width()
                         .height(SearchBarDefaults::HEIGHT)
                         .padding_values(PaddingValues {
-                            left: 16.0,
-                            right: 16.0,
-                            top: 0.0,
-                            bottom: 0.0,
+                            left: Dp(16.0),
+                            right: Dp(16.0),
+                            top: Dp(0.0),
+                            bottom: Dp(0.0),
                         })
                         .background(config.colors.container_color)
                         .alpha(alpha))
@@ -977,10 +979,10 @@ pub fn ExpandedFullScreenSearchBar(
                     let insets = config.window_insets;
                     let full = Column(Modifier::new().fill_max_size().padding_values(
                         PaddingValues {
-                            left: insets.left,
-                            right: insets.right,
-                            top: insets.top,
-                            bottom: insets.bottom,
+                            left: Dp(insets.left),
+                            right: Dp(insets.right),
+                            top: Px(insets.top).to_dp(),
+                            bottom: Dp(insets.bottom),
                         },
                     ))
                     .child((header, body));
@@ -1085,13 +1087,13 @@ pub fn ExpandedDockedSearchBar(
                             focused: th.elevation.level2,
                             pressed: th.elevation.level3,
                             dragged: th.elevation.level3,
-                            disabled: 0.0,
+                            disabled: Dp::ZERO,
                         }))
                     .child(inp);
 
                     let dropdown = Box(Modifier::new()
                         .fill_max_width()
-                        .max_height(get_window_container_height() * 2.0 / 3.0)
+                        .max_height(Dp(get_window_container_height() * 2.0 / 3.0))
                         .alpha(c_alpha)
                         .clip_rounded(config.dropdown_shape_radius)
                         .background(config.colors.container_color)
@@ -1101,21 +1103,21 @@ pub fn ExpandedDockedSearchBar(
                             focused: th.elevation.level3,
                             pressed: th.elevation.level3,
                             dragged: th.elevation.level3,
-                            disabled: 0.0,
+                            disabled: Dp::ZERO,
                         }))
                     .child(
                         Column(Modifier::new().fill_max_width()).child((
                             Box(Modifier::new()
                                 .fill_max_width()
-                                .height(1.0)
+                                .height(Dp(1.0))
                                 .background(config.colors.divider_color)),
                             content,
                         )),
                     );
 
-                    let docked_width = _cw.max(SearchBarDefaults::MIN_WIDTH);
-                    let popup_left = _cx;
-                    let popup_top = _cy + _ch + config.dropdown_gap_size;
+                    let docked_width = Dp(_cw).max(SearchBarDefaults::MIN_WIDTH);
+                    let popup_left = Dp(_cx);
+                    let popup_top = Dp(_cy) + Dp(_ch) + config.dropdown_gap_size;
 
                     let col = Column(Modifier::new().fill_max_width()).child((header, dropdown));
 
@@ -1164,12 +1166,12 @@ pub fn AppBarWithSearch(
     // CK parity: when app bar container is transparent, disable tonal/shadow elevations
     let is_container_transparent = app_bar_bg.3 == 0;
     let tonal_elevation = if is_container_transparent {
-        0.0
+        Dp::ZERO
     } else {
         config.tonal_elevation
     };
     let shadow_elevation = if is_container_transparent {
-        0.0
+        Dp::ZERO
     } else {
         config.shadow_elevation
     };
@@ -1180,7 +1182,7 @@ pub fn AppBarWithSearch(
 
     let bar_m = Modifier::new()
         .fill_max_width()
-        .height(config.height + insets.top)
+        .height(config.height + Px(insets.top).to_dp())
         .translate(0.0, config.scroll_offset)
         .background(app_bar_bg)
         .semantics(Semantics::new(Role::Container).with_selectable_group());
@@ -1189,16 +1191,16 @@ pub fn AppBarWithSearch(
         .fill_max_size()
         .align_items(AlignItems::CENTER)
         .padding_values(PaddingValues {
-            left: config.content_padding.left + insets.left,
-            right: config.content_padding.right + insets.right,
-            top: insets.top,
-            bottom: 0.0,
+            left: config.content_padding.left + Px(insets.left).to_dp(),
+            right: config.content_padding.right + Px(insets.right).to_dp(),
+            top: Px(insets.top).to_dp(),
+            bottom: Dp(0.0),
         }))
     .child({
         let mut children: Vec<View> = Vec::new();
         if let Some(nav) = navigation_icon {
             children.push(nav);
-            children.push(Box(Modifier::new().width(4.0)));
+            children.push(Box(Modifier::new().width(Dp(4.0))));
         }
         // Wrap input_field in collapsed SearchBar (CK parity)
         let sb_colors = &config.colors.search_bar_colors;
@@ -1209,7 +1211,7 @@ pub fn AppBarWithSearch(
             None,
             None,
             SearchBarConfig {
-                height: config.height - 8.0,
+                height: config.height - Dp(8.0),
                 shape_radius: config.shape_radius,
                 colors: SearchBarColors {
                     container_color: bg,
@@ -1234,5 +1236,5 @@ pub fn AppBarWithSearch(
         children
     });
 
-    Box(bar_m.shadow(shadow_elevation, 0.0)).child(row)
+    Box(bar_m.shadow(shadow_elevation, Dp::ZERO)).child(row)
 }

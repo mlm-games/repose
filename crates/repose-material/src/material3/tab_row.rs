@@ -30,8 +30,8 @@ pub struct TabRowConfig {
     pub selected_content_color: Color,
     pub unselected_content_color: Color,
     pub indicator_color: Color,
-    pub height: f32,
-    pub indicator_height: f32,
+    pub height: Dp,
+    pub indicator_height: Dp,
 }
 
 impl Default for TabRowConfig {
@@ -81,7 +81,7 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                     let indicator_h = animate_f32(
                         format!("tab_ind_h_{}_{}", id, i),
                         if selected {
-                            config.indicator_height
+                            config.indicator_height.0
                         } else {
                             0.0
                         },
@@ -125,7 +125,7 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
                             .single_line(),
                         Box(Modifier::new()
                             .fill_max_width()
-                            .height(indicator_h)
+                            .height(Dp(indicator_h))
                             .background(config.indicator_color)
                             .clip_rounded(TabDefaults::INDICATOR_CORNER)),
                     ))
@@ -135,7 +135,7 @@ pub fn TabRow(selected_index: usize, tabs: Vec<Tab>, config: TabRowConfig) -> Vi
         // Divider
         Box(Modifier::new()
             .fill_max_width()
-            .height(1.0)
+            .height(Dp(1.0))
             .background(th.outline_variant)),
     ))
 }

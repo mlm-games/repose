@@ -14,9 +14,9 @@ pub struct CircularProgressIndicatorConfig {
     pub modifier: Modifier,
     pub color: Color,
     pub track_color: Color,
-    pub stroke_width: f32,
+    pub stroke_width: Dp,
     pub stroke_cap: StrokeCap,
-    pub gap_size: f32,
+    pub gap_size: Dp,
 }
 
 impl Default for CircularProgressIndicatorConfig {
@@ -27,7 +27,7 @@ impl Default for CircularProgressIndicatorConfig {
             track_color: ProgressIndicatorDefaults::circular_track_color(),
             stroke_width: ProgressIndicatorDefaults::CIRCULAR_STROKE_WIDTH,
             stroke_cap: StrokeCap::Round,
-            gap_size: 0.0,
+            gap_size: Dp::ZERO,
         }
     }
 }
@@ -40,8 +40,8 @@ pub fn CircularProgressIndicator(
     value: Option<f32>,
     config: CircularProgressIndicatorConfig,
 ) -> View {
-    let sz = dp_to_px(ProgressIndicatorDefaults::CIRCULAR_INDICATOR_SIZE);
-    let stroke_px = dp_to_px(config.stroke_width);
+    let sz = ProgressIndicatorDefaults::CIRCULAR_INDICATOR_SIZE.to_px().0;
+    let stroke_px = config.stroke_width.to_px().0;
     let val = value.map(|v| v.clamp(0.0, 1.0));
 
     // Three concurrent animations matching Compose Material3 indeterminate spec:
@@ -104,10 +104,12 @@ pub fn CircularProgressIndicator(
         config.gap_size + config.stroke_width
     };
     let circle_dia_dp = indicator_size_dp - config.stroke_width;
-    let gap_sweep_rad = 2.0 * adjusted_gap_dp / circle_dia_dp;
+    let gap_sweep_rad = (adjusted_gap_dp / circle_dia_dp) * 2.0;
 
-    Box(Modifier::new().size(sz, sz).then(config.modifier).painter(
-        move |scene: &mut Scene, rect: Rect, alpha: f32| {
+    Box(Modifier::new()
+        .size(Dp(sz), Dp(sz))
+        .then(config.modifier)
+        .painter(move |scene: &mut Scene, rect: Rect, alpha: f32| {
             let mul_c = |c: Color| {
                 Color(
                     c.0,
@@ -138,7 +140,7 @@ pub fn CircularProgressIndicator(
                             rect: circle,
                             start_angle,
                             sweep_angle: sweep_rad,
-                            stroke_width: stroke_px,
+                            stroke_width: Px(stroke_px),
                             color: mul_c(config.color),
                             cap: config.stroke_cap,
                         });
@@ -152,7 +154,7 @@ pub fn CircularProgressIndicator(
                             rect: circle,
                             start_angle: track_start,
                             sweep_angle: track_sweep,
-                            stroke_width: stroke_px,
+                            stroke_width: Px(stroke_px),
                             color: mul_c(config.track_color),
                             cap: config.stroke_cap,
                         });
@@ -170,7 +172,7 @@ pub fn CircularProgressIndicator(
                         rect: circle,
                         start_angle,
                         sweep_angle: sweep_rad,
-                        stroke_width: stroke_px,
+                        stroke_width: Px(stroke_px),
                         color: mul_c(config.color),
                         cap: config.stroke_cap,
                     });
@@ -183,15 +185,14 @@ pub fn CircularProgressIndicator(
                             rect: circle,
                             start_angle: track_start,
                             sweep_angle: track_sweep,
-                            stroke_width: stroke_px,
+                            stroke_width: Px(stroke_px),
                             color: mul_c(config.track_color),
                             cap: config.stroke_cap,
                         });
                     }
                 }
             }
-        },
-    ))
+        }))
     .semantics(Semantics {
         role: Role::ProgressBar,
         ..Default::default()
@@ -206,10 +207,10 @@ pub struct LinearProgressIndicatorConfig {
     pub track_color: Color,
     /// Stroke cap style for the indicator ends. Default: `StrokeCap::Round`
     pub stroke_cap: StrokeCap,
-    /// Gap between indicator and track, in dp.
-    pub gap_size: f32,
-    /// Diameter of the stop indicator dot, in dp.
-    pub stop_size: f32,
+    /// Gap between indicator and track, in [`Dp`].
+    pub gap_size: Dp,
+    /// Diameter of the stop indicator dot, in [`Dp`].
+    pub stop_size: Dp,
 }
 
 impl Default for LinearProgressIndicatorConfig {
@@ -274,7 +275,7 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
             } else {
                 corner
             };
-            let dot_r = dp_to_px(config.stop_size) * 0.5;
+            let dot_r = config.stop_size.to_px().0 * 0.5;
 
             // Full track background
             scene.nodes.push(SceneNode::Rect {
@@ -285,7 +286,7 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
                     h: track_h,
                 },
                 brush: Brush::Solid(mul_c(config.track_color)),
-                radius: [cap_radius; 4],
+                radius: [Px(cap_radius); 4],
             });
 
             if let Some(t) = value {
@@ -303,7 +304,7 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
                             h: track_h,
                         },
                         brush: Brush::Solid(mul_c(config.color)),
-                        radius: [cap_radius; 4],
+                        radius: [Px(cap_radius); 4],
                     });
                 }
 
@@ -341,7 +342,7 @@ pub fn LinearProgressIndicator(value: Option<f32>, config: LinearProgressIndicat
                                 h: track_h,
                             },
                             brush: Brush::Solid(mul_c(config.color)),
-                            radius: [cap_radius; 4],
+                            radius: [Px(cap_radius); 4],
                         });
                     }
                 }

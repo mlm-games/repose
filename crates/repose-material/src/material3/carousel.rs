@@ -42,10 +42,10 @@ where
     F: Fn(T, usize) -> View + 'static,
 {
     let padded_modifier = config.modifier.padding_values(PaddingValues {
-        left: peek_amount,
-        right: peek_amount,
-        top: 0.0,
-        bottom: 0.0,
+        left: Dp(peek_amount),
+        right: Dp(peek_amount),
+        top: Dp(0.0),
+        bottom: Dp(0.0),
     });
 
     LazyRow(

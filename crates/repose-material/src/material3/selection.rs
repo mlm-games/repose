@@ -94,11 +94,11 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         if !is_enabled && checked {
             0.0
         } else if !is_enabled {
-            CheckboxDefaults::STROKE_WIDTH
+            CheckboxDefaults::STROKE_WIDTH.0
         } else if checked {
             0.0
         } else {
-            CheckboxDefaults::STROKE_WIDTH
+            CheckboxDefaults::STROKE_WIDTH.0
         },
         spec,
     );
@@ -151,7 +151,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
     let mut m = Modifier::new()
         .width(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .height(CheckboxDefaults::TOUCH_TARGET_SIZE)
-        .padding(0.0)
+        .padding(Dp(0.0))
         .background(Color::TRANSPARENT)
         .state_colors(config.state_colors) // keep for dragged/disabled overlays if any
         .align_items(AlignItems::CENTER)
@@ -164,7 +164,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         is_enabled,
         cb,
         false, // unbounded
-        Some(20.0),
+        Some(Dp(20.0)),
     );
     m = m.semantics(Semantics {
         role: Role::Checkbox,
@@ -176,7 +176,7 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
         Box(Modifier::new()
             .size(sz, sz)
             .background(fill)
-            .border(bd_w, bd, CheckboxDefaults::CORNER_RADIUS)
+            .border(Dp(bd_w), bd, CheckboxDefaults::CORNER_RADIUS)
             .clip_rounded(CheckboxDefaults::CORNER_RADIUS)
             .align_items(AlignItems::CENTER)
             .justify_content(JustifyContent::CENTER))
@@ -184,7 +184,8 @@ pub fn Checkbox(checked: bool, on_change: impl Fn(bool) + 'static, config: Check
             Box(Modifier::new().alpha(check_alpha)).child(
                 Icon(Symbol::new("done", '\u{E876}'))
                     .color(check_col)
-                    .size(CheckboxDefaults::CHECK_ICON_SIZE),
+                    // Icon size is a font size (Sp); numerically equals dp.
+                    .size(Sp(CheckboxDefaults::CHECK_ICON_SIZE.0)),
             )
         } else {
             Box(Modifier::new())
@@ -239,12 +240,12 @@ pub fn TriStateCheckbox(
             if has_fill {
                 0.0
             } else {
-                CheckboxDefaults::STROKE_WIDTH
+                CheckboxDefaults::STROKE_WIDTH.0
             }
         } else if has_fill {
             0.0
         } else {
-            CheckboxDefaults::STROKE_WIDTH
+            CheckboxDefaults::STROKE_WIDTH.0
         },
         spec,
     );
@@ -290,7 +291,7 @@ pub fn TriStateCheckbox(
     let mut m = Modifier::new()
         .width(CheckboxDefaults::TOUCH_TARGET_SIZE)
         .height(CheckboxDefaults::TOUCH_TARGET_SIZE)
-        .padding(0.0)
+        .padding(Dp(0.0))
         .background(Color::TRANSPARENT)
         .state_colors(config.state_colors)
         .align_items(AlignItems::CENTER)
@@ -309,7 +310,7 @@ pub fn TriStateCheckbox(
             })
         },
         false, // unbounded
-        Some(20.0),
+        Some(Dp(20.0)),
     );
     m = m.semantics(Semantics {
         role: Role::Checkbox,
@@ -325,7 +326,7 @@ pub fn TriStateCheckbox(
         Box(Modifier::new()
             .size(sz, sz)
             .background(fill)
-            .border(bd_w, bd, CheckboxDefaults::CORNER_RADIUS)
+            .border(Dp(bd_w), bd, CheckboxDefaults::CORNER_RADIUS)
             .clip_rounded(CheckboxDefaults::CORNER_RADIUS)
             .align_items(AlignItems::CENTER)
             .justify_content(JustifyContent::CENTER))
@@ -333,14 +334,15 @@ pub fn TriStateCheckbox(
             Box(Modifier::new().alpha(symbol_alpha)).child(if is_indeterminate {
                 // Dash for indeterminate
                 Box(Modifier::new()
-                    .width(10.0)
-                    .height(2.0)
+                    .width(Dp(10.0))
+                    .height(Dp(2.0))
                     .background(symbol_col)
-                    .clip_rounded(1.0))
+                    .clip_rounded(Dp(1.0)))
             } else {
                 Icon(Symbol::new("done", '\u{E876}'))
                     .color(symbol_col)
-                    .size(CheckboxDefaults::CHECK_ICON_SIZE)
+                    // Icon size is a font size (Sp); numerically equals dp.
+                    .size(Sp(CheckboxDefaults::CHECK_ICON_SIZE.0))
             })
         } else {
             Box(Modifier::new())
@@ -411,7 +413,7 @@ pub fn RadioButton(
     let dot_size = animate_f32(
         format!("rb_dot_{}", id),
         if selected {
-            RadioButtonDefaults::DOT_RADIUS * 2.0
+            (RadioButtonDefaults::DOT_RADIUS * 2.0).0
         } else {
             0.0
         },
@@ -445,7 +447,7 @@ pub fn RadioButton(
     let mut m = Modifier::new()
         .width(RadioButtonDefaults::TOUCH_TARGET_SIZE)
         .height(RadioButtonDefaults::TOUCH_TARGET_SIZE)
-        .padding(0.0)
+        .padding(Dp(0.0))
         .background(Color::TRANSPARENT)
         .state_colors(config.state_colors)
         .align_items(AlignItems::CENTER)
@@ -458,7 +460,7 @@ pub fn RadioButton(
         config.enabled,
         cb,
         false,
-        Some(20.0),
+        Some(Dp(20.0)),
     );
     m = m.semantics(Semantics {
         role: Role::RadioButton,
@@ -475,9 +477,9 @@ pub fn RadioButton(
             .justify_content(JustifyContent::CENTER))
         .child(if dot_size > 0.5 {
             Box(Modifier::new()
-                .size(dot_size, dot_size)
+                .size(Dp(dot_size), Dp(dot_size))
                 .background(dot_col)
-                .clip_rounded(dot_size * 0.5))
+                .clip_rounded(Dp(dot_size * 0.5)))
         } else {
             Box(Modifier::new())
         }),
@@ -556,20 +558,20 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
 
     // Thumb: spring-animated position and size
     let thumb_target_pos = if checked {
-        track_w - SwitchDefaults::THUMB_CHECKED_SIZE - 4.0
+        (track_w - SwitchDefaults::THUMB_CHECKED_SIZE - Dp(4.0)).0
     } else {
         8.0
     };
     let thumb_target_d = if checked {
-        SwitchDefaults::THUMB_CHECKED_SIZE
+        SwitchDefaults::THUMB_CHECKED_SIZE.0
     } else {
-        SwitchDefaults::THUMB_UNCHECKED_SIZE
+        SwitchDefaults::THUMB_UNCHECKED_SIZE.0
     };
     let spring = th.motion.spring;
 
     let thumb_left = animate_f32(format!("sw_pos_{}", id), thumb_target_pos, spring);
     let thumb_d = animate_f32(format!("sw_d_{}", id), thumb_target_d, spring);
-    let thumb_top = (track_h - thumb_d) * 0.5;
+    let thumb_top = (track_h - Dp(thumb_d)) * 0.5;
 
     let color_spec = th.motion.color_fast;
     let is_enabled = config.enabled;
@@ -639,10 +641,10 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
 
     let mut track = Modifier::new()
         .size(track_w, track_h)
-        .padding(0.0)
+        .padding(Dp(0.0))
         .clip_rounded(track_h * 0.5)
         .background(track_bg)
-        .border(track_border, border_color, track_h * 0.5)
+        .border(Dp(track_border), border_color, track_h * 0.5)
         .interaction_source(&sw_source);
 
     track = apply_enabled_click(track, is_enabled, {
@@ -658,14 +660,14 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
 
     Box(track.then(config.modifier)).child((
         Box(Modifier::new()
-            .size(thumb_d, thumb_d)
+            .size(Dp(thumb_d), Dp(thumb_d))
             .background(thumb_bg)
-            .clip_rounded(thumb_d * 0.5)
+            .clip_rounded(Dp(thumb_d * 0.5))
             .hit_passthrough()
             .align_items(AlignItems::CENTER)
             .justify_content(JustifyContent::CENTER)
             .absolute()
-            .offset(Some(thumb_left), Some(thumb_top), None, None))
+            .offset(Some(Dp(thumb_left)), Some(thumb_top), None, None))
         .child(
             config
                 .thumb_content
@@ -686,19 +688,19 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
                 .unwrap_or(Box(Modifier::new())),
         ),
         Box(Modifier::new()
-            .size(40.0, 40.0)
+            .size(Dp(40.0), Dp(40.0))
             .hit_passthrough()
             .interaction_source(&sw_source)
             .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
                 color: Some(th.on_surface),
                 bounded: false,
-                radius: Some(20.0),
+                radius: Some(Dp(20.0)),
                 ..Default::default()
             }))
             .absolute()
             .offset(
-                Some(thumb_left + thumb_d * 0.5 - 20.0),
-                Some(track_h * 0.5 - 20.0),
+                Some(Dp(thumb_left + thumb_d * 0.5 - 20.0)),
+                Some(track_h * 0.5 - Dp(20.0)),
                 None,
                 None,
             )),

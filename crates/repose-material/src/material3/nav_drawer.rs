@@ -19,9 +19,9 @@ pub struct NavigationDrawerConfig {
     pub container_color: Color,
     pub content_color: Color,
     pub scrim_color: Color,
-    pub tonal_elevation: f32,
-    pub width: f32,
-    pub shape_radius: f32,
+    pub tonal_elevation: Dp,
+    pub width: Dp,
+    pub shape_radius: Dp,
 }
 
 impl Default for NavigationDrawerConfig {
@@ -80,20 +80,25 @@ pub fn ModalNavigationDrawer(
 
     let mut drawer_m = Modifier::new()
         .absolute()
-        .offset(Some(drawer_offset), Some(0.0), None, Some(0.0))
+        .offset(
+            Some(Dp(drawer_offset)),
+            Some(Dp::ZERO),
+            None,
+            Some(Dp::ZERO),
+        )
         .fill_max_height()
         .width(config.width)
         .background(config.container_color)
         .clip_rounded(config.shape_radius);
 
-    if config.tonal_elevation > 0.0 {
+    if config.tonal_elevation.0 > 0.0 {
         drawer_m = drawer_m.state_elevation(StateElevation {
             default: config.tonal_elevation,
             hovered: config.tonal_elevation,
             focused: config.tonal_elevation,
             pressed: config.tonal_elevation,
             dragged: config.tonal_elevation,
-            disabled: 0.0,
+            disabled: Dp::ZERO,
         });
     }
 
@@ -136,20 +141,25 @@ pub fn DismissibleNavigationDrawer(
 
     let mut drawer_m = Modifier::new()
         .absolute()
-        .offset(Some(drawer_offset), Some(0.0), None, Some(0.0))
+        .offset(
+            Some(Dp(drawer_offset)),
+            Some(Dp::ZERO),
+            None,
+            Some(Dp::ZERO),
+        )
         .fill_max_height()
         .width(config.width)
         .background(config.container_color)
         .clip_rounded(config.shape_radius);
 
-    if config.tonal_elevation > 0.0 {
+    if config.tonal_elevation.0 > 0.0 {
         drawer_m = drawer_m.state_elevation(StateElevation {
             default: config.tonal_elevation,
             hovered: config.tonal_elevation,
             focused: config.tonal_elevation,
             pressed: config.tonal_elevation,
             dragged: config.tonal_elevation,
-            disabled: 0.0,
+            disabled: Dp::ZERO,
         });
     }
 
@@ -189,7 +199,7 @@ pub struct NavigationDrawerItemConfig {
     pub icon: Option<View>,
     pub badge: Option<View>,
     pub enabled: bool,
-    pub shape_radius: f32,
+    pub shape_radius: Dp,
     pub interaction_source: Option<MutableInteractionSource>,
 }
 
@@ -243,12 +253,12 @@ pub fn NavigationDrawerItem(
     let mut m = Modifier::new()
         .fill_max_width()
         .padding_values(PaddingValues {
-            left: 12.0,
-            right: 12.0,
-            top: 0.0,
-            bottom: 0.0,
+            left: Dp(12.0),
+            right: Dp(12.0),
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         })
-        .min_height(56.0)
+        .min_height(Dp(56.0))
         .background(bg)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
@@ -275,16 +285,16 @@ pub fn NavigationDrawerItem(
         Row(Modifier::new()
             .align_items(AlignItems::CENTER)
             .padding_values(PaddingValues {
-                left: 16.0,
-                right: 24.0,
-                top: 0.0,
-                bottom: 0.0,
+                left: Dp(16.0),
+                right: Dp(24.0),
+                top: Dp(0.0),
+                bottom: Dp(0.0),
             }))
         .child((
             config
                 .icon
-                .unwrap_or(Box(Modifier::new().width(24.0).height(24.0))),
-            Box(Modifier::new().width(12.0).height(1.0)),
+                .unwrap_or(Box(Modifier::new().width(Dp(24.0)).height(Dp(24.0)))),
+            Box(Modifier::new().width(Dp(12.0)).height(Dp(1.0))),
             Box(Modifier::new().flex_grow(1.0)).child(label),
             config.badge.unwrap_or(Box(Modifier::new())),
         ))

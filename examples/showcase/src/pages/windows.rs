@@ -66,9 +66,9 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                             .enumerate()
                             .map(|(i, line)| {
                                 Text(format!("{}  {}", i + 1, line))
-                                    .size(12.0)
+                                    .size(Sp(12.0))
                                     .color(theme().on_surface)
-                                    .modifier(Modifier::new().padding(6.0))
+                                    .modifier(Modifier::new().padding(Dp(6.0)))
                             })
                             .collect::<Vec<_>>(),
                     ),
@@ -83,17 +83,17 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
             let note_id = st.alloc_id();
             st.open(
                 FloatingWindow::new(note_id, "Notes", note_body.clone())
-                    .position(80.0, 80.0)
-                    .size(360.0, 220.0)
-                    .min_size(260.0, 160.0),
+                    .position(Dp(80.0), Dp(80.0))
+                    .size(Dp(360.0), Dp(220.0))
+                    .min_size(Dp(260.0), Dp(160.0)),
             );
 
             let log_id = st.alloc_id();
             st.open(
                 FloatingWindow::new(log_id, "Activity", log_body(log_id))
-                    .position(480.0, 120.0)
-                    .size(340.0, 240.0)
-                    .min_size(240.0, 160.0)
+                    .position(Dp(480.0), Dp(120.0))
+                    .size(Dp(340.0), Dp(240.0))
+                    .min_size(Dp(240.0), Dp(160.0))
                     .actions(vec![WindowAction {
                         label: "Add".to_string(),
                         on_click: {
@@ -119,7 +119,9 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                     Rc::new(|| {
                         Column(Modifier::new().fill_max_size().gap(sp::SM)).child(vec![
                             Hint("Selection"),
-                            Text("No selection").size(15.0).color(theme().on_surface),
+                            Text("No selection")
+                                .size(Sp(15.0))
+                                .color(theme().on_surface),
                             Hint("Transform"),
                             Caption("Position: 0, 0"),
                             Caption("Rotation: 0 deg"),
@@ -127,9 +129,9 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                         ])
                     }),
                 )
-                .position(200.0, 380.0)
-                .size(300.0, 220.0)
-                .min_size(220.0, 160.0)
+                .position(Dp(200.0), Dp(380.0))
+                .size(Dp(300.0), Dp(220.0))
+                .min_size(Dp(220.0), Dp(160.0))
                 .resizable(false),
             );
         }
@@ -143,9 +145,9 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
             let id = st.alloc_id();
             st.open(
                 FloatingWindow::new(id, format!("Note {}", id), note_body.clone())
-                    .position(140.0, 140.0)
-                    .size(320.0, 200.0)
-                    .min_size(240.0, 160.0),
+                    .position(Dp(140.0), Dp(140.0))
+                    .size(Dp(320.0), Dp(200.0))
+                    .min_size(Dp(240.0), Dp(160.0)),
             );
         }
     };
@@ -158,9 +160,9 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
             let id = st.alloc_id();
             st.open(
                 FloatingWindow::new(id, format!("Log {}", id), log_body(id))
-                    .position(520.0, 160.0)
-                    .size(320.0, 220.0)
-                    .min_size(240.0, 160.0),
+                    .position(Dp(520.0), Dp(160.0))
+                    .size(Dp(320.0), Dp(220.0))
+                    .min_size(Dp(240.0), Dp(160.0)),
             );
         }
     };
@@ -198,9 +200,9 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                         ))
                     }),
                 )
-                .position(260.0, 120.0)
-                .size(260.0, 200.0)
-                .min_size(220.0, 160.0)
+                .position(Dp(260.0), Dp(120.0))
+                .size(Dp(260.0), Dp(200.0))
+                .min_size(Dp(220.0), Dp(160.0))
                 .resizable(false),
             );
         }
@@ -219,7 +221,7 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                     id,
                     "Palette",
                     Rc::new(move || {
-                        Column(Modifier::new().fill_max_size().gap(6.0)).child((
+                        Column(Modifier::new().fill_max_size().gap(Dp(6.0))).child((
                             Hint("Command Palette"),
                             OutlinedTextField(
                                 Modifier::new().fill_max_width(),
@@ -245,20 +247,20 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                                 .map(|(i, label)| {
                                     Box(Modifier::new()
                                         .fill_max_width()
-                                        .padding(6.0)
+                                        .padding(Dp(6.0))
                                         .background(theme().surface_variant)
-                                        .clip_rounded(6.0)
+                                        .clip_rounded(Dp(6.0))
                                         .key(i as u64))
-                                    .child(Text(*label).size(12.0).color(theme().on_surface))
+                                    .child(Text(*label).size(Sp(12.0)).color(theme().on_surface))
                                 })
                                 .collect::<Vec<_>>(),
                             ),
                         ))
                     }),
                 )
-                .position(360.0, 220.0)
-                .size(360.0, 240.0)
-                .min_size(260.0, 180.0),
+                .position(Dp(360.0), Dp(220.0))
+                .size(Dp(360.0), Dp(240.0))
+                .min_size(Dp(260.0), Dp(180.0)),
             );
         }
     };
@@ -274,14 +276,16 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                     format!("Global {}", id),
                     Rc::new(move || {
                         Column(Modifier::new().fill_max_size().gap(sp::SM)).child((
-                            Text("Global window").size(14.0).color(theme().on_surface),
+                            Text("Global window")
+                                .size(Sp(14.0))
+                                .color(theme().on_surface),
                             Caption("Persists across navigation"),
                         ))
                     }),
                 )
-                .position(220.0, 140.0)
-                .size(320.0, 200.0)
-                .min_size(240.0, 160.0),
+                .position(Dp(220.0), Dp(140.0))
+                .size(Dp(320.0), Dp(200.0))
+                .min_size(Dp(240.0), Dp(160.0)),
             );
         }
     };
@@ -292,7 +296,10 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
         "Multi-Window / Popout Panels",
         Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
             Hint("Floating windows are hosted in-app. Drag, resize, and focus them."),
-            Row(Modifier::new().align_items(AlignItems::CENTER).gap(10.0)).child(vec![
+            Row(Modifier::new()
+                .align_items(AlignItems::CENTER)
+                .gap(Dp(10.0)))
+            .child(vec![
                 Button(Modifier::new(), open_note, ButtonConfig::default(), || {
                     Text("New Note")
                 }),
@@ -319,49 +326,51 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
             ]),
             Column(
                 Modifier::new()
-                    .height(240.0)
+                    .height(Dp(240.0))
                     .fill_max_width()
                     .background(theme().surface_variant)
-                    .border(1.0, theme().outline, 12.0)
-                    .clip_rounded(12.0),
+                    .border(Dp(1.0), theme().outline, Dp(12.0))
+                    .clip_rounded(Dp(12.0)),
             )
             .child((
                 Column(Modifier::new().fill_max_size()).child((
-                    Caption("Stage").modifier(Modifier::new().padding(10.0)),
+                    Caption("Stage").modifier(Modifier::new().padding(Dp(10.0))),
                     Caption("Drop windows here; the host surface stays interactive.")
-                        .modifier(Modifier::new().padding(10.0)),
+                        .modifier(Modifier::new().padding(Dp(10.0))),
                 )),
                 Box(Modifier::new()
                     .absolute()
-                    .offset(Some(16.0), Some(120.0), None, None)
-                    .size(120.0, 68.0)
+                    .offset(Some(Dp(16.0)), Some(Dp(120.0)), None, None)
+                    .size(Dp(120.0), Dp(68.0))
                     .background(theme().primary.with_alpha(40))
-                    .border(1.0, theme().primary, 10.0)
-                    .clip_rounded(10.0))
+                    .border(Dp(1.0), theme().primary, Dp(10.0))
+                    .clip_rounded(Dp(10.0)))
                 .child(
                     Text("Canvas")
-                        .size(12.0)
+                        .size(Sp(12.0))
                         .color(theme().primary)
-                        .modifier(Modifier::new().padding(10.0)),
+                        .modifier(Modifier::new().padding(Dp(10.0))),
                 ),
                 Box(Modifier::new()
                     .absolute()
-                    .offset(Some(160.0), Some(80.0), None, None)
-                    .size(160.0, 90.0)
+                    .offset(Some(Dp(160.0)), Some(Dp(80.0)), None, None)
+                    .size(Dp(160.0), Dp(90.0))
                     .background(theme().surface)
-                    .border(1.0, theme().outline, 10.0)
-                    .clip_rounded(10.0))
-                .child(Column(Modifier::new().padding(10.0).gap(6.0)).child((
-                    Caption("Pinned"),
-                    Text("Navigator").size(12.0).color(theme().on_surface),
-                ))),
+                    .border(Dp(1.0), theme().outline, Dp(10.0))
+                    .clip_rounded(Dp(10.0)))
+                .child(
+                    Column(Modifier::new().padding(Dp(10.0)).gap(Dp(6.0))).child((
+                        Caption("Pinned"),
+                        Text("Navigator").size(Sp(12.0)).color(theme().on_surface),
+                    )),
+                ),
             )),
             ScrollArea(
                 Modifier::new()
-                    .height(180.0)
+                    .height(Dp(180.0))
                     .fill_max_width()
-                    .border(1.0, theme().outline, 12.0)
-                    .clip_rounded(12.0),
+                    .border(Dp(1.0), theme().outline, Dp(12.0))
+                    .clip_rounded(Dp(12.0)),
                 list_state,
                 Column(Modifier::new().fill_max_width()).child((
                     Caption("Spawned windows are listed here for debugging.")
@@ -377,16 +386,16 @@ pub fn screen(global_windows: Rc<RefCell<WindowManagerState>>) -> View {
                                     .fill_max_width()
                                     .padding(sp::SM)
                                     .background(theme().surface)
-                                    .border(1.0, theme().outline, 10.0)
-                                    .clip_rounded(10.0))
+                                    .border(Dp(1.0), theme().outline, Dp(10.0))
+                                    .clip_rounded(Dp(10.0)))
                                 .child((
                                     Text(format!("{}  {}", i + 1, w.title))
-                                        .size(13.0)
+                                        .size(Sp(13.0))
                                         .color(theme().on_surface),
                                     Spacer(),
                                     Caption(format!(
                                         "{} x {}",
-                                        w.size.width as i32, w.size.height as i32
+                                        w.size.width.0 as i32, w.size.height.0 as i32
                                     )),
                                 ))
                             })

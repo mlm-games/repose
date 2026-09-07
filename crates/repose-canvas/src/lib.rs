@@ -9,26 +9,28 @@ pub struct DrawScope {
     pub size: Size,
 }
 
+/// Paint-space draw commands. `Rect`/`Vec2` compounds carry px magnitudes
+/// (like Compose `Offset`/`Size`/`Rect`); scalar lengths use [`Px`].
 #[derive(Clone)]
 pub enum DrawCommand {
     Rect {
         rect: Rect,
         color: Color,
-        radius: f32,
-        stroke: Option<(f32, Color)>,
+        radius: Px,
+        stroke: Option<(Px, Color)>,
     },
     Ellipse {
         center: Vec2,
         rx: f32,
         ry: f32,
         color: Color,
-        stroke: Option<(f32, Color)>,
+        stroke: Option<(Px, Color)>,
     },
     Text {
         text: String,
         pos: Vec2,
         color: Color,
-        size: f32,
+        size: Px,
     },
     /// Pre-tessellated vector mesh (fill or stroke) in mesh-local space.
     /// `transform` is a 2x3 affine mapping local -> world pixels and is applied
@@ -62,7 +64,7 @@ pub enum DrawCommand {
 }
 
 impl DrawScope {
-    pub fn draw_rect(&mut self, rect: Rect, color: Color, radius: f32) {
+    pub fn draw_rect(&mut self, rect: Rect, color: Color, radius: Px) {
         self.commands.push(DrawCommand::Rect {
             rect,
             color,
@@ -70,7 +72,7 @@ impl DrawScope {
             stroke: None,
         });
     }
-    pub fn draw_rect_stroke(&mut self, rect: Rect, color: Color, radius: f32, width: f32) {
+    pub fn draw_rect_stroke(&mut self, rect: Rect, color: Color, radius: Px, width: Px) {
         self.commands.push(DrawCommand::Rect {
             rect,
             color,
@@ -87,29 +89,22 @@ impl DrawScope {
             stroke: None,
         });
     }
-    pub fn draw_ellipse_stroke(
-        &mut self,
-        center: Vec2,
-        rx: f32,
-        ry: f32,
-        color: Color,
-        width: f32,
-    ) {
+    pub fn draw_ellipse_stroke(&mut self, center: Vec2, rx: f32, ry: f32, color: Color, width: Px) {
         self.commands.push(DrawCommand::Ellipse {
             center,
             rx: rx.max(0.0),
             ry: ry.max(0.0),
             color,
-            stroke: Some((width.max(0.0), color)),
+            stroke: Some((width, color)),
         });
     }
     pub fn draw_circle(&mut self, center: Vec2, radius: f32, color: Color) {
         self.draw_ellipse(center, radius, radius, color);
     }
-    pub fn draw_circle_stroke(&mut self, center: Vec2, radius: f32, color: Color, width: f32) {
+    pub fn draw_circle_stroke(&mut self, center: Vec2, radius: f32, color: Color, width: Px) {
         self.draw_ellipse_stroke(center, radius, radius, color, width);
     }
-    pub fn draw_text(&mut self, text: impl Into<String>, pos: Vec2, color: Color, size: f32) {
+    pub fn draw_text(&mut self, text: impl Into<String>, pos: Vec2, color: Color, size: Px) {
         self.commands.push(DrawCommand::Text {
             text: text.into(),
             pos,
@@ -245,7 +240,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                             x: rect.x + pos.x,
                             y: rect.y + pos.y,
                             w: 0.0,
-                            h: *size,
+                            h: size.0,
                         },
                         text: Arc::<str>::from(text.clone()),
                         color: *color,
@@ -255,8 +250,8 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                         font_weight: FontWeight::NORMAL,
                         font_style: FontStyle::Normal,
                         text_decoration: TextDecoration::default(),
-                        letter_spacing: 0.0,
-                        line_height: 0.0,
+                        letter_spacing: Px::ZERO,
+                        line_height: Px::ZERO,
                         extra_style: Default::default(),
                         url: None,
                         font_variation_settings: None,
@@ -338,7 +333,7 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
         || m.fill_max_w.is_some()
         || m.fill_max_h.is_some();
     if !has_size {
-        m = m.size(100.0, 100.0);
+        m = m.size(Dp(100.0), Dp(100.0));
     }
 
     Box(m)
@@ -356,7 +351,7 @@ pub fn Embedded(modifier: Modifier, payload: PaintCallbackPayload) -> View {
         || m.fill_max_w.is_some()
         || m.fill_max_h.is_some();
     if !has_size {
-        m = m.size(100.0, 100.0);
+        m = m.size(Dp(100.0), Dp(100.0));
     }
     Box(m)
 }

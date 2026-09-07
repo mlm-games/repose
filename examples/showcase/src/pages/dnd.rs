@@ -29,10 +29,10 @@ fn task_card(task: Task) -> View {
     };
 
     Box(Modifier::new()
-        .width(220.0)
+        .width(Dp(220.0))
         .padding(sp::MD)
         .background(th.surface_container)
-        .border(1.0, th.outline_variant, sp::MD)
+        .border(Dp(1.0), th.outline_variant, sp::MD)
         .clip_rounded(sp::MD)
         .on_drag_start({
             let t = task.clone();
@@ -42,16 +42,16 @@ fn task_card(task: Task) -> View {
         Column(Modifier::new().gap(sp::SM)).child((
             Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
                 Icon(Symbols::drag_indicator)
-                    .size(16.0)
+                    .size(Sp(16.0))
                     .color(th.on_surface_variant),
-                Text(task.title).size(14.0).color(th.on_surface),
+                Text(task.title).size(Sp(14.0)).color(th.on_surface),
             )),
             Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
                 Box(Modifier::new()
-                    .padding(4.0)
+                    .padding(Dp(4.0))
                     .background(accent.with_alpha(36))
-                    .clip_rounded(999.0))
-                .child(Text(task.tag).size(10.0).color(accent)),
+                    .clip_rounded(Dp(999.0)))
+                .child(Text(task.tag).size(Sp(10.0)).color(accent)),
                 Spacer(),
                 Caption(format!("#{}", task.id)),
             )),
@@ -67,9 +67,9 @@ pub fn screen() -> View {
         let sink = dropped.clone();
         Box(Modifier::new()
             .fill_max_width()
-            .height(180.0)
+            .height(Dp(180.0))
             .background(th.primary.with_alpha(18))
-            .border(2.0, th.primary.with_alpha(140), sp::LG)
+            .border(Dp(2.0), th.primary.with_alpha(140), sp::LG)
             .clip_rounded(sp::LG)
             .padding(sp::LG)
             .on_drop(move |ev| {
@@ -106,8 +106,8 @@ pub fn screen() -> View {
                     .gap(sp::SM),
             )
             .child((
-                Icon(Symbols::inbox).size(28.0).color(th.primary),
-                Text("Drop here").size(16.0).color(th.on_surface),
+                Icon(Symbols::inbox).size(Sp(28.0)).color(th.primary),
+                Text("Drop here").size(Sp(16.0)).color(th.on_surface),
                 Caption("Drop a task card or an OS file"),
             )),
         )
@@ -119,12 +119,12 @@ pub fn screen() -> View {
             .fill_max_width()
             .padding(sp::MD)
             .background(th.surface_container)
-            .border(1.0, th.outline_variant, sp::MD)
+            .border(Dp(1.0), th.outline_variant, sp::MD)
             .clip_rounded(sp::MD))
         .child(
             Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
-                Icon(Symbols::task_alt).size(16.0).color(th.primary),
-                Text(dropped.get()).size(13.0).color(th.on_surface),
+                Icon(Symbols::task_alt).size(Sp(16.0)).color(th.primary),
+                Text(dropped.get()).size(Sp(13.0)).color(th.on_surface),
             )),
         )
     };
@@ -158,7 +158,7 @@ pub fn screen() -> View {
             Column(Modifier::new().gap(sp::MD)).child((
                 Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
                     Icon(Symbols::upload_file)
-                        .size(16.0)
+                        .size(Sp(16.0))
                         .color(theme().on_surface_variant),
                     Hint("Internal cards and OS file drops both land here."),
                 )),

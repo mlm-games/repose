@@ -17,8 +17,8 @@ use std::time::Duration;
 use repose_core::animation::{AnimatedValue, AnimationSpec, Easing};
 use repose_core::animation_driver;
 use repose_core::{
-    Color, Indication, IndicationDrawNode, IndicationNodeFactory, InteractionSource, PressId, Rect,
-    Scene, SceneNode, Vec2, remember_state_with_key, request_frame,
+    Color, Dp, Indication, IndicationDrawNode, IndicationNodeFactory, InteractionSource, PressId,
+    Px, Rect, Scene, SceneNode, Vec2, remember_state_with_key, request_frame,
 };
 
 const FADE_IN_MS: u64 = 75;
@@ -35,7 +35,8 @@ const HOVER_ALPHA: f32 = 0.08;
 #[derive(Clone, Debug)]
 pub struct RippleConfig {
     pub bounded: bool,
-    pub radius: Option<f32>,
+    /// Fixed ripple radius in [`Dp`]. `None` = derive from layout size.
+    pub radius: Option<Dp>,
     pub color: Option<Color>,
     pub enable_press: bool,
     pub enable_focus: bool,
@@ -109,7 +110,7 @@ impl RippleDrawNode {
 }
 
 impl IndicationDrawNode for RippleDrawNode {
-    fn draw(&self, scene: &mut Scene, rect: Rect, radius: [f32; 4], alpha: f32) {
+    fn draw(&self, scene: &mut Scene, rect: Rect, radius: [Px; 4], alpha: f32) {
         let base_color = self
             .config
             .color
@@ -127,7 +128,7 @@ impl IndicationDrawNode for RippleDrawNode {
             x: rect.x + rect.w * 0.5,
             y: rect.y + rect.h * 0.5,
         };
-        let target_radius = self.config.radius.unwrap_or_else(|| {
+        let target_radius = self.config.radius.map(|r| r.to_px().0).unwrap_or_else(|| {
             let diag = (rect.w * rect.w + rect.h * rect.h).sqrt();
             if bounded {
                 diag * 0.5 + 10.0

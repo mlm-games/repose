@@ -105,10 +105,10 @@ pub fn screen() -> View {
                 ),
                 Canvas(
                     Modifier::new()
-                        .size(560.0, 200.0)
+                        .size(Dp(560.0), Dp(200.0))
                         .background(theme().surface)
-                        .border(1.0, theme().outline, 16.0)
-                        .clip_rounded(16.0),
+                        .border(Dp(1.0), theme().outline, Dp(16.0))
+                        .clip_rounded(Dp(16.0)),
                     move |ds| {
                         let th = theme();
                         ds.draw_vector_mesh(
@@ -143,7 +143,7 @@ pub fn screen() -> View {
                             "static · static · spinning star · quad",
                             Vec2 { x: 22.0, y: 178.0 },
                             th.on_surface_variant,
-                            12.0,
+                            Px(12.0),
                         );
                     },
                 ),
@@ -158,10 +158,10 @@ pub fn screen() -> View {
                 ),
                 Canvas(
                     Modifier::new()
-                        .size(560.0, 200.0)
+                        .size(Dp(560.0), Dp(200.0))
                         .background(theme().surface)
-                        .border(1.0, theme().outline, 16.0)
-                        .clip_rounded(16.0),
+                        .border(Dp(1.0), theme().outline, Dp(16.0))
+                        .clip_rounded(Dp(16.0)),
                     move |ds| {
                         let th = theme();
                         ds.draw_vector_mesh(
@@ -216,10 +216,10 @@ pub fn screen() -> View {
                 ),
                 Canvas(
                     Modifier::new()
-                        .size(560.0, 220.0)
+                        .size(Dp(560.0), Dp(220.0))
                         .background(theme().surface)
-                        .border(1.0, theme().outline, 16.0)
-                        .clip_rounded(16.0),
+                        .border(Dp(1.0), theme().outline, Dp(16.0))
+                        .clip_rounded(Dp(16.0)),
                     move |ds| {
                         let th = theme();
                         ds.push_vector_clip(star_mesh(200.0, 110.0, 70.0, 120.0, 5, Color::WHITE));
@@ -247,7 +247,7 @@ pub fn screen() -> View {
                             "content inside a star clip; one circle sits outside",
                             Vec2 { x: 280.0, y: 198.0 },
                             th.on_surface_variant,
-                            12.0,
+                            Px(12.0),
                         );
                     },
                 ),
@@ -261,10 +261,10 @@ pub fn screen() -> View {
                 ),
                 Canvas(
                     Modifier::new()
-                        .size(560.0, 120.0)
+                        .size(Dp(560.0), Dp(120.0))
                         .background(theme().surface)
-                        .border(1.0, theme().outline, 16.0)
-                        .clip_rounded(16.0),
+                        .border(Dp(1.0), theme().outline, Dp(16.0))
+                        .clip_rounded(Dp(16.0)),
                     move |ds| {
                         let th = theme();
                         let t = spin.fract();

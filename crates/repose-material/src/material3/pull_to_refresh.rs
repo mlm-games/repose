@@ -25,7 +25,7 @@ impl Default for PullToRefreshConfig {
         Self {
             modifier: Modifier::new(),
             indicator_color: PullToRefreshDefaults::indicator_color(),
-            threshold: PullToRefreshDefaults::THRESHOLD,
+            threshold: PullToRefreshDefaults::THRESHOLD.0,
             content_alignment: AlignItems::FLEX_START,
         }
     }
@@ -167,22 +167,25 @@ pub fn PullToRefresh(
         if distance_fraction > 0.01 {
             Box(Modifier::new()
                 .fill_max_width()
-                .height(indicator_h)
+                .height(Dp(Px(indicator_h).to_dp().0))
                 .align_items(AlignItems::CENTER)
                 .justify_content(JustifyContent::CENTER))
             .child(
                 Box(Modifier::new()
-                    .size(icon_size, icon_size)
-                    .translate(icon_size * 0.5, icon_size * 0.5)
+                    .size(Dp(icon_size), Dp(icon_size))
+                    .translate(Dp(icon_size * 0.5).to_px().0, Dp(icon_size * 0.5).to_px().0)
                     .rotate(rotation)
-                    .translate(-icon_size * 0.5, -icon_size * 0.5))
+                    .translate(
+                        Dp(-icon_size * 0.5).to_px().0,
+                        Dp(-icon_size * 0.5).to_px().0,
+                    ))
                 .child(if refreshing {
                     Icon(Symbol::new("refresh", '\u{E5D5}'))
-                        .size(24.0)
+                        .size(Sp(24.0))
                         .color(config.indicator_color)
                 } else {
                     Icon(Symbol::new("arrow_downward", '\u{E5DB}'))
-                        .size(icon_size)
+                        .size(Sp(icon_size))
                         .color(config.indicator_color.with_alpha_f32(alpha))
                 }),
             )

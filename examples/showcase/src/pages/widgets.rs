@@ -30,10 +30,14 @@ fn focus_cell(idx: i32) -> View {
         .clickable()
         .padding(sp::LG)
         .background(theme().surface)
-        .border(1.0, theme().outline, 8.0)
-        .clip_rounded(8.0)
+        .border(Dp(1.0), theme().outline, Dp(8.0))
+        .clip_rounded(Dp(8.0))
         .on_pointer_down(move |_| log::info!("Clicked item {idx}")))
-    .child(Text(format!("{idx}")).size(18.0).color(theme().on_surface))
+    .child(
+        Text(format!("{idx}"))
+            .size(Sp(18.0))
+            .color(theme().on_surface),
+    )
 }
 
 pub fn screen() -> View {
@@ -55,7 +59,7 @@ pub fn screen() -> View {
     Page(vec![
         Section(
             "Switch / Checkbox / Radio",
-            Column(Modifier::new().padding(sp::MD).gap(10.0)).child((
+            Column(Modifier::new().padding(sp::MD).gap(Dp(10.0))).child((
                 Labeled(
                     Switch(
                         sw.get(),
@@ -133,7 +137,7 @@ pub fn screen() -> View {
                 Row(Modifier::new().fill_max_width().gap(sp::MD)).child((
                     Column(Modifier::new().gap(sp::SM).flex_grow(1.0)).child((
                         Text(format!("Linear: {:.0}%", prog.get() * 100.0))
-                            .size(13.0)
+                            .size(Sp(13.0))
                             .color(th.on_surface_variant),
                         LinearProgressIndicator(
                             Some(prog.get()),
@@ -141,12 +145,12 @@ pub fn screen() -> View {
                         ),
                     )),
                     Column(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
-                        Text("Circular").size(13.0).color(th.on_surface_variant),
+                        Text("Circular").size(Sp(13.0)).color(th.on_surface_variant),
                         CircularProgressIndicator(Some(prog.get()), Default::default()),
                     )),
                     Column(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
                         Text("Indeterminate")
-                            .size(13.0)
+                            .size(Sp(13.0))
                             .color(th.on_surface_variant),
                         CircularProgressIndicator(None, Default::default()),
                     )),
@@ -198,12 +202,12 @@ pub fn screen() -> View {
                         },
                     ),
                     Modifier::new(),
-                    Some(Icon(Symbols::search).size(20.0)),
+                    Some(Icon(Symbols::search).size(Sp(20.0))),
                     None,
                     SearchBarConfig::default(),
                 ),
                 Text(format!("Query: \"{}\"", search_state.query()))
-                    .size(13.0)
+                    .size(Sp(13.0))
                     .color(th.on_surface_variant),
             )),
         ),
@@ -215,7 +219,7 @@ pub fn screen() -> View {
                     vec![
                         Tab {
                             label: "Tab A".into(),
-                            icon: Some(Icon(Symbols::home).size(18.0)),
+                            icon: Some(Icon(Symbols::home).size(Sp(18.0))),
                             on_click: Rc::new({
                                 let t = tab_index.clone();
                                 move || t.set(0)
@@ -235,7 +239,7 @@ pub fn screen() -> View {
                         },
                         Tab {
                             label: "Tab C".into(),
-                            icon: Some(Icon(Symbols::settings).size(18.0)),
+                            icon: Some(Icon(Symbols::settings).size(Sp(18.0))),
                             on_click: Rc::new({
                                 let t = tab_index.clone();
                                 move || t.set(2)
@@ -247,7 +251,7 @@ pub fn screen() -> View {
                     TabRowConfig::default(),
                 ),
                 Text(format!("Selected tab: {}", tab_index.get()))
-                    .size(14.0)
+                    .size(Sp(14.0))
                     .color(th.on_surface),
             )),
         ),
@@ -257,7 +261,7 @@ pub fn screen() -> View {
                 Row(Modifier::new().gap(sp::XL).align_items(AlignItems::CENTER)).child((
                     BadgedBox(
                         Badge(None, BadgeConfig::default()),
-                        Icon(Symbols::info).size(24.0).color(th.on_surface),
+                        Icon(Symbols::info).size(Sp(24.0)).color(th.on_surface),
                         BadgedBoxConfig {
                             has_content: false,
                             ..Default::default()
@@ -265,10 +269,10 @@ pub fn screen() -> View {
                     ),
                     BadgedBox(
                         Badge(
-                            Some(Text("3").size(10.0).color(th.on_error)),
+                            Some(Text("3").size(Sp(10.0)).color(th.on_error)),
                             BadgeConfig::default(),
                         ),
-                        Icon(Symbols::settings).size(24.0).color(th.on_surface),
+                        Icon(Symbols::settings).size(Sp(24.0)).color(th.on_surface),
                         BadgedBoxConfig {
                             has_content: true,
                             ..Default::default()
@@ -276,10 +280,10 @@ pub fn screen() -> View {
                     ),
                     BadgedBox(
                         Badge(
-                            Some(Text("99+").size(9.0).color(th.on_error)),
+                            Some(Text("99+").size(Sp(9.0)).color(th.on_error)),
                             BadgeConfig::default(),
                         ),
-                        Icon(Symbols::favorite).size(24.0).color(th.error),
+                        Icon(Symbols::favorite).size(Sp(24.0)).color(th.error),
                         BadgedBoxConfig {
                             has_content: true,
                             ..Default::default()
@@ -299,12 +303,12 @@ pub fn screen() -> View {
                     Box(Modifier::new()
                         .padding(sp::MD)
                         .background(th.surface_container)
-                        .border(1.0, th.outline_variant, 8.0)
-                        .clip_rounded(8.0))
+                        .border(Dp(1.0), th.outline_variant, Dp(8.0))
+                        .clip_rounded(Dp(8.0)))
                     .child(
                         Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
-                            Icon(Symbols::info).size(18.0).color(th.primary),
-                            Text("Hover me").size(14.0).color(th.on_surface),
+                            Icon(Symbols::info).size(Sp(18.0)).color(th.primary),
+                            Text("Hover me").size(Sp(14.0)).color(th.on_surface),
                         )),
                     ),
                     TooltipConfig::default(),
@@ -316,11 +320,11 @@ pub fn screen() -> View {
             "Spatial Focus (arrow keys)",
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 Hint("Navigate the 3×3 grid with arrow keys"),
-                Column(Modifier::new().gap(6.0).align_items(AlignItems::CENTER)).child(
+                Column(Modifier::new().gap(Dp(6.0)).align_items(AlignItems::CENTER)).child(
                     (0..3)
                         .map(|row| {
                             Row(Modifier::new()
-                                .gap(6.0)
+                                .gap(Dp(6.0))
                                 .justify_content(JustifyContent::CENTER))
                             .child(
                                 (0..3)
@@ -331,7 +335,7 @@ pub fn screen() -> View {
                         .collect::<Vec<_>>(),
                 ),
                 Hint("Focus callback (check console):"),
-                Row(Modifier::new().gap(6.0)).child(
+                Row(Modifier::new().gap(Dp(6.0))).child(
                     (0..3)
                         .map(|i| {
                             let lbl = format!("btn{i}");
@@ -340,12 +344,12 @@ pub fn screen() -> View {
                                 .clickable()
                                 .padding(sp::MD)
                                 .background(theme().surface)
-                                .border(1.0, theme().outline, 8.0)
-                                .clip_rounded(8.0)
+                                .border(Dp(1.0), theme().outline, Dp(8.0))
+                                .clip_rounded(Dp(8.0))
                                 .on_focus_changed(move |focused| {
                                     log::warn!("{lbl} focus: {focused}")
                                 }))
-                            .child(Text(lbl2).size(14.0).color(theme().on_surface))
+                            .child(Text(lbl2).size(Sp(14.0)).color(theme().on_surface))
                         })
                         .collect::<Vec<_>>(),
                 ),
@@ -361,15 +365,15 @@ pub fn screen() -> View {
                         AssistChip(
                             || {},
                             Text("Leading"),
-                            Some(Icon(Symbols::add).size(18.0)),
+                            Some(Icon(Symbols::add).size(Sp(18.0))),
                             None,
                             ChipConfig::default(),
                         ),
                         AssistChip(
                             || {},
                             Text("Both"),
-                            Some(Icon(Symbols::search).size(18.0)),
-                            Some(Icon(Symbols::close).size(18.0)),
+                            Some(Icon(Symbols::search).size(Sp(18.0))),
+                            Some(Icon(Symbols::close).size(Sp(18.0))),
                             ChipConfig::default(),
                         ),
                     )),
@@ -400,8 +404,8 @@ pub fn screen() -> View {
                             true,
                             || {},
                             Text("Trailing"),
-                            Some(Icon(Symbols::favorite).size(18.0)),
-                            Some(Icon(Symbols::close).size(18.0)),
+                            Some(Icon(Symbols::favorite).size(Sp(18.0))),
+                            Some(Icon(Symbols::close).size(Sp(18.0))),
                             ChipConfig::default(),
                         ),
                     )),
@@ -413,13 +417,13 @@ pub fn screen() -> View {
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
                 HorizontalDivider(DividerConfig::default()),
                 Row(Modifier::new()
-                    .height(40.0)
+                    .height(Dp(40.0))
                     .gap(sp::MD)
                     .align_items(AlignItems::CENTER))
                 .child((
-                    Text("Left").size(14.0).color(th.on_surface),
+                    Text("Left").size(Sp(14.0)).color(th.on_surface),
                     VerticalDivider(DividerConfig::default()),
-                    Text("Right").size(14.0).color(th.on_surface),
+                    Text("Right").size(Sp(14.0)).color(th.on_surface),
                 )),
             )),
         ),

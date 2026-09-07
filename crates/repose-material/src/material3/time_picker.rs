@@ -129,15 +129,15 @@ pub fn TimePicker(
     Column(
         config
             .modifier
-            .width(256.0)
-            .padding(24.0)
+            .width(Dp(256.0))
+            .padding(Dp(24.0))
             .align_items(AlignItems::CENTER),
     )
     .child((
         // Time display
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
             Box(Modifier::new()
-                .padding(8.0)
+                .padding(Dp(8.0))
                 .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
                     color: Some(th.on_surface),
                     bounded: true,
@@ -150,16 +150,16 @@ pub fn TimePicker(
                 }))
             .child(
                 Text(hour_str)
-                    .size(48.0)
+                    .size(Sp(48.0))
                     .color(config.colors.clock_dial_unselected_content_color)
                     .single_line(),
             ),
             Text(":")
-                .size(48.0)
+                .size(Sp(48.0))
                 .color(config.colors.clock_dial_unselected_content_color)
                 .single_line(),
             Box(Modifier::new()
-                .padding(8.0)
+                .padding(Dp(8.0))
                 .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
                     color: Some(th.on_surface),
                     bounded: true,
@@ -172,27 +172,27 @@ pub fn TimePicker(
                 }))
             .child(
                 Text(min_str)
-                    .size(48.0)
+                    .size(Sp(48.0))
                     .color(config.colors.clock_dial_unselected_content_color)
                     .single_line(),
             ),
         )),
-        Box(Modifier::new().fill_max_width().height(16.0)),
+        Box(Modifier::new().fill_max_width().height(Dp(16.0))),
         // AM/PM toggle
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
             Box(Modifier::new()
                 .padding_values(PaddingValues {
-                    left: 12.0,
-                    right: 12.0,
-                    top: 4.0,
-                    bottom: 4.0,
+                    left: Dp(12.0),
+                    right: Dp(12.0),
+                    top: Dp(4.0),
+                    bottom: Dp(4.0),
                 })
                 .background(if is_am {
                     config.colors.period_selector_selected_container_color
                 } else {
                     Color::TRANSPARENT
                 })
-                .clip_rounded(8.0)
+                .clip_rounded(Dp(8.0))
                 .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
                     color: Some(th.on_surface),
                     bounded: true,
@@ -217,20 +217,20 @@ pub fn TimePicker(
             } else {
                 config.colors.period_selector_unselected_content_color
             })),
-            Box(Modifier::new().width(8.0).height(1.0)),
+            Box(Modifier::new().width(Dp(8.0)).height(Dp(1.0))),
             Box(Modifier::new()
                 .padding_values(PaddingValues {
-                    left: 12.0,
-                    right: 12.0,
-                    top: 4.0,
-                    bottom: 4.0,
+                    left: Dp(12.0),
+                    right: Dp(12.0),
+                    top: Dp(4.0),
+                    bottom: Dp(4.0),
                 })
                 .background(if !is_am {
                     config.colors.period_selector_selected_container_color
                 } else {
                     Color::TRANSPARENT
                 })
-                .clip_rounded(8.0)
+                .clip_rounded(Dp(8.0))
                 .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
                     color: Some(th.on_surface),
                     bounded: true,
@@ -256,11 +256,11 @@ pub fn TimePicker(
                 config.colors.period_selector_unselected_content_color
             })),
         )),
-        Box(Modifier::new().fill_max_width().height(16.0)),
+        Box(Modifier::new().fill_max_width().height(Dp(16.0))),
         Row(Modifier::new().fill_max_width()).child((
             Spacer(),
             Box(Modifier::new()
-                .padding(8.0)
+                .padding(Dp(8.0))
                 .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
                     color: Some(th.on_surface),
                     bounded: true,
@@ -277,9 +277,9 @@ pub fn TimePicker(
                     .size(th.typography.label_large)
                     .single_line(),
             ),
-            Box(Modifier::new().width(8.0).height(1.0)),
+            Box(Modifier::new().width(Dp(8.0)).height(Dp(1.0))),
             Box(Modifier::new()
-                .padding(8.0)
+                .padding(Dp(8.0))
                 .indication(crate::ripple::ripple(crate::ripple::RippleConfig {
                     color: Some(th.on_surface),
                     bounded: true,

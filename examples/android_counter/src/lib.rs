@@ -13,11 +13,11 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
         .fill_max_size()
         .background(theme().background))
     .child(
-        Column(Modifier::new().padding(24.0).fill_max_size()).with_children(vec![
+        Column(Modifier::new().padding(Dp(24.0)).fill_max_size()).with_children(vec![
             Spacer(),
-            Text(format!("Count: {}", count.get())).modifier(Modifier::new().padding(12.0)),
+            Text(format!("Count: {}", count.get())).modifier(Modifier::new().padding(Dp(12.0))),
             Button(
-                Modifier::new().padding(16.0),
+                Modifier::new().padding(Dp(16.0)),
                 {
                     let count = count.clone();
                     move || count.update(|c| *c += 1)
@@ -26,7 +26,7 @@ fn app(_s: &mut Scheduler, _rc: &RenderContext) -> View {
                 || Text("Increment"),
             ),
             Button(
-                Modifier::new().padding(16.0),
+                Modifier::new().padding(Dp(16.0)),
                 {
                     let count = count.clone();
                     move || count.update(|c| *c -= 1)

@@ -13,22 +13,22 @@ pub(crate) fn open_url(url: &str) {
     note = "Focus is shown via StateColors/StateElevation `focused`; the external ring is removed"
 )]
 #[allow(dead_code)]
-pub(crate) fn push_focus_ring(scene: &mut Scene, rect: repose_core::Rect, radius_dp: [f32; 4]) {
-    let width = dp_to_px(2.0);
-    let offset = dp_to_px(2.0);
-    let expand = offset + width;
+pub(crate) fn push_focus_ring(scene: &mut Scene, rect: repose_core::Rect, radius_dp: [Dp; 4]) {
+    let width = Dp(2.0).to_px();
+    let offset = Dp(2.0).to_px();
+    let expand = (offset + width).0;
     let inflated = repose_core::Rect {
         x: rect.x - expand,
         y: rect.y - expand,
         w: rect.w + 2.0 * expand,
         h: rect.h + 2.0 * expand,
     };
-    let radius = clamp_radii(
+    let radius = clamp_radii_px(
         [
-            dp_to_px(radius_dp[0]) + expand,
-            dp_to_px(radius_dp[1]) + expand,
-            dp_to_px(radius_dp[2]) + expand,
-            dp_to_px(radius_dp[3]) + expand,
+            radius_dp[0].to_px().0 + expand,
+            radius_dp[1].to_px().0 + expand,
+            radius_dp[2].to_px().0 + expand,
+            radius_dp[3].to_px().0 + expand,
         ],
         inflated.w,
         inflated.h,
@@ -52,8 +52,8 @@ pub(crate) fn push_focus_ring(scene: &mut Scene, rect: repose_core::Rect, radius
     note = "Focus is shown via StateColors/StateElevation `focused`; the external ring is removed"
 )]
 #[allow(dead_code)]
-pub(crate) fn focus_radius(modifier: &Modifier) -> [f32; 4] {
-    modifier.clip_rounded.unwrap_or([6.0; 4])
+pub(crate) fn focus_radius(modifier: &Modifier) -> [Dp; 4] {
+    modifier.clip_rounded.unwrap_or([Dp(6.0); 4])
 }
 
 /// Associate a `FocusRequester` (if present on the modifier) with the view.
@@ -144,6 +144,15 @@ pub(crate) fn clamp_radii(r: [f32; 4], w: f32, h: f32) -> [f32; 4] {
         clamp_radius(r[2], w, h),
         clamp_radius(r[3], w, h),
     ]
+}
+/// [`Px`]-typed variant of [`clamp_radii`] for paint-space radii.
+pub(crate) fn clamp_radii_px(r: [f32; 4], w: f32, h: f32) -> [Px; 4] {
+    let c = clamp_radii(r, w, h);
+    [Px(c[0]), Px(c[1]), Px(c[2]), Px(c[3])]
+}
+/// [`Px`]-typed variant of [`max_radii`] for paint-space radii.
+pub(crate) fn max_radii_px(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    max_radii(a, b)
 }
 pub(crate) fn max_radii(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
     [

@@ -12,15 +12,15 @@ use super::*;
 pub struct TooltipConfig {
     pub container_color: Color,
     pub content_color: Color,
-    pub offset_y: f32,
-    pub horizontal_padding: f32,
-    pub vertical_padding: f32,
+    pub offset_y: Dp,
+    pub horizontal_padding: Dp,
+    pub vertical_padding: Dp,
     pub has_action: bool,
     pub enable_user_input: bool,
     pub focusable: bool,
-    pub max_width: f32,
-    pub tonal_elevation: f32,
-    pub shadow_elevation: f32,
+    pub max_width: Dp,
+    pub tonal_elevation: Dp,
+    pub shadow_elevation: Dp,
 }
 
 impl Default for TooltipConfig {
@@ -35,8 +35,8 @@ impl Default for TooltipConfig {
             enable_user_input: true,
             focusable: false,
             max_width: TooltipDefaults::MAX_WIDTH,
-            tonal_elevation: 0.0,
-            shadow_elevation: 0.0,
+            tonal_elevation: Dp::ZERO,
+            shadow_elevation: Dp::ZERO,
         }
     }
 }
@@ -125,7 +125,7 @@ pub fn TooltipBox(
         if tooltip_visible {
             Box(Modifier::new()
                 .absolute()
-                .offset(Some(0.0), Some(config.offset_y), Some(0.0), None)
+                .offset(Some(Dp(0.0)), Some(config.offset_y), Some(Dp(0.0)), None)
                 .justify_content(JustifyContent::CENTER)
                 .align_items(AlignItems::CENTER)
                 .hit_passthrough()
@@ -147,17 +147,17 @@ pub fn TooltipBox(
                     .hit_passthrough()
                     .then({
                         let mut m = Modifier::new();
-                        if config.shadow_elevation > 0.0 {
-                            m = m.shadow(config.shadow_elevation, 0.0);
+                        if config.shadow_elevation.0 > 0.0 {
+                            m = m.shadow(config.shadow_elevation, Dp::ZERO);
                         }
-                        if config.tonal_elevation > 0.0 {
+                        if config.tonal_elevation.0 > 0.0 {
                             m = m.state_elevation(StateElevation {
                                 default: config.tonal_elevation,
                                 hovered: config.tonal_elevation,
                                 focused: config.tonal_elevation,
                                 pressed: config.tonal_elevation,
                                 dragged: config.tonal_elevation,
-                                disabled: 0.0,
+                                disabled: Dp::ZERO,
                             });
                         }
                         m

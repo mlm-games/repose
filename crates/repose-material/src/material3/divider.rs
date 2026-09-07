@@ -9,7 +9,7 @@ use super::*;
 #[derive(Clone, Debug)]
 pub struct DividerConfig {
     pub modifier: Modifier,
-    pub thickness: f32,
+    pub thickness: Dp,
     pub color: Color,
 }
 

@@ -16,8 +16,8 @@ pub struct FABConfig {
     pub container_color: Color,
     pub content_color: Color,
     pub state_elevation: StateElevation,
-    pub shape_radius: f32,
-    pub size: f32,
+    pub shape_radius: Dp,
+    pub size: Dp,
     pub interaction_source: Option<MutableInteractionSource>,
 }
 
@@ -56,12 +56,12 @@ fn fab_impl(icon: View, on_click: impl Fn() + 'static, config: FABConfig) -> Vie
         config.state_elevation
     } else {
         StateElevation {
-            default: 0.0,
-            hovered: 0.0,
-            focused: 0.0,
-            pressed: 0.0,
-            dragged: 0.0,
-            disabled: 0.0,
+            default: Dp::ZERO,
+            hovered: Dp::ZERO,
+            focused: Dp::ZERO,
+            pressed: Dp::ZERO,
+            dragged: Dp::ZERO,
+            disabled: Dp::ZERO,
         }
     };
 
@@ -140,12 +140,12 @@ pub fn ExtendedFAB(
         config.state_elevation
     } else {
         StateElevation {
-            default: 0.0,
-            hovered: 0.0,
-            focused: 0.0,
-            pressed: 0.0,
-            dragged: 0.0,
-            disabled: 0.0,
+            default: Dp::ZERO,
+            hovered: Dp::ZERO,
+            focused: Dp::ZERO,
+            pressed: Dp::ZERO,
+            dragged: Dp::ZERO,
+            disabled: Dp::ZERO,
         }
     };
 
@@ -156,8 +156,8 @@ pub fn ExtendedFAB(
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
 
     let mut m = Modifier::new()
-        .height(56.0)
-        .min_width(80.0)
+        .height(Dp(56.0))
+        .min_width(Dp(80.0))
         .background(bg)
         .state_colors(StateColors {
             default: Color::TRANSPARENT,
@@ -170,10 +170,10 @@ pub fn ExtendedFAB(
         .state_elevation(elev)
         .clip_rounded(FABDefaults::SHAPE_RADIUS)
         .padding_values(PaddingValues {
-            left: 16.0,
-            right: 20.0,
-            top: 0.0,
-            bottom: 0.0,
+            left: Dp(16.0),
+            right: Dp(20.0),
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         })
         .align_items(AlignItems::CENTER);
 
@@ -184,7 +184,7 @@ pub fn ExtendedFAB(
         icon.map(|v| super::util::icon_content_with_color(content_color, v))
             .unwrap_or(Box(Modifier::new())),
         Box(Modifier::new()
-            .width(if has_icon { 12.0 } else { 0.0 })
+            .width(if has_icon { Dp(12.0) } else { Dp::ZERO })
             .fill_max_height()),
         Text(label)
             .color(content_color)

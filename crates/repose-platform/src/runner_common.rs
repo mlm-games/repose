@@ -43,7 +43,7 @@ pub fn on_cursor_moved(
 pub fn on_mouse_wheel(rt: &mut ReposeRuntime, delta: MouseScrollDelta, scale: f32) -> bool {
     let (dx_px, dy_px) = match delta {
         MouseScrollDelta::LineDelta(x, y) => {
-            let unit_px = repose_core::locals::dp_to_px(60.0) * scale;
+            let unit_px = repose_core::Dp(60.0).to_px().0 * scale;
             (-(x * unit_px), -(y * unit_px))
         }
         MouseScrollDelta::PixelDelta(p) => (-(p.x as f32), -(p.y as f32)),

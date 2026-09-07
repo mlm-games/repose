@@ -68,12 +68,12 @@ impl ChipColors {
 /// Elevation levels for chips.
 #[derive(Clone, Copy, Debug)]
 pub struct ChipElevation {
-    pub default: f32,
-    pub hovered: f32,
-    pub focused: f32,
-    pub pressed: f32,
-    pub dragged: f32,
-    pub disabled: f32,
+    pub default: Dp,
+    pub hovered: Dp,
+    pub focused: Dp,
+    pub pressed: Dp,
+    pub dragged: Dp,
+    pub disabled: Dp,
 }
 
 impl ChipElevation {
@@ -109,13 +109,13 @@ pub struct ChipConfig {
     pub enabled: bool,
     pub colors: ChipColors,
     pub elevation: ChipElevation,
-    pub border_width: f32,
+    pub border_width: Dp,
     pub border_color: Color,
     pub selected_border_color: Color,
     pub disabled_border_color: Color,
     pub disabled_selected_border_color: Color,
-    pub shape_radius: f32,
-    pub horizontal_padding: f32,
+    pub shape_radius: Dp,
+    pub horizontal_padding: Dp,
     pub interaction_source: Option<MutableInteractionSource>,
 }
 
@@ -195,8 +195,8 @@ pub fn AssistChip(
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.horizontal_padding,
-            top: 0.0,
-            bottom: 0.0,
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         })
         .background(bg)
         .clip_rounded(shape)
@@ -204,7 +204,7 @@ pub fn AssistChip(
         .justify_content(JustifyContent::CENTER)
         .then(config.modifier);
 
-    if config.border_width > 0.0 && border != Color::TRANSPARENT {
+    if config.border_width.0 > 0.0 && border != Color::TRANSPARENT {
         m = m.border(config.border_width, border, shape);
     }
 
@@ -216,10 +216,10 @@ pub fn AssistChip(
             leading_icon
                 .map(|v| {
                     Box(Modifier::new().padding_values(PaddingValues {
-                        left: 0.0,
-                        right: 8.0,
-                        top: 0.0,
-                        bottom: 0.0,
+                        left: Dp(0.0),
+                        right: Dp(8.0),
+                        top: Dp(0.0),
+                        bottom: Dp(0.0),
                     }))
                     .child(with_content_color(leading_color, move || v))
                 })
@@ -228,10 +228,10 @@ pub fn AssistChip(
             trailing_icon
                 .map(|v| {
                     Box(Modifier::new().padding_values(PaddingValues {
-                        left: 8.0,
-                        right: 0.0,
-                        top: 0.0,
-                        bottom: 0.0,
+                        left: Dp(8.0),
+                        right: Dp(0.0),
+                        top: Dp(0.0),
+                        bottom: Dp(0.0),
                     }))
                     .child(with_content_color(trailing_color, move || v))
                 })
@@ -278,8 +278,8 @@ pub fn ElevatedAssistChip(
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.horizontal_padding,
-            top: 0.0,
-            bottom: 0.0,
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         })
         .background(bg)
         .clip_rounded(shape)
@@ -295,10 +295,10 @@ pub fn ElevatedAssistChip(
             leading_icon
                 .map(|v| {
                     Box(Modifier::new().padding_values(PaddingValues {
-                        left: 0.0,
-                        right: 8.0,
-                        top: 0.0,
-                        bottom: 0.0,
+                        left: Dp(0.0),
+                        right: Dp(8.0),
+                        top: Dp(0.0),
+                        bottom: Dp(0.0),
                     }))
                     .child(with_content_color(leading_color, move || v))
                 })
@@ -307,10 +307,10 @@ pub fn ElevatedAssistChip(
             trailing_icon
                 .map(|v| {
                     Box(Modifier::new().padding_values(PaddingValues {
-                        left: 8.0,
-                        right: 0.0,
-                        top: 0.0,
-                        bottom: 0.0,
+                        left: Dp(8.0),
+                        right: Dp(0.0),
+                        top: Dp(0.0),
+                        bottom: Dp(0.0),
                     }))
                     .child(with_content_color(trailing_color, move || v))
                 })
@@ -389,8 +389,8 @@ pub fn FilterChip(
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.horizontal_padding,
-            top: 0.0,
-            bottom: 0.0,
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         })
         .background(bg)
         .clip_rounded(shape)
@@ -398,7 +398,7 @@ pub fn FilterChip(
         .justify_content(JustifyContent::CENTER)
         .then(config.modifier);
 
-    if config.border_width > 0.0 && border != Color::TRANSPARENT {
+    if config.border_width.0 > 0.0 && border != Color::TRANSPARENT {
         m = m.border(config.border_width, border, shape);
     }
     m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
@@ -409,10 +409,10 @@ pub fn FilterChip(
             leading_icon
                 .map(|v| {
                     Box(Modifier::new().padding_values(PaddingValues {
-                        left: 0.0,
-                        right: 8.0,
-                        top: 0.0,
-                        bottom: 0.0,
+                        left: Dp(0.0),
+                        right: Dp(8.0),
+                        top: Dp(0.0),
+                        bottom: Dp(0.0),
                     }))
                     .child(with_content_color(leading_color, move || v))
                 })
@@ -421,10 +421,10 @@ pub fn FilterChip(
             trailing_icon
                 .map(|v| {
                     Box(Modifier::new().padding_values(PaddingValues {
-                        left: 8.0,
-                        right: 0.0,
-                        top: 0.0,
-                        bottom: 0.0,
+                        left: Dp(8.0),
+                        right: Dp(0.0),
+                        top: Dp(0.0),
+                        bottom: Dp(0.0),
                     }))
                     .child(with_content_color(trailing_color, move || v))
                 })
@@ -492,8 +492,8 @@ pub fn ElevatedFilterChip(
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.horizontal_padding,
-            top: 0.0,
-            bottom: 0.0,
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         })
         .background(bg)
         .clip_rounded(shape)
@@ -509,10 +509,10 @@ pub fn ElevatedFilterChip(
             leading_icon
                 .map(|v| {
                     Box(Modifier::new().padding_values(PaddingValues {
-                        left: 0.0,
-                        right: 8.0,
-                        top: 0.0,
-                        bottom: 0.0,
+                        left: Dp(0.0),
+                        right: Dp(8.0),
+                        top: Dp(0.0),
+                        bottom: Dp(0.0),
                     }))
                     .child(with_content_color(leading_color, move || v))
                 })
@@ -521,10 +521,10 @@ pub fn ElevatedFilterChip(
             trailing_icon
                 .map(|v| {
                     Box(Modifier::new().padding_values(PaddingValues {
-                        left: 8.0,
-                        right: 0.0,
-                        top: 0.0,
-                        bottom: 0.0,
+                        left: Dp(8.0),
+                        right: Dp(0.0),
+                        top: Dp(0.0),
+                        bottom: Dp(0.0),
                     }))
                     .child(with_content_color(trailing_color, move || v))
                 })
@@ -573,8 +573,8 @@ pub fn SuggestionChip(
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.horizontal_padding,
-            top: 0.0,
-            bottom: 0.0,
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         })
         .background(bg)
         .clip_rounded(shape)
@@ -582,7 +582,7 @@ pub fn SuggestionChip(
         .justify_content(JustifyContent::CENTER)
         .then(config.modifier);
 
-    if config.border_width > 0.0 && border != Color::TRANSPARENT {
+    if config.border_width.0 > 0.0 && border != Color::TRANSPARENT {
         m = m.border(config.border_width, border, shape);
     }
     m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
@@ -592,10 +592,10 @@ pub fn SuggestionChip(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
             icon.map(|v| {
                 Box(Modifier::new().padding_values(PaddingValues {
-                    left: 0.0,
-                    right: 8.0,
-                    top: 0.0,
-                    bottom: 0.0,
+                    left: Dp(0.0),
+                    right: Dp(8.0),
+                    top: Dp(0.0),
+                    bottom: Dp(0.0),
                 }))
                 .child(with_content_color(leading_color, move || v))
             })
@@ -642,8 +642,8 @@ pub fn ElevatedSuggestionChip(
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.horizontal_padding,
-            top: 0.0,
-            bottom: 0.0,
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         })
         .background(bg)
         .clip_rounded(shape)
@@ -658,10 +658,10 @@ pub fn ElevatedSuggestionChip(
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
             icon.map(|v| {
                 Box(Modifier::new().padding_values(PaddingValues {
-                    left: 0.0,
-                    right: 8.0,
-                    top: 0.0,
-                    bottom: 0.0,
+                    left: Dp(0.0),
+                    right: Dp(8.0),
+                    top: Dp(0.0),
+                    bottom: Dp(0.0),
                 }))
                 .child(with_content_color(leading_color, move || v))
             })
@@ -742,8 +742,8 @@ pub fn InputChip(
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.horizontal_padding,
-            top: 0.0,
-            bottom: 0.0,
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         })
         .background(bg)
         .clip_rounded(shape)
@@ -751,7 +751,7 @@ pub fn InputChip(
         .justify_content(JustifyContent::CENTER)
         .then(config.modifier);
 
-    if config.border_width > 0.0 && border != Color::TRANSPARENT {
+    if config.border_width.0 > 0.0 && border != Color::TRANSPARENT {
         m = m.border(config.border_width, border, shape);
     }
     m = apply_m3_clickable(m, &ch_source, label_color, is_enabled, on_click);
@@ -763,10 +763,10 @@ pub fn InputChip(
                 .or(leading_icon)
                 .map(|v| {
                     Box(Modifier::new().padding_values(PaddingValues {
-                        left: 0.0,
-                        right: 8.0,
-                        top: 0.0,
-                        bottom: 0.0,
+                        left: Dp(0.0),
+                        right: Dp(8.0),
+                        top: Dp(0.0),
+                        bottom: Dp(0.0),
                     }))
                     .child(with_content_color(leading_color, move || v))
                 })
@@ -775,10 +775,10 @@ pub fn InputChip(
             trailing_icon
                 .map(|v| {
                     Box(Modifier::new().padding_values(PaddingValues {
-                        left: 8.0,
-                        right: 0.0,
-                        top: 0.0,
-                        bottom: 0.0,
+                        left: Dp(8.0),
+                        right: Dp(0.0),
+                        top: Dp(0.0),
+                        bottom: Dp(0.0),
                     }))
                     .child(with_content_color(trailing_color, move || v))
                 })
@@ -794,7 +794,7 @@ pub fn chip_group_flow(modifier: Modifier, children: impl repose_ui::IntoChildre
     FlowRow(
         Modifier::new()
             .fill_max_width()
-            .gap(8.0)
+            .gap(Dp(8.0))
             .align_items(AlignItems::CENTER)
             .then(modifier),
         FlowRowConfig::default(),

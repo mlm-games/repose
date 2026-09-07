@@ -22,12 +22,12 @@ pub struct NavigationRailConfig {
     pub unselected_icon_color: Color,
     pub unselected_text_color: Color,
     pub indicator_color: Color,
-    pub width: f32,
-    pub item_radius: f32,
+    pub width: Dp,
+    pub item_radius: Dp,
     pub indicator_opacity: f32,
-    pub item_spacing: f32,
-    pub indicator_width: f32,
-    pub indicator_height: f32,
+    pub item_spacing: Dp,
+    pub indicator_width: Dp,
+    pub indicator_height: Dp,
 }
 
 impl Default for NavigationRailConfig {
@@ -87,10 +87,10 @@ pub fn NavigationRail(
         top_children.push(
             Box(Modifier::new()
                 .padding_values(PaddingValues {
-                    left: 12.0,
-                    right: 12.0,
-                    top: 12.0,
-                    bottom: 12.0,
+                    left: Dp(12.0),
+                    right: Dp(12.0),
+                    top: Dp(12.0),
+                    bottom: Dp(12.0),
                 })
                 .align_self(AlignSelf::CENTER))
             .child(h),
@@ -101,10 +101,10 @@ pub fn NavigationRail(
         top_children.push(
             Box(Modifier::new()
                 .padding_values(PaddingValues {
-                    left: 12.0,
-                    right: 12.0,
-                    top: 8.0,
-                    bottom: 8.0,
+                    left: Dp(12.0),
+                    right: Dp(12.0),
+                    top: Dp(8.0),
+                    bottom: Dp(8.0),
                 })
                 .align_self(AlignSelf::CENTER))
             .child(f),
@@ -114,7 +114,7 @@ pub fn NavigationRail(
     if has_header || has_fab {
         top_children.push(Box(Modifier::new()
             .fill_max_width()
-            .height(1.0)
+            .height(Dp(1.0))
             .background(th.outline_variant)));
     }
 
@@ -162,10 +162,10 @@ pub fn NavigationRail(
         let mut item_m = Modifier::new()
             .fill_max_width()
             .padding_values(PaddingValues {
-                left: 4.0,
-                right: 4.0,
-                top: 4.0,
-                bottom: 4.0,
+                left: Dp(4.0),
+                right: Dp(4.0),
+                top: Dp(4.0),
+                bottom: Dp(4.0),
             })
             .align_items(AlignItems::CENTER)
             .justify_content(JustifyContent::CENTER)
@@ -184,8 +184,8 @@ pub fn NavigationRail(
         let bg_m = Modifier::new()
             .absolute()
             .offset(
-                Some((24.0 - config.indicator_width) / 2.0),
-                Some((24.0 - config.indicator_height) / 2.0),
+                Some((Dp(24.0) - config.indicator_width) / 2.0),
+                Some((Dp(24.0) - config.indicator_height) / 2.0),
                 None,
                 None,
             )
@@ -195,12 +195,12 @@ pub fn NavigationRail(
             .clip_rounded(config.item_radius);
 
         // Pill ripple host - handles hover/focus/press, mapped from outer item
-        let dx = (*item_width.borrow() - config.indicator_width) / 2.0;
+        let dx = (Dp(*item_width.borrow()) - config.indicator_width) / 2.0;
         let pill_m = Modifier::new()
             .absolute()
             .offset(
-                Some((24.0 - config.indicator_width) / 2.0),
-                Some((24.0 - config.indicator_height) / 2.0),
+                Some((Dp(24.0) - config.indicator_width) / 2.0),
+                Some((Dp(24.0) - config.indicator_height) / 2.0),
                 None,
                 None,
             )
@@ -212,7 +212,11 @@ pub fn NavigationRail(
                 color: Some(th.on_surface),
                 bounded: true,
                 press_offset: if *item_width.borrow() > 0.0 {
-                    Some(Vec2 { x: dx, y: 0.0 })
+                    // Ripple offsets are px; pill geometry is Dp.
+                    Some(Vec2 {
+                        x: dx.to_px().0,
+                        y: 0.0,
+                    })
                 } else {
                     None
                 },
@@ -222,7 +226,7 @@ pub fn NavigationRail(
         item_views.push(
             Column(item_m).child((
                 Column(Modifier::new()).child((
-                    Box(Modifier::new().size(24.0, 24.0)).child((
+                    Box(Modifier::new().size(Dp(24.0), Dp(24.0))).child((
                         Box(bg_m),
                         with_content_color(fg, move || item.icon),
                         Box(pill_m),
@@ -231,12 +235,12 @@ pub fn NavigationRail(
                         .map(|b| {
                             Box(Modifier::new()
                                 .absolute()
-                                .offset(None, None, None, Some(0.0)))
+                                .offset(None, None, None, Some(Dp(0.0))))
                             .child(b)
                         })
                         .unwrap_or(Box(Modifier::new())),
                 )),
-                Box(Modifier::new().fill_max_width().height(4.0)),
+                Box(Modifier::new().fill_max_width().height(Dp(4.0))),
                 Text(item.label)
                     .color(fg_label)
                     .size(th.typography.label_medium)

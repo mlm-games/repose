@@ -12,15 +12,15 @@ fn test_render_z_index_paints_last() {
     let red = Color::from_rgb(255, 0, 0);
     let blue = Color::from_rgb(0, 0, 255);
 
-    let red_box = RBox(Modifier::new().size(100.0, 100.0).background(red));
+    let red_box = RBox(Modifier::new().size(Dp(100.0), Dp(100.0)).background(red));
     let blue_box = RBox(
         Modifier::new()
-            .size(100.0, 100.0)
+            .size(Dp(100.0), Dp(100.0))
             .background(blue)
             .render_z_index(100.0),
     );
 
-    let root = Column(Modifier::new().size(200.0, 200.0)).child((red_box, blue_box));
+    let root = Column(Modifier::new().size(Dp(200.0), Dp(200.0))).child((red_box, blue_box));
 
     let mut engine = LayoutEngine::new();
     let (scene, _hits, _sems) = engine.layout_frame(
@@ -80,24 +80,24 @@ fn test_render_z_index_order_by_value() {
 
     let box1 = RBox(
         Modifier::new()
-            .size(50.0, 50.0)
+            .size(Dp(50.0), Dp(50.0))
             .background(red)
             .render_z_index(10.0),
     );
     let box2 = RBox(
         Modifier::new()
-            .size(50.0, 50.0)
+            .size(Dp(50.0), Dp(50.0))
             .background(green)
             .render_z_index(20.0),
     );
     let box3 = RBox(
         Modifier::new()
-            .size(50.0, 50.0)
+            .size(Dp(50.0), Dp(50.0))
             .background(blue)
             .render_z_index(5.0),
     );
 
-    let root = Column(Modifier::new().size(200.0, 200.0)).child((box1, box2, box3));
+    let root = Column(Modifier::new().size(Dp(200.0), Dp(200.0))).child((box1, box2, box3));
 
     let mut engine = LayoutEngine::new();
     let (scene, _hits, _sems) = engine.layout_frame(
@@ -151,19 +151,19 @@ fn test_render_z_index_with_nested_children() {
     let green = Color::from_rgb(0, 255, 0);
     let blue = Color::from_rgb(0, 0, 255);
 
-    let red_box = RBox(Modifier::new().size(50.0, 50.0).background(red));
-    let green_box = RBox(Modifier::new().size(50.0, 50.0).background(green));
+    let red_box = RBox(Modifier::new().size(Dp(50.0), Dp(50.0)).background(red));
+    let green_box = RBox(Modifier::new().size(Dp(50.0), Dp(50.0)).background(green));
 
     let content = Column(Modifier::new()).child((red_box, green_box));
 
     let overlay = RBox(
         Modifier::new()
-            .size(30.0, 30.0)
+            .size(Dp(30.0), Dp(30.0))
             .background(blue)
             .render_z_index(1000.0),
     );
 
-    let root = Column(Modifier::new().size(200.0, 200.0)).child((content, overlay));
+    let root = Column(Modifier::new().size(Dp(200.0), Dp(200.0))).child((content, overlay));
 
     let mut engine = LayoutEngine::new();
     let (scene, _hits, _sems) = engine.layout_frame(
@@ -233,26 +233,28 @@ fn test_render_z_index_paints_over_scrollbars() {
     let overlay_color = Color::from_rgb(0, 0, 255);
 
     // Tall content inside scroll - 500px tall in 200px viewport
-    let tall_content = RBox(Modifier::new().size(180.0, 500.0).background(content_color));
-
-    let scroll = RBox(
+    let tall_content = RBox(
         Modifier::new()
-            .size(200.0, 200.0)
-            .vertical_scroll(ScrollAxisBinding {
-                show_scrollbar: true,
-                ..Default::default()
-            }),
-    )
+            .size(Dp(180.0), Dp(500.0))
+            .background(content_color),
+    );
+
+    let scroll = RBox(Modifier::new().size(Dp(200.0), Dp(200.0)).vertical_scroll(
+        ScrollAxisBinding {
+            show_scrollbar: true,
+            ..Default::default()
+        },
+    ))
     .child(tall_content);
 
     let overlay = RBox(
         Modifier::new()
-            .size(50.0, 50.0)
+            .size(Dp(50.0), Dp(50.0))
             .background(overlay_color)
             .render_z_index(1000.0),
     );
 
-    let root = Column(Modifier::new().size(200.0, 200.0)).child((scroll, overlay));
+    let root = Column(Modifier::new().size(Dp(200.0), Dp(200.0))).child((scroll, overlay));
 
     let mut engine = LayoutEngine::new();
     let (scene, _hits, _sems) = engine.layout_frame(
@@ -311,15 +313,17 @@ fn test_render_z_index_with_overlay_host() {
     let overlay_color = Color::from_rgb(0, 0, 255);
 
     // Tall content inside scroll - 500px tall in 200px viewport
-    let tall_content = RBox(Modifier::new().size(180.0, 500.0).background(content_color));
-    let scroll = RBox(
+    let tall_content = RBox(
         Modifier::new()
-            .size(200.0, 200.0)
-            .vertical_scroll(ScrollAxisBinding {
-                show_scrollbar: true,
-                ..Default::default()
-            }),
-    )
+            .size(Dp(180.0), Dp(500.0))
+            .background(content_color),
+    );
+    let scroll = RBox(Modifier::new().size(Dp(200.0), Dp(200.0)).vertical_scroll(
+        ScrollAxisBinding {
+            show_scrollbar: true,
+            ..Default::default()
+        },
+    ))
     .child(tall_content);
 
     // Create an OverlayHost wrapping the scroll content
@@ -329,13 +333,13 @@ fn test_render_z_index_with_overlay_host() {
     // The hint box with render_z_index should paint on top
     let hint_box = RBox(
         Modifier::new()
-            .size(50.0, 50.0)
+            .size(Dp(50.0), Dp(50.0))
             .background(overlay_color)
             .render_z_index(1000.0),
     );
 
     // Final structure: Stack { OverlayHost, HintBox }
-    let root = Column(Modifier::new().size(200.0, 200.0)).child((overlay_host, hint_box));
+    let root = Column(Modifier::new().size(Dp(200.0), Dp(200.0))).child((overlay_host, hint_box));
 
     let mut engine = LayoutEngine::new();
     let (scene, _hits, _sems) = engine.layout_frame(
@@ -391,10 +395,13 @@ fn test_subcompose_layout_runs_closure_and_lays_out() {
     let call_count = Arc::new(AtomicUsize::new(0));
     let count_clone = call_count.clone();
 
-    let sub = SubcomposeLayout(Modifier::new().size(200.0, 100.0), move |scope| {
+    let sub = SubcomposeLayout(Modifier::new().size(Dp(200.0), Dp(100.0)), move |scope| {
         count_clone.fetch_add(1, Ordering::SeqCst);
-        assert!(scope.max_width > 0.0, "scope.max_width should be positive");
-        RBox(Modifier::new().size(100.0, 50.0).background(red))
+        assert!(
+            scope.max_width.0 > 0.0,
+            "scope.max_width should be positive"
+        );
+        RBox(Modifier::new().size(Dp(100.0), Dp(50.0)).background(red))
     });
 
     let root = Column(Modifier::new()).child(sub);
@@ -432,9 +439,9 @@ fn test_subcompose_layout_caches_closure_across_frames() {
     let call_count = Arc::new(AtomicUsize::new(0));
     let count_clone = call_count.clone();
 
-    let sub = SubcomposeLayout(Modifier::new().size(200.0, 100.0), move |_scope| {
+    let sub = SubcomposeLayout(Modifier::new().size(Dp(200.0), Dp(100.0)), move |_scope| {
         count_clone.fetch_add(1, Ordering::SeqCst);
-        RBox(Modifier::new().size(50.0, 50.0))
+        RBox(Modifier::new().size(Dp(50.0), Dp(50.0)))
     });
 
     let root = Column(Modifier::new()).child(sub);
@@ -481,9 +488,10 @@ fn test_subcompose_layout_ancestor_modifier_narrows_scope_through_engine() {
     // max_width == 320.0, not the window's 800.0.
     let sub = SubcomposeLayout(Modifier::new(), move |scope| {
         cap.store(scope.max_width.to_bits(), Ordering::SeqCst);
-        RBox(Modifier::new().size(100.0, 50.0))
+        RBox(Modifier::new().size(Dp(100.0), Dp(50.0)))
     });
-    let root = Column(Modifier::new()).child(crate::Box(Modifier::new().width(320.0)).child(sub));
+    let root =
+        Column(Modifier::new()).child(crate::Box(Modifier::new().width(Dp(320.0))).child(sub));
 
     let mut engine = LayoutEngine::new();
     let _ = engine.layout_frame(
@@ -510,11 +518,15 @@ fn test_vertical_scroll_content_can_exceed_viewport() {
     let state = ScrollState::new();
     // Tall content inside fixed-height scroll
     let root = ScrollArea(
-        Modifier::new().height(100.0).width(200.0),
+        Modifier::new().height(Dp(100.0)).width(Dp(200.0)),
         Rc::new(state),
         Column(Modifier::new())
-            .child(RBox(Modifier::new().height(80.0).background(Color::WHITE)))
-            .child(RBox(Modifier::new().height(80.0).background(Color::BLACK))),
+            .child(RBox(
+                Modifier::new().height(Dp(80.0)).background(Color::WHITE),
+            ))
+            .child(RBox(
+                Modifier::new().height(Dp(80.0)).background(Color::BLACK),
+            )),
     );
     let mut eng = LayoutEngine::new();
     let (_scene, hits, _) = eng.layout_frame(
@@ -542,11 +554,11 @@ fn test_nested_scroll_nav_like() {
     let white = Color::WHITE;
     let state = ScrollState::new();
     let inner = ScrollArea(
-        Modifier::new().height(100.0).fill_max_width(),
+        Modifier::new().height(Dp(100.0)).fill_max_width(),
         Rc::new(state),
-        Column(Modifier::new()).child(RBox(Modifier::new().height(300.0).background(white))),
+        Column(Modifier::new()).child(RBox(Modifier::new().height(Dp(300.0)).background(white))),
     );
-    let root = Column(Modifier::new().size(200.0, 200.0)).child(inner);
+    let root = Column(Modifier::new().size(Dp(200.0), Dp(200.0))).child(inner);
 
     let mut eng = LayoutEngine::new();
     let (scene, hits, _) = eng.layout_frame(
@@ -582,11 +594,11 @@ fn test_intrinsic_size_scroll_content_height() {
 
     let state = ScrollState::new();
     let v = ScrollArea(
-        Modifier::new().width(200.0),
+        Modifier::new().width(Dp(200.0)),
         Rc::new(state),
         Column(Modifier::new())
-            .child(RBox(Modifier::new().height(80.0)))
-            .child(RBox(Modifier::new().height(80.0))),
+            .child(RBox(Modifier::new().height(Dp(80.0))))
+            .child(RBox(Modifier::new().height(Dp(80.0)))),
     );
     let mut eng = make_engine();
     let (w, h) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
@@ -778,17 +790,17 @@ mod layer_tests {
 #[test]
 fn test_annotated_text_large_font_not_clipped() {
     use repose_core::SpanStyle;
-    let big = SpanStyle::default().font_size(24.0);
+    let big = SpanStyle::default().font_size(Sp(24.0));
     let anno = build_annotated_string(|b| {
         b.push("Normal ");
         b.push_with_style("Big", big.clone());
         b.push(" normal");
     });
-    let v = crate::AnnotatedText(anno).size(14.0);
+    let v = crate::AnnotatedText(anno).size(Sp(14.0));
     let mut eng = make_engine();
     let (w_anno, h_anno) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
     let (w_base, h_base) = eng.intrinsic_size(
-        &crate::Text("Normal Big normal").size(14.0),
+        &crate::Text("Normal Big normal").size(Sp(14.0)),
         IntrinsicSizeMode::MaxContent,
     );
     assert!(
@@ -813,15 +825,15 @@ fn test_annotated_stroke_expands_bounds() {
     use repose_core::{DrawStyle, SpanStyle};
     let s = SpanStyle::default()
         .draw_style(DrawStyle::stroke(0.1))
-        .font_size(20.0);
+        .font_size(Sp(20.0));
     let anno = build_annotated_string(|b| {
         b.push_with_style("Stroked", s);
     });
-    let v = crate::AnnotatedText(anno).size(16.0);
+    let v = crate::AnnotatedText(anno).size(Sp(16.0));
     let mut eng = make_engine();
     let (w, h) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
     let (w0, h0) = eng.intrinsic_size(
-        &crate::Text("Stroked").size(16.0),
+        &crate::Text("Stroked").size(Sp(16.0)),
         IntrinsicSizeMode::MaxContent,
     );
     assert!(w > w0, "stroke should expand width");
@@ -832,14 +844,14 @@ fn test_annotated_stroke_expands_bounds() {
 fn test_annotated_superscript_expands_height() {
     use repose_core::{BaselineShift, SpanStyle};
     let sp = SpanStyle::default()
-        .font_size(14.0)
+        .font_size(Sp(14.0))
         .baseline_shift(BaselineShift::Superscript);
     let anno = build_annotated_string(|b| {
         b.push("a");
         b.push_with_style("super", sp);
         b.push("b");
     });
-    let v = crate::AnnotatedText(anno).size(16.0);
+    let v = crate::AnnotatedText(anno).size(Sp(16.0));
     let mut eng = make_engine();
     let (_, h) = eng.intrinsic_size(&v, IntrinsicSizeMode::MaxContent);
     assert!(
@@ -869,7 +881,7 @@ mod shadow_tests {
     #[test]
     fn test_shadow_alone_does_not_emit_composite_shadow() {
         // Shadow without graphics_layer: nothing to composite.
-        let view = Column(Modifier::new().shadow(8.0, 4.0)).child(Text("x"));
+        let view = Column(Modifier::new().shadow(Dp(8.0), Dp(4.0))).child(Text("x"));
         let nodes = collect_nodes(&view);
         let count = nodes
             .iter()
@@ -883,7 +895,8 @@ mod shadow_tests {
 
     #[test]
     fn test_layer_with_shadow_emits_composite_shadow() {
-        let view = Column(Modifier::new().graphics_layer(1.0).shadow(8.0, 4.0)).child(Text("x"));
+        let view =
+            Column(Modifier::new().graphics_layer(1.0).shadow(Dp(8.0), Dp(4.0))).child(Text("x"));
         let nodes = collect_nodes(&view);
         let count = nodes
             .iter()
@@ -895,7 +908,8 @@ mod shadow_tests {
     #[test]
     fn test_shadow_appears_after_end_layer() {
         // Order: BeginLayer, ...content..., EndLayer, CompositeShadow, (any)CompositeLayer.
-        let view = Column(Modifier::new().graphics_layer(1.0).shadow(8.0, 4.0)).child(Text("x"));
+        let view =
+            Column(Modifier::new().graphics_layer(1.0).shadow(Dp(8.0), Dp(4.0))).child(Text("x"));
         let nodes = collect_nodes(&view);
         let end_idx = nodes
             .iter()
@@ -915,7 +929,12 @@ mod shadow_tests {
 
     #[test]
     fn test_shadow_passes_through_blur_and_offset() {
-        let view = Column(Modifier::new().graphics_layer(1.0).shadow(10.0, 6.0)).child(Text("x"));
+        let view = Column(
+            Modifier::new()
+                .graphics_layer(1.0)
+                .shadow(Dp(10.0), Dp(6.0)),
+        )
+        .child(Text("x"));
         let nodes = collect_nodes(&view);
         let shadow = nodes
             .iter()
@@ -928,15 +947,15 @@ mod shadow_tests {
             .expect("CompositeShadow present");
         let (blur, offset) = shadow;
         // 1 dp = 1 px in tests (density scale = 1).
-        assert!(blur > 0.0, "blur should be > 0, got {}", blur);
-        assert!(offset.1 > 0.0, "offset_y should be > 0, got {}", offset.1);
+        assert!(blur.0 > 0.0, "blur should be > 0, got {}", blur);
+        assert!(offset.1.0 > 0.0, "offset_y should be > 0, got {}", offset.1);
     }
 
     #[test]
     fn test_elevation_helper_sets_shadow() {
-        let m4 = Modifier::new().elevation(4.0);
+        let m4 = Modifier::new().elevation(Dp(4.0));
         assert!(m4.shadow.is_some(), "elevation(4) should set shadow");
-        let m0 = Modifier::new().elevation(0.0);
+        let m0 = Modifier::new().elevation(Dp(0.0));
         assert!(m0.shadow.is_none(), "elevation(0) should not set shadow");
     }
 
@@ -948,21 +967,25 @@ mod shadow_tests {
                 Modifier::new()
                     .fill_max_size()
                     .padding_values(PaddingValues {
-                        left: gx - 60.0,
-                        top: gy - 11.0,
-                        right: 0.0,
-                        bottom: 0.0,
+                        left: Dp(gx - 60.0),
+                        top: Dp(gy - 11.0),
+                        right: Dp::ZERO,
+                        bottom: Dp::ZERO,
                     }),
             )
             .child(
                 Column(
                     Modifier::new()
-                        .width(120.0)
-                        .height(22.0)
+                        .width(Dp(120.0))
+                        .height(Dp(22.0))
                         .justify_content(JustifyContent::CENTER)
                         .align_items(AlignItems::CENTER),
                 )
-                .child(Text(label.to_string()).size(10.0).font_family("Silkscreen")),
+                .child(
+                    Text(label.to_string())
+                        .size(Sp(10.0))
+                        .font_family("Silkscreen"),
+                ),
             )
         };
         let normal_at = |label: String, gx: f32, gy: f32| {
@@ -970,15 +993,15 @@ mod shadow_tests {
                 Modifier::new()
                     .fill_max_size()
                     .padding_values(PaddingValues {
-                        left: gx,
-                        top: gy,
-                        right: 0.0,
-                        bottom: 0.0,
+                        left: Dp(gx),
+                        top: Dp(gy),
+                        right: Dp::ZERO,
+                        bottom: Dp::ZERO,
                     }),
             )
             .child(
-                Column(Modifier::new().width(200.0).height(16.0))
-                    .child(Text(label).size(7.0).font_family("Silkscreen")),
+                Column(Modifier::new().width(Dp(200.0)).height(Dp(16.0)))
+                    .child(Text(label).size(Sp(7.0)).font_family("Silkscreen")),
             )
         };
         let hitbox_at = |x: f32, y: f32| {
@@ -986,16 +1009,16 @@ mod shadow_tests {
                 Modifier::new()
                     .fill_max_size()
                     .padding_values(PaddingValues {
-                        left: x,
-                        top: y,
-                        right: 0.0,
-                        bottom: 0.0,
+                        left: Dp(x),
+                        top: Dp(y),
+                        right: Dp::ZERO,
+                        bottom: Dp::ZERO,
                     }),
             )
             .child(Column(
                 Modifier::new()
-                    .width(24.0)
-                    .height(16.0)
+                    .width(Dp(24.0))
+                    .height(Dp(16.0))
                     .clickable()
                     .on_click(|| {}),
             ))
@@ -1105,10 +1128,10 @@ fn test_row_baseline_alignment() {
     // Compose-style: the RowScope-flagged children form the baseline group
     // and coincide; a lone flagged child would define the group alone and
     // not move, and unflagged siblings keep normal alignment.
-    let root = Row(Modifier::new().size(400.0, 200.0)).child(row_scope(|s| {
+    let root = Row(Modifier::new().size(Dp(400.0), Dp(200.0))).child(row_scope(|s| {
         vec![
-            s.align_by_baseline(Text("Ag").size(32.0).single_line()),
-            s.align_by_baseline(Text("Ag").size(16.0).single_line()),
+            s.align_by_baseline(Text("Ag").size(Sp(32.0)).single_line()),
+            s.align_by_baseline(Text("Ag").size(Sp(16.0)).single_line()),
         ]
     }));
 
@@ -1124,7 +1147,7 @@ fn test_row_baseline_alignment() {
     for node in &scene.nodes {
         if let SceneNode::Text { rect, size, .. } = node {
             let (ascent, _) =
-                repose_text::primary_font_vertical_metrics(Some("sans-serif"), 400, *size);
+                repose_text::primary_font_vertical_metrics(Some("sans-serif"), 400, size.0);
             baselines.push(rect.y + ascent);
         }
     }
@@ -1144,11 +1167,15 @@ fn test_row_baseline_alignment_grows_row() {
     let root = Column(Modifier::new()).child((
         Row(Modifier::new()).child(row_scope(|s| {
             vec![
-                s.align_by_baseline(Text("Ag").size(64.0).single_line()),
-                s.align_by_baseline(Text("Ag\nAg").size(32.0)),
+                s.align_by_baseline(Text("Ag").size(Sp(64.0)).single_line()),
+                s.align_by_baseline(Text("Ag\nAg").size(Sp(32.0))),
             ]
         })),
-        RBox(Modifier::new().size(400.0, 10.0).background(Color::WHITE)),
+        RBox(
+            Modifier::new()
+                .size(Dp(400.0), Dp(10.0))
+                .background(Color::WHITE),
+        ),
     ));
     let mut eng = make_engine();
     let (scene, _, _) = eng.layout_frame(
@@ -1165,9 +1192,9 @@ fn test_row_baseline_alignment_grows_row() {
     for node in &scene.nodes {
         if let SceneNode::Text { rect, size, .. } = node {
             let (ascent, _) =
-                repose_text::primary_font_vertical_metrics(Some("sans-serif"), 400, *size);
+                repose_text::primary_font_vertical_metrics(Some("sans-serif"), 400, size.0);
             let run = (rect.y + ascent, rect.y, rect.y + rect.h, rect.h);
-            if *size >= 64.0 {
+            if size.0 >= 64.0 {
                 big.push(run);
             } else {
                 small.push(run);
@@ -1219,7 +1246,7 @@ fn test_intrinsic_and_fit_content_sizing() {
     // `intrinsic_width(Max)` sizes to max-content; `fit_content_width(limit)`
     // shrink-wraps clamped to the limit.
     let wide = Text("hello world hello world").single_line();
-    let root = Column(Modifier::new().size(400.0, 400.0))
+    let root = Column(Modifier::new().size(Dp(400.0), Dp(400.0)))
         .child(RBox(Modifier::new().intrinsic_width(IntrinsicSize::Max)).child(wide));
     let mut eng = make_engine();
     let (scene, _, _) = eng.layout_frame(
@@ -1235,8 +1262,8 @@ fn test_intrinsic_and_fit_content_sizing() {
     );
 
     let narrow = Text("hello world hello world").single_line();
-    let root = Column(Modifier::new().size(400.0, 400.0))
-        .child(RBox(Modifier::new().fit_content_width(50.0)).child(narrow));
+    let root = Column(Modifier::new().size(Dp(400.0), Dp(400.0)))
+        .child(RBox(Modifier::new().fit_content_width(Dp(50.0))).child(narrow));
     let mut eng = make_engine();
     let (scene, _, _) = eng.layout_frame(
         &root,
@@ -1257,16 +1284,22 @@ fn test_balanced_flow_row_lays_out() {
 
     let white = Color::WHITE;
     let root = crate::FlowRow(
-        Modifier::new().size(300.0, 300.0),
+        Modifier::new().size(Dp(300.0), Dp(300.0)),
         FlowRowConfig {
             balanced: true,
             min_lines: 2,
             ..Default::default()
         },
     )
-    .child(RBox(Modifier::new().size(100.0, 20.0).background(white)))
-    .child(RBox(Modifier::new().size(100.0, 20.0).background(white)))
-    .child(RBox(Modifier::new().size(100.0, 20.0).background(white)));
+    .child(RBox(
+        Modifier::new().size(Dp(100.0), Dp(20.0)).background(white),
+    ))
+    .child(RBox(
+        Modifier::new().size(Dp(100.0), Dp(20.0)).background(white),
+    ))
+    .child(RBox(
+        Modifier::new().size(Dp(100.0), Dp(20.0)).background(white),
+    ));
     let mut eng = make_engine();
     let (scene, _, _) = eng.layout_frame(
         &root,
@@ -1282,14 +1315,16 @@ fn test_balanced_flow_row_lays_out() {
 
     // Same for the vertical variant.
     let root = crate::FlowColumn(
-        Modifier::new().size(300.0, 300.0),
+        Modifier::new().size(Dp(300.0), Dp(300.0)),
         FlowColumnConfig {
             balanced: true,
             min_lines: 2,
             ..Default::default()
         },
     )
-    .child(RBox(Modifier::new().size(20.0, 100.0).background(white)));
+    .child(RBox(
+        Modifier::new().size(Dp(20.0), Dp(100.0)).background(white),
+    ));
     let mut eng = make_engine();
     let (scene, _, _) = eng.layout_frame(
         &root,
@@ -1308,12 +1343,13 @@ fn test_balanced_flow_row_lays_out() {
 fn test_contain_modifiers_lay_out() {
     // Containment must not break layout of ordinary content.
     let white = Color::WHITE;
-    let root = Column(Modifier::new().size(200.0, 200.0).contain_content())
-        .child(RBox(Modifier::new().size(50.0, 50.0).background(white)))
-        .child(
-            Column(Modifier::new().contain_layout())
-                .child(RBox(Modifier::new().size(30.0, 30.0).background(white))),
-        );
+    let root = Column(Modifier::new().size(Dp(200.0), Dp(200.0)).contain_content())
+        .child(RBox(
+            Modifier::new().size(Dp(50.0), Dp(50.0)).background(white),
+        ))
+        .child(Column(Modifier::new().contain_layout()).child(RBox(
+            Modifier::new().size(Dp(30.0), Dp(30.0)).background(white),
+        )));
     let mut eng = make_engine();
     let (scene, _, _) = eng.layout_frame(
         &root,
@@ -1332,8 +1368,9 @@ fn test_safe_center_alignment_lays_out() {
     // Safe centering keeps content reachable; at minimum it must lay out
     // identically to unsafe centering for fitting content.
     let white = Color::WHITE;
-    let root = Center(Modifier::new().size(200.0, 200.0))
-        .child(RBox(Modifier::new().size(50.0, 50.0).background(white)));
+    let root = Center(Modifier::new().size(Dp(200.0), Dp(200.0))).child(RBox(
+        Modifier::new().size(Dp(50.0), Dp(50.0)).background(white),
+    ));
     let mut eng = make_engine();
     let (scene, _, _) = eng.layout_frame(
         &root,
@@ -1347,7 +1384,7 @@ fn test_safe_center_alignment_lays_out() {
     let safe = Text("hi").single_line();
     let root = Column(
         Modifier::new()
-            .size(200.0, 200.0)
+            .size(Dp(200.0), Dp(200.0))
             .content_alignment_safe(Alignment::Center),
     )
     .child(safe);
@@ -1368,10 +1405,18 @@ fn test_debug_taffy_subtree_and_grid_summary() {
 
     let white = Color::WHITE;
     // Grid container with 2 columns; devtools helpers must report it.
-    let root = Column(Modifier::new().size(300.0, 300.0)).child(
-        RBox(Modifier::new().size(300.0, 200.0).grid(2, 4.0, 4.0))
-            .child(RBox(Modifier::new().size(50.0, 50.0).background(white)))
-            .child(RBox(Modifier::new().size(50.0, 50.0).background(white))),
+    let root = Column(Modifier::new().size(Dp(300.0), Dp(300.0))).child(
+        RBox(
+            Modifier::new()
+                .size(Dp(300.0), Dp(200.0))
+                .grid(2, Dp(4.0), Dp(4.0)),
+        )
+        .child(RBox(
+            Modifier::new().size(Dp(50.0), Dp(50.0)).background(white),
+        ))
+        .child(RBox(
+            Modifier::new().size(Dp(50.0), Dp(50.0)).background(white),
+        )),
     );
     let mut eng = make_engine();
     let (scene, _, _) = eng.layout_frame(

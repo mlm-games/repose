@@ -858,7 +858,12 @@ pub fn run_desktop_app_with_config(
                             if let Some(inspector) = &mut self.inspector {
                                 inspector.frame(&mut scene);
                             }
-                            backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
+                            backend.frame(
+                                &scene,
+                                GlyphRasterConfig {
+                                    px: Px(18.0 * scale),
+                                },
+                            );
                         }
                         log::trace!("RedrawRequested: no frame request, skipping compose");
                         return;
@@ -998,7 +1003,12 @@ pub fn run_desktop_app_with_config(
                     };
                     let scale = win.scale_factor() as f32;
                     if let Some(backend) = self.backend.as_mut() {
-                        backend.frame(&scene, GlyphRasterConfig { px: 18.0 * scale });
+                        backend.frame(
+                            &scene,
+                            GlyphRasterConfig {
+                                px: Px(18.0 * scale),
+                            },
+                        );
                     }
 
                     // Initialize TextFieldState for any focused TextField that

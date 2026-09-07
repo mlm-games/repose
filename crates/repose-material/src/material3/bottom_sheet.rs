@@ -18,14 +18,14 @@ pub struct BottomSheetConfig {
     pub container_color: Color,
     pub content_color: Color,
     pub scrim_color: Color,
-    pub tonal_elevation: f32,
-    pub shadow_elevation: f32,
+    pub tonal_elevation: Dp,
+    pub shadow_elevation: Dp,
     pub drag_handle_color: Color,
-    pub shape_radius: f32,
-    pub max_width: f32,
-    pub drag_handle_width: f32,
-    pub drag_handle_height: f32,
-    pub peek_height: f32,
+    pub shape_radius: Dp,
+    pub max_width: Dp,
+    pub drag_handle_width: Dp,
+    pub drag_handle_height: Dp,
+    pub peek_height: Dp,
     pub gestures_enabled: bool,
 }
 
@@ -36,7 +36,7 @@ impl Default for BottomSheetConfig {
             content_color: BottomSheetDefaults::content_color(),
             scrim_color: BottomSheetDefaults::scrim_color(),
             tonal_elevation: BottomSheetDefaults::TONAL_ELEVATION,
-            shadow_elevation: 0.0,
+            shadow_elevation: Dp::ZERO,
             drag_handle_color: BottomSheetDefaults::drag_handle_color(),
             shape_radius: BottomSheetDefaults::SHAPE_RADIUS,
             max_width: BottomSheetDefaults::MAX_WIDTH,
@@ -76,8 +76,8 @@ pub fn BottomSheet(
             .clip_rounded(config.shape_radius))
         .child(with_content_color(config.content_color, move || content)),
         Box(Modifier::new()
-            .width(1.0)
-            .height(0.0)
+            .width(Dp(1.0))
+            .height(Dp(0.0))
             .fill_max_width()
             .alpha(opacity)
             .hit_passthrough()
@@ -88,16 +88,18 @@ pub fn BottomSheet(
 /// State for `ModalBottomSheet` - manages visibility and drag offset.
 pub struct SheetState {
     visible: Signal<bool>,
+    /// Drag offset in px (pointer space).
     drag_offset: Signal<f32>,
+    /// Peek height in [`Dp`] magnitudes.
     peek_height: Signal<f32>,
 }
 
 impl SheetState {
-    pub fn new(peek_height: f32) -> Self {
+    pub fn new(peek_height: Dp) -> Self {
         Self {
             visible: signal(false),
             drag_offset: signal(0.0),
-            peek_height: signal(peek_height),
+            peek_height: signal(peek_height.0),
         }
     }
 
@@ -114,8 +116,8 @@ impl SheetState {
         self.drag_offset.set(0.0);
     }
 
-    pub fn set_peek_height(&self, h: f32) {
-        self.peek_height.set(h);
+    pub fn set_peek_height(&self, h: Dp) {
+        self.peek_height.set(h.0);
     }
 }
 
@@ -131,8 +133,10 @@ pub fn ModalBottomSheet(
     config: BottomSheetConfig,
 ) -> View {
     let th = theme();
-    let peek_h = state.peek_height.get().max(config.peek_height);
-    let anim_distance = peek_h.max(48.0).max(400.0);
+    // Peek heights are Dp; the slide animation runs in px (pointer space).
+    let peek_h = Dp(state.peek_height.get().max(config.peek_height.0));
+    let anim_distance = peek_h.max(Dp(48.0)).max(Dp(400.0));
+    let anim_distance_px = anim_distance.to_px().0;
     let mbs_id = remember(unique_component_id);
     let overlay_guard = remember_with_key(format!("mbs_oguard_{mbs_id}"), || {
         RefCell::new(None::<OverlayGuard>)
@@ -156,15 +160,15 @@ pub fn ModalBottomSheet(
     let is_dragging: Rc<RefCell<bool>> =
         remember_state_with_key(format!("mbs_drag_{mbs_id}"), || false);
 
-    // Animated offset: anim_distance px (off-screen) -> 0px (visible)
+    // Animated offset: anim_distance_px (off-screen) -> 0px (visible)
     let anim = remember_state_with_key(format!("mbs_anim_{mbs_id}"), || {
-        AnimatedValue::new(anim_distance, theme().motion.spring)
+        AnimatedValue::new(anim_distance_px, theme().motion.spring)
     });
     let last_target = remember_state_with_key(format!("mbs_anim_target_{mbs_id}"), || f32::NAN);
     let anim_target = if state.is_visible() {
         0.0
     } else {
-        anim_distance
+        anim_distance_px
     };
 
     {
@@ -187,7 +191,7 @@ pub fn ModalBottomSheet(
     }
 
     let offset = *anim.borrow().get();
-    let sheet_visible = state.is_visible() || offset < anim_distance - 10.0;
+    let sheet_visible = state.is_visible() || offset < anim_distance_px - 10.0;
 
     if sheet_visible {
         if overlay_guard.borrow().is_none() {
@@ -209,7 +213,7 @@ pub fn ModalBottomSheet(
                     let mut sheet_mod = modifier
                         .clone()
                         .fill_max_width()
-                        .max_width(dp_to_px(config.max_width))
+                        .max_width(config.max_width)
                         .translate(0.0, off)
                         .background(config.container_color)
                         .clip_rounded(config.shape_radius);
@@ -250,9 +254,9 @@ pub fn ModalBottomSheet(
                                 move |_| {
                                     *is_dragging.borrow_mut() = false;
                                     let current_off = *anim.borrow().get();
-                                    let threshold = anim_distance * 0.3;
+                                    let threshold = anim_distance_px * 0.3;
                                     if current_off > threshold {
-                                        anim.borrow_mut().set_target(anim_distance);
+                                        anim.borrow_mut().set_target(anim_distance_px);
                                         state.dismiss();
                                     } else {
                                         anim.borrow_mut().set_target(0.0);
@@ -267,11 +271,11 @@ pub fn ModalBottomSheet(
                                 .fill_max_width()
                                 .justify_content(JustifyContent::CENTER))
                             .child(Box(Modifier::new()
-                                .margin_vertical(22.0)
+                                .margin_vertical(Dp(22.0))
                                 .width(config.drag_handle_width)
                                 .height(config.drag_handle_height)
                                 .background(config.drag_handle_color)
-                                .clip_rounded(2.0))),
+                                .clip_rounded(Dp(2.0)))),
                             content,
                         )),
                     );
@@ -285,7 +289,7 @@ pub fn ModalBottomSheet(
                     let scrim_alpha = if state.is_visible() {
                         config.scrim_color.3
                     } else {
-                        let t = (off / anim_distance).clamp(0.0, 1.0);
+                        let t = (off / anim_distance_px).clamp(0.0, 1.0);
                         (config.scrim_color.3 as f32 * (1.0 - t)) as u8
                     };
                     let scrim = Box(Modifier::new()

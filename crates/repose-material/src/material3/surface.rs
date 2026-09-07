@@ -15,10 +15,10 @@ pub struct SurfaceConfig {
     pub enabled: bool,
     pub color: Color,
     pub content_color: Color,
-    pub shape_radius: f32,
-    pub tonal_elevation: f32,
-    pub shadow_elevation: f32,
-    pub border: Option<(f32, Color)>,
+    pub shape_radius: Dp,
+    pub tonal_elevation: Dp,
+    pub shadow_elevation: Dp,
+    pub border: Option<(Dp, Color)>,
     pub interaction_source: Option<MutableInteractionSource>,
 }
 
@@ -52,8 +52,8 @@ pub fn Surface(config: SurfaceConfig, content: impl FnOnce() -> View) -> View {
         .clip_rounded(config.shape_radius)
         .interaction_source(&sf_source)
         .then(config.modifier);
-    if config.shadow_elevation > 0.0 {
-        m = m.shadow(config.shadow_elevation, 0.0);
+    if config.shadow_elevation.0 > 0.0 {
+        m = m.shadow(config.shadow_elevation, Dp::ZERO);
     }
     if let Some((w, c)) = config.border {
         m = m.border(w, c, config.shape_radius);
@@ -78,16 +78,16 @@ pub fn ClickableSurface(
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
     let mut m = Modifier::new()
-        .min_width(48.0)
-        .min_height(48.0)
+        .min_width(Dp(48.0))
+        .min_height(Dp(48.0))
         .background(config.color);
     m = apply_tonal_elevation(m, config.tonal_elevation, config.color);
     m = m
         .clip_rounded(config.shape_radius)
         .interaction_source(&sf_source)
         .then(config.modifier);
-    if config.shadow_elevation > 0.0 {
-        m = m.shadow(config.shadow_elevation, 0.0);
+    if config.shadow_elevation.0 > 0.0 {
+        m = m.shadow(config.shadow_elevation, Dp::ZERO);
     }
     if let Some((w, c)) = config.border {
         m = m.border(w, c, config.shape_radius);

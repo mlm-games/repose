@@ -1,4 +1,4 @@
-use crate::{InteractionSource, Rect, Scene};
+use crate::{InteractionSource, Px, Rect, Scene};
 
 /// Marker trait for indication implementations.
 pub trait Indication: std::fmt::Debug {}
@@ -12,7 +12,7 @@ pub trait IndicationNodeFactory: Indication {
 /// pass to emit scene nodes for visual feedback (ripple, overlay, focus ring).
 pub trait IndicationDrawNode {
     /// Draw the indication into `scene` at the given `rect` (in physical pixels).
-    /// `radius` is the component's corner radii (px) for shape-matched overlays.
+    /// `radius` is the component's corner radii in [`Px`] for shape-matched overlays.
     /// `alpha` is the accumulated compositing alpha from ancestor modifiers.
-    fn draw(&self, scene: &mut Scene, rect: Rect, radius: [f32; 4], alpha: f32);
+    fn draw(&self, scene: &mut Scene, rect: Rect, radius: [Px; 4], alpha: f32);
 }

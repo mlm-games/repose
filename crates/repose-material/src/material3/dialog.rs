@@ -82,11 +82,11 @@ impl Default for DialogProperties {
     }
 }
 
-fn preferred_dialog_width_dp(container_w: f32, container_h: f32) -> f32 {
+fn preferred_dialog_width_dp(container_w: Dp, container_h: Dp) -> Dp {
     let smallest = container_w.min(container_h);
-    if smallest >= 600.0 {
+    if smallest.0 >= 600.0 {
         super::DialogDefaults::PREFERRED_WIDTH_EXPANDED
-    } else if smallest >= 480.0 {
+    } else if smallest.0 >= 480.0 {
         super::DialogDefaults::PREFERRED_WIDTH_MEDIUM
     } else {
         super::DialogDefaults::PREFERRED_WIDTH_COMPACT
@@ -94,28 +94,28 @@ fn preferred_dialog_width_dp(container_w: f32, container_h: f32) -> f32 {
 }
 
 /// After merging caller modifiers, clamp size so the dialog can never escape the viewport.
-fn clamp_dialog_modifier(mut m: Modifier, platform_max_w: f32, platform_max_h: f32) -> Modifier {
+fn clamp_dialog_modifier(mut m: Modifier, platform_max_w: Dp, platform_max_h: Dp) -> Modifier {
     let max_w = m
         .max_width
         .unwrap_or(platform_max_w)
         .min(platform_max_w)
-        .max(0.0);
+        .max(Dp::ZERO);
     let max_h = m
         .max_height
         .unwrap_or(platform_max_h)
         .min(platform_max_h)
-        .max(0.0);
+        .max(Dp::ZERO);
     m.max_width = Some(max_w);
     m.max_height = Some(max_h);
 
     // Compose Constraints: min cannot exceed max.
     if let Some(min_w) = m.min_width {
-        m.min_width = Some(min_w.min(max_w).max(0.0));
+        m.min_width = Some(min_w.min(max_w).max(Dp::ZERO));
     } else {
-        m.min_width = Some(super::DialogDefaults::MIN_WIDTH.min(max_w).max(0.0));
+        m.min_width = Some(super::DialogDefaults::MIN_WIDTH.min(max_w).max(Dp::ZERO));
     }
     if let Some(min_h) = m.min_height {
-        m.min_height = Some(min_h.min(max_h).max(0.0));
+        m.min_height = Some(min_h.min(max_h).max(Dp::ZERO));
     }
     m
 }
@@ -157,11 +157,11 @@ pub fn Dialog(
     let scroll_state: Rc<repose_core::scroll::ScrollState> =
         remember_with_key(state.key("scroll"), repose_core::scroll::ScrollState::new);
 
-    let platform_state: Rc<RefCell<(f32, f32, PaddingValues)>> =
+    let platform_state: Rc<RefCell<(Dp, Dp, PaddingValues)>> =
         remember_with_key(state.key("plat"), || {
             RefCell::new((
                 super::DialogDefaults::MAX_WIDTH,
-                800.0,
+                Dp(800.0),
                 PaddingValues::default(),
             ))
         });
@@ -250,23 +250,25 @@ pub fn Dialog(
                             let mut pad = PaddingValues::default();
                             if p.use_platform_insets {
                                 let insets = window_insets();
-                                pad.left = px_to_dp(insets.left);
-                                pad.right = px_to_dp(insets.right);
-                                pad.top = px_to_dp(insets.top);
-                                pad.bottom = px_to_dp(insets.bottom) + px_to_dp(insets.ime_bottom);
+                                pad.left = Px(insets.left).to_dp();
+                                pad.right = Px(insets.right).to_dp();
+                                pad.top = Px(insets.top).to_dp();
+                                pad.bottom =
+                                    Px(insets.bottom).to_dp() + Px(insets.ime_bottom).to_dp();
                             }
-                            let win_w = if scope.max_width.is_finite() && scope.max_width > 10.0 {
+                            let win_w = if scope.max_width.is_finite() && scope.max_width.0 > 10.0 {
                                 scope.max_width
                             } else {
-                                1280.0
+                                Dp(1280.0)
                             };
-                            let win_h = if scope.max_height.is_finite() && scope.max_height > 10.0 {
+                            let win_h = if scope.max_height.is_finite() && scope.max_height.0 > 10.0
+                            {
                                 scope.max_height
                             } else {
-                                800.0
+                                Dp(800.0)
                             };
-                            let avail_w = (win_w - pad.left - pad.right).max(0.0);
-                            let avail_h = (win_h - pad.top - pad.bottom).max(0.0);
+                            let avail_w = (win_w - pad.left - pad.right).max(Dp::ZERO);
+                            let avail_h = (win_h - pad.top - pad.bottom).max(Dp::ZERO);
                             let platform_max_w = if p.use_platform_default_width {
                                 preferred_dialog_width_dp(win_w, win_h)
                                     .min(avail_w)
@@ -276,7 +278,7 @@ pub fn Dialog(
                             };
                             *platform_state_for_measure.borrow_mut() =
                                 (platform_max_w, avail_h, pad);
-                            Box(Modifier::new().size(0.0, 0.0))
+                            Box(Modifier::new().size(Dp(0.0), Dp(0.0)))
                         },
                     );
 
@@ -367,17 +369,17 @@ pub fn Dialog(
     Box(Modifier::new())
 }
 
-/// Configuration for alert dialog.
+/// Configuration for alert dialog (dimensions in [`Dp`]).
 #[derive(Clone, Debug)]
 pub struct AlertDialogConfig {
     pub modifier: Modifier,
     pub scrim_color: Color,
-    pub min_width: f32,
-    pub max_width: f32,
-    pub horizontal_padding: f32,
-    pub shape_radius: Option<f32>,
+    pub min_width: Dp,
+    pub max_width: Dp,
+    pub horizontal_padding: Dp,
+    pub shape_radius: Option<Dp>,
     pub container_color: Color,
-    pub tonal_elevation: f32,
+    pub tonal_elevation: Dp,
 }
 
 impl Default for AlertDialogConfig {
@@ -390,7 +392,7 @@ impl Default for AlertDialogConfig {
             horizontal_padding: AlertDialogDefaults::HORIZONTAL_PADDING,
             shape_radius: None,
             container_color: theme().surface_container_high,
-            tonal_elevation: 0.0,
+            tonal_elevation: Dp::ZERO,
         }
     }
 }
@@ -438,7 +440,7 @@ pub fn AlertDialog(
 #[derive(Clone)]
 pub struct DatePickerDialogConfig {
     pub modifier: Modifier,
-    pub shape_radius: Option<f32>,
+    pub shape_radius: Option<Dp>,
     pub colors: super::DatePickerColors,
 }
 
@@ -495,7 +497,7 @@ pub fn DatePickerDialog(
 #[derive(Clone)]
 pub struct TimePickerDialogConfig {
     pub modifier: Modifier,
-    pub shape_radius: Option<f32>,
+    pub shape_radius: Option<Dp>,
     pub container_color: Color,
     pub colors: super::TimePickerColors,
 }

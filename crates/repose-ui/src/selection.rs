@@ -29,31 +29,31 @@ pub trait SelectableTextExt {
 
 impl SelectableTextExt for View {
     fn selectable(self, on_selection_change: impl Fn(Option<(usize, usize)>) + 'static) -> View {
-        let (text, font_size_dp) = match &self.kind {
+        let (text, font_size_sp) = match &self.kind {
             ViewKind::Text {
                 text, font_size, ..
             } => (text.clone(), *font_size),
             _ => return self,
         };
-        make_selectable(self, text, font_size_dp, on_selection_change)
+        make_selectable(self, text, font_size_sp, on_selection_change)
     }
 }
 
 /// Backward-compatible free function.
 pub fn SelectableText(
     text: impl Into<String>,
-    font_size_dp: f32,
+    font_size_sp: Sp,
     on_selection_change: impl Fn(Option<(usize, usize)>) + 'static,
 ) -> View {
     let text: String = text.into();
-    let v = Text(text.clone()).size(font_size_dp);
-    make_selectable(v, text, font_size_dp, on_selection_change)
+    let v = Text(text.clone()).size(font_size_sp);
+    make_selectable(v, text, font_size_sp, on_selection_change)
 }
 
 fn make_selectable(
     mut v: View,
     text: String,
-    font_size_dp: f32,
+    font_size_sp: Sp,
     on_selection_change: impl Fn(Option<(usize, usize)>) + 'static,
 ) -> View {
     let text_for_handlers = text.clone();
@@ -95,7 +95,7 @@ fn make_selectable(
             if r.w <= 0.0 || r.h <= 0.0 {
                 return;
             }
-            let font_px = dp_to_px(font_size_dp) * text_scale().0;
+            let font_px = font_size_sp.to_px().0;
             let lx = ev.position.x.max(0.0);
             let ly = ev.position.y.max(0.0);
             let wrap_w = r.w.max(1.0);
@@ -187,7 +187,7 @@ fn make_selectable(
             if r.w <= 0.0 || r.h <= 0.0 {
                 return;
             }
-            let font_px = dp_to_px(font_size_dp) * text_scale().0;
+            let font_px = font_size_sp.to_px().0;
             let lx = ev.position.x.max(0.0);
             let ly = ev.position.y.max(0.0);
             let wrap_w = r.w.max(1.0);
@@ -243,7 +243,7 @@ fn make_selectable(
                 return;
             }
 
-            let font_px = dp_to_px(font_size_dp) * text_scale().0;
+            let font_px = font_size_sp.to_px().0;
             let wrap_w = rect.w.max(1.0);
             let (sx, sy, sli) = caret_xy_for_byte(&text, font_px, wrap_w, s);
             let (ex, ey, eli) = caret_xy_for_byte(&text, font_px, wrap_w, e);
@@ -262,7 +262,7 @@ fn make_selectable(
                         h: line_h,
                     },
                     brush,
-                    radius: [0.0; 4],
+                    radius: [Px::ZERO; 4],
                 });
             } else {
                 // First partial line
@@ -274,7 +274,7 @@ fn make_selectable(
                         h: line_h,
                     },
                     brush,
-                    radius: [0.0; 4],
+                    radius: [Px::ZERO; 4],
                 });
                 // Full middle lines
                 if eli > sli + 1 {
@@ -286,7 +286,7 @@ fn make_selectable(
                             h: (eli as f32 - sli as f32 - 1.0) * line_h,
                         },
                         brush,
-                        radius: [0.0; 4],
+                        radius: [Px::ZERO; 4],
                     });
                 }
                 // Last partial line
@@ -298,7 +298,7 @@ fn make_selectable(
                         h: line_h,
                     },
                     brush,
-                    radius: [0.0; 4],
+                    radius: [Px::ZERO; 4],
                 });
             }
         }

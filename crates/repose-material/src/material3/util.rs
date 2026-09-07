@@ -12,7 +12,8 @@ pub(crate) static FILTERCHIP_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// Apply tonal elevation as a translucent primary overlay when the container
 /// color matches the surface color. This mirrors CK's Surface tonalElevation:
 /// the overlay is composited over the container so the base tint is preserved.
-pub(crate) fn apply_tonal_elevation(m: Modifier, elevation: f32, container: Color) -> Modifier {
+pub(crate) fn apply_tonal_elevation(m: Modifier, elevation: Dp, container: Color) -> Modifier {
+    let elevation = elevation.0;
     if elevation <= 0.0 {
         return m;
     }
@@ -99,7 +100,7 @@ pub(crate) fn apply_m3_clickable_ex(
     enabled: bool,
     on_click: impl Fn() + 'static,
     bounded: bool,
-    radius: Option<f32>,
+    radius: Option<Dp>,
 ) -> Modifier {
     m = m.interaction_source(source);
     m = m.indication(ripple(RippleConfig {

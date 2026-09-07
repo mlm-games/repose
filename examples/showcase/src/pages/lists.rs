@@ -37,7 +37,7 @@ fn make_items(count: usize) -> Vec<Item> {
 }
 
 /// icon over title card
-fn cell_card(m: Modifier, icon: View, title: String, pad: f32) -> View {
+fn cell_card(m: Modifier, icon: View, title: String, pad: Dp) -> View {
     Box(m).child(
         Column(
             Modifier::new()
@@ -48,7 +48,10 @@ fn cell_card(m: Modifier, icon: View, title: String, pad: f32) -> View {
         )
         .child((
             icon,
-            Text(title).size(14.0).single_line().overflow_ellipsize(),
+            Text(title)
+                .size(Sp(14.0))
+                .single_line()
+                .overflow_ellipsize(),
         )),
     )
 }
@@ -88,24 +91,24 @@ pub fn screen() -> View {
                     let done_tint = th.primary.with_alpha(48);
                     Row(Modifier::new()
                         .fill_max_width()
-                        .padding(12.0)
+                        .padding(Dp(12.0))
                         .align_items(AlignItems::CENTER)
                         .background(if it.done { done_tint } else { th.surface })
-                        .border(1.0, th.outline, 0.0))
+                        .border(Dp(1.0), th.outline, Dp(0.0)))
                     .child((
                         (if it.done {
                             Icon(Symbols::check_circle)
                         } else {
                             Icon(Symbols::circle)
                         })
-                        .size(16.0)
-                        .modifier(Modifier::new().padding(8.0)),
-                        Text(it.title).modifier(Modifier::new().padding(4.0)),
+                        .size(Sp(16.0))
+                        .modifier(Modifier::new().padding(Dp(8.0))),
+                        Text(it.title).modifier(Modifier::new().padding(Dp(4.0))),
                     ))
                 },
                 LazyColumnConfig {
                     state: scroll,
-                    modifier: Modifier::new().fill_max_width().max_height(400.0),
+                    modifier: Modifier::new().fill_max_width().max_height(Dp(400.0)),
                     ..Default::default()
                 },
             )
@@ -133,16 +136,16 @@ pub fn screen() -> View {
                     let h = 48.0 + (it.id % 5) as f32 * 16.0;
                     Box(Modifier::new()
                         .fill_max_width()
-                        .height(h)
+                        .height(Dp(h))
                         .background(bg)
-                        .border(1.0, th.outline_variant, 0.0)
-                        .padding(12.0)
+                        .border(Dp(1.0), th.outline_variant, Dp(0.0))
+                        .padding(Dp(12.0))
                         .justify_content(JustifyContent::CENTER))
                     .child(Text(format!("{} (height = {}dp)", it.title, h as i32)))
                 },
                 LazyColumnConfig {
                     state: hetero_scroll,
-                    modifier: Modifier::new().fill_max_width().max_height(400.0),
+                    modifier: Modifier::new().fill_max_width().max_height(Dp(400.0)),
                     ..Default::default()
                 },
             )
@@ -160,23 +163,23 @@ pub fn screen() -> View {
                     };
                     cell_card(
                         Modifier::new()
-                            .width(120.0)
-                            .height(140.0)
+                            .width(Dp(120.0))
+                            .height(Dp(140.0))
                             .background(bg)
-                            .border(1.0, th.outline, 0.0)
-                            .clip_rounded(12.0),
+                            .border(Dp(1.0), th.outline, Dp(0.0))
+                            .clip_rounded(Dp(12.0)),
                         if it.done {
-                            Icon(Symbols::check_circle).size(24.0)
+                            Icon(Symbols::check_circle).size(Sp(24.0))
                         } else {
-                            Icon(Symbols::circle).size(24.0)
+                            Icon(Symbols::circle).size(Sp(24.0))
                         },
                         it.title,
-                        8.0,
+                        Dp(8.0),
                     )
                 },
                 LazyRowConfig {
                     state: row_scroll,
-                    modifier: Modifier::new().fill_max_width().height(160.0),
+                    modifier: Modifier::new().fill_max_width().height(Dp(160.0)),
                     ..Default::default()
                 },
             )
@@ -192,16 +195,16 @@ pub fn screen() -> View {
                     cell_card(
                         Modifier::new()
                             .fill_max_width()
-                            .height(160.0)
+                            .height(Dp(160.0))
                             .background(th.primary.with_alpha(32))
-                            .clip_rounded(16.0),
-                        Text(if it.done { "★" } else { "☆" }).size(32.0),
+                            .clip_rounded(Dp(16.0)),
+                        Text(if it.done { "★" } else { "☆" }).size(Sp(32.0)),
                         it.title,
-                        12.0,
+                        Dp(12.0),
                     )
                 },
                 CarouselConfig {
-                    modifier: Modifier::new().fill_max_width().height(180.0),
+                    modifier: Modifier::new().fill_max_width().height(Dp(180.0)),
                 },
             )
         }),
@@ -226,20 +229,20 @@ pub fn screen() -> View {
                             .fill_max_width()
                             .fill_max_height()
                             .background(th.error)
-                            .padding(16.0)
+                            .padding(Dp(16.0))
                             .justify_content(JustifyContent::END)
                             .align_items(AlignItems::CENTER))
-                        .child(Text("Delete").color(th.on_error).size(16.0)),
+                        .child(Text("Delete").color(th.on_error).size(Sp(16.0))),
                         // Foreground content (draggable)
                         Box(Modifier::new()
                             .fill_max_width()
                             .background(th.surface_container)
-                            .border(1.0, th.outline_variant, 0.0)
-                            .padding(16.0))
+                            .border(Dp(1.0), th.outline_variant, Dp(0.0))
+                            .padding(Dp(16.0)))
                         .child(
                             Row(Modifier::new().align_items(AlignItems::CENTER)).child((
-                                Icon(Symbols::notifications).size(20.0),
-                                Box(Modifier::new().width(12.0).height(1.0)),
+                                Icon(Symbols::notifications).size(Sp(20.0)),
+                                Box(Modifier::new().width(Dp(12.0)).height(Dp(1.0))),
                                 Column(Modifier::new()).child((
                                     Text(msg)
                                         .size(th.typography.body_large)
@@ -259,12 +262,12 @@ pub fn screen() -> View {
             if vis.is_empty() {
                 Column(
                     Modifier::new()
-                        .padding(24.0)
+                        .padding(Dp(24.0))
                         .align_items(AlignItems::CENTER),
                 )
                 .child(
                     Text("All dismissed! 🎉")
-                        .size(18.0)
+                        .size(Sp(18.0))
                         .color(th.on_surface_variant),
                 )
             } else {

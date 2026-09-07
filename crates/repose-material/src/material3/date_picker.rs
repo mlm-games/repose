@@ -234,15 +234,18 @@ pub fn DatePicker(
     let now = ReposeDate::now();
     let today = (now.year, now.month, now.day);
 
-    Column(config.modifier.padding(16.0)).child((
+    Column(config.modifier.padding(Dp(16.0))).child((
         // Month header
         Row(Modifier::new()
             .fill_max_width()
             .align_items(AlignItems::CENTER))
         .child((
             IconButton(
-                Box(Modifier::new())
-                    .child(Text("◀").color(config.colors.navigation_color).size(16.0)),
+                Box(Modifier::new()).child(
+                    Text("◀")
+                        .color(config.colors.navigation_color)
+                        .size(Sp(16.0)),
+                ),
                 prev_month,
                 IconButtonConfig::default(),
             ),
@@ -251,10 +254,13 @@ pub fn DatePicker(
                 Text(MONTH_NAMES[(month - 1) as usize].to_string())
                     .size(th.typography.title_medium)
                     .color(config.colors.header_color),
-                Row(Modifier::new().gap(8.0).align_items(AlignItems::CENTER)).child((
+                Row(Modifier::new().gap(Dp(8.0)).align_items(AlignItems::CENTER)).child((
                     IconButton(
-                        Box(Modifier::new())
-                            .child(Text("‹").color(config.colors.navigation_color).size(14.0)),
+                        Box(Modifier::new()).child(
+                            Text("‹")
+                                .color(config.colors.navigation_color)
+                                .size(Sp(14.0)),
+                        ),
                         prev_year,
                         IconButtonConfig::default(),
                     ),
@@ -262,8 +268,11 @@ pub fn DatePicker(
                         .size(th.typography.body_small)
                         .color(th.on_surface_variant),
                     IconButton(
-                        Box(Modifier::new())
-                            .child(Text("›").color(config.colors.navigation_color).size(14.0)),
+                        Box(Modifier::new()).child(
+                            Text("›")
+                                .color(config.colors.navigation_color)
+                                .size(Sp(14.0)),
+                        ),
                         next_year,
                         IconButtonConfig::default(),
                     ),
@@ -271,13 +280,16 @@ pub fn DatePicker(
             )),
             Spacer(),
             IconButton(
-                Box(Modifier::new())
-                    .child(Text("▶").color(config.colors.navigation_color).size(16.0)),
+                Box(Modifier::new()).child(
+                    Text("▶")
+                        .color(config.colors.navigation_color)
+                        .size(Sp(16.0)),
+                ),
                 next_month,
                 IconButtonConfig::default(),
             ),
         )),
-        Box(Modifier::new().fill_max_width().height(12.0)),
+        Box(Modifier::new().fill_max_width().height(Dp(12.0))),
         // Day grid
         Column(Modifier::new()).child({
             let mut rows: Vec<View> = Vec::new();
@@ -286,8 +298,8 @@ pub fn DatePicker(
                 .iter()
                 .map(|d| {
                     Box(Modifier::new()
-                        .width(40.0)
-                        .height(40.0)
+                        .width(Dp(40.0))
+                        .height(Dp(40.0))
                         .align_items(AlignItems::CENTER)
                         .justify_content(JustifyContent::CENTER))
                     .child(
@@ -307,7 +319,7 @@ pub fn DatePicker(
                 for d in 0..7 {
                     let cell_idx = w * 7 + d;
                     if cell_idx < start_dow {
-                        week.push(Box(Modifier::new().width(40.0).height(40.0)));
+                        week.push(Box(Modifier::new().width(Dp(40.0)).height(Dp(40.0))));
                     } else {
                         let day_num = (cell_idx - start_dow + 1) as i32;
                         if day_num <= dim as i32 {
@@ -317,14 +329,14 @@ pub fn DatePicker(
                             let s = state.clone();
                             week.push(
                                 Box(Modifier::new()
-                                    .width(40.0)
-                                    .height(40.0)
+                                    .width(Dp(40.0))
+                                    .height(Dp(40.0))
                                     .background(if is_selected {
                                         config.colors.selected_day_container_color
                                     } else {
                                         Color::TRANSPARENT
                                     })
-                                    .clip_rounded(20.0)
+                                    .clip_rounded(Dp(20.0))
                                     .indication(crate::ripple::ripple(
                                         crate::ripple::RippleConfig {
                                             color: Some(theme().on_surface),
@@ -348,16 +360,16 @@ pub fn DatePicker(
                                         });
                                     if is_today && !is_selected {
                                         t = t.modifier(Modifier::new().border(
-                                            1.0,
+                                            Dp(1.0),
                                             config.colors.today_border_color,
-                                            10.0,
+                                            Dp(10.0),
                                         ));
                                     }
                                     t
                                 }),
                             );
                         } else {
-                            week.push(Box(Modifier::new().width(40.0).height(40.0)));
+                            week.push(Box(Modifier::new().width(Dp(40.0)).height(Dp(40.0))));
                         }
                     }
                 }
@@ -365,12 +377,12 @@ pub fn DatePicker(
             }
             rows
         }),
-        Box(Modifier::new().fill_max_width().height(12.0)),
+        Box(Modifier::new().fill_max_width().height(Dp(12.0))),
         // Cancel / Confirm
         Row(Modifier::new()
             .fill_max_width()
             .justify_content(JustifyContent::END)
-            .gap(8.0))
+            .gap(Dp(8.0)))
         .child((
             TextButton(
                 Modifier::new(),
@@ -379,7 +391,7 @@ pub fn DatePicker(
                     move || (on_dismiss)()
                 },
                 ButtonConfig::default(),
-                || Text("Cancel").size(14.0),
+                || Text("Cancel").size(Sp(14.0)),
             ),
             Button(
                 Modifier::new(),
@@ -392,7 +404,7 @@ pub fn DatePicker(
                     }
                 },
                 ButtonConfig::default(),
-                || Text("OK").size(14.0),
+                || Text("OK").size(Sp(14.0)),
             ),
         )),
     ))

@@ -24,8 +24,8 @@ impl Default for SwipeToDismissConfig {
     fn default() -> Self {
         Self {
             modifier: Modifier::new(),
-            dismiss_threshold: SwipeToDismissDefaults::DISMISS_THRESHOLD,
-            dismissed_offset: SwipeToDismissDefaults::DISMISSED_OFFSET,
+            dismiss_threshold: SwipeToDismissDefaults::DISMISS_THRESHOLD.0,
+            dismissed_offset: SwipeToDismissDefaults::DISMISSED_OFFSET.0,
             animation_spec: AnimationSpec::spring_gentle(),
             gestures_enabled: true,
             enable_dismiss_from_start_to_end: true,

@@ -11,8 +11,8 @@ use crate::{Box, Column, Row, Text, ViewExt};
 #[derive(Clone, Copy, Debug)]
 pub struct PaneScaffoldDirective {
     pub max_horizontal_partitions: u32,
-    pub horizontal_part_spacing: f32,
-    pub list_pane_width: f32,
+    pub horizontal_part_spacing: Dp,
+    pub list_pane_width: Dp,
     pub content_padding: PaddingValues,
 }
 
@@ -20,8 +20,8 @@ impl Default for PaneScaffoldDirective {
     fn default() -> Self {
         Self {
             max_horizontal_partitions: 1,
-            horizontal_part_spacing: 0.0,
-            list_pane_width: 0.0,
+            horizontal_part_spacing: Dp::ZERO,
+            list_pane_width: Dp::ZERO,
             content_padding: PaddingValues::default(),
         }
     }
@@ -32,15 +32,15 @@ impl PaneScaffoldDirective {
         if class.is_at_least_medium_width() {
             Self {
                 max_horizontal_partitions: 2,
-                horizontal_part_spacing: 0.0,
-                list_pane_width: 360.0,
+                horizontal_part_spacing: Dp::ZERO,
+                list_pane_width: Dp(360.0),
                 content_padding: PaddingValues::default(),
             }
         } else {
             Self {
                 max_horizontal_partitions: 1,
-                horizontal_part_spacing: 0.0,
-                list_pane_width: 0.0,
+                horizontal_part_spacing: Dp::ZERO,
+                list_pane_width: Dp::ZERO,
                 content_padding: PaddingValues::default(),
             }
         }
@@ -65,7 +65,7 @@ where
 {
     if directive.max_horizontal_partitions >= 2 {
         let spacing = directive.horizontal_part_spacing;
-        let list_mod = if directive.list_pane_width > 0.0 {
+        let list_mod = if directive.list_pane_width.0 > 0.0 {
             Modifier::new()
                 .width(directive.list_pane_width)
                 .fill_max_height()
@@ -93,17 +93,18 @@ pub fn ScaffoldPane(directive: &PaneScaffoldDirective, content: View) -> View {
 
 pub fn TwoPaneTopBar(title: &str, leading: Option<View>, trailing: Option<View>) -> View {
     let th = theme();
-    let leading = leading.unwrap_or_else(|| Box(Modifier::new().width(0.0).height(0.0)));
-    let trailing = trailing.unwrap_or_else(|| Box(Modifier::new().width(0.0).height(0.0)));
+    let leading = leading.unwrap_or_else(|| Box(Modifier::new().width(Dp::ZERO).height(Dp::ZERO)));
+    let trailing =
+        trailing.unwrap_or_else(|| Box(Modifier::new().width(Dp::ZERO).height(Dp::ZERO)));
     Box(Modifier::new()
         .fill_max_width()
-        .height(56.0)
+        .height(Dp(56.0))
         .background(th.surface)
         .padding_values(PaddingValues {
-            left: 16.0,
-            right: 16.0,
-            top: 0.0,
-            bottom: 0.0,
+            left: Dp(16.0),
+            right: Dp(16.0),
+            top: Dp::ZERO,
+            bottom: Dp::ZERO,
         }))
     .child((
         leading,
@@ -111,10 +112,10 @@ pub fn TwoPaneTopBar(title: &str, leading: Option<View>, trailing: Option<View>)
             Modifier::new()
                 .flex_grow(1.0)
                 .padding_values(PaddingValues {
-                    left: 16.0,
-                    right: 16.0,
-                    top: 0.0,
-                    bottom: 0.0,
+                    left: Dp(16.0),
+                    right: Dp(16.0),
+                    top: Dp::ZERO,
+                    bottom: Dp::ZERO,
                 }),
         )
         .child(Text(title)),

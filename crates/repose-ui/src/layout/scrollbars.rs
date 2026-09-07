@@ -32,8 +32,8 @@ pub(crate) fn push_scrollbar(
         return;
     }
 
-    let thick = dp_to_px(4.0);
-    let main_inset = dp_to_px(2.0);
+    let thick = Dp(4.0).to_px().0;
+    let main_inset = Dp(2.0).to_px().0;
 
     let (track_x, track_y, track_main, track_cross) = match axis {
         ScrollbarAxis::V => (
@@ -54,7 +54,7 @@ pub(crate) fn push_scrollbar(
     }
 
     let ratio = (vp_len / content_len).clamp(0.0, 1.0);
-    let thumb_len = (track_main * ratio).max(dp_to_px(24.0)).min(track_main);
+    let thumb_len = (track_main * ratio).max(Dp(24.0).to_px().0).min(track_main);
     let tpos = (offset / (content_len - vp_len).max(1.0)).clamp(0.0, 1.0);
     let thumb_offset = tpos * (track_main - thumb_len);
 
@@ -92,12 +92,12 @@ pub(crate) fn push_scrollbar(
     scene.nodes.push(SceneNode::Rect {
         rect: track_rect,
         brush: Brush::Solid(locals::theme().scrollbar_track),
-        radius: [thick * 0.5; 4],
+        radius: [Px(thick * 0.5); 4],
     });
     scene.nodes.push(SceneNode::Rect {
         rect: thumb_rect,
         brush: Brush::Solid(locals::theme().scrollbar_thumb),
-        radius: [thick * 0.5; 4],
+        radius: [Px(thick * 0.5); 4],
     });
 
     if let Some(s) = set_offset {

@@ -71,7 +71,7 @@ fn lerp_color(c0: Color, c1: Color, t: f32) -> Color {
     )
 }
 
-fn spacer(h: f32) -> View {
+fn spacer(h: Dp) -> View {
     Box(Modifier::new().height(h))
 }
 
@@ -115,7 +115,7 @@ fn gradient_painter(stops: Vec<(f32, Color)>) -> Painter {
                         h: rect.h,
                     },
                     brush: Brush::Solid(col),
-                    radius: [0.0; 4],
+                    radius: [Px::ZERO; 4],
                 });
             }
         },
@@ -134,10 +134,10 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
 
     let oc = Rc::new(on_change);
 
-    let slider_w = 200.0f32;
-    let slider_h = 20.0f32;
-    let swatch_size = 40.0f32;
-    let thumb_w = 4.0f32;
+    let slider_w = Dp(200.0);
+    let slider_h = Dp(20.0);
+    let swatch_size = Dp(40.0);
+    let thumb_w = Dp(4.0);
 
     let th = locals::theme();
 
@@ -230,11 +230,11 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
             .width(swatch_size)
             .height(swatch_size)
             .background(color)
-            .border(1.0, th.outline, 4.0)
-            .clip_rounded(4.0)),
-        Box(Modifier::new().width(8.0).height(1.0)),
+            .border(Dp(1.0), th.outline, Dp(4.0))
+            .clip_rounded(Dp(4.0))),
+        Box(Modifier::new().width(Dp(8.0)).height(Dp(1.0))),
         Text(format!("#{:02X}{:02X}{:02X}", color.0, color.1, color.2))
-            .size(12.0)
+            .size(Sp(12.0))
             .color(th.on_surface),
     ));
 
@@ -246,11 +246,11 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
             .child(Box(Modifier::new())),
             Box(Modifier::new()
                 .absolute()
-                .offset(Some(hue_frac * slider_w - thumb_w * 0.5), None, None, None)
+                .offset(Some(slider_w * hue_frac - thumb_w * 0.5), None, None, None)
                 .width(thumb_w)
                 .height(slider_h)
                 .background(Color::WHITE)
-                .border(1.0, th.outline, 2.0)),
+                .border(Dp(1.0), th.outline, Dp(2.0))),
         ))
         .modifier(
             Modifier::new()
@@ -273,11 +273,11 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
             .child(Box(Modifier::new())),
             Box(Modifier::new()
                 .absolute()
-                .offset(Some(sat_frac * slider_w - thumb_w * 0.5), None, None, None)
+                .offset(Some(slider_w * sat_frac - thumb_w * 0.5), None, None, None)
                 .width(thumb_w)
                 .height(slider_h)
                 .background(Color::WHITE)
-                .border(1.0, th.outline, 2.0)),
+                .border(Dp(1.0), th.outline, Dp(2.0))),
         ))
         .modifier(
             Modifier::new()
@@ -300,11 +300,11 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
             .child(Box(Modifier::new())),
             Box(Modifier::new()
                 .absolute()
-                .offset(Some(val_frac * slider_w - thumb_w * 0.5), None, None, None)
+                .offset(Some(slider_w * val_frac - thumb_w * 0.5), None, None, None)
                 .width(thumb_w)
                 .height(slider_h)
                 .background(Color::WHITE)
-                .border(1.0, th.outline, 2.0)),
+                .border(Dp(1.0), th.outline, Dp(2.0))),
         ))
         .modifier(
             Modifier::new()
@@ -319,18 +319,22 @@ pub fn ColorPicker(color: Color, on_change: impl Fn(Color) + 'static) -> View {
                 }),
         );
 
-    Column(Modifier::new().width(240.0))
+    Column(Modifier::new().width(Dp(240.0)))
         .child(header)
-        .child(spacer(8.0))
-        .child(Text("Hue").size(11.0).color(th.on_surface_variant))
-        .child(spacer(2.0))
+        .child(spacer(Dp(8.0)))
+        .child(Text("Hue").size(Sp(11.0)).color(th.on_surface_variant))
+        .child(spacer(Dp(2.0)))
         .child(hue_slider)
-        .child(spacer(4.0))
-        .child(Text("Saturation").size(11.0).color(th.on_surface_variant))
-        .child(spacer(2.0))
+        .child(spacer(Dp(4.0)))
+        .child(
+            Text("Saturation")
+                .size(Sp(11.0))
+                .color(th.on_surface_variant),
+        )
+        .child(spacer(Dp(2.0)))
         .child(sat_slider)
-        .child(spacer(4.0))
-        .child(Text("Value").size(11.0).color(th.on_surface_variant))
-        .child(spacer(2.0))
+        .child(spacer(Dp(4.0)))
+        .child(Text("Value").size(Sp(11.0)).color(th.on_surface_variant))
+        .child(spacer(Dp(2.0)))
         .child(val_slider)
 }

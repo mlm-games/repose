@@ -456,13 +456,19 @@ pub fn DockArea(
     };
 
     ZStack(modifier.fill_max_size()).child((
-        Box(Modifier::new()
-            .absolute()
-            .offset(Some(0.0), Some(0.0), Some(0.0), Some(0.0)))
+        Box(Modifier::new().absolute().offset(
+            Some(Dp(0.0)),
+            Some(Dp(0.0)),
+            Some(Dp(0.0)),
+            Some(Dp(0.0)),
+        ))
         .child(float_target),
-        Box(Modifier::new()
-            .absolute()
-            .offset(Some(0.0), Some(0.0), Some(0.0), Some(0.0)))
+        Box(Modifier::new().absolute().offset(
+            Some(Dp(0.0)),
+            Some(Dp(0.0)),
+            Some(Dp(0.0)),
+            Some(Dp(0.0)),
+        ))
         .child(root_view),
     ))
 }
@@ -486,17 +492,17 @@ fn render_node(
     match &node.kind {
         DockKind::Empty => Box(Modifier::new()
             .fill_max_size()
-            .padding(6.0)
+            .padding(Dp(6.0))
             .background(theme().surface_container_lowest)
             .clip_rounded(theme().shapes.medium)
             .border(
-                1.0,
+                Dp(1.0),
                 theme().outline_variant.with_alpha(80),
                 theme().shapes.medium,
             )
             .key(node.id))
         .child(
-            Box(Modifier::new().fill_max_size().padding(16.0)).child(
+            Box(Modifier::new().fill_max_size().padding(Dp(16.0))).child(
                 Text("Drop panel here")
                     .size(theme().typography.label_medium)
                     .color(theme().on_surface_variant),
@@ -539,10 +545,10 @@ fn render_tabs(
 ) -> View {
     let th = theme();
 
-    const PANEL_PAD: f32 = 5.0;
-    const TAB_BAR_H: f32 = 44.0;
-    const TAB_H: f32 = 32.0;
-    const TAB_RADIUS: f32 = 16.0;
+    const PANEL_PAD: Dp = Dp(5.0);
+    const TAB_BAR_H: Dp = Dp(44.0);
+    const TAB_H: Dp = Dp(32.0);
+    const TAB_RADIUS: Dp = Dp(16.0);
 
     // Ensure active is valid
     let active_pid = active.or_else(|| tabs.first().copied());
@@ -562,12 +568,12 @@ fn render_tabs(
         .height(TAB_BAR_H)
         .background(strip_bg)
         .padding_values(PaddingValues {
-            left: 8.0,
-            right: 8.0,
-            top: 6.0,
-            bottom: 6.0,
+            left: Dp(8.0),
+            right: Dp(8.0),
+            top: Dp(6.0),
+            bottom: Dp(6.0),
         })
-        .gap(6.0)
+        .gap(Dp(6.0))
         .painter({
             let tabbar_rect = tabbar_rect.clone();
             move |_scene, r, _alpha| *tabbar_rect.borrow_mut() = r
@@ -640,17 +646,17 @@ fn render_tabs(
                     Row(Modifier::new()
                         .key(pid)
                         .height(TAB_H)
-                        .min_width(108.0)
-                        .max_width(240.0)
+                        .min_width(Dp(108.0))
+                        .max_width(Dp(240.0))
                         .clip_rounded(TAB_RADIUS)
                         .background(tab_bg)
                         .padding_values(PaddingValues {
-                            left: 12.0,
-                            right: 4.0,
-                            top: 0.0,
-                            bottom: 0.0,
+                            left: Dp(12.0),
+                            right: Dp(4.0),
+                            top: Dp(0.0),
+                            bottom: Dp(0.0),
                         })
-                        .gap(4.0)
+                        .gap(Dp(4.0))
                         .clickable()
                         .on_pointer_enter(hover_in)
                         .on_pointer_leave(hover_out)
@@ -668,10 +674,10 @@ fn render_tabs(
                             .height(TAB_H)
                             .weight(1.0)
                             .padding_values(PaddingValues {
-                                left: 0.0,
-                                right: 4.0,
-                                top: 0.0,
-                                bottom: 0.0,
+                                left: Dp(0.0),
+                                right: Dp(4.0),
+                                top: Dp(0.0),
+                                bottom: Dp(0.0),
                             })
                             .content_alignment(Alignment::Center))
                         .child(
@@ -710,14 +716,14 @@ fn render_tabs(
                 .padding(PANEL_PAD)
                 .clip_rounded(th.shapes.medium)
                 .background(th.surface_container_lowest)
-                .border(1.0, th.outline_variant.with_alpha(70), th.shapes.medium),
+                .border(Dp(1.0), th.outline_variant.with_alpha(70), th.shapes.medium),
         )
         .child((
             tab_bar,
             Box(Modifier::new()
                 .fill_max_size()
                 .background(th.surface_container_lowest))
-            .child(Box(Modifier::new().fill_max_size().padding(8.0)).child(content)),
+            .child(Box(Modifier::new().fill_max_size().padding(Dp(8.0))).child(content)),
         )),
         Box(Modifier::new()
             .absolute()
@@ -738,9 +744,9 @@ fn dock_tab_icon_button(
     on_click: impl Fn(PointerEvent) + 'static,
 ) -> View {
     Box(Modifier::new()
-        .size(26.0, 26.0)
-        .padding(2.0)
-        .clip_rounded(13.0)
+        .size(Dp(26.0), Dp(26.0))
+        .padding(Dp(2.0))
+        .clip_rounded(Dp(13.0))
         .background(fg.with_alpha(18))
         .clickable()
         .cursor(CursorIcon::Pointer)
@@ -749,7 +755,7 @@ fn dock_tab_icon_button(
         Box(Modifier::new()
             .fill_max_size()
             .content_alignment(Alignment::Center))
-        .child(Text(label).size(14.0).color(fg)),
+        .child(Text(label).size(Sp(14.0)).color(fg)),
     )
 }
 
@@ -760,7 +766,7 @@ fn dock_drop_overlay(node_id: u64, dock: &DockHandle, key_prefix: &str) -> View 
         return Box(Modifier::new().hit_passthrough());
     }
 
-    let zone_dp = 72.0;
+    let zone_dp = Dp(72.0);
     let hover = dock.hover_sig.get();
 
     let preview = if let Some(h) = hover.as_ref() {
@@ -782,7 +788,7 @@ fn dock_drop_overlay(node_id: u64, dock: &DockHandle, key_prefix: &str) -> View 
         DropZone::Left,
         Modifier::new()
             .absolute()
-            .offset(Some(0.0), Some(0.0), None, Some(0.0))
+            .offset(Some(Dp(0.0)), Some(Dp(0.0)), None, Some(Dp(0.0)))
             .width(zone_dp),
     );
 
@@ -790,7 +796,7 @@ fn dock_drop_overlay(node_id: u64, dock: &DockHandle, key_prefix: &str) -> View 
         DropZone::Right,
         Modifier::new()
             .absolute()
-            .offset(None, Some(0.0), Some(0.0), Some(0.0))
+            .offset(None, Some(Dp(0.0)), Some(Dp(0.0)), Some(Dp(0.0)))
             .width(zone_dp),
     );
 
@@ -798,7 +804,7 @@ fn dock_drop_overlay(node_id: u64, dock: &DockHandle, key_prefix: &str) -> View 
         DropZone::Top,
         Modifier::new()
             .absolute()
-            .offset(Some(zone_dp), Some(0.0), Some(zone_dp), None)
+            .offset(Some(zone_dp), Some(Dp(0.0)), Some(zone_dp), None)
             .height(zone_dp),
     );
 
@@ -806,7 +812,7 @@ fn dock_drop_overlay(node_id: u64, dock: &DockHandle, key_prefix: &str) -> View 
         DropZone::Bottom,
         Modifier::new()
             .absolute()
-            .offset(Some(zone_dp), None, Some(zone_dp), Some(0.0))
+            .offset(Some(zone_dp), None, Some(zone_dp), Some(Dp(0.0)))
             .height(zone_dp),
     );
 
@@ -859,9 +865,9 @@ fn dock_drop_preview(zone: DropZone) -> View {
         Box(modifier
             .clip_rounded(radius)
             .background(fill)
-            .border(2.0, border, radius))
+            .border(Dp(2.0), border, radius))
         .child(
-            Box(Modifier::new().padding(12.0)).child(
+            Box(Modifier::new().padding(Dp(12.0))).child(
                 Text(label)
                     .size(th.typography.label_medium)
                     .single_line()
@@ -873,17 +879,28 @@ fn dock_drop_preview(zone: DropZone) -> View {
     match zone {
         DropZone::Center => card(
             "Add as tab",
-            Modifier::new()
-                .absolute()
-                .offset(Some(14.0), Some(14.0), Some(14.0), Some(14.0)),
+            Modifier::new().absolute().offset(
+                Some(Dp(14.0)),
+                Some(Dp(14.0)),
+                Some(Dp(14.0)),
+                Some(Dp(14.0)),
+            ),
         ),
 
-        DropZone::Left => Row(Modifier::new().fill_max_size().padding(14.0).gap(10.0)).child((
+        DropZone::Left => Row(Modifier::new()
+            .fill_max_size()
+            .padding(Dp(14.0))
+            .gap(Dp(10.0)))
+        .child((
             card("Split left", Modifier::new().weight(0.44).fill_max_height()),
             Box(Modifier::new().weight(0.56)),
         )),
 
-        DropZone::Right => Row(Modifier::new().fill_max_size().padding(14.0).gap(10.0)).child((
+        DropZone::Right => Row(Modifier::new()
+            .fill_max_size()
+            .padding(Dp(14.0))
+            .gap(Dp(10.0)))
+        .child((
             Box(Modifier::new().weight(0.56)),
             card(
                 "Split right",
@@ -891,20 +908,30 @@ fn dock_drop_preview(zone: DropZone) -> View {
             ),
         )),
 
-        DropZone::Top => Column(Modifier::new().fill_max_size().padding(14.0).gap(10.0)).child((
+        DropZone::Top => Column(
+            Modifier::new()
+                .fill_max_size()
+                .padding(Dp(14.0))
+                .gap(Dp(10.0)),
+        )
+        .child((
             card("Split top", Modifier::new().weight(0.44).fill_max_width()),
             Box(Modifier::new().weight(0.56)),
         )),
 
-        DropZone::Bottom => {
-            Column(Modifier::new().fill_max_size().padding(14.0).gap(10.0)).child((
-                Box(Modifier::new().weight(0.56)),
-                card(
-                    "Split bottom",
-                    Modifier::new().weight(0.44).fill_max_width(),
-                ),
-            ))
-        }
+        DropZone::Bottom => Column(
+            Modifier::new()
+                .fill_max_size()
+                .padding(Dp(14.0))
+                .gap(Dp(10.0)),
+        )
+        .child((
+            Box(Modifier::new().weight(0.56)),
+            card(
+                "Split bottom",
+                Modifier::new().weight(0.44).fill_max_width(),
+            ),
+        )),
 
         DropZone::Float => Box(Modifier::new()),
     }
@@ -938,7 +965,7 @@ fn render_split(
         })
     };
 
-    let divider_thick = 8.0;
+    let divider_thick = Dp(8.0);
 
     let start_drag = {
         let split_drag = split_drag.clone();
@@ -1019,18 +1046,18 @@ fn render_split(
         SplitDir::Horizontal => Box(Modifier::new()
             .fill_max_size()
             .content_alignment(Alignment::Center)
-            .clip_rounded(4.0))
+            .clip_rounded(Dp(4.0)))
         .child(Box(Modifier::new()
-            .width(4.0)
-            .offset(None, Some(24.0), None, Some(24.0))
+            .width(Dp(4.0))
+            .offset(None, Some(Dp(24.0)), None, Some(Dp(24.0)))
             .background(grabber_color))),
         SplitDir::Vertical => Box(Modifier::new()
             .fill_max_size()
             .content_alignment(Alignment::Center)
-            .clip_rounded(4.0))
+            .clip_rounded(Dp(4.0)))
         .child(Box(Modifier::new()
-            .height(4.0)
-            .offset(Some(24.0), None, Some(24.0), None)
+            .height(Dp(4.0))
+            .offset(Some(Dp(24.0)), None, Some(Dp(24.0)), None)
             .background(grabber_color))),
     };
 
@@ -1370,12 +1397,12 @@ pub fn CollapsibleSidePanel(
 
         Box(Modifier::new()
             .width(match side {
-                DockSide::Left | DockSide::Right => handle_size,
-                DockSide::Top | DockSide::Bottom => 0.0,
+                DockSide::Left | DockSide::Right => Dp(Px(handle_size).to_dp().0),
+                DockSide::Top | DockSide::Bottom => Dp::ZERO,
             })
             .height(match side {
-                DockSide::Top | DockSide::Bottom => handle_size,
-                DockSide::Left | DockSide::Right => 0.0,
+                DockSide::Top | DockSide::Bottom => Dp(Px(handle_size).to_dp().0),
+                DockSide::Left | DockSide::Right => Dp::ZERO,
             })
             .fill_max_height()
             .fill_max_width()
@@ -1431,19 +1458,19 @@ pub fn CollapsibleSidePanel(
 
     let body = Box(Modifier::new()
         .width(match side {
-            DockSide::Left | DockSide::Right => body_size,
-            DockSide::Top | DockSide::Bottom => 0.0,
+            DockSide::Left | DockSide::Right => Dp(Px(body_size).to_dp().0),
+            DockSide::Top | DockSide::Bottom => Dp::ZERO,
         })
         .height(match side {
-            DockSide::Top | DockSide::Bottom => body_size,
-            DockSide::Left | DockSide::Right => 0.0,
+            DockSide::Top | DockSide::Bottom => Dp(Px(body_size).to_dp().0),
+            DockSide::Left | DockSide::Right => Dp::ZERO,
         })
         .fill_max_height()
         .fill_max_width()
-        .clip_rounded(0.0)
+        .clip_rounded(Dp(0.0))
         .background(th.surface))
     .child(if body_size > 0.5 {
-        Box(Modifier::new().fill_max_size().padding(8.0)).child(content())
+        Box(Modifier::new().fill_max_size().padding(Dp(8.0))).child(content())
     } else {
         Box(Modifier::new())
     });

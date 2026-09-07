@@ -2067,8 +2067,6 @@ impl WgpuSurfaceBackend {
         msaa_samples: u32,
         present_mode: PresentModePref,
     ) -> anyhow::Result<WgpuSurfaceBackend> {
-        
-
         let instance: Instance = if cfg!(target_arch = "wasm32") {
             let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
             desc.backends = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
@@ -4520,7 +4518,7 @@ impl WgpuSceneRenderer {
                         brush_to_instance_fields(brush);
                     batch.rects.push(RectInstance {
                         xywh: ndc,
-                        radii: *radius,
+                        radii: radius.map(|r| r.0),
                         brush_type,
                         _pad: [0.0; 3],
                         color0,
@@ -4545,8 +4543,8 @@ impl WgpuSceneRenderer {
                     );
                     batch.borders.push(BorderInstance {
                         xywh: ndc,
-                        radii: *radius,
-                        stroke: *width,
+                        radii: radius.map(|r| r.0),
+                        stroke: width.0,
                         color: color.to_linear(),
                         sin_cos,
                     });
@@ -4574,11 +4572,11 @@ impl WgpuSceneRenderer {
                         current_target_size.0,
                         current_target_size.1,
                     );
-                    let pad_px = *width * 0.5 + 2.0;
+                    let pad_px = width.0 * 0.5 + 2.0;
                     let pad = (pad_px / current_target_size.0) * 2.0;
                     batch.e_borders.push(EllipseBorderInstance {
                         xywh: ndc,
-                        stroke: *width,
+                        stroke: width.0,
                         pad,
                         color: color.to_linear(),
                         sin_cos,
@@ -4599,7 +4597,7 @@ impl WgpuSceneRenderer {
                         current_target_size.0,
                         current_target_size.1,
                     );
-                    let pad_px = *stroke_width * 0.5 + 2.0;
+                    let pad_px = stroke_width.0 * 0.5 + 2.0;
                     let pad = (pad_px / current_target_size.0) * 2.0;
                     let cap_val = match cap {
                         StrokeCap::Butt => 0.0,
@@ -4610,7 +4608,7 @@ impl WgpuSceneRenderer {
                         xywh: ndc,
                         start_angle: *start_angle,
                         sweep_angle: *sweep_angle,
-                        stroke: *stroke_width,
+                        stroke: stroke_width.0,
                         pad,
                         color: color.to_linear(),
                         sin_cos,
@@ -4635,7 +4633,7 @@ impl WgpuSceneRenderer {
                 } => {
                     flush_batch!(); // flush any prior primitives
 
-                    let px = *size;
+                    let px = size.0;
                     let lh_ratio = rect.h / px;
                     let fw = font_weight.0;
                     let fs = if *font_style == FontStyle::Italic {
@@ -4650,7 +4648,7 @@ impl WgpuSceneRenderer {
                         *font_family,
                         fw,
                         fs,
-                        *letter_spacing,
+                        letter_spacing.0,
                         font_variation_settings.as_deref(),
                     );
                     let baseline_y = shaped.first().map(|g| rect.y + g.y);
@@ -5161,14 +5159,14 @@ impl WgpuSceneRenderer {
                             clip_ndc_tl[2],
                             clip_ndc_tl[3],
                         ],
-                        radii: *radius,
+                        radii: radius.map(|r| r.0),
                         sin_cos: [1.0, 0.0],
                     };
                     let bytes = bytemuck::bytes_of(&inst);
                     self.clip_ring.grow_to_fit(&self.device, bytes.len() as u64);
                     let (off, _) = self.clip_ring.alloc_write(&self.queue, bytes);
 
-                    let rounded = radius.iter().any(|&r| r > 0.5);
+                    let rounded = radius.iter().any(|&r| r.0 > 0.5);
 
                     current_pass.cmds.push(Cmd::ClipPush {
                         off,
@@ -5219,7 +5217,7 @@ impl WgpuSceneRenderer {
                         brush_to_instance_fields(&Brush::Solid(*color));
                     batch.rects.push(RectInstance {
                         xywh: ndc,
-                        radii: *radius,
+                        radii: radius.map(|r| r.0),
                         brush_type,
                         _pad: [0.0; 3],
                         color0,
@@ -5284,8 +5282,8 @@ impl WgpuSceneRenderer {
                     current_target_size = (w as f32, h as f32);
                     layer_alphas.push((*layer_id, *alpha, current_pass.initial_scissor));
                     // Store blur info for post-processing after EndLayer
-                    if *blur_radius_x > 0.0 || *blur_radius_y > 0.0 {
-                        layer_blurs.push((*layer_id, *blur_radius_x, *blur_radius_y));
+                    if blur_radius_x.0 > 0.0 || blur_radius_y.0 > 0.0 {
+                        layer_blurs.push((*layer_id, blur_radius_x.0, blur_radius_y.0));
                     }
                 }
                 SceneNode::EndLayer { layer_id } => {
@@ -5389,14 +5387,14 @@ impl WgpuSceneRenderer {
                     flush_batch!();
                     if let Some(layer) = self.layer_pool.get(layer_id).cloned() {
                         // Shadow rect = layer rect + offset.
-                        let sx = layer.rect_px.0 + offset_px.0;
-                        let sy = layer.rect_px.1 + offset_px.1;
+                        let sx = layer.rect_px.0 + offset_px.0.0;
+                        let sy = layer.rect_px.1 + offset_px.1.0;
                         let sw = layer.rect_px.2;
                         let sh = layer.rect_px.3;
                         // The blur in UV space is 1.5 * blur_px / texture_size
                         // (the 1.5 matches the 3x3 Gaussian span).
-                        let bw_uv = (blur_px * 1.5) / layer.width.max(1) as f32;
-                        let bh_uv = (blur_px * 1.5) / layer.height.max(1) as f32;
+                        let bw_uv = (blur_px.0 * 1.5) / layer.width.max(1) as f32;
+                        let bh_uv = (blur_px.0 * 1.5) / layer.height.max(1) as f32;
                         let shadow_u1 = layer.rect_px.2 / layer.width.max(1) as f32;
                         let shadow_v1 = layer.rect_px.3 / layer.height.max(1) as f32;
                         let ndc_tl = to_ndc(sx, sy, sw, sh, fb_w, fb_h);
@@ -5543,9 +5541,10 @@ impl WgpuSceneRenderer {
                 {
                     let ptr = Arc::as_ptr(payload) as *const () as usize;
                     if seen.insert(ptr)
-                        && let Ok(cb_arc) = payload.clone().downcast::<Callback>() {
-                            prepare_list.push(cb_arc);
-                        }
+                        && let Ok(cb_arc) = payload.clone().downcast::<Callback>()
+                    {
+                        prepare_list.push(cb_arc);
+                    }
                 }
             }
             if !prepare_list.is_empty() {

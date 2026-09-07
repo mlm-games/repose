@@ -71,7 +71,7 @@ use repose_ui::*;
 fn Counter() -> View {
     let count = remember_mutable(|| 0);
 
-    Column(Modifier::new().padding(16.0)).child((
+    Column(Modifier::new().padding(16.0.dp())).child((
         Text(format!("Count: {}", *count.get())),
         Button("Increment", {
             let count = count.clone();
@@ -105,7 +105,7 @@ let full_name = produce_state("full", {
 
 **Layout:**
 ```rust
-Row(Modifier::new().gap(8.0)).child((
+Row(Modifier::new().gap(8.0.dp())).child((
     Text("Left"),
     Spacer(),
     Text("Right"),

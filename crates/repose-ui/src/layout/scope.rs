@@ -57,7 +57,7 @@ impl LayoutEngine {
         }
     }
 
-    pub(crate) fn sync_scope_trees(&mut self, font_px: &dyn Fn(f32) -> f32) {
+    pub(crate) fn sync_scope_trees(&mut self, font_px: &dyn Fn(Sp) -> f32) {
         let removed_ids: Vec<NodeId> = self.tree.removed_ids.to_vec();
         let dirty_nodes: Vec<NodeId> = self.tree.dirty_nodes().iter().copied().collect();
         let scope_keys: Vec<String> = self.scope_trees.keys().cloned().collect();
@@ -111,13 +111,13 @@ impl LayoutEngine {
                     while let Some(pid) = cur {
                         if dirty_nodes.contains(&pid)
                             && let Some(pnode) = self.tree.get(pid)
-                                && (pnode.modifier.transform.is_some()
-                                    || pnode.modifier.alpha.is_some()
-                                    || pnode.modifier.graphics_layer.is_some())
-                                {
-                                    ancestor_dirty_with_transform = true;
-                                    break;
-                                }
+                            && (pnode.modifier.transform.is_some()
+                                || pnode.modifier.alpha.is_some()
+                                || pnode.modifier.graphics_layer.is_some())
+                        {
+                            ancestor_dirty_with_transform = true;
+                            break;
+                        }
                         cur = self.tree.get(pid).and_then(|n| n.parent);
                     }
                     if ancestor_dirty_with_transform {
@@ -156,7 +156,7 @@ impl LayoutEngine {
         &mut self,
         scope_key: &str,
         node_id: NodeId,
-        font_px: &dyn Fn(f32) -> f32,
+        font_px: &dyn Fn(Sp) -> f32,
     ) -> taffy::NodeId {
         let _ = self.ensure_view_id(node_id);
 
@@ -237,7 +237,7 @@ impl LayoutEngine {
         &mut self,
         scope_key: &str,
         node_id: NodeId,
-        font_px: &dyn Fn(f32) -> f32,
+        font_px: &dyn Fn(Sp) -> f32,
     ) -> taffy::NodeId {
         let _ = self.ensure_view_id(node_id);
         let node = self.tree.get(node_id).unwrap();

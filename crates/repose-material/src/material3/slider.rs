@@ -176,8 +176,8 @@ pub fn Slider(
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
     let mut host = Modifier::new()
-        .min_width(200.0)
-        .height(44.0)
+        .min_width(Dp(200.0))
+        .height(Dp(44.0))
         .interaction_source(&sl_source);
     if !is_enabled {
         host = host.enabled(false);
@@ -193,12 +193,12 @@ pub fn Slider(
                     ((c.3 as f32) * alpha).clamp(0.0, 255.0) as u8,
                 )
             };
-            let track_h = dp_to_px(SliderDefaults::TRACK_HEIGHT);
-            let thumb_w = dp_to_px(SliderDefaults::THUMB_WIDTH);
-            let thumb_h = dp_to_px(SliderDefaults::THUMB_HEIGHT);
-            let dot_r = dp_to_px(2.0);
+            let track_h = SliderDefaults::TRACK_HEIGHT.to_px().0;
+            let thumb_w = SliderDefaults::THUMB_WIDTH.to_px().0;
+            let thumb_h = SliderDefaults::THUMB_HEIGHT.to_px().0;
+            let dot_r = Dp(2.0).to_px().0;
             let corner = track_h * 0.5;
-            let gap = thumb_w * 0.5 + dp_to_px(ProgressIndicatorDefaults::SLIDER_THUMB_TRACK_GAP);
+            let gap = thumb_w * 0.5 + ProgressIndicatorDefaults::SLIDER_THUMB_TRACK_GAP.to_px().0;
             let pad = thumb_w * 0.5;
             let track_x = rect.x + pad;
             let track_w = (rect.w - thumb_w).max(0.0);
@@ -234,7 +234,7 @@ pub fn Slider(
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(inact_trk)),
-                    radius: [corner; 4],
+                    radius: [Px(corner); 4],
                 });
                 let sx = track_x + track_w - corner;
                 scene.nodes.push(SceneNode::Ellipse {
@@ -257,7 +257,7 @@ pub fn Slider(
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(act_trk)),
-                    radius: [corner; 4],
+                    radius: [Px(corner); 4],
                 });
             }
             let tick_start = track_x + corner;
@@ -292,7 +292,7 @@ pub fn Slider(
                     h: thumb_h,
                 },
                 brush: Brush::Solid(mul_c(thumb_col)),
-                radius: [tw * 0.5; 4],
+                radius: [Px(tw * 0.5); 4],
             });
         })
         .on_pointer_down({
@@ -333,10 +333,9 @@ pub fn Slider(
             move |_pe: PointerEvent| {
                 let was = *drag_active.get();
                 drag_active.set(false);
-                if was
-                    && let Some(ref cb) = on_finished {
-                        (cb)();
-                    }
+                if was && let Some(ref cb) = on_finished {
+                    (cb)();
+                }
             }
         })
         .on_pointer_cancel({
@@ -479,8 +478,8 @@ pub fn RangeSlider(
         .map(Rc::new)
         .unwrap_or_else(|| remember(MutableInteractionSource::new));
     let mut host = Modifier::new()
-        .min_width(200.0)
-        .height(44.0)
+        .min_width(Dp(200.0))
+        .height(Dp(44.0))
         .interaction_source(&sl_source);
     if !is_enabled {
         host = host.enabled(false);
@@ -496,12 +495,12 @@ pub fn RangeSlider(
                     ((c.3 as f32) * alpha).clamp(0.0, 255.0) as u8,
                 )
             };
-            let track_h = dp_to_px(SliderDefaults::TRACK_HEIGHT);
-            let thumb_w = dp_to_px(SliderDefaults::THUMB_WIDTH);
-            let thumb_h = dp_to_px(SliderDefaults::THUMB_HEIGHT);
-            let dot_r = dp_to_px(2.0);
+            let track_h = SliderDefaults::TRACK_HEIGHT.to_px().0;
+            let thumb_w = SliderDefaults::THUMB_WIDTH.to_px().0;
+            let thumb_h = SliderDefaults::THUMB_HEIGHT.to_px().0;
+            let dot_r = Dp(2.0).to_px().0;
             let corner = track_h * 0.5;
-            let gap = thumb_w * 0.5 + dp_to_px(ProgressIndicatorDefaults::SLIDER_THUMB_TRACK_GAP);
+            let gap = thumb_w * 0.5 + ProgressIndicatorDefaults::SLIDER_THUMB_TRACK_GAP.to_px().0;
             let pad = thumb_w * 0.5;
             let track_x = rect.x + pad;
             let track_w = (rect.w - thumb_w).max(0.0);
@@ -542,7 +541,7 @@ pub fn RangeSlider(
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(inact_trk)),
-                    radius: [corner; 4],
+                    radius: [Px(corner); 4],
                 });
                 let sx0 = track_x + corner;
                 scene.nodes.push(SceneNode::Ellipse {
@@ -566,7 +565,7 @@ pub fn RangeSlider(
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(inact_trk)),
-                    radius: [corner; 4],
+                    radius: [Px(corner); 4],
                 });
                 let sx = track_x + track_w - corner;
                 scene.nodes.push(SceneNode::Ellipse {
@@ -589,7 +588,7 @@ pub fn RangeSlider(
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(act_trk)),
-                    radius: [corner; 4],
+                    radius: [Px(corner); 4],
                 });
             }
             let tick_start = track_x + corner;
@@ -630,7 +629,7 @@ pub fn RangeSlider(
                         h: thumb_h,
                     },
                     brush: Brush::Solid(mul_c(thumb_col)),
-                    radius: [tw * 0.5; 4],
+                    radius: [Px(tw * 0.5); 4],
                 });
             }
         })
@@ -691,10 +690,9 @@ pub fn RangeSlider(
                 let was = *drag_active.get();
                 drag_active.set(false);
                 active_thumb.set(false);
-                if was
-                    && let Some(ref cb) = on_finished {
-                        (cb)();
-                    }
+                if was && let Some(ref cb) = on_finished {
+                    (cb)();
+                }
             }
         })
         .on_pointer_cancel({

@@ -2,7 +2,7 @@
 
 use rapidhash::fast::RapidHasher;
 use repose_core::{
-    Brush, Color, Modifier, TextOverflow, View, ViewKind,
+    Brush, Color, Dp, Modifier, Px, Sp, TextOverflow, View, ViewKind,
     animation::{AnimationSpec, Easing},
     scroll::ScrollBinding,
 };
@@ -65,7 +65,7 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             font_family.hash(hasher);
             text.hash(hasher);
             hash_color(color, hasher);
-            hash_f32(*font_size, hasher);
+            hash_sp(*font_size, hasher);
             soft_wrap.hash(hasher);
             max_lines.hash(hasher);
             hash_text_overflow(overflow, hasher);
@@ -77,8 +77,8 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
             if let Some(c) = &text_decoration.color {
                 hash_color(c, hasher);
             }
-            hash_f32(*letter_spacing, hasher);
-            hash_f32(*line_height, hasher);
+            hash_sp(*letter_spacing, hasher);
+            hash_sp(*line_height, hasher);
             font_variation_settings.hash(hasher);
             if let Some(annos) = annotations {
                 annos.len().hash(hasher);
@@ -89,7 +89,7 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
                         hash_color(c, hasher);
                     }
                     if let Some(fs) = span.style.font_size {
-                        hash_f32(fs, hasher);
+                        hash_sp(fs, hasher);
                     }
                     if let Some(fw) = span.style.font_weight {
                         fw.hash(hasher);
@@ -101,10 +101,10 @@ fn hash_view_kind(kind: &ViewKind, hasher: &mut impl Hasher) {
                         fs.hash(hasher);
                     }
                     if let Some(ls) = span.style.letter_spacing {
-                        hash_f32(ls, hasher);
+                        hash_sp(ls, hasher);
                     }
                     if let Some(lh) = span.style.line_height {
-                        hash_f32(lh, hasher);
+                        hash_sp(lh, hasher);
                     }
                     if let Some(bg) = &span.style.background {
                         hash_color(bg, hasher);
@@ -201,44 +201,63 @@ fn hash_opt_f32(v: Option<f32>, hasher: &mut impl Hasher) {
         None => 0u8.hash(hasher),
     }
 }
+fn hash_dp(v: Dp, hasher: &mut impl Hasher) {
+    hash_f32(v.0, hasher);
+}
+fn hash_opt_dp(v: Option<Dp>, hasher: &mut impl Hasher) {
+    match v {
+        Some(x) => {
+            1u8.hash(hasher);
+            hash_dp(x, hasher);
+        }
+        None => 0u8.hash(hasher),
+    }
+}
+fn hash_sp(v: Sp, hasher: &mut impl Hasher) {
+    hash_f32(v.0, hasher);
+}
+#[allow(dead_code)]
+fn hash_px(v: Px, hasher: &mut impl Hasher) {
+    hash_f32(v.0, hasher);
+}
 
 fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     // Size
     if let Some(s) = &m.size {
-        hash_f32(s.width, hasher);
-        hash_f32(s.height, hasher);
+        hash_dp(s.width, hasher);
+        hash_dp(s.height, hasher);
     }
-    hash_opt_f32(m.width, hasher);
-    hash_opt_f32(m.height, hasher);
+    hash_opt_dp(m.width, hasher);
+    hash_opt_dp(m.height, hasher);
     if let Some(s) = &m.required_size {
-        hash_f32(s.width, hasher);
-        hash_f32(s.height, hasher);
+        hash_dp(s.width, hasher);
+        hash_dp(s.height, hasher);
     }
-    hash_opt_f32(m.required_min_width, hasher);
-    hash_opt_f32(m.required_max_width, hasher);
-    hash_opt_f32(m.required_min_height, hasher);
-    hash_opt_f32(m.required_max_height, hasher);
-    hash_opt_f32(m.default_min_width, hasher);
-    hash_opt_f32(m.default_min_height, hasher);
+    hash_opt_dp(m.required_min_width, hasher);
+    hash_opt_dp(m.required_max_width, hasher);
+    hash_opt_dp(m.required_min_height, hasher);
+    hash_opt_dp(m.required_max_height, hasher);
+    hash_opt_dp(m.default_min_width, hasher);
+    hash_opt_dp(m.default_min_height, hasher);
     hash_opt_f32(m.fill_max, hasher);
     hash_opt_f32(m.fill_max_w, hasher);
     hash_opt_f32(m.fill_max_h, hasher);
     m.repaint_boundary.hash(hasher);
 
     // Padding
-    hash_opt_f32(m.padding, hasher);
+    hash_opt_dp(m.padding, hasher);
     if let Some(pv) = &m.padding_values {
-        hash_f32(pv.left, hasher);
-        hash_f32(pv.right, hasher);
-        hash_f32(pv.top, hasher);
-        hash_f32(pv.bottom, hasher);
+        hash_dp(pv.left, hasher);
+        hash_dp(pv.right, hasher);
+        hash_dp(pv.top, hasher);
+        hash_dp(pv.bottom, hasher);
     }
 
     // Min/max size
-    hash_opt_f32(m.min_width, hasher);
-    hash_opt_f32(m.min_height, hasher);
-    hash_opt_f32(m.max_width, hasher);
-    hash_opt_f32(m.max_height, hasher);
+    hash_opt_dp(m.min_width, hasher);
+    hash_opt_dp(m.min_height, hasher);
+    hash_opt_dp(m.max_width, hasher);
+    hash_opt_dp(m.max_height, hasher);
 
     // Background
     if let Some(bg) = &m.background {
@@ -247,17 +266,17 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
 
     // Border
     if let Some(b) = &m.border {
-        hash_f32(b.width, hasher);
+        hash_dp(b.width, hasher);
         hash_color(&b.color, hasher);
         for &r in &b.radius {
-            hash_f32(r, hasher);
+            hash_dp(r, hasher);
         }
     }
 
     // Flex
     hash_opt_f32(m.flex_grow, hasher);
     hash_opt_f32(m.flex_shrink, hasher);
-    hash_opt_f32(m.flex_basis, hasher);
+    hash_opt_dp(m.flex_basis, hasher);
     m.flex_wrap.map(|v| std::mem::discriminant(&v)).hash(hasher);
     m.flex_basis_content.hash(hasher);
     m.flex_line_count.hash(hasher);
@@ -279,7 +298,7 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     // Clip
     if let Some(r) = &m.clip_rounded {
         for &v in r {
-            hash_f32(v, hasher);
+            hash_dp(v, hasher);
         }
     }
 
@@ -299,16 +318,16 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     m.position_type
         .map(|v| std::mem::discriminant(&v))
         .hash(hasher);
-    hash_opt_f32(m.offset_left, hasher);
-    hash_opt_f32(m.offset_right, hasher);
-    hash_opt_f32(m.offset_top, hasher);
-    hash_opt_f32(m.offset_bottom, hasher);
+    hash_opt_dp(m.offset_left, hasher);
+    hash_opt_dp(m.offset_right, hasher);
+    hash_opt_dp(m.offset_top, hasher);
+    hash_opt_dp(m.offset_bottom, hasher);
 
     // Grid
     if let Some(g) = &m.grid {
         g.columns.hash(hasher);
-        hash_f32(g.row_gap, hasher);
-        hash_f32(g.column_gap, hasher);
+        hash_dp(g.row_gap, hasher);
+        hash_dp(g.column_gap, hasher);
     }
     m.grid_col_span.hash(hasher);
     m.grid_row_span.hash(hasher);
@@ -317,8 +336,8 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     hash_opt_f32(m.aspect_ratio, hasher);
     m.intrinsic_width.hash(hasher);
     m.intrinsic_height.hash(hasher);
-    hash_opt_f32(m.fit_content_width, hasher);
-    hash_opt_f32(m.fit_content_height, hasher);
+    hash_opt_dp(m.fit_content_width, hasher);
+    hash_opt_dp(m.fit_content_height, hasher);
     // Contain has no Hash impl upstream; map to a discriminant byte.
     match m.contain {
         None => 0u8.hash(hasher),
@@ -365,21 +384,21 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     // Overflow / clip_rect
     m.overflow.map(|o| std::mem::discriminant(&o)).hash(hasher);
     if let Some(cr) = &m.clip_rect {
-        ((cr.left * 100.0) as i32).hash(hasher);
-        ((cr.top * 100.0) as i32).hash(hasher);
-        ((cr.right * 100.0) as i32).hash(hasher);
-        ((cr.bottom * 100.0) as i32).hash(hasher);
+        ((cr.left.0 * 100.0) as i32).hash(hasher);
+        ((cr.top.0 * 100.0) as i32).hash(hasher);
+        ((cr.right.0 * 100.0) as i32).hash(hasher);
+        ((cr.bottom.0 * 100.0) as i32).hash(hasher);
         std::mem::discriminant(&cr.op).hash(hasher);
     }
 
     // Gaps & margins
-    hash_opt_f32(m.gap, hasher);
-    hash_opt_f32(m.row_gap, hasher);
-    hash_opt_f32(m.column_gap, hasher);
-    hash_opt_f32(m.margin_top, hasher);
-    hash_opt_f32(m.margin_left, hasher);
-    hash_opt_f32(m.margin_right, hasher);
-    hash_opt_f32(m.margin_bottom, hasher);
+    hash_opt_dp(m.gap, hasher);
+    hash_opt_dp(m.row_gap, hasher);
+    hash_opt_dp(m.column_gap, hasher);
+    hash_opt_dp(m.margin_top, hasher);
+    hash_opt_dp(m.margin_left, hasher);
+    hash_opt_dp(m.margin_right, hasher);
+    hash_opt_dp(m.margin_bottom, hasher);
 
     // Layers / custom paint / custom layout
     hash_opt_f32(m.graphics_layer, hasher);
@@ -387,8 +406,8 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     m.paint_callback.is_some().hash(hasher);
     m.layout.is_some().hash(hasher);
     if let Some(sh) = &m.shadow {
-        hash_f32(sh.blur_radius, hasher);
-        hash_f32(sh.offset_y, hasher);
+        hash_dp(sh.blur_radius, hasher);
+        hash_dp(sh.offset_y, hasher);
         hash_color(&sh.color, hasher);
     }
 
@@ -430,10 +449,10 @@ fn hash_modifier(m: &Modifier, hasher: &mut impl Hasher) {
     }
 
     if let Some(se) = &m.state_elevation {
-        hash_f32(se.default, hasher);
-        hash_f32(se.hovered, hasher);
-        hash_f32(se.pressed, hasher);
-        hash_f32(se.disabled, hasher);
+        hash_dp(se.default, hasher);
+        hash_dp(se.hovered, hasher);
+        hash_dp(se.pressed, hasher);
+        hash_dp(se.disabled, hasher);
     }
 
     if let Some(spec) = &m.animate_content_size {
@@ -503,12 +522,14 @@ fn hash_text_overflow(o: &TextOverflow, hasher: &mut impl Hasher) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use repose_core::{FontStyle, FontWeight, Modifier, TextAlign, TextDecoration, View, ViewKind};
+    use repose_core::{
+        FontStyle, FontWeight, Modifier, TextAlign, TextDecoration, UnitExt, View, ViewKind,
+    };
 
     #[test]
     fn test_same_view_same_hash() {
-        let v1 = View::new(0, ViewKind::Box).modifier(Modifier::new().width(100.0));
-        let v2 = View::new(0, ViewKind::Box).modifier(Modifier::new().width(100.0));
+        let v1 = View::new(0, ViewKind::Box).modifier(Modifier::new().width(100.0.dp()));
+        let v2 = View::new(0, ViewKind::Box).modifier(Modifier::new().width(100.0.dp()));
 
         assert_eq!(hash_view_content(&v1), hash_view_content(&v2));
     }
@@ -530,8 +551,8 @@ mod tests {
 
     #[test]
     fn test_different_view_different_hash() {
-        let v1 = View::new(0, ViewKind::Box).modifier(Modifier::new().width(100.0));
-        let v2 = View::new(0, ViewKind::Box).modifier(Modifier::new().width(200.0));
+        let v1 = View::new(0, ViewKind::Box).modifier(Modifier::new().width(100.0.dp()));
+        let v2 = View::new(0, ViewKind::Box).modifier(Modifier::new().width(200.0.dp()));
 
         assert_ne!(hash_view_content(&v1), hash_view_content(&v2));
     }
@@ -543,7 +564,7 @@ mod tests {
             ViewKind::Text {
                 text: "Hello".to_string(),
                 color: Color::WHITE,
-                font_size: 16.0,
+                font_size: 16.0.sp(),
                 soft_wrap: true,
                 max_lines: None,
                 overflow: TextOverflow::Visible,
@@ -553,8 +574,8 @@ mod tests {
                 font_weight: FontWeight::NORMAL,
                 font_style: FontStyle::Normal,
                 text_decoration: TextDecoration::default(),
-                letter_spacing: 0.0,
-                line_height: 0.0,
+                letter_spacing: Sp::ZERO,
+                line_height: Sp::ZERO,
                 url: None,
                 font_variation_settings: None,
             },
@@ -564,7 +585,7 @@ mod tests {
             ViewKind::Text {
                 text: "Hello".to_string(),
                 color: Color::WHITE,
-                font_size: 16.0,
+                font_size: 16.0.sp(),
                 soft_wrap: true,
                 max_lines: None,
                 overflow: TextOverflow::Visible,
@@ -574,8 +595,8 @@ mod tests {
                 font_weight: FontWeight::NORMAL,
                 font_style: FontStyle::Normal,
                 text_decoration: TextDecoration::default(),
-                letter_spacing: 0.0,
-                line_height: 0.0,
+                letter_spacing: Sp::ZERO,
+                line_height: Sp::ZERO,
                 url: None,
                 font_variation_settings: None,
             },
@@ -585,7 +606,7 @@ mod tests {
             ViewKind::Text {
                 text: "World".to_string(),
                 color: Color::WHITE,
-                font_size: 16.0,
+                font_size: 16.0.sp(),
                 soft_wrap: true,
                 max_lines: None,
                 overflow: TextOverflow::Visible,
@@ -595,8 +616,8 @@ mod tests {
                 font_weight: FontWeight::NORMAL,
                 font_style: FontStyle::Normal,
                 text_decoration: TextDecoration::default(),
-                letter_spacing: 0.0,
-                line_height: 0.0,
+                letter_spacing: Sp::ZERO,
+                line_height: Sp::ZERO,
                 url: None,
                 font_variation_settings: None,
             },

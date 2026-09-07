@@ -35,16 +35,17 @@ impl ButtonColors {
 }
 
 /// Elevation levels for buttons (matching Compose Material3 `ButtonElevation`).
+/// All levels are [`Dp`].
 #[derive(Clone, Copy, Debug)]
 pub struct ButtonElevation {
-    pub default: f32,
-    pub pressed: f32,
-    pub focused: f32,
-    pub hovered: f32,
-    pub disabled: f32,
+    pub default: Dp,
+    pub pressed: Dp,
+    pub focused: Dp,
+    pub hovered: Dp,
+    pub disabled: Dp,
 }
 
-/// Configuration for button components.
+/// Configuration for button components (dimensions in [`Dp`]).
 #[derive(Clone, Debug)]
 pub struct ButtonConfig {
     pub modifier: Modifier,
@@ -53,10 +54,10 @@ pub struct ButtonConfig {
     pub container_color: Option<Color>,
     pub state_colors: StateColors,
     pub state_elevation: Option<StateElevation>,
-    pub border: Option<(f32, Color, f32)>,
-    pub shape_radius: f32,
+    pub border: Option<(Dp, Color, Dp)>,
+    pub shape_radius: Dp,
     pub content_padding: Option<PaddingValues>,
-    pub height: f32,
+    pub height: Dp,
     pub colors: Option<ButtonColors>,
     pub elevation: Option<ButtonElevation>,
     pub interaction_source: Option<MutableInteractionSource>,
@@ -138,10 +139,10 @@ fn button_impl(
     container_color: Option<Color>,
     state_colors: StateColors,
     state_elevation: Option<StateElevation>,
-    border: Option<(f32, Color, f32)>,
+    border: Option<(Dp, Color, Dp)>,
     pad: PaddingValues,
-    height: f32,
-    shape_radius: f32,
+    height: Dp,
+    shape_radius: Dp,
     enabled: bool,
     interaction_source: Option<MutableInteractionSource>,
 ) -> View {
@@ -294,7 +295,7 @@ pub fn OutlinedButton(
         } else {
             th.on_surface.with_alpha_f32(0.12)
         };
-        (1.0, c, config.shape_radius)
+        (Dp(1.0), c, config.shape_radius)
     });
     let pad = config
         .content_padding
@@ -397,9 +398,9 @@ pub struct ToggleButtonConfig {
     pub checked_content_color: Option<Color>,
     pub state_colors: StateColors,
     pub state_elevation: Option<StateElevation>,
-    pub border: Option<(f32, Color, f32)>,
-    pub shape_radius: f32,
-    pub height: f32,
+    pub border: Option<(Dp, Color, Dp)>,
+    pub shape_radius: Dp,
+    pub height: Dp,
     pub content_padding: Option<PaddingValues>,
     pub interaction_source: Option<MutableInteractionSource>,
 }
@@ -434,11 +435,11 @@ fn toggle_button_impl(
     checked_content_color: Option<Color>,
     state_colors: StateColors,
     state_elevation: StateElevation,
-    border: Option<(f32, Color, f32)>,
-    pad_left: f32,
-    pad_right: f32,
-    height: f32,
-    shape_radius: f32,
+    border: Option<(Dp, Color, Dp)>,
+    pad_left: Dp,
+    pad_right: Dp,
+    height: Dp,
+    shape_radius: Dp,
     enabled: bool,
     interaction_source: Option<MutableInteractionSource>,
 ) -> View {
@@ -482,12 +483,12 @@ fn toggle_button_impl(
         state_elevation
     } else {
         StateElevation {
-            default: 0.0,
-            hovered: 0.0,
-            focused: 0.0,
-            pressed: 0.0,
-            dragged: 0.0,
-            disabled: 0.0,
+            default: Dp::ZERO,
+            hovered: Dp::ZERO,
+            focused: Dp::ZERO,
+            pressed: Dp::ZERO,
+            dragged: Dp::ZERO,
+            disabled: Dp::ZERO,
         }
     };
     let mut m = Modifier::new()
@@ -495,8 +496,8 @@ fn toggle_button_impl(
         .padding_values(PaddingValues {
             left: pad_left,
             right: pad_right,
-            top: 8.0,
-            bottom: 8.0,
+            top: Dp(8.0),
+            bottom: Dp(8.0),
         })
         .background(bg)
         .clip_rounded(shape_radius)
@@ -633,7 +634,7 @@ pub fn OutlinedToggleButton(
         .unwrap_or_else(ToggleButtonDefaults::state_elevation_default);
     let border = if !checked {
         Some(config.border.unwrap_or((
-            1.0,
+            Dp(1.0),
             ToggleButtonDefaults::outlined_border_color(),
             config.shape_radius,
         )))

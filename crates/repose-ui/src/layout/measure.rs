@@ -24,8 +24,8 @@ impl LayoutEngine {
         scope_root_map: &FxHashMap<NodeId, String>,
         node_to_scope: &FxHashMap<NodeId, String>,
         scope_trees: &mut HashMap<String, ScopeLayoutTree>,
-        font_px: &dyn Fn(f32) -> f32,
-        px: &dyn Fn(f32) -> f32,
+        font_px: &dyn Fn(Sp) -> f32,
+        px: &dyn Fn(Dp) -> f32,
         baseline_map: &mut FxHashMap<NodeId, TextBaselines>,
         taffy_map: &FxHashMap<NodeId, taffy::NodeId>,
         shifts_out: &mut FxHashMap<NodeId, f32>,
@@ -56,11 +56,12 @@ impl LayoutEngine {
                         |known, avail| {
                             // Check if this is a scope root marker -> return cached scope size
                             if let Some(&node_id) = reverse_map.get(&taffy_node) {
-                                // Custom layout modifier: delegate measurement to user callback
+                                // Custom layout modifier: delegate measurement to user callback.
+                                // Taffy works in px; the callback speaks Dp.
                                 if let Some(node) = tree.get(node_id)
                                     && let Some(ref layout_cb) = node.modifier.layout
                                 {
-                                    let scale = dp_to_px(1.0);
+                                    let scale = effective_density_scale();
                                     let avail_w = match avail.width {
                                         AvailableSpace::Definite(w) => w / scale,
                                         _ => f32::INFINITY,
@@ -74,15 +75,15 @@ impl LayoutEngine {
                                     let known_h =
                                         known.height.map(|h| h / scale).unwrap_or(f32::INFINITY);
                                     let constraints = repose_core::modifier::LayoutConstraints {
-                                        min_width: 0.0,
-                                        max_width: avail_w.min(known_w),
-                                        min_height: 0.0,
-                                        max_height: avail_h.min(known_h),
+                                        min_width: Dp::ZERO,
+                                        max_width: Dp(avail_w.min(known_w)),
+                                        min_height: Dp::ZERO,
+                                        max_height: Dp(avail_h.min(known_h)),
                                     };
                                     let (w_dp, h_dp) = layout_cb(constraints);
                                     return taffy::geometry::Size {
-                                        width: w_dp * scale,
-                                        height: h_dp * scale,
+                                        width: w_dp.0 * scale,
+                                        height: h_dp.0 * scale,
                                     };
                                 }
                                 if scope_root_map.contains_key(&node_id)
@@ -144,8 +145,8 @@ impl LayoutEngine {
         scope_root_map: &FxHashMap<NodeId, String>,
         node_to_scope: &FxHashMap<NodeId, String>,
         tree: &ViewTree,
-        font_px: &dyn Fn(f32) -> f32,
-        px: &dyn Fn(f32) -> f32,
+        font_px: &dyn Fn(Sp) -> f32,
+        px: &dyn Fn(Dp) -> f32,
         key: &str,
         known: taffy::geometry::Size<Option<f32>>,
         avail: taffy::geometry::Size<AvailableSpace>,
@@ -409,17 +410,17 @@ impl LayoutEngine {
         grew
     }
 
-    /// Identity key for baseline synthesis: (family, weight, font dp).
+    /// Identity key for baseline synthesis: (family, weight, font sp).
     /// `None` for non-text nodes (taffy synthesizes container baselines
     /// from baseline-carrying descendants itself).
-    fn text_baseline_key(ctx: Option<&NodeContext>) -> Option<(Option<&str>, u16, f32)> {
+    fn text_baseline_key(ctx: Option<&NodeContext>) -> Option<(Option<&str>, u16, Sp)> {
         match ctx {
             Some(NodeContext::Text {
                 font_family,
                 font_weight,
-                font_dp,
+                font_sp,
                 ..
-            }) => Some((*font_family, font_weight.0, *font_dp)),
+            }) => Some((*font_family, font_weight.0, *font_sp)),
             _ => None,
         }
     }
@@ -433,17 +434,17 @@ impl LayoutEngine {
     /// [`TextLayout`] plus skrifa ascent/descent of the primary font.
     fn attach_text_baselines(
         out: taffy::LayoutOutput,
-        key: Option<(Option<&str>, u16, f32)>,
+        key: Option<(Option<&str>, u16, Sp)>,
         taffy_node: taffy::NodeId,
         reverse_map: &FxHashMap<taffy::NodeId, NodeId>,
         text_cache: &FxHashMap<NodeId, TextLayout>,
-        font_px: &dyn Fn(f32) -> f32,
+        font_px: &dyn Fn(Sp) -> f32,
         baselines_out: &mut FxHashMap<NodeId, TextBaselines>,
     ) -> taffy::LayoutOutput {
-        let Some((family, weight, font_dp)) = key else {
+        let Some((family, weight, font_sp)) = key else {
             return out;
         };
-        let px = font_px(font_dp);
+        let px = font_px(font_sp);
         let (ascent, descent) = repose_text::primary_font_vertical_metrics(family, weight, px);
         let em = (ascent + descent).max(1.0);
         let nid = reverse_map.get(&taffy_node).copied();
@@ -514,13 +515,13 @@ impl LayoutEngine {
         text_cache: &mut FxHashMap<NodeId, TextLayout>,
         reverse_map: &FxHashMap<taffy::NodeId, NodeId>,
         _tree: &ViewTree,
-        font_px: &dyn Fn(f32) -> f32,
-        px: &dyn Fn(f32) -> f32,
+        font_px: &dyn Fn(Sp) -> f32,
+        px: &dyn Fn(Dp) -> f32,
     ) -> taffy::geometry::Size<f32> {
         match ctx {
             Some(NodeContext::Text {
                 text,
-                font_dp,
+                font_sp,
                 soft_wrap,
                 max_lines,
                 overflow,
@@ -533,8 +534,9 @@ impl LayoutEngine {
                 annotations,
             }) => {
                 let has_annotations = annotations.as_ref().is_some_and(|a| !a.is_empty());
-                let size_px_val = font_px(*font_dp);
-                let lh = if *line_height > 0.0 {
+                let size_px_val = font_px(*font_sp);
+                let letter_spacing_px = font_px(*letter_spacing);
+                let lh = if line_height.0 > 0.0 {
                     font_px(*line_height)
                 } else {
                     size_px_val
@@ -556,7 +558,7 @@ impl LayoutEngine {
                                 font_family: *font_family,
                                 font_weight: fw,
                                 font_style: fs,
-                                letter_spacing: *letter_spacing,
+                                letter_spacing: letter_spacing_px,
                                 ..Default::default()
                             },
                         )
@@ -581,7 +583,7 @@ impl LayoutEngine {
                                         font_family: *font_family,
                                         font_weight: fw,
                                         font_style: fs,
-                                        letter_spacing: *letter_spacing,
+                                        letter_spacing: letter_spacing_px,
                                         ..Default::default()
                                     },
                                 )
@@ -593,8 +595,8 @@ impl LayoutEngine {
                         }
                         let seg_text = &text[seg_start..seg_end];
                         if !seg_text.is_empty() {
-                            let seg_font_dp = span.style.font_size.unwrap_or(*font_dp);
-                            let seg_px = font_px(seg_font_dp);
+                            let seg_font_sp = span.style.font_size.unwrap_or(*font_sp);
+                            let seg_px = font_px(seg_font_sp);
                             let seg_fw = span.style.font_weight.unwrap_or(font_weight.0);
                             let seg_fs = span.style.font_style.unwrap_or(fs);
                             let seg_ls = span.style.letter_spacing.unwrap_or(*letter_spacing);
@@ -606,7 +608,7 @@ impl LayoutEngine {
                                     font_family: seg_family,
                                     font_weight: seg_fw,
                                     font_style: seg_fs,
-                                    letter_spacing: seg_ls,
+                                    letter_spacing: font_px(seg_ls),
                                     ..Default::default()
                                 },
                             )
@@ -632,7 +634,7 @@ impl LayoutEngine {
                                     font_family: *font_family,
                                     font_weight: fw,
                                     font_style: fs,
-                                    letter_spacing: *letter_spacing,
+                                    letter_spacing: letter_spacing_px,
                                     ..Default::default()
                                 },
                             )
@@ -655,7 +657,7 @@ impl LayoutEngine {
                             font_family: *font_family,
                             font_weight: fw,
                             font_style: fs,
-                            letter_spacing: *letter_spacing,
+                            letter_spacing: letter_spacing_px,
                             ..Default::default()
                         },
                     )
@@ -692,7 +694,7 @@ impl LayoutEngine {
                                 font_family: *font_family,
                                 font_weight: fw,
                                 font_style: fs,
-                                letter_spacing: *letter_spacing,
+                                letter_spacing: letter_spacing_px,
                                 ..Default::default()
                             },
                         )
@@ -844,7 +846,7 @@ impl LayoutEngine {
                                     wrap_w_px,
                                     fw,
                                     fs,
-                                    *letter_spacing,
+                                    letter_spacing_px,
                                     fvs,
                                 );
                             }
@@ -859,7 +861,7 @@ impl LayoutEngine {
                             true,
                             fw,
                             fs,
-                            *letter_spacing,
+                            letter_spacing_px,
                             fvs,
                         );
                         let mut lns: Vec<String> = ranges
@@ -877,7 +879,7 @@ impl LayoutEngine {
                                 wrap_w_px,
                                 fw,
                                 fs,
-                                *letter_spacing,
+                                letter_spacing_px,
                                 fvs,
                             );
                         }
@@ -890,7 +892,7 @@ impl LayoutEngine {
                         wrap_w_px,
                         fw,
                         fs,
-                        *letter_spacing,
+                        letter_spacing_px,
                         fvs,
                     );
                     let elided_len = elided.len();
@@ -910,11 +912,11 @@ impl LayoutEngine {
                         widths.push(w);
                         let mut max_h = line_h_px_val;
                         for span in annos.iter().filter(|sp| sp.start < e && sp.end > s) {
-                            let seg_font_dp = span.style.font_size.unwrap_or(*font_dp);
-                            let seg_px = font_px(seg_font_dp);
+                            let seg_font_sp = span.style.font_size.unwrap_or(*font_sp);
+                            let seg_px = font_px(seg_font_sp);
                             let seg_line_h = if let Some(lh) = span.style.line_height {
-                                if lh > 0.0 { font_px(lh) } else { seg_px }
-                            } else if *line_height > 0.0 {
+                                if lh.0 > 0.0 { font_px(lh) } else { seg_px }
+                            } else if line_height.0 > 0.0 {
                                 font_px(*line_height)
                             } else {
                                 seg_px
@@ -952,7 +954,7 @@ impl LayoutEngine {
                                     font_family: *font_family,
                                     font_weight: fw,
                                     font_style: fs,
-                                    letter_spacing: *letter_spacing,
+                                    letter_spacing: letter_spacing_px,
                                     ..Default::default()
                                 },
                             )
@@ -1001,16 +1003,20 @@ impl LayoutEngine {
                 }
             }
             Some(NodeContext::TextInput { multiline }) => {
-                let natural_w = px(160.0);
+                let natural_w = px(Dp(160.0));
                 let width = match avail.width {
                     AvailableSpace::Definite(w) if w > 0.5 => w,
-                    AvailableSpace::MinContent => px(48.0).max(natural_w),
+                    AvailableSpace::MinContent => px(Dp(48.0)).max(natural_w),
                     _ => known.width.unwrap_or(natural_w),
                 };
-                let natural_h = if *multiline { px(140.0) } else { px(36.0) };
+                let natural_h = if *multiline {
+                    px(Dp(140.0))
+                } else {
+                    px(Dp(36.0))
+                };
                 let height = match avail.height {
                     AvailableSpace::Definite(h) if h > 0.5 => h,
-                    AvailableSpace::MinContent => px(28.0).max(natural_h),
+                    AvailableSpace::MinContent => px(Dp(28.0)).max(natural_h),
                     _ => known.height.unwrap_or(natural_h),
                 };
                 taffy::geometry::Size { width, height }

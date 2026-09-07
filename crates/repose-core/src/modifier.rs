@@ -9,7 +9,8 @@ use taffy::{
 
 use crate::animation::AnimationSpec;
 use crate::indication::IndicationNodeFactory;
-use crate::{Brush, Color, PointerEvent, Size, Transform, Vec2};
+use crate::units::{Dp, DpSize};
+use crate::{Brush, Color, PointerEvent, Transform, Vec2};
 
 /// State-driven colors. Priority: disabled > dragged > pressed > focused > hovered > default.
 ///
@@ -26,17 +27,18 @@ pub struct StateColors {
     pub dragged: Color,
 }
 
-/// State-driven elevation. Priority: disabled > dragged > pressed > focused > hovered > default.
+/// State-driven elevation (levels in [`Dp`]).
+/// Priority: disabled > dragged > pressed > focused > hovered > default.
 #[derive(Clone, Copy, Debug)]
 pub struct StateElevation {
-    pub default: f32,
-    pub hovered: f32,
+    pub default: Dp,
+    pub hovered: Dp,
     /// Applied between pressed and hovered in the paint priority order.
-    pub focused: f32,
-    pub pressed: f32,
-    pub disabled: f32,
+    pub focused: Dp,
+    pub pressed: Dp,
+    pub disabled: Dp,
     /// Elevation while the component is being dragged (preferred over hovered/pressed/focused).
-    pub dragged: f32,
+    pub dragged: Dp,
 }
 
 impl StateColors {
@@ -55,12 +57,12 @@ impl StateColors {
 impl StateElevation {
     pub const fn zero() -> Self {
         Self {
-            default: 0.0,
-            hovered: 0.0,
-            focused: 0.0,
-            pressed: 0.0,
-            disabled: 0.0,
-            dragged: 0.0,
+            default: Dp(0.0),
+            hovered: Dp(0.0),
+            focused: Dp(0.0),
+            pressed: Dp(0.0),
+            disabled: Dp(0.0),
+            dragged: Dp(0.0),
         }
     }
 }
@@ -161,36 +163,36 @@ pub enum Overflow {
 }
 
 /// Rectangular clip with a clipping operation.
-/// The rect is relative to the element bounds, in dp.
+/// The rect is relative to the element bounds, in [`Dp`].
 #[derive(Clone, Copy, Debug)]
 pub struct ClipRect {
-    pub left: f32,
-    pub top: f32,
-    pub right: f32,
-    pub bottom: f32,
+    pub left: Dp,
+    pub top: Dp,
+    pub right: Dp,
+    pub bottom: Dp,
     pub op: ClipOp,
 }
 
 #[derive(Clone, Debug)]
 pub struct Border {
-    pub width: f32,
+    pub width: Dp,
     pub color: Color,
-    pub radius: [f32; 4],
+    pub radius: [Dp; 4],
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PaddingValues {
-    pub left: f32,
-    pub right: f32,
-    pub top: f32,
-    pub bottom: f32,
+    pub left: Dp,
+    pub right: Dp,
+    pub top: Dp,
+    pub bottom: Dp,
 }
 
 #[derive(Clone, Debug)]
 pub struct GridConfig {
     pub columns: usize,
-    pub row_gap: f32,
-    pub column_gap: f32,
+    pub row_gap: Dp,
+    pub column_gap: Dp,
 }
 
 /// Edge treatment for `Modifier::blur` -> controls how pixels at the edges
@@ -208,10 +210,10 @@ pub enum BlurredEdgeTreatment {
 /// Gaussian blur parameters for `Modifier::blur`.
 #[derive(Clone, Copy, Debug)]
 pub struct BlurStyle {
-    /// Horizontal blur radius in dp.
-    pub radius_x: f32,
-    /// Vertical blur radius in dp.
-    pub radius_y: f32,
+    /// Horizontal blur radius in [`Dp`].
+    pub radius_x: Dp,
+    /// Vertical blur radius in [`Dp`].
+    pub radius_y: Dp,
     /// Controls edge pixel behavior.
     pub edge_treatment: BlurredEdgeTreatment,
 }
@@ -220,24 +222,25 @@ pub struct BlurStyle {
 /// Mirrors Compose's `Constraints` -> the element's size must fall within
 /// `[min_width, max_width]` × `[min_height, max_height]`.
 /// A dimension with `INFINITY` max means unbounded in that direction.
+/// All values are in [`Dp`].
 #[derive(Clone, Copy, Debug)]
 pub struct LayoutConstraints {
-    pub min_width: f32,
-    pub max_width: f32,
-    pub min_height: f32,
-    pub max_height: f32,
+    pub min_width: Dp,
+    pub max_width: Dp,
+    pub min_height: Dp,
+    pub max_height: Dp,
 }
 
 /// Drop-shadow parameters applied to a graphics layer.
 ///
-/// `blur_radius` is the Gaussian blur radius in dp (1.0 = subtle, 8.0 = soft,
-/// 16.0 = very diffuse). `offset_y` is the vertical offset of the shadow in dp
+/// `blur_radius` is the Gaussian blur radius in [`Dp`] (1.0 = subtle, 8.0 = soft,
+/// 16.0 = very diffuse). `offset_y` is the vertical offset of the shadow in [`Dp`]
 /// (positive = below the layer). `color` is the shadow color (premultiplied
 /// alpha controls shadow darkness).
 #[derive(Clone, Copy, Debug)]
 pub struct ShadowSpec {
-    pub blur_radius: f32,
-    pub offset_y: f32,
+    pub blur_radius: Dp,
+    pub offset_y: Dp,
     pub color: Color,
 }
 
@@ -620,31 +623,31 @@ pub struct Modifier {
     /// would otherwise shift.
     pub key: Option<u64>,
 
-    pub size: Option<Size>,
-    pub width: Option<f32>,
-    pub height: Option<f32>,
-    pub required_size: Option<Size>,
+    pub size: Option<DpSize>,
+    pub width: Option<Dp>,
+    pub height: Option<Dp>,
+    pub required_size: Option<DpSize>,
     pub fill_max: Option<f32>,
     pub fill_max_w: Option<f32>,
     pub fill_max_h: Option<f32>,
-    pub padding: Option<f32>,
+    pub padding: Option<Dp>,
     pub padding_values: Option<PaddingValues>,
-    pub min_width: Option<f32>,
-    pub min_height: Option<f32>,
-    pub max_width: Option<f32>,
-    pub max_height: Option<f32>,
+    pub min_width: Option<Dp>,
+    pub min_height: Option<Dp>,
+    pub max_width: Option<Dp>,
+    pub max_height: Option<Dp>,
     /// Like [`required_size`] but only for min width. Overrides parent min constraints.
-    pub required_min_width: Option<f32>,
+    pub required_min_width: Option<Dp>,
     /// Like [`required_size`] but only for max width. Overrides parent max constraints.
-    pub required_max_width: Option<f32>,
+    pub required_max_width: Option<Dp>,
     /// Like [`required_size`] but only for min height. Overrides parent min constraints.
-    pub required_min_height: Option<f32>,
+    pub required_min_height: Option<Dp>,
     /// Like [`required_size`] but only for max height. Overrides parent max constraints.
-    pub required_max_height: Option<f32>,
+    pub required_max_height: Option<Dp>,
     /// Minimum size that only applies when the incoming constraint is 0 (unconstrained).
     /// Use [`min_width`] for an unconditional minimum.
-    pub default_min_width: Option<f32>,
-    pub default_min_height: Option<f32>,
+    pub default_min_width: Option<Dp>,
+    pub default_min_height: Option<Dp>,
     pub background: Option<Brush>,
     pub state_colors: Option<StateColors>,
     pub state_elevation: Option<StateElevation>,
@@ -652,7 +655,7 @@ pub struct Modifier {
     pub border: Option<Border>,
     pub flex_grow: Option<f32>,
     pub flex_shrink: Option<f32>,
-    pub flex_basis: Option<f32>,
+    pub flex_basis: Option<Dp>,
     /// `flex-basis: content` — size from content, ignoring [`flex_basis`](Self::flex_basis).
     /// Maps to taffy's `content` keyword (taffy 0.14+).
     pub flex_basis_content: bool,
@@ -661,16 +664,16 @@ pub struct Modifier {
     /// Transport for flow config; prefer building flows via `FlowRowConfig`.
     pub flex_line_count: Option<u16>,
     pub flex_dir: Option<FlexDirection>,
-    pub gap: Option<f32>,
-    pub row_gap: Option<f32>,
-    pub column_gap: Option<f32>,
+    pub gap: Option<Dp>,
+    pub row_gap: Option<Dp>,
+    pub column_gap: Option<Dp>,
     pub align_self: Option<AlignSelf>,
     pub justify_content: Option<JustifyContent>,
     pub align_items_container: Option<AlignItems>,
     pub align_content: Option<AlignContent>,
-    pub clip_rounded: Option<[f32; 4]>,
+    pub clip_rounded: Option<[Dp; 4]>,
     /// Rectangular clip with a clipping operation (Intersect or Difference).
-    /// The rect is relative to the element bounds, in dp.
+    /// The rect is relative to the element bounds, in [`Dp`].
     pub clip_rect: Option<ClipRect>,
     /// Controls whether child content is clipped to the parent bounds.
     ///
@@ -745,9 +748,9 @@ pub struct Modifier {
     pub blur: Option<BlurStyle>,
     /// Custom layout callback. When set, the element's measurement is delegated
     /// to this function instead of the default Taffy-based layout.
-    /// The callback receives `LayoutConstraints` (min/max width/height in dp).
-    /// Returns `(width, height)` for this element.
-    pub layout: Option<Rc<dyn Fn(LayoutConstraints) -> (f32, f32)>>,
+    /// The callback receives `LayoutConstraints` (min/max width/height in [`Dp`]).
+    /// Returns `(width, height)` for this element, in [`Dp`].
+    pub layout: Option<Rc<dyn Fn(LayoutConstraints) -> (Dp, Dp)>>,
     pub semantics: Option<crate::Semantics>,
     pub alpha: Option<f32>,
     pub graphics_layer: Option<f32>,
@@ -757,15 +760,15 @@ pub struct Modifier {
     pub grid_col_span: Option<u16>,
     pub grid_row_span: Option<u16>,
     pub position_type: Option<PositionType>,
-    pub offset_left: Option<f32>,
-    pub offset_right: Option<f32>,
-    pub offset_top: Option<f32>,
-    pub offset_bottom: Option<f32>,
+    pub offset_left: Option<Dp>,
+    pub offset_right: Option<Dp>,
+    pub offset_top: Option<Dp>,
+    pub offset_bottom: Option<Dp>,
 
-    pub margin_left: Option<f32>,
-    pub margin_right: Option<f32>,
-    pub margin_top: Option<f32>,
-    pub margin_bottom: Option<f32>,
+    pub margin_left: Option<Dp>,
+    pub margin_right: Option<Dp>,
+    pub margin_top: Option<Dp>,
+    pub margin_bottom: Option<Dp>,
     pub aspect_ratio: Option<f32>,
     /// Size this node's width to its min or max intrinsic content size.
     /// Wired to taffy's `min-content`/`max-content` sizing keywords.
@@ -773,12 +776,12 @@ pub struct Modifier {
     /// Size this node's height to its min or max intrinsic content size.
     /// Wired to taffy's `min-content`/`max-content` sizing keywords.
     pub intrinsic_height: Option<IntrinsicSize>,
-    /// `fit-content(limit)` width in dp: `max(min-content, min(max-content, limit))`.
+    /// `fit-content(limit)` width in [`Dp`]: `max(min-content, min(max-content, limit))`.
     /// Applies when no explicit [`width`](Self::width) is set.
-    pub fit_content_width: Option<f32>,
-    /// `fit-content(limit)` height in dp. Applies when no explicit
+    pub fit_content_width: Option<Dp>,
+    /// `fit-content(limit)` height in [`Dp`]. Applies when no explicit
     /// [`height`](Self::height) is set.
-    pub fit_content_height: Option<f32>,
+    pub fit_content_height: Option<Dp>,
     /// Baseline alignment request for a `Row` child. See [`BaselineAlign`].
     /// Set via `RowScope` methods; inert under non-`Row` parents.
     pub baseline_align: Option<BaselineAlign>,
@@ -1043,18 +1046,15 @@ impl Modifier {
         self
     }
 
-    pub fn size(mut self, w: f32, h: f32) -> Self {
-        self.size = Some(Size {
-            width: w,
-            height: h,
-        });
+    pub fn size(mut self, w: Dp, h: Dp) -> Self {
+        self.size = Some(DpSize::new(w, h));
         self
     }
-    pub fn width(mut self, w: f32) -> Self {
+    pub fn width(mut self, w: Dp) -> Self {
         self.width = Some(w);
         self
     }
-    pub fn height(mut self, h: f32) -> Self {
+    pub fn height(mut self, h: Dp) -> Self {
         self.height = Some(h);
         self
     }
@@ -1062,43 +1062,40 @@ impl Modifier {
     /// Unlike `size()` which is bounded by the parent's max constraints,
     /// `required_size()` forces the node to this size regardless of the parent,
     /// acting as both min and max.
-    pub fn required_size(mut self, w: f32, h: f32) -> Self {
-        self.required_size = Some(Size {
-            width: w,
-            height: h,
-        });
+    pub fn required_size(mut self, w: Dp, h: Dp) -> Self {
+        self.required_size = Some(DpSize::new(w, h));
         self
     }
-    pub fn required_width_in(mut self, min: f32, max: f32) -> Self {
-        self.required_min_width = Some(min.max(0.0));
-        self.required_max_width = Some(max.max(0.0));
+    pub fn required_width_in(mut self, min: Dp, max: Dp) -> Self {
+        self.required_min_width = Some(Dp(min.0.max(0.0)));
+        self.required_max_width = Some(Dp(max.0.max(0.0)));
         self
     }
-    pub fn required_height_in(mut self, min: f32, max: f32) -> Self {
-        self.required_min_height = Some(min.max(0.0));
-        self.required_max_height = Some(max.max(0.0));
+    pub fn required_height_in(mut self, min: Dp, max: Dp) -> Self {
+        self.required_min_height = Some(Dp(min.0.max(0.0)));
+        self.required_max_height = Some(Dp(max.0.max(0.0)));
         self
     }
-    pub fn required_min_width(mut self, w: f32) -> Self {
-        self.required_min_width = Some(w.max(0.0));
+    pub fn required_min_width(mut self, w: Dp) -> Self {
+        self.required_min_width = Some(Dp(w.0.max(0.0)));
         self
     }
-    pub fn required_max_width(mut self, w: f32) -> Self {
-        self.required_max_width = Some(w.max(0.0));
+    pub fn required_max_width(mut self, w: Dp) -> Self {
+        self.required_max_width = Some(Dp(w.0.max(0.0)));
         self
     }
-    pub fn required_min_height(mut self, h: f32) -> Self {
-        self.required_min_height = Some(h.max(0.0));
+    pub fn required_min_height(mut self, h: Dp) -> Self {
+        self.required_min_height = Some(Dp(h.0.max(0.0)));
         self
     }
-    pub fn required_max_height(mut self, h: f32) -> Self {
-        self.required_max_height = Some(h.max(0.0));
+    pub fn required_max_height(mut self, h: Dp) -> Self {
+        self.required_max_height = Some(Dp(h.0.max(0.0)));
         self
     }
     /// Minimum size that only takes effect when the incoming constraint is 0 (unconstrained).
-    pub fn default_min_size(mut self, w: f32, h: f32) -> Self {
-        self.default_min_width = Some(w.max(0.0));
-        self.default_min_height = Some(h.max(0.0));
+    pub fn default_min_size(mut self, w: Dp, h: Dp) -> Self {
+        self.default_min_width = Some(Dp(w.0.max(0.0)));
+        self.default_min_height = Some(Dp(h.0.max(0.0)));
         self
     }
     /// Fill the available space in both dimensions.
@@ -1129,7 +1126,7 @@ impl Modifier {
         self.fill_max_h = Some(fraction.clamp(0.0, 1.0));
         self
     }
-    pub fn padding(mut self, v: f32) -> Self {
+    pub fn padding(mut self, v: Dp) -> Self {
         self.padding = Some(v);
         self
     }
@@ -1139,65 +1136,66 @@ impl Modifier {
     }
     /// Add padding equal to the current IME (soft keyboard) bottom inset.
     /// Combine with `system_bars_padding()` to handle both system bars and keyboard.
+    /// Window insets are stored in px and converted to [`Dp`] here.
     pub fn ime_padding(mut self) -> Self {
+        use crate::units::Px;
         let insets = crate::locals::window_insets();
-        let scale = crate::locals::effective_density_scale();
         let mut p = self.padding_values.unwrap_or_default();
-        p.bottom += insets.ime_bottom / scale;
+        p.bottom = p.bottom + Px(insets.ime_bottom).to_dp();
         self.padding_values = Some(p);
         self
     }
     /// Add padding equal to the current system bar insets (status bar top, nav bar bottom).
     pub fn system_bars_padding(mut self) -> Self {
+        use crate::units::Px;
         let insets = crate::locals::window_insets();
-        let scale = crate::locals::effective_density_scale();
         let mut p = self.padding_values.unwrap_or_default();
-        p.top += insets.top / scale;
-        p.bottom += insets.bottom / scale;
+        p.top = p.top + Px(insets.top).to_dp();
+        p.bottom = p.bottom + Px(insets.bottom).to_dp();
         self.padding_values = Some(p);
         self
     }
     /// Add status bar inset as top padding.
     pub fn status_bars_padding(mut self) -> Self {
+        use crate::units::Px;
         let insets = crate::locals::window_insets();
-        let scale = crate::locals::effective_density_scale();
         let mut p = self.padding_values.unwrap_or_default();
-        p.top += insets.top / scale;
+        p.top = p.top + Px(insets.top).to_dp();
         self.padding_values = Some(p);
         self
     }
     /// Add navigation bar inset as bottom padding.
     pub fn navigation_bars_padding(mut self) -> Self {
         let insets = crate::locals::window_insets();
-        let scale = crate::locals::effective_density_scale();
+        use crate::units::Px;
         let mut p = self.padding_values.unwrap_or_default();
-        p.bottom += insets.bottom / scale;
+        p.bottom = p.bottom + Px(insets.bottom).to_dp();
         self.padding_values = Some(p);
         self
     }
-    pub fn min_size(mut self, w: f32, h: f32) -> Self {
+    pub fn min_size(mut self, w: Dp, h: Dp) -> Self {
         self.min_width = Some(w);
         self.min_height = Some(h);
         self
     }
-    pub fn max_size(mut self, w: f32, h: f32) -> Self {
+    pub fn max_size(mut self, w: Dp, h: Dp) -> Self {
         self.max_width = Some(w);
         self.max_height = Some(h);
         self
     }
-    pub fn min_width(mut self, w: f32) -> Self {
+    pub fn min_width(mut self, w: Dp) -> Self {
         self.min_width = Some(w);
         self
     }
-    pub fn min_height(mut self, h: f32) -> Self {
+    pub fn min_height(mut self, h: Dp) -> Self {
         self.min_height = Some(h);
         self
     }
-    pub fn max_width(mut self, w: f32) -> Self {
+    pub fn max_width(mut self, w: Dp) -> Self {
         self.max_width = Some(w);
         self
     }
-    pub fn max_height(mut self, h: f32) -> Self {
+    pub fn max_height(mut self, h: Dp) -> Self {
         self.max_height = Some(h);
         self
     }
@@ -1211,7 +1209,7 @@ impl Modifier {
         self.background = Some(brush);
         self
     }
-    pub fn border(mut self, width: f32, color: Color, radius: f32) -> Self {
+    pub fn border(mut self, width: Dp, color: Color, radius: Dp) -> Self {
         self.border = Some(Border {
             width,
             color,
@@ -1219,7 +1217,7 @@ impl Modifier {
         });
         self
     }
-    pub fn border_radii(mut self, width: f32, color: Color, radii: [f32; 4]) -> Self {
+    pub fn border_radii(mut self, width: Dp, color: Color, radii: [Dp; 4]) -> Self {
         self.border = Some(Border {
             width,
             color,
@@ -1235,7 +1233,7 @@ impl Modifier {
         self.flex_shrink = Some(v);
         self
     }
-    pub fn flex_basis(mut self, v: f32) -> Self {
+    pub fn flex_basis(mut self, v: Dp) -> Self {
         self.flex_basis = Some(v);
         self
     }
@@ -1253,19 +1251,19 @@ impl Modifier {
         self.flex_dir = Some(d);
         self
     }
-    pub fn gap(mut self, v: f32) -> Self {
-        let v = v.max(0.0);
+    pub fn gap(mut self, v: Dp) -> Self {
+        let v = Dp(v.0.max(0.0));
         self.gap = Some(v);
         self.row_gap = Some(v);
         self.column_gap = Some(v);
         self
     }
-    pub fn row_gap(mut self, v: f32) -> Self {
-        self.row_gap = Some(v.max(0.0));
+    pub fn row_gap(mut self, v: Dp) -> Self {
+        self.row_gap = Some(Dp(v.0.max(0.0)));
         self
     }
-    pub fn column_gap(mut self, v: f32) -> Self {
-        self.column_gap = Some(v.max(0.0));
+    pub fn column_gap(mut self, v: Dp) -> Self {
+        self.column_gap = Some(Dp(v.0.max(0.0)));
         self
     }
     pub fn align_self(mut self, a: AlignSelf) -> Self {
@@ -1302,17 +1300,17 @@ impl Modifier {
         self.align_content = Some(a);
         self
     }
-    pub fn clip_rounded(mut self, radius: f32) -> Self {
+    pub fn clip_rounded(mut self, radius: Dp) -> Self {
         self.clip_rounded = Some([radius; 4]);
         self
     }
-    pub fn clip_rounded_radii(mut self, radii: [f32; 4]) -> Self {
+    pub fn clip_rounded_radii(mut self, radii: [Dp; 4]) -> Self {
         self.clip_rounded = Some(radii);
         self
     }
     /// Clip a rectangular region from this element using the given operation.
-    /// `left`, `top`, `right`, `bottom` are relative to the element bounds, in dp.
-    pub fn clip_rect(mut self, left: f32, top: f32, right: f32, bottom: f32, op: ClipOp) -> Self {
+    /// `left`, `top`, `right`, `bottom` are relative to the element bounds, in [`Dp`].
+    pub fn clip_rect(mut self, left: Dp, top: Dp, right: Dp, bottom: Dp, op: ClipOp) -> Self {
         self.clip_rect = Some(ClipRect {
             left,
             top,
@@ -1573,7 +1571,7 @@ impl Modifier {
             return self
                 .clickable()
                 .enabled(false)
-                .default_min_size(48.0, 48.0)
+                .default_min_size(Dp(48.0), Dp(48.0))
                 .semantics(s);
         }
         self = self.clickable().on_click(on_click);
@@ -1590,7 +1588,7 @@ impl Modifier {
             }
             self = self.semantics(s);
         }
-        self.default_min_size(48.0, 48.0)
+        self.default_min_size(Dp(48.0), Dp(48.0))
     }
     pub fn combined_clickable(
         mut self,
@@ -1613,7 +1611,7 @@ impl Modifier {
         if let Some(f) = on_double_click {
             self = self.on_double_click(f);
         }
-        self.default_min_size(48.0, 48.0)
+        self.default_min_size(Dp(48.0), Dp(48.0))
     }
     pub fn semantics(mut self, s: crate::Semantics) -> Self {
         self.semantics = Some(s);
@@ -1631,38 +1629,38 @@ impl Modifier {
         self.graphics_layer = Some(alpha.clamp(0.0, 1.0));
         self
     }
-    /// Drop shadow with the given `blur_radius` (dp) and vertical `offset_y` (dp).
+    /// Drop shadow with the given `blur_radius` ([`Dp`]) and vertical `offset_y` ([`Dp`]).
     /// The shadow color defaults to black with alpha 64 (~25%). Combines with
     /// [`Modifier::graphics_layer`] to draw a shadow underneath the layer.
-    pub fn shadow(mut self, blur_radius: f32, offset_y: f32) -> Self {
+    pub fn shadow(mut self, blur_radius: Dp, offset_y: Dp) -> Self {
         self.shadow = Some(ShadowSpec {
-            blur_radius: blur_radius.max(0.0),
+            blur_radius: Dp(blur_radius.0.max(0.0)),
             offset_y,
             color: Color(0, 0, 0, 64),
         });
         self
     }
     /// Drop shadow with a custom color. Alpha 0..=255.
-    pub fn shadow_with_color(mut self, blur_radius: f32, offset_y: f32, color: Color) -> Self {
+    pub fn shadow_with_color(mut self, blur_radius: Dp, offset_y: Dp, color: Color) -> Self {
         self.shadow = Some(ShadowSpec {
-            blur_radius: blur_radius.max(0.0),
+            blur_radius: Dp(blur_radius.0.max(0.0)),
             offset_y,
             color,
         });
         self
     }
-    /// Material-style elevation. Auto-scales blur and offset by `level` (dp)
+    /// Material-style elevation. Auto-scales blur and offset by `level` ([`Dp`])
     /// and uses a default shadow color. Level 0 = no shadow. 4 = subtle;
     /// 16 = strong. Requires [`Modifier::graphics_layer`] to take effect.
-    pub fn elevation(mut self, level: f32) -> Self {
-        if level <= 0.0 {
+    pub fn elevation(mut self, level: Dp) -> Self {
+        if level.0 <= 0.0 {
             self.shadow = None;
             return self;
         }
         self.shadow = Some(ShadowSpec {
-            blur_radius: level * 2.0,
-            offset_y: level * 0.5,
-            color: Color(0, 0, 0, (level * 8.0).clamp(8.0, 80.0) as u8),
+            blur_radius: Dp(level.0 * 2.0),
+            offset_y: Dp(level.0 * 0.5),
+            color: Color(0, 0, 0, (level.0 * 8.0).clamp(8.0, 80.0) as u8),
         });
         self
     }
@@ -1670,7 +1668,7 @@ impl Modifier {
         self.transform = Some(t);
         self
     }
-    pub fn grid(mut self, columns: usize, row_gap: f32, column_gap: f32) -> Self {
+    pub fn grid(mut self, columns: usize, row_gap: Dp, column_gap: Dp) -> Self {
         self.grid = Some(GridConfig {
             columns,
             row_gap,
@@ -1689,10 +1687,10 @@ impl Modifier {
     }
     pub fn offset(
         mut self,
-        left: Option<f32>,
-        top: Option<f32>,
-        right: Option<f32>,
-        bottom: Option<f32>,
+        left: Option<Dp>,
+        top: Option<Dp>,
+        right: Option<Dp>,
+        bottom: Option<Dp>,
     ) -> Self {
         self.offset_left = left;
         self.offset_top = top;
@@ -1700,23 +1698,23 @@ impl Modifier {
         self.offset_bottom = bottom;
         self
     }
-    pub fn offset_left(mut self, v: f32) -> Self {
+    pub fn offset_left(mut self, v: Dp) -> Self {
         self.offset_left = Some(v);
         self
     }
-    pub fn offset_right(mut self, v: f32) -> Self {
+    pub fn offset_right(mut self, v: Dp) -> Self {
         self.offset_right = Some(v);
         self
     }
-    pub fn offset_top(mut self, v: f32) -> Self {
+    pub fn offset_top(mut self, v: Dp) -> Self {
         self.offset_top = Some(v);
         self
     }
-    pub fn offset_bottom(mut self, v: f32) -> Self {
+    pub fn offset_bottom(mut self, v: Dp) -> Self {
         self.offset_bottom = Some(v);
         self
     }
-    pub fn margin(mut self, v: f32) -> Self {
+    pub fn margin(mut self, v: Dp) -> Self {
         self.margin_left = Some(v);
         self.margin_right = Some(v);
         self.margin_top = Some(v);
@@ -1724,13 +1722,13 @@ impl Modifier {
         self
     }
 
-    pub fn margin_horizontal(mut self, v: f32) -> Self {
+    pub fn margin_horizontal(mut self, v: Dp) -> Self {
         self.margin_left = Some(v);
         self.margin_right = Some(v);
         self
     }
 
-    pub fn margin_vertical(mut self, v: f32) -> Self {
+    pub fn margin_vertical(mut self, v: Dp) -> Self {
         self.margin_top = Some(v);
         self.margin_bottom = Some(v);
         self
@@ -1739,14 +1737,14 @@ impl Modifier {
         self.aspect_ratio = Some(ratio);
         self
     }
-    /// `fit-content(limit)` width: shrink-wrap content, clamped to `limit` dp.
-    pub fn fit_content_width(mut self, limit_dp: f32) -> Self {
-        self.fit_content_width = Some(limit_dp.max(0.0));
+    /// `fit-content(limit)` width: shrink-wrap content, clamped to `limit` [`Dp`].
+    pub fn fit_content_width(mut self, limit: Dp) -> Self {
+        self.fit_content_width = Some(Dp(limit.0.max(0.0)));
         self
     }
-    /// `fit-content(limit)` height: shrink-wrap content, clamped to `limit` dp.
-    pub fn fit_content_height(mut self, limit_dp: f32) -> Self {
-        self.fit_content_height = Some(limit_dp.max(0.0));
+    /// `fit-content(limit)` height: shrink-wrap content, clamped to `limit` [`Dp`].
+    pub fn fit_content_height(mut self, limit: Dp) -> Self {
+        self.fit_content_height = Some(Dp(limit.0.max(0.0)));
         self
     }
     /// CSS containment. See [`contain`](Self::contain).
@@ -1827,8 +1825,8 @@ impl Modifier {
         let w = w.max(0.0);
         self.flex_grow = Some(w);
         self.flex_shrink = Some(1.0);
-        // dp units; 0 is fine.
-        self.flex_basis = Some(0.0);
+        // Dp units; 0 is fine.
+        self.flex_basis = Some(Dp::ZERO);
         self
     }
     /// Marks this view as a repaint boundary candidate.
@@ -1947,7 +1945,8 @@ impl Modifier {
     }
 
     /// Called after layout when this element's position changes.
-    /// The callback receives the element's rect in dp (device-independent pixels).
+    /// The callback receives the element's rect with [`Dp`] magnitudes
+    /// (device-independent pixels).
     /// Fires whenever the rect changes, including on the initial layout.
     pub fn on_globally_positioned(mut self, f: impl Fn(crate::Rect) + 'static) -> Self {
         self.on_globally_positioned = Some(Rc::new(f));
@@ -1955,7 +1954,7 @@ impl Modifier {
     }
 
     /// Called after layout when this element's size changes.
-    /// Provides the new (width, height) in dp.
+    /// Provides the new (width, height) with [`Dp`] magnitudes.
     pub fn on_size_changed(mut self, f: impl Fn(crate::Vec2) + 'static) -> Self {
         self.on_size_changed = Some(Rc::new(f));
         self
@@ -1981,46 +1980,46 @@ impl Modifier {
     }
 
     /// Apply a gaussian blur to this element's rendered content.
-    /// `radius_dp` is the uniform blur radius in device-independent pixels.
+    /// `radius` is the uniform blur radius in [`Dp`].
     /// Larger values produce a stronger blur.
     /// Uses `Rectangle` edge treatment (clip to bounds).
     ///
     /// Requires `graphics_layer` to be enabled (set automatically if not).
-    pub fn blur(mut self, radius_dp: f32) -> Self {
+    pub fn blur(mut self, radius: Dp) -> Self {
         self.blur = Some(BlurStyle {
-            radius_x: radius_dp.max(0.0),
-            radius_y: radius_dp.max(0.0),
+            radius_x: Dp(radius.0.max(0.0)),
+            radius_y: Dp(radius.0.max(0.0)),
             edge_treatment: BlurredEdgeTreatment::Rectangle,
         });
         self
     }
 
-    /// Apply a gaussian blur with separate horizontal/vertical radii.
+    /// Apply a gaussian blur with separate horizontal/vertical radii ([`Dp`]).
     /// `edge_treatment` controls how edge pixels are handled.
     ///
     /// Requires `graphics_layer` to be enabled (set automatically if not).
     pub fn blur_with_edge(
         mut self,
-        radius_x: f32,
-        radius_y: f32,
+        radius_x: Dp,
+        radius_y: Dp,
         edge_treatment: BlurredEdgeTreatment,
     ) -> Self {
         self.blur = Some(BlurStyle {
-            radius_x: radius_x.max(0.0),
-            radius_y: radius_y.max(0.0),
+            radius_x: Dp(radius_x.0.max(0.0)),
+            radius_y: Dp(radius_y.0.max(0.0)),
             edge_treatment,
         });
         self
     }
 
     /// Override this element's measured size with a custom callback.
-    /// The callback receives `LayoutConstraints` (min/max width/height in dp),
-    /// where `max_width`/`max_height` may be `f32::INFINITY` if unbounded.
-    /// Returns `(width, height)` for this element.
+    /// The callback receives `LayoutConstraints` (min/max width/height in [`Dp`]),
+    /// where `max_width`/`max_height` may be `Dp::INFINITY` if unbounded.
+    /// Returns `(width, height)` for this element, in [`Dp`].
     ///
     /// Child placement is handled by the parent layout (same as Compose's
     /// `Modifier.size` family).
-    pub fn layout(mut self, f: impl Fn(LayoutConstraints) -> (f32, f32) + 'static) -> Self {
+    pub fn layout(mut self, f: impl Fn(LayoutConstraints) -> (Dp, Dp) + 'static) -> Self {
         self.layout = Some(Rc::new(f));
         self
     }

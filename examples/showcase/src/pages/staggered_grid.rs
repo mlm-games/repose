@@ -52,7 +52,7 @@ pub fn screen() -> View {
                 }, ButtonConfig::default(), || Text("Remove")),
                 Spacer(),
                 Text(format!("{} tiles", items.get().len()))
-                    .size(13.0)
+                    .size(Sp(13.0))
                     .color(theme().on_surface_variant),
             )),
             LazyVerticalStaggeredGrid(
@@ -61,15 +61,15 @@ pub fn screen() -> View {
                 |item| item.height,
                 |item, _| {
                     let (bg, fg) = tile_colors(item.id);
-                    DemoTile(format!("#{}", item.id + 1), format!("{:.0}dp", item.height), bg, fg, item.height)
+                    DemoTile(format!("#{}", item.id + 1), format!("{:.0}dp", item.height), bg, fg, Dp(item.height))
                 },
                 LazyVerticalStaggeredGridConfig {
                     state,
                     modifier: Modifier::new()
                         .fill_max_width()
-                        .max_width(820.0)
+                        .max_width(Dp(820.0))
                         .fill_max_height()
-                        .max_height(520.0)
+                        .max_height(Dp(520.0))
                         .gap(sp::SM),
                     ..Default::default()
                 },

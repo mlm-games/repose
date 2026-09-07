@@ -39,10 +39,10 @@ pub fn Badge(content: Option<View>, config: BadgeConfig) -> View {
             .background(config.container_color)
             .clip_rounded(BadgeDefaults::LABEL_HEIGHT * 0.5)
             .padding_values(PaddingValues {
-                left: 4.0,
-                right: 4.0,
-                top: 0.0,
-                bottom: 0.0,
+                left: Dp(4.0),
+                right: Dp(4.0),
+                top: Dp(0.0),
+                bottom: Dp(0.0),
             })
             .align_items(AlignItems::CENTER)
             .justify_content(JustifyContent::CENTER)
@@ -57,13 +57,13 @@ pub fn Badge(content: Option<View>, config: BadgeConfig) -> View {
 pub struct BadgedBoxConfig {
     pub modifier: Modifier,
     /// Horizontal offset for the badge when it's a small dot.
-    pub dot_offset_x: f32,
+    pub dot_offset_x: Dp,
     /// Vertical offset for the badge when it's a small dot.
-    pub dot_offset_y: f32,
+    pub dot_offset_y: Dp,
     /// Horizontal offset for the badge when it has content.
-    pub content_offset_x: f32,
+    pub content_offset_x: Dp,
     /// Vertical offset for the badge when it has content.
-    pub content_offset_y: f32,
+    pub content_offset_y: Dp,
     /// When true, use `content_offset_*` (labeled badge). When false, use `dot_offset_*`.
     pub has_content: bool,
 }

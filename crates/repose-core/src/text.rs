@@ -527,16 +527,17 @@ pub enum KeyboardCapitalization {
     Sentences,
 }
 
-/// Text shadow.
+/// Text shadow. Offsets and blur are in [`Dp`](crate::units::Dp),
+/// converted to px at the paint boundary.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Shadow {
     pub color: Color,
-    /// Horizontal offset in dp.
-    pub offset_x: f32,
-    /// Vertical offset in dp.
-    pub offset_y: f32,
-    /// Blur radius in dp.
-    pub blur_radius: f32,
+    /// Horizontal offset in [`Dp`](crate::units::Dp).
+    pub offset_x: crate::units::Dp,
+    /// Vertical offset in [`Dp`](crate::units::Dp).
+    pub offset_y: crate::units::Dp,
+    /// Blur radius in [`Dp`](crate::units::Dp).
+    pub blur_radius: crate::units::Dp,
 }
 
 /// Font synthesis controls whether the font renderer may synthesize
@@ -592,18 +593,18 @@ pub enum LineBreak {
     Paragraph,
 }
 
-/// First-line and rest-line indent in dp.
+/// First-line and rest-line indent in [`Dp`](crate::units::Dp).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TextIndent {
-    pub first_line: f32,
-    pub rest_lines: f32,
+    pub first_line: crate::units::Dp,
+    pub rest_lines: crate::units::Dp,
 }
 
 impl Default for TextIndent {
     fn default() -> Self {
         Self {
-            first_line: 0.0,
-            rest_lines: 0.0,
+            first_line: crate::units::Dp::ZERO,
+            rest_lines: crate::units::Dp::ZERO,
         }
     }
 }
@@ -659,11 +660,11 @@ impl DrawStyle {
 }
 
 /// Style configuration for text displayed in a text field.
-/// Corresponds to Compose's `TextStyle`.
+/// Corresponds to Compose's `TextStyle` (font sizes are `TextUnit` Sp there).
 #[derive(Clone, Debug)]
 pub struct TextStyle {
-    /// Font size in dp. 0 = use default (16dp for TextField).
-    pub font_size: f32,
+    /// Font size in [`Sp`](crate::units::Sp). `Sp::ZERO` = use default (16sp for TextField).
+    pub font_size: crate::units::Sp,
     /// Text color. None = use theme default.
     pub color: Option<Color>,
     /// Font weight. None = NORMAL.
@@ -674,10 +675,10 @@ pub struct TextStyle {
     pub font_style: Option<u8>,
     /// Text alignment. Unspecified = inherit.
     pub text_align: crate::TextAlign,
-    /// Letter spacing in dp. 0 = no extra spacing.
-    pub letter_spacing: f32,
-    /// Line height in dp. 0 = default (font_size).
-    pub line_height: f32,
+    /// Letter spacing in [`Sp`](crate::units::Sp). `Sp::ZERO` = no extra spacing.
+    pub letter_spacing: crate::units::Sp,
+    /// Line height in [`Sp`](crate::units::Sp). `Sp::ZERO` = default (font_size).
+    pub line_height: crate::units::Sp,
     /// Text background color. None = transparent.
     pub background: Option<Color>,
     /// Text decoration (underline, strikethrough). None = no decoration.
@@ -711,14 +712,14 @@ pub struct TextStyle {
 impl Default for TextStyle {
     fn default() -> Self {
         Self {
-            font_size: 0.0,
+            font_size: crate::units::Sp::ZERO,
             color: None,
             font_weight: None,
             font_family: Some("sans-serif"),
             font_style: None,
             text_align: crate::TextAlign::Unspecified,
-            letter_spacing: 0.0,
-            line_height: 0.0,
+            letter_spacing: crate::units::Sp::ZERO,
+            line_height: crate::units::Sp::ZERO,
             background: None,
             text_decoration: None,
             shadow: None,
@@ -1060,13 +1061,13 @@ impl Default for KeyboardOptions {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpanStyle {
     pub color: Option<Color>,
-    pub font_size: Option<f32>,
+    pub font_size: Option<crate::units::Sp>,
     pub font_weight: Option<u16>,
     pub font_family: Option<&'static str>,
     pub font_style: Option<u8>,
     pub text_align: Option<crate::TextAlign>,
-    pub letter_spacing: Option<f32>,
-    pub line_height: Option<f32>,
+    pub letter_spacing: Option<crate::units::Sp>,
+    pub line_height: Option<crate::units::Sp>,
     pub background: Option<Color>,
     pub text_decoration: Option<crate::TextDecoration>,
     pub text_direction: Option<crate::TextDirection>,
@@ -1111,8 +1112,8 @@ impl SpanStyle {
         self
     }
 
-    pub fn font_size(mut self, px: f32) -> Self {
-        self.font_size = Some(px);
+    pub fn font_size(mut self, size: crate::units::Sp) -> Self {
+        self.font_size = Some(size);
         self
     }
 

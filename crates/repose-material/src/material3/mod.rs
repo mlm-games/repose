@@ -71,7 +71,7 @@ pub use time_picker::*;
 pub use tooltip::*;
 
 use repose_core::{
-    JustifyContent, Modifier, PaddingValues, Theme, View, with_local_indication, with_theme,
+    Dp, JustifyContent, Modifier, PaddingValues, Theme, View, with_local_indication, with_theme,
 };
 use repose_ui::{Box, Column, Row, ViewExt};
 
@@ -100,10 +100,10 @@ pub(crate) fn alert_dialog_body(
     Column(
         Modifier::new()
             .padding_values(PaddingValues {
-                left: 24.0,
-                right: 24.0,
-                top: 24.0,
-                bottom: 24.0,
+                left: Dp(24.0),
+                right: Dp(24.0),
+                top: Dp(24.0),
+                bottom: Dp(24.0),
             })
             .fill_max_width(),
     )
@@ -111,23 +111,23 @@ pub(crate) fn alert_dialog_body(
         Box(Modifier::new().fill_max_width().flex_shrink(0.0)).child(title),
         Box(Modifier::new()
             .fill_max_width()
-            .height(16.0)
+            .height(Dp(16.0))
             .flex_shrink(0.0)),
         Box(Modifier::new()
             .fill_max_width()
             .flex_grow(1.0)
             .flex_shrink(1.0)
-            .flex_basis(0.0))
+            .flex_basis(Dp::ZERO))
         .child(text),
         Box(Modifier::new()
             .fill_max_width()
-            .height(24.0)
+            .height(Dp(24.0))
             .flex_shrink(0.0)),
         Row(Modifier::new()
             .fill_max_width()
             .flex_shrink(0.0)
             .justify_content(JustifyContent::FLEX_END)
-            .gap(8.0))
+            .gap(Dp(8.0)))
         .child((
             dismiss_button.unwrap_or(Box(Modifier::new())),
             confirm_button,

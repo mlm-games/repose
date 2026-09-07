@@ -19,16 +19,16 @@ pub struct DropdownMenuConfig {
     pub item_text_color: Color,
     pub disabled_item_text_color: Color,
     pub divider_color: Color,
-    pub min_width: f32,
-    pub item_height: f32,
-    pub max_width: f32,
-    pub shadow_elevation: Option<f32>,
-    pub tonal_elevation: f32,
-    pub border: Option<(f32, Color, f32)>,
-    pub shape_radius: Option<f32>,
-    pub offset_x: f32,
-    pub offset_y: f32,
-    pub vertical_margin: f32,
+    pub min_width: Dp,
+    pub item_height: Dp,
+    pub max_width: Dp,
+    pub shadow_elevation: Option<Dp>,
+    pub tonal_elevation: Dp,
+    pub border: Option<(Dp, Color, Dp)>,
+    pub shape_radius: Option<Dp>,
+    pub offset_x: Dp,
+    pub offset_y: Dp,
+    pub vertical_margin: Dp,
 }
 
 impl Default for DropdownMenuConfig {
@@ -42,11 +42,11 @@ impl Default for DropdownMenuConfig {
             item_height: DropdownMenuDefaults::ITEM_HEIGHT,
             max_width: DropdownMenuDefaults::MAX_WIDTH,
             shadow_elevation: None,
-            tonal_elevation: 0.0,
+            tonal_elevation: Dp::ZERO,
             border: None,
             shape_radius: None,
-            offset_x: 0.0,
-            offset_y: 0.0,
+            offset_x: Dp::ZERO,
+            offset_y: Dp::ZERO,
             vertical_margin: DropdownMenuDefaults::VERTICAL_MARGIN,
         }
     }
@@ -131,10 +131,10 @@ impl MenuState {
 }
 
 const DDM_SCALE_FROM: f32 = 0.8;
-const DDM_VERTICAL_PADDING: f32 = 8.0;
-const DDM_ITEM_H_PAD: f32 = 12.0;
-const DDM_ITEM_MIN_HEIGHT: f32 = 48.0;
-const DDM_MIN_OPEN_HEIGHT: f32 = 48.0;
+const DDM_VERTICAL_PADDING: Dp = Dp(8.0);
+const DDM_ITEM_H_PAD: Dp = Dp(12.0);
+const DDM_ITEM_MIN_HEIGHT: Dp = Dp(48.0);
+const DDM_MIN_OPEN_HEIGHT: Dp = Dp(48.0);
 
 /// Either a menu item or a divider.
 #[derive(Clone)]
@@ -219,14 +219,14 @@ pub fn DropdownMenu(
 
                     let rect = *trigger_rect.borrow();
                     let win_h = get_window_container_height();
-                    let hm = config.vertical_margin;
+                    let hm = config.vertical_margin.0;
 
                     let space_below = (win_h - hm) - (rect.y + rect.h);
                     let space_above = rect.y - hm;
 
                     let estimated_h = estimate_dropdown_height(&items, &config)
                         .min(space_below.max(space_above))
-                        .max(DDM_MIN_OPEN_HEIGHT);
+                        .max(DDM_MIN_OPEN_HEIGHT.0);
                     let place_below = space_below >= estimated_h
                         || (space_above < estimated_h && space_below >= space_above);
                     let available_height = (if place_below {
@@ -236,7 +236,7 @@ pub fn DropdownMenu(
                     })
                     .max(48.0);
 
-                    let popup_x = rect.x + config.offset_x;
+                    let popup_x = rect.x + config.offset_x.0;
                     let constrained_width = config.max_width;
 
                     let mut adjusted_config = config.clone();
@@ -256,16 +256,20 @@ pub fn DropdownMenu(
                     let mut offset_modifier = Modifier::new();
                     if place_below {
                         offset_modifier = offset_modifier.offset(
-                            Some(popup_x),
-                            Some(rect.y + rect.h + config.offset_y),
+                            Some(Dp(popup_x)),
+                            Some(Dp(rect.y + rect.h + config.offset_y.0)),
                             None,
                             None,
                         );
                     } else {
-                        let menu_bottom_y = rect.y + config.offset_y;
+                        let menu_bottom_y = rect.y + config.offset_y.0;
                         let offset_bottom = (win_h - menu_bottom_y).max(0.0);
-                        offset_modifier =
-                            offset_modifier.offset(Some(popup_x), None, None, Some(offset_bottom));
+                        offset_modifier = offset_modifier.offset(
+                            Some(Dp(popup_x)),
+                            None,
+                            None,
+                            Some(Dp(offset_bottom)),
+                        );
                     }
 
                     let menu = Box(offset_modifier
@@ -294,11 +298,11 @@ pub fn DropdownMenu(
 }
 
 fn estimate_dropdown_height(items: &[DropdownMenuEntry], config: &DropdownMenuConfig) -> f32 {
-    let mut h = 2.0 * DDM_VERTICAL_PADDING;
+    let mut h = 2.0 * DDM_VERTICAL_PADDING.0;
     for entry in items {
         match entry {
             DropdownMenuEntry::Item(_) => {
-                h += config.item_height.max(DDM_ITEM_MIN_HEIGHT);
+                h += config.item_height.max(DDM_ITEM_MIN_HEIGHT).0;
             }
             // Divider: 1px line + 12px horizontal margins (also vertical here).
             DropdownMenuEntry::Divider => h += 1.0 + 2.0 * 12.0,
@@ -335,8 +339,8 @@ fn render_dropdown_menu_content(
                     .padding_values(PaddingValues {
                         left: DDM_ITEM_H_PAD,
                         right: DDM_ITEM_H_PAD,
-                        top: 0.0,
-                        bottom: 0.0,
+                        top: Dp::ZERO,
+                        bottom: Dp::ZERO,
                     })
                     .align_items(AlignItems::CENTER);
 
@@ -384,8 +388,8 @@ fn render_dropdown_menu_content(
             }
             DropdownMenuEntry::Divider => Box(Modifier::new()
                 .fill_max_width()
-                .height(1.0)
-                .margin(12.0)
+                .height(Dp(1.0))
+                .margin(Dp(12.0))
                 .background(config.divider_color)),
         })
         .collect();
@@ -398,19 +402,19 @@ fn render_dropdown_menu_content(
 
     let items_column = Box(Modifier::new()
         .fill_max_width()
-        .max_height((max_height - 2.0 * DDM_VERTICAL_PADDING).max(0.0))
+        .max_height(Dp((max_height - 2.0 * DDM_VERTICAL_PADDING.0).max(0.0)))
         .vertical_scroll(axis_binding))
     .child(Column(Modifier::new().fill_max_width()).with_children(children));
 
     let shadow_elevation = config.shadow_elevation.unwrap_or(th.elevation.level2);
 
     let mut card_modifier = Modifier::new()
-        .shadow(shadow_elevation, 0.0)
+        .shadow(shadow_elevation, Dp::ZERO)
         .min_width(config.min_width)
         .max_width(config.max_width)
         .padding_values(PaddingValues {
-            left: 0.0,
-            right: 0.0,
+            left: Dp::ZERO,
+            right: Dp::ZERO,
             top: DDM_VERTICAL_PADDING,
             bottom: DDM_VERTICAL_PADDING,
         })

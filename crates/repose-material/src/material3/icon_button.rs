@@ -61,9 +61,9 @@ pub struct IconButtonConfig {
     pub modifier: Modifier,
     pub enabled: bool,
     pub colors: IconButtonColors,
-    pub container_size: Option<f32>,
+    pub container_size: Option<Dp>,
     pub interaction_source: Option<MutableInteractionSource>,
-    pub shape_radius: Option<f32>,
+    pub shape_radius: Option<Dp>,
 }
 
 impl Default for IconButtonConfig {
@@ -118,9 +118,9 @@ fn icon_button_render(
     on_click: impl Fn() + 'static,
     config: &IconButtonConfig,
     colors: IconButtonColors,
-    sz: f32,
+    sz: Dp,
     bg: Option<Color>,
-    bdr: Option<(f32, Color)>,
+    bdr: Option<(Dp, Color)>,
     state_colors: StateColors,
     ripple_bounded: bool,
 ) -> View {
@@ -293,7 +293,7 @@ pub fn OutlinedIconButton(
         colors,
         sz,
         None,
-        Some((1.0, border_color)),
+        Some((Dp(1.0), border_color)),
         StateColors {
             default: Color::TRANSPARENT,
             hovered: Color::TRANSPARENT,

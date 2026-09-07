@@ -141,13 +141,14 @@ impl ViewTree {
                 // Apply cached Taffy-computed size for this ancestor if
                 // available.
                 if let Some(cache) = &node.layout_cache {
+                    // Layout cache rects are px; the scope is Dp.
                     let w = cache.rect.w;
                     if w > 0.0 && w.is_finite() {
-                        scope.max_width = scope.max_width.min(w);
+                        scope.max_width = scope.max_width.min(repose_core::Px(w).to_dp());
                     }
                     let h = cache.rect.h;
                     if h > 0.0 && h.is_finite() {
-                        scope.max_height = scope.max_height.min(h);
+                        scope.max_height = scope.max_height.min(repose_core::Px(h).to_dp());
                     }
                 }
             }
@@ -790,18 +791,18 @@ fn intersect_scope_with_modifier(scope: SubcomposeScope, modifier: &Modifier) ->
     // constraints are offset by the padding amount).
     if let Some(p) = modifier.padding {
         let total = p * 2.0;
-        s.min_width = (s.min_width - total).max(0.0);
-        s.max_width = (s.max_width - total).max(0.0);
-        s.min_height = (s.min_height - total).max(0.0);
-        s.max_height = (s.max_height - total).max(0.0);
+        s.min_width = (s.min_width - total).max(repose_core::Dp::ZERO);
+        s.max_width = (s.max_width - total).max(repose_core::Dp::ZERO);
+        s.min_height = (s.min_height - total).max(repose_core::Dp::ZERO);
+        s.max_height = (s.max_height - total).max(repose_core::Dp::ZERO);
     }
     if let Some(pv) = modifier.padding_values {
         let h_total = pv.left + pv.right;
         let v_total = pv.top + pv.bottom;
-        s.min_width = (s.min_width - h_total).max(0.0);
-        s.max_width = (s.max_width - h_total).max(0.0);
-        s.min_height = (s.min_height - v_total).max(0.0);
-        s.max_height = (s.max_height - v_total).max(0.0);
+        s.min_width = (s.min_width - h_total).max(repose_core::Dp::ZERO);
+        s.max_width = (s.max_width - h_total).max(repose_core::Dp::ZERO);
+        s.min_height = (s.min_height - v_total).max(repose_core::Dp::ZERO);
+        s.max_height = (s.max_height - v_total).max(repose_core::Dp::ZERO);
     }
     s
 }
@@ -810,8 +811,8 @@ fn intersect_scope_with_modifier(scope: SubcomposeScope, modifier: &Modifier) ->
 mod tests {
     use super::*;
     use repose_core::{
-        Color, FontStyle, FontWeight, Modifier, SubcomposeScope, TextAlign, TextDecoration, View,
-        ViewKind,
+        Color, Dp, FontStyle, FontWeight, Modifier, Sp, SubcomposeScope, TextAlign, TextDecoration,
+        UnitExt, View, ViewKind,
     };
     use std::sync::Arc;
 
@@ -821,7 +822,7 @@ mod tests {
             ViewKind::Text {
                 text: text.to_string(),
                 color: Color::WHITE,
-                font_size: 16.0,
+                font_size: 16.0.sp(),
                 soft_wrap: true,
                 max_lines: None,
                 overflow: repose_core::TextOverflow::Visible,
@@ -831,8 +832,8 @@ mod tests {
                 font_weight: FontWeight::NORMAL,
                 font_style: FontStyle::Normal,
                 text_decoration: TextDecoration::default(),
-                letter_spacing: 0.0,
-                line_height: 0.0,
+                letter_spacing: Sp::ZERO,
+                line_height: Sp::ZERO,
                 url: None,
                 font_variation_settings: None,
             },
@@ -964,14 +965,14 @@ mod tests {
             text_view("hi")
         })]);
 
-        tree.set_subcompose_scope(SubcomposeScope::new(0.0, 360.0, 0.0, 640.0));
+        tree.set_subcompose_scope(SubcomposeScope::new(Dp(0.0), Dp(360.0), Dp(0.0), Dp(640.0)));
         tree.update(&root);
 
         let observed = captured.lock().unwrap().expect("scope captured");
-        assert_eq!(observed.max_width, 360.0);
-        assert_eq!(observed.max_height, 640.0);
-        assert_eq!(observed.min_width, 0.0);
-        assert_eq!(observed.min_height, 0.0);
+        assert_eq!(observed.max_width, Dp(360.0));
+        assert_eq!(observed.max_height, Dp(640.0));
+        assert_eq!(observed.min_width, Dp(0.0));
+        assert_eq!(observed.min_height, Dp(0.0));
     }
 
     #[test]
@@ -1005,7 +1006,7 @@ mod tests {
             text_view("hi")
         })]);
 
-        tree.set_subcompose_scope(SubcomposeScope::new(0.0, 100.0, 0.0, 100.0));
+        tree.set_subcompose_scope(SubcomposeScope::new(Dp(0.0), Dp(100.0), Dp(0.0), Dp(100.0)));
         tree.update(&root);
         assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 1);
 
@@ -1014,7 +1015,7 @@ mod tests {
         assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 1);
 
         // Scope changed: closure re-runs.
-        tree.set_subcompose_scope(SubcomposeScope::new(0.0, 200.0, 0.0, 200.0));
+        tree.set_subcompose_scope(SubcomposeScope::new(Dp(0.0), Dp(200.0), Dp(0.0), Dp(200.0)));
         tree.update(&root);
         assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
@@ -1044,7 +1045,7 @@ mod tests {
                 c2.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 text_view("hi")
             })
-            .modifier(Modifier::new().padding(4.0)),
+            .modifier(Modifier::new().padding(4.0.dp())),
         ]);
 
         tree.update(&root2);
@@ -1054,7 +1055,7 @@ mod tests {
     #[test]
     fn test_subcompose_cache_drops_on_node_removal() {
         let mut tree = ViewTree::new();
-        tree.set_subcompose_scope(SubcomposeScope::new(0.0, 100.0, 0.0, 100.0));
+        tree.set_subcompose_scope(SubcomposeScope::new(Dp(0.0), Dp(100.0), Dp(0.0), Dp(100.0)));
 
         // First root has a SubcomposeLayout child.
         let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -1152,7 +1153,7 @@ mod tests {
         // the subcompose cache to invalidate so the new closure runs.
         let root2 = box_view().with_children(vec![
             multi_slot_view(|_scope| vec![(0, text_view("a")), (2, text_view("c"))])
-                .modifier(Modifier::new().padding(4.0)),
+                .modifier(Modifier::new().padding(4.0.dp())),
         ]);
         tree.update(&root2);
 
@@ -1168,7 +1169,12 @@ mod tests {
     #[test]
     fn test_subcompose_ancestor_modifier_narrows_scope() {
         let mut tree = ViewTree::new();
-        tree.set_subcompose_scope(SubcomposeScope::new(0.0, 1000.0, 0.0, 1000.0));
+        tree.set_subcompose_scope(SubcomposeScope::new(
+            Dp(0.0),
+            Dp(1000.0),
+            Dp(0.0),
+            Dp(1000.0),
+        ));
 
         let captured = Arc::new(std::sync::Mutex::new(SubcomposeScope::UNBOUNDED));
         let cap2 = captured.clone();
@@ -1180,19 +1186,24 @@ mod tests {
             vec![(0, text_view("hi"))]
         });
         let root = box_view()
-            .modifier(Modifier::new().width(200.0))
+            .modifier(Modifier::new().width(200.0.dp()))
             .with_children(vec![sub]);
 
         tree.update(&root);
 
         let observed = *captured.lock().unwrap();
-        assert_eq!(observed.max_width, 200.0);
+        assert_eq!(observed.max_width, Dp(200.0));
     }
 
     #[test]
     fn test_subcompose_chained_ancestor_constraints_intersect() {
         let mut tree = ViewTree::new();
-        tree.set_subcompose_scope(SubcomposeScope::new(0.0, 1000.0, 0.0, 1000.0));
+        tree.set_subcompose_scope(SubcomposeScope::new(
+            Dp(0.0),
+            Dp(1000.0),
+            Dp(0.0),
+            Dp(1000.0),
+        ));
 
         let captured = Arc::new(std::sync::Mutex::new(SubcomposeScope::UNBOUNDED));
         let cap2 = captured.clone();
@@ -1204,17 +1215,17 @@ mod tests {
         // Box(width=400) -> Box(max_width=300) -> SubcomposeLayout.
         // The intersection should give max_width = 300.
         let root = box_view()
-            .modifier(Modifier::new().width(400.0))
+            .modifier(Modifier::new().width(400.0.dp()))
             .with_children(vec![
                 box_view()
-                    .modifier(Modifier::new().max_width(300.0))
+                    .modifier(Modifier::new().max_width(300.0.dp()))
                     .with_children(vec![sub]),
             ]);
 
         tree.update(&root);
 
         let observed = *captured.lock().unwrap();
-        assert_eq!(observed.max_width, 300.0);
+        assert_eq!(observed.max_width, Dp(300.0));
     }
 
     #[test]
@@ -1222,7 +1233,12 @@ mod tests {
     #[allow(clippy::arc_with_non_send_sync)]
     fn test_subcompose_nested_layouts_inherit_narrowed_scope() {
         let mut tree = ViewTree::new();
-        tree.set_subcompose_scope(SubcomposeScope::new(0.0, 1000.0, 0.0, 1000.0));
+        tree.set_subcompose_scope(SubcomposeScope::new(
+            Dp(0.0),
+            Dp(1000.0),
+            Dp(0.0),
+            Dp(1000.0),
+        ));
 
         let outer_captured = Arc::new(std::sync::Mutex::new(SubcomposeScope::UNBOUNDED));
         let inner_captured = Arc::new(std::sync::Mutex::new(SubcomposeScope::UNBOUNDED));
@@ -1240,14 +1256,14 @@ mod tests {
             *outer2.lock().unwrap() = *scope;
             vec![(0, (*inner_clone).clone())]
         })
-        .modifier(Modifier::new().width(400.0));
+        .modifier(Modifier::new().width(400.0.dp()));
         let root = box_view().with_children(vec![outer]);
 
         tree.update(&root);
 
         let outer_obs = *outer_captured.lock().unwrap();
         let inner_obs = *inner_captured.lock().unwrap();
-        assert_eq!(outer_obs.max_width, 400.0);
-        assert_eq!(inner_obs.max_width, 400.0);
+        assert_eq!(outer_obs.max_width, Dp(400.0));
+        assert_eq!(inner_obs.max_width, Dp(400.0));
     }
 }

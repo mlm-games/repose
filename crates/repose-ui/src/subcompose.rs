@@ -160,14 +160,15 @@ mod tests {
 
     fn text_view(text: &str) -> View {
         use repose_core::{
-            Color, FontStyle, FontWeight, TextAlign, TextDecoration, TextOverflow, ViewKind,
+            Color, FontStyle, FontWeight, Sp, TextAlign, TextDecoration, TextOverflow, UnitExt,
+            ViewKind,
         };
         View {
             id: 0,
             kind: ViewKind::Text {
                 text: text.to_string(),
                 color: Color::WHITE,
-                font_size: 14.0,
+                font_size: 14.0.sp(),
                 soft_wrap: true,
                 max_lines: None,
                 overflow: TextOverflow::Clip,
@@ -177,8 +178,8 @@ mod tests {
                 font_weight: FontWeight::NORMAL,
                 font_style: FontStyle::Normal,
                 text_decoration: TextDecoration::default(),
-                letter_spacing: 0.0,
-                line_height: 0.0,
+                letter_spacing: Sp::ZERO,
+                line_height: Sp::ZERO,
                 url: None,
                 font_variation_settings: None,
             },
@@ -276,7 +277,7 @@ mod tests {
     fn box_with_constraints_with_key_forwards_scope() {
         use crate::Box as RBox;
         let sub = box_with_constraints_with_key(42u64, Modifier::new(), |scope| {
-            assert!(scope.max_width > 0.0);
+            assert!(scope.max_width.0 > 0.0);
             RBox(Modifier::new())
         });
         // Smoke check: builds a valid View with the SubcomposeLayout kind.

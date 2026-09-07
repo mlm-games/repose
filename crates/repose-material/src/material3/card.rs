@@ -18,10 +18,10 @@ pub struct CardConfig {
     pub content_color: Color,
     pub disabled_container_color: Color,
     pub disabled_content_color: Color,
-    pub shape_radius: f32,
-    pub tonal_elevation: f32,
+    pub shape_radius: Dp,
+    pub tonal_elevation: Dp,
     pub state_elevation: Option<StateElevation>,
-    pub border: Option<(f32, Color)>,
+    pub border: Option<(Dp, Color)>,
     pub interaction_source: Option<MutableInteractionSource>,
 }
 
@@ -73,15 +73,15 @@ pub fn Card(config: CardConfig, content: impl FnOnce() -> View) -> View {
             se
         } else {
             StateElevation {
-                default: 0.0,
-                hovered: 0.0,
-                focused: 0.0,
-                pressed: 0.0,
-                dragged: 0.0,
-                disabled: 0.0,
+                default: Dp::ZERO,
+                hovered: Dp::ZERO,
+                focused: Dp::ZERO,
+                pressed: Dp::ZERO,
+                dragged: Dp::ZERO,
+                disabled: Dp::ZERO,
             }
         });
-    } else if config.tonal_elevation > 0.0 {
+    } else if config.tonal_elevation.0 > 0.0 {
         m = apply_tonal_elevation(m, config.tonal_elevation, bg);
     }
     if !config.enabled {
@@ -102,7 +102,7 @@ pub fn ElevatedCard(config: CardConfig, content: impl FnOnce() -> View) -> View 
                 focused: th.elevation.level2,
                 pressed: th.elevation.level3,
                 dragged: th.elevation.level3,
-                disabled: 0.0,
+                disabled: Dp::ZERO,
             }),
             ..config
         },
@@ -115,7 +115,7 @@ pub fn OutlinedCard(config: CardConfig, content: impl FnOnce() -> View) -> View 
     Card(
         CardConfig {
             container_color: CardDefaults::outlined_container_color(),
-            border: Some((1.0, CardDefaults::outlined_border_color())),
+            border: Some((Dp(1.0), CardDefaults::outlined_border_color())),
             ..config
         },
         content,
@@ -138,7 +138,7 @@ fn clickable_card_impl(
     on_click: impl Fn() + 'static,
     modifier: Modifier,
     bg: Color,
-    shape_radius: f32,
+    shape_radius: Dp,
     config: CardConfig,
     content: impl FnOnce() -> View,
 ) -> View {
@@ -203,7 +203,7 @@ pub fn ClickableElevatedCard(
             focused: th.elevation.level2,
             pressed: th.elevation.level3,
             dragged: th.elevation.level3,
-            disabled: 0.0,
+            disabled: Dp::ZERO,
         }),
         ..config
     };
@@ -226,7 +226,7 @@ pub fn ClickableOutlinedCard(
 ) -> View {
     let th = theme();
     let cfg = CardConfig {
-        border: Some((1.0, th.outline_variant)),
+        border: Some((Dp(1.0), th.outline_variant)),
         ..config
     };
     clickable_card_impl(

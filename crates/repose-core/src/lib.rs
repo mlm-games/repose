@@ -132,6 +132,7 @@ pub mod signal;
 pub mod state;
 pub mod tests;
 pub mod text;
+pub mod units;
 
 pub mod timer;
 
@@ -163,6 +164,7 @@ pub use semantics::*;
 pub use signal::*;
 pub use state::*;
 pub use text::*;
+pub use units::*;
 pub use view::*;
 
 pub use repose_macros::View;

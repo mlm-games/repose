@@ -14,7 +14,7 @@ impl LayoutEngine {
         &self,
         view: &View,
         taffy: &mut taffy::TaffyTree<NodeContext>,
-        font_px: &dyn Fn(f32) -> f32,
+        font_px: &dyn Fn(Sp) -> f32,
     ) -> taffy::NodeId {
         let style = self.style_from_kind(&view.kind, &view.modifier, font_px);
         let ctx = Self::context_from_kind_or_modifier(&view.kind, &view.modifier);
@@ -73,7 +73,7 @@ impl LayoutEngine {
         t
     }
 
-    pub(crate) fn sync_taffy_tree(&mut self, root_id: NodeId, font_px: &dyn Fn(f32) -> f32) {
+    pub(crate) fn sync_taffy_tree(&mut self, root_id: NodeId, font_px: &dyn Fn(Sp) -> f32) {
         // Removals from root tree (non-scope nodes + scope root markers)
         for &node_id in &self.tree.removed_ids {
             if self.node_to_scope.contains_key(&node_id) {
@@ -119,7 +119,7 @@ impl LayoutEngine {
     pub(crate) fn update_taffy_node(
         &mut self,
         node_id: NodeId,
-        font_px: &dyn Fn(f32) -> f32,
+        font_px: &dyn Fn(Sp) -> f32,
     ) -> taffy::NodeId {
         // Ensure this node has a stable view id
         let _ = self.ensure_view_id(node_id);
@@ -246,7 +246,7 @@ impl LayoutEngine {
         &mut self,
         node_id: NodeId,
         taffy_id: taffy::NodeId,
-        font_px: &dyn Fn(f32) -> f32,
+        font_px: &dyn Fn(Sp) -> f32,
     ) {
         // Ensure this node has a stable view id
         let _ = self.ensure_view_id(node_id);
@@ -420,7 +420,7 @@ impl LayoutEngine {
     pub(crate) fn style_from_node(
         &self,
         node: &TreeNode,
-        font_px: &dyn Fn(f32) -> f32,
+        font_px: &dyn Fn(Sp) -> f32,
     ) -> taffy::Style {
         self.style_from_kind(&node.kind, &node.modifier, font_px)
     }
@@ -429,9 +429,10 @@ impl LayoutEngine {
         &self,
         kind: &ViewKind,
         m: &repose_core::Modifier,
-        _font_px: &dyn Fn(f32) -> f32,
+        _font_px: &dyn Fn(Sp) -> f32,
     ) -> taffy::Style {
-        let px = |dp_val: f32| dp_to_px(dp_val);
+        // Taffy works in px; Modifier speaks Dp. Convert at this boundary.
+        let px = |v: Dp| v.to_px().0;
         let mut s = taffy::Style {
             display: Display::Flex,
             ..Default::default()
@@ -482,7 +483,7 @@ impl LayoutEngine {
             s.flex_shrink = sh.max(0.0);
         }
         if let Some(b) = m.flex_basis {
-            s.flex_basis = length(px(b.max(0.0)));
+            s.flex_basis = length(px(b.max(Dp::ZERO)));
         }
         if m.flex_basis_content {
             s.flex_basis = taffy::Dimension::content();
@@ -513,11 +514,11 @@ impl LayoutEngine {
         let column_gap_dp = m.column_gap.or(m.gap);
 
         if let Some(v) = column_gap_dp {
-            s.gap.width = length(px(v.max(0.0)));
+            s.gap.width = length(px(v.max(Dp::ZERO)));
         }
 
         if let Some(v) = row_gap_dp {
-            s.gap.height = length(px(v.max(0.0)));
+            s.gap.height = length(px(v.max(Dp::ZERO)));
         }
 
         if let Some(v) = m.margin_top {
@@ -549,10 +550,10 @@ impl LayoutEngine {
                 .map(|_| GridTemplateComponent::Single(flex(1.0_f32)))
                 .collect();
             if column_gap_dp.is_none() {
-                s.gap.width = length(px(cfg.column_gap));
+                s.gap.width = length(px(cfg.column_gap.max(Dp::ZERO)));
             }
             if row_gap_dp.is_none() {
-                s.gap.height = length(px(cfg.row_gap));
+                s.gap.height = length(px(cfg.row_gap.max(Dp::ZERO)));
             }
         }
 
@@ -591,21 +592,21 @@ impl LayoutEngine {
         let mut width_set = false;
         let mut height_set = false;
         if let Some(sz) = m.size {
-            if sz.width.is_finite() {
-                s.size.width = length(px(sz.width.max(0.0)));
+            if sz.width.0.is_finite() {
+                s.size.width = length(px(sz.width.max(Dp::ZERO)));
                 width_set = true;
             }
-            if sz.height.is_finite() {
-                s.size.height = length(px(sz.height.max(0.0)));
+            if sz.height.0.is_finite() {
+                s.size.height = length(px(sz.height.max(Dp::ZERO)));
                 height_set = true;
             }
         }
         if let Some(w) = m.width {
-            s.size.width = length(px(w.max(0.0)));
+            s.size.width = length(px(w.max(Dp::ZERO)));
             width_set = true;
         }
         if let Some(h) = m.height {
-            s.size.height = length(px(h.max(0.0)));
+            s.size.height = length(px(h.max(Dp::ZERO)));
             height_set = true;
         }
         // Intrinsic / fit-content sizing keywords (taffy 0.14). These revive
@@ -619,7 +620,7 @@ impl LayoutEngine {
                 };
                 width_set = true;
             } else if let Some(limit) = m.fit_content_width {
-                s.size.width = taffy::Dimension::fit_content_px(px(limit.max(0.0)));
+                s.size.width = taffy::Dimension::fit_content_px(px(limit.max(Dp::ZERO)));
                 width_set = true;
             }
         }
@@ -631,18 +632,18 @@ impl LayoutEngine {
                 };
                 height_set = true;
             } else if let Some(limit) = m.fit_content_height {
-                s.size.height = taffy::Dimension::fit_content_px(px(limit.max(0.0)));
+                s.size.height = taffy::Dimension::fit_content_px(px(limit.max(Dp::ZERO)));
                 height_set = true;
             }
         }
 
         if let Some(sz) = m.required_size {
-            s.size.width = length(px(sz.width.max(0.0)));
-            s.size.height = length(px(sz.height.max(0.0)));
-            s.min_size.width = length(px(sz.width.max(0.0)));
-            s.min_size.height = length(px(sz.height.max(0.0)));
-            s.max_size.width = length(px(sz.width.max(0.0)));
-            s.max_size.height = length(px(sz.height.max(0.0)));
+            s.size.width = length(px(sz.width.max(Dp::ZERO)));
+            s.size.height = length(px(sz.height.max(Dp::ZERO)));
+            s.min_size.width = length(px(sz.width.max(Dp::ZERO)));
+            s.min_size.height = length(px(sz.height.max(Dp::ZERO)));
+            s.max_size.width = length(px(sz.width.max(Dp::ZERO)));
+            s.max_size.height = length(px(sz.height.max(Dp::ZERO)));
             width_set = true;
             height_set = true;
         }
@@ -679,37 +680,37 @@ impl LayoutEngine {
         {
             // Indent leaves more than parent nodes for visual tree structure:
             // depth * 16dp + chevron space if has_children.
-            let indent_dp = *depth as f32 * 16.0 + if *has_children { 16.0 } else { 24.0 };
-            s.padding.left = length(px(indent_dp));
+            let indent = Dp(*depth as f32 * 16.0 + if *has_children { 16.0 } else { 24.0 });
+            s.padding.left = length(px(indent));
         }
 
         if m.required_size.is_none() {
             if let Some(v) = m.min_width {
-                s.min_size.width = length(px(v.max(0.0)));
+                s.min_size.width = length(px(v.max(Dp::ZERO)));
             }
             if let Some(v) = m.min_height {
-                s.min_size.height = length(px(v.max(0.0)));
+                s.min_size.height = length(px(v.max(Dp::ZERO)));
             }
             if let Some(v) = m.max_width {
-                s.max_size.width = length(px(v.max(0.0)));
+                s.max_size.width = length(px(v.max(Dp::ZERO)));
             }
             if let Some(v) = m.max_height {
-                s.max_size.height = length(px(v.max(0.0)));
+                s.max_size.height = length(px(v.max(Dp::ZERO)));
             }
         }
 
         // Required range (overrides constraints, like required_size but per-axis)
         if let Some(v) = m.required_min_width {
-            s.min_size.width = length(px(v.max(0.0)));
+            s.min_size.width = length(px(v.max(Dp::ZERO)));
         }
         if let Some(v) = m.required_max_width {
-            s.max_size.width = length(px(v.max(0.0)));
+            s.max_size.width = length(px(v.max(Dp::ZERO)));
         }
         if let Some(v) = m.required_min_height {
-            s.min_size.height = length(px(v.max(0.0)));
+            s.min_size.height = length(px(v.max(Dp::ZERO)));
         }
         if let Some(v) = m.required_max_height {
-            s.max_size.height = length(px(v.max(0.0)));
+            s.max_size.height = length(px(v.max(Dp::ZERO)));
         }
 
         // Default min size (only applies when incoming constraint is 0 / unconstrained)
@@ -723,12 +724,12 @@ impl LayoutEngine {
             if let Some(v) = m.default_min_width
                 && (s.min_size.width.is_auto() || s.min_size.width == length(0.0_f32))
             {
-                s.min_size.width = length(px(v.max(0.0)));
+                s.min_size.width = length(px(v.max(Dp::ZERO)));
             }
             if let Some(v) = m.default_min_height
                 && (s.min_size.height.is_auto() || s.min_size.height == length(0.0_f32))
             {
-                s.min_size.height = length(px(v.max(0.0)));
+                s.min_size.height = length(px(v.max(Dp::ZERO)));
             }
         }
         if let Some(r) = m.aspect_ratio {
@@ -787,7 +788,7 @@ impl LayoutEngine {
                 ..
             } => NodeContext::Text {
                 text: text.clone(),
-                font_dp: *font_size,
+                font_sp: *font_size,
                 soft_wrap: *soft_wrap,
                 max_lines: *max_lines,
                 overflow: *overflow,

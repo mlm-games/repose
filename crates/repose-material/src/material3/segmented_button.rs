@@ -40,8 +40,8 @@ pub struct SegmentedButtonConfig {
     pub selected_content_color: Color,
     pub unselected_content_color: Color,
     pub state_colors: StateColors,
-    pub height: f32,
-    pub shape_radius: f32,
+    pub height: Dp,
+    pub shape_radius: Dp,
     pub content_padding: PaddingValues,
 }
 
@@ -79,22 +79,22 @@ pub fn SegmentedButton(
     let shape_r = config.shape_radius;
 
     // corner order: [BL, BR, TR, TL]
-    let segment_radii = |i: usize| -> [f32; 4] {
+    let segment_radii = |i: usize| -> [Dp; 4] {
         if count == 1 {
             [shape_r, shape_r, shape_r, shape_r]
         } else if i == 0 {
-            [shape_r, 0.0, 0.0, shape_r]
+            [shape_r, Dp::ZERO, Dp::ZERO, shape_r]
         } else if i == count - 1 {
-            [0.0, shape_r, shape_r, 0.0]
+            [Dp::ZERO, shape_r, shape_r, Dp::ZERO]
         } else {
-            [0.0, 0.0, 0.0, 0.0]
+            [Dp::ZERO, Dp::ZERO, Dp::ZERO, Dp::ZERO]
         }
     };
 
     // Outer border wraps the entire group. Internal dividers are inside each segment Row.
     Row(Modifier::new()
         .height(config.height)
-        .border(1.0, config.border_color, shape_r)
+        .border(Dp(1.0), config.border_color, shape_r)
         .then(config.modifier))
     .child(
         segments
@@ -160,7 +160,7 @@ pub fn SegmentedButton(
                     )),
                     if i < count - 1 {
                         Box(Modifier::new()
-                            .width(1.0)
+                            .width(Dp(1.0))
                             .fill_max_height()
                             .background(th.outline))
                     } else {

@@ -57,7 +57,10 @@ impl LayoutEngine {
         }
         self.tree
             .set_subcompose_scope(repose_core::SubcomposeScope::new(
-                0.0, max_w_dp, 0.0, max_h_dp,
+                Dp::ZERO,
+                Dp(max_w_dp),
+                Dp::ZERO,
+                Dp(max_h_dp),
             ));
         let root_node_id = self.tree.update(root);
         self.stats.tree = self.tree.stats.clone();
@@ -148,9 +151,10 @@ impl LayoutEngine {
             }
         }
 
-        // Helpers
-        let px = |dp_val: f32| dp_to_px(dp_val);
-        let font_px = |dp_font: f32| dp_to_px(dp_font) * locals::text_scale().0;
+        // Helpers: Dp/Sp authoring units -> px floats for Taffy.
+        // (Sp includes TextScale, like Compose `TextUnit.toPx`.)
+        let px = |v: Dp| v.to_px().0;
+        let font_px = |s: Sp| s.to_px().0;
 
         // 3. Sync Taffy
         // 3a. Sync scope-internal TaffyTrees first
@@ -270,8 +274,8 @@ impl LayoutEngine {
     }
 
     pub fn intrinsic_size(&mut self, view: &View, mode: IntrinsicSizeMode) -> (f32, f32) {
-        let px_closure = |dp_val: f32| dp_to_px(dp_val);
-        let font_px_closure = |dp_font: f32| dp_to_px(dp_font) * locals::text_scale().0;
+        let px_closure = |v: Dp| v.to_px().0;
+        let font_px_closure = |s: Sp| s.to_px().0;
 
         let mut temp_taffy = taffy::TaffyTree::new();
         let root_tid = self.build_taffy_subtree(view, &mut temp_taffy, &font_px_closure);

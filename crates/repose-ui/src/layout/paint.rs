@@ -13,7 +13,7 @@ use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 
 use crate::Interactions;
 use crate::anim::{animate_color, animate_f32};
-use crate::textfield::{TF_FONT_DP, TextFieldState, TextMeasureConfig, measure_text};
+use crate::textfield::{TF_FONT_SP, TextFieldState, TextMeasureConfig, measure_text};
 
 use super::*;
 
@@ -42,7 +42,7 @@ impl LayoutEngine {
         textfield_states: &HashMap<u64, Rc<RefCell<TextFieldState>>>,
         interactions: &Interactions,
         focused: Option<u64>,
-        font_px: &dyn Fn(f32) -> f32,
+        font_px: &dyn Fn(Sp) -> f32,
     ) -> (Scene, Vec<HitRegion>, Vec<SemNode>) {
         let mut scene = Scene {
             clear_color: locals::theme().background,
@@ -273,7 +273,7 @@ impl LayoutEngine {
         alpha_accum: f32,
         sem_parent: Option<u64>,
         interaction_source: Option<u64>,
-        font_px: &dyn Fn(f32) -> f32,
+        font_px: &dyn Fn(Sp) -> f32,
         allow_cache: bool,
         deferred: &mut Vec<(NodeId, (f32, f32), f32, Option<u64>, f32)>,
         skip_defer: bool,
@@ -484,16 +484,16 @@ impl LayoutEngine {
             return;
         }
 
-        let round_clip_px = clamp_radii(
+        let round_clip_px = clamp_radii_px(
             modifier
                 .clip_rounded
-                .map(|r| r.map(dp_to_px))
+                .map(|r| r.map(|v| v.to_px().0))
                 .unwrap_or([0.0; 4]),
             rect.w,
             rect.h,
         );
         let push_round_clip =
-            round_clip_px.iter().any(|&r| r > 0.5) && rect.w > 0.5 && rect.h > 0.5;
+            round_clip_px.iter().any(|&r| r.0 > 0.5) && rect.w > 0.5 && rect.h > 0.5;
 
         if let Some(anim_spec) = &modifier.animate_content_size {
             let target = repose_core::Size {
@@ -577,12 +577,12 @@ impl LayoutEngine {
         {
             scene.nodes.push(SceneNode::PushClip {
                 rect: repose_core::Rect {
-                    x: rect.x + dp_to_px(cr.left),
-                    y: rect.y + dp_to_px(cr.top),
-                    w: (dp_to_px(cr.right) - dp_to_px(cr.left)).max(0.0),
-                    h: (dp_to_px(cr.bottom) - dp_to_px(cr.top)).max(0.0),
+                    x: rect.x + cr.left.to_px().0,
+                    y: rect.y + cr.top.to_px().0,
+                    w: (cr.right.to_px().0 - cr.left.to_px().0).max(0.0),
+                    h: (cr.bottom.to_px().0 - cr.top.to_px().0).max(0.0),
                 },
-                radius: [0.0; 4],
+                radius: [Px::ZERO; 4],
                 op: cr.op,
             });
         }
@@ -595,7 +595,7 @@ impl LayoutEngine {
         if push_bounds_clip {
             scene.nodes.push(SceneNode::PushClip {
                 rect,
-                radius: [0.0; 4],
+                radius: [Px::ZERO; 4],
                 op: ClipOp::Intersect,
             });
         }
@@ -615,14 +615,15 @@ impl LayoutEngine {
             } else {
                 se.default
             };
-            let elev = animate_f32(
+            // Animate in dp, convert to px at the boundary.
+            let elev_dp = animate_f32(
                 format!("m3_elev:{view_id}"),
-                target,
+                target.0,
                 locals::theme().motion.shape,
             );
-            if elev > 0.5 {
-                let shadow_offset = elev * 0.5;
-                let shadow_alpha = ((elev / 24.0).clamp(0.0, 1.0) * 0.25 * 255.0) as u8;
+            if elev_dp > 0.5 {
+                let shadow_offset = Dp(elev_dp * 0.5).to_px().0;
+                let shadow_alpha = ((elev_dp / 24.0).clamp(0.0, 1.0) * 0.25 * 255.0) as u8;
                 scene.nodes.push(SceneNode::Shadow {
                     rect: repose_core::Rect {
                         x: rect.x + shadow_offset * 0.5,
@@ -631,7 +632,7 @@ impl LayoutEngine {
                         h: rect.h,
                     },
                     radius: round_clip_px,
-                    elevation: elev,
+                    elevation: Dp(elev_dp).to_px(),
                     color: Color(0, 0, 0, shadow_alpha),
                 });
             }
@@ -680,13 +681,13 @@ impl LayoutEngine {
             scene.nodes.push(SceneNode::Border {
                 rect,
                 color: mul_alpha_color(b.color, alpha_accum),
-                width: dp_to_px(b.width),
-                radius: clamp_radii(
-                    max_radii(
-                        b.radius.map(dp_to_px),
+                width: b.width.to_px(),
+                radius: clamp_radii_px(
+                    max_radii_px(
+                        b.radius.map(|v| v.to_px().0),
                         modifier
                             .clip_rounded
-                            .map(|r| r.map(dp_to_px))
+                            .map(|r| r.map(|v| v.to_px().0))
                             .unwrap_or([0.0; 4]),
                     ),
                     rect.w,
@@ -757,16 +758,15 @@ impl LayoutEngine {
         };
 
         // Sync focus transitions into the InteractionSource (Compose FocusInteraction).
-        if owns_hit
-            && let Some(ref src) = indication_source {
-                let msrc = src.to_mutable();
-                let was = src.collect_is_focused();
-                if is_focused && !was {
-                    msrc.emit(Interaction::Focus);
-                } else if !is_focused && was {
-                    msrc.emit(Interaction::Unfocus);
-                }
+        if owns_hit && let Some(ref src) = indication_source {
+            let msrc = src.to_mutable();
+            let was = src.collect_is_focused();
+            if is_focused && !was {
+                msrc.emit(Interaction::Focus);
+            } else if !is_focused && was {
+                msrc.emit(Interaction::Unfocus);
             }
+        }
         if let (Some(factory), Some(interaction_source)) =
             (indication_factory.as_ref(), indication_source.as_ref())
         {
@@ -944,7 +944,7 @@ impl LayoutEngine {
                         )
                     } else {
                         let px = font_px(*font_size);
-                        let lh = if *line_height > 0.0 {
+                        let lh = if line_height.0 > 0.0 {
                             font_px(*line_height)
                         } else {
                             px
@@ -970,7 +970,7 @@ impl LayoutEngine {
                     };
                     scene.nodes.push(SceneNode::PushClip {
                         rect: clip_rect,
-                        radius: [0.0; 4],
+                        radius: [Px::ZERO; 4],
                         op: crate::ClipOp::Intersect,
                     });
                 }
@@ -1011,14 +1011,14 @@ impl LayoutEngine {
                             start: usize,
                             end: usize,
                             color: Color,
-                            font_dp: f32,
+                            font_sp: Sp,
                             decoration: TextDecoration,
                             url: Option<Arc<str>>,
                             font_weight: u16,
                             font_family: Option<&'static str>,
                             font_style: u8,
-                            letter_spacing: f32,
-                            line_height: f32,
+                            letter_spacing: Sp,
+                            line_height: Sp,
                             background: Option<Color>,
                             alpha: f32,
                             text_direction: TextDirection,
@@ -1055,7 +1055,7 @@ impl LayoutEngine {
                                     start: cursor,
                                     end: seg_start,
                                     color: *color,
-                                    font_dp: *font_size,
+                                    font_sp: *font_size,
                                     decoration: *text_decoration,
                                     url: None,
                                     font_weight: font_weight.0,
@@ -1104,7 +1104,7 @@ impl LayoutEngine {
                                 start: seg_start,
                                 end: seg_end,
                                 color: span_color,
-                                font_dp: span_size,
+                                font_sp: span_size,
                                 decoration: span_decoration,
                                 url: span_url,
                                 font_weight: span_weight,
@@ -1130,7 +1130,7 @@ impl LayoutEngine {
                                 start: cursor,
                                 end: line_end,
                                 color: *color,
-                                font_dp: *font_size,
+                                font_sp: *font_size,
                                 decoration: *text_decoration,
                                 url: None,
                                 font_weight: font_weight.0,
@@ -1150,9 +1150,9 @@ impl LayoutEngine {
                             });
                         }
 
-                        // Measure and emit each segment
-                        let seg_font_px =
-                            |dp: f32| dp_to_px(dp) * repose_core::locals::text_scale().0;
+                        // Measure and emit each segment.
+                        // Sp -> px via the ambient Density * TextScale
+                        // (Compose `TextUnit.toPx`).
                         let mut total_w = 0.0f32;
                         let mut seg_measurements: Vec<&mut SegInfo> = segments.iter_mut().collect();
                         for info in &mut seg_measurements {
@@ -1160,7 +1160,7 @@ impl LayoutEngine {
                             if seg_text.is_empty() {
                                 continue;
                             }
-                            info.px = seg_font_px(info.font_dp);
+                            info.px = font_px(info.font_sp);
                             info.w = measure_text(
                                 seg_text,
                                 info.px,
@@ -1168,7 +1168,7 @@ impl LayoutEngine {
                                     font_family: info.font_family,
                                     font_weight: info.font_weight,
                                     font_style: info.font_style,
-                                    letter_spacing: info.letter_spacing,
+                                    letter_spacing: font_px(info.letter_spacing),
                                     ..Default::default()
                                 },
                             )
@@ -1214,14 +1214,14 @@ impl LayoutEngine {
                                 scene.nodes.push(SceneNode::Rect {
                                     rect: bg_rect,
                                     brush: Brush::Solid(mul_alpha_color(*bg, alpha_accum)),
-                                    radius: [0.0; 4],
+                                    radius: [Px::ZERO; 4],
                                 });
                             }
                             scene.nodes.push(SceneNode::Text {
                                 rect: seg_rect,
                                 text: Arc::<str>::from(seg_text.to_string().into_boxed_str()),
                                 color: mul_alpha_color(seg_color, alpha_accum),
-                                size: info.px,
+                                size: Px(info.px),
                                 font_family: info.font_family,
                                 text_align: *text_align,
                                 font_weight: FontWeight(info.font_weight),
@@ -1231,8 +1231,8 @@ impl LayoutEngine {
                                     FontStyle::Normal
                                 },
                                 text_decoration: info.decoration,
-                                letter_spacing: info.letter_spacing,
-                                line_height: info.line_height,
+                                letter_spacing: Px(font_px(info.letter_spacing)),
+                                line_height: Px(font_px(info.line_height)),
                                 extra_style: TextExtraStyle {
                                     text_direction: info.text_direction,
                                     font_synthesis: info.font_synthesis,
@@ -1279,7 +1279,7 @@ impl LayoutEngine {
                                         font_family: *font_family,
                                         font_weight: fw_val,
                                         font_style: fs_val,
-                                        letter_spacing: *letter_spacing,
+                                        letter_spacing: font_px(*letter_spacing),
                                         ..Default::default()
                                     },
                                 )
@@ -1309,14 +1309,14 @@ impl LayoutEngine {
                             rect: seg_rect,
                             text: Arc::<str>::from(ln.clone()),
                             color: mul_alpha_color(*color, alpha_accum),
-                            size: size_px,
+                            size: Px(size_px),
                             font_family: *font_family,
                             text_align: *text_align,
                             font_weight: *font_weight,
                             font_style: *font_style,
                             text_decoration: *text_decoration,
-                            letter_spacing: *letter_spacing,
-                            line_height: *line_height,
+                            letter_spacing: Px(font_px(*letter_spacing)),
+                            line_height: Px(font_px(*line_height)),
                             extra_style: Default::default(),
                             url: url.clone(),
                             font_variation_settings: font_variation_settings.clone(),
@@ -1388,7 +1388,7 @@ impl LayoutEngine {
                 let on_scroll = if multiline {
                     let key = tf_key;
                     let h = rect.h;
-                    let font_val = font_px(TF_FONT_DP);
+                    let font_val = font_px(TF_FONT_SP);
                     let wrap_w = rect.w.max(1.0);
                     let states = textfield_states.get(&key).cloned();
                     Some(Rc::new(move |d: Vec2| -> Vec2 {
@@ -1417,7 +1417,7 @@ impl LayoutEngine {
                     // Single-line horizontal scroll (mouse wheel or trackpad)
                     let key = tf_key;
                     let inner_w = rect.w.max(1.0);
-                    let font_val = font_px(TF_FONT_DP);
+                    let font_val = font_px(TF_FONT_SP);
                     let states = textfield_states.get(&key).cloned();
                     Some(Rc::new(move |d: Vec2| -> Vec2 {
                         let Some(st_rc) = states.as_ref() else {
@@ -1549,12 +1549,12 @@ impl LayoutEngine {
                             (None, None) => None,
                         };
 
-                    let font_size_dp = ti
+                    let font_size_sp = ti
                         .text_style
                         .as_ref()
                         .map(|ts| ts.font_size)
-                        .filter(|&v| v != 0.0)
-                        .unwrap_or(crate::textfield::TF_FONT_DP);
+                        .filter(|&v| v != Sp::ZERO)
+                        .unwrap_or(crate::textfield::TF_FONT_SP);
                     hits.push(HitRegion {
                         id: view_id,
                         rect,
@@ -1569,7 +1569,7 @@ impl LayoutEngine {
                         tf_enabled: ti.enabled,
                         tf_read_only: ti.read_only,
                         tf_value: ti.value.clone(),
-                        tf_font_size_dp: font_size_dp,
+                        tf_font_size: font_size_sp,
                         on_action: combined,
                         cursor: Some(crate::CursorIcon::Text),
                         keyboard_type: ti.keyboard_type,
@@ -1644,8 +1644,12 @@ impl LayoutEngine {
                 on_toggle,
                 on_select,
             } => {
-                let indent_px = dp_to_px(*depth as f32 * 16.0);
-                let chevron_w = if *has_children { dp_to_px(16.0) } else { 0.0 };
+                let indent_px = Dp(*depth as f32 * 16.0).to_px().0;
+                let chevron_w = if *has_children {
+                    Dp(16.0).to_px().0
+                } else {
+                    0.0
+                };
 
                 // Selection highlight
                 if *is_selected {
@@ -1653,14 +1657,14 @@ impl LayoutEngine {
                     scene.nodes.push(SceneNode::Rect {
                         rect,
                         brush: Brush::Solid(th.primary.with_alpha_f32(0.15)),
-                        radius: [0.0; 4],
+                        radius: [Px::ZERO; 4],
                     });
                 }
 
                 // Expand/collapse chevron
                 if *has_children {
                     let chevron_text = if *is_expanded { "▼" } else { "▶" };
-                    let chevron_px = dp_to_px(12.0);
+                    let chevron_px = Dp(12.0).to_px().0;
                     scene.nodes.push(SceneNode::Text {
                         rect: repose_core::Rect {
                             x: rect.x + indent_px,
@@ -1670,14 +1674,14 @@ impl LayoutEngine {
                         },
                         text: Arc::from(chevron_text),
                         color: mul_alpha_color(locals::theme().on_surface, alpha_accum),
-                        size: chevron_px,
+                        size: Px(chevron_px),
                         font_family: None,
                         text_align: TextAlign::Start,
                         font_weight: FontWeight::NORMAL,
                         font_style: FontStyle::Normal,
                         text_decoration: TextDecoration::default(),
-                        letter_spacing: 0.0,
-                        line_height: 0.0,
+                        letter_spacing: Px::ZERO,
+                        line_height: Px::ZERO,
                         extra_style: Default::default(),
                         url: None,
                         font_variation_settings: None,
@@ -1750,13 +1754,14 @@ impl LayoutEngine {
             }
         }
 
-        // Fire on_globally_positioned / on_size_changed if position/size changed
+        // Fire on_globally_positioned / on_size_changed if position/size changed.
+        // Taffy/paint work in px; callbacks observe Dp magnitudes.
         let view_id_for_pos = view_id;
         let dp_rect = repose_core::Rect {
-            x: px_to_dp(rect.x),
-            y: px_to_dp(rect.y),
-            w: px_to_dp(rect.w),
-            h: px_to_dp(rect.h),
+            x: px_to_dp(Px(rect.x)).0,
+            y: px_to_dp(Px(rect.y)).0,
+            w: px_to_dp(Px(rect.w)).0,
+            h: px_to_dp(Px(rect.h)).0,
         };
         if let Some(cb) = &modifier.on_globally_positioned {
             let prev = self.prev_observed_rects.get(&view_id_for_pos).copied();
@@ -1781,17 +1786,17 @@ impl LayoutEngine {
         let child_offset_px = base_px;
         let has_blur = modifier
             .blur
-            .is_some_and(|b| b.radius_x > 0.0 || b.radius_y > 0.0);
+            .is_some_and(|b| b.radius_x.0 > 0.0 || b.radius_y.0 > 0.0);
         let layer_id = if modifier.graphics_layer.is_some() || has_blur {
             let id = self.layer_id_counter;
             self.layer_id_counter = self.layer_id_counter.wrapping_add(1);
             let blur_style = modifier.blur.unwrap_or(BlurStyle {
-                radius_x: 0.0,
-                radius_y: 0.0,
+                radius_x: Dp::ZERO,
+                radius_y: Dp::ZERO,
                 edge_treatment: BlurredEdgeTreatment::Rectangle,
             });
-            let blur_radius_x = dp_to_px(blur_style.radius_x);
-            let blur_radius_y = dp_to_px(blur_style.radius_y);
+            let blur_radius_x = blur_style.radius_x.to_px();
+            let blur_radius_y = blur_style.radius_y.to_px();
             let alpha = modifier.graphics_layer.unwrap_or(1.0);
             // Snap the layer rect to whole pixels so the composite quad exactly
             // matches the offscreen texture (avoids fractional 1:1 sampling blur
@@ -1859,9 +1864,7 @@ impl LayoutEngine {
                     // taffy 0.14: browser-accurate scrollable overflow rect
                     // (end padding, nested overflow, RTL/start-side). It can
                     // only extend the manual child walk above, never shrink it.
-                    ch = ch
-                        .max(layout.scrollable_overflow_rect.bottom)
-                        .max(0.0);
+                    ch = ch.max(layout.scrollable_overflow_rect.bottom).max(0.0);
                     if let Some(s) = &b.set_content_main {
                         s(ch);
                     }
@@ -1869,7 +1872,7 @@ impl LayoutEngine {
 
                     scene.nodes.push(SceneNode::PushClip {
                         rect: vp,
-                        radius: [0.0; 4],
+                        radius: [Px::ZERO; 4],
                         op: crate::ClipOp::Intersect,
                     });
 
@@ -1950,9 +1953,7 @@ impl LayoutEngine {
                         cw = cw.max(l.location.x + l.size.width);
                     }
                     // taffy 0.14 scrollable overflow rect: see vertical path.
-                    cw = cw
-                        .max(layout.scrollable_overflow_rect.right)
-                        .max(0.0);
+                    cw = cw.max(layout.scrollable_overflow_rect.right).max(0.0);
                     if let Some(s) = &b.set_content_main {
                         s(cw);
                     }
@@ -1960,7 +1961,7 @@ impl LayoutEngine {
 
                     scene.nodes.push(SceneNode::PushClip {
                         rect: vp,
-                        radius: [0.0; 4],
+                        radius: [Px::ZERO; 4],
                         op: crate::ClipOp::Intersect,
                     });
 
@@ -2057,12 +2058,8 @@ impl LayoutEngine {
                     }
                     // taffy 0.14 scrollable overflow rect: catches end padding
                     // and RTL/start-side overflow the manual walk can miss.
-                    cw = cw
-                        .max(layout.scrollable_overflow_rect.right)
-                        .max(0.0);
-                    ch = ch
-                        .max(layout.scrollable_overflow_rect.bottom)
-                        .max(0.0);
+                    cw = cw.max(layout.scrollable_overflow_rect.right).max(0.0);
+                    ch = ch.max(layout.scrollable_overflow_rect.bottom).max(0.0);
                     if let Some(s) = &b.set_content_width {
                         s(cw);
                     }
@@ -2073,7 +2070,7 @@ impl LayoutEngine {
 
                     scene.nodes.push(SceneNode::PushClip {
                         rect: vp,
-                        radius: [0.0; 4],
+                        radius: [Px::ZERO; 4],
                         op: crate::ClipOp::Intersect,
                     });
                     let hits_start = hits.len();
@@ -2272,8 +2269,8 @@ impl LayoutEngine {
             if let Some(shadow) = &modifier.shadow {
                 scene.nodes.push(SceneNode::CompositeShadow {
                     layer_id: id,
-                    blur_px: dp_to_px(shadow.blur_radius),
-                    offset_px: (0.0, dp_to_px(shadow.offset_y)),
+                    blur_px: shadow.blur_radius.to_px(),
+                    offset_px: (Px::ZERO, shadow.offset_y.to_px()),
                     color: shadow.color,
                 });
             }

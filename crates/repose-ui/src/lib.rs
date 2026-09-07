@@ -22,7 +22,7 @@
 //! use repose_ui::*;
 //!
 //! fn Counter(count: i32, on_inc: impl Fn() + 'static) -> View {
-//!     Column(Modifier::new().padding(16.0)).child((
+//!     Column(Modifier::new().padding(16.0.dp())).child((
 //!         Text(format!("Count = {count}")),
 //!         Button("Increment".into_children(), on_inc),
 //!     ))
@@ -297,7 +297,8 @@ pub fn Text(text: impl Into<String>) -> View {
         ViewKind::Text {
             text: text.into(),
             color: locals::content_color(),
-            font_size: locals::text_size().unwrap_or(16.0), // dp (converted to px in layout/paint)
+            // Sp (converted to px in layout/paint, including TextScale).
+            font_size: locals::text_size().unwrap_or(Sp(16.0)),
             soft_wrap: true,
             max_lines: None,
             overflow: TextOverflow::Clip,
@@ -307,8 +308,8 @@ pub fn Text(text: impl Into<String>) -> View {
             font_weight: FontWeight::NORMAL,
             font_style: FontStyle::Normal,
             text_decoration: TextDecoration::default(),
-            letter_spacing: 0.0,
-            line_height: 0.0,
+            letter_spacing: Sp::ZERO,
+            line_height: Sp::ZERO,
             url: None,
             font_variation_settings: None,
         },
@@ -329,7 +330,7 @@ pub fn AnnotatedText(annotated: AnnotatedString) -> View {
         ViewKind::Text {
             text: annotated.text,
             color: locals::content_color(),
-            font_size: locals::text_size().unwrap_or(16.0),
+            font_size: locals::text_size().unwrap_or(Sp(16.0)),
             soft_wrap: true,
             max_lines: None,
             overflow: TextOverflow::Clip,
@@ -339,8 +340,8 @@ pub fn AnnotatedText(annotated: AnnotatedString) -> View {
             font_weight: FontWeight::NORMAL,
             font_style: FontStyle::Normal,
             text_decoration: TextDecoration::default(),
-            letter_spacing: 0.0,
-            line_height: 0.0,
+            letter_spacing: Sp::ZERO,
+            line_height: Sp::ZERO,
             url: None,
             font_variation_settings: None,
         },
@@ -359,8 +360,8 @@ pub fn Grid(
     columns: usize,
     modifier: Modifier,
     children: Vec<View>,
-    row_gap: f32,
-    column_gap: f32,
+    row_gap: Dp,
+    column_gap: Dp,
 ) -> View {
     Column(modifier.grid(columns, row_gap, column_gap)).with_children(children)
 }
@@ -429,16 +430,16 @@ pub fn DragValue(
     let th = locals::theme();
 
     Box(Modifier::new()
-        .min_width(48.0)
-        .height(28.0)
+        .min_width(Dp(48.0))
+        .height(Dp(28.0))
         .background(th.surface_container)
-        .border(1.0, th.outline, 4.0)
-        .clip_rounded(4.0)
+        .border(Dp(1.0), th.outline, Dp(4.0))
+        .clip_rounded(Dp(4.0))
         .padding_values(PaddingValues {
-            left: 4.0,
-            right: 4.0,
-            top: 0.0,
-            bottom: 0.0,
+            left: Dp(4.0),
+            right: Dp(4.0),
+            top: Dp::ZERO,
+            bottom: Dp::ZERO,
         })
         .on_pointer_down({
             let dsx = drag_start_x.clone();
@@ -475,7 +476,7 @@ pub fn DragValue(
         .cursor(CursorIcon::EwResize))
     .child(
         Text(format_value(value))
-            .size(13.0)
+            .size(Sp(13.0))
             .color(th.on_surface)
             .single_line()
             .overflow_ellipsize(),
@@ -514,7 +515,7 @@ pub fn Embedded(modifier: Modifier, payload: PaintCallbackPayload) -> View {
         || m.fill_max_w.is_some()
         || m.fill_max_h.is_some();
     if !has_size {
-        m = m.size(100.0, 100.0);
+        m = m.size(Dp(100.0), Dp(100.0));
     }
     Box(m)
 }
@@ -619,10 +620,10 @@ pub fn last_layout_stats() -> layout::LayoutStats {
 
 pub use layout::LayoutStats;
 
-/// Method styling
+/// Method styling (text sizes are [`Sp`]).
 pub trait TextStyle {
     fn color(self, c: Color) -> View;
-    fn size(self, px: f32) -> View;
+    fn size(self, size: Sp) -> View;
     fn max_lines(self, n: usize) -> View;
     fn single_line(self) -> View;
     fn overflow_ellipsize(self) -> View;
@@ -633,8 +634,8 @@ pub trait TextStyle {
     fn font_weight(self, weight: FontWeight) -> View;
     fn font_style(self, style: FontStyle) -> View;
     fn text_decoration(self, decoration: TextDecoration) -> View;
-    fn letter_spacing(self, spacing: f32) -> View;
-    fn line_height(self, height: f32) -> View;
+    fn letter_spacing(self, spacing: Sp) -> View;
+    fn line_height(self, height: Sp) -> View;
     fn url(self, url: impl Into<std::sync::Arc<str>>) -> View;
     fn font_variation_settings(self, settings: &str) -> View;
 }
@@ -648,13 +649,13 @@ impl TextStyle for View {
         }
         self
     }
-    fn size(mut self, dp_font: f32) -> View {
+    fn size(mut self, size: Sp) -> View {
         if let ViewKind::Text {
-            font_size: text_size_dp,
+            font_size: text_size_sp,
             ..
         } = &mut self.kind
         {
-            *text_size_dp = dp_font;
+            *text_size_sp = size;
         }
         self
     }
@@ -736,13 +737,13 @@ impl TextStyle for View {
         }
         self
     }
-    fn letter_spacing(mut self, spacing: f32) -> View {
+    fn letter_spacing(mut self, spacing: Sp) -> View {
         if let ViewKind::Text { letter_spacing, .. } = &mut self.kind {
             *letter_spacing = spacing;
         }
         self
     }
-    fn line_height(mut self, height: f32) -> View {
+    fn line_height(mut self, height: Sp) -> View {
         if let ViewKind::Text { line_height, .. } = &mut self.kind {
             *line_height = height;
         }

@@ -48,8 +48,8 @@ pub fn screen() -> View {
     let header = Section(
         "Window size class",
         Column(Modifier::new().padding(sp::LG).gap(sp::XS)).child((
-            Text(format!("Width: {:?}", class.width)).size(14.0),
-            Text(format!("Height: {:?}", class.height)).size(14.0),
+            Text(format!("Width: {:?}", class.width)).size(Sp(14.0)),
+            Text(format!("Height: {:?}", class.height)).size(Sp(14.0)),
             Hint(if class.is_at_least_medium_width() {
                 "Multi-pane layout active (list + detail side by side)."
             } else {
@@ -80,14 +80,14 @@ pub fn screen() -> View {
                     Box(Modifier::new()
                         .fill_max_width()
                         .padding(sp::MD)
-                        .gap(2.0)
+                        .gap(Dp(2.0))
                         .background(bg)
-                        .clip_rounded(8.0)
+                        .clip_rounded(Dp(8.0))
                         .clickable()
                         .on_pointer_down(move |_| on_click()))
                     .child((
-                        Text(e.title).size(15.0).color(th.on_surface),
-                        Text(e.subtitle).size(12.0).color(th.on_surface_variant),
+                        Text(e.title).size(Sp(15.0)).color(th.on_surface),
+                        Text(e.subtitle).size(Sp(12.0)).color(th.on_surface_variant),
                     ))
                 })
                 .collect::<Vec<_>>(),
@@ -108,14 +108,18 @@ pub fn screen() -> View {
                 Box(Modifier::new()
                     .padding(sp::SM)
                     .background(th.surface_container)
-                    .clip_rounded(6.0)
+                    .clip_rounded(Dp(6.0))
                     .clickable()
                     .on_pointer_down(move |_| pane_back.set(ListDetailPaneValue::List)))
-                .child(Text("<- List").size(13.0).color(th.primary)),
+                .child(Text("<- List").size(Sp(13.0)).color(th.primary)),
             );
         }
-        children.push(Text(cur.title).size(22.0).color(th.on_surface));
-        children.push(Text(cur.subtitle).size(14.0).color(th.on_surface_variant));
+        children.push(Text(cur.title).size(Sp(22.0)).color(th.on_surface));
+        children.push(
+            Text(cur.subtitle)
+                .size(Sp(14.0))
+                .color(th.on_surface_variant),
+        );
         children.push(Hint(
             "Resize the window to see the pane split adapt between compact and medium widths.",
         ));
@@ -135,7 +139,7 @@ pub fn screen() -> View {
     ));
 
     Row(Modifier::new().fill_max_size().padding(sp::MD).gap(sp::MD)).child((
-        Box(Modifier::new().width(280.0).fill_max_height()).child(header),
+        Box(Modifier::new().width(Dp(280.0)).fill_max_height()).child(header),
         main_col,
     ))
 }
@@ -147,13 +151,13 @@ fn multi_slot_demo() -> View {
         let mut m = Modifier::new()
             .padding(sp::SM)
             .background(th.surface_container_high)
-            .clip_rounded(6.0);
+            .clip_rounded(Dp(6.0));
         m = if grow {
             m.flex_grow(1.0)
         } else {
             m.fill_max_width()
         };
-        Box(m).child(Text(label).size(12.0).color(th.on_surface))
+        Box(m).child(Text(label).size(Sp(12.0)).color(th.on_surface))
     };
 
     Section(
@@ -161,15 +165,15 @@ fn multi_slot_demo() -> View {
         subcompose_layout_with_slots(
             Modifier::new().fill_max_width().padding(sp::SM),
             move |scope| {
-                let wide = scope.max_width.is_finite() && scope.max_width >= 480.0;
+                let wide = scope.max_width.is_finite() && scope.max_width >= Dp(480.0);
                 let header = Box(Modifier::new()
                     .fill_max_width()
                     .padding(sp::SM)
                     .background(th.surface_container)
-                    .clip_rounded(6.0))
+                    .clip_rounded(Dp(6.0)))
                 .child(
                     Text("slot 0: header (stable)")
-                        .size(12.0)
+                        .size(Sp(12.0))
                         .color(th.on_surface),
                 );
                 let body = if wide {

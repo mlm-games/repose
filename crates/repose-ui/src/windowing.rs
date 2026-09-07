@@ -2,15 +2,16 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use repose_core::{
-    AlignItems, Color, CursorIcon, JustifyContent, Modifier, PaddingValues, PointerButton,
-    PointerEvent, PointerEventKind, Rect, Size, StateColors, Vec2, View, request_frame,
+    AlignItems, Color, CursorIcon, Dp, DpOffset, DpSize, JustifyContent, Modifier, PaddingValues,
+    PointerButton, PointerEvent, PointerEventKind, Px, Rect, Size, Sp, StateColors, Vec2, View,
+    request_frame,
 };
 
 use crate::{Box, Column, Row, Spacer, Text, TextStyle, ViewExt, ZStack};
 
-const TITLE_BAR_HEIGHT_DP: f32 = 32.0;
-const WINDOW_PADDING_DP: f32 = 8.0;
-const RESIZE_HANDLE_DP: f32 = 10.0;
+const TITLE_BAR_HEIGHT: Dp = Dp(32.0);
+const WINDOW_PADDING: Dp = Dp(8.0);
+const RESIZE_HANDLE: Dp = Dp(10.0);
 const WINDOW_Z_BASE: f32 = 10_000.0;
 const WINDOW_Z_STEP: f32 = 10.0;
 const KEEP_VISIBLE_DP: f32 = 24.0;
@@ -27,14 +28,14 @@ pub struct FloatingWindow {
     pub title: String,
     pub content: Rc<dyn Fn() -> View>,
     pub on_close: Option<Rc<dyn Fn()>>,
-    /// Position in dp from the host's top-left corner.
-    pub position: Vec2,
-    /// Size in dp.
-    pub size: Size,
-    /// Minimum size in dp.
-    pub min_size: Size,
-    /// Maximum size in dp (optional).
-    pub max_size: Option<Size>,
+    /// Position in [`Dp`] from the host's top-left corner.
+    pub position: DpOffset,
+    /// Size in [`Dp`].
+    pub size: DpSize,
+    /// Minimum size in [`Dp`].
+    pub min_size: DpSize,
+    /// Maximum size in [`Dp`] (optional).
+    pub max_size: Option<DpSize>,
     pub resizable: bool,
     pub closable: bool,
     pub draggable: bool,
@@ -48,15 +49,9 @@ impl FloatingWindow {
             title: title.into(),
             content,
             on_close: None,
-            position: Vec2 { x: 40.0, y: 40.0 },
-            size: Size {
-                width: 420.0,
-                height: 300.0,
-            },
-            min_size: Size {
-                width: 220.0,
-                height: 160.0,
-            },
+            position: DpOffset::new(Dp(40.0), Dp(40.0)),
+            size: DpSize::new(Dp(420.0), Dp(300.0)),
+            min_size: DpSize::new(Dp(220.0), Dp(160.0)),
             max_size: None,
             resizable: true,
             closable: true,
@@ -65,23 +60,23 @@ impl FloatingWindow {
         }
     }
 
-    pub fn position(mut self, x: f32, y: f32) -> Self {
-        self.position = Vec2 { x, y };
+    pub fn position(mut self, x: Dp, y: Dp) -> Self {
+        self.position = DpOffset::new(x, y);
         self
     }
 
-    pub fn size(mut self, width: f32, height: f32) -> Self {
-        self.size = Size { width, height };
+    pub fn size(mut self, width: Dp, height: Dp) -> Self {
+        self.size = DpSize::new(width, height);
         self
     }
 
-    pub fn min_size(mut self, width: f32, height: f32) -> Self {
-        self.min_size = Size { width, height };
+    pub fn min_size(mut self, width: Dp, height: Dp) -> Self {
+        self.min_size = DpSize::new(width, height);
         self
     }
 
-    pub fn max_size(mut self, width: f32, height: f32) -> Self {
-        self.max_size = Some(Size { width, height });
+    pub fn max_size(mut self, width: Dp, height: Dp) -> Self {
+        self.max_size = Some(DpSize::new(width, height));
         self
     }
 
@@ -166,7 +161,7 @@ impl WindowManagerState {
         }
     }
 
-    pub fn set_position(&mut self, id: u64, position: Vec2) -> bool {
+    pub fn set_position(&mut self, id: u64, position: DpOffset) -> bool {
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
             w.position = position;
             true
@@ -175,7 +170,7 @@ impl WindowManagerState {
         }
     }
 
-    pub fn set_size(&mut self, id: u64, size: Size) -> bool {
+    pub fn set_size(&mut self, id: u64, size: DpSize) -> bool {
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
             w.size = size;
             true
@@ -291,10 +286,22 @@ impl WindowModifierExt for Modifier {
                     window_id,
                     kind: DragKind::Move,
                     start_pointer: px_vec_to_dp(pe.position_in_window()),
-                    start_pos: pos,
-                    start_size: size,
-                    min_size,
-                    max_size,
+                    start_pos: Vec2 {
+                        x: pos.x.0,
+                        y: pos.y.0,
+                    },
+                    start_size: Size {
+                        width: size.width.0,
+                        height: size.height.0,
+                    },
+                    min_size: Size {
+                        width: min_size.width.0,
+                        height: min_size.height.0,
+                    },
+                    max_size: max_size.map(|s| Size {
+                        width: s.width.0,
+                        height: s.height.0,
+                    }),
                 });
 
                 state_down.borrow_mut().bring_to_front(window_id);
@@ -331,10 +338,22 @@ impl WindowModifierExt for Modifier {
                     window_id,
                     kind: DragKind::Resize(handle),
                     start_pointer: px_vec_to_dp(pe.position_in_window()),
-                    start_pos: pos,
-                    start_size: size,
-                    min_size,
-                    max_size,
+                    start_pos: Vec2 {
+                        x: pos.x.0,
+                        y: pos.y.0,
+                    },
+                    start_size: Size {
+                        width: size.width.0,
+                        height: size.height.0,
+                    },
+                    min_size: Size {
+                        width: min_size.width.0,
+                        height: min_size.height.0,
+                    },
+                    max_size: max_size.map(|s| Size {
+                        width: s.width.0,
+                        height: s.height.0,
+                    }),
                 });
 
                 state_down.borrow_mut().bring_to_front(window_id);
@@ -370,8 +389,8 @@ impl WindowModifierExt for Modifier {
             let (pos, size) = apply_drag(ds, delta, bounds);
 
             let mut st = state_move.borrow_mut();
-            st.set_position(window_id, pos);
-            st.set_size(window_id, size);
+            st.set_position(window_id, DpOffset::new(Dp(pos.x), Dp(pos.y)));
+            st.set_size(window_id, DpSize::new(Dp(size.width), Dp(size.height)));
             pe.consume();
             request_frame();
         })
@@ -502,13 +521,13 @@ pub fn WindowHost(
                     action_views.push(
                         Row(Modifier::new()
                             .padding_values(PaddingValues {
-                                left: 6.0,
-                                right: 6.0,
-                                top: 0.0,
-                                bottom: 0.0,
+                                left: Dp(6.0),
+                                right: Dp(6.0),
+                                top: Dp::ZERO,
+                                bottom: Dp::ZERO,
                             })
-                            .height(20.0)
-                            .clip_rounded(10.0)
+                            .height(Dp(20.0))
+                            .clip_rounded(Dp(10.0))
                             .justify_content(JustifyContent::CENTER)
                             .align_items(AlignItems::CENTER)
                             .state_colors(StateColors {
@@ -541,9 +560,9 @@ pub fn WindowHost(
                     let focus_state = focus_state.clone();
                     action_views.push(
                         Row(Modifier::new()
-                            .width(20.0)
-                            .height(20.0)
-                            .clip_rounded(10.0)
+                            .width(Dp(20.0))
+                            .height(Dp(20.0))
+                            .clip_rounded(Dp(10.0))
                             .justify_content(JustifyContent::CENTER)
                             .align_items(AlignItems::CENTER)
                             .state_colors(StateColors {
@@ -567,9 +586,9 @@ pub fn WindowHost(
                             .z_index(1.0)
                             .key(key_for(window_id, 90)))
                         .child(
-                            Text("\u{E5CD}")
+                            Text("")
                                 .font_family("Material Symbols Outlined")
-                                .size(14.0)
+                                .size(Sp(14.0))
                                 .color(th.error),
                         ),
                     );
@@ -577,13 +596,13 @@ pub fn WindowHost(
 
                 let mut bar_mod = Modifier::new()
                     .fill_max_width()
-                    .height(TITLE_BAR_HEIGHT_DP)
+                    .height(TITLE_BAR_HEIGHT)
                     .background(title_bg)
                     .padding_values(PaddingValues {
-                        left: 10.0,
-                        right: 8.0,
-                        top: 6.0,
-                        bottom: 6.0,
+                        left: Dp(10.0),
+                        right: Dp(8.0),
+                        top: Dp(6.0),
+                        bottom: Dp(6.0),
                     })
                     .align_items(AlignItems::CENTER)
                     .key(key_for(window_id, 10));
@@ -624,7 +643,7 @@ pub fn WindowHost(
             };
 
             let content_shell =
-                Box(Modifier::new().fill_max_size().padding(WINDOW_PADDING_DP)).child(content_view);
+                Box(Modifier::new().fill_max_size().padding(WINDOW_PADDING)).child(content_view);
 
             let resize_handles = if window_resizable {
                 let handles = build_resize_handles(&host, window_id);
@@ -641,7 +660,7 @@ pub fn WindowHost(
                 .offset(Some(window_pos.x), Some(window_pos.y), None, None)
                 .size(window_size.width, window_size.height)
                 .background(th.surface_container_high)
-                .border(1.0, border_color, th.shapes.medium)
+                .border(Dp(1.0), border_color, th.shapes.medium)
                 .clip_rounded(th.shapes.medium)
                 .z_index(-1.0)
                 .window_focus_region(&host, window_id))
@@ -653,9 +672,12 @@ pub fn WindowHost(
 
     Column(host_mod).child((
         content,
-        Box(Modifier::new()
-            .absolute()
-            .offset(Some(0.0), Some(0.0), Some(0.0), Some(0.0)))
+        Box(Modifier::new().absolute().offset(
+            Some(Dp::ZERO),
+            Some(Dp::ZERO),
+            Some(Dp::ZERO),
+            Some(Dp::ZERO),
+        ))
         .child(Column(Modifier::new().fill_max_size()).with_children(window_views)),
     ))
 }
@@ -691,41 +713,41 @@ fn build_resize_handles(host: &WindowHostHandle, window_id: u64) -> View {
 fn handle_mod_left() -> Modifier {
     Modifier::new()
         .absolute()
-        .offset(Some(0.0), Some(0.0), None, Some(0.0))
-        .width(RESIZE_HANDLE_DP)
+        .offset(Some(Dp::ZERO), Some(Dp::ZERO), None, Some(Dp::ZERO))
+        .width(RESIZE_HANDLE)
 }
 
 fn handle_mod_right() -> Modifier {
     Modifier::new()
         .absolute()
-        .offset(None, Some(0.0), Some(0.0), Some(0.0))
-        .width(RESIZE_HANDLE_DP)
+        .offset(None, Some(Dp::ZERO), Some(Dp::ZERO), Some(Dp::ZERO))
+        .width(RESIZE_HANDLE)
 }
 
 fn handle_mod_top() -> Modifier {
     Modifier::new()
         .absolute()
-        .offset(Some(0.0), Some(0.0), Some(0.0), None)
-        .height(RESIZE_HANDLE_DP)
+        .offset(Some(Dp::ZERO), Some(Dp::ZERO), Some(Dp::ZERO), None)
+        .height(RESIZE_HANDLE)
 }
 
 fn handle_mod_bottom() -> Modifier {
     Modifier::new()
         .absolute()
-        .offset(Some(0.0), None, Some(0.0), Some(0.0))
-        .height(RESIZE_HANDLE_DP)
+        .offset(Some(Dp::ZERO), None, Some(Dp::ZERO), Some(Dp::ZERO))
+        .height(RESIZE_HANDLE)
 }
 
 fn handle_mod_corner(left: bool, top: bool) -> Modifier {
     Modifier::new()
         .absolute()
         .offset(
-            if left { Some(0.0) } else { None },
-            if top { Some(0.0) } else { None },
-            if left { None } else { Some(0.0) },
-            if top { None } else { Some(0.0) },
+            if left { Some(Dp::ZERO) } else { None },
+            if top { Some(Dp::ZERO) } else { None },
+            if left { None } else { Some(Dp::ZERO) },
+            if top { None } else { Some(Dp::ZERO) },
         )
-        .size(RESIZE_HANDLE_DP * 1.4, RESIZE_HANDLE_DP * 1.4)
+        .size(RESIZE_HANDLE * 1.4, RESIZE_HANDLE * 1.4)
 }
 
 fn resize_from_handle(ds: DragState, handle: ResizeHandle, delta: Vec2) -> (Vec2, Size) {
@@ -785,7 +807,7 @@ fn apply_drag(ds: DragState, delta: Vec2, bounds: Rect) -> (Vec2, Size) {
     };
 
     let min_w = ds.min_size.width.max(120.0);
-    let min_h = ds.min_size.height.max(TITLE_BAR_HEIGHT_DP + 40.0);
+    let min_h = ds.min_size.height.max(TITLE_BAR_HEIGHT.0 + 40.0);
 
     let mut max_w = f32::INFINITY;
     let mut max_h = f32::INFINITY;
@@ -899,9 +921,11 @@ fn key_for(window_id: u64, part: u64) -> u64 {
     window_id ^ (part.wrapping_mul(0x9E3779B97F4A7C15))
 }
 
+/// Convert a px magnitude to a dp magnitude (both as `f32`).
+/// Prefer the typed [`Px`] / [`Dp`] API at public boundaries; these helpers
+/// serve the drag-math internals, which work in dp magnitudes.
 fn px_to_dp(px: f32) -> f32 {
-    let scale = repose_core::locals::effective_density_scale();
-    if scale > 0.0001 { px / scale } else { px }
+    Px(px).to_dp().0
 }
 
 fn px_vec_to_dp(v: Vec2) -> Vec2 {

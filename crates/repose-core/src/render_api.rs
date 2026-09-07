@@ -1,8 +1,10 @@
+use crate::units::Px;
 use crate::view::Scene;
 
 #[derive(Clone, Copy)]
 pub struct GlyphRasterConfig {
-    pub px: f32,
+    /// Rasterization size in physical pixels.
+    pub px: Px,
 }
 
 pub trait RenderBackend {

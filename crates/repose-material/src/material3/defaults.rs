@@ -9,17 +9,17 @@ impl SurfaceDefaults {
     pub fn content_color() -> Color {
         theme().on_surface
     }
-    pub const SHAPE_RADIUS: f32 = 0.0;
-    pub const TONAL_ELEVATION: f32 = 0.0;
-    pub const SHADOW_ELEVATION: f32 = 0.0;
+    pub const SHAPE_RADIUS: Dp = Dp(0.0);
+    pub const TONAL_ELEVATION: Dp = Dp(0.0);
+    pub const SHADOW_ELEVATION: Dp = Dp(0.0);
 }
 
 pub struct ToggleButtonDefaults;
 
 impl ToggleButtonDefaults {
-    pub const HEIGHT: f32 = 40.0;
-    pub const HORIZONTAL_PADDING: f32 = 24.0;
-    pub const SHAPE_RADIUS: f32 = 20.0;
+    pub const HEIGHT: Dp = Dp(40.0);
+    pub const HORIZONTAL_PADDING: Dp = Dp(24.0);
+    pub const SHAPE_RADIUS: Dp = Dp(20.0);
     pub fn content_color() -> Color {
         theme().on_surface_variant
     }
@@ -72,12 +72,12 @@ impl ToggleButtonDefaults {
     }
     pub fn state_elevation_default() -> StateElevation {
         StateElevation {
-            default: 0.0,
-            hovered: 1.0,
-            focused: 0.0,
-            pressed: 0.0,
-            dragged: 0.0,
-            disabled: 0.0,
+            default: Dp(0.0),
+            hovered: Dp(1.0),
+            focused: Dp(0.0),
+            pressed: Dp(0.0),
+            dragged: Dp(0.0),
+            disabled: Dp(0.0),
         }
     }
     pub fn elevated_state_elevation() -> StateElevation {
@@ -88,7 +88,7 @@ impl ToggleButtonDefaults {
             focused: th.elevation.level1,
             pressed: th.elevation.level1,
             dragged: th.elevation.level1,
-            disabled: 0.0,
+            disabled: Dp(0.0),
         }
     }
 }
@@ -102,9 +102,9 @@ impl ProgressIndicatorDefaults {
     pub fn linear_track_color() -> Color {
         theme().secondary_container
     }
-    pub const LINEAR_INDICATOR_HEIGHT: f32 = 4.0;
-    pub const LINEAR_INDICATOR_GAP_SIZE: f32 = 4.0;
-    pub const LINEAR_TRACK_STOP_SIZE: f32 = 4.0;
+    pub const LINEAR_INDICATOR_HEIGHT: Dp = Dp(4.0);
+    pub const LINEAR_INDICATOR_GAP_SIZE: Dp = Dp(4.0);
+    pub const LINEAR_TRACK_STOP_SIZE: Dp = Dp(4.0);
 
     pub fn circular_color() -> Color {
         theme().primary
@@ -112,11 +112,11 @@ impl ProgressIndicatorDefaults {
     pub fn circular_track_color() -> Color {
         theme().secondary_container
     }
-    pub const CIRCULAR_INDICATOR_SIZE: f32 = 40.0;
-    pub const CIRCULAR_STROKE_WIDTH: f32 = 4.0;
+    pub const CIRCULAR_INDICATOR_SIZE: Dp = Dp(40.0);
+    pub const CIRCULAR_STROKE_WIDTH: Dp = Dp(4.0);
 
     /// M3 `ActiveHandleLeadingSpace` / `ActiveHandleTrailingSpace`
-    pub const SLIDER_THUMB_TRACK_GAP: f32 = 6.0;
+    pub const SLIDER_THUMB_TRACK_GAP: Dp = Dp(6.0);
 }
 
 pub struct ButtonDefaults;
@@ -149,24 +149,24 @@ impl ButtonDefaults {
     pub fn text_content_color() -> Color {
         theme().primary
     }
-    pub const HEIGHT: f32 = 40.0;
-    pub const MIN_HEIGHT: f32 = 40.0;
-    pub const MIN_WIDTH: f32 = 58.0;
-    pub const HORIZONTAL_PADDING: f32 = 24.0;
-    pub const TEXT_HORIZONTAL_PADDING: f32 = 12.0;
+    pub const HEIGHT: Dp = Dp(40.0);
+    pub const MIN_HEIGHT: Dp = Dp(40.0);
+    pub const MIN_WIDTH: Dp = Dp(58.0);
+    pub const HORIZONTAL_PADDING: Dp = Dp(24.0);
+    pub const TEXT_HORIZONTAL_PADDING: Dp = Dp(12.0);
     pub const CONTENT_PADDING: PaddingValues = PaddingValues {
-        left: 24.0,
-        right: 24.0,
-        top: 8.0,
-        bottom: 8.0,
+        left: Dp(24.0),
+        right: Dp(24.0),
+        top: Dp(8.0),
+        bottom: Dp(8.0),
     };
     pub const TEXT_CONTENT_PADDING: PaddingValues = PaddingValues {
-        left: 12.0,
-        right: 12.0,
-        top: 8.0,
-        bottom: 8.0,
+        left: Dp(12.0),
+        right: Dp(12.0),
+        top: Dp(8.0),
+        bottom: Dp(8.0),
     };
-    pub const SHAPE_RADIUS: f32 = 20.0;
+    pub const SHAPE_RADIUS: Dp = Dp(20.0);
     pub fn state_colors_default() -> StateColors {
         let th = theme();
         StateColors {
@@ -180,12 +180,12 @@ impl ButtonDefaults {
     }
     pub fn state_elevation_default() -> StateElevation {
         StateElevation {
-            default: 0.0,
-            hovered: 1.0,
-            focused: 0.0,
-            pressed: 0.0,
-            dragged: 0.0,
-            disabled: 0.0,
+            default: Dp(0.0),
+            hovered: Dp(1.0),
+            focused: Dp(0.0),
+            pressed: Dp(0.0),
+            dragged: Dp(0.0),
+            disabled: Dp(0.0),
         }
     }
     pub fn elevated_state_elevation() -> StateElevation {
@@ -196,7 +196,7 @@ impl ButtonDefaults {
             focused: th.elevation.level1,
             pressed: th.elevation.level1,
             dragged: th.elevation.level1,
-            disabled: 0.0,
+            disabled: Dp(0.0),
         }
     }
 }
@@ -204,10 +204,10 @@ impl ButtonDefaults {
 pub struct SnackbarDefaults;
 
 impl SnackbarDefaults {
-    pub const MIN_HEIGHT: f32 = 48.0;
-    pub const MIN_WIDTH: f32 = 280.0;
-    pub const MAX_WIDTH: f32 = 600.0;
-    pub const SHAPE_RADIUS: f32 = 4.0;
+    pub const MIN_HEIGHT: Dp = Dp(48.0);
+    pub const MIN_WIDTH: Dp = Dp(280.0);
+    pub const MAX_WIDTH: Dp = Dp(600.0);
+    pub const SHAPE_RADIUS: Dp = Dp(4.0);
     pub fn container_color() -> Color {
         theme().inverse_surface
     }
@@ -252,8 +252,8 @@ impl CardDefaults {
     pub fn disabled_content_color() -> Color {
         theme().on_surface.with_alpha_f32(0.38)
     }
-    pub const SHAPE_RADIUS: f32 = 12.0;
-    pub const ELEVATION: f32 = 0.0;
+    pub const SHAPE_RADIUS: Dp = Dp(12.0);
+    pub const ELEVATION: Dp = Dp(0.0);
 }
 
 pub struct DialogDefaults;
@@ -262,23 +262,23 @@ impl DialogDefaults {
     pub fn container_color() -> Color {
         theme().surface_container_high
     }
-    pub const SHAPE_RADIUS: f32 = 28.0;
-    pub const MIN_WIDTH: f32 = 280.0;
-    pub const MAX_WIDTH: f32 = 560.0;
-    pub const HORIZONTAL_PADDING: f32 = 24.0;
+    pub const SHAPE_RADIUS: Dp = Dp(28.0);
+    pub const MIN_WIDTH: Dp = Dp(280.0);
+    pub const MAX_WIDTH: Dp = Dp(560.0);
+    pub const HORIZONTAL_PADDING: Dp = Dp(24.0);
     /// Compose/Android preferred dialog widths by smallest-side bucket.
-    pub const PREFERRED_WIDTH_COMPACT: f32 = 320.0; // smallest < 480
-    pub const PREFERRED_WIDTH_MEDIUM: f32 = 440.0; // smallest < 600
-    pub const PREFERRED_WIDTH_EXPANDED: f32 = 580.0; // smallest >= 600
+    pub const PREFERRED_WIDTH_COMPACT: Dp = Dp(320.0); // smallest < 480
+    pub const PREFERRED_WIDTH_MEDIUM: Dp = Dp(440.0); // smallest < 600
+    pub const PREFERRED_WIDTH_EXPANDED: Dp = Dp(580.0); // smallest >= 600
 }
 
 pub struct IconButtonDefaults;
 
 impl IconButtonDefaults {
-    pub const CONTAINER_SIZE: f32 = 40.0;
-    pub const FILLED_CONTAINER_SIZE: f32 = 40.0;
-    pub const MIN_INTERACTIVE_SIZE: f32 = 48.0;
-    pub const STATE_LAYER_RADIUS: f32 = 20.0;
+    pub const CONTAINER_SIZE: Dp = Dp(40.0);
+    pub const FILLED_CONTAINER_SIZE: Dp = Dp(40.0);
+    pub const MIN_INTERACTIVE_SIZE: Dp = Dp(48.0);
+    pub const STATE_LAYER_RADIUS: Dp = Dp(20.0);
 
     pub fn content_color() -> Color {
         repose_core::content_color()
@@ -365,11 +365,11 @@ impl IconButtonDefaults {
 pub struct CheckboxDefaults;
 
 impl CheckboxDefaults {
-    pub const TOUCH_TARGET_SIZE: f32 = 40.0;
-    pub const BOX_SIZE: f32 = 18.0;
-    pub const STROKE_WIDTH: f32 = 2.0;
-    pub const CORNER_RADIUS: f32 = 2.0;
-    pub const CHECK_ICON_SIZE: f32 = 14.0;
+    pub const TOUCH_TARGET_SIZE: Dp = Dp(40.0);
+    pub const BOX_SIZE: Dp = Dp(18.0);
+    pub const STROKE_WIDTH: Dp = Dp(2.0);
+    pub const CORNER_RADIUS: Dp = Dp(2.0);
+    pub const CHECK_ICON_SIZE: Dp = Dp(14.0);
     pub fn checked_color() -> Color {
         theme().primary
     }
@@ -404,10 +404,10 @@ impl CheckboxDefaults {
 pub struct RadioButtonDefaults;
 
 impl RadioButtonDefaults {
-    pub const TOUCH_TARGET_SIZE: f32 = 40.0;
-    pub const OUTER_RADIUS: f32 = 10.0;
-    pub const DOT_RADIUS: f32 = 5.0;
-    pub const STROKE_WIDTH: f32 = 2.0;
+    pub const TOUCH_TARGET_SIZE: Dp = Dp(40.0);
+    pub const OUTER_RADIUS: Dp = Dp(10.0);
+    pub const DOT_RADIUS: Dp = Dp(5.0);
+    pub const STROKE_WIDTH: Dp = Dp(2.0);
     pub fn selected_color() -> Color {
         theme().primary
     }
@@ -436,10 +436,10 @@ impl RadioButtonDefaults {
 pub struct SwitchDefaults;
 
 impl SwitchDefaults {
-    pub const TRACK_WIDTH: f32 = 52.0;
-    pub const TRACK_HEIGHT: f32 = 32.0;
-    pub const THUMB_CHECKED_SIZE: f32 = 24.0;
-    pub const THUMB_UNCHECKED_SIZE: f32 = 16.0;
+    pub const TRACK_WIDTH: Dp = Dp(52.0);
+    pub const TRACK_HEIGHT: Dp = Dp(32.0);
+    pub const THUMB_CHECKED_SIZE: Dp = Dp(24.0);
+    pub const THUMB_UNCHECKED_SIZE: Dp = Dp(16.0);
     pub fn checked_track_color() -> Color {
         theme().primary
     }
@@ -498,13 +498,13 @@ impl SwitchDefaults {
 pub struct SliderDefaults;
 
 impl SliderDefaults {
-    pub const TRACK_HEIGHT: f32 = 16.0;
-    pub const THUMB_WIDTH: f32 = 4.0;
-    pub const THUMB_HEIGHT: f32 = 44.0;
+    pub const TRACK_HEIGHT: Dp = Dp(16.0);
+    pub const THUMB_WIDTH: Dp = Dp(4.0);
+    pub const THUMB_HEIGHT: Dp = Dp(44.0);
     /// State-layer diameter around the thumb (Compose SliderTokens / StateLayerSize).
-    pub const STATE_LAYER_SIZE: f32 = 40.0;
+    pub const STATE_LAYER_SIZE: Dp = Dp(40.0);
     /// Deprecated, kept as an alias. The painter uses [`THUMB_WIDTH`]/[`THUMB_HEIGHT`].
-    pub const THUMB_SIZE: f32 = 20.0;
+    pub const THUMB_SIZE: Dp = Dp(20.0);
     pub fn active_track_color() -> Color {
         theme().primary
     }
@@ -552,7 +552,7 @@ impl SliderDefaults {
 pub struct DividerDefaults;
 
 impl DividerDefaults {
-    pub const THICKNESS: f32 = 1.0;
+    pub const THICKNESS: Dp = Dp(1.0);
     pub fn color() -> Color {
         theme().outline_variant
     }
@@ -561,13 +561,13 @@ impl DividerDefaults {
 pub struct BadgeDefaults;
 
 impl BadgeDefaults {
-    pub const DOT_SIZE: f32 = 6.0;
-    pub const LABEL_MIN_WIDTH: f32 = 16.0;
-    pub const LABEL_HEIGHT: f32 = 16.0;
-    pub const DOT_OFFSET_X: f32 = 6.0;
-    pub const DOT_OFFSET_Y: f32 = 6.0;
-    pub const CONTENT_OFFSET_X: f32 = 12.0;
-    pub const CONTENT_OFFSET_Y: f32 = 14.0;
+    pub const DOT_SIZE: Dp = Dp(6.0);
+    pub const LABEL_MIN_WIDTH: Dp = Dp(16.0);
+    pub const LABEL_HEIGHT: Dp = Dp(16.0);
+    pub const DOT_OFFSET_X: Dp = Dp(6.0);
+    pub const DOT_OFFSET_Y: Dp = Dp(6.0);
+    pub const CONTENT_OFFSET_X: Dp = Dp(12.0);
+    pub const CONTENT_OFFSET_Y: Dp = Dp(14.0);
     pub fn container_color() -> Color {
         theme().error
     }
@@ -579,11 +579,11 @@ impl BadgeDefaults {
 pub struct ListItemDefaults;
 
 impl ListItemDefaults {
-    pub const ONE_LINE_HEIGHT: f32 = 56.0;
-    pub const TWO_LINE_HEIGHT: f32 = 72.0;
-    pub const THREE_LINE_HEIGHT: f32 = 88.0;
-    pub const HORIZONTAL_PADDING: f32 = 16.0;
-    pub const TRAILING_PADDING: f32 = 24.0;
+    pub const ONE_LINE_HEIGHT: Dp = Dp(56.0);
+    pub const TWO_LINE_HEIGHT: Dp = Dp(72.0);
+    pub const THREE_LINE_HEIGHT: Dp = Dp(88.0);
+    pub const HORIZONTAL_PADDING: Dp = Dp(16.0);
+    pub const TRAILING_PADDING: Dp = Dp(24.0);
     pub fn headline_color() -> Color {
         theme().on_surface
     }
@@ -672,7 +672,7 @@ impl ListItemDefaults {
 pub struct TopAppBarDefaults;
 
 impl TopAppBarDefaults {
-    pub const HEIGHT: f32 = 64.0;
+    pub const HEIGHT: Dp = Dp(64.0);
     pub fn container_color() -> Color {
         theme().surface
     }
@@ -696,9 +696,9 @@ impl TopAppBarDefaults {
 pub struct TabDefaults;
 
 impl TabDefaults {
-    pub const HEIGHT: f32 = 48.0;
-    pub const INDICATOR_HEIGHT: f32 = 3.0;
-    pub const INDICATOR_CORNER: f32 = 1.5;
+    pub const HEIGHT: Dp = Dp(48.0);
+    pub const INDICATOR_HEIGHT: Dp = Dp(3.0);
+    pub const INDICATOR_CORNER: Dp = Dp(1.5);
     pub fn container_color() -> Color {
         theme().surface
     }
@@ -716,12 +716,12 @@ impl TabDefaults {
 pub struct NavigationBarDefaults;
 
 impl NavigationBarDefaults {
-    pub const HEIGHT: f32 = 80.0;
-    pub const TONAL_ELEVATION: f32 = 0.0;
+    pub const HEIGHT: Dp = Dp(80.0);
+    pub const TONAL_ELEVATION: Dp = Dp(0.0);
     pub const ITEM_ACTIVE_INDICATOR_OPACITY: f32 = 1.0;
-    pub const ITEM_SPACING: f32 = 8.0;
-    pub const ACTIVE_INDICATOR_WIDTH: f32 = 56.0;
-    pub const ACTIVE_INDICATOR_HEIGHT: f32 = 32.0;
+    pub const ITEM_SPACING: Dp = Dp(8.0);
+    pub const ACTIVE_INDICATOR_WIDTH: Dp = Dp(56.0);
+    pub const ACTIVE_INDICATOR_HEIGHT: Dp = Dp(32.0);
     pub fn container_color() -> Color {
         theme().surface_container
     }
@@ -743,19 +743,19 @@ impl NavigationBarDefaults {
     pub fn indicator_color() -> Color {
         theme().secondary_container
     }
-    pub const INDICATOR_RADIUS: f32 = 16.0;
+    pub const INDICATOR_RADIUS: Dp = Dp(16.0);
 }
 
 pub struct NavigationRailDefaults;
 
 impl NavigationRailDefaults {
-    pub const WIDTH: f32 = 80.0;
-    pub const ITEM_RADIUS: f32 = 16.0;
-    pub const ITEM_MIN_HEIGHT: f32 = 56.0;
+    pub const WIDTH: Dp = Dp(80.0);
+    pub const ITEM_RADIUS: Dp = Dp(16.0);
+    pub const ITEM_MIN_HEIGHT: Dp = Dp(56.0);
     pub const ITEM_ACTIVE_INDICATOR_OPACITY: f32 = 1.0;
-    pub const ITEM_SPACING: f32 = 4.0;
-    pub const ACTIVE_INDICATOR_WIDTH: f32 = 56.0;
-    pub const ACTIVE_INDICATOR_HEIGHT: f32 = 32.0;
+    pub const ITEM_SPACING: Dp = Dp(4.0);
+    pub const ACTIVE_INDICATOR_WIDTH: Dp = Dp(56.0);
+    pub const ACTIVE_INDICATOR_HEIGHT: Dp = Dp(32.0);
     pub fn container_color() -> Color {
         theme().surface
     }
@@ -779,13 +779,13 @@ impl NavigationRailDefaults {
 pub struct SegmentedButtonDefaults;
 
 impl SegmentedButtonDefaults {
-    pub const HEIGHT: f32 = 40.0;
-    pub const SHAPE_RADIUS: f32 = 20.0;
+    pub const HEIGHT: Dp = Dp(40.0);
+    pub const SHAPE_RADIUS: Dp = Dp(20.0);
     pub const CONTENT_PADDING: PaddingValues = PaddingValues {
-        left: 12.0,
-        right: 12.0,
-        top: 0.0,
-        bottom: 0.0,
+        left: Dp(12.0),
+        right: Dp(12.0),
+        top: Dp(0.0),
+        bottom: Dp(0.0),
     };
     pub fn border_color() -> Color {
         theme().outline
@@ -815,12 +815,12 @@ impl SegmentedButtonDefaults {
 pub struct FABDefaults;
 
 impl FABDefaults {
-    pub const SMALL_SIZE: f32 = 40.0;
-    pub const SMALL_SHAPE_RADIUS: f32 = 12.0;
-    pub const SIZE: f32 = 56.0;
-    pub const LARGE_SIZE: f32 = 96.0;
-    pub const SHAPE_RADIUS: f32 = 28.0;
-    pub const LARGE_SHAPE_RADIUS: f32 = 28.0;
+    pub const SMALL_SIZE: Dp = Dp(40.0);
+    pub const SMALL_SHAPE_RADIUS: Dp = Dp(12.0);
+    pub const SIZE: Dp = Dp(56.0);
+    pub const LARGE_SIZE: Dp = Dp(96.0);
+    pub const SHAPE_RADIUS: Dp = Dp(28.0);
+    pub const LARGE_SHAPE_RADIUS: Dp = Dp(28.0);
     pub fn container_color() -> Color {
         theme().primary_container
     }
@@ -834,7 +834,7 @@ impl FABDefaults {
             focused: theme().elevation.level3,
             pressed: theme().elevation.level5,
             dragged: theme().elevation.level5,
-            disabled: 0.0,
+            disabled: Dp(0.0),
         }
     }
 }
@@ -842,10 +842,10 @@ impl FABDefaults {
 pub struct ChipDefaults;
 
 impl ChipDefaults {
-    pub const HEIGHT: f32 = 32.0;
-    pub const HORIZONTAL_PADDING: f32 = 16.0;
-    pub const SHAPE_RADIUS: f32 = 8.0;
-    pub const BORDER_WIDTH: f32 = 1.0;
+    pub const HEIGHT: Dp = Dp(32.0);
+    pub const HORIZONTAL_PADDING: Dp = Dp(16.0);
+    pub const SHAPE_RADIUS: Dp = Dp(8.0);
+    pub const BORDER_WIDTH: Dp = Dp(1.0);
 
     // Colors for non-selected state
     pub fn container_color() -> Color {
@@ -912,44 +912,44 @@ impl ChipDefaults {
     }
 
     // Elevation defaults (flat chip - no elevation)
-    pub fn elevation_default() -> f32 {
-        0.0
+    pub fn elevation_default() -> Dp {
+        Dp::ZERO
     }
-    pub fn elevation_hovered() -> f32 {
-        0.0
+    pub fn elevation_hovered() -> Dp {
+        Dp::ZERO
     }
-    pub fn elevation_focused() -> f32 {
-        0.0
+    pub fn elevation_focused() -> Dp {
+        Dp::ZERO
     }
-    pub fn elevation_pressed() -> f32 {
-        0.0
+    pub fn elevation_pressed() -> Dp {
+        Dp::ZERO
     }
-    pub fn elevation_dragged() -> f32 {
-        0.0
+    pub fn elevation_dragged() -> Dp {
+        Dp::ZERO
     }
-    pub fn elevation_disabled() -> f32 {
-        0.0
+    pub fn elevation_disabled() -> Dp {
+        Dp::ZERO
     }
 
     // Elevated chip defaults
-    pub fn elevated_elevation_default() -> f32 {
+    pub fn elevated_elevation_default() -> Dp {
         theme().elevation.level1
     }
-    pub fn elevated_elevation_hovered() -> f32 {
+    pub fn elevated_elevation_hovered() -> Dp {
         theme().elevation.level2
     }
-    pub fn elevated_elevation_focused() -> f32 {
+    pub fn elevated_elevation_focused() -> Dp {
         theme().elevation.level1
     }
-    pub fn elevated_elevation_pressed() -> f32 {
+    pub fn elevated_elevation_pressed() -> Dp {
         theme().elevation.level1
     }
-    pub fn elevated_elevation_dragged() -> f32 {
+    pub fn elevated_elevation_dragged() -> Dp {
         // M3 elevated chip dragged container elevation is Level 4 (8dp).
         theme().elevation.level4
     }
-    pub fn elevated_elevation_disabled() -> f32 {
-        0.0
+    pub fn elevated_elevation_disabled() -> Dp {
+        Dp(0.0)
     }
 
     // Elevated chip container colors
@@ -976,16 +976,16 @@ impl ScaffoldDefaults {
     pub fn content_color() -> Color {
         theme().on_background
     }
-    pub const TOP_BAR_HEIGHT: f32 = 64.0;
-    pub const BOTTOM_BAR_HEIGHT: f32 = 80.0;
-    pub const FAB_MARGIN: f32 = 16.0;
+    pub const TOP_BAR_HEIGHT: Dp = Dp(64.0);
+    pub const BOTTOM_BAR_HEIGHT: Dp = Dp(80.0);
+    pub const FAB_MARGIN: Dp = Dp(16.0);
 }
 
 pub struct NavigationDrawerDefaults;
 
 impl NavigationDrawerDefaults {
-    pub const WIDTH: f32 = 300.0;
-    pub const TONAL_ELEVATION: f32 = 0.0;
+    pub const WIDTH: Dp = Dp(300.0);
+    pub const TONAL_ELEVATION: Dp = Dp(0.0);
     pub fn container_color() -> Color {
         theme().surface_container_low
     }
@@ -995,13 +995,13 @@ impl NavigationDrawerDefaults {
     pub fn scrim_color() -> Color {
         theme().scrim.with_alpha(82)
     }
-    pub const SHAPE_RADIUS: f32 = 16.0;
+    pub const SHAPE_RADIUS: Dp = Dp(16.0);
 }
 
 pub struct BottomSheetDefaults;
 
 impl BottomSheetDefaults {
-    pub const TONAL_ELEVATION: f32 = 0.0;
+    pub const TONAL_ELEVATION: Dp = Dp(0.0);
     pub fn container_color() -> Color {
         theme().surface_container_low
     }
@@ -1014,36 +1014,36 @@ impl BottomSheetDefaults {
     pub fn scrim_color() -> Color {
         theme().scrim.with_alpha(85)
     }
-    pub const DRAG_HANDLE_WIDTH: f32 = 32.0;
-    pub const DRAG_HANDLE_HEIGHT: f32 = 4.0;
-    pub const SHAPE_RADIUS: f32 = 16.0;
-    pub const PEEK_HEIGHT: f32 = 56.0;
-    pub const MAX_WIDTH: f32 = 640.0;
+    pub const DRAG_HANDLE_WIDTH: Dp = Dp(32.0);
+    pub const DRAG_HANDLE_HEIGHT: Dp = Dp(4.0);
+    pub const SHAPE_RADIUS: Dp = Dp(16.0);
+    pub const PEEK_HEIGHT: Dp = Dp(56.0);
+    pub const MAX_WIDTH: Dp = Dp(640.0);
 }
 
 pub struct SearchBarDefaults;
 
 impl SearchBarDefaults {
-    pub const HEIGHT: f32 = 56.0;
-    pub const EXPANDED_WIDTH: f32 = 360.0;
-    pub const COLLAPSED_WIDTH: f32 = 240.0;
-    pub const DOCKED_HEIGHT: f32 = 400.0;
-    pub const TONAL_ELEVATION: f32 = 0.0;
-    pub const SHADOW_ELEVATION: f32 = 0.0;
-    pub const SHAPE_RADIUS: f32 = 28.0; // full round
-    pub const ACTIVE_SHAPE_RADIUS: f32 = 28.0;
-    pub const DOCKED_SHAPE_RADIUS: f32 = 28.0;
-    pub const DROPDOWN_SHAPE_RADIUS: f32 = 12.0;
-    pub const DROPDOWN_GAP_SIZE: f32 = 2.0;
-    pub const MIN_WIDTH: f32 = Self::COLLAPSED_WIDTH;
-    pub const MAX_WIDTH: f32 = 720.0;
-    pub const VERTICAL_PADDING: f32 = 8.0;
+    pub const HEIGHT: Dp = Dp(56.0);
+    pub const EXPANDED_WIDTH: Dp = Dp(360.0);
+    pub const COLLAPSED_WIDTH: Dp = Dp(240.0);
+    pub const DOCKED_HEIGHT: Dp = Dp(400.0);
+    pub const TONAL_ELEVATION: Dp = Dp(0.0);
+    pub const SHADOW_ELEVATION: Dp = Dp(0.0);
+    pub const SHAPE_RADIUS: Dp = Dp(28.0); // full round
+    pub const ACTIVE_SHAPE_RADIUS: Dp = Dp(28.0);
+    pub const DOCKED_SHAPE_RADIUS: Dp = Dp(28.0);
+    pub const DROPDOWN_SHAPE_RADIUS: Dp = Dp(12.0);
+    pub const DROPDOWN_GAP_SIZE: Dp = Dp(2.0);
+    pub const MIN_WIDTH: Dp = Self::COLLAPSED_WIDTH;
+    pub const MAX_WIDTH: Dp = Dp(720.0);
+    pub const VERTICAL_PADDING: Dp = Dp(8.0);
 
     pub const CONTENT_PADDING: PaddingValues = PaddingValues {
-        left: 16.0,
-        right: 16.0,
-        top: 0.0,
-        bottom: 0.0,
+        left: Dp(16.0),
+        right: Dp(16.0),
+        top: Dp(0.0),
+        bottom: Dp(0.0),
     };
 
     pub fn container_color() -> Color {
@@ -1087,11 +1087,11 @@ impl SearchBarDefaults {
 pub struct DropdownMenuDefaults;
 
 impl DropdownMenuDefaults {
-    pub const MIN_WIDTH: f32 = 112.0;
-    pub const ITEM_HEIGHT: f32 = 48.0;
-    pub const VERTICAL_MARGIN: f32 = 48.0;
-    pub const HORIZONTAL_MARGIN: f32 = 8.0;
-    pub const MAX_WIDTH: f32 = 280.0;
+    pub const MIN_WIDTH: Dp = Dp(112.0);
+    pub const ITEM_HEIGHT: Dp = Dp(48.0);
+    pub const VERTICAL_MARGIN: Dp = Dp(48.0);
+    pub const HORIZONTAL_MARGIN: Dp = Dp(8.0);
+    pub const MAX_WIDTH: Dp = Dp(280.0);
     pub fn container_color() -> Color {
         theme().surface_container
     }
@@ -1109,10 +1109,10 @@ impl DropdownMenuDefaults {
 pub struct TooltipDefaults;
 
 impl TooltipDefaults {
-    pub const OFFSET_Y: f32 = -28.0;
-    pub const HORIZONTAL_PADDING: f32 = 8.0;
-    pub const VERTICAL_PADDING: f32 = 4.0;
-    pub const MAX_WIDTH: f32 = 200.0;
+    pub const OFFSET_Y: Dp = Dp(-28.0);
+    pub const HORIZONTAL_PADDING: Dp = Dp(8.0);
+    pub const VERTICAL_PADDING: Dp = Dp(4.0);
+    pub const MAX_WIDTH: Dp = Dp(200.0);
     pub fn container_color() -> Color {
         theme().inverse_surface
     }
@@ -1124,7 +1124,7 @@ impl TooltipDefaults {
 pub struct PullToRefreshDefaults;
 
 impl PullToRefreshDefaults {
-    pub const THRESHOLD: f32 = 64.0;
+    pub const THRESHOLD: Dp = Dp(64.0);
     pub fn indicator_color() -> Color {
         theme().primary
     }
@@ -1136,9 +1136,9 @@ impl PullToRefreshDefaults {
 pub struct AlertDialogDefaults;
 
 impl AlertDialogDefaults {
-    pub const MIN_WIDTH: f32 = 280.0;
-    pub const MAX_WIDTH: f32 = 560.0;
-    pub const HORIZONTAL_PADDING: f32 = 24.0;
+    pub const MIN_WIDTH: Dp = Dp(280.0);
+    pub const MAX_WIDTH: Dp = Dp(560.0);
+    pub const HORIZONTAL_PADDING: Dp = Dp(24.0);
     pub fn scrim_color() -> Color {
         theme().scrim.with_alpha(82)
     }
@@ -1147,12 +1147,12 @@ impl AlertDialogDefaults {
 pub struct OutlinedTextFieldDefaults;
 
 impl OutlinedTextFieldDefaults {
-    pub const MIN_HEIGHT: f32 = 56.0;
-    pub const MIN_WIDTH: f32 = 280.0;
-    pub const UNFOCUSED_BORDER_THICKNESS: f32 = 1.0;
-    pub const FOCUSED_BORDER_THICKNESS: f32 = 2.0;
-    pub const TEXT_FIELD_PADDING: f32 = 16.0;
-    pub const VERTICAL_PADDING_WITH_LABEL: f32 = 8.0;
+    pub const MIN_HEIGHT: Dp = Dp(56.0);
+    pub const MIN_WIDTH: Dp = Dp(280.0);
+    pub const UNFOCUSED_BORDER_THICKNESS: Dp = Dp(1.0);
+    pub const FOCUSED_BORDER_THICKNESS: Dp = Dp(2.0);
+    pub const TEXT_FIELD_PADDING: Dp = Dp(16.0);
+    pub const VERTICAL_PADDING_WITH_LABEL: Dp = Dp(8.0);
 
     pub fn label_color() -> Color {
         theme().on_surface_variant
@@ -1201,14 +1201,14 @@ impl OutlinedTextFieldDefaults {
 pub struct DatePickerDefaults;
 
 impl DatePickerDefaults {
-    pub const CONTAINER_WIDTH: f32 = 360.0;
-    pub const CONTAINER_HEIGHT: f32 = 568.0;
-    pub const HEADER_CONTAINER_HEIGHT: f32 = 120.0;
-    pub const DATE_CELL_SIZE: f32 = 40.0;
-    pub const YEAR_CELL_HEIGHT: f32 = 36.0;
-    pub const YEAR_CELL_WIDTH: f32 = 72.0;
-    pub const TODAY_BORDER_WIDTH: f32 = 1.0;
-    pub const HORIZONTAL_PADDING: f32 = 12.0;
+    pub const CONTAINER_WIDTH: Dp = Dp(360.0);
+    pub const CONTAINER_HEIGHT: Dp = Dp(568.0);
+    pub const HEADER_CONTAINER_HEIGHT: Dp = Dp(120.0);
+    pub const DATE_CELL_SIZE: Dp = Dp(40.0);
+    pub const YEAR_CELL_HEIGHT: Dp = Dp(36.0);
+    pub const YEAR_CELL_WIDTH: Dp = Dp(72.0);
+    pub const TODAY_BORDER_WIDTH: Dp = Dp(1.0);
+    pub const HORIZONTAL_PADDING: Dp = Dp(12.0);
 
     pub fn container_color() -> Color {
         theme().surface_container_high
@@ -1248,16 +1248,16 @@ impl DatePickerDefaults {
 pub struct TimePickerDefaults;
 
 impl TimePickerDefaults {
-    pub const CLOCK_DIAL_CONTAINER_SIZE: f32 = 256.0;
-    pub const CLOCK_DIAL_MIN_CONTAINER_SIZE: f32 = 200.0;
-    pub const PERIOD_SELECTOR_HORIZONTAL_WIDTH: f32 = 216.0;
-    pub const PERIOD_SELECTOR_HORIZONTAL_HEIGHT: f32 = 38.0;
-    pub const PERIOD_SELECTOR_VERTICAL_WIDTH: f32 = 52.0;
-    pub const PERIOD_SELECTOR_VERTICAL_HEIGHT: f32 = 80.0;
-    pub const TIME_SELECTOR_CONTAINER_WIDTH: f32 = 96.0;
-    pub const TIME_SELECTOR_CONTAINER_HEIGHT: f32 = 80.0;
-    pub const TIME_SELECTOR_24H_WIDTH: f32 = 114.0;
-    pub const MAX_HEIGHT: f32 = 384.0;
+    pub const CLOCK_DIAL_CONTAINER_SIZE: Dp = Dp(256.0);
+    pub const CLOCK_DIAL_MIN_CONTAINER_SIZE: Dp = Dp(200.0);
+    pub const PERIOD_SELECTOR_HORIZONTAL_WIDTH: Dp = Dp(216.0);
+    pub const PERIOD_SELECTOR_HORIZONTAL_HEIGHT: Dp = Dp(38.0);
+    pub const PERIOD_SELECTOR_VERTICAL_WIDTH: Dp = Dp(52.0);
+    pub const PERIOD_SELECTOR_VERTICAL_HEIGHT: Dp = Dp(80.0);
+    pub const TIME_SELECTOR_CONTAINER_WIDTH: Dp = Dp(96.0);
+    pub const TIME_SELECTOR_CONTAINER_HEIGHT: Dp = Dp(80.0);
+    pub const TIME_SELECTOR_24H_WIDTH: Dp = Dp(114.0);
+    pub const MAX_HEIGHT: Dp = Dp(384.0);
 
     pub fn clock_dial_color() -> Color {
         theme().surface_container_highest
@@ -1309,61 +1309,61 @@ impl TimePickerDefaults {
 pub struct SwipeToDismissDefaults;
 
 impl SwipeToDismissDefaults {
-    pub const POSITIONAL_THRESHOLD: f32 = 56.0;
-    pub const DISMISS_THRESHOLD: f32 = 150.0;
-    pub const DISMISSED_OFFSET: f32 = 300.0;
-    pub const MAX_WIDTH: f32 = 400.0;
+    pub const POSITIONAL_THRESHOLD: Dp = Dp(56.0);
+    pub const DISMISS_THRESHOLD: Dp = Dp(150.0);
+    pub const DISMISSED_OFFSET: Dp = Dp(300.0);
+    pub const MAX_WIDTH: Dp = Dp(400.0);
 }
 
 pub struct SplitButtonDefaults;
 
 impl SplitButtonDefaults {
-    pub const SPACING: f32 = 2.0;
-    pub const LEADING_BUTTON_MIN_WIDTH: f32 = 48.0;
+    pub const SPACING: Dp = Dp(2.0);
+    pub const LEADING_BUTTON_MIN_WIDTH: Dp = Dp(48.0);
 
-    pub const XSMALL_CONTAINER_HEIGHT: f32 = 32.0;
-    pub const SMALL_CONTAINER_HEIGHT: f32 = 40.0; // SplitButtonSmallTokens.ContainerHeight
-    pub const MEDIUM_CONTAINER_HEIGHT: f32 = 56.0;
-    pub const LARGE_CONTAINER_HEIGHT: f32 = 64.0; // estimate -> no LargeTokens in repo
-    pub const XLARGE_CONTAINER_HEIGHT: f32 = 72.0; // estimate
+    pub const XSMALL_CONTAINER_HEIGHT: Dp = Dp(32.0);
+    pub const SMALL_CONTAINER_HEIGHT: Dp = Dp(40.0); // SplitButtonSmallTokens.ContainerHeight
+    pub const MEDIUM_CONTAINER_HEIGHT: Dp = Dp(56.0);
+    pub const LARGE_CONTAINER_HEIGHT: Dp = Dp(64.0); // estimate -> no LargeTokens in repo
+    pub const XLARGE_CONTAINER_HEIGHT: Dp = Dp(72.0); // estimate
 
-    pub const OUTER_CORNER_SIZE: f32 = f32::INFINITY; // ShapeDefaults.CornerFull equivalent
-    pub const SMALL_INNER_CORNER_SIZE: f32 = 4.0;
-    pub const XSMALL_INNER_CORNER_SIZE: f32 = 4.0;
-    pub const MEDIUM_INNER_CORNER_SIZE: f32 = 4.0;
-    pub const LARGE_INNER_CORNER_SIZE: f32 = 4.0;
-    pub const XLARGE_INNER_CORNER_SIZE: f32 = 4.0;
+    pub const OUTER_CORNER_SIZE: Dp = Dp(f32::INFINITY); // ShapeDefaults.CornerFull equivalent
+    pub const SMALL_INNER_CORNER_SIZE: Dp = Dp(4.0);
+    pub const XSMALL_INNER_CORNER_SIZE: Dp = Dp(4.0);
+    pub const MEDIUM_INNER_CORNER_SIZE: Dp = Dp(4.0);
+    pub const LARGE_INNER_CORNER_SIZE: Dp = Dp(4.0);
+    pub const XLARGE_INNER_CORNER_SIZE: Dp = Dp(4.0);
 
-    pub const XSMALL_INNER_CORNER_SIZE_PRESSED: f32 = 6.0;
-    pub const SMALL_INNER_CORNER_SIZE_PRESSED: f32 = 6.0;
-    pub const MEDIUM_INNER_CORNER_SIZE_PRESSED: f32 = 6.0;
-    pub const LARGE_INNER_CORNER_SIZE_PRESSED: f32 = 6.0;
-    pub const XLARGE_INNER_CORNER_SIZE_PRESSED: f32 = 6.0;
+    pub const XSMALL_INNER_CORNER_SIZE_PRESSED: Dp = Dp(6.0);
+    pub const SMALL_INNER_CORNER_SIZE_PRESSED: Dp = Dp(6.0);
+    pub const MEDIUM_INNER_CORNER_SIZE_PRESSED: Dp = Dp(6.0);
+    pub const LARGE_INNER_CORNER_SIZE_PRESSED: Dp = Dp(6.0);
+    pub const XLARGE_INNER_CORNER_SIZE_PRESSED: Dp = Dp(6.0);
 
-    pub const LEADING_ICON_SIZE: f32 = 18.0;
-    pub const TRAILING_ICON_SIZE: f32 = 22.0;
-    pub const XSMALL_TRAILING_ICON_SIZE: f32 = 22.0;
-    pub const MEDIUM_TRAILING_ICON_SIZE: f32 = 26.0;
-    pub const LARGE_TRAILING_ICON_SIZE: f32 = 26.0;
-    pub const XLARGE_TRAILING_ICON_SIZE: f32 = 26.0;
+    pub const LEADING_ICON_SIZE: Dp = Dp(18.0);
+    pub const TRAILING_ICON_SIZE: Dp = Dp(22.0);
+    pub const XSMALL_TRAILING_ICON_SIZE: Dp = Dp(22.0);
+    pub const MEDIUM_TRAILING_ICON_SIZE: Dp = Dp(26.0);
+    pub const LARGE_TRAILING_ICON_SIZE: Dp = Dp(26.0);
+    pub const XLARGE_TRAILING_ICON_SIZE: Dp = Dp(26.0);
 
     /// `LeadingButtonTrailingSpace` (12.0).
     pub fn small_leading_content_padding() -> PaddingValues {
         PaddingValues {
-            left: 16.0,
-            right: 12.0,
-            top: 0.0,
-            bottom: 0.0,
+            left: Dp(16.0),
+            right: Dp(12.0),
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         }
     }
 
     /// `TrailingButtonTrailingSpace` (13.0).
     pub fn small_trailing_content_padding() -> PaddingValues {
         PaddingValues {
-            left: 13.0,
-            right: 13.0,
-            top: 0.0,
-            bottom: 0.0,
+            left: Dp(13.0),
+            right: Dp(13.0),
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         }
     }
 
@@ -1371,10 +1371,10 @@ impl SplitButtonDefaults {
     /// `LeadingButtonTrailingSpace` (10.0).
     pub fn xsmall_leading_content_padding() -> PaddingValues {
         PaddingValues {
-            left: 12.0,
-            right: 10.0,
-            top: 0.0,
-            bottom: 0.0,
+            left: Dp(12.0),
+            right: Dp(10.0),
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         }
     }
 
@@ -1382,68 +1382,68 @@ impl SplitButtonDefaults {
     /// `TrailingButtonTrailingSpace` (13.0).
     pub fn xsmall_trailing_content_padding() -> PaddingValues {
         PaddingValues {
-            left: 13.0,
-            right: 13.0,
-            top: 0.0,
-            bottom: 0.0,
+            left: Dp(13.0),
+            right: Dp(13.0),
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         }
     }
 
     /// `LeadingButtonTrailingSpace` (24.0).
     pub fn medium_leading_content_padding() -> PaddingValues {
         PaddingValues {
-            left: 24.0,
-            right: 24.0,
-            top: 0.0,
-            bottom: 0.0,
+            left: Dp(24.0),
+            right: Dp(24.0),
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         }
     }
 
     /// `TrailingButtonTrailingSpace` (15.0).
     pub fn medium_trailing_content_padding() -> PaddingValues {
         PaddingValues {
-            left: 15.0,
-            right: 15.0,
-            top: 0.0,
-            bottom: 0.0,
+            left: Dp(15.0),
+            right: Dp(15.0),
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         }
     }
 
     pub fn large_leading_content_padding() -> PaddingValues {
         PaddingValues {
-            left: 32.0,
-            right: 32.0,
-            top: 0.0,
-            bottom: 0.0,
+            left: Dp(32.0),
+            right: Dp(32.0),
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         }
     }
 
     pub fn large_trailing_content_padding() -> PaddingValues {
         PaddingValues {
-            left: 24.0,
-            right: 24.0,
-            top: 0.0,
-            bottom: 0.0,
+            left: Dp(24.0),
+            right: Dp(24.0),
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         }
     }
 
     /// Content padding for an extra-large leading button (estimate).
     pub fn xlarge_leading_content_padding() -> PaddingValues {
         PaddingValues {
-            left: 32.0,
-            right: 32.0,
-            top: 0.0,
-            bottom: 0.0,
+            left: Dp(32.0),
+            right: Dp(32.0),
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         }
     }
 
     /// Content padding for an extra-large trailing button (estimate).
     pub fn xlarge_trailing_content_padding() -> PaddingValues {
         PaddingValues {
-            left: 24.0,
-            right: 24.0,
-            top: 0.0,
-            bottom: 0.0,
+            left: Dp(24.0),
+            right: Dp(24.0),
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         }
     }
 }
@@ -1454,25 +1454,25 @@ impl ButtonGroupDefaults {
     pub const EXPANDED_RATIO: f32 = 0.15;
 
     /// -> used for unconnected (standard) button groups.
-    pub const STANDARD_GAP: f32 = 12.0;
+    pub const STANDARD_GAP: Dp = Dp(12.0);
 
     /// -> used for connected button groups.
-    pub const CONNECTED_GAP: f32 = 2.0;
+    pub const CONNECTED_GAP: Dp = Dp(2.0);
 
-    pub const CONTAINER_HEIGHT: f32 = 40.0;
+    pub const CONTAINER_HEIGHT: Dp = Dp(40.0);
 
     // Connected button group shape helpers (shapes for leading/middle/trailing items)
 
-    pub const CONNECTED_INNER_CORNER: f32 = 8.0; // ConnectedButtonGroupSmallTokens.InnerCornerCornerSize
-    pub const CONNECTED_PRESSED_INNER_CORNER: f32 = 4.0; // PressedInnerCornerCornerSize
-    pub const CONNECTED_CHECKED_CORNER: f32 = f32::INFINITY;
-    pub const CONNECTED_OUTER_CORNER: f32 = f32::INFINITY;
+    pub const CONNECTED_INNER_CORNER: Dp = Dp(8.0); // ConnectedButtonGroupSmallTokens.InnerCornerCornerSize
+    pub const CONNECTED_PRESSED_INNER_CORNER: Dp = Dp(4.0); // PressedInnerCornerCornerSize
+    pub const CONNECTED_CHECKED_CORNER: Dp = Dp(f32::INFINITY);
+    pub const CONNECTED_OUTER_CORNER: Dp = Dp(f32::INFINITY);
 }
 
 pub struct CarouselDefaults;
 
 impl CarouselDefaults {
-    pub const MIN_SMALL_ITEM_SIZE: f32 = 40.0;
-    pub const MAX_SMALL_ITEM_SIZE: f32 = 56.0;
-    pub const ANCHOR_SIZE: f32 = 10.0;
+    pub const MIN_SMALL_ITEM_SIZE: Dp = Dp(40.0);
+    pub const MAX_SMALL_ITEM_SIZE: Dp = Dp(56.0);
+    pub const ANCHOR_SIZE: Dp = Dp(10.0);
 }

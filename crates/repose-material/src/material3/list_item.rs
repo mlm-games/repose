@@ -153,18 +153,18 @@ pub struct ListItemConfig {
     pub dragged: bool,
     pub colors: ListItemColors,
     pub state_colors: StateColors,
-    pub tonal_elevation: f32,
+    pub tonal_elevation: Dp,
     /// Additional elevation applied while `dragged` (M3 drag lift, e.g. Level 4).
-    pub dragged_elevation: f32,
-    pub shadow_elevation: f32,
-    pub shape_radius: f32,
+    pub dragged_elevation: Dp,
+    pub shadow_elevation: Dp,
+    pub shape_radius: Dp,
     /// Per-corner radii `[BL, BR, TR, TL]`. When set, overrides `shape_radius`.
-    pub shape_radii: Option<[f32; 4]>,
-    pub horizontal_padding: f32,
-    pub trailing_padding: f32,
-    pub one_line_height: f32,
-    pub two_line_height: f32,
-    pub three_line_height: f32,
+    pub shape_radii: Option<[Dp; 4]>,
+    pub horizontal_padding: Dp,
+    pub trailing_padding: Dp,
+    pub one_line_height: Dp,
+    pub two_line_height: Dp,
+    pub three_line_height: Dp,
     pub interaction_source: Option<MutableInteractionSource>,
 }
 
@@ -177,10 +177,10 @@ impl Default for ListItemConfig {
             dragged: false,
             colors: ListItemColors::default(),
             state_colors: ListItemDefaults::state_colors_default(),
-            tonal_elevation: 0.0,
-            dragged_elevation: 0.0,
-            shadow_elevation: 0.0,
-            shape_radius: 0.0,
+            tonal_elevation: Dp::ZERO,
+            dragged_elevation: Dp::ZERO,
+            shadow_elevation: Dp::ZERO,
+            shape_radius: Dp::ZERO,
             shape_radii: None,
             horizontal_padding: ListItemDefaults::HORIZONTAL_PADDING,
             trailing_padding: ListItemDefaults::TRAILING_PADDING,
@@ -274,7 +274,7 @@ pub fn ListItem(
 
     let mut modifier = Modifier::new()
         .fill_max_width()
-        .min_width(200.0)
+        .min_width(Dp(200.0))
         .min_height(min_h)
         .background(bg);
     match config.shape_radii {
@@ -286,15 +286,15 @@ pub fn ListItem(
         .padding_values(PaddingValues {
             left: config.horizontal_padding,
             right: config.trailing_padding,
-            top: top_bottom_padding,
-            bottom: top_bottom_padding,
+            top: Dp(top_bottom_padding),
+            bottom: Dp(top_bottom_padding),
         })
         .align_items(vert_align)
         .interaction_source(&li_source)
         .then(config.modifier);
 
-    if config.tonal_elevation > 0.0 || config.dragged_elevation > 0.0 {
-        let dragged_elev = if config.dragged_elevation > 0.0 {
+    if config.tonal_elevation.0 > 0.0 || config.dragged_elevation.0 > 0.0 {
+        let dragged_elev = if config.dragged_elevation.0 > 0.0 {
             config.dragged_elevation
         } else {
             config.tonal_elevation
@@ -305,11 +305,11 @@ pub fn ListItem(
             focused: config.tonal_elevation,
             pressed: config.tonal_elevation,
             dragged: dragged_elev,
-            disabled: 0.0,
+            disabled: Dp::ZERO,
         });
     }
-    if config.shadow_elevation > 0.0 {
-        modifier = modifier.shadow(config.shadow_elevation, 0.0);
+    if config.shadow_elevation.0 > 0.0 {
+        modifier = modifier.shadow(config.shadow_elevation, Dp::ZERO);
     }
 
     if on_click.is_some() || on_long_click.is_some() {
@@ -324,11 +324,10 @@ pub fn ListItem(
                 cb();
             }
         });
-        if is_enabled
-            && let Some(cb) = &on_long_click {
-                let cb = cb.clone();
-                modifier = modifier.on_long_click(move || cb());
-            }
+        if is_enabled && let Some(cb) = &on_long_click {
+            let cb = cb.clone();
+            modifier = modifier.on_long_click(move || cb());
+        }
     }
 
     let wrap_icon = |color: Color, v: View| -> View { with_content_color(color, move || v) };
@@ -337,10 +336,10 @@ pub fn ListItem(
         leading
             .map(|v| {
                 Box(Modifier::new().padding_values(PaddingValues {
-                    left: 0.0,
-                    right: 16.0,
-                    top: 0.0,
-                    bottom: 0.0,
+                    left: Dp(0.0),
+                    right: Dp(16.0),
+                    top: Dp(0.0),
+                    bottom: Dp(0.0),
                 }))
                 .child(wrap_icon(ld_col, v))
             })
@@ -376,10 +375,10 @@ pub fn ListItem(
         trailing
             .map(|v| {
                 Box(Modifier::new().padding_values(PaddingValues {
-                    left: 16.0,
-                    right: 0.0,
-                    top: 0.0,
-                    bottom: 0.0,
+                    left: Dp(16.0),
+                    right: Dp(0.0),
+                    top: Dp(0.0),
+                    bottom: Dp(0.0),
                 }))
                 .child(wrap_icon(tr_col, v))
             })
@@ -447,15 +446,15 @@ pub fn ToggleableListItem(
 }
 
 /// Compute per-index corner radii `[BL, BR, TR, TL]` for a segmented list item.
-fn segmented_item_radii(index: usize, count: usize, r: f32) -> [f32; 4] {
+fn segmented_item_radii(index: usize, count: usize, r: Dp) -> [Dp; 4] {
     if count <= 1 {
         [r, r, r, r]
     } else if index == 0 {
-        [0.0, 0.0, r, r]
+        [Dp::ZERO, Dp::ZERO, r, r]
     } else if index == count - 1 {
-        [r, r, 0.0, 0.0]
+        [r, r, Dp::ZERO, Dp::ZERO]
     } else {
-        [0.0, 0.0, 0.0, 0.0]
+        [Dp::ZERO, Dp::ZERO, Dp::ZERO, Dp::ZERO]
     }
 }
 

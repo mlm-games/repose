@@ -14,14 +14,15 @@ pub use crate::geometry::{Rect, Size, Vec2};
 pub use crate::indication::*;
 pub use crate::input::*;
 pub use crate::locals::{
-    Density, Dp, HeightClass, LocalIndication, TextDirection, TextScale, Theme, UiScale,
-    WidthClass, WindowInsets, WindowSizeClass, calculate_window_size_class, content_color, density,
-    dp_to_px, get_window_container_height, get_window_container_width, local_indication,
-    set_ime_inset, set_window_container_height, set_window_container_size,
-    set_window_container_width, set_window_size_class_default, text_direction, text_scale, theme,
-    ui_scale, window_insets, window_size_class, with_content_color, with_density, with_input_mode,
-    with_local_indication, with_text_direction, with_text_scale, with_theme, with_ui_scale,
-    with_window_insets, with_window_size_class,
+    Density, Dp, DpOffset, DpRect, DpSize, HeightClass, LocalIndication, Px, Sp, TextDirection,
+    TextScale, Theme, UiScale, UnitExt, WidthClass, WindowInsets, WindowSizeClass,
+    calculate_window_size_class, content_color, density, dp_to_px, get_window_container_height,
+    get_window_container_width, local_indication, px_to_dp, set_ime_inset,
+    set_window_container_height, set_window_container_size, set_window_container_width,
+    set_window_size_class_default, text_direction, text_scale, theme, ui_scale, window_insets,
+    window_size_class, with_content_color, with_density, with_input_mode, with_local_indication,
+    with_text_direction, with_text_scale, with_theme, with_ui_scale, with_window_insets,
+    with_window_size_class,
 };
 pub use crate::modifier::{
     Interaction, InteractionSource, Modifier, MutableInteractionSource, PressId, StateColors,
@@ -49,6 +50,7 @@ pub use crate::text::{
     AnnotatedString, AnnotatedStringBuilder, BaselineShift, SpanStyle, TextSpan,
     build_annotated_string,
 };
+pub use crate::units::{lerp_dp, lerp_px, lerp_sp, max_dp, min_dp, size_px_to_dp};
 pub use crate::view::{
     BlendMode, BoxWithConstraintsScope, ImageFit, ImageHandle, PaintDesc, Scene, SceneNode,
     SubcomposeScope, TextExtraStyle, TextOverflow, VectorMeshData, VectorVertex, View, ViewId,

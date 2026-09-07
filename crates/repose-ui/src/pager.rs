@@ -8,7 +8,7 @@ use crate::anim_ext::{AnimatedContent, AnimatedContentConfig, EnterTransition, E
 #[derive(Clone)]
 pub struct PagerConfig {
     pub modifier: Modifier,
-    pub page_spacing: f32,
+    pub page_spacing: Dp,
     pub user_scroll_enabled: bool,
     pub content_padding: PaddingValues,
 }
@@ -17,7 +17,7 @@ impl Default for PagerConfig {
     fn default() -> Self {
         Self {
             modifier: Modifier::new(),
-            page_spacing: 0.0,
+            page_spacing: Dp::ZERO,
             user_scroll_enabled: true,
             content_padding: PaddingValues::default(),
         }
@@ -81,7 +81,7 @@ pub fn HorizontalPager(
     let key = key.into();
     let page = state.current_page.get();
     let page_spacing = config.page_spacing;
-    let slide_offset = 800.0 + page_spacing;
+    let slide_offset = Dp(800.0) + page_spacing;
 
     // Drag-to-swipe gesture handling
     let drag_start_x = Rc::new(remember_with_key(format!("pager_drag:{key}"), || {
@@ -127,14 +127,14 @@ pub fn HorizontalPager(
                 EnterTransition::FadeIn,
                 EnterTransition::SlideIn {
                     offset_x: slide_offset,
-                    offset_y: 0.0,
+                    offset_y: Dp::ZERO,
                 },
             ]),
             exit: ExitTransition::Composite(vec![
                 ExitTransition::FadeOut,
                 ExitTransition::SlideOut {
                     offset_x: -(slide_offset),
-                    offset_y: 0.0,
+                    offset_y: Dp::ZERO,
                 },
             ]),
         },
@@ -171,7 +171,7 @@ pub fn VerticalPager(
     let key = key.into();
     let page = state.current_page.get();
     let page_spacing = config.page_spacing;
-    let slide_offset = 600.0 + page_spacing;
+    let slide_offset = Dp(600.0) + page_spacing;
 
     let drag_start_y = Rc::new(remember_with_key(format!("vpager_drag:{key}"), || {
         RefCell::new(None::<f32>)
@@ -215,14 +215,14 @@ pub fn VerticalPager(
             enter: EnterTransition::Composite(vec![
                 EnterTransition::FadeIn,
                 EnterTransition::SlideIn {
-                    offset_x: 0.0,
+                    offset_x: Dp::ZERO,
                     offset_y: slide_offset,
                 },
             ]),
             exit: ExitTransition::Composite(vec![
                 ExitTransition::FadeOut,
                 ExitTransition::SlideOut {
-                    offset_x: 0.0,
+                    offset_x: Dp::ZERO,
                     offset_y: -(slide_offset),
                 },
             ]),

@@ -38,8 +38,8 @@ pub fn screen() -> View {
                     Column(
                         Modifier::new()
                             .background(th.error)
-                            .border(1.0, th.outline, 12.0)
-                            .clip_rounded(12.0)
+                            .border(Dp(1.0), th.outline, Dp(12.0))
+                            .clip_rounded(Dp(12.0))
                             .padding(sp::MD)
                             .gap(sp::SM),
                     )

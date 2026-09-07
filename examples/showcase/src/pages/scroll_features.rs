@@ -10,10 +10,10 @@ use crate::ui::{Hint, Page, Section, sp};
 fn list_card(label: String) -> View {
     Box(Modifier::new()
         .fill_max_width()
-        .padding(10.0)
+        .padding(Dp(10.0))
         .background(theme().surface)
-        .border(1.0, theme().outline, 10.0)
-        .clip_rounded(10.0))
+        .border(Dp(1.0), theme().outline, Dp(10.0))
+        .clip_rounded(Dp(10.0)))
     .child(Text(label))
 }
 
@@ -30,7 +30,11 @@ fn flow_row_demo() -> View {
     const COLORS: [u32; 6] = [0x4285F4, 0xEA4335, 0x34A853, 0xFBBC05, 0x8E24AA, 0x00BCD4];
     Section(
         "FlowRow - auto-wrapping horizontal layout",
-        FlowRow(Modifier::new().gap(sp::SM).fill_max_width(), FlowRowConfig::default()).child(
+        FlowRow(
+            Modifier::new().gap(sp::SM).fill_max_width(),
+            FlowRowConfig::default(),
+        )
+        .child(
             (0..25)
                 .map(|i| {
                     let hex = COLORS[i as usize % COLORS.len()];
@@ -42,9 +46,9 @@ fn flow_row_demo() -> View {
                     );
                     Box(Modifier::new()
                         .background(c)
-                        .clip_rounded(8.0)
+                        .clip_rounded(Dp(8.0))
                         .padding(sp::SM))
-                    .child(Text(format!("Item {i}")).color(Color::WHITE).size(14.0))
+                    .child(Text(format!("Item {i}")).color(Color::WHITE).size(Sp(14.0)))
                 })
                 .collect::<Vec<_>>(),
         ),
@@ -56,10 +60,10 @@ fn overscroll_demo() -> View {
         "OverscrollEffect - rubber-band at scroll boundaries",
         ScrollArea(
             Modifier::new()
-                .height(200.0)
+                .height(Dp(200.0))
                 .fill_max_width()
-                .border(1.0, theme().outline, 12.0)
-                .clip_rounded(12.0),
+                .border(Dp(1.0), theme().outline, Dp(12.0))
+                .clip_rounded(Dp(12.0)),
             remember_scroll_state("overscroll_demo"),
             Column(Modifier::new().fill_max_width().gap(sp::XS)).child(
                 (0..20)
@@ -114,9 +118,9 @@ fn pull_to_refresh_demo() -> View {
                     .fill_max_width()
                     .padding(sp::MD)
                     .background(theme().surface)
-                    .border(1.0, theme().outline, 8.0)
-                    .clip_rounded(8.0))
-                .child(Text(label).size(14.0).color(theme().on_surface))
+                    .border(Dp(1.0), theme().outline, Dp(8.0))
+                    .clip_rounded(Dp(8.0)))
+                .child(Text(label).size(Sp(14.0)).color(theme().on_surface))
             })
             .collect()
     } else {
@@ -126,11 +130,11 @@ fn pull_to_refresh_demo() -> View {
                     .fill_max_width()
                     .padding(sp::MD)
                     .background(theme().surface)
-                    .border(1.0, theme().outline, 8.0)
-                    .clip_rounded(8.0))
+                    .border(Dp(1.0), theme().outline, Dp(8.0))
+                    .clip_rounded(Dp(8.0)))
                 .child(
                     Text(format!("List item {i}"))
-                        .size(14.0)
+                        .size(Sp(14.0))
                         .color(theme().on_surface),
                 )
             })
@@ -143,10 +147,10 @@ fn pull_to_refresh_demo() -> View {
             Hint(format!("Refreshed {} times", count.get())),
             ScrollArea(
                 Modifier::new()
-                    .height(250.0)
+                    .height(Dp(250.0))
                     .fill_max_width()
-                    .border(1.0, theme().outline, 12.0)
-                    .clip_rounded(12.0),
+                    .border(Dp(1.0), theme().outline, Dp(12.0))
+                    .clip_rounded(Dp(12.0)),
                 scroll_state,
                 PullToRefresh(
                     ptr.clone(),
@@ -182,8 +186,8 @@ fn nested_scroll_demo() -> View {
             .fill_max_width()
             .padding(sp::MD)
             .background(bg)
-            .clip_rounded(8.0))
-        .child(Text(text).size(14.0).color(fg))
+            .clip_rounded(Dp(8.0)))
+        .child(Text(text).size(Sp(14.0)).color(fg))
     };
 
     let th = theme();
@@ -191,10 +195,10 @@ fn nested_scroll_demo() -> View {
         "NestedScroll - coordinated parent-child scrolling",
         ScrollArea(
             Modifier::new()
-                .height(300.0)
+                .height(Dp(300.0))
                 .fill_max_width()
-                .border(1.0, th.outline, 12.0)
-                .clip_rounded(12.0),
+                .border(Dp(1.0), th.outline, Dp(12.0))
+                .clip_rounded(Dp(12.0)),
             outer_state,
             Column(Modifier::new().fill_max_width().gap(sp::SM)).child((
                 banner(
@@ -204,9 +208,9 @@ fn nested_scroll_demo() -> View {
                 ),
                 Box(Modifier::new()
                     .fill_max_width()
-                    .height(160.0)
-                    .border(1.0, th.outline_variant, 8.0)
-                    .clip_rounded(8.0))
+                    .height(Dp(160.0))
+                    .border(Dp(1.0), th.outline_variant, Dp(8.0))
+                    .clip_rounded(Dp(8.0)))
                 .child(ScrollArea(
                     Modifier::new().fill_max_size(),
                     inner_state,
@@ -217,10 +221,10 @@ fn nested_scroll_demo() -> View {
                                     .fill_max_width()
                                     .padding(sp::SM)
                                     .background(th.secondary_container)
-                                    .clip_rounded(6.0))
+                                    .clip_rounded(Dp(6.0)))
                                 .child(
                                     Text(format!("Inner item {i}"))
-                                        .size(13.0)
+                                        .size(Sp(13.0))
                                         .color(th.on_secondary_container),
                                 )
                             })
@@ -237,11 +241,11 @@ fn nested_scroll_demo() -> View {
                     th.on_surface_variant,
                     "More outer content - scroll here when inner reaches its boundary",
                 ),
-                Box(Modifier::new().height(200.0).fill_max_width()).child(
+                Box(Modifier::new().height(Dp(200.0)).fill_max_width()).child(
                     Text(
                         "Bottom area - demonstrates outer scroll continuing past inner scrollable",
                     )
-                    .size(13.0)
+                    .size(Sp(13.0))
                     .color(th.on_surface.with_alpha(100)),
                 ),
             )),

@@ -228,19 +228,19 @@ pub fn screen() -> View {
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
                 Hint("Drag in any direction (directly scooped from egui, though bottom-up rotation wouldn't work as intended for the same reason) horizontal = yaw, vertical = pitch. prepare uploads vec2 uniform, paint draws with perspective + per-vertex gradient. Viewport = layout rect.")
                     .color(theme().on_surface_variant)
-                    .size(12.0),
+                    .size(Sp(12.0)),
                 Row(Modifier::new().gap(sp::SM)).child((
                     Text(format!("yaw {:.2} pitch {:.2} rad", angle.get().x, angle.get().y)),
                     Text(format!("drag ({:.0}, {:.0})", drag_pos.get().x, drag_pos.get().y))
                         .color(theme().on_surface_variant)
-                        .size(12.0),
+                        .size(Sp(12.0)),
                 )),
                 Embedded(
                     Modifier::new()
-                        .size(560.0, 220.0)
+                        .size(Dp(560.0), Dp(220.0))
                         .background(theme().surface_container_low)
-                        .border(1.0, theme().outline_variant, 16.0)
-                        .clip_rounded(16.0)
+                        .border(Dp(1.0), theme().outline_variant, Dp(16.0))
+                        .clip_rounded(Dp(16.0))
                         .on_pointer_down({
                             let drag_pos = drag_pos.clone();
                             let is_dragging = is_dragging.clone();

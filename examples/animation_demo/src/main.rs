@@ -71,23 +71,23 @@ fn app(s: &mut Scheduler, _rc: &RenderContext) -> View {
     };
 
     Box(Modifier::new().fill_max_size().background(th.background)).child(
-        Column(Modifier::new().padding(32.0)).child((
+        Column(Modifier::new().padding(Dp(32.0))).child((
             scope!("title", s, [], {
-                Text("Animation Demo").modifier(Modifier::new().padding(12.0))
+                Text("Animation Demo").modifier(Modifier::new().padding(Dp(12.0)))
             }),
             Box(Modifier::new()
-                .size(current_size, current_size)
+                .size(Dp(current_size), Dp(current_size))
                 .background(current_color)
-                .border(2.0, th.on_surface, 8.0)),
+                .border(Dp(2.0), th.on_surface, Dp(8.0))),
             scope!("color_buttons", s, [], {
-                Row(Modifier::new().padding(16.0)).child((
+                Row(Modifier::new().padding(Dp(16.0))).child((
                     Button(
                         Modifier::new(),
                         on_color(th.primary),
                         ButtonConfig::default(),
                         || {
                             Text("🔵 Blue")
-                                .modifier(Modifier::new().padding(8.0).align_self_center())
+                                .modifier(Modifier::new().padding(Dp(8.0)).align_self_center())
                         },
                     ),
                     Button(
@@ -96,7 +96,7 @@ fn app(s: &mut Scheduler, _rc: &RenderContext) -> View {
                         ButtonConfig::default(),
                         || {
                             Text("🟢 Green")
-                                .modifier(Modifier::new().padding(8.0).align_self_center())
+                                .modifier(Modifier::new().padding(Dp(8.0)).align_self_center())
                         },
                     ),
                     Button(
@@ -105,18 +105,21 @@ fn app(s: &mut Scheduler, _rc: &RenderContext) -> View {
                         ButtonConfig::default(),
                         || {
                             Text("🔴 Red")
-                                .modifier(Modifier::new().padding(8.0).align_self_center())
+                                .modifier(Modifier::new().padding(Dp(8.0)).align_self_center())
                         },
                     ),
                 ))
             }),
             scope!("size_buttons", s, [], {
-                Row(Modifier::new().padding(8.0)).child((
+                Row(Modifier::new().padding(Dp(8.0))).child((
                     Button(
                         Modifier::new(),
                         on_size(80.0),
                         ButtonConfig::default(),
-                        || Text("Small").modifier(Modifier::new().padding(8.0).align_self_center()),
+                        || {
+                            Text("Small")
+                                .modifier(Modifier::new().padding(Dp(8.0)).align_self_center())
+                        },
                     ),
                     Button(
                         Modifier::new(),
@@ -124,14 +127,17 @@ fn app(s: &mut Scheduler, _rc: &RenderContext) -> View {
                         ButtonConfig::default(),
                         || {
                             Text("Medium")
-                                .modifier(Modifier::new().padding(8.0).align_self_center())
+                                .modifier(Modifier::new().padding(Dp(8.0)).align_self_center())
                         },
                     ),
                     Button(
                         Modifier::new(),
                         on_size(220.0),
                         ButtonConfig::default(),
-                        || Text("Large").modifier(Modifier::new().padding(8.0).align_self_center()),
+                        || {
+                            Text("Large")
+                                .modifier(Modifier::new().padding(Dp(8.0)).align_self_center())
+                        },
                     ),
                 ))
             }),
@@ -142,9 +148,9 @@ fn app(s: &mut Scheduler, _rc: &RenderContext) -> View {
                     "✓ Idle"
                 },
             )
-            .size(64.0)
+            .size(Sp(64.0))
             .color(th.on_surface_variant)
-            .modifier(Modifier::new().padding(12.0)),
+            .modifier(Modifier::new().padding(Dp(12.0))),
         )),
     )
 }

@@ -284,19 +284,21 @@ pub fn drag_preview_chip(label: impl Into<String>, accent: Color) -> DragPreview
 }
 
 fn draw_label_chip(scene: &mut Scene, pointer: Vec2, label: &str, accent: Color, elevated: bool) {
-    let ts = crate::locals::text_scale().0;
-    let pad_x = crate::locals::dp_to_px(10.0);
-    let pad_y = crate::locals::dp_to_px(6.0);
-    let font_px = crate::locals::dp_to_px(13.0) * ts;
+    use crate::units::{Px, UnitExt as _};
+    // Paint-space: Dp/Sp converted at the boundary (Compose `Density.toPx`).
+    // `Rect` carries px magnitudes; scalar node fields take `Px`.
+    let pad_x = 10.0.dp().to_px();
+    let pad_y = 6.0.dp().to_px();
+    let font_px = 13.0.sp().to_px();
     // Approximate width: ~0.55em per char (good enough without measuring).
-    let text_w = (label.chars().count() as f32 * font_px * 0.55).max(crate::locals::dp_to_px(24.0));
-    let w = text_w + pad_x * 2.0;
-    let h = font_px + pad_y * 2.0;
-    let r = crate::locals::dp_to_px(8.0);
+    let text_w = Px((label.chars().count() as f32 * font_px.0 * 0.55).max(24.0.dp().to_px().0));
+    let w = text_w.0 + pad_x.0 * 2.0;
+    let h = font_px.0 + pad_y.0 * 2.0;
+    let r = 8.0.dp().to_px();
 
     let origin = Vec2 {
-        x: pointer.x + crate::locals::dp_to_px(14.0),
-        y: pointer.y + crate::locals::dp_to_px(14.0),
+        x: pointer.x + 14.0.dp().to_px().0,
+        y: pointer.y + 14.0.dp().to_px().0,
     };
     let rect = Rect {
         x: origin.x,
@@ -309,8 +311,8 @@ fn draw_label_chip(scene: &mut Scene, pointer: Vec2, label: &str, accent: Color,
         // Soft "shadow"
         scene.nodes.push(SceneNode::Rect {
             rect: Rect {
-                x: rect.x + crate::locals::dp_to_px(2.0),
-                y: rect.y + crate::locals::dp_to_px(3.0),
+                x: rect.x + 2.0.dp().to_px().0,
+                y: rect.y + 3.0.dp().to_px().0,
                 w: rect.w,
                 h: rect.h,
             },
@@ -328,15 +330,15 @@ fn draw_label_chip(scene: &mut Scene, pointer: Vec2, label: &str, accent: Color,
     scene.nodes.push(SceneNode::Border {
         rect,
         color: accent.with_alpha(0xFF),
-        width: crate::locals::dp_to_px(1.0),
+        width: 1.0.dp().to_px(),
         radius: [r; 4],
     });
     scene.nodes.push(SceneNode::Text {
         rect: Rect {
-            x: rect.x + pad_x,
-            y: rect.y + pad_y,
-            w: text_w,
-            h: font_px,
+            x: rect.x + pad_x.0,
+            y: rect.y + pad_y.0,
+            w: text_w.0,
+            h: font_px.0,
         },
         text: Arc::<str>::from(label),
         color: Color::WHITE,
@@ -346,8 +348,8 @@ fn draw_label_chip(scene: &mut Scene, pointer: Vec2, label: &str, accent: Color,
         font_weight: FontWeight::MEDIUM,
         font_style: FontStyle::Normal,
         text_decoration: TextDecoration::default(),
-        letter_spacing: 0.0,
-        line_height: 0.0,
+        letter_spacing: Px::ZERO,
+        line_height: Px::ZERO,
         extra_style: Default::default(),
         url: None,
         font_variation_settings: None,
@@ -356,15 +358,16 @@ fn draw_label_chip(scene: &mut Scene, pointer: Vec2, label: &str, accent: Color,
 
 /// Default ghost: translucent clone of the source bounds, locked to grab offset.
 fn draw_default_source_ghost(scene: &mut Scene, ctx: &DragPreviewCtx, accent: Color) {
-    let w = ctx.source_rect.w.max(crate::locals::dp_to_px(24.0));
-    let h = ctx.source_rect.h.max(crate::locals::dp_to_px(16.0));
+    use crate::units::UnitExt as _;
+    let w = ctx.source_rect.w.max(24.0.dp().to_px().0);
+    let h = ctx.source_rect.h.max(16.0.dp().to_px().0);
     let rect = Rect {
         x: ctx.pointer.x - ctx.grab_offset.x,
         y: ctx.pointer.y - ctx.grab_offset.y,
         w,
         h,
     };
-    let r = crate::locals::dp_to_px(6.0);
+    let r = 6.0.dp().to_px();
     scene.nodes.push(SceneNode::Rect {
         rect,
         brush: Brush::Solid(accent.with_alpha(0x55)),
@@ -373,7 +376,7 @@ fn draw_default_source_ghost(scene: &mut Scene, ctx: &DragPreviewCtx, accent: Co
     scene.nodes.push(SceneNode::Border {
         rect,
         color: accent.with_alpha(0xCC),
-        width: crate::locals::dp_to_px(1.5),
+        width: 1.5.dp().to_px(),
         radius: [r; 4],
     });
 }
@@ -833,11 +836,12 @@ pub fn overlay_drag_indicator(
     if let Some(tid) = dnd_target_id_at(f, pos)
         && let Some(hit) = f.hit_regions.iter().find(|h| h.id == tid)
     {
-        let r = crate::locals::dp_to_px(8.0);
+        use crate::units::UnitExt as _;
+        let r = 8.0.dp().to_px();
         scene.nodes.push(SceneNode::Border {
             rect: hit.rect,
             color: accent,
-            width: crate::locals::dp_to_px(2.0),
+            width: 2.0.dp().to_px(),
             radius: [r; 4],
         });
     }

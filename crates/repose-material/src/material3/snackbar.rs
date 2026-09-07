@@ -24,10 +24,10 @@ pub struct SnackbarConfig {
     pub show_dismiss_action: bool,
     /// Called when the dismiss icon is clicked.
     pub on_dismiss: Option<Rc<dyn Fn()>>,
-    pub shape_radius: f32,
-    pub min_height: f32,
-    pub min_width: f32,
-    pub max_width: f32,
+    pub shape_radius: Dp,
+    pub min_height: Dp,
+    pub min_width: Dp,
+    pub max_width: Dp,
 }
 
 impl std::fmt::Debug for SnackbarConfig {
@@ -96,12 +96,12 @@ pub fn Snackbar(
         .max_width(config.max_width)
         .background(bg)
         .clip_rounded(config.shape_radius)
-        .shadow(th.elevation.level3, 0.0));
+        .shadow(th.elevation.level3, Dp::ZERO));
 
     let dismiss_btn = if config.show_dismiss_action {
         let d = config.on_dismiss.clone();
         Some(IconButton(
-            Icon(Symbol::new("close", '\u{E5CD}')).size(24.0),
+            Icon(Symbol::new("close", '\u{E5CD}')).size(Sp(24.0)),
             move || {
                 if let Some(cb) = &d {
                     cb();
@@ -116,7 +116,7 @@ pub fn Snackbar(
                         .dismiss_action_content_color
                         .with_alpha_f32(0.38),
                 },
-                container_size: Some(48.0),
+                container_size: Some(Dp(48.0)),
                 ..Default::default()
             },
         ))
@@ -126,18 +126,18 @@ pub fn Snackbar(
 
     let content = if config.action_on_new_line {
         Column(Modifier::new().padding_values(PaddingValues {
-            left: 16.0,
-            right: 8.0,
-            top: 0.0,
-            bottom: 0.0,
+            left: Dp(16.0),
+            right: Dp(8.0),
+            top: Dp(0.0),
+            bottom: Dp(0.0),
         }))
         .child((
             Text(msg)
                 .modifier(Modifier::new().padding_values(PaddingValues {
-                    left: 0.0,
-                    right: 0.0,
-                    top: 14.0,
-                    bottom: 14.0,
+                    left: Dp(0.0),
+                    right: Dp(0.0),
+                    top: Dp(14.0),
+                    bottom: Dp(14.0),
                 }))
                 .color(fg)
                 .size(th.typography.body_medium)
@@ -171,19 +171,19 @@ pub fn Snackbar(
         Row(Modifier::new()
             .fill_max_width()
             .padding_values(PaddingValues {
-                left: 16.0,
-                right: 8.0,
-                top: 0.0,
-                bottom: 0.0,
+                left: Dp(16.0),
+                right: Dp(8.0),
+                top: Dp(0.0),
+                bottom: Dp(0.0),
             })
             .align_items(repose_core::AlignItems::CENTER))
         .child((
             Text(msg)
                 .modifier(Modifier::new().padding_values(PaddingValues {
-                    left: 0.0,
-                    right: 0.0,
-                    top: 14.0,
-                    bottom: 14.0,
+                    left: Dp(0.0),
+                    right: Dp(0.0),
+                    top: Dp(14.0),
+                    bottom: Dp(14.0),
                 }))
                 .color(fg)
                 .size(th.typography.body_medium)
@@ -216,7 +216,7 @@ pub fn Snackbar(
 
     Box(Modifier::new()
         .absolute()
-        .offset_bottom(0.0)
+        .offset_bottom(Dp::ZERO)
         .fill_max_width()
         .justify_content(repose_core::JustifyContent::CENTER)
         .then(modifier))

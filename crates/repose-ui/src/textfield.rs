@@ -62,7 +62,7 @@ pub fn get_textfield_state(key: u64) -> Option<Rc<RefCell<TextFieldState>>> {
 }
 
 pub fn ensure_caret_visible(state: &mut TextFieldState, multiline: bool) {
-    let font_px = repose_core::dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+    let font_px = TF_FONT_SP.to_px().0;
     let wrap_width = state.inner_width;
     if multiline {
         let (cx, cy, _) = crate::textfield::caret_xy_for_byte(
@@ -73,7 +73,7 @@ pub fn ensure_caret_visible(state: &mut TextFieldState, multiline: bool) {
         );
         let iw = state.inner_width;
         let ih = state.inner_height;
-        state.ensure_caret_visible_xy(cx, cy, iw, ih, repose_core::dp_to_px(2.0));
+        state.ensure_caret_visible_xy(cx, cy, iw, ih, Dp(2.0).to_px().0);
     } else {
         let caret_idx = state.caret_index();
         let (display, caret_display_off) = if let Some(vt) = &state.visual_transformation {
@@ -87,7 +87,7 @@ pub fn ensure_caret_visible(state: &mut TextFieldState, multiline: bool) {
         };
         let m = crate::textfield::measure_text(&display, font_px, TextMeasureConfig::default());
         let caret_x = m.positions.get(caret_display_off).copied().unwrap_or(0.0);
-        state.ensure_caret_visible(caret_x, wrap_width, repose_core::dp_to_px(2.0));
+        state.ensure_caret_visible(caret_x, wrap_width, Dp(2.0).to_px().0);
     }
 }
 
@@ -253,8 +253,9 @@ impl TextUndoOp {
 const SCROLL_STIFFNESS: f32 = 300.0;
 const SCROLL_DAMPING: f32 = 30.0;
 
-/// Logical font size for TextField in dp (converted to px at measure/paint time).
-pub const TF_FONT_DP: f32 = 16.0;
+/// Logical font size for TextField in [`Sp`] (converted to px at
+/// measure/paint time, including `TextScale`).
+pub const TF_FONT_SP: Sp = Sp(16.0);
 
 /// Configures the keyboard for a text field.
 #[derive(Clone, Copy, Debug)]
@@ -273,8 +274,8 @@ impl Default for KeyboardOptions {
         }
     }
 }
-/// Horizontal padding inside the TextField in dp.
-pub const TF_PADDING_X_DP: f32 = 8.0;
+/// Horizontal padding inside the TextField in [`Dp`].
+pub const TF_PADDING_X: Dp = Dp(8.0);
 
 pub struct TextMetrics {
     /// positions[i] = advance up to the i-th grapheme (len == graphemes + 1)
@@ -1582,18 +1583,18 @@ pub(crate) fn paint_text_field(
     text_input: &TextInputConfig,
     state: Option<&Rc<RefCell<TextFieldState>>>,
     is_focused: bool,
-    clip_rounded: Option<[f32; 4]>,
+    clip_rounded: Option<[Dp; 4]>,
     alpha_accum: f32,
 ) {
     let ts = text_input.text_style.clone().unwrap_or_default();
-    let font_size_dp = if ts.font_size != 0.0 {
+    let font_size_sp = if ts.font_size != Sp::ZERO {
         ts.font_size
     } else {
-        TF_FONT_DP
+        TF_FONT_SP
     };
-    let font_val = dp_to_px(font_size_dp) * locals::text_scale().0;
-    let line_h = if ts.line_height != 0.0 {
-        dp_to_px(ts.line_height) * locals::text_scale().0
+    let font_val = font_size_sp.to_px().0;
+    let line_h = if ts.line_height != Sp::ZERO {
+        ts.line_height.to_px().0
     } else if text_input.multiline {
         0.0 // sentinel -> renderer uses Normal line height (font-metric-based)
     } else {
@@ -1601,7 +1602,7 @@ pub(crate) fn paint_text_field(
     };
     let text_off_y = (rect.h - line_h.max(font_val)) / 2.0;
 
-    let clip_radius = clip_rounded.unwrap_or([0.0; 4]).map(dp_to_px);
+    let clip_radius = clip_rounded.unwrap_or([Dp::ZERO; 4]).map(|v| v.to_px());
     scene.nodes.push(SceneNode::PushClip {
         rect,
         radius: clip_radius,
@@ -1639,7 +1640,7 @@ pub(crate) fn paint_text_field(
                     font_family: ts.font_family,
                     font_weight: ts.font_weight.unwrap_or(400),
                     font_style: ts.font_style.unwrap_or(0),
-                    letter_spacing: ts.letter_spacing,
+                    letter_spacing: ts.letter_spacing.to_px().0,
                     font_variation_settings: None,
                 },
             );
@@ -1679,7 +1680,7 @@ pub(crate) fn paint_text_field(
                         h: line_h.max(font_val),
                     },
                     brush: Brush::Solid(selection),
-                    radius: [0.0; 4],
+                    radius: [Px::ZERO; 4],
                 });
             }
 
@@ -1707,16 +1708,16 @@ pub(crate) fn paint_text_field(
                     .copied()
                     .unwrap_or(sx)
                     - st.scroll_offset;
-                let y = rect.y + text_off_y + line_h.max(font_val) - dp_to_px(2.0);
+                let y = rect.y + text_off_y + line_h.max(font_val) - Dp(2.0).to_px().0;
                 scene.nodes.push(SceneNode::Rect {
                     rect: repose_core::Rect {
                         x: rect.x + sx.max(0.0),
                         y,
-                        w: (ex - sx).max(dp_to_px(2.0)),
-                        h: dp_to_px(2.0),
+                        w: (ex - sx).max(Dp(2.0).to_px().0),
+                        h: Dp(2.0).to_px().0,
                     },
                     brush: Brush::Solid(th.focus),
-                    radius: [0.0; 4],
+                    radius: [Px::ZERO; 4],
                 });
             }
 
@@ -1745,7 +1746,7 @@ pub(crate) fn paint_text_field(
                 },
                 text: Arc::from(render_txt),
                 color: mul_alpha_color(txt_col, alpha_accum),
-                size: font_val,
+                size: Px(font_val),
                 font_family: ts.font_family,
                 text_align: ts.text_align,
                 font_weight: FontWeight(ts.font_weight.unwrap_or(400)),
@@ -1754,8 +1755,8 @@ pub(crate) fn paint_text_field(
                     _ => FontStyle::Normal,
                 },
                 text_decoration: ts.text_decoration.unwrap_or_default(),
-                letter_spacing: ts.letter_spacing,
-                line_height: ts.line_height,
+                letter_spacing: ts.letter_spacing.to_px(),
+                line_height: ts.line_height.to_px(),
                 extra_style: Default::default(),
                 url: None,
                 font_variation_settings: None,
@@ -1783,11 +1784,11 @@ pub(crate) fn paint_text_field(
                     rect: repose_core::Rect {
                         x: rect.x + cx.max(0.0),
                         y: cursor_y,
-                        w: dp_to_px(1.0),
+                        w: Dp(1.0).to_px().0,
                         h: font_val,
                     },
                     brush: Brush::Solid(cursor_color),
-                    radius: [0.0; 4],
+                    radius: [Px::ZERO; 4],
                 });
             }
         } else {
@@ -1806,7 +1807,7 @@ pub(crate) fn paint_text_field(
                 rect.w.max(1.0),
                 400,
                 0,
-                ts.letter_spacing,
+                ts.letter_spacing.to_px().0,
                 None,
             );
             let lh = layout.line_h_px;
@@ -1823,7 +1824,7 @@ pub(crate) fn paint_text_field(
                     },
                     text: Arc::from(text_input.hint.clone()),
                     color: mul_alpha_color(ts.color.unwrap_or(th.on_surface_variant), alpha_accum),
-                    size: font_val,
+                    size: Px(font_val),
                     font_family: ts.font_family,
                     text_align: ts.text_align,
                     font_weight: FontWeight(ts.font_weight.unwrap_or(400)),
@@ -1832,8 +1833,8 @@ pub(crate) fn paint_text_field(
                         _ => FontStyle::Normal,
                     },
                     text_decoration: ts.text_decoration.unwrap_or_default(),
-                    letter_spacing: ts.letter_spacing,
-                    line_height: ts.line_height,
+                    letter_spacing: ts.letter_spacing.to_px(),
+                    line_height: ts.line_height.to_px(),
                     extra_style: Default::default(),
                     url: None,
                     font_variation_settings: None,
@@ -1857,7 +1858,7 @@ pub(crate) fn paint_text_field(
                         },
                         text: Arc::<str>::from(ln),
                         color: mul_alpha_color(ts.color.unwrap_or(th.on_surface), alpha_accum),
-                        size: font_val,
+                        size: Px(font_val),
                         font_family: ts.font_family,
                         text_align: ts.text_align,
                         font_weight: FontWeight(ts.font_weight.unwrap_or(400)),
@@ -1866,8 +1867,8 @@ pub(crate) fn paint_text_field(
                             _ => FontStyle::Normal,
                         },
                         text_decoration: ts.text_decoration.unwrap_or_default(),
-                        letter_spacing: ts.letter_spacing,
-                        line_height: ts.line_height,
+                        letter_spacing: ts.letter_spacing.to_px(),
+                        line_height: ts.line_height.to_px(),
                         extra_style: Default::default(),
                         url: None,
                         font_variation_settings: None,
@@ -1908,7 +1909,7 @@ pub(crate) fn paint_text_field(
                             font_family: ts.font_family,
                             font_weight: ts.font_weight.unwrap_or(400),
                             font_style: ts.font_style.unwrap_or(0),
-                            letter_spacing: ts.letter_spacing,
+                            letter_spacing: ts.letter_spacing.to_px().0,
                             font_variation_settings: None,
                         },
                     );
@@ -1933,7 +1934,7 @@ pub(crate) fn paint_text_field(
                             h: lh,
                         },
                         brush: Brush::Solid(selection),
-                        radius: [0.0; 4],
+                        radius: [Px::ZERO; 4],
                     });
                 }
             }
@@ -1969,7 +1970,7 @@ pub(crate) fn paint_text_field(
                             font_family: ts.font_family,
                             font_weight: ts.font_weight.unwrap_or(400),
                             font_style: ts.font_style.unwrap_or(0),
-                            letter_spacing: ts.letter_spacing,
+                            letter_spacing: ts.letter_spacing.to_px().0,
                             font_variation_settings: None,
                         },
                     );
@@ -1989,12 +1990,12 @@ pub(crate) fn paint_text_field(
                     scene.nodes.push(SceneNode::Rect {
                         rect: repose_core::Rect {
                             x: rect.x + sx,
-                            y: draw_y + lh - dp_to_px(2.0),
-                            w: (ex - sx).max(dp_to_px(2.0)),
-                            h: dp_to_px(2.0),
+                            y: draw_y + lh - Dp(2.0).to_px().0,
+                            w: (ex - sx).max(Dp(2.0).to_px().0),
+                            h: Dp(2.0).to_px().0,
                         },
                         brush: Brush::Solid(th.focus),
-                        radius: [0.0; 4],
+                        radius: [Px::ZERO; 4],
                     });
                 }
             }
@@ -2020,11 +2021,11 @@ pub(crate) fn paint_text_field(
                     rect: repose_core::Rect {
                         x: draw_x,
                         y: draw_y + (lh - font_val) / 2.0,
-                        w: dp_to_px(1.0),
+                        w: Dp(1.0).to_px().0,
                         h: font_val,
                     },
                     brush: Brush::Solid(cursor_color),
-                    radius: [0.0; 4],
+                    radius: [Px::ZERO; 4],
                 });
             }
         }
@@ -2045,14 +2046,14 @@ pub(crate) fn paint_text_field(
                 },
                 text: Arc::from(text_input.hint.clone()),
                 color: mul_alpha_color(th.on_surface_variant, alpha_accum),
-                size: font_val,
+                size: Px(font_val),
                 font_family: None,
                 text_align: TextAlign::Unspecified,
                 font_weight: FontWeight::NORMAL,
                 font_style: FontStyle::Normal,
                 text_decoration: ts.text_decoration.unwrap_or_default(),
-                letter_spacing: 0.0,
-                line_height: 0.0,
+                letter_spacing: Px::ZERO,
+                line_height: Px::ZERO,
                 extra_style: Default::default(),
                 url: None,
                 font_variation_settings: None,
@@ -2072,7 +2073,7 @@ pub(crate) fn paint_text_field(
                 rect.w.max(1.0),
                 400,
                 0,
-                ts.letter_spacing,
+                ts.letter_spacing.to_px().0,
                 None,
             );
             let lh = layout.line_h_px;
@@ -2091,14 +2092,14 @@ pub(crate) fn paint_text_field(
                     },
                     text: Arc::<str>::from(ln),
                     color: mul_alpha_color(th.on_surface, alpha_accum),
-                    size: font_val,
+                    size: Px(font_val),
                     font_family: None,
                     text_align: TextAlign::Unspecified,
                     font_weight: FontWeight::NORMAL,
                     font_style: FontStyle::Normal,
                     text_decoration: ts.text_decoration.unwrap_or_default(),
-                    letter_spacing: 0.0,
-                    line_height: 0.0,
+                    letter_spacing: Px::ZERO,
+                    line_height: Px::ZERO,
                     extra_style: Default::default(),
                     url: None,
                     font_variation_settings: None,
@@ -2114,14 +2115,14 @@ pub(crate) fn paint_text_field(
                 },
                 text: Arc::from(rendered_by_vt(&text_input.value)),
                 color: mul_alpha_color(th.on_surface, alpha_accum),
-                size: font_val,
+                size: Px(font_val),
                 font_family: None,
                 text_align: TextAlign::Unspecified,
                 font_weight: FontWeight::NORMAL,
                 font_style: FontStyle::Normal,
                 text_decoration: ts.text_decoration.unwrap_or_default(),
-                letter_spacing: 0.0,
-                line_height: 0.0,
+                letter_spacing: Px::ZERO,
+                line_height: Px::ZERO,
                 extra_style: Default::default(),
                 url: None,
                 font_variation_settings: None,
@@ -2157,7 +2158,7 @@ pub(crate) fn paint_text_field(
                     rect.w.max(1.0),
                     400,
                     0,
-                    ts.letter_spacing,
+                    ts.letter_spacing.to_px().0,
                     None,
                 );
                 let lc = l.ranges.len();
@@ -2315,14 +2316,14 @@ fn text_field_view(
 /// Ensure caret visibility for a TextFieldState inside a given rect (px).
 /// Extracted from `repose-platform::tf_ensure_visible_in_rect` for better layering.
 pub fn tf_ensure_visible_in_rect(state: &mut TextFieldState, inner_rect: repose_core::Rect) {
-    use crate::textfield::{TF_FONT_DP, TF_PADDING_X_DP, TextMeasureConfig, measure_text};
-    let font_px = repose_core::locals::dp_to_px(TF_FONT_DP) * repose_core::locals::text_scale().0;
+    use crate::textfield::{TF_FONT_SP, TF_PADDING_X, TextMeasureConfig, measure_text};
+    let font_px = TF_FONT_SP.to_px().0;
     let m = measure_text(&state.text, font_px, TextMeasureConfig::default());
     let caret_x_px = m.positions.get(state.caret_index()).copied().unwrap_or(0.0);
     state.ensure_caret_visible(
         caret_x_px,
-        inner_rect.w - 2.0 * repose_core::locals::dp_to_px(TF_PADDING_X_DP),
-        repose_core::locals::dp_to_px(2.0),
+        inner_rect.w - 2.0 * TF_PADDING_X.to_px().0,
+        Dp(2.0).to_px().0,
     );
 }
 

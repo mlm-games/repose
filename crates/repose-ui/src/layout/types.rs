@@ -184,19 +184,21 @@ pub enum IntrinsicSizeMode {
 }
 
 /// Context stored with each Taffy node.
+/// Text sizes are [`Sp`](repose_core::Sp) (authoring units); converted to px
+/// by the `font_px` closure at the measure boundary.
 #[derive(Clone)]
 pub(crate) enum NodeContext {
     Text {
         text: String,
-        font_dp: f32,
+        font_sp: Sp,
         soft_wrap: bool,
         max_lines: Option<usize>,
         overflow: TextOverflow,
         font_family: Option<&'static str>,
         font_weight: FontWeight,
         font_style: FontStyle,
-        letter_spacing: f32,
-        line_height: f32,
+        letter_spacing: Sp,
+        line_height: Sp,
         font_variation_settings: Option<Arc<str>>,
         annotations: Option<Arc<[TextSpan]>>,
     },

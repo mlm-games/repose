@@ -49,11 +49,11 @@ pub fn Scaffold(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig)
 
 fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfig) -> View {
     let insets = window_insets();
-    let itop = px_to_dp(insets.top);
-    let ibottom = px_to_dp(insets.bottom);
-    let iime = px_to_dp(insets.ime_bottom);
-    let ileft = px_to_dp(insets.left);
-    let iright = px_to_dp(insets.right);
+    let itop = Px(insets.top).to_dp();
+    let ibottom = Px(insets.bottom).to_dp();
+    let iime = Px(insets.ime_bottom).to_dp();
+    let ileft = Px(insets.left).to_dp();
+    let iright = Px(insets.right).to_dp();
 
     let content_padding = PaddingValues {
         top: if config.top_bar.is_some() {
@@ -83,7 +83,7 @@ fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfi
                 top: if config.top_bar.is_some() {
                     ScaffoldDefaults::TOP_BAR_HEIGHT + itop
                 } else {
-                    0.0
+                    Dp::ZERO
                 },
                 bottom: if config.bottom_bar.is_some() {
                     ScaffoldDefaults::BOTTOM_BAR_HEIGHT + ibottom + iime
@@ -96,15 +96,18 @@ fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfi
         if let Some(bar) = config.top_bar {
             Box(Modifier::new()
                 .absolute()
-                .offset(Some(0.0), Some(itop), Some(0.0), None))
+                .offset(Some(Dp(0.0)), Some(itop), Some(Dp(0.0)), None))
             .child(bar)
         } else {
             Box(Modifier::new())
         },
         if let Some(bar) = config.bottom_bar {
-            Box(Modifier::new()
-                .absolute()
-                .offset(Some(0.0), None, Some(ibottom + iime), Some(0.0)))
+            Box(Modifier::new().absolute().offset(
+                Some(Dp(0.0)),
+                None,
+                Some(ibottom + iime),
+                Some(Dp(0.0)),
+            ))
             .child(bar)
         } else {
             Box(Modifier::new())
@@ -113,13 +116,14 @@ fn scaffold_inner(content: impl Fn(PaddingValues) -> View, config: ScaffoldConfi
             let mut fab_m = Modifier::new().absolute();
             match config.fab_position {
                 FabPosition::End => {
-                    fab_m = fab_m.offset(None, None, Some(16.0 + ibottom + iime), Some(16.0));
+                    fab_m =
+                        fab_m.offset(None, None, Some(Dp(16.0) + ibottom + iime), Some(Dp(16.0)));
                 }
                 FabPosition::Center => {
                     fab_m = fab_m.fill_max_width().align_self(AlignSelf::CENTER).offset(
                         None,
                         None,
-                        Some(16.0 + ibottom + iime),
+                        Some(Dp(16.0) + ibottom + iime),
                         None,
                     );
                 }

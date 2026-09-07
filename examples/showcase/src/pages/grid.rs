@@ -43,16 +43,16 @@ pub fn screen() -> View {
                             format!("id {}", item.id),
                             bg,
                             fg,
-                            100.0,
+                            Dp(100.0),
                         )
                     },
                     LazyGridConfig {
                         state: vert_state,
                         modifier: Modifier::new()
                             .fill_max_width()
-                            .max_width(820.0)
+                            .max_width(Dp(820.0))
                             .fill_max_height()
-                            .max_height(460.0)
+                            .max_height(Dp(460.0))
                             .gap(sp::SM),
                         ..Default::default()
                     },
@@ -74,16 +74,16 @@ pub fn screen() -> View {
                             format!("id {}", item.id),
                             bg,
                             fg,
-                            60.0,
+                            Dp(60.0),
                         )
                     },
                     LazyGridConfig {
                         state: horiz_state,
                         modifier: Modifier::new()
                             .fill_max_height()
-                            .max_height(320.0)
+                            .max_height(Dp(320.0))
                             .fill_max_width()
-                            .max_width(820.0)
+                            .max_width(Dp(820.0))
                             .gap(sp::SM),
                         ..Default::default()
                     },

@@ -28,13 +28,13 @@ pub struct NavigationBarConfig {
     pub unselected_icon_color: Color,
     pub unselected_text_color: Color,
     pub indicator_color: Color,
-    pub height: f32,
-    pub tonal_elevation: f32,
+    pub height: Dp,
+    pub tonal_elevation: Dp,
     pub indicator_opacity: f32,
-    pub indicator_radius: f32,
-    pub item_spacing: f32,
-    pub indicator_width: f32,
-    pub indicator_height: f32,
+    pub indicator_radius: Dp,
+    pub item_spacing: Dp,
+    pub indicator_width: Dp,
+    pub indicator_height: Dp,
 }
 
 impl Default for NavigationBarConfig {
@@ -75,14 +75,14 @@ pub fn NavigationBar(
         .background(config.container_color)
         .then(config.modifier);
 
-    if config.tonal_elevation > 0.0 {
+    if config.tonal_elevation.0 > 0.0 {
         bar_m = bar_m.state_elevation(StateElevation {
             default: config.tonal_elevation,
             hovered: config.tonal_elevation,
             focused: config.tonal_elevation,
             pressed: config.tonal_elevation,
             dragged: config.tonal_elevation,
-            disabled: 0.0,
+            disabled: Dp::ZERO,
         });
     }
 
@@ -153,13 +153,13 @@ pub fn NavigationBar(
 
                     // Pill-sized ripple host - hover/focus now pill-bounded, not full item.
                     // Map press pos from outer item (full width) to pill local via MappedInteractionSource offset.
-                    let pill_dx = (*item_width.borrow() - config.indicator_width) / 2.0;
-                    let pill_dy = 14.0;
+                    let pill_dx = (Dp(*item_width.borrow()) - config.indicator_width) / 2.0;
+                    let pill_dy = Dp(14.0);
                     let pill_m = Modifier::new()
                         .absolute()
                         .offset(
-                            Some((24.0 - config.indicator_width) / 2.0),
-                            Some((24.0 - config.indicator_height) / 2.0),
+                            Some((Dp(24.0) - config.indicator_width) / 2.0),
+                            Some((Dp(24.0) - config.indicator_height) / 2.0),
                             None,
                             None,
                         )
@@ -171,9 +171,10 @@ pub fn NavigationBar(
                             color: Some(theme().on_surface_variant),
                             bounded: true,
                             press_offset: if *item_width.borrow() > 0.0 {
+                                // Ripple offsets are px; pill geometry is Dp.
                                 Some(Vec2 {
-                                    x: pill_dx,
-                                    y: pill_dy,
+                                    x: pill_dx.to_px().0,
+                                    y: pill_dy.to_px().0,
                                 })
                             } else {
                                 None
@@ -183,8 +184,8 @@ pub fn NavigationBar(
                     let bg_m = Modifier::new()
                         .absolute()
                         .offset(
-                            Some((24.0 - config.indicator_width) / 2.0),
-                            Some((24.0 - config.indicator_height) / 2.0),
+                            Some((Dp(24.0) - config.indicator_width) / 2.0),
+                            Some((Dp(24.0) - config.indicator_height) / 2.0),
                             None,
                             None,
                         )
@@ -220,7 +221,7 @@ pub fn NavigationBar(
                                 Box(pill_m),
                             )),
                             // 8dp gap: 4dp IndicatorVerticalPadding + 4dp IndicatorToLabelPadding
-                            Box(Modifier::new().height(8.0)),
+                            Box(Modifier::new().height(Dp(8.0))),
                             Text(item.label)
                                 .color(fg_label)
                                 .size(th.typography.label_medium)

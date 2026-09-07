@@ -23,37 +23,41 @@ material_symbols! {
 }
 
 pub mod sp {
-    pub const XS: f32 = 4.0;
-    pub const SM: f32 = 8.0;
-    pub const MD: f32 = 12.0;
-    pub const LG: f32 = 16.0;
-    pub const XL: f32 = 24.0;
-    pub const XXL: f32 = 32.0;
+    use repose_core::prelude::*;
+
+    pub const XS: Dp = Dp(4.0);
+    pub const SM: Dp = Dp(8.0);
+    pub const MD: Dp = Dp(12.0);
+    pub const LG: Dp = Dp(16.0);
+    pub const XL: Dp = Dp(24.0);
+    pub const XXL: Dp = Dp(32.0);
 }
 
 pub mod radius {
-    pub const LG: f32 = 18.0;
-    pub const XL: f32 = 28.0;
+    use repose_core::prelude::*;
+
+    pub const LG: Dp = Dp(18.0);
+    pub const XL: Dp = Dp(28.0);
 }
 
 pub fn Hint(text: impl Into<String>) -> View {
     Text(text.into())
-        .size(13.0)
+        .size(Sp(13.0))
         .color(theme().on_surface_variant)
 }
 
 pub fn Caption(text: impl Into<String>) -> View {
     Text(text.into())
-        .size(12.0)
+        .size(Sp(12.0))
         .color(theme().on_surface_variant)
 }
 
 pub fn Pill(label: impl Into<String>, bg: Color, fg: Color) -> View {
     Box(Modifier::new()
-        .padding(8.0)
+        .padding(Dp(8.0))
         .background(bg)
-        .clip_rounded(999.0))
-    .child(Text(label.into()).size(12.0).color(fg).single_line())
+        .clip_rounded(Dp(999.0)))
+    .child(Text(label.into()).size(Sp(12.0)).color(fg).single_line())
 }
 
 /// Standard page container with consistent section rhythm.
@@ -67,7 +71,7 @@ pub fn DemoTile(
     subtitle: impl Into<String>,
     bg: Color,
     fg: Color,
-    height: f32,
+    height: Dp,
 ) -> View {
     Box(Modifier::new()
         .fill_max_width()
@@ -82,8 +86,10 @@ pub fn DemoTile(
                 .align_items(AlignItems::CENTER),
         )
         .child((
-            Text(title.into()).size(20.0).color(fg),
-            Text(subtitle.into()).size(12.0).color(fg.with_alpha(180)),
+            Text(title.into()).size(Sp(20.0)).color(fg),
+            Text(subtitle.into())
+                .size(Sp(12.0))
+                .color(fg.with_alpha(180)),
         )),
     )
 }
@@ -95,14 +101,14 @@ pub fn Section(title: &str, body: View) -> View {
 pub fn SectionWith(title: &str, subtitle: Option<&str>, body: View) -> View {
     let th = theme();
 
-    let mut header: Vec<View> = vec![Text(title).size(18.0).color(th.on_surface)];
+    let mut header: Vec<View> = vec![Text(title).size(Sp(18.0)).color(th.on_surface)];
 
     if let Some(s) = subtitle {
         header.push(Hint(s));
     }
 
     Column(Modifier::new().gap(sp::SM)).child((
-        Column(Modifier::new().gap(2.0).padding(sp::XS)).with_children(header),
+        Column(Modifier::new().gap(Dp(2.0)).padding(sp::XS)).with_children(header),
         ElevatedCard(
             CardConfig {
                 modifier: Modifier::new().fill_max_width().padding(sp::LG),
@@ -177,7 +183,7 @@ fn PageViewport(current: Route, content: View, compact: bool) -> View {
         Column(
             Modifier::new()
                 .fill_max_width()
-                .max_width(1180.0)
+                .max_width(Dp(1180.0))
                 .gap(if compact { sp::MD } else { sp::XL }),
         )
         .with_children(children),
@@ -193,17 +199,17 @@ fn PageHero(route: Route, compact: bool) -> View {
             Pill(route.group().title(), th.primary.with_alpha(24), th.primary),
         )),
         Text(route.title())
-            .size(if compact { 28.0 } else { 36.0 })
+            .size(if compact { Sp(28.0) } else { Sp(36.0) })
             .color(th.on_surface),
         Text(route.description())
-            .size(if compact { 14.0 } else { 15.0 })
+            .size(if compact { Sp(14.0) } else { Sp(15.0) })
             .color(th.on_surface_variant),
     ));
 
     Box(Modifier::new()
         .fill_max_width()
         .background(th.surface_container_low)
-        .border(1.0, th.outline_variant, radius::XL)
+        .border(Dp(1.0), th.outline_variant, radius::XL)
         .clip_rounded(radius::XL)
         .padding(if compact { sp::LG } else { sp::XL }))
     .child(title_block)
@@ -219,10 +225,10 @@ pub fn TopBar(current: Route, overlay: OverlayHandle, vm: SettingsVm, compact: b
     .child(
         Row(Modifier::new()
             .fill_max_width()
-            .height(64.0)
+            .height(Dp(64.0))
             .padding(sp::MD)
             .background(th.surface_container)
-            .border(1.0, th.outline_variant, radius::XL)
+            .border(Dp(1.0), th.outline_variant, radius::XL)
             .clip_rounded(radius::XL)
             .align_items(AlignItems::CENTER)
             .gap(sp::MD))
@@ -231,7 +237,7 @@ pub fn TopBar(current: Route, overlay: OverlayHandle, vm: SettingsVm, compact: b
             Spacer(),
             IconButton(
                 Icon(Symbols::settings)
-                    .size(20.0)
+                    .size(Sp(20.0))
                     .color(th.on_surface_variant),
                 {
                     let s = settings_state.clone();
@@ -257,29 +263,29 @@ fn BrandBlock(current: Route, compact: bool) -> View {
 
     let text_children = if compact {
         vec![
-            Text(current.title()).size(17.0).color(th.on_surface),
+            Text(current.title()).size(Sp(17.0)).color(th.on_surface),
             Text("Repose Showcase")
-                .size(12.0)
+                .size(Sp(12.0))
                 .color(th.on_surface_variant),
         ]
     } else {
         vec![
-            Text("Repose UI").size(18.0).color(th.on_surface),
+            Text("Repose UI").size(Sp(18.0)).color(th.on_surface),
             Text("M3 multiplatform showcase")
-                .size(12.0)
+                .size(Sp(12.0))
                 .color(th.on_surface_variant),
         ]
     };
 
     Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::MD)).child((
         Box(Modifier::new()
-            .size(40.0, 40.0)
+            .size(Dp(40.0), Dp(40.0))
             .background(th.primary)
-            .clip_rounded(14.0)
+            .clip_rounded(Dp(14.0))
             .align_items(AlignItems::CENTER)
             .justify_content(JustifyContent::CENTER))
-        .child(Text("R").size(18.0).color(th.on_primary)),
-        Column(Modifier::new().gap(1.0)).with_children(text_children),
+        .child(Text("R").size(Sp(18.0)).color(th.on_primary)),
+        Column(Modifier::new().gap(Dp(1.0))).with_children(text_children),
     ))
 }
 
@@ -289,12 +295,12 @@ fn SettingsPanel(vm: SettingsVm) -> View {
     Column(
         Modifier::new()
             .padding(sp::XL)
-            .min_width(340.0)
-            .max_width(440.0)
+            .min_width(Dp(340.0))
+            .max_width(Dp(440.0))
             .gap(sp::LG),
     )
     .child((
-        Text("Settings").size(22.0).color(th.on_surface),
+        Text("Settings").size(Sp(22.0)).color(th.on_surface),
         Column(Modifier::new().gap(sp::MD)).child((
             LabeledSwitch("Dark mode", vm.dark, {
                 let f = vm.on_dark.clone();
@@ -336,7 +342,7 @@ pub fn NavRail(current: Route, nav: Navigator<Route>) -> View {
     Card(
         CardConfig {
             modifier: Modifier::new()
-                .width(292.0)
+                .width(Dp(292.0))
                 .fill_max_height()
                 .padding(sp::SM),
             ..Default::default()
@@ -345,7 +351,7 @@ pub fn NavRail(current: Route, nav: Navigator<Route>) -> View {
             ScrollArea(
                 Modifier::new().fill_max_size(),
                 scroll,
-                Column(Modifier::new().fill_max_width().gap(2.0)).with_children(items),
+                Column(Modifier::new().fill_max_width().gap(Dp(2.0))).with_children(items),
             )
         },
     )
@@ -354,10 +360,16 @@ pub fn NavRail(current: Route, nav: Navigator<Route>) -> View {
 fn NavGroupLabel(group: RouteGroup) -> View {
     let th = theme();
 
-    Column(Modifier::new().fill_max_width().padding(sp::MD).gap(1.0)).child((
-        Text(group.title()).size(12.0).color(th.primary),
+    Column(
+        Modifier::new()
+            .fill_max_width()
+            .padding(sp::MD)
+            .gap(Dp(1.0)),
+    )
+    .child((
+        Text(group.title()).size(Sp(12.0)).color(th.primary),
         Text(group.subtitle())
-            .size(11.0)
+            .size(Sp(11.0))
             .color(th.on_surface_variant),
     ))
 }
@@ -386,21 +398,21 @@ fn NavItem(route: Route, selected: bool, on_click: impl Fn() + 'static) -> View 
         .fill_max_width()
         .padding(sp::SM)
         .background(bg)
-        .border(1.0, stroke, radius::LG)
+        .border(Dp(1.0), stroke, radius::LG)
         .clip_rounded(radius::LG)
         .clickable()
         .on_pointer_down(move |_| on_click()))
     .child(
         Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::MD)).child((
             RouteBadge(route, selected),
-            Column(Modifier::new().gap(2.0).flex_grow(1.0)).child((
+            Column(Modifier::new().gap(Dp(2.0)).flex_grow(1.0)).child((
                 Text(route.title())
-                    .size(14.0)
+                    .size(Sp(14.0))
                     .color(fg)
                     .single_line()
                     .overflow_ellipsize(),
                 Text(route.description())
-                    .size(11.0)
+                    .size(Sp(11.0))
                     .color(sub)
                     .single_line()
                     .overflow_ellipsize(),
@@ -423,20 +435,20 @@ fn RouteBadge(route: Route, selected: bool) -> View {
     };
 
     Box(Modifier::new()
-        .size(38.0, 38.0)
+        .size(Dp(38.0), Dp(38.0))
         .background(bg)
-        .clip_rounded(14.0)
+        .clip_rounded(Dp(14.0))
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER)
         .flex_shrink(0.0))
-    .child(Text(route.badge()).size(13.0).color(fg))
+    .child(Text(route.badge()).size(Sp(13.0)).color(fg))
 }
 
 fn CompactNav(current: Route, nav: Navigator<Route>) -> View {
     let scroll = remember_horizontal_scroll_state("shell:compact-nav");
 
     HorizontalScrollArea(
-        Modifier::new().fill_max_width().height(64.0),
+        Modifier::new().fill_max_width().height(Dp(64.0)),
         scroll,
         Row(Modifier::new()
             .align_items(AlignItems::CENTER)
@@ -473,13 +485,13 @@ fn CompactNavChip(route: Route, selected: bool, on_click: impl Fn() + 'static) -
     Box(Modifier::new()
         .padding(sp::MD)
         .background(bg)
-        .clip_rounded(999.0)
+        .clip_rounded(Dp(999.0))
         .clickable()
         .on_pointer_down(move |_| on_click()))
     .child(
         Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::SM)).child((
-            Text(route.badge()).size(12.0).color(fg),
-            Text(route.title()).size(13.0).color(fg).single_line(),
+            Text(route.badge()).size(Sp(12.0)).color(fg),
+            Text(route.title()).size(Sp(13.0)).color(fg).single_line(),
         )),
     )
 }
@@ -490,7 +502,7 @@ pub fn LabeledSwitch(label: &str, checked: bool, on_change: impl Fn(bool) + 'sta
         .align_items(AlignItems::CENTER)
         .gap(sp::SM))
     .child((
-        Text(label).size(14.0).color(theme().on_surface_variant),
+        Text(label).size(Sp(14.0)).color(theme().on_surface_variant),
         Spacer(),
         Switch(checked, on_change, SwitchConfig::default()),
     ))
@@ -503,12 +515,17 @@ pub fn LabeledSlider(
     step: Option<f32>,
     on_change: impl Fn(f32) + 'static,
 ) -> View {
-    Column(Modifier::new().align_items(AlignItems::STRETCH).gap(6.0)).child((
+    Column(
+        Modifier::new()
+            .align_items(AlignItems::STRETCH)
+            .gap(Dp(6.0)),
+    )
+    .child((
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
-            Text(label).size(14.0).color(theme().on_surface_variant),
+            Text(label).size(Sp(14.0)).color(theme().on_surface_variant),
             Spacer(),
             Text(format!("{value:.2}"))
-                .size(13.0)
+                .size(Sp(13.0))
                 .color(theme().on_surface_variant),
         )),
         Slider(value, range, step, on_change, SliderConfig::default()),
@@ -517,8 +534,13 @@ pub fn LabeledSlider(
 
 /// Control + trailing label row.
 pub fn Labeled(control: View, label: &str) -> View {
-    Row(Modifier::new().align_items(AlignItems::CENTER).gap(10.0))
-        .child((control, Text(label).size(14.0).color(theme().on_surface)))
+    Row(Modifier::new()
+        .align_items(AlignItems::CENTER)
+        .gap(Dp(10.0)))
+    .child((
+        control,
+        Text(label).size(Sp(14.0)).color(theme().on_surface),
+    ))
 }
 
 pub fn ShortcutHud(note: String, fired: bool) -> View {
@@ -526,24 +548,26 @@ pub fn ShortcutHud(note: String, fired: bool) -> View {
 
     Box(Modifier::new()
         .absolute()
-        .offset(None, None, Some(16.0), Some(16.0))
-        .padding(10.0)
+        .offset(None, None, Some(Dp(16.0)), Some(Dp(16.0)))
+        .padding(Dp(10.0))
         .background(th.surface_container_high.with_alpha(232))
-        .border(1.0, th.outline_variant, radius::LG)
+        .border(Dp(1.0), th.outline_variant, radius::LG)
         .clip_rounded(radius::LG)
         .hit_passthrough()
         .render_z_index(1000.0))
     .child(
         Column(Modifier::new().gap(sp::XS)).child((
             Text("Shortcut Overrides")
-                .size(12.0)
+                .size(Sp(12.0))
                 .color(th.on_surface.with_alpha(204)),
-            Text(note).size(12.0).color(th.on_surface.with_alpha(153)),
+            Text(note)
+                .size(Sp(12.0))
+                .color(th.on_surface.with_alpha(153)),
             if fired {
-                Text("Snackbar triggered").size(12.0).color(th.primary)
+                Text("Snackbar triggered").size(Sp(12.0)).color(th.primary)
             } else {
                 Text("Snackbar idle")
-                    .size(12.0)
+                    .size(Sp(12.0))
                     .color(th.on_surface.with_alpha(102))
             },
         )),

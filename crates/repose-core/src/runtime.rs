@@ -452,6 +452,8 @@ pub struct Frame {
     pub focus_chain: Vec<u64>,
 }
 
+/// Hit-test region in physical pixels (`rect` carries px magnitudes,
+/// like Compose `Rect`).
 #[derive(Clone, Default)]
 pub struct HitRegion {
     pub id: u64,
@@ -497,9 +499,9 @@ pub struct HitRegion {
     /// Controlled text snapshot for this field (last compose).
     pub tf_value: String,
 
-    /// Font size for this text field in dp (for hit-test / caret mapping).
-    /// 0.0 means use `TF_FONT_DP` default.
-    pub tf_font_size_dp: f32,
+    /// Font size for this text field in [`Sp`](crate::units::Sp)
+    /// (for hit-test / caret mapping). `Sp::ZERO` means use `TF_FONT_SP` default.
+    pub tf_font_size: crate::units::Sp,
 
     // internal
     pub on_drag_start: Option<Rc<dyn Fn(crate::dnd::DragStart) -> Option<crate::dnd::DragPayload>>>,

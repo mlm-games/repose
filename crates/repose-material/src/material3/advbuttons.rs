@@ -11,7 +11,7 @@ use repose_ui::{Box, Row, Text, TextStyle, ViewExt};
 #[derive(Clone)]
 pub struct SplitButtonConfig {
     pub modifier: Modifier,
-    pub spacing: f32,
+    pub spacing: Dp,
 }
 
 impl Default for SplitButtonConfig {
@@ -39,7 +39,7 @@ pub fn SplitButtonLayout(
     .child((leading_button, trailing_button))
 }
 
-fn split_leading_shape_radii() -> [f32; 4] {
+fn split_leading_shape_radii() -> [Dp; 4] {
     [
         SplitButtonDefaults::OUTER_CORNER_SIZE,
         SplitButtonDefaults::SMALL_INNER_CORNER_SIZE,
@@ -48,7 +48,7 @@ fn split_leading_shape_radii() -> [f32; 4] {
     ]
 }
 
-fn split_trailing_shape_radii() -> [f32; 4] {
+fn split_trailing_shape_radii() -> [Dp; 4] {
     [
         SplitButtonDefaults::SMALL_INNER_CORNER_SIZE,
         SplitButtonDefaults::OUTER_CORNER_SIZE,
@@ -65,21 +65,21 @@ fn split_button_impl(
     container_color: Option<Color>,
     state_colors: StateColors,
     state_elevation: Option<StateElevation>,
-    border: Option<(f32, Color, f32)>,
-    pad_left: f32,
-    pad_right: f32,
-    height: f32,
+    border: Option<(Dp, Color, Dp)>,
+    pad_left: Dp,
+    pad_right: Dp,
+    height: Dp,
     enabled: bool,
     interaction_source: Option<MutableInteractionSource>,
 ) -> View {
     let mut m = Modifier::new()
         .height(height)
-        .min_width(48.0)
+        .min_width(Dp(48.0))
         .padding_values(PaddingValues {
             left: pad_left,
             right: pad_right,
-            top: 0.0,
-            bottom: 0.0,
+            top: Dp::ZERO,
+            bottom: Dp::ZERO,
         })
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER);
@@ -219,12 +219,12 @@ pub fn SplitButtonTrailingToggleButton(
         .unwrap_or(super::ToggleButtonDefaults::HORIZONTAL_PADDING);
     let mut m = Modifier::new()
         .height(config.height)
-        .min_width(48.0)
+        .min_width(Dp(48.0))
         .padding_values(PaddingValues {
             left: pad_l,
             right: pad_r,
-            top: 0.0,
-            bottom: 0.0,
+            top: Dp::ZERO,
+            bottom: Dp::ZERO,
         })
         .background(bg)
         .align_items(AlignItems::CENTER)
@@ -320,12 +320,12 @@ pub fn SplitButtonTonalTrailingToggleButton(
         .unwrap_or(super::ToggleButtonDefaults::HORIZONTAL_PADDING);
     let mut m = Modifier::new()
         .height(config.height)
-        .min_width(48.0)
+        .min_width(Dp(48.0))
         .padding_values(PaddingValues {
             left: pad_l,
             right: pad_r,
-            top: 0.0,
-            bottom: 0.0,
+            top: Dp::ZERO,
+            bottom: Dp::ZERO,
         })
         .background(bg)
         .align_items(AlignItems::CENTER)
@@ -393,7 +393,7 @@ impl ButtonGroupScope {
             button_group_content: Box::new(move || {
                 let cb = cb2.clone();
                 let config = super::ButtonConfig {
-                    shape_radius: 0.0,
+                    shape_radius: Dp(0.0),
                     ..Default::default()
                 };
                 super::Button(
@@ -428,7 +428,7 @@ impl ButtonGroupScope {
             button_group_content: Box::new(move || {
                 let cb = cb2.clone();
                 let config = super::ToggleButtonConfig {
-                    shape_radius: 0.0,
+                    shape_radius: Dp(0.0),
                     ..Default::default()
                 };
                 super::ToggleButton(
@@ -471,7 +471,7 @@ impl ButtonGroupScope {
 /// [`ButtonGroupScope::toggleable_item`].
 pub fn ButtonGroup(
     modifier: Modifier,
-    gap: f32,
+    gap: Dp,
     content: impl FnOnce(&mut ButtonGroupScope),
 ) -> View {
     let mut scope = ButtonGroupScope::new();

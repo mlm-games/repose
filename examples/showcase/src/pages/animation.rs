@@ -46,10 +46,10 @@ fn state_face(label: &'static str, bg: Color, fg: Color) -> View {
     Box(Modifier::new()
         .fill_max_size()
         .background(bg)
-        .clip_rounded(12.0)
+        .clip_rounded(Dp(12.0))
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER))
-    .child(Text(label).color(fg).size(18.0))
+    .child(Text(label).color(fg).size(Sp(18.0)))
 }
 
 pub fn screen() -> View {
@@ -103,10 +103,10 @@ pub fn screen() -> View {
                     TextButton(Modifier::new(), { let v = visible.clone(); move || v.update(|x| *x = !*x) }, ButtonConfig::default(), || Text("Toggle")),
                 )),
                 Box(Modifier::new().padding(sp::SM)).child(Box(Modifier::new()
-                    .size(220.0, 120.0)
+                    .size(Dp(220.0), Dp(120.0))
                     .scale(t).alpha(t)
                     .background(theme().primary)
-                    .clip_rounded(16.0))),
+                    .clip_rounded(Dp(16.0)))),
             ))
         }),
 
@@ -116,7 +116,7 @@ pub fn screen() -> View {
                     let c = cross.clone();
                     move || c.update(|x| *x = match x { CrossfadeState::A => CrossfadeState::B, CrossfadeState::B => CrossfadeState::A })
                 }, ButtonConfig::default(), || Text("Toggle")),
-                Box(Modifier::new().size(200.0, 80.0)).child(
+                Box(Modifier::new().size(Dp(200.0), Dp(80.0))).child(
                     Crossfade(cross.get(), CrossfadeConfig {
                         key: "cross_demo".into(),
                         spec: AnimationSpec::tween(Duration::from_millis(400), Easing::EaseInOut),
@@ -134,14 +134,14 @@ pub fn screen() -> View {
                 Box(Modifier::new()
                     .animate_content_size(AnimationSpec::spring_gentle())
                     .background(theme().surface_container_highest)
-                    .clip_rounded(12.0)
+                    .clip_rounded(Dp(12.0))
                     .padding(sp::LG))
                 .child(
                     Text(if long_text.get() {
                         "This is a much longer text that demonstrates how animateContentSize smoothly transitions between different content sizes without any jarring jumps."
                     } else {
                         "Short text."
-                    }).color(theme().on_surface).size(16.0),
+                    }).color(theme().on_surface).size(Sp(16.0)),
                 ),
             ))
         }),
@@ -150,24 +150,24 @@ pub fn screen() -> View {
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 Hint("A pulsing box using repeated animation spec"),
                 Box(Modifier::new()
-                    .size(120.0 * repeated_anim, 120.0 * repeated_anim)
+                    .size(Dp(120.0 * repeated_anim), Dp(120.0 * repeated_anim))
                     .background(theme().tertiary)
-                    .clip_rounded(16.0)
+                    .clip_rounded(Dp(16.0))
                     .align_items(AlignItems::CENTER)
                     .justify_content(JustifyContent::CENTER))
-                .child(Text("Pulse").color(theme().on_tertiary).size(16.0)),
+                .child(Text("Pulse").color(theme().on_tertiary).size(Sp(16.0))),
             ))
         }),
 
         Section("AnimatedContent", {
             let enter = match transition_kind.get() {
                 0 => EnterTransition::FadeIn,
-                1 => EnterTransition::SlideIn { offset_x: 200.0, offset_y: 0.0 },
+                1 => EnterTransition::SlideIn { offset_x: Dp(200.0), offset_y: Dp::ZERO },
                 _ => EnterTransition::ScaleIn { initial: 0.5 },
             };
             let exit = match transition_kind.get() {
                 0 => ExitTransition::FadeOut,
-                1 => ExitTransition::SlideOut { offset_x: -200.0, offset_y: 0.0 },
+                1 => ExitTransition::SlideOut { offset_x: Dp(-200.0), offset_y: Dp::ZERO },
                 _ => ExitTransition::ScaleOut { target: 0.5 },
             };
 
@@ -185,7 +185,7 @@ pub fn screen() -> View {
                         })
                     }}, ButtonConfig::default(), || Text("Next")),
                 )),
-                Box(Modifier::new().size(300.0, 100.0)).child(
+                Box(Modifier::new().size(Dp(300.0), Dp(100.0))).child(
                     AnimatedContent(content_state.get(), |s| match s {
                         ContentState::First => state_face("First", theme().primary, theme().on_primary),
                         ContentState::Second => state_face("Second", theme().tertiary, theme().on_tertiary),
@@ -210,7 +210,7 @@ pub fn screen() -> View {
             let colors = [theme().primary, theme().tertiary, theme().secondary, theme().error];
 
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
-                Row(Modifier::new().align_items(AlignItems::CENTER).gap(6.0)).child((
+                Row(Modifier::new().align_items(AlignItems::CENTER).gap(Dp(6.0))).child((
                     Button(Modifier::new(), {
                         let li = list_items.clone();
                         let nid = next_id.clone();
@@ -232,19 +232,19 @@ pub fn screen() -> View {
                     }, ButtonConfig::default(), || Text("Pop Last")),
                     Spacer(),
                 )),
-                Row(Modifier::new().align_items(AlignItems::CENTER).gap(6.0)).child((
+                Row(Modifier::new().align_items(AlignItems::CENTER).gap(Dp(6.0))).child((
                     TextButton(Modifier::new(), { let s = list_anim_spec.clone(); move || s.set(0) }, ButtonConfig::default(), || Text("Fast")),
                     TextButton(Modifier::new(), { let s = list_anim_spec.clone(); move || s.set(1) }, ButtonConfig::default(), || Text("Tween")),
                     TextButton(Modifier::new(), { let s = list_anim_spec.clone(); move || s.set(2) }, ButtonConfig::default(), || Text("Spring")),
                     Spacer(),
-                    Text("Count: ").size(13.0).color(theme().on_surface_variant),
-                    Text(items.len().to_string()).size(13.0).color(theme().on_surface),
+                    Text("Count: ").size(Sp(13.0)).color(theme().on_surface_variant),
+                    Text(items.len().to_string()).size(Sp(13.0)).color(theme().on_surface),
                 )),
                 Box(Modifier::new()
-                    .max_width(600.0)
-                    .max_height(220.0)
-                    .border(1.0, theme().outline_variant, 8.0)
-                    .clip_rounded(8.0))
+                    .max_width(Dp(600.0))
+                    .max_height(Dp(220.0))
+                    .border(Dp(1.0), theme().outline_variant, Dp(8.0))
+                    .clip_rounded(Dp(8.0)))
                 .child(LazyColumn(
                     items,
                     44.0,
@@ -254,14 +254,14 @@ pub fn screen() -> View {
                         Row(Modifier::new()
                             .padding(sp::MD)
                             .fill_max_width()
-                            .height(44.0)
+                            .height(Dp(44.0))
                             .align_items(AlignItems::CENTER)
-                            .gap(10.0))
+                            .gap(Dp(10.0)))
                         .child((
-                            Box(Modifier::new().size(24.0, 24.0).background(c).clip_rounded(12.0).flex_shrink(0.0)),
+                            Box(Modifier::new().size(Dp(24.0), Dp(24.0)).background(c).clip_rounded(Dp(12.0)).flex_shrink(0.0)),
                             Column(Modifier::new()).child((
-                                Text(item.label).size(14.0).color(theme().on_surface),
-                                Text(format!("id={}", item.id)).size(11.0).color(theme().on_surface_variant),
+                                Text(item.label).size(Sp(14.0)).color(theme().on_surface),
+                                Text(format!("id={}", item.id)).size(Sp(11.0)).color(theme().on_surface_variant),
                             )),
                             Spacer(),
                             TextButton(Modifier::new(), {

@@ -51,7 +51,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
     let menu_label = remember(|| signal("Choose…".to_string()));
 
     // BottomSheet state
-    let sheet_state = remember(|| SheetState::new(200.0));
+    let sheet_state = remember(|| SheetState::new(Dp(200.0)));
     let old_sheet_state = remember(|| signal(false));
 
     // Date / time picker state
@@ -144,7 +144,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                     overlay.clone(),
                     Modifier::new(),
                     Column(Modifier::new().padding(sp::XL).gap(sp::SM)).child((
-                        Text("Sheet Content").color(th.on_surface).size(18.0),
+                        Text("Sheet Content").color(th.on_surface).size(Sp(18.0)),
                         Text("This is a modal bottom sheet with a drag handle.")
                             .color(th.on_surface_variant),
                         TextButton(
@@ -262,64 +262,65 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 Text(format!("Selected: Item {}", rail_selected.get() + 1))
                     .color(th.on_surface)
                     .size(th.typography.body_medium),
-                Row(Modifier::new().height(400.0).border(1.0, th.outline, 8.0)).child(
-                    NavigationRail(
-                        rail_selected.get(),
-                        vec![
-                            rail_item(
-                                "Favorites",
-                                Icon(Symbols::star).size(20.0),
-                                {
-                                    let s = rail_selected.clone();
-                                    move || s.set(0)
-                                },
-                                None,
-                            ),
-                            rail_item(
-                                "Cloud",
-                                Icon(Symbols::cloud).size(20.0),
-                                {
-                                    let s = rail_selected.clone();
-                                    move || s.set(1)
-                                },
-                                None,
-                            ),
-                            rail_item(
-                                "Settings",
-                                Icon(Symbols::settings).size(20.0),
-                                {
-                                    let s = rail_selected.clone();
-                                    move || s.set(2)
-                                },
-                                Some(Box(Modifier::new()
-                                    .size(8.0, 8.0)
+                Row(Modifier::new()
+                    .height(Dp(400.0))
+                    .border(Dp(1.0), th.outline, Dp(8.0)))
+                .child(NavigationRail(
+                    rail_selected.get(),
+                    vec![
+                        rail_item(
+                            "Favorites",
+                            Icon(Symbols::star).size(Sp(20.0)),
+                            {
+                                let s = rail_selected.clone();
+                                move || s.set(0)
+                            },
+                            None,
+                        ),
+                        rail_item(
+                            "Cloud",
+                            Icon(Symbols::cloud).size(Sp(20.0)),
+                            {
+                                let s = rail_selected.clone();
+                                move || s.set(1)
+                            },
+                            None,
+                        ),
+                        rail_item(
+                            "Settings",
+                            Icon(Symbols::settings).size(Sp(20.0)),
+                            {
+                                let s = rail_selected.clone();
+                                move || s.set(2)
+                            },
+                            Some(Box(Modifier::new()
+                                .size(Dp(8.0), Dp(8.0))
+                                .background(th.error)
+                                .clip_rounded(Dp(4.0)))),
+                        ),
+                        rail_item(
+                            "Cart",
+                            Icon(Symbols::shopping_cart).size(Sp(20.0)),
+                            {
+                                let s = rail_selected.clone();
+                                move || s.set(3)
+                            },
+                            Some(
+                                Box(Modifier::new()
+                                    .min_width(Dp(16.0))
+                                    .height(Dp(16.0))
                                     .background(th.error)
-                                    .clip_rounded(4.0))),
+                                    .clip_rounded(Dp(8.0))
+                                    .align_items(AlignItems::CENTER)
+                                    .justify_content(JustifyContent::CENTER))
+                                .child(Text("3").color(th.on_error).size(Sp(10.0)).single_line()),
                             ),
-                            rail_item(
-                                "Cart",
-                                Icon(Symbols::shopping_cart).size(20.0),
-                                {
-                                    let s = rail_selected.clone();
-                                    move || s.set(3)
-                                },
-                                Some(
-                                    Box(Modifier::new()
-                                        .min_width(16.0)
-                                        .height(16.0)
-                                        .background(th.error)
-                                        .clip_rounded(8.0)
-                                        .align_items(AlignItems::CENTER)
-                                        .justify_content(JustifyContent::CENTER))
-                                    .child(Text("3").color(th.on_error).size(10.0).single_line()),
-                                ),
-                            ),
-                        ],
-                        None,
-                        None,
-                        NavigationRailConfig::default(),
-                    ),
-                ),
+                        ),
+                    ],
+                    None,
+                    None,
+                    NavigationRailConfig::default(),
+                )),
             )),
         ),
         Section(
@@ -369,7 +370,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
             Column(Modifier::new().padding(sp::MD).gap(sp::LG)).child((
                 Column(Modifier::new().gap(sp::SM)).child((
                     Text("Filled SplitButton (with toggleable trailing)")
-                        .size(14.0)
+                        .size(Sp(14.0))
                         .color(th.on_surface_variant),
                     {
                         let checked = remember(|| signal(false));
@@ -389,7 +390,11 @@ pub fn screen(overlay: OverlayHandle) -> View {
                                 Modifier::new(),
                                 Default::default(),
                                 move |chk| {
-                                    Icon(Symbols::settings).size(if chk { 22.0 } else { 18.0 })
+                                    Icon(Symbols::settings).size(if chk {
+                                        Sp(22.0)
+                                    } else {
+                                        Sp(18.0)
+                                    })
                                 },
                             ),
                             SplitButtonConfig::default(),
@@ -398,7 +403,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 )),
                 Column(Modifier::new().gap(sp::SM)).child((
                     Text("Tonal SplitButton")
-                        .size(14.0)
+                        .size(Sp(14.0))
                         .color(th.on_surface_variant),
                     {
                         let checked = remember(|| signal(false));
@@ -418,7 +423,11 @@ pub fn screen(overlay: OverlayHandle) -> View {
                                 Modifier::new(),
                                 Default::default(),
                                 move |chk| {
-                                    Icon(Symbols::settings).size(if chk { 22.0 } else { 18.0 })
+                                    Icon(Symbols::settings).size(if chk {
+                                        Sp(22.0)
+                                    } else {
+                                        Sp(18.0)
+                                    })
                                 },
                             ),
                             SplitButtonConfig::default(),
@@ -427,7 +436,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 )),
                 Column(Modifier::new().gap(sp::SM)).child((
                     Text("SplitButton with DropdownMenu")
-                        .size(14.0)
+                        .size(Sp(14.0))
                         .color(th.on_surface_variant),
                     {
                         let split_menu = remember(MenuState::new);
@@ -461,7 +470,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                                     Modifier::new(),
                                     move || split_menu.open(),
                                     ButtonConfig::default(),
-                                    || Icon(Symbols::expand_more).size(18.0),
+                                    || Icon(Symbols::expand_more).size(Sp(18.0)),
                                 ),
                                 split_menu_items.clone(),
                                 DropdownMenuConfig::default(),
@@ -478,7 +487,7 @@ pub fn screen(overlay: OverlayHandle) -> View {
                 let sel = remember(|| signal(0usize));
                 ButtonGroup(
                     Modifier::new().fill_max_width(),
-                    8.0,
+                    Dp(8.0),
                     move |scope: &mut ButtonGroupScope| {
                         let s = sel.clone();
                         scope.clickable_item(move || s.set(0), "First".into(), None);
@@ -494,12 +503,12 @@ pub fn screen(overlay: OverlayHandle) -> View {
             "Animation: Keyframes (animate_keyframes)",
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 Text("Keyframe animation bouncing between sizes")
-                    .size(14.0)
+                    .size(Sp(14.0))
                     .color(th.on_surface_variant),
                 Box(Modifier::new()
-                    .size(kf_val, 24.0)
+                    .size(Dp(kf_val), Dp(24.0))
                     .background(th.primary)
-                    .clip_rounded(4.0)),
+                    .clip_rounded(Dp(4.0))),
             )),
         ),
         Section(
@@ -515,9 +524,9 @@ pub fn screen(overlay: OverlayHandle) -> View {
                     || Text("Animate to random"),
                 ),
                 Box(Modifier::new()
-                    .size(anim_val * 100.0 + 20.0, 20.0)
+                    .size(Dp(anim_val * 100.0 + 20.0), Dp(20.0))
                     .background(th.tertiary)
-                    .clip_rounded(4.0)),
+                    .clip_rounded(Dp(4.0))),
             )),
         ),
         Section(

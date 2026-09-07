@@ -189,7 +189,7 @@ impl Callback {
             || m.fill_max_w.is_some()
             || m.fill_max_h.is_some();
         if !has_size {
-            m = m.size(100.0, 100.0);
+            m = m.size(repose_core::Dp(100.0), repose_core::Dp(100.0));
         }
         repose_core::View::new(0, repose_core::ViewKind::Box).modifier(m)
     }

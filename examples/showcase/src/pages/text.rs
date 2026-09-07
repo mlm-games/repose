@@ -18,14 +18,14 @@ material_symbols! {
 }
 
 fn field_status(change: String, submit: String) -> View {
-    Column(Modifier::new().gap(2.0)).child((
+    Column(Modifier::new().gap(Dp(2.0))).child((
         Caption(format!("last change: {change}")),
         Caption(format!("last submit: {submit}")),
     ))
 }
 
 fn symbol_cell(glyph: View, label: &'static str) -> View {
-    Column(Modifier::new().gap(sp::XS)).child((glyph, Text(label).size(12.0)))
+    Column(Modifier::new().gap(sp::XS)).child((glyph, Text(label).size(Sp(12.0))))
 }
 
 fn annotated_demos() -> Vec<(&'static str, View)> {
@@ -40,7 +40,7 @@ fn annotated_demos() -> Vec<(&'static str, View)> {
                 b.push_color("Yellow", Color::from_rgba(0xE6, 0xE6, 0x1C, 255));
                 b.push(" text spans.");
             });
-            AnnotatedText(a).size(18.0)
+            AnnotatedText(a).size(Sp(18.0))
         }),
         ("Annotated Text - Mixed Colors", {
             let a = build_annotated_string(|b| {
@@ -52,7 +52,7 @@ fn annotated_demos() -> Vec<(&'static str, View)> {
                 b.push_color("colors", Color::from_rgba(0x1C, 0x1C, 0xE6, 255));
                 b.push(" in a single line.");
             });
-            AnnotatedText(a).size(16.0)
+            AnnotatedText(a).size(Sp(16.0))
         }),
         ("Annotated Text - Themed Colors", {
             let a = build_annotated_string(|b| {
@@ -62,21 +62,21 @@ fn annotated_demos() -> Vec<(&'static str, View)> {
                 b.push_color("Error", t.error);
                 b.push(" colored text.");
             });
-            AnnotatedText(a).size(16.0)
+            AnnotatedText(a).size(Sp(16.0))
         }),
         ("Annotated Text - Custom Font Size", {
             let a = build_annotated_string(|b| {
                 b.push("Normal text ");
-                b.push_with_style("Big text ", SpanStyle::default().font_size(24.0));
+                b.push_with_style("Big text ", SpanStyle::default().font_size(Sp(24.0)));
                 b.push_with_style(
                     "Colored big ",
                     SpanStyle::default()
                         .color(Color::from_rgba(0xE6, 0x1C, 0x1C, 255))
-                        .font_size(24.0),
+                        .font_size(Sp(24.0)),
                 );
                 b.push("back to normal.");
             });
-            AnnotatedText(a).size(14.0)
+            AnnotatedText(a).size(Sp(14.0))
         }),
         ("Annotated Text - Stroke (draw_style)", {
             let a = build_annotated_string(|b| {
@@ -99,15 +99,15 @@ fn annotated_demos() -> Vec<(&'static str, View)> {
                             path_effect: Some(PathEffect::Corner { radius: 0.02 }),
                         })
                         // .color(Color::from_rgba(0x1C, 0x1C, 0xE6, 255))
-                        .font_size(22.0),
+                        .font_size(Sp(22.0)),
                 );
                 b.push("in a sentence.");
             });
-            AnnotatedText(a).size(16.0)
+            AnnotatedText(a).size(Sp(16.0))
         }),
         ("Super/Subscript", {
-            let base = 18.0;
-            let sub_size = base * 0.83;
+            let base = Sp(18.0);
+            let sub_size = Sp(base.0 * 0.83);
             let a = build_annotated_string(|b| {
                 b.push("Normal text ");
                 b.push_with_style(
@@ -137,7 +137,7 @@ fn annotated_demos() -> Vec<(&'static str, View)> {
                 b.push_color("color", Color::from_rgba(0x8C, 0xE6, 0x1C, 255));
                 b.push(" and the line breaking correctly preserves the styling per segment.");
             });
-            AnnotatedText(a).size(16.0)
+            AnnotatedText(a).size(Sp(16.0))
         }),
     ]
 }
@@ -184,10 +184,10 @@ pub fn screen() -> View {
             Section(
                 "Material Symbols",
                 Row(Modifier::new().padding(sp::MD).gap(sp::LG)).child((
-                    symbol_cell(Icon(Symbols::home).size(32.0).color(theme().primary), "home"),
-                    symbol_cell(Icon(Symbols::favorite).size(32.0).color(theme().error), "favorite"),
-                    symbol_cell(Icon(Symbols::settings).size(32.0).color(theme().on_surface), "settings"),
-                    symbol_cell(Icon(Symbols::search).size(32.0).color(theme().primary), "search"),
+                    symbol_cell(Icon(Symbols::home).size(Sp(32.0)).color(theme().primary), "home"),
+                    symbol_cell(Icon(Symbols::favorite).size(Sp(32.0)).color(theme().error), "favorite"),
+                    symbol_cell(Icon(Symbols::settings).size(Sp(32.0)).color(theme().on_surface), "settings"),
+                    symbol_cell(Icon(Symbols::search).size(Sp(32.0)).color(theme().primary), "search"),
                 )),
             )
             .modifier(Modifier::new().flex_grow(1.0)),
@@ -214,7 +214,7 @@ pub fn screen() -> View {
                 ),
                 Row(Modifier::new()).child((
                     Hint("(masked value: "),
-                    Text(pw.get()).size(14.0).color(theme().primary),
+                    Text(pw.get()).size(Sp(14.0)).color(theme().primary),
                     Hint(")"),
                 )),
             ))
@@ -232,12 +232,12 @@ pub fn screen() -> View {
                     BasicTextField(
                         tf_state.clone(),
                         Modifier::new()
-                            .height(180.0)
+                            .height(Dp(180.0))
                             .fill_max_width()
                             .padding(sp::SM)
                             .background(theme().surface)
-                            .border(1.0, theme().outline, 10.0)
-                            .clip_rounded(10.0),
+                            .border(Dp(1.0), theme().outline, Dp(10.0))
+                            .clip_rounded(Dp(10.0)),
                         "Write notes…",
                         TextFieldConfig {
                             on_change: Some(Rc::new({
@@ -268,8 +268,8 @@ pub fn screen() -> View {
                     .overflow_ellipsize()
                     .modifier(Modifier::new().fill_max_width()),
                 Text("This paragraph demonstrates wrapping in a constrained box. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vestibulum at arcu sed justo viverra posuere.")
-                    .size(16.0)
-                    .modifier(Modifier::new().width(420.0)),
+                    .size(Sp(16.0))
+                    .modifier(Modifier::new().width(Dp(420.0))),
             )),
         ),
     ];
@@ -295,7 +295,7 @@ pub fn screen() -> View {
             })
         };
         Column(Modifier::new().padding(sp::SM).gap(sp::SM)).child((
-            AnnotatedText(annotated).size(18.0),
+            AnnotatedText(annotated).size(Sp(18.0)),
             Button(
                 Modifier::new(),
                 {
@@ -313,7 +313,7 @@ pub fn screen() -> View {
         let sel2 = sel.clone();
         Column(Modifier::new().padding(sp::SM).gap(sp::SM)).child((
             Text("Try clicking and dragging to select text in this paragraph.")
-                .size(16.0)
+                .size(Sp(16.0))
                 .selectable(move |range| {
                     sel2.set(match range {
                         Some((a, b)) if a != b => format!("{}..{}", a.min(b), a.max(b)),
@@ -332,7 +332,7 @@ pub fn screen() -> View {
             Text(
                 "Double-tap a word to select it. Triple-tap to select all. Shift+click to extend.",
             )
-            .size(16.0)
+            .size(Sp(16.0))
             .selectable(move |range| {
                 sel2.set(match range {
                     Some((a, b)) if a != b => format!("{}..{}", a.min(b), a.max(b)),

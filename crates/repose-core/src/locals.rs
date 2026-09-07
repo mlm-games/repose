@@ -92,16 +92,7 @@ pub fn set_density_default(d: Density) {
     };
 }
 
-/// density‑independent pixels (dp)
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Dp(pub f32);
-
-impl Dp {
-    /// Converts this dp value into physical pixels using current Density * UiScale.
-    pub fn to_px(self) -> f32 {
-        self.0 * effective_density_scale()
-    }
-}
+pub use crate::units::{Dp, DpOffset, DpRect, DpSize, Px, Sp, UnitExt};
 
 /// Effective dp→px scale: device density × app UI scale.
 #[inline]
@@ -109,15 +100,16 @@ pub fn effective_density_scale() -> f32 {
     (density().scale * ui_scale().0).max(0.0001)
 }
 
-/// Convenience: convert a raw dp scalar into px using current Density * UiScale.
-pub fn dp_to_px(dp: f32) -> f32 {
-    Dp(dp).to_px()
+/// Convert [`Dp`] into [`Px`] using current Density * UiScale.
+#[inline]
+pub fn dp_to_px(dp: Dp) -> Px {
+    dp.to_px()
 }
 
-/// Convenience: convert a raw px scalar into dp using current Density * UiScale.
-pub fn px_to_dp(px: f32) -> f32 {
-    let scale = effective_density_scale();
-    if scale <= 0.0001 { 0.0 } else { px / scale }
+/// Convert [`Px`] into [`Dp`] using current Density * UiScale.
+#[inline]
+pub fn px_to_dp(px: Px) -> Dp {
+    px.to_dp()
 }
 
 fn with_locals_frame<R>(f: impl FnOnce() -> R) -> R {
@@ -355,114 +347,118 @@ impl Default for ColorScheme {
     }
 }
 
+/// Material type scale. All sizes are [`Sp`] (Compose `Typography` uses `TextUnit`).
 #[derive(Clone, Copy, Debug)]
 #[must_use]
 pub struct Typography {
-    pub display_large: f32,
-    pub display_medium: f32,
-    pub display_small: f32,
-    pub headline_large: f32,
-    pub headline_medium: f32,
-    pub headline_small: f32,
-    pub title_large: f32,
-    pub title_medium: f32,
-    pub title_small: f32,
-    pub body_large: f32,
-    pub body_medium: f32,
-    pub body_small: f32,
-    pub label_large: f32,
-    pub label_medium: f32,
-    pub label_small: f32,
+    pub display_large: Sp,
+    pub display_medium: Sp,
+    pub display_small: Sp,
+    pub headline_large: Sp,
+    pub headline_medium: Sp,
+    pub headline_small: Sp,
+    pub title_large: Sp,
+    pub title_medium: Sp,
+    pub title_small: Sp,
+    pub body_large: Sp,
+    pub body_medium: Sp,
+    pub body_small: Sp,
+    pub label_large: Sp,
+    pub label_medium: Sp,
+    pub label_small: Sp,
 }
 
 impl Default for Typography {
     fn default() -> Self {
         Self {
-            display_large: 57.0,
-            display_medium: 45.0,
-            display_small: 36.0,
-            headline_large: 32.0,
-            headline_medium: 28.0,
-            headline_small: 24.0,
-            title_large: 22.0,
-            title_medium: 16.0,
-            title_small: 14.0,
-            body_large: 16.0,
-            body_medium: 14.0,
-            body_small: 12.0,
-            label_large: 14.0,
-            label_medium: 12.0,
-            label_small: 11.0,
+            display_large: Sp(57.0),
+            display_medium: Sp(45.0),
+            display_small: Sp(36.0),
+            headline_large: Sp(32.0),
+            headline_medium: Sp(28.0),
+            headline_small: Sp(24.0),
+            title_large: Sp(22.0),
+            title_medium: Sp(16.0),
+            title_small: Sp(14.0),
+            body_large: Sp(16.0),
+            body_medium: Sp(14.0),
+            body_small: Sp(12.0),
+            label_large: Sp(14.0),
+            label_medium: Sp(12.0),
+            label_small: Sp(11.0),
         }
     }
 }
 
+/// Corner radii in [`Dp`].
 #[derive(Clone, Copy, Debug)]
 #[must_use]
 pub struct Shapes {
-    pub extra_small: f32,
-    pub small: f32,
-    pub medium: f32,
-    pub large: f32,
-    pub extra_large: f32,
+    pub extra_small: Dp,
+    pub small: Dp,
+    pub medium: Dp,
+    pub large: Dp,
+    pub extra_large: Dp,
 }
 
 impl Default for Shapes {
     fn default() -> Self {
         Self {
-            extra_small: 4.0,
-            small: 8.0,
-            medium: 12.0,
-            large: 16.0,
-            extra_large: 28.0,
+            extra_small: Dp(4.0),
+            small: Dp(8.0),
+            medium: Dp(12.0),
+            large: Dp(16.0),
+            extra_large: Dp(28.0),
         }
     }
 }
 
+/// Layout gaps in [`Dp`].
 #[derive(Clone, Copy, Debug)]
 #[must_use]
 pub struct Spacing {
-    pub xs: f32,
-    pub sm: f32,
-    pub md: f32,
-    pub lg: f32,
-    pub xl: f32,
-    pub xxl: f32,
+    pub xs: Dp,
+    pub sm: Dp,
+    pub md: Dp,
+    pub lg: Dp,
+    pub xl: Dp,
+    pub xxl: Dp,
 }
 
 impl Default for Spacing {
     fn default() -> Self {
         Self {
-            xs: 4.0,
-            sm: 8.0,
-            md: 12.0,
-            lg: 16.0,
-            xl: 24.0,
-            xxl: 32.0,
+            xs: Dp(4.0),
+            sm: Dp(8.0),
+            md: Dp(12.0),
+            lg: Dp(16.0),
+            xl: Dp(24.0),
+            xxl: Dp(32.0),
         }
     }
 }
 
+/// Elevation levels in [`Dp`].
 #[derive(Clone, Copy, Debug)]
 #[must_use]
 pub struct Elevation {
-    pub level0: f32,
-    pub level1: f32,
-    pub level2: f32,
-    pub level3: f32,
-    pub level4: f32,
-    pub level5: f32,
+    pub level0: Dp,
+    pub level1: Dp,
+    pub level2: Dp,
+    pub level3: Dp,
+    pub level4: Dp,
+    pub level5: Dp,
 }
 
 impl Default for Elevation {
     fn default() -> Self {
         Self {
-            level0: 0.0,
-            level1: 1.0,
-            level2: 3.0,
-            level3: 6.0,
-            level4: 8.0,
-            level5: 12.0,
+            level0: Dp(0.0),
+            level1: Dp(1.0),
+            level2: Dp(3.0),
+            level3: Dp(6.0),
+            level4: Dp(8.0),
+            level5: Dp(12.0),
         }
     }
 }
@@ -692,19 +688,19 @@ pub fn content_color_for(background: Color) -> Color {
     }
 }
 
-/// Composition-local default text size (dp). Bare `Text(...)`
+/// Composition-local default text size ([`Sp`]). Bare `Text(...)`
 /// children inherit the container's typography instead of the global default.
 #[derive(Clone, Copy, Debug)]
-pub struct TextSize(pub f32);
+pub struct TextSize(pub Sp);
 
-pub fn with_text_size<R>(size: f32, f: impl FnOnce() -> R) -> R {
+pub fn with_text_size<R>(size: Sp, f: impl FnOnce() -> R) -> R {
     with_locals_frame(|| {
         set_local_boxed(TypeId::of::<TextSize>(), Box::new(TextSize(size)));
         f()
     })
 }
 
-pub fn text_size() -> Option<f32> {
+pub fn text_size() -> Option<Sp> {
     get_local::<TextSize>().map(|t| t.0)
 }
 

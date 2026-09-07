@@ -28,14 +28,14 @@ fn dots(current: usize) -> View {
         (0..PAGES)
             .map(|i| {
                 Box(Modifier::new()
-                    .size(8.0, 8.0)
-                    .margin(4.0)
+                    .size(Dp(8.0), Dp(8.0))
+                    .margin(Dp(4.0))
                     .background(if i == current {
                         colors[i]
                     } else {
                         theme().outline_variant
                     })
-                    .clip_rounded(4.0))
+                    .clip_rounded(Dp(4.0)))
             })
             .collect::<Vec<_>>(),
     )
@@ -46,7 +46,7 @@ fn page_face(p: usize, hint: &'static str) -> View {
     Box(Modifier::new()
         .fill_max_size()
         .background(color.with_alpha(48))
-        .clip_rounded(24.0))
+        .clip_rounded(Dp(24.0)))
     .child(
         Column(
             Modifier::new()
@@ -55,9 +55,9 @@ fn page_face(p: usize, hint: &'static str) -> View {
                 .align_items(AlignItems::CENTER),
         )
         .child((
-            Text(format!("Page {}", p + 1)).size(48.0).color(color),
+            Text(format!("Page {}", p + 1)).size(Sp(48.0)).color(color),
             Text(hint)
-                .size(16.0)
+                .size(Sp(16.0))
                 .color(theme().on_surface.with_alpha(180)),
         )),
     )
@@ -78,7 +78,7 @@ fn controls(state: Rc<PagerState>, current: usize) -> View {
         }),
         Spacer(),
         Text(format!("Page {} of {}", current + 1, PAGES))
-            .size(14.0)
+            .size(Sp(14.0))
             .color(theme().on_surface),
         Spacer(),
         Button(Modifier::new(), next, ButtonConfig::default(), || {
@@ -112,7 +112,10 @@ pub fn screen() -> View {
                 h_state.clone(),
                 |p| page_face(p, "Swipe left/right"),
                 PagerConfig {
-                    modifier: Modifier::new().fill_max_size().height(200.0).margin(sp::SM),
+                    modifier: Modifier::new()
+                        .fill_max_size()
+                        .height(Dp(200.0))
+                        .margin(sp::SM),
                     ..Default::default()
                 },
             ),
@@ -125,7 +128,10 @@ pub fn screen() -> View {
                 v_state.clone(),
                 |p| page_face(p, "Swipe up/down"),
                 PagerConfig {
-                    modifier: Modifier::new().fill_max_size().height(300.0).margin(sp::SM),
+                    modifier: Modifier::new()
+                        .fill_max_size()
+                        .height(Dp(300.0))
+                        .margin(sp::SM),
                     ..Default::default()
                 },
             ),

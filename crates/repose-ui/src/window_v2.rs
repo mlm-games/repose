@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use repose_core::{Rect, Size, Vec2};
+use repose_core::{Dp, DpOffset, DpSize, Rect, Size, Vec2};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ScreenInsets {
@@ -894,10 +894,10 @@ pub fn apply_window_state_to_floating(
     let window_metrics = WindowMetrics::new(
         screen.clone(),
         Rect {
-            x: window.position.x,
-            y: window.position.y,
-            w: window.size.width,
-            h: window.size.height,
+            x: window.position.x.0,
+            y: window.position.y.0,
+            w: window.size.width.0,
+            h: window.size.height.0,
         },
         ScreenInsets::default(),
     );
@@ -914,11 +914,7 @@ pub fn apply_window_state_to_floating(
             last.unwrap()
         };
         let screen_id = screen_scope
-            .eval(
-                &state
-                    .take_pending_screen()
-                    .unwrap_or_default(),
-            )
+            .eval(&state.take_pending_screen().unwrap_or_default())
             .id;
         let placement = state
             .take_pending_placement()
@@ -934,12 +930,12 @@ pub fn apply_window_state_to_floating(
             height: bounds.h,
         };
         sz.width = sz.width.clamp(
-            window.min_size.width,
-            window.max_size.map(|s| s.width).unwrap_or(f32::INFINITY),
+            window.min_size.width.0,
+            window.max_size.map(|s| s.width.0).unwrap_or(f32::INFINITY),
         );
         sz.height = sz.height.clamp(
-            window.min_size.height,
-            window.max_size.map(|s| s.height).unwrap_or(f32::INFINITY),
+            window.min_size.height.0,
+            window.max_size.map(|s| s.height.0).unwrap_or(f32::INFINITY),
         );
         sz.width = sz.width.min(host_bounds.w.max(sz.width));
         sz.height = sz.height.min(host_bounds.h.max(sz.height));
@@ -956,20 +952,14 @@ pub fn apply_window_state_to_floating(
             pos.x = pos.x.clamp(min_x, max_x);
             pos.y = pos.y.clamp(min_y, max_y);
         }
-        window.position = pos;
-        window.size = sz;
+        window.position = DpOffset::new(Dp(pos.x), Dp(pos.y));
+        window.size = DpSize::new(Dp(sz.width), Dp(sz.height));
     }
     if let Some(p) = state.try_placement() {
         match p {
             WindowPlacement::Maximized | WindowPlacement::Fullscreen => {
-                window.position = Vec2 {
-                    x: host_bounds.x,
-                    y: host_bounds.y,
-                };
-                window.size = Size {
-                    width: host_bounds.w,
-                    height: host_bounds.h,
-                };
+                window.position = DpOffset::new(Dp(host_bounds.x), Dp(host_bounds.y));
+                window.size = DpSize::new(Dp(host_bounds.w), Dp(host_bounds.h));
             }
             WindowPlacement::Floating => {}
         }
@@ -989,10 +979,10 @@ pub fn apply_dialog_state_to_floating(
         WindowMetrics::new(
             screen.clone(),
             Rect {
-                x: pw.position.x,
-                y: pw.position.y,
-                w: pw.size.width,
-                h: pw.size.height,
+                x: pw.position.x.0,
+                y: pw.position.y.0,
+                w: pw.size.width.0,
+                h: pw.size.height.0,
             },
             ScreenInsets::default(),
         )
@@ -1000,10 +990,10 @@ pub fn apply_dialog_state_to_floating(
     let window_metrics = WindowMetrics::new(
         screen.clone(),
         Rect {
-            x: dialog_window.position.x,
-            y: dialog_window.position.y,
-            w: dialog_window.size.width,
-            h: dialog_window.size.height,
+            x: dialog_window.position.x.0,
+            y: dialog_window.position.y.0,
+            w: dialog_window.size.width.0,
+            h: dialog_window.size.height.0,
         },
         ScreenInsets::default(),
     );
@@ -1021,11 +1011,7 @@ pub fn apply_dialog_state_to_floating(
             last.unwrap()
         };
         let screen_id = screen_scope
-            .eval(
-                &state
-                    .take_pending_screen()
-                    .unwrap_or_default(),
-            )
+            .eval(&state.take_pending_screen().unwrap_or_default())
             .id;
         state.initialize(screen_id, rect);
     } else {
@@ -1037,24 +1023,21 @@ pub fn apply_dialog_state_to_floating(
             height: bounds.h,
         };
         sz.width = sz.width.clamp(
-            dialog_window.min_size.width,
+            dialog_window.min_size.width.0,
             dialog_window
                 .max_size
-                .map(|s| s.width)
+                .map(|s| s.width.0)
                 .unwrap_or(f32::INFINITY),
         );
         sz.height = sz.height.clamp(
-            dialog_window.min_size.height,
+            dialog_window.min_size.height.0,
             dialog_window
                 .max_size
-                .map(|s| s.height)
+                .map(|s| s.height.0)
                 .unwrap_or(f32::INFINITY),
         );
-        dialog_window.position = Vec2 {
-            x: bounds.x,
-            y: bounds.y,
-        };
-        dialog_window.size = sz;
+        dialog_window.position = DpOffset::new(Dp(bounds.x), Dp(bounds.y));
+        dialog_window.size = DpSize::new(Dp(sz.width), Dp(sz.height));
     }
 }
 
@@ -1096,9 +1079,9 @@ mod tests {
         );
         apply_window_state_to_floating(&mut state, &mut win, host(), dummy_measure);
         assert!(state.is_initialized);
-        assert!((win.position.x - 440.0).abs() < 1.0);
-        assert!((win.position.y - 300.0).abs() < 1.0);
-        assert_eq!(win.size.width, 400.0);
+        assert!((win.position.x - Dp(440.0)).abs().0 < 1.0);
+        assert!((win.position.y - Dp(300.0)).abs().0 < 1.0);
+        assert_eq!(win.size.width, Dp(400.0));
     }
     #[test]
     fn unconstrained_sizes_to_content() {
@@ -1117,8 +1100,8 @@ mod tests {
             Rc::new(|| repose_core::View::new(0, repose_core::ViewKind::Box)),
         );
         apply_window_state_to_floating(&mut state, &mut win, host(), dummy_measure);
-        assert!((win.size.width - 400.0).abs() < 1.0);
-        assert!((win.size.height - 200.0).abs() < 1.0);
+        assert!((win.size.width - Dp(400.0)).abs().0 < 1.0);
+        assert!((win.size.height - Dp(200.0)).abs().0 < 1.0);
     }
     #[test]
     fn async_request_distinction() {
@@ -1134,7 +1117,7 @@ mod tests {
         state.request_position(Vec2 { x: 100.0, y: 100.0 });
         assert_eq!(win.position, initial);
         apply_window_state_to_floating(&mut state, &mut win, h, dummy_measure);
-        assert!((win.position.x - 100.0).abs() < 1.0);
+        assert!((win.position.x - Dp(100.0)).abs().0 < 1.0);
     }
     #[test]
     fn request_size_preserves_position() {
@@ -1153,14 +1136,14 @@ mod tests {
             Rc::new(|| repose_core::View::new(0, repose_core::ViewKind::Box)),
         );
         apply_window_state_to_floating(&mut state, &mut win, h, dummy_measure);
-        assert!((win.position.x - 50.0).abs() < 1.5);
+        assert!((win.position.x - Dp(50.0)).abs().0 < 1.5);
         state.request_size(Size {
             width: 500.0,
             height: 400.0,
         });
         apply_window_state_to_floating(&mut state, &mut win, h, dummy_measure);
-        assert!((win.position.x - 50.0).abs() < 1.5);
-        assert!((win.size.width - 500.0).abs() < 1.0);
+        assert!((win.position.x - Dp(50.0)).abs().0 < 1.5);
+        assert!((win.size.width - Dp(500.0)).abs().0 < 1.0);
     }
     #[test]
     fn dialog_centered_in_parent() {
@@ -1169,8 +1152,8 @@ mod tests {
             "parent",
             Rc::new(|| repose_core::View::new(0, repose_core::ViewKind::Box)),
         )
-        .position(100.0, 100.0)
-        .size(400.0, 300.0);
+        .position(Dp(100.0), Dp(100.0))
+        .size(Dp(400.0), Dp(300.0));
         let mut dialog_state = DialogState::new(
             WindowScreenProvider::default(),
             WindowBoundsProvider::new_provider(
@@ -1193,8 +1176,8 @@ mod tests {
             Some(&parent),
             dummy_measure,
         );
-        assert!((dialog_win.position.x - 200.0).abs() < 1.0);
-        assert!((dialog_win.position.y - 200.0).abs() < 1.0);
+        assert!((dialog_win.position.x - Dp(200.0)).abs().0 < 1.0);
+        assert!((dialog_win.position.y - Dp(200.0)).abs().0 < 1.0);
     }
     #[test]
     fn min_max_clamping() {
@@ -1215,16 +1198,16 @@ mod tests {
             "test",
             Rc::new(|| repose_core::View::new(0, repose_core::ViewKind::Box)),
         )
-        .min_size(200.0, 200.0)
-        .max_size(300.0, 300.0);
+        .min_size(Dp(200.0), Dp(200.0))
+        .max_size(Dp(300.0), Dp(300.0));
         apply_window_state_to_floating(&mut state, &mut win, host(), dummy_measure);
-        assert_eq!(win.size.width, 200.0);
+        assert_eq!(win.size.width, Dp(200.0));
         state.request_size(Size {
             width: 500.0,
             height: 500.0,
         });
         apply_window_state_to_floating(&mut state, &mut win, host(), dummy_measure);
-        assert_eq!(win.size.width, 300.0);
+        assert_eq!(win.size.width, Dp(300.0));
     }
     #[test]
     fn screen_selection() {

@@ -22,10 +22,10 @@ pub fn screen() -> View {
                 Hint("Filled and stroked rects, circles, and text recorded into SceneNodes."),
                 Canvas(
                     Modifier::new()
-                        .size(560.0, 200.0)
+                        .size(Dp(560.0), Dp(200.0))
                         .background(theme().surface)
-                        .border(1.0, theme().outline, 16.0)
-                        .clip_rounded(16.0),
+                        .border(Dp(1.0), theme().outline, Dp(16.0))
+                        .clip_rounded(Dp(16.0)),
                     |ds| {
                         ds.draw_rect(
                             Rect {
@@ -35,7 +35,7 @@ pub fn screen() -> View {
                                 h: 96.0,
                             },
                             theme().primary,
-                            16.0,
+                            Px(16.0),
                         );
                         ds.draw_rect_stroke(
                             Rect {
@@ -45,15 +45,15 @@ pub fn screen() -> View {
                                 h: 130.0,
                             },
                             theme().outline,
-                            18.0,
-                            2.0,
+                            Px(18.0),
+                            Px(2.0),
                         );
                         ds.draw_circle(Vec2 { x: 430.0, y: 88.0 }, 44.0, theme().tertiary);
                         ds.draw_text(
                             "Fill · Stroke · Circle",
                             Vec2 { x: 22.0, y: 160.0 },
                             theme().on_surface,
-                            18.0,
+                            Px(18.0),
                         );
                     },
                 ),
@@ -67,10 +67,10 @@ pub fn screen() -> View {
                 ),
                 Canvas(
                     Modifier::new()
-                        .size(560.0, 220.0)
+                        .size(Dp(560.0), Dp(220.0))
                         .background(theme().surface_container_low)
-                        .border(1.0, theme().outline_variant, 16.0)
-                        .clip_rounded(16.0),
+                        .border(Dp(1.0), theme().outline_variant, Dp(16.0))
+                        .clip_rounded(Dp(16.0)),
                     move |ds| {
                         let th = theme();
                         let base_y = 190.0;
@@ -88,14 +88,14 @@ pub fn screen() -> View {
                                     h,
                                 },
                                 colors[i % colors.len()],
-                                8.0,
+                                Px(8.0),
                             );
                         }
                         ds.draw_text(
                             "live values",
                             Vec2 { x: 24.0, y: 208.0 },
                             th.on_surface_variant,
-                            12.0,
+                            Px(12.0),
                         );
                     },
                 ),

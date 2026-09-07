@@ -11,7 +11,11 @@ pub fn screen(nav: Navigator<Route>) -> View {
         SectionWith(
             "Featured demos",
             None,
-            FlowRow(Modifier::new().fill_max_width().gap(sp::MD), FlowRowConfig::default()).child(
+            FlowRow(
+                Modifier::new().fill_max_width().gap(sp::MD),
+                FlowRowConfig::default(),
+            )
+            .child(
                 Route::FEATURED
                     .iter()
                     .copied()
@@ -108,7 +112,7 @@ fn platform_status() -> View {
                 .gap(sp::SM))
             .child((
                 Text("Continuous redraw")
-                    .size(14.0)
+                    .size(Sp(14.0))
                     .color(th.on_surface_variant),
                 Spacer(),
                 Switch(
@@ -137,7 +141,7 @@ fn status_row(label: &str, value: &str, value_color: Color) -> View {
     .child((
         Caption(label),
         Spacer(),
-        Text(value).size(13.0).color(value_color).single_line(),
+        Text(value).size(Sp(13.0)).color(value_color).single_line(),
     ))
 }
 
@@ -147,16 +151,16 @@ fn hero(nav: Navigator<Route>) -> View {
     Box(Modifier::new()
         .fill_max_width()
         .background(th.primary_container)
-        .border(1.0, th.outline_variant, 32.0)
-        .clip_rounded(32.0)
+        .border(Dp(1.0), th.outline_variant, Dp(32.0))
+        .clip_rounded(Dp(32.0))
         .padding(sp::XXL))
     .child(
         Column(Modifier::new().gap(sp::LG).align_items(AlignItems::CENTER)).child((
             Text("Repose UI Showcase")
-                .size(42.0)
+                .size(Sp(42.0))
                 .color(th.on_primary_container),
             Text("Adaptive M3 components across desktop, web, and Android.")
-                .size(16.0)
+                .size(Sp(16.0))
                 .color(th.on_primary_container.with_alpha(210)),
             Row(Modifier::new()
                 .fill_max_width()
@@ -182,11 +186,11 @@ fn cta_button(label: &'static str, on_click: impl Fn() + 'static) -> View {
     Box(Modifier::new()
         .padding(sp::MD)
         .background(th.surface)
-        .border(1.0, th.outline_variant, 999.0)
-        .clip_rounded(999.0)
+        .border(Dp(1.0), th.outline_variant, Dp(999.0))
+        .clip_rounded(Dp(999.0))
         .clickable()
         .on_pointer_down(move |_| on_click()))
-    .child(Text(label).size(14.0).color(th.primary))
+    .child(Text(label).size(Sp(14.0)).color(th.primary))
 }
 
 fn feature_card(route: Route, nav: Navigator<Route>) -> View {
@@ -194,22 +198,22 @@ fn feature_card(route: Route, nav: Navigator<Route>) -> View {
 
     Box(Modifier::new()
         .key(route.id())
-        .width(280.0)
+        .width(Dp(280.0))
         .padding(sp::LG)
         .background(th.surface_container)
-        .border(1.0, th.outline_variant, 24.0)
-        .clip_rounded(24.0)
+        .border(Dp(1.0), th.outline_variant, Dp(24.0))
+        .clip_rounded(Dp(24.0))
         .clickable()
         .on_pointer_down(move |_| nav.push(route)))
     .child(Column(Modifier::new().gap(sp::SM)).child((
         Row(Modifier::new().align_items(AlignItems::CENTER).gap(sp::MD)).child((
             badge(route),
-            Column(Modifier::new().gap(1.0)).child((
-                Text(route.title()).size(17.0).color(th.on_surface),
+            Column(Modifier::new().gap(Dp(1.0))).child((
+                Text(route.title()).size(Sp(17.0)).color(th.on_surface),
                 Caption(route.description()),
             )),
         )),
-        Text("Open ->").size(13.0).color(th.primary),
+        Text("Open ->").size(Sp(13.0)).color(th.primary),
     )))
 }
 
@@ -217,10 +221,10 @@ fn badge(route: Route) -> View {
     let th = theme();
 
     Box(Modifier::new()
-        .size(44.0, 44.0)
+        .size(Dp(44.0), Dp(44.0))
         .background(th.primary)
-        .clip_rounded(16.0)
+        .clip_rounded(Dp(16.0))
         .align_items(AlignItems::CENTER)
         .justify_content(JustifyContent::CENTER))
-    .child(Text(route.badge()).size(14.0).color(th.on_primary))
+    .child(Text(route.badge()).size(Sp(14.0)).color(th.on_primary))
 }

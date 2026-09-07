@@ -4,14 +4,14 @@ use repose_ui::*;
 use crate::ui::{Hint, Page, Section, sp};
 
 fn shadow_card(m: Modifier, label: &'static str, fg: Option<Color>) -> View {
-    let mut t = Text(label).size(14.0);
+    let mut t = Text(label).size(Sp(14.0));
     if let Some(c) = fg {
         t = t.color(c);
     }
     Box(m
-        .size(160.0, 100.0)
+        .size(Dp(160.0), Dp(100.0))
         .graphics_layer(1.0)
-        .clip_rounded(12.0)
+        .clip_rounded(Dp(12.0))
         .padding(sp::MD))
     .child(t)
 }
@@ -21,12 +21,12 @@ pub fn screen() -> View {
         Section("view! macro - declarative syntax", {
             Column(Modifier::new().padding(sp::MD).gap(sp::SM)).child((
                 Hint("Layout built via view! macro instead of nested function calls"),
-                repose_core::View!(Row(Modifier::new().gap(8.0)).child((
-                    Box(Modifier::new().size(32.0, 32.0).background(theme().primary).clip_rounded(6.0)),
-                    Text("Macro").size(18.0).color(theme().on_surface),
-                    Box(Modifier::new().size(32.0, 32.0).background(theme().tertiary).clip_rounded(6.0)),
+                repose_core::View!(Row(Modifier::new().gap(Dp(8.0))).child((
+                    Box(Modifier::new().size(Dp(32.0), Dp(32.0)).background(theme().primary).clip_rounded(Dp(6.0))),
+                    Text("Macro").size(Sp(18.0)).color(theme().on_surface),
+                    Box(Modifier::new().size(Dp(32.0), Dp(32.0)).background(theme().tertiary).clip_rounded(Dp(6.0))),
                 ))),
-                Hint("Equivalent: Row(Modifier::new().gap(8.0).align_items(AlignItems::CENTER)).child(("),
+                Hint("Equivalent: Row(Modifier::new().gap(Dp(8.0)).align_items(AlignItems::CENTER)).child(("),
             ))
         }),
         Section(
@@ -39,69 +39,69 @@ pub fn screen() -> View {
                         Box(Modifier::new()
                             .padding(sp::SM)
                             .background(theme().surface)
-                            .border(1.0, theme().outline, 10.0)
-                            .clip_rounded(10.0))
+                            .border(Dp(1.0), theme().outline, Dp(10.0))
+                            .clip_rounded(Dp(10.0)))
                         .child(Text(format!("Item {}", i + 1)).modifier(Modifier::new().padding(sp::MD)))
                     })
                     .collect(),
-                8.0,
-                8.0,
+                Dp(8.0),
+                Dp(8.0),
             ),
         ),
         Section(
             "Graphics Layer (Modifier::graphics_layer)",
             Column(Modifier::new().padding(sp::MD).gap(sp::MD)).child((
                 Hint("Render subtree to an offscreen texture, then composite with group alpha."),
-                Column(Modifier::new().size(420.0, 160.0)).child((
+                Column(Modifier::new().size(Dp(420.0), Dp(160.0))).child((
                     Box(Modifier::new()
-                        .size(420.0, 160.0)
+                        .size(Dp(420.0), Dp(160.0))
                         .background(theme().primary.with_alpha(96))
-                        .clip_rounded(12.0)),
+                        .clip_rounded(Dp(12.0))),
                     Box(Modifier::new()
-                        .size(360.0, 120.0)
+                        .size(Dp(360.0), Dp(120.0))
                         .graphics_layer(0.7)
                         .absolute()
-                        .offset(Some(20.0), Some(20.0), None, None)
+                        .offset(Some(Dp(20.0)), Some(Dp(20.0)), None, None)
                         .background(theme().secondary)
-                        .border(1.0, theme().outline, 12.0)
-                        .clip_rounded(12.0)
+                        .border(Dp(1.0), theme().outline, Dp(12.0))
+                        .clip_rounded(Dp(12.0))
                         .padding(sp::LG))
                     .child((
-                        Text("graphics_layer(0.7)").size(20.0).color(theme().on_secondary),
+                        Text("graphics_layer(0.7)").size(Sp(20.0)).color(theme().on_secondary),
                         Text("Subtree is rendered to an offscreen texture\nand composited at 70% alpha.")
-                            .size(12.0)
+                            .size(Sp(12.0))
                             .color(theme().on_secondary),
                     )),
                     Box(Modifier::new()
-                        .size(280.0, 60.0)
+                        .size(Dp(280.0), Dp(60.0))
                         .graphics_layer(0.5)
                         .absolute()
-                        .offset(Some(120.0), Some(80.0), None, None)
+                        .offset(Some(Dp(120.0)), Some(Dp(80.0)), None, None)
                         .background(theme().tertiary)
-                        .border(1.0, theme().outline, 8.0)
-                        .clip_rounded(8.0)
+                        .border(Dp(1.0), theme().outline, Dp(8.0))
+                        .clip_rounded(Dp(8.0))
                         .padding(sp::SM))
-                    .child(Text("graphics_layer(0.5) overlapping").color(theme().on_tertiary).size(14.0)),
+                    .child(Text("graphics_layer(0.5) overlapping").color(theme().on_tertiary).size(Sp(14.0))),
                 )),
             )),
         ),
         Section(
             "Drop Shadow (.elevation / .shadow)",
-            Column(Modifier::new().padding(20.0).gap(20.0)).child((
+            Column(Modifier::new().padding(Dp(20.0)).gap(Dp(20.0))).child((
                 Hint("Combine graphics_layer with shadow/elevation to render an offscreen-pass Gaussian drop shadow."),
                 FlowRow(Modifier::new().fill_max_width().gap(sp::XL), FlowRowConfig::default()).child((
                     shadow_card(
-                        Modifier::new().elevation(4.0).background(theme().surface)
-                            .border(1.0, theme().outline_variant, 12.0),
+                        Modifier::new().elevation(Dp(4.0)).background(theme().surface)
+                            .border(Dp(1.0), theme().outline_variant, Dp(12.0)),
                         "elevation(4)", None,
                     ),
                     shadow_card(
-                        Modifier::new().elevation(8.0).background(theme().surface)
-                            .border(1.0, theme().outline_variant, 12.0),
+                        Modifier::new().elevation(Dp(8.0)).background(theme().surface)
+                            .border(Dp(1.0), theme().outline_variant, Dp(12.0)),
                         "elevation(8)", None,
                     ),
                     shadow_card(
-                        Modifier::new().shadow(16.0, 6.0).background(theme().primary),
+                        Modifier::new().shadow(Dp(16.0), Dp(6.0)).background(theme().primary),
                         "shadow(16, 6)", Some(theme().on_primary),
                     ),
                 )),
@@ -111,26 +111,26 @@ pub fn screen() -> View {
             "Stack (absolute positioning)",
             Column(
                 Modifier::new()
-                    .size(420.0, 180.0)
+                    .size(Dp(420.0), Dp(180.0))
                     .background(theme().surface)
-                    .border(1.0, theme().outline, 12.0)
-                    .clip_rounded(12.0),
+                    .border(Dp(1.0), theme().outline, Dp(12.0))
+                    .clip_rounded(Dp(12.0)),
             )
             .child((
                 Box(Modifier::new()
                     .absolute()
-                    .offset(Some(12.0), Some(12.0), None, None)
+                    .offset(Some(Dp(12.0)), Some(Dp(12.0)), None, None)
                     .background(theme().primary)
-                    .clip_rounded(10.0)
-                    .padding(10.0))
+                    .clip_rounded(Dp(10.0))
+                    .padding(Dp(10.0)))
                 .child(Text("Top-left").color(theme().on_primary)),
                 Box(Modifier::new()
                     .absolute()
-                    .offset(None, None, Some(12.0), Some(12.0))
+                    .offset(None, None, Some(Dp(12.0)), Some(Dp(12.0)))
                     .background(theme().surface)
-                    .border(1.0, theme().outline, 10.0)
-                    .clip_rounded(10.0)
-                    .padding(10.0))
+                    .border(Dp(1.0), theme().outline, Dp(10.0))
+                    .clip_rounded(Dp(10.0))
+                    .padding(Dp(10.0)))
                 .child(Text("Bottom-right")),
             )),
         ),

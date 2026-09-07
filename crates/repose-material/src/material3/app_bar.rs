@@ -180,7 +180,7 @@ impl TopAppBarScrollBehavior {
 pub struct TopAppBarConfig {
     pub modifier: Modifier,
     pub colors: TopAppBarColors,
-    pub height: f32,
+    pub height: Dp,
     /// Collapse progress in `0.0..=1.0` driving the container color lerp.
     /// Ignored when [`scroll_behavior`](TopAppBarConfig::scroll_behavior) is set.
     pub scroll_fraction: f32,
@@ -227,10 +227,10 @@ impl Default for TopAppBarConfig {
             scroll_behavior: None,
             window_insets: WindowInsets::default(),
             content_padding: PaddingValues {
-                left: 4.0,
-                right: 4.0,
-                top: 0.0,
-                bottom: 0.0,
+                left: Dp(4.0),
+                right: Dp(4.0),
+                top: Dp(0.0),
+                bottom: Dp(0.0),
             },
         }
     }
@@ -257,14 +257,14 @@ fn top_app_bar_layout(
 
     let root_m = Modifier::new()
         .fill_max_width()
-        .height(config.height + insets.top)
+        .height(config.height + Px(insets.top).to_dp())
         .background(bg)
         .translate(0.0, scroll_offset)
         .semantics(Semantics::new(Role::Container));
 
     let nav = navigation_icon
         .map(|icon| with_content_color(colors.navigation_icon_content_color, move || icon))
-        .unwrap_or(Box(Modifier::new().width(16.0).fill_max_height()));
+        .unwrap_or(Box(Modifier::new().width(Dp(16.0)).fill_max_height()));
 
     let actions_row = Row(Modifier::new()
         .align_items(AlignItems::CENTER)
@@ -286,10 +286,10 @@ fn top_app_bar_layout(
     ));
 
     let content_padding = PaddingValues {
-        left: config.content_padding.left + insets.left,
-        right: config.content_padding.right + insets.right,
-        top: config.content_padding.top + insets.top,
-        bottom: config.content_padding.bottom + insets.bottom,
+        left: config.content_padding.left + Px(insets.left).to_dp(),
+        right: config.content_padding.right + Px(insets.right).to_dp(),
+        top: config.content_padding.top + Px(insets.top).to_dp(),
+        bottom: config.content_padding.bottom + Px(insets.bottom).to_dp(),
     };
 
     if centered {
@@ -304,7 +304,7 @@ fn top_app_bar_layout(
             .child((nav, Box(Modifier::new().flex_grow(1.0)), actions_row)),
             Box(Modifier::new()
                 .absolute()
-                .offset(Some(0.0), Some(0.0), Some(0.0), None)
+                .offset(Some(Dp(0.0)), Some(Dp(0.0)), Some(Dp(0.0)), None)
                 .fill_max_width()
                 .justify_content(JustifyContent::CENTER)
                 .align_items(AlignItems::CENTER))
@@ -315,10 +315,10 @@ fn top_app_bar_layout(
             nav,
             Box(Modifier::new()
                 .padding_values(PaddingValues {
-                    left: 16.0,
-                    right: 0.0,
-                    top: 0.0,
-                    bottom: 0.0,
+                    left: Dp(16.0),
+                    right: Dp(0.0),
+                    top: Dp(0.0),
+                    bottom: Dp(0.0),
                 })
                 .flex_grow(1.0))
             .child(title_column),

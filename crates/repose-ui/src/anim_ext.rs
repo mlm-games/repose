@@ -16,8 +16,8 @@ pub type ExpandFrom = f32;
 pub enum EnterTransition {
     /// Fade from alpha 0 to 1.
     FadeIn,
-    /// Slide from the given offset (dx, dy in dp) to position (0,0).
-    SlideIn { offset_x: f32, offset_y: f32 },
+    /// Slide from the given offset (dx, dy in [`Dp`]) to position (0,0).
+    SlideIn { offset_x: Dp, offset_y: Dp },
     /// Scale from initial to 1.0 combined with fade from 0 to 1.
     ScaleIn { initial: f32 },
     /// Animate layout height 0 -> full and clip (Compose `expandVertically`).
@@ -65,7 +65,7 @@ impl EnterTransition {
     pub fn expand_in() -> Self {
         Self::ExpandIn { clip: true }
     }
-    pub fn slide_in(offset_x: f32, offset_y: f32) -> Self {
+    pub fn slide_in(offset_x: Dp, offset_y: Dp) -> Self {
         Self::SlideIn { offset_x, offset_y }
     }
     pub fn scale_in(initial: f32) -> Self {
@@ -97,8 +97,8 @@ impl EnterTransition {
 pub enum ExitTransition {
     /// Fade from alpha 1 to 0.
     FadeOut,
-    /// Slide from position (0,0) to the given offset (dx, dy in dp).
-    SlideOut { offset_x: f32, offset_y: f32 },
+    /// Slide from position (0,0) to the given offset (dx, dy in [`Dp`]).
+    SlideOut { offset_x: Dp, offset_y: Dp },
     /// Scale from 1.0 to target combined with fade from 1 to 0.
     ScaleOut { target: f32 },
     /// Animate layout height full -> 0 and clip (Compose `shrinkVertically`).
@@ -143,7 +143,7 @@ impl ExitTransition {
     pub fn shrink_out() -> Self {
         Self::ShrinkOut { clip: true }
     }
-    pub fn slide_out(offset_x: f32, offset_y: f32) -> Self {
+    pub fn slide_out(offset_x: Dp, offset_y: Dp) -> Self {
         Self::SlideOut { offset_x, offset_y }
     }
     pub fn scale_out(target: f32) -> Self {
@@ -376,13 +376,13 @@ fn apply_size_fraction(
     } else {
         match axis {
             SizeAxis::Vertical => {
-                outer = outer.height(shown_h.max(0.0));
+                outer = outer.height(Dp(shown_h.max(0.0)));
             }
             SizeAxis::Horizontal => {
-                outer = outer.width(shown_w.max(0.0));
+                outer = outer.width(Dp(shown_w.max(0.0)));
             }
             SizeAxis::Both => {
-                outer = outer.size(shown_w.max(0.0), shown_h.max(0.0));
+                outer = outer.size(Dp(shown_w.max(0.0)), Dp(shown_h.max(0.0)));
             }
         }
     }
@@ -406,18 +406,18 @@ fn apply_size_fraction(
     if have && !settled {
         match axis {
             SizeAxis::Vertical => {
-                inner = inner.height(full_h);
+                inner = inner.height(Dp(full_h));
             }
             SizeAxis::Horizontal => {
-                inner = inner.width(full_w);
+                inner = inner.width(Dp(full_w));
             }
             SizeAxis::Both => {
-                inner = inner.size(full_w, full_h);
+                inner = inner.size(Dp(full_w), Dp(full_h));
             }
         }
     }
     if ox.abs() > 0.01 || oy.abs() > 0.01 {
-        inner = inner.translate(dp_to_px(ox), dp_to_px(oy));
+        inner = inner.translate(Dp(ox).to_px().0, Dp(oy).to_px().0);
     }
 
     Box(outer).child(Box(inner).child(view))
@@ -503,8 +503,8 @@ fn apply_enter(
             let offset = animate_vec2_from(
                 format!("{key}:v{version}:enter:slide"),
                 Vec2 {
-                    x: dp_to_px(*offset_x),
-                    y: dp_to_px(*offset_y),
+                    x: offset_x.to_px().0,
+                    y: offset_y.to_px().0,
                 },
                 Vec2::default(),
                 *spec,
@@ -585,8 +585,8 @@ fn apply_enter_single(
             let offset = animate_vec2_from(
                 format!("{key}:v{version}:enter:slide"),
                 Vec2 {
-                    x: dp_to_px(*offset_x),
-                    y: dp_to_px(*offset_y),
+                    x: offset_x.to_px().0,
+                    y: offset_y.to_px().0,
                 },
                 Vec2::default(),
                 *spec,
@@ -666,8 +666,8 @@ fn apply_exit(
                 format!("{key}:v{version}:exit:slide"),
                 Vec2::default(),
                 Vec2 {
-                    x: dp_to_px(*offset_x),
-                    y: dp_to_px(*offset_y),
+                    x: offset_x.to_px().0,
+                    y: offset_y.to_px().0,
                 },
                 *spec,
             );
@@ -744,8 +744,8 @@ fn apply_exit_single(
                 format!("{key}:v{version}:exit:slide"),
                 Vec2::default(),
                 Vec2 {
-                    x: dp_to_px(*offset_x),
-                    y: dp_to_px(*offset_y),
+                    x: offset_x.to_px().0,
+                    y: offset_y.to_px().0,
                 },
                 *spec,
             );
@@ -823,8 +823,8 @@ fn apply_enter_inflow(
             let offset = animate_vec2_from(
                 format!("{key}:v{version}:enter:slide"),
                 Vec2 {
-                    x: dp_to_px(*offset_x),
-                    y: dp_to_px(*offset_y),
+                    x: offset_x.to_px().0,
+                    y: offset_y.to_px().0,
                 },
                 Vec2::default(),
                 *spec,
@@ -900,8 +900,8 @@ fn apply_enter_inflow_single(
             let offset = animate_vec2_from(
                 format!("{key}:v{version}:enter:slide"),
                 Vec2 {
-                    x: dp_to_px(*offset_x),
-                    y: dp_to_px(*offset_y),
+                    x: offset_x.to_px().0,
+                    y: offset_y.to_px().0,
                 },
                 Vec2::default(),
                 *spec,
@@ -977,8 +977,8 @@ fn apply_exit_inflow(
                 format!("{key}:v{version}:exit:slide"),
                 Vec2::default(),
                 Vec2 {
-                    x: dp_to_px(*offset_x),
-                    y: dp_to_px(*offset_y),
+                    x: offset_x.to_px().0,
+                    y: offset_y.to_px().0,
                 },
                 *spec,
             );
@@ -1055,8 +1055,8 @@ fn apply_exit_inflow_single(
                 format!("{key}:v{version}:exit:slide"),
                 Vec2::default(),
                 Vec2 {
-                    x: dp_to_px(*offset_x),
-                    y: dp_to_px(*offset_y),
+                    x: offset_x.to_px().0,
+                    y: offset_y.to_px().0,
                 },
                 *spec,
             );
@@ -1149,8 +1149,8 @@ fn exit_animation_done(key: &str, version: u64, exit: &ExitTransition) -> bool {
             .unwrap_or(false),
         ExitTransition::SlideOut { offset_x, offset_y } => {
             let target = Vec2 {
-                x: dp_to_px(*offset_x),
-                y: dp_to_px(*offset_y),
+                x: offset_x.to_px().0,
+                y: offset_y.to_px().0,
             };
             read_anim_vec2_value(&format!("{key}:v{version}:exit:slide"), Vec2::default())
                 .map(|v| (v.x - target.x).abs() < 0.5 && (v.y - target.y).abs() < 0.5)
@@ -1274,6 +1274,6 @@ pub fn AnimatedVisibility(visible: bool, content: View, config: AnimatedVisibili
         entering.modifier.key = Some(transition_child_key(&key, v, "av_enter"));
         entering
     } else {
-        exiting.unwrap_or_else(|| Box(Modifier::new().height(0.0)))
+        exiting.unwrap_or_else(|| Box(Modifier::new().height(Dp::ZERO)))
     }
 }
