@@ -22,6 +22,9 @@ thread_local! {
 }
 
 /// Publish live Device/Queue for shared offscreen.
+///
+/// WASM: `thread_local`, so a worker thread never sees the main-thread
+/// device. Do NOT send the `Device`/`Queue` to a worker and render there..
 pub fn set_shared_device(device: wgpu::Device, queue: wgpu::Queue) {
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -208,6 +211,12 @@ impl OffscreenRenderer {
     }
 
     pub fn render_rgba(&mut self, scene: &Scene, clear: Option<[f64; 4]>) -> Result<Vec<u8>> {
+        // Blocking map on the wasm main thread (Window) can never complete..
+        #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+        debug_assert!(
+            web_workers::web::has_block_support(),
+            "render_rgba (blocking) called on wasm main thread; use render_rgba_async"
+        );
         let cmd = self.encode_rgba(scene, clear);
         self.renderer.queue.submit(Some(cmd));
         let slice = self.readback.slice(..);
@@ -240,11 +249,15 @@ impl OffscreenRenderer {
                 let _ = tx.send_sync(r);
             }
         });
+        let start = web_workers::sync::Instant::now();
         loop {
             let _ = self.renderer.device.poll(PollType::Poll);
             if let Ok(r) = rx.try_recv() {
                 r?;
                 break;
+            }
+            if start.elapsed().as_secs() > 30 {
+                anyhow::bail!("offscreen readback timed out after 30s (map callback never fired)");
             }
             web_workers::web::yield_now_async(web_workers::web::YieldTime::UserVisible).await;
         }
@@ -354,11 +367,15 @@ pub async fn map_buffer_async(slice: &wgpu::BufferSlice<'_>, device: &wgpu::Devi
             let _ = tx.send_sync(r);
         }
     });
+    let start = web_workers::sync::Instant::now();
     loop {
         let _ = device.poll(PollType::Poll);
         if let Ok(r) = rx.try_recv() {
             r?;
             break;
+        }
+        if start.elapsed().as_secs() > 30 {
+            anyhow::bail!("map_buffer timed out after 30s (map callback never fired)");
         }
         web_workers::web::yield_now_async(web_workers::web::YieldTime::UserVisible).await;
     }
