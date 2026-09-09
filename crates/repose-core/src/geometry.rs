@@ -71,6 +71,15 @@ pub struct Transform {
     pub shear_y: f32,
     pub origin_x: f32,
     pub origin_y: f32,
+    /// Projective row of the homogeneous 3x3 map: `w = px * x + py * y + pw`
+    /// and the rendered point is the affine result divided by `w`. Identity
+    /// (pure affine) is `[0.0, 0.0, 1.0]`, e.g. a 3D tilt of a planar layer.
+    ///
+    /// Only the scene-graph translation consumes this (perspective subtrees
+    /// are flattened into offscreen layers and composited projectively, CSS
+    /// style). [`linear`](Self::linear), [`apply_to_point`](Self::apply_to_point)
+    /// and [`combine`](Self::combine) stay affine-only by design.
+    pub perspective: [f32; 3],
 }
 
 impl Transform {
@@ -85,6 +94,7 @@ impl Transform {
             shear_y: 0.0,
             origin_x: 0.5,
             origin_y: 0.5,
+            perspective: [0.0, 0.0, 1.0],
         }
     }
 
@@ -99,6 +109,7 @@ impl Transform {
             shear_y: 0.0,
             origin_x: 0.5,
             origin_y: 0.5,
+            perspective: [0.0, 0.0, 1.0],
         }
     }
 
@@ -138,6 +149,134 @@ impl Transform {
             && self.rotate == 0.0
             && self.shear_x == 0.0
             && self.shear_y == 0.0
+    }
+
+    /// Whether the projective row is non-trivial (true perspective).
+    pub fn has_perspective(&self) -> bool {
+        self.perspective != [0.0, 0.0, 1.0]
+    }
+
+    /// Full homogeneous 3x3 map (row-major, 9 elements): the affine
+    /// `linear()` + translation in rows 0-1, [`perspective`](Self::perspective)
+    /// in row 2. `world_h = M * [x, y, 1]`, `world = world_h.xy / world_h.z`.
+    ///
+    /// Origin pivots are intentionally not folded in: the renderer consumes
+    /// the affine parts origin-free (see `rect_to_instance_ndc`), so pivots
+    /// must be baked into the rows by the producer (see
+    /// [`from_projective_rows`](Self::from_projective_rows)).
+    pub fn projective_matrix(&self) -> [f32; 9] {
+        let m = self.linear();
+        [
+            m[0],
+            m[1],
+            self.translate_x,
+            m[2],
+            m[3],
+            self.translate_y,
+            self.perspective[0],
+            self.perspective[1],
+            self.perspective[2],
+        ]
+    }
+
+    /// Build a transform from explicit homogeneous rows: `row0`/`row1` are the
+    /// affine `[a, b, t]` rows, `perspective` the projective `[px, py, pw]`
+    /// row. The affine 2x2 is decomposed into scale/rotate/shear parts (via
+    /// the same decomposition [`combine`](Self::combine) uses), so this
+    /// round-trips any 3D-rotation-of-a-plane + perspective map exactly —
+    /// e.g. ASS `\frx`/`\fry` about an `\org` pivot, where the pivot lives in
+    /// the rows because the renderer ignores `origin_*`.
+    pub fn from_projective_rows(row0: [f32; 3], row1: [f32; 3], perspective: [f32; 3]) -> Self {
+        let (sx, sy, rot, hx, hy) = decompose_linear([row0[0], row0[1], row1[0], row1[1]])
+            .unwrap_or((1.0, 1.0, 0.0, 0.0, 0.0));
+        Self {
+            translate_x: row0[2],
+            translate_y: row1[2],
+            scale_x: sx,
+            scale_y: sy,
+            rotate: rot,
+            shear_x: hx,
+            shear_y: hy,
+            origin_x: 0.5,
+            origin_y: 0.5,
+            perspective,
+        }
+    }
+
+    /// Apply the full projective map to a point, with perspective divide.
+    /// Degenerate `w` (≈ 0, at/behind the viewer) clamps to a tiny epsilon of
+    /// the original sign so output stays finite; callers culling
+    /// behind-camera content should test `w` via [`projective_w`](Self::projective_w).
+    pub fn apply_projective(&self, p: Vec2) -> Vec2 {
+        let m = self.linear();
+        let x = m[0] * p.x + m[1] * p.y + self.translate_x;
+        let y = m[2] * p.x + m[3] * p.y + self.translate_y;
+        let w = self.projective_w(p);
+        Vec2 { x: x / w, y: y / w }
+    }
+
+    /// The homogeneous `w` of a point under this transform's projective row.
+    pub fn projective_w(&self, p: Vec2) -> f32 {
+        let w = self.perspective[0] * p.x + self.perspective[1] * p.y + self.perspective[2];
+        if w.abs() < 1e-6 {
+            if w < 0.0 { -1e-6 } else { 1e-6 }
+        } else {
+            w
+        }
+    }
+
+    /// Compose two homogeneous 3x3 maps (row-major 9-element arrays, as from
+    /// [`projective_matrix`](Self::projective_matrix)): `world = outer ×
+    /// inner × local`. Used at scene-translation time to fold affine
+    /// ancestors over a perspective node; the result feeds layer-flattening,
+    /// never the part-based [`combine`](Self::combine).
+    pub fn compose_projective(outer: &[f32; 9], inner: &[f32; 9]) -> [f32; 9] {
+        let mut c = [0.0f32; 9];
+        for i in 0..3 {
+            for j in 0..3 {
+                c[i * 3 + j] = outer[i * 3] * inner[j]
+                    + outer[i * 3 + 1] * inner[3 + j]
+                    + outer[i * 3 + 2] * inner[6 + j];
+            }
+        }
+        c
+    }
+
+    /// Axis-aligned bounds of a projectively mapped rect (projects all four
+    /// corners and bounds them; the correct cull rect for flattened layers).
+    pub fn project_rect(&self, r: &Rect) -> Rect {
+        let corners = [
+            Vec2 { x: r.x, y: r.y },
+            Vec2 {
+                x: r.x + r.w,
+                y: r.y,
+            },
+            Vec2 {
+                x: r.x + r.w,
+                y: r.y + r.h,
+            },
+            Vec2 {
+                x: r.x,
+                y: r.y + r.h,
+            },
+        ];
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        for c in corners {
+            let p = self.apply_projective(c);
+            min_x = min_x.min(p.x);
+            min_y = min_y.min(p.y);
+            max_x = max_x.max(p.x);
+            max_y = max_y.max(p.y);
+        }
+        Rect {
+            x: min_x,
+            y: min_y,
+            w: (max_x - min_x).max(0.0),
+            h: (max_y - min_y).max(0.0),
+        }
     }
 
     pub fn apply_to_point(&self, p: Vec2) -> Vec2 {
@@ -204,7 +343,18 @@ impl Transform {
     /// The linear part is composed exactly (via polar decomposition of the
     /// 2x2 product); origins are inherited from `self`, matching the
     /// previous behaviour for the shear-free cases.
+    ///
+    /// Affine-only by design: a part-based transform cannot represent a
+    /// composed projective map, so `perspective` rows do NOT compose here
+    /// (debug-asserted). Perspective folds at scene-translation time into a
+    /// full 3x3 via [`projective_matrix`](Self::projective_matrix) and
+    /// [`compose_projective`](Self::compose_projective), which is what
+    /// flattens perspective subtrees into projectively composited layers.
     pub fn combine(&self, other: &Transform) -> Transform {
+        debug_assert!(
+            !self.has_perspective() && !other.has_perspective(),
+            "Transform::combine is affine-only; compose projective rows with compose_projective"
+        );
         let a = self.linear();
         let b = other.linear();
         let m = [
@@ -229,6 +379,8 @@ impl Transform {
             shear_y,
             origin_x: self.origin_x,
             origin_y: self.origin_y,
+            // Affine-only (see doc): callers must not push perspective here.
+            perspective: [0.0, 0.0, 1.0],
         }
     }
 }
@@ -293,6 +445,7 @@ mod tests {
             shear_y: hy,
             origin_x: 0.0,
             origin_y: 0.0,
+            perspective: [0.0, 0.0, 1.0],
         }
     }
 
@@ -372,5 +525,116 @@ mod tests {
         ];
         assert!(approx(id[0], 1.0) && approx(id[3], 1.0));
         assert!(approx(id[1], 0.0) && approx(id[2], 0.0));
+    }
+}
+
+#[cfg(test)]
+mod projective_tests {
+    use super::*;
+
+    fn approx(a: f32, b: f32) -> bool {
+        (a - b).abs() < 1e-3
+    }
+
+    #[test]
+    fn identity_row_is_affine_noop() {
+        let t = Transform::identity();
+        assert!(!t.has_perspective());
+        let p = Vec2 { x: 13.0, y: -7.0 };
+        let q = t.apply_projective(p);
+        assert!(approx(q.x, p.x) && approx(q.y, p.y));
+        assert!(approx(t.projective_w(p), 1.0));
+    }
+
+    #[test]
+    fn tilt_about_center_matches_hand_computation() {
+        // Rotation about the x-axis through the rect centre, focal length f:
+        // y' = cy + (y - cy) * cos, w = 1 + (y - cy) * sin / f.
+        let (cx, cy, f) = (100.0f32, 100.0f32, 1000.0f32);
+        let th = 0.5f32;
+        let (s, c) = (th.sin(), th.cos());
+        let t = Transform::from_projective_rows(
+            [1.0, 0.0, 0.0],
+            [0.0, c, cy * (1.0 - c)],
+            [0.0, s / f, 1.0 - cy * s / f],
+        );
+        assert!(t.has_perspective());
+        // Centre is fixed; w varies linearly with distance from the axis.
+        let q = t.apply_projective(Vec2 { x: cx, y: cy });
+        assert!(approx(q.x, cx) && approx(q.y, cy));
+        assert!(
+            t.projective_w(Vec2 {
+                x: cx,
+                y: cy - 50.0
+            }) < 1.0
+        );
+        assert!(
+            t.projective_w(Vec2 {
+                x: cx,
+                y: cy + 50.0
+            }) > 1.0
+        );
+    }
+
+    #[test]
+    fn from_projective_rows_round_trips_affine_part() {
+        let t = Transform::from_projective_rows(
+            [2.0, 0.5, 7.0],
+            [-0.5, 3.0, -2.0],
+            [0.001, -0.002, 1.0],
+        );
+        // Affine rows survive the parts round-trip; translation is exact.
+        let m = t.projective_matrix();
+        assert!(approx(m[0], 2.0) && approx(m[1], 0.5) && approx(m[2], 7.0));
+        assert!(approx(m[3], -0.5) && approx(m[4], 3.0) && approx(m[5], -2.0));
+        assert!(approx(m[6], 0.001) && approx(m[7], -0.002) && approx(m[8], 1.0));
+    }
+
+    #[test]
+    fn compose_projective_matches_sequential_apply() {
+        let outer = Transform {
+            translate_x: 5.0,
+            ..Transform::identity()
+        };
+        let inner =
+            Transform::from_projective_rows([1.0, 0.0, 0.0], [0.0, 0.9, 10.0], [0.0, 0.001, 1.0]);
+        let c =
+            Transform::compose_projective(&outer.projective_matrix(), &inner.projective_matrix());
+        for p in [Vec2 { x: 0.0, y: 0.0 }, Vec2 { x: 40.0, y: -25.0 }] {
+            // Sequential: inner (projective) then outer (affine).
+            let q1 = inner.apply_projective(p);
+            let m = outer.projective_matrix();
+            let q1 = Vec2 {
+                x: m[0] * q1.x + m[1] * q1.y + m[2],
+                y: m[3] * q1.x + m[4] * q1.y + m[5],
+            };
+            let w = c[6] * p.x + c[7] * p.y + c[8];
+            let q2 = Vec2 {
+                x: (c[0] * p.x + c[1] * p.y + c[2]) / w,
+                y: (c[3] * p.x + c[4] * p.y + c[5]) / w,
+            };
+            assert!(
+                approx(q1.x, q2.x) && approx(q1.y, q2.y),
+                "mismatch at {p:?}: {q1:?} vs {q2:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn project_rect_bounds_projected_corners() {
+        let t =
+            Transform::from_projective_rows([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.002, 0.0, 1.0]);
+        let r = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 100.0,
+            h: 100.0,
+        };
+        let b = t.project_rect(&r);
+        // w grows with x: the left edge (w=1) is unscaled, the right edge
+        // (w=1.2) shrinks in both axes.
+        assert!(approx(b.x, 0.0));
+        assert!(approx(b.w, 100.0 / 1.2));
+        assert!(approx(b.y, 0.0) && approx(b.h, 100.0));
     }
 }

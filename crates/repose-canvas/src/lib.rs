@@ -46,7 +46,10 @@ pub enum DrawCommand {
     /// world transform.
     VectorOverlay { meshes: Arc<[VectorMeshData]> },
     /// Begin a stencil clip from an arbitrary tessellated mask.
-    PushVectorClip { mesh: Arc<VectorMeshData> },
+    PushVectorClip {
+        mesh: Arc<VectorMeshData>,
+        op: ClipOp,
+    },
     /// End a stencil clip opened by `PushVectorClip`.
     PopVectorClip,
     /// Push a world transform onto the stack (image/vector subtree).
@@ -138,7 +141,16 @@ impl DrawScope {
     }
 
     pub fn push_vector_clip(&mut self, mesh: Arc<VectorMeshData>) {
-        self.commands.push(DrawCommand::PushVectorClip { mesh });
+        self.commands.push(DrawCommand::PushVectorClip {
+            mesh,
+            op: ClipOp::Intersect,
+        });
+    }
+
+    /// Push a vector clip with an explicit operator (e.g. `Difference` to
+    /// cut the mask out instead of masking to it).
+    pub fn push_vector_clip_op(&mut self, mesh: Arc<VectorMeshData>, op: ClipOp) {
+        self.commands.push(DrawCommand::PushVectorClip { mesh, op });
     }
 
     /// Pop the most recent vector clip.
@@ -288,9 +300,10 @@ pub fn Canvas(modifier: Modifier, on_draw: impl Fn(&mut DrawScope) + 'static) ->
                         meshes: translated.into(),
                     });
                 }
-                DrawCommand::PushVectorClip { mesh } => {
+                DrawCommand::PushVectorClip { mesh, op } => {
                     scene.nodes.push(SceneNode::PushVectorClip {
                         mesh: Arc::new(translate_mesh_data(mesh, rect.x, rect.y)),
+                        op: *op,
                     });
                 }
                 DrawCommand::PopVectorClip => {

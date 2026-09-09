@@ -338,6 +338,17 @@ pub enum SceneNode {
         tint: Color,
         fit: ImageFit,
     },
+    /// Tinted A8 coverage mask: samples `handle` (registered with
+    /// `register_coverage_a8`) as coverage and composites `color` with
+    /// source-over. Lets hosts rasterize geometry once (e.g. cached glyph
+    /// coverage tiles) and re-composite it per frame with a new color or
+    /// position without re-uploading. `rect` positions the tile's top-left;
+    /// its size is the registered tile size.
+    Coverage {
+        rect: Rect,
+        handle: ImageHandle,
+        color: Color,
+    },
     /// Shadow behind a rounded rect, typically driven by `StateElevation`.
     /// The `elevation` field controls offset and alpha.
     Shadow {
@@ -385,9 +396,11 @@ pub enum SceneNode {
     },
     /// Pre-tessellated vector mesh (fill or stroke geometry produced by the
     /// host, e.g. lyon tessellation). Vertices live in the mesh's own local
-    /// space; `transform` is a 2x3 affine that maps local -> world pixels and
-    /// is applied in the vertex shader. The current scene `PushTransform`
-    /// stack is folded in on top of `transform`.
+    /// space; `transform` is a 2x3 affine that maps local -> world pixels as
+    /// `[m00, m01, m10, m11, tx, ty]` (`out = M * local + t`; identity is
+    /// `[1.0, 0.0, 0.0, 1.0, 0.0, 0.0]`) and is applied in the vertex shader.
+    /// The current scene `PushTransform` stack is folded in on top of
+    /// `transform`.
     VectorMesh {
         mesh: Arc<VectorMeshData>,
         transform: [f32; 6],
@@ -406,8 +419,14 @@ pub enum SceneNode {
     /// Start a vector clip: the mesh is rendered into the stencil buffer
     /// (increment) and subsequent content is masked to it. Mirrors the
     /// rect-based `PushClip` but for arbitrary tessellated masks.
+    /// `op` selects intersection (keep content inside the mask, the common
+    /// case) or difference (cut the mask out, e.g. ASS `\iclip` drawings).
+    /// Difference is exact for a lone mask and for a mask nested inside
+    /// intersect clips; a normal clip nested inside a difference mask is
+    /// best-effort (see the renderer docs).
     PushVectorClip {
         mesh: Arc<VectorMeshData>,
+        op: ClipOp,
     },
     /// End a vector clip opened by `PushVectorClip`.
     PopVectorClip,

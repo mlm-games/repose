@@ -1827,6 +1827,7 @@ impl LayoutEngine {
                     shear_y: 0.0,
                     origin_x: 0.5,
                     origin_y: 0.5,
+                    perspective: [0.0, 0.0, 1.0],
                 },
             });
             Some(id)

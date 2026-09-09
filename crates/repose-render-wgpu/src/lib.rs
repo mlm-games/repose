@@ -193,6 +193,10 @@ pub struct WgpuSceneRenderer {
     // Stencil clip ring
     clip_ring: UploadRing,
 
+    // Projective layer-composite ring (one ProjectiveInstance per flattened
+    // perspective subtree)
+    projective_ring: UploadRing,
+
     // Tessellated vector glyph pipeline (always enabled)
     slug_enabled: bool,
     slug_ring: UploadRing,
@@ -209,9 +213,14 @@ pub struct WgpuSceneRenderer {
     mesh_bind: wgpu::BindGroup,
     mesh_uniform_head: u64,
     /// CPU mirror of the active vector-clip stack: (voff, vcnt, ioff, icnt,
-    /// uoff) of each pushed mask so `PopVectorClip` can re-draw it to
-    /// decrement the stencil.
-    mesh_clip_stack: Vec<(u64, u32, u64, u32, u64)>,
+    /// uoff, difference) of each pushed mask so `PopVectorClip` can re-draw
+    /// it to decrement the stencil.
+    mesh_clip_stack: Vec<(u64, u32, u64, u32, u64, bool)>,
+
+    /// Translator-owned flatten layer ids used by the previous frame;
+    /// drained from the layer pool at the start of each translation (they
+    /// are single-frame by construction).
+    flatten_layer_ids: Vec<u32>,
 
     msaa_samples: u32,
 
@@ -234,6 +243,11 @@ pub struct WgpuSceneRenderer {
     next_image_handle: u64,
     images: HashMap<u64, ImageTex>,
     retained: HashMap<u64, RetainedImage>,
+
+    // A8 coverage-tile management (host-rasterized masks composited tinted;
+    // no retained CPU copies — tiles are immutable and re-registered).
+    next_coverage_handle: u64,
+    coverages: HashMap<u64, CoverageTex>,
 
     // Eviction stats
     frame_index: u64,
@@ -323,6 +337,10 @@ struct Pipelines {
     text_mask: wgpu::RenderPipeline,
     text_color: wgpu::RenderPipeline,
     image_rgba: wgpu::RenderPipeline,
+    /// Tinted A8 coverage composite (`coverage.wgsl`): same vertex
+    /// attributes and bind groups as the text/color path, sampling a
+    /// single-channel tile registered with `register_coverage_a8`.
+    coverage: wgpu::RenderPipeline,
     image_nv12: wgpu::RenderPipeline,
     blur: wgpu::RenderPipeline,
     blur_content: wgpu::RenderPipeline,
@@ -341,6 +359,10 @@ struct Pipelines {
     mesh_clip_inc: wgpu::RenderPipeline,
     /// Stencil decrement for vector clips.
     mesh_clip_dec: wgpu::RenderPipeline,
+    /// Projective layer composite (perspective flattening): samples a
+    /// graphics-layer texture through a 2D projective map. Drawn with a
+    /// `ProjectiveInstance` from `projective_ring`.
+    projective_layer: wgpu::RenderPipeline,
 }
 
 impl Pipelines {
@@ -654,7 +676,7 @@ impl Pipelines {
             vertex: wgpu::VertexState {
                 module: &text_color_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[Some(glyph_vertex)],
+                buffers: &[Some(glyph_vertex.clone())],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -675,6 +697,39 @@ impl Pipelines {
         });
         // image_rgba reuses the text color pipeline (same vertex/bindings).
         let image_rgba = text_color.clone();
+
+        // Tinted A8 coverage composite. Same vertex attributes (GlyphInstance)
+        // and bind groups (globals + texture/sampler) as the text color path,
+        // sampling R8 tiles uploaded via `register_coverage_a8`.
+        let coverage_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("coverage.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shaders/coverage.wgsl"))),
+        });
+        let coverage = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("coverage pipeline (tinted a8)"),
+            layout: Some(&text_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &coverage_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Some(glyph_vertex.clone())],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &coverage_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(stencil_for_content.clone()),
+            multisample: msaa_state,
+            multiview_mask: None,
+            cache: None,
+        });
 
         // Blur composite pipeline (graphics-layer drop shadow)
         let blur_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1054,6 +1109,89 @@ impl Pipelines {
             clip_color_target,
         );
 
+        // Projective layer composite (perspective flattening). Same
+        // bind groups as the text/image path (globals + layer texture), with
+        // per-instance projected corners. Like `image_rgba` it draws into the
+        // parent target, so it shares the content stencil state.
+        let projective_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("projective_layer.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                "shaders/projective_layer.wgsl"
+            ))),
+        });
+        let projective_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("projective layer pipeline layout"),
+                bind_group_layouts: &[Some(globals_layout), Some(text_bind_layout)],
+                immediate_size: 0,
+            });
+        let projective_vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<ProjectiveInstance>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    shader_location: 0,
+                    offset: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 1,
+                    offset: 8,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 2,
+                    offset: 16,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 3,
+                    offset: 24,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 4,
+                    offset: 32,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 5,
+                    offset: 48,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    shader_location: 6,
+                    offset: 64,
+                    format: wgpu::VertexFormat::Float32,
+                },
+            ],
+        };
+        let projective_layer = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("projective layer composite pipeline"),
+            layout: Some(&projective_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &projective_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Some(projective_vertex_layout)],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &projective_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(stencil_for_content.clone()),
+            multisample: msaa_state,
+            multiview_mask: None,
+            cache: None,
+        });
+
         Self {
             rects,
             borders,
@@ -1064,6 +1202,7 @@ impl Pipelines {
             text_color,
             image_rgba,
             image_nv12,
+            coverage,
             blur,
             blur_content,
             clip_a2c,
@@ -1074,6 +1213,7 @@ impl Pipelines {
             mesh_overlay,
             mesh_clip_inc,
             mesh_clip_dec,
+            projective_layer,
         }
     }
 }
@@ -1088,6 +1228,29 @@ struct Pass {
     clear_color: Option<[f32; 4]>,
     cmds: Vec<Cmd>,
 }
+
+/// One translator-flattened perspective layer (see
+/// `push_perspective_layer`): the projective map and everything needed to
+/// restore the parent target on the matching pop.
+struct FlattenRecord {
+    /// `transform_stack.len()` before this flatten pushed its two entries
+    /// (stripped affine + layer-local shift).
+    stack_len: usize,
+    layer_id: u32,
+    /// Full projective map (row-major 3x3): affine ancestors over the
+    /// perspective node, in parent-target coordinates.
+    map: [f32; 9],
+    /// Layer rect in the parent target's coordinates.
+    layer_rect: repose_core::Rect,
+    saved_scissor: Vec<repose_core::Rect>,
+    saved_root: repose_core::Rect,
+    saved_size: (f32, f32),
+}
+
+/// First translator-owned flatten layer id. Producer ids start at 1 per
+/// scene, so this range never collides; ids are drained from the layer pool
+/// after each frame, so reuse across frames is safe.
+const FLATTEN_ID_BASE: u32 = 0xF000_0000;
 
 #[allow(non_snake_case)]
 enum Cmd {
@@ -1141,6 +1304,14 @@ enum Cmd {
         cnt: u32,
         handle: u64,
     },
+    /// Composite a tinted A8 coverage tile (`SceneNode::Coverage`). The
+    /// instance lives in `self.glyph_color.ring` (a `GlyphInstance`); the
+    /// bind comes from the coverage registry.
+    Coverage {
+        off: u64,
+        cnt: u32,
+        handle: u64,
+    },
     ImageNv12 {
         off: u64,
         cnt: u32,
@@ -1169,6 +1340,15 @@ enum Cmd {
         cnt: u32,
         layer_id: u32,
     },
+    /// Composite a flattened perspective layer through its projective map.
+    /// The instance lives in `self.projective_ring` (a `ProjectiveInstance`
+    /// with CPU-projected NDC corners); sampled from the layer's texture
+    /// with perspective-correct UVs by the `projective_layer` pipeline.
+    CompositeProjective {
+        off: u64,
+        cnt: u32,
+        layer_id: u32,
+    },
     /// Draw a tessellated vector mesh (solid or gradient paint).
     VectorMesh {
         voff: u64,
@@ -1186,6 +1366,9 @@ enum Cmd {
         uoff: u64,
     },
     /// Increment the stencil buffer with a tessellated vector mask.
+    /// `difference` marks an inverse (`\iclip`-style) mask: content draws
+    /// *outside* it. The counting still balances (push increments, pop
+    /// decrements); only the depth bookkeeping differs (see executor).
     VectorClipPush {
         voff: u64,
         vcnt: u32,
@@ -1193,6 +1376,7 @@ enum Cmd {
         icnt: u32,
         uoff: u64,
         scissor: (u32, u32, u32, u32),
+        difference: bool,
     },
     /// Decrement the stencil buffer with the matching vector mask.
     VectorClipPop {
@@ -1202,11 +1386,27 @@ enum Cmd {
         icnt: u32,
         uoff: u64,
         scissor: (u32, u32, u32, u32),
+        difference: bool,
     },
     Callback {
         rect: repose_core::Rect,
         payload: repose_core::PaintCallbackPayload,
     },
+}
+
+/// A registered A8 coverage tile: single-channel mask sampled as coverage
+/// by `SceneNode::Coverage`. Tiles are immutable; producers re-register on
+/// geometry change and `remove_coverage` stale handles (unused tiles also
+/// age out via the image eviction policy).
+struct CoverageTex {
+    // Held to keep the GPU texture alive (freed on remove/evict).
+    #[allow(dead_code)]
+    tex: wgpu::Texture,
+    bind: wgpu::BindGroup,
+    w: u32,
+    h: u32,
+    last_used_frame: u64,
+    bytes: u64,
 }
 
 enum ImageTex {
@@ -1352,6 +1552,24 @@ struct BlurInstance {
     color: [f32; 4],
     blur_uv: [f32; 2],
     fwd_mat: [f32; 4],
+}
+
+/// Projective layer-composite instance: the four layer-rect corners projected
+/// to NDC (`c0..c3`, counter-clockwise from top-left) with their homogeneous
+/// `w`, the layer-texture uv bounds, and a group alpha. Matches
+/// `projective_layer.wgsl` (offsets: c0@0 c1@8 c2@16 c3@24 uv@32 w@48
+/// alpha@64; stride 80).
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct ProjectiveInstance {
+    c0: [f32; 2],
+    c1: [f32; 2],
+    c2: [f32; 2],
+    c3: [f32; 2],
+    uv: [f32; 4],
+    w: [f32; 4],
+    alpha: f32,
+    _pad: [f32; 3],
 }
 
 /// CPU-computed Y′CbCr -> R′G′B′ transform uploaded as a uniform buffer.
@@ -1570,13 +1788,19 @@ impl WgpuSceneRenderer {
             depth_compare: Some(wgpu::CompareFunction::Always),
             stencil: wgpu::StencilState {
                 front: wgpu::StencilFaceState {
-                    compare: wgpu::CompareFunction::LessEqual,
+                    // Equal (not LessEqual): inverse (`Difference`) vector
+                    // masks work by keeping the depth while incrementing the
+                    // masked pixels, so content must test exact equality.
+                    // Outcomes match LessEqual everywhere except pre-existing
+                    // stencil leaks, which now fail visibly instead of
+                    // drawing through (unbalanced clips already warn).
+                    compare: wgpu::CompareFunction::Equal,
                     fail_op: wgpu::StencilOperation::Keep,
                     depth_fail_op: wgpu::StencilOperation::Keep,
                     pass_op: wgpu::StencilOperation::Keep,
                 },
                 back: wgpu::StencilFaceState {
-                    compare: wgpu::CompareFunction::LessEqual,
+                    compare: wgpu::CompareFunction::Equal,
                     fail_op: wgpu::StencilOperation::Keep,
                     depth_fail_op: wgpu::StencilOperation::Keep,
                     pass_op: wgpu::StencilOperation::Keep,
@@ -1917,6 +2141,12 @@ impl WgpuSceneRenderer {
             1 << 16,
             wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         );
+        let ring_projective = UploadRing::new(
+            &device,
+            "ring projective",
+            1 << 16,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        );
         let ring_nv12 = UploadRing::new(
             &device,
             "ring nv12",
@@ -1999,6 +2229,9 @@ impl WgpuSceneRenderer {
             mesh_uniform_head: 0,
             mesh_clip_stack: Vec::new(),
 
+            projective_ring: ring_projective,
+            flatten_layer_ids: Vec::new(),
+
             msaa_samples,
             depth_stencil_tex,
             depth_stencil_view,
@@ -2013,6 +2246,9 @@ impl WgpuSceneRenderer {
             next_image_handle: 1,
             images: HashMap::new(),
             retained: HashMap::new(),
+
+            next_coverage_handle: 1,
+            coverages: HashMap::new(),
 
             frame_index: 0,
             image_bytes_total: 0,
@@ -3316,6 +3552,102 @@ impl WgpuSceneRenderer {
         handle
     }
 
+    /// Register an 8-bit coverage tile (`w * h` bytes, 0 = empty, 255 =
+    /// fully covered) for `SceneNode::Coverage`, returning its handle.
+    /// Coverage tiles are immutable: re-register on geometry change and
+    /// `remove_coverage` handles you no longer emit (stale tiles also age
+    /// out under the image eviction policy).
+    pub fn register_coverage_a8(&mut self, w: u32, h: u32, coverage: &[u8]) -> u64 {
+        let expected = (w as usize) * (h as usize);
+        if coverage.len() < expected || w == 0 || h == 0 {
+            log::error!("Coverage buffer too small: {} < {expected}", coverage.len());
+            return 0;
+        }
+        let handle = self.next_coverage_handle;
+        self.next_coverage_handle += 1;
+
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("coverage tile a8"),
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("coverage bind a8"),
+            layout: &self.image_bind_layout_rgba,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.image_sampler),
+                },
+            ],
+        });
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &coverage[..expected],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(w),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+        let bytes = (w as u64) * (h as u64);
+        self.image_bytes_total += bytes;
+        self.coverages.insert(
+            handle,
+            CoverageTex {
+                tex,
+                bind,
+                w,
+                h,
+                last_used_frame: self.frame_index,
+                bytes,
+            },
+        );
+        self.evict_budget_excess();
+        handle
+    }
+
+    /// Remove a coverage tile registered with [`register_coverage_a8`](Self::register_coverage_a8).
+    pub fn remove_coverage(&mut self, handle: u64) {
+        if let Some(tile) = self.coverages.remove(&handle) {
+            self.image_bytes_total = self.image_bytes_total.saturating_sub(tile.bytes);
+        }
+    }
+
+    /// Tile dimensions, marking the handle used (keeps it alive under the
+    /// eviction policy). Returns `None` for unknown handles.
+    pub fn coverage_dimensions(&mut self, handle: u64) -> Option<(u32, u32)> {
+        if let Some(tile) = self.coverages.get_mut(&handle) {
+            tile.last_used_frame = self.frame_index;
+            return Some((tile.w, tile.h));
+        }
+        None
+    }
+
     fn evict_unused_images(&mut self) {
         let now = self.frame_index;
         let evict_after = self.image_evict_after_frames;
@@ -3345,6 +3677,17 @@ impl WgpuSceneRenderer {
             } else {
                 self.remove_image(h);
             }
+        }
+
+        // Coverage tiles have no retained CPU copies: age-out removes them.
+        let mut stale = Vec::new();
+        for (h, t) in self.coverages.iter() {
+            if now.saturating_sub(t.last_used_frame) > evict_after {
+                stale.push(*h);
+            }
+        }
+        for h in stale {
+            self.remove_coverage(h);
         }
 
         self.evict_budget_excess();
@@ -4190,6 +4533,191 @@ impl RenderBackend for WgpuSurfaceBackend {
 }
 
 impl WgpuSceneRenderer {
+    /// Open a translator-owned flatten layer for a perspective `PushTransform`.
+    ///
+    /// True perspective cannot ride the affine instance fast path, so the
+    /// subtree renders flat into an offscreen layer and is composited back
+    /// projectively on the matching pop (CSS-style flattening). The layer
+    /// rect is the currently visible scissor in this target: content outside
+    /// it is invisible in the parent, so clipping it in the layer changes
+    /// nothing. Children keep the node's affine part on the stack (so
+    /// `combine` stays affine-only) plus a layer-local shift, exactly like
+    /// producer-owned blur layers — which is exact under rigid ancestors
+    /// (translations commute) and the documented layer contract otherwise.
+    #[allow(clippy::too_many_arguments)]
+    fn push_perspective_layer(
+        &mut self,
+        node: Transform,
+        top: Transform,
+        transform_stack: &mut Vec<Transform>,
+        scissor_stack: &mut Vec<repose_core::Rect>,
+        root_clip_rect: &mut repose_core::Rect,
+        current_target_size: &mut (f32, f32),
+        current_pass: &mut Pass,
+        passes: &mut Vec<Pass>,
+        target_stack: &mut Vec<PassTarget>,
+        flatten_stack: &mut Vec<FlattenRecord>,
+        id_head: &mut u32,
+        ids_used: &mut Vec<u32>,
+    ) {
+        // Full projective map: affine ancestors over the node's map.
+        // Ancestors are affine by construction (perspective always flattens
+        // at push, and only stripped affines reach the stack).
+        let map =
+            Transform::compose_projective(&top.projective_matrix(), &node.projective_matrix());
+        let scr = scissor_stack.last().copied().unwrap_or(*root_clip_rect);
+        let w = scr.w.ceil().max(1.0);
+        let h = scr.h.ceil().max(1.0);
+        let layer_rect = repose_core::Rect {
+            x: scr.x,
+            y: scr.y,
+            w,
+            h,
+        };
+        // Translator-owned ids live far above producer ids (which start at 1
+        // per scene) and are drained from the pool after each frame.
+        let layer_id = *id_head;
+        *id_head = id_head.wrapping_add(1);
+        ids_used.push(layer_id);
+
+        let stack_len = transform_stack.len();
+        // Children render with the ancestors' map only: the node's own
+        // affine part lives in `map` and applies once, at composite time.
+        // (Pushing the stripped affine here too would foreshorten twice.)
+        transform_stack.push(top);
+        transform_stack.push(Transform::translate(-layer_rect.x, -layer_rect.y));
+
+        let saved_scissor = std::mem::replace(
+            scissor_stack,
+            vec![repose_core::Rect {
+                x: 0.0,
+                y: 0.0,
+                w,
+                h,
+            }],
+        );
+        let saved_root = std::mem::replace(
+            root_clip_rect,
+            repose_core::Rect {
+                x: 0.0,
+                y: 0.0,
+                w,
+                h,
+            },
+        );
+        let saved_size = std::mem::replace(current_target_size, (w, h));
+        let prev_target = current_pass.target;
+        let saved = std::mem::replace(
+            current_pass,
+            Pass {
+                target: PassTarget::Layer(layer_id),
+                initial_scissor: (0, 0, w as u32, h as u32),
+                clear_color: Some([0.0, 0.0, 0.0, 0.0]),
+                cmds: Vec::new(),
+            },
+        );
+        passes.push(saved);
+        target_stack.push(prev_target);
+        self.get_or_create_layer(layer_id, w as u32, h as u32, layer_rect);
+        *current_target_size = (w, h);
+        flatten_stack.push(FlattenRecord {
+            stack_len,
+            layer_id,
+            map,
+            layer_rect,
+            saved_scissor,
+            saved_root,
+            saved_size,
+        });
+    }
+
+    /// Close a flatten layer: restore the parent target and composite the
+    /// layer texture through the recorded projective map.
+    #[allow(clippy::too_many_arguments)]
+    fn pop_perspective_layer(
+        &mut self,
+        rec: FlattenRecord,
+        scissor_stack: &mut Vec<repose_core::Rect>,
+        root_clip_rect: &mut repose_core::Rect,
+        current_target_size: &mut (f32, f32),
+        current_pass: &mut Pass,
+        passes: &mut Vec<Pass>,
+        target_stack: &mut Vec<PassTarget>,
+    ) {
+        *scissor_stack = rec.saved_scissor;
+        *root_clip_rect = rec.saved_root;
+        *current_target_size = rec.saved_size;
+        let saved = std::mem::replace(
+            current_pass,
+            Pass {
+                target: target_stack.pop().unwrap_or(PassTarget::Surface),
+                initial_scissor: (0, 0, self.output_width, self.output_height),
+                clear_color: None,
+                cmds: Vec::new(),
+            },
+        );
+        passes.push(saved);
+
+        // Project the layer-rect corners (parent space) to NDC in the
+        // resumed (parent) target, keeping each corner's homogeneous w for
+        // perspective-correct sampling.
+        let (tw, th) = rec.saved_size;
+        let r = rec.layer_rect;
+        let corners = [
+            (r.x, r.y),
+            (r.x + r.w, r.y),
+            (r.x + r.w, r.y + r.h),
+            (r.x, r.y + r.h),
+        ];
+        let mut ndc = [[0.0f32; 2]; 4];
+        let mut ws = [1.0f32; 4];
+        let mut all_behind = true;
+        for (i, (x, y)) in corners.iter().enumerate() {
+            let w_raw = rec.map[6] * x + rec.map[7] * y + rec.map[8];
+            let w = if w_raw.abs() < 1e-6 {
+                if w_raw < 0.0 { -1e-6 } else { 1e-6 }
+            } else {
+                w_raw
+            };
+            if w > 0.0 {
+                all_behind = false;
+            }
+            let px = (rec.map[0] * x + rec.map[1] * y + rec.map[2]) / w;
+            let py = (rec.map[3] * x + rec.map[4] * y + rec.map[5]) / w;
+            ndc[i] = [px / tw * 2.0 - 1.0, 1.0 - py / th * 2.0];
+            ws[i] = w;
+        }
+        if all_behind {
+            // Entire subtree behind the viewer: nothing to composite (the
+            // layer pass still ran, but its output is correctly discarded).
+            return;
+        }
+        let layer = self.layer_pool.get(&rec.layer_id).expect("flatten layer");
+        let uv_u1 = layer.rect_px.2 / layer.width.max(1) as f32;
+        let uv_v1 = layer.rect_px.3 / layer.height.max(1) as f32;
+        let inst = ProjectiveInstance {
+            c0: ndc[0],
+            c1: ndc[1],
+            c2: ndc[2],
+            c3: ndc[3],
+            uv: [0.0, 0.0, uv_u1, uv_v1],
+            w: ws,
+            alpha: 1.0,
+            _pad: [0.0; 3],
+        };
+        self.projective_ring.grow_to_fit(
+            &self.device,
+            std::mem::size_of::<ProjectiveInstance>() as u64,
+        );
+        let bytes = bytemuck::bytes_of(&inst);
+        let (off, _) = self.projective_ring.alloc_write(&self.queue, bytes);
+        current_pass.cmds.push(Cmd::CompositeProjective {
+            off,
+            cnt: 1,
+            layer_id: rec.layer_id,
+        });
+    }
+
     fn upload_mesh_geometry(&mut self, mesh: &repose_core::VectorMeshData) -> (u64, u32, u64, u32) {
         let verts: Vec<MeshVertex> = mesh
             .vertices
@@ -4376,12 +4904,11 @@ impl WgpuSceneRenderer {
 
         let mut passes: Vec<Pass> = Vec::with_capacity(1);
         let clear_color = clear_color_override.unwrap_or_else(|| {
-            [
-                scene.clear_color.0 as f64 / 255.0,
-                scene.clear_color.1 as f64 / 255.0,
-                scene.clear_color.2 as f64 / 255.0,
-                scene.clear_color.3 as f64 / 255.0,
-            ]
+            // Scene clear colors are sRGB bytes like every other `Color`;
+            // linearize so the sRGB target re-encodes them exactly (passing
+            // raw bytes double-encoded: (10,20,30) read back (56,79,96)).
+            let lin = scene.clear_color.to_linear();
+            [lin[0] as f64, lin[1] as f64, lin[2] as f64, lin[3] as f64]
         });
         let mut current_pass: Pass = Pass {
             target: PassTarget::Surface,
@@ -4500,9 +5027,19 @@ impl WgpuSceneRenderer {
         self.mesh_indices.reset();
         self.mesh_uniform_head = 0;
         self.mesh_clip_stack.clear();
+        self.projective_ring.reset();
+        // Translator-owned flatten layers are single-frame by construction:
+        // drop last frame's textures before translating (their composites
+        // were submitted last frame, so GPU-side refs are independent).
+        for id in self.flatten_layer_ids.drain(..) {
+            self.layer_pool.remove(&id);
+        }
         let mut batch = Batch::new();
         let mut slug_verts_local: Vec<slug::TessVertex> = Vec::new();
         let mut transform_stack: Vec<Transform> = vec![Transform::identity()];
+        let mut flatten_stack: Vec<FlattenRecord> = Vec::new();
+        let mut flatten_id_head: u32 = FLATTEN_ID_BASE;
+        let mut flatten_ids_used: Vec<u32> = Vec::new();
         let mut scissor_stack: Vec<repose_core::Rect> = Vec::with_capacity(8);
         // NOTE: Records the clip instance range + flags of each active rounded-rect clip
         // so PopClip can re-stamp the stencil with a decrement pass (mirroring
@@ -5158,6 +5695,48 @@ impl WgpuSceneRenderer {
                         }
                     }
                 }
+                SceneNode::Coverage {
+                    rect,
+                    handle,
+                    color,
+                } => {
+                    flush_batch!();
+                    // Unknown handles are skipped (same policy as images);
+                    // the lookup also marks the tile used for eviction.
+                    let Some((tile_w, tile_h)) = self.coverage_dimensions(*handle) else {
+                        log::warn!("Coverage handle {handle} not found");
+                        continue;
+                    };
+                    // The tile composites at its registered size; `rect`
+                    // positions its top-left.
+                    let draw_rect = repose_core::Rect {
+                        x: rect.x,
+                        y: rect.y,
+                        w: tile_w as f32,
+                        h: tile_h as f32,
+                    };
+                    let (ndc_center, fwd_mat) = rect_to_instance_ndc(
+                        draw_rect,
+                        current_transform,
+                        current_target_size.0,
+                        current_target_size.1,
+                    );
+                    let inst = GlyphInstance {
+                        xywh: ndc_center,
+                        uv: [0.0, 1.0, 1.0, 0.0],
+                        color: color.to_linear(),
+                        fwd_mat,
+                    };
+                    if let Some((off, _)) =
+                        self.glyph_color.upload(&self.device, &self.queue, &[inst])
+                    {
+                        current_pass.cmds.push(Cmd::Coverage {
+                            off,
+                            cnt: 1,
+                            handle: *handle,
+                        });
+                    }
+                }
                 SceneNode::PushClip { rect, radius, op } => {
                     flush_batch!(); // flush content before entering clip
 
@@ -5265,11 +5844,53 @@ impl WgpuSceneRenderer {
                 }
                 SceneNode::PushTransform { transform } => {
                     flush_batch!(); // flush before transform change
-                    let combined = current_transform.combine(transform);
-                    transform_stack.push(combined);
+                    if transform.has_perspective() {
+                        // True perspective cannot ride the affine fast path:
+                        // flatten the subtree into an offscreen layer and
+                        // composite it back projectively (CSS-style). See
+                        // `push_perspective_layer`.
+                        let top = *transform_stack.last().unwrap_or(&t_identity);
+                        self.push_perspective_layer(
+                            *transform,
+                            top,
+                            &mut transform_stack,
+                            &mut scissor_stack,
+                            &mut root_clip_rect,
+                            &mut current_target_size,
+                            &mut current_pass,
+                            &mut passes,
+                            &mut target_stack,
+                            &mut flatten_stack,
+                            &mut flatten_id_head,
+                            &mut flatten_ids_used,
+                        );
+                    } else {
+                        let combined = current_transform.combine(transform);
+                        transform_stack.push(combined);
+                    }
                 }
                 SceneNode::PopTransform => {
                     flush_batch!(); // flush before transform change
+                    if let Some(rec) = flatten_stack.last() {
+                        // A flatten level closes when the stack is back to the
+                        // two entries this flatten pushed (stripped transform +
+                        // layer-local shift); deeper plain pushes close first.
+                        if transform_stack.len() == rec.stack_len + 2 {
+                            let rec = flatten_stack.pop().expect("checked above");
+                            transform_stack.pop();
+                            transform_stack.pop();
+                            self.pop_perspective_layer(
+                                rec,
+                                &mut scissor_stack,
+                                &mut root_clip_rect,
+                                &mut current_target_size,
+                                &mut current_pass,
+                                &mut passes,
+                                &mut target_stack,
+                            );
+                            continue;
+                        }
+                    }
                     transform_stack.pop();
                 }
                 SceneNode::BeginLayer {
@@ -5494,15 +6115,23 @@ impl WgpuSceneRenderer {
                         });
                     }
                 }
-                SceneNode::PushVectorClip { mesh } => {
+                SceneNode::PushVectorClip { mesh, op } => {
                     flush_batch!();
+                    let difference = matches!(op, repose_core::ClipOp::Difference);
                     let t_identity = Transform::identity();
                     let current_transform = transform_stack.last().unwrap_or(&t_identity);
                     let affine =
                         combine_mesh_affine(current_transform, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
                     let aabb = mesh_aabb(mesh, affine);
                     let top = scissor_stack.last().copied().unwrap_or(root_clip_rect);
-                    let next = intersect(top, aabb);
+                    // An intersect mask can only remove pixels, so the scissor
+                    // tightens; a difference mask removes the *inside*, so the
+                    // scissor stays (content outside the mask must still draw).
+                    let next = if difference {
+                        top
+                    } else {
+                        intersect(top, aabb)
+                    };
                     scissor_stack.push(next);
                     let scissor = to_scissor(
                         &next,
@@ -5521,8 +6150,10 @@ impl WgpuSceneRenderer {
                         icnt,
                         uoff,
                         scissor,
+                        difference,
                     });
-                    self.mesh_clip_stack.push((voff, vcnt, ioff, icnt, uoff));
+                    self.mesh_clip_stack
+                        .push((voff, vcnt, ioff, icnt, uoff, difference));
                 }
                 SceneNode::PopVectorClip => {
                     flush_batch!();
@@ -5531,7 +6162,9 @@ impl WgpuSceneRenderer {
                     } else {
                         log::warn!("PopVectorClip with empty scissor stack");
                     }
-                    if let Some((voff, vcnt, ioff, icnt, uoff)) = self.mesh_clip_stack.pop() {
+                    if let Some((voff, vcnt, ioff, icnt, uoff, difference)) =
+                        self.mesh_clip_stack.pop()
+                    {
                         let top = scissor_stack.last().copied().unwrap_or(root_clip_rect);
                         let scissor = to_scissor(
                             &top,
@@ -5545,6 +6178,7 @@ impl WgpuSceneRenderer {
                             icnt,
                             uoff,
                             scissor,
+                            difference,
                         });
                     } else {
                         log::warn!("PopVectorClip with empty clip stack");
@@ -5909,6 +6543,22 @@ impl WgpuSceneRenderer {
                             );
                         }
                     }
+                    Cmd::Coverage {
+                        off,
+                        cnt: n,
+                        handle,
+                    } => {
+                        if let Some(tile) = self.coverages.get(&handle) {
+                            draw_with_bind!(
+                                &pipes.coverage,
+                                self.glyph_color.ring,
+                                GlyphInstance,
+                                &tile.bind,
+                                off,
+                                n
+                            );
+                        }
+                    }
 
                     Cmd::ImageNv12 {
                         off,
@@ -5993,6 +6643,25 @@ impl WgpuSceneRenderer {
                             );
                         }
                     }
+                    Cmd::CompositeProjective {
+                        off,
+                        cnt: n,
+                        layer_id,
+                    } => {
+                        if let Some(lt) = self.layer_pool.get(&layer_id).cloned() {
+                            // The layer texture is sampled with the rgba
+                            // (non-linear-filter) binding, like the sharp
+                            // composite path.
+                            draw_with_bind!(
+                                &pipes.projective_layer,
+                                self.projective_ring,
+                                ProjectiveInstance,
+                                &lt.bind,
+                                off,
+                                n
+                            );
+                        }
+                    }
 
                     Cmd::VectorMesh {
                         voff,
@@ -6021,14 +6690,21 @@ impl WgpuSceneRenderer {
                         icnt,
                         uoff,
                         scissor,
+                        difference,
                     } => {
                         let scissor =
                             clamp_scissor(scissor.0, scissor.1, scissor.2, scissor.3, tw, th);
                         rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                         rpass.set_stencil_reference(clip_depth);
                         draw_indexed_mesh!(&pipes.mesh_clip_inc, uoff, voff, vcnt, ioff, icnt);
-                        clip_depth = (clip_depth + 1).min(255);
-                        rpass.set_stencil_reference(clip_depth);
+                        if !difference {
+                            clip_depth = (clip_depth + 1).min(255);
+                            rpass.set_stencil_reference(clip_depth);
+                        }
+                        // Difference masks increment without bumping the depth:
+                        // content keeps testing `Equal(depth)`, which now fails
+                        // exactly inside the mask. Exact for a lone mask and
+                        // for a mask inside intersect clips.
                     }
 
                     Cmd::VectorClipPop {
@@ -6038,16 +6714,25 @@ impl WgpuSceneRenderer {
                         icnt,
                         uoff,
                         scissor,
+                        difference,
                     } => {
                         // Decrement the mask while the stencil reference is
                         // still at the depth it was incremented to, so the
                         // equal-compare fires; then step the clip depth down.
-                        rpass.set_stencil_reference(clip_depth);
+                        // A difference mask incremented *above* the depth, so
+                        // test depth+1 and leave the depth unchanged.
+                        if difference {
+                            rpass.set_stencil_reference((clip_depth + 1).min(255));
+                        } else {
+                            rpass.set_stencil_reference(clip_depth);
+                        }
                         let scissor =
                             clamp_scissor(scissor.0, scissor.1, scissor.2, scissor.3, tw, th);
                         rpass.set_scissor_rect(scissor.0, scissor.1, scissor.2, scissor.3);
                         draw_indexed_mesh!(&pipes.mesh_clip_dec, uoff, voff, vcnt, ioff, icnt);
-                        clip_depth = clip_depth.saturating_sub(1);
+                        if !difference {
+                            clip_depth = clip_depth.saturating_sub(1);
+                        }
                         rpass.set_stencil_reference(clip_depth);
                     }
 
@@ -6083,6 +6768,10 @@ impl WgpuSceneRenderer {
                 }
             }
         }
+
+        // Translator-owned flatten layers are single-frame: remember this
+        // frame's ids so the next translation drains their textures.
+        self.flatten_layer_ids = flatten_ids_used;
 
         // Display pass: linear working space -> sRGB OETF -> swapchain
         if self.working_space

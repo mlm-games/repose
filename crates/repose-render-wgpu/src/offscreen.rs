@@ -60,6 +60,21 @@ pub fn clear_shared_device() {
     }
 }
 
+/// Headless scene renderer: renders a [`Scene`] into CPU-readable RGBA8.
+///
+/// # Contracts
+///
+/// - Output is `width * height * 4` bytes, row-major, **premultiplied-alpha
+///   sRGB** (`Rgba8UnormSrgb`): opaque content reads back exact sRGB bytes;
+///   translucent pixels carry `rgb * a` (divide by `a` for straight alpha).
+/// - `clear = None` fills with `scene.clear_color`; `Some(c)` overrides it
+///   with linear-space `[r, g, b, a]` doubles.
+/// - All sizes clamp to a minimum of 1 (no zero-sized textures/buffers).
+/// - `render_rgba` blocks until the GPU work completes and the pixels are
+///   mapped; it is safe to call every frame (no per-frame allocations
+///   beyond the returned `Vec`).
+/// - Without a usable GPU adapter, [`new`](Self::new)/[`new_blocking`](Self::new_blocking)
+///   fail with an error (never a panic, never silent fallback).
 pub struct OffscreenRenderer {
     renderer: WgpuSceneRenderer,
     texture: wgpu::Texture,
@@ -71,6 +86,9 @@ pub struct OffscreenRenderer {
 }
 
 impl OffscreenRenderer {
+    /// Create a renderer for `width`x`height` frames with `msaa` samples
+    /// (clamped to what the adapter supports via `pick_surface_msaa`).
+    /// Dimensions clamp to ≥ 1. Errors when no GPU adapter is available.
     pub async fn new(width: u32, height: u32, msaa: u32) -> Result<Self> {
         let width = width.max(1);
         let height = height.max(1);
@@ -104,11 +122,16 @@ impl OffscreenRenderer {
         Self::from_renderer(renderer, width, height)
     }
 
+    /// Blocking [`new`](Self::new). Must not run on the wasm main thread
+    /// without block support (debug-asserted); use `render_rgba_async` there.
     pub fn new_blocking(width: u32, height: u32, msaa: u32) -> Result<Self> {
         pollster::block_on(Self::new(width, height, msaa))
     }
 
-    /// Shared-device: reuse Device/Queue, no Adapter.
+    /// Shared-device: reuse Device/Queue, no Adapter. Dimensions clamp to
+    /// ≥ 1; `msaa` clamps to ≥ 1 (no adapter-based picking without one —
+    /// prefer [`from_device_with_adapter`](Self::from_device_with_adapter)
+    /// when an adapter is handy).
     pub fn from_device(
         device: wgpu::Device,
         queue: wgpu::Queue,
@@ -123,6 +146,8 @@ impl OffscreenRenderer {
         Self::from_renderer(renderer, width, height)
     }
 
+    /// Shared-device with adapter-based MSAA picking. Dimensions clamp to
+    /// ≥ 1.
     pub fn from_device_with_adapter(
         device: wgpu::Device,
         queue: wgpu::Queue,
@@ -139,7 +164,11 @@ impl OffscreenRenderer {
         Self::from_renderer(renderer, width, height)
     }
 
+    /// Wrap an existing scene renderer with a fresh target + readback
+    /// buffer. Dimensions clamp to ≥ 1.
     pub fn from_renderer(mut renderer: WgpuSceneRenderer, width: u32, height: u32) -> Result<Self> {
+        let width = width.max(1);
+        let height = height.max(1);
         renderer.resize(width, height);
         let texture = renderer.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("repose-offscreen-tex"),
@@ -210,6 +239,10 @@ impl OffscreenRenderer {
         encoder.finish()
     }
 
+    /// Render `scene` and read back `width * height * 4` premultiplied sRGB
+    /// bytes (see the [struct contracts](Self)). `clear = None` uses
+    /// `scene.clear_color`; an empty scene therefore reads back the clear
+    /// color exactly. Blocks until mapping completes.
     pub fn render_rgba(&mut self, scene: &Scene, clear: Option<[f64; 4]>) -> Result<Vec<u8>> {
         // Blocking map on the wasm main thread (Window) can never complete..
         #[cfg(all(target_family = "wasm", target_os = "unknown"))]
@@ -275,6 +308,19 @@ impl OffscreenRenderer {
         &self.renderer
     }
 
+    /// Current target width in pixels.
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    /// Current target height in pixels.
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// Resize the target + readback buffer. A no-op when the size already
+    /// matches (no reallocation). Dimensions clamp to ≥ 1. After this,
+    /// `render_rgba` returns `width * height * 4` bytes at the new size.
     pub fn ensure_size(&mut self, width: u32, height: u32) -> Result<()> {
         let width = width.max(1);
         let height = height.max(1);
