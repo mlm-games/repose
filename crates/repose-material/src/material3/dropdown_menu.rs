@@ -116,10 +116,16 @@ impl MenuState {
         self.visible.get()
     }
 
+    /// Open anchored to the trigger element's measured rect.
     pub fn open(&self) {
+        self.anchor.set(None);
         self.visible.set(true);
     }
 
+    /// Open anchored at an explicit window-space position in Dp
+    /// (e.g. a cursor position: `px_to_dp` the event's
+    /// `position_in_window()` first, since pointer positions are physical
+    /// pixels). Takes precedence over the trigger rect while set.
     pub fn open_at(&self, screen_pos: Vec2) {
         self.anchor.set(Some(screen_pos));
         self.visible.set(true);
@@ -200,6 +206,13 @@ pub fn DropdownMenu(
     let progress = *anim.borrow().get();
     let menu_visible = state.is_open() || progress > 0.01;
 
+    // Explicit cursor anchor (window-space Dp via `open_at`) wins over the
+    // trigger rect. Read here so the composition subscribes to it — the
+    // trigger rect below is a plain RefCell filled by layout callbacks and
+    // is stale for exactly the first frame after the trigger moves, which
+    // used to park context menus at the wrong spot.
+    let explicit_anchor = state.anchor.get();
+
     if menu_visible {
         if overlay_guard.borrow().is_none() {
             let anim = anim.clone();
@@ -217,7 +230,15 @@ pub fn DropdownMenu(
                     let scale = DDM_SCALE_FROM + (1.0 - DDM_SCALE_FROM) * p;
                     let alpha = p;
 
-                    let rect = *trigger_rect.borrow();
+                    let rect = explicit_anchor
+                        .map(|pos| Rect {
+                            x: pos.x,
+                            y: pos.y,
+                            w: 1.0,
+                            h: 1.0,
+                        })
+                        .unwrap_or(*trigger_rect.borrow());
+                    let win_w = get_window_container_width();
                     let win_h = get_window_container_height();
                     let hm = config.vertical_margin.0;
 
@@ -236,7 +257,11 @@ pub fn DropdownMenu(
                     })
                     .max(48.0);
 
-                    let popup_x = rect.x + config.offset_x.0;
+                    // Keep the card on-screen horizontally (cursor menus near
+                    // the right edge used to overflow off-window).
+                    let menu_w = config.max_width.0.max(config.min_width.0).max(1.0);
+                    let popup_x = (rect.x + config.offset_x.0)
+                        .clamp(hm, (win_w - hm - menu_w).max(hm));
                     let constrained_width = config.max_width;
 
                     let mut adjusted_config = config.clone();
