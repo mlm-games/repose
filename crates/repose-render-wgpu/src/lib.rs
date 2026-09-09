@@ -450,7 +450,7 @@ impl Pipelines {
             wgpu::VertexAttribute {
                 shader_location: 7,
                 offset: 96,
-                format: wgpu::VertexFormat::Float32x2,
+                format: wgpu::VertexFormat::Float32x4,
             },
         ];
         let border_attrs: &[wgpu::VertexAttribute] = &[
@@ -477,7 +477,7 @@ impl Pipelines {
             wgpu::VertexAttribute {
                 shader_location: 4,
                 offset: 52,
-                format: wgpu::VertexFormat::Float32x2,
+                format: wgpu::VertexFormat::Float32x4,
             },
         ];
         let ellipse_attrs: &[wgpu::VertexAttribute] = &[
@@ -494,7 +494,7 @@ impl Pipelines {
             wgpu::VertexAttribute {
                 shader_location: 2,
                 offset: 32,
-                format: wgpu::VertexFormat::Float32x2,
+                format: wgpu::VertexFormat::Float32x4,
             },
         ];
         let ellipse_border_attrs: &[wgpu::VertexAttribute] = &[
@@ -521,7 +521,7 @@ impl Pipelines {
             wgpu::VertexAttribute {
                 shader_location: 4,
                 offset: 40,
-                format: wgpu::VertexFormat::Float32x2,
+                format: wgpu::VertexFormat::Float32x4,
             },
         ];
 
@@ -569,11 +569,11 @@ impl Pipelines {
             wgpu::VertexAttribute {
                 shader_location: 6,
                 offset: 48,
-                format: wgpu::VertexFormat::Float32x2,
+                format: wgpu::VertexFormat::Float32x4,
             },
             wgpu::VertexAttribute {
                 shader_location: 7,
-                offset: 56,
+                offset: 64,
                 format: wgpu::VertexFormat::Float32,
             },
         ];
@@ -619,7 +619,7 @@ impl Pipelines {
                 wgpu::VertexAttribute {
                     shader_location: 3,
                     offset: 48,
-                    format: wgpu::VertexFormat::Float32x2,
+                    format: wgpu::VertexFormat::Float32x4,
                 },
             ],
         };
@@ -721,7 +721,7 @@ impl Pipelines {
                         wgpu::VertexAttribute {
                             shader_location: 4,
                             offset: 56,
-                            format: wgpu::VertexFormat::Float32x2,
+                            format: wgpu::VertexFormat::Float32x4,
                         },
                     ],
                 })],
@@ -784,7 +784,7 @@ impl Pipelines {
                         wgpu::VertexAttribute {
                             shader_location: 4,
                             offset: 56,
-                            format: wgpu::VertexFormat::Float32x2,
+                            format: wgpu::VertexFormat::Float32x4,
                         },
                     ],
                 })],
@@ -852,7 +852,7 @@ impl Pipelines {
                         wgpu::VertexAttribute {
                             shader_location: 4,
                             offset: 52,
-                            format: wgpu::VertexFormat::Float32x2,
+                            format: wgpu::VertexFormat::Float32x4,
                         },
                     ],
                 })],
@@ -1291,7 +1291,7 @@ struct RectInstance {
     color1: [f32; 4],
     grad_start: [f32; 2],
     grad_end: [f32; 2],
-    sin_cos: [f32; 2],
+    fwd_mat: [f32; 4],
 }
 
 #[repr(C)]
@@ -1301,7 +1301,7 @@ struct BorderInstance {
     radii: [f32; 4],
     stroke: f32,
     color: [f32; 4],
-    sin_cos: [f32; 2],
+    fwd_mat: [f32; 4],
 }
 
 #[repr(C)]
@@ -1309,7 +1309,7 @@ struct BorderInstance {
 struct EllipseInstance {
     xywh: [f32; 4],
     color: [f32; 4],
-    sin_cos: [f32; 2],
+    fwd_mat: [f32; 4],
 }
 
 #[repr(C)]
@@ -1319,7 +1319,7 @@ struct EllipseBorderInstance {
     stroke: f32,
     pad: f32,
     color: [f32; 4],
-    sin_cos: [f32; 2],
+    fwd_mat: [f32; 4],
 }
 
 #[repr(C)]
@@ -1331,7 +1331,7 @@ struct ArcInstance {
     stroke: f32,
     pad: f32,
     color: [f32; 4],
-    sin_cos: [f32; 2],
+    fwd_mat: [f32; 4],
     cap: f32, // 0=Butt, 1=Round, 2=Square
 }
 
@@ -1341,7 +1341,7 @@ struct GlyphInstance {
     xywh: [f32; 4],
     uv: [f32; 4],
     color: [f32; 4],
-    sin_cos: [f32; 2],
+    fwd_mat: [f32; 4],
 }
 
 #[repr(C)]
@@ -1351,7 +1351,7 @@ struct BlurInstance {
     uv: [f32; 4],
     color: [f32; 4],
     blur_uv: [f32; 2],
-    sin_cos: [f32; 2],
+    fwd_mat: [f32; 4],
 }
 
 /// CPU-computed Y′CbCr -> R′G′B′ transform uploaded as a uniform buffer.
@@ -1372,7 +1372,7 @@ struct Nv12Instance {
     uv: [f32; 4],
     color: [f32; 4], // tint
     uv_x_offset: f32,
-    sin_cos: [f32; 2],
+    fwd_mat: [f32; 4],
     _pad: [f32; 1],
 }
 
@@ -1381,7 +1381,7 @@ struct Nv12Instance {
 struct ClipInstance {
     xywh: [f32; 4],
     radii: [f32; 4],
-    sin_cos: [f32; 2],
+    fwd_mat: [f32; 4],
 }
 
 #[repr(C)]
@@ -1458,14 +1458,8 @@ fn mesh_uniform_from_paint(affine: [f32; 6], paint: &repose_core::PaintDesc) -> 
 }
 
 fn combine_mesh_affine(current: &Transform, mesh: [f32; 6]) -> [f32; 6] {
-    let cos_a = current.rotate.cos();
-    let sin_a = current.rotate.sin();
-    // current transform linear part: [[sx*cos, -sy*sin],[sx*sin, sy*cos]]
-    let cm00 = current.scale_x * cos_a;
-    let cm01 = -current.scale_y * sin_a;
-    let cm10 = current.scale_x * sin_a;
-    let cm11 = current.scale_y * cos_a;
-    // mesh affine: out = [[mm00, mm01],[mm10, mm11]] * local + (mtx, mty)
+    let cm = current.linear();
+    let (cm00, cm01, cm10, cm11) = (cm[0], cm[1], cm[2], cm[3]);
     let mm00 = mesh[0];
     let mm01 = mesh[1];
     let mm10 = mesh[2];
@@ -1777,7 +1771,7 @@ impl WgpuSceneRenderer {
                 wgpu::VertexAttribute {
                     shader_location: 2,
                     offset: 32,
-                    format: wgpu::VertexFormat::Float32x2,
+                    format: wgpu::VertexFormat::Float32x4,
                 },
             ],
         };
@@ -3309,6 +3303,19 @@ impl WgpuSceneRenderer {
         handle
     }
 
+    /// Register raw RGBA8 pixels (`w * h * 4` bytes) as an image, returning
+    /// its handle for `SceneNode::Image`. Used by CPU-rasterized overlays
+    /// (e.g. subtitle bitmap layers) that have no encoded image bytes.
+    /// Pass `srgb = true` for sRGB overlays composited over video.
+    pub fn register_image_rgba8(&mut self, w: u32, h: u32, rgba: &[u8], srgb: bool) -> u64 {
+        let handle = self.next_image_handle;
+        self.next_image_handle += 1;
+        if let Err(e) = self.set_image_rgba8(handle, w, h, rgba, srgb) {
+            log::error!("Failed to register image: {e}");
+        }
+        handle
+    }
+
     fn evict_unused_images(&mut self) {
         let now = self.frame_index;
         let evict_after = self.image_evict_after_frames;
@@ -4279,31 +4286,44 @@ impl WgpuSceneRenderer {
             [min_x, min_y, w_ndc, h_ndc]
         }
 
-        /// Convert a local-space rect + transform to NDC center-based position+size and rotation.
+        /// Convert a local-space rect + transform to NDC center-based position+size
+        /// plus the forward rotation/shear 2x2 (row-major `[m00, m01, m10, m11]`,
+        /// scale-free: scale rides in the NDC size). Shaders apply it to quad
+        /// corners and its adjugate/determinant inverse to sample positions.
         fn rect_to_instance_ndc(
             rect: repose_core::Rect,
             transform: &Transform,
             fb_w: f32,
             fb_h: f32,
-        ) -> ([f32; 4], [f32; 2]) {
+        ) -> ([f32; 4], [f32; 4]) {
             let cx = rect.x + rect.w * 0.5;
             let cy = rect.y + rect.h * 0.5;
 
-            let sx = cx * transform.scale_x;
-            let sy = cy * transform.scale_y;
-            let cos_a = transform.rotate.cos();
-            let sin_a = transform.rotate.sin();
-            let tx = sx * cos_a - sy * sin_a + transform.translate_x;
-            let ty = sx * sin_a + sy * cos_a + transform.translate_y;
+            let m = transform.linear();
+            let tx = m[0] * cx + m[1] * cy + transform.translate_x;
+            let ty = m[2] * cx + m[3] * cy + transform.translate_y;
 
-            // NDC center
             let ndc_cx = (tx / fb_w) * 2.0 - 1.0;
             let ndc_cy = 1.0 - (ty / fb_h) * 2.0;
             // NDC size (after scale only, no rotation - rotation is done in shader)
             let ndc_w = (rect.w * transform.scale_x / fb_w) * 2.0;
             let ndc_h = (rect.h * transform.scale_y / fb_h) * 2.0;
 
-            ([ndc_cx, ndc_cy, ndc_w, ndc_h], [cos_a, sin_a])
+            ([ndc_cx, ndc_cy, ndc_w, ndc_h], forward_rs_mat(transform))
+        }
+
+        /// Forward rotation+shear 2x2 (row-major, scale-free) for instance
+        /// attributes. Identity for untransformed content; degenerate shear
+        /// (only from absurd inputs) falls back to identity.
+        fn forward_rs_mat(transform: &Transform) -> [f32; 4] {
+            let c = transform.rotate.cos();
+            let s = transform.rotate.sin();
+            let (hx, hy) = (transform.shear_x, transform.shear_y);
+            let m = [c - s * hy, c * hx - s, s + c * hy, s * hx + c];
+            if (m[0] * m[3] - m[1] * m[2]).abs() < 1e-6 {
+                return [1.0, 0.0, 0.0, 1.0];
+            }
+            m
         }
 
         fn to_scissor(r: &repose_core::Rect, fb_w: u32, fb_h: u32) -> (u32, u32, u32, u32) {
@@ -4508,7 +4528,7 @@ impl WgpuSceneRenderer {
                     radius,
                 } => {
                     flush_if_prim_changed!("rect", &self.rects);
-                    let (ndc, sin_cos) = rect_to_instance_ndc(
+                    let (ndc, fwd_mat) = rect_to_instance_ndc(
                         *rect,
                         current_transform,
                         current_target_size.0,
@@ -4525,7 +4545,7 @@ impl WgpuSceneRenderer {
                         color1,
                         grad_start,
                         grad_end,
-                        sin_cos,
+                        fwd_mat,
                     });
                 }
                 SceneNode::Border {
@@ -4535,7 +4555,7 @@ impl WgpuSceneRenderer {
                     radius,
                 } => {
                     flush_if_prim_changed!("border", &self.borders);
-                    let (ndc, sin_cos) = rect_to_instance_ndc(
+                    let (ndc, fwd_mat) = rect_to_instance_ndc(
                         *rect,
                         current_transform,
                         current_target_size.0,
@@ -4546,12 +4566,12 @@ impl WgpuSceneRenderer {
                         radii: radius.map(|r| r.0),
                         stroke: width.0,
                         color: color.to_linear(),
-                        sin_cos,
+                        fwd_mat,
                     });
                 }
                 SceneNode::Ellipse { rect, brush } => {
                     flush_if_prim_changed!("ellipse", &self.ellipses);
-                    let (ndc, sin_cos) = rect_to_instance_ndc(
+                    let (ndc, fwd_mat) = rect_to_instance_ndc(
                         *rect,
                         current_transform,
                         current_target_size.0,
@@ -4561,12 +4581,12 @@ impl WgpuSceneRenderer {
                     batch.ellipses.push(EllipseInstance {
                         xywh: ndc,
                         color,
-                        sin_cos,
+                        fwd_mat,
                     });
                 }
                 SceneNode::EllipseBorder { rect, color, width } => {
                     flush_if_prim_changed!("ellipse_border", &self.ellipse_borders);
-                    let (ndc, sin_cos) = rect_to_instance_ndc(
+                    let (ndc, fwd_mat) = rect_to_instance_ndc(
                         *rect,
                         current_transform,
                         current_target_size.0,
@@ -4579,7 +4599,7 @@ impl WgpuSceneRenderer {
                         stroke: width.0,
                         pad,
                         color: color.to_linear(),
-                        sin_cos,
+                        fwd_mat,
                     });
                 }
                 SceneNode::Arc {
@@ -4591,7 +4611,7 @@ impl WgpuSceneRenderer {
                     cap,
                 } => {
                     flush_if_prim_changed!("arc", &self.arcs);
-                    let (ndc, sin_cos) = rect_to_instance_ndc(
+                    let (ndc, fwd_mat) = rect_to_instance_ndc(
                         *rect,
                         current_transform,
                         current_target_size.0,
@@ -4611,7 +4631,7 @@ impl WgpuSceneRenderer {
                         stroke: stroke_width.0,
                         pad,
                         color: color.to_linear(),
-                        sin_cos,
+                        fwd_mat,
                         cap: cap_val,
                     });
                 }
@@ -4653,18 +4673,15 @@ impl WgpuSceneRenderer {
                     );
                     let baseline_y = shaped.first().map(|g| rect.y + g.y);
 
-                    let cos_a = current_transform.rotate.cos();
-                    let sin_a = current_transform.rotate.sin();
-                    let has_rotation = current_transform.rotate != 0.0;
+                    let fwd = forward_rs_mat(current_transform);
+                    let has_linear = fwd != [1.0, 0.0, 0.0, 1.0];
 
-                    // For rotated text, the pivot is the center of the text rect.
                     let pivot_x = rect.x + rect.w * 0.5;
                     let pivot_y = rect.y + rect.h * 0.5;
 
-                    // Helper: compute NDC for a glyph rect, handling rotation correctly.
                     let make_glyph_instance =
-                        |gx: f32, gy: f32, gw: f32, gh: f32| -> ([f32; 4], [f32; 2]) {
-                            if has_rotation {
+                        |gx: f32, gy: f32, gw: f32, gh: f32| -> ([f32; 4], [f32; 4]) {
+                            if has_linear {
                                 let corners =
                                     [(gx, gy), (gx + gw, gy), (gx + gw, gy + gh), (gx, gy + gh)];
                                 let mut min_x = f32::MAX;
@@ -4674,8 +4691,8 @@ impl WgpuSceneRenderer {
                                 for &(x, y) in &corners {
                                     let dx = x - pivot_x;
                                     let dy = y - pivot_y;
-                                    let rx = pivot_x + dx * cos_a - dy * sin_a;
-                                    let ry = pivot_y + dx * sin_a + dy * cos_a;
+                                    let rx = pivot_x + fwd[0] * dx + fwd[1] * dy;
+                                    let ry = pivot_y + fwd[2] * dx + fwd[3] * dy;
                                     min_x = min_x.min(rx);
                                     max_x = max_x.max(rx);
                                     min_y = min_y.min(ry);
@@ -4697,9 +4714,8 @@ impl WgpuSceneRenderer {
                                     ndc_tl[2],
                                     ndc_tl[3],
                                 ];
-                                (ndc, [cos_a, sin_a])
+                                (ndc, fwd)
                             } else {
-                                // Only safe at 1:1 scale (no zoom animations active).
                                 let (sx, sy) = if current_transform.scale_x == 1.0
                                     && current_transform.scale_y == 1.0
                                 {
@@ -4814,11 +4830,11 @@ impl WgpuSceneRenderer {
                                 let tty = current_transform.translate_y;
 
                                 let tf = |x: f32, y: f32| -> (f32, f32) {
-                                    if has_rotation {
+                                    if has_linear {
                                         let dx = x - pivot_x;
                                         let dy = y - pivot_y;
-                                        let rx = pivot_x + dx * cos_a - dy * sin_a;
-                                        let ry = pivot_y + dx * sin_a + dy * cos_a;
+                                        let rx = pivot_x + fwd[0] * dx + fwd[1] * dy;
+                                        let ry = pivot_y + fwd[2] * dx + fwd[3] * dy;
                                         (rx, ry)
                                     } else {
                                         (x * scx + ttx, y * scy + tty)
@@ -4862,22 +4878,21 @@ impl WgpuSceneRenderer {
                             continue;
                         }
 
-                        // Atlas fallback: color emoji + failed slug extraction
                         if let Some(info) = self.upload_glyph_color(sg.key, sg.px) {
-                            let (ndc, sin_cos) = make_glyph_instance(gx, gy, info.w, info.h);
+                            let (ndc, fwd_mat) = make_glyph_instance(gx, gy, info.w, info.h);
                             batch.colors.push(GlyphInstance {
                                 xywh: ndc,
                                 uv: [info.u0, info.v1, info.u1, info.v0],
                                 color: color.to_linear(),
-                                sin_cos,
+                                fwd_mat,
                             });
                         } else if let Some(info) = self.upload_glyph_mask(sg.key, sg.px) {
-                            let (ndc, sin_cos) = make_glyph_instance(gx, gy, info.w, info.h);
+                            let (ndc, fwd_mat) = make_glyph_instance(gx, gy, info.w, info.h);
                             batch.masks.push(GlyphInstance {
                                 xywh: ndc,
                                 uv: [info.u0, info.v1, info.u1, info.v0],
                                 color: color.to_linear(),
-                                sin_cos,
+                                fwd_mat,
                             });
                         }
                     }
@@ -4905,7 +4920,7 @@ impl WgpuSceneRenderer {
 
                         if text_decoration.underline {
                             let dy = baseline_y + px * 0.1;
-                            let (ndc, sin_cos) = rect_to_instance_ndc(
+                            let (ndc, fwd_mat) = rect_to_instance_ndc(
                                 repose_core::Rect {
                                     x: rect.x,
                                     y: dy,
@@ -4925,12 +4940,12 @@ impl WgpuSceneRenderer {
                                 color1: [0.0; 4],
                                 grad_start: [0.0; 2],
                                 grad_end: [0.0; 2],
-                                sin_cos,
+                                fwd_mat,
                             });
                         }
                         if text_decoration.strikethrough {
                             let sy = baseline_y - px * 0.3;
-                            let (ndc, sin_cos) = rect_to_instance_ndc(
+                            let (ndc, fwd_mat) = rect_to_instance_ndc(
                                 repose_core::Rect {
                                     x: rect.x,
                                     y: sy,
@@ -4950,7 +4965,7 @@ impl WgpuSceneRenderer {
                                 color1: [0.0; 4],
                                 grad_start: [0.0; 2],
                                 grad_end: [0.0; 2],
-                                sin_cos,
+                                fwd_mat,
                             });
                         }
                     }
@@ -5068,7 +5083,7 @@ impl WgpuSceneRenderer {
                         _ => continue,
                     };
 
-                    let (ndc_center, sin_cos) = rect_to_instance_ndc(
+                    let (ndc_center, fwd_mat) = rect_to_instance_ndc(
                         draw_rect,
                         current_transform,
                         current_target_size.0,
@@ -5092,7 +5107,7 @@ impl WgpuSceneRenderer {
                             uv: uv_rect,
                             color: tint.to_linear(),
                             uv_x_offset,
-                            sin_cos,
+                            fwd_mat,
                             _pad: [0.0],
                         };
                         if let Some((off, _)) = self.nv12.upload(&self.device, &self.queue, &[inst])
@@ -5109,7 +5124,7 @@ impl WgpuSceneRenderer {
                             xywh: ndc_center,
                             uv: uv_rect,
                             color: tint.to_linear(),
-                            sin_cos,
+                            fwd_mat,
                         };
                         if let Some((off, _)) =
                             self.glyph_color.upload(&self.device, &self.queue, &[inst])
@@ -5160,7 +5175,7 @@ impl WgpuSceneRenderer {
                             clip_ndc_tl[3],
                         ],
                         radii: radius.map(|r| r.0),
-                        sin_cos: [1.0, 0.0],
+                        fwd_mat: [1.0, 0.0, 0.0, 1.0],
                     };
                     let bytes = bytemuck::bytes_of(&inst);
                     self.clip_ring.grow_to_fit(&self.device, bytes.len() as u64);
@@ -5207,7 +5222,7 @@ impl WgpuSceneRenderer {
                     color,
                 } => {
                     flush_if_prim_changed!("rect", &self.rects);
-                    let (ndc, sin_cos) = rect_to_instance_ndc(
+                    let (ndc, fwd_mat) = rect_to_instance_ndc(
                         *rect,
                         current_transform,
                         current_target_size.0,
@@ -5224,7 +5239,7 @@ impl WgpuSceneRenderer {
                         color1: [0.0; 4],
                         grad_start: [0.0; 2],
                         grad_end: [0.0; 2],
-                        sin_cos,
+                        fwd_mat,
                     });
                 }
                 SceneNode::PushTransform { transform } => {
@@ -5340,7 +5355,7 @@ impl WgpuSceneRenderer {
                                 uv: [0.0, 0.0, uv_u1, uv_v1],
                                 color: [1.0, 1.0, 1.0, layer_alpha],
                                 blur_uv: [bw_uv, bh_uv],
-                                sin_cos: [1.0, 0.0],
+                                fwd_mat: [1.0, 0.0, 0.0, 1.0],
                             };
                             self.blur_ring.grow_to_fit(
                                 &self.device,
@@ -5364,7 +5379,7 @@ impl WgpuSceneRenderer {
                                 ],
                                 uv: [0.0, uv_v1, uv_u1, 0.0],
                                 color: [1.0, 1.0, 1.0, layer_alpha],
-                                sin_cos: [1.0, 0.0],
+                                fwd_mat: [1.0, 0.0, 0.0, 1.0],
                             };
                             if let Some((off, cnt)) =
                                 self.glyph_color.upload(&self.device, &self.queue, &[inst])
@@ -5413,7 +5428,7 @@ impl WgpuSceneRenderer {
                                 color.3 as f32 / 255.0,
                             ],
                             blur_uv: [bw_uv, bh_uv],
-                            sin_cos: [1.0, 0.0],
+                            fwd_mat: [1.0, 0.0, 0.0, 1.0],
                         };
                         self.blur_ring
                             .grow_to_fit(&self.device, std::mem::size_of::<BlurInstance>() as u64);

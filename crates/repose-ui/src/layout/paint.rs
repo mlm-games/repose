@@ -550,12 +550,9 @@ impl LayoutEngine {
             let mut adjusted = tf;
             let pivot_x = rect.x + rect.w * tf.origin_x;
             let pivot_y = rect.y + rect.h * tf.origin_y;
-            let cos_a = tf.rotate.cos();
-            let sin_a = tf.rotate.sin();
-            let sp_x = pivot_x * tf.scale_x;
-            let sp_y = pivot_y * tf.scale_y;
-            adjusted.translate_x += pivot_x - (sp_x * cos_a - sp_y * sin_a);
-            adjusted.translate_y += pivot_y - (sp_x * sin_a + sp_y * cos_a);
+            let lm = tf.linear();
+            adjusted.translate_x += pivot_x - (lm[0] * pivot_x + lm[1] * pivot_y);
+            adjusted.translate_y += pivot_y - (lm[2] * pivot_x + lm[3] * pivot_y);
             adjusted.origin_x = 0.0;
             adjusted.origin_y = 0.0;
             scene.nodes.push(SceneNode::PushTransform {
@@ -1826,6 +1823,8 @@ impl LayoutEngine {
                     scale_x: 1.0,
                     scale_y: 1.0,
                     rotate: 0.0,
+                    shear_x: 0.0,
+                    shear_y: 0.0,
                     origin_x: 0.5,
                     origin_y: 0.5,
                 },

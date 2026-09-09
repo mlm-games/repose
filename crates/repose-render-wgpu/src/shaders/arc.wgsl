@@ -12,20 +12,20 @@ struct VSOut {
     @location(3) sweep_angle: f32,
     @location(4) stroke_ndc: f32,
     @location(5) pos_ndc: vec2<f32>,
-    @location(6) sin_cos: vec2<f32>,
+    @location(6) fwd_mat: vec4<f32>,
     @location(7) @interpolate(flat) start_endpoint: vec2<f32>,
     @location(8) @interpolate(flat) end_endpoint: vec2<f32>,
     @location(9) @interpolate(flat) cap: f32,
 };
 
-fn ellipse_pt_at_angle(center: vec2<f32>, half: vec2<f32>, angle: f32, sc: vec2<f32>) -> vec2<f32> {
+fn ellipse_pt_at_angle(center: vec2<f32>, half: vec2<f32>, angle: f32, fwd: vec4<f32>) -> vec2<f32> {
     let c = cos(angle);
     let s = sin(angle);
     let denom = sqrt(half.y * half.y * c * c + half.x * half.x * s * s);
     let local = vec2(half.x * half.y * c / denom, -half.x * half.y * s / denom);
     return center + vec2(
-        local.x * sc.x - local.y * sc.y,
-        local.x * sc.y + local.y * sc.x
+        fwd.x * local.x + fwd.y * local.y,
+        fwd.z * local.x + fwd.w * local.y
     );
 }
 
@@ -37,7 +37,7 @@ fn vs_main(
     @location(3) stroke_ndc: f32,
     @location(4) pad: f32,
     @location(5) color: vec4<f32>,
-    @location(6) sin_cos: vec2<f32>,
+    @location(6) fwd_mat: vec4<f32>,
     @location(7) cap: f32,
     @builtin(vertex_index) v: u32
 ) -> VSOut {
@@ -50,7 +50,10 @@ fn vs_main(
     // Expand quad to accommodate the full stroke width + AA
     let quad_half = half + pad;
     let corner = (p * 2.0 - 1.0) * quad_half;
-    let rotated = vec2(corner.x * sin_cos.x - corner.y * sin_cos.y, corner.x * sin_cos.y + corner.y * sin_cos.x);
+    let rotated = vec2(
+        fwd_mat.x * corner.x + fwd_mat.y * corner.y,
+        fwd_mat.z * corner.x + fwd_mat.w * corner.y
+    );
     let pos_ndc = xywh.xy + rotated;
 
     let center = xywh.xy;
@@ -60,9 +63,8 @@ fn vs_main(
     let cap_offset = half_px / max(r_px, 1.0);
     let adjusted_start = start_angle + cap_offset;
 
-    // Compute points on the ellipse at polar angles matching local_angle's convention.
-    let start_endpoint = ellipse_pt_at_angle(center, half, adjusted_start, sin_cos);
-    let end_endpoint = ellipse_pt_at_angle(center, half, adjusted_start + sweep_angle, sin_cos);
+    let start_endpoint = ellipse_pt_at_angle(center, half, adjusted_start, fwd_mat);
+    let end_endpoint = ellipse_pt_at_angle(center, half, adjusted_start + sweep_angle, fwd_mat);
 
     var out: VSOut;
     out.pos = vec4(pos_ndc, 0.0, 1.0);
@@ -72,29 +74,33 @@ fn vs_main(
     out.stroke_ndc = stroke_ndc;
     out.color = color;
     out.pos_ndc = pos_ndc;
-    out.sin_cos = sin_cos;
+    out.fwd_mat = fwd_mat;
     out.start_endpoint = start_endpoint;
     out.end_endpoint = end_endpoint;
     out.cap = cap;
     return out;
 }
 
-fn sdf_ellipse(pos_ndc: vec2<f32>, xywh: vec4<f32>, sin_cos: vec2<f32>) -> f32 {
+fn sdf_ellipse(pos_ndc: vec2<f32>, xywh: vec4<f32>, fwd_mat: vec4<f32>) -> f32 {
     let center = xywh.xy;
+    let rel = pos_ndc - center;
+    let det = max(fwd_mat.x * fwd_mat.w - fwd_mat.y * fwd_mat.z, 1e-6);
     let unrotated = center + vec2(
-        (pos_ndc.x - center.x) * sin_cos.x + (pos_ndc.y - center.y) * sin_cos.y,
-        -(pos_ndc.x - center.x) * sin_cos.y + (pos_ndc.y - center.y) * sin_cos.x
+        (fwd_mat.w * rel.x - fwd_mat.y * rel.y) / det,
+        (-fwd_mat.z * rel.x + fwd_mat.x * rel.y) / det,
     );
     let radii = 0.5 * xywh.zw;
     let p = (unrotated - center) / radii;
     return length(p) - 1.0;
 }
 
-fn local_angle(pos_ndc: vec2<f32>, xywh: vec4<f32>, sin_cos: vec2<f32>) -> f32 {
+fn local_angle(pos_ndc: vec2<f32>, xywh: vec4<f32>, fwd_mat: vec4<f32>) -> f32 {
     let center = xywh.xy;
+    let rel = pos_ndc - center;
+    let det = max(fwd_mat.x * fwd_mat.w - fwd_mat.y * fwd_mat.z, 1e-6);
     let unrotated = center + vec2(
-        (pos_ndc.x - center.x) * sin_cos.x + (pos_ndc.y - center.y) * sin_cos.y,
-        -(pos_ndc.x - center.x) * sin_cos.y + (pos_ndc.y - center.y) * sin_cos.x
+        (fwd_mat.w * rel.x - fwd_mat.y * rel.y) / det,
+        (-fwd_mat.z * rel.x + fwd_mat.x * rel.y) / det,
     );
     let dx = unrotated.x - center.x;
     let dy = unrotated.y - center.y;
@@ -137,14 +143,14 @@ fn round_cap_coverage(pos_ndc: vec2<f32>, endpoint: vec2<f32>, half_px: f32) -> 
 
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
-    let d = sdf_ellipse(in.pos_ndc, in.xywh, in.sin_cos);
+    let d = sdf_ellipse(in.pos_ndc, in.xywh, in.fwd_mat);
     let grad = vec2(dpdx(d), dpdy(d));
     let w = max(length(grad), 1e-5);
     let half_px = 0.5 * in.stroke_ndc;
     let half = half_px * w;
     let stroke_cov = 1.0 - smoothstep(-w, w, abs(d) - half);
 
-    let angle = local_angle(in.pos_ndc, in.xywh, in.sin_cos);
+    let angle = local_angle(in.pos_ndc, in.xywh, in.fwd_mat);
     let angle_w = max(length(fwidth(in.pos_ndc)) / length(in.xywh.zw), 1e-4);
     let angle_cov = arc_coverage(angle, in.start_angle, in.sweep_angle, angle_w * 2.0);
 

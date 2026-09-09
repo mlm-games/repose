@@ -14,7 +14,7 @@ struct VSOut {
     @location(5) grad_start: vec2<f32>,
     @location(6) grad_end: vec2<f32>,
     @location(7) pos_ndc: vec2<f32>,
-    @location(8) sin_cos: vec2<f32>,
+    @location(8) fwd_mat: vec4<f32>,
 };
 
 @vertex
@@ -26,7 +26,7 @@ fn vs_main(
     @location(4) color1: vec4<f32>,
     @location(5) grad_start: vec2<f32>,
     @location(6) grad_end: vec2<f32>,
-    @location(7) sin_cos: vec2<f32>,
+    @location(7) fwd_mat: vec4<f32>,
     @builtin(vertex_index) v: u32,
 ) -> VSOut {
     var positions = array<vec2<f32>, 6>(
@@ -36,7 +36,10 @@ fn vs_main(
     let p = positions[v];
     let half = 0.5 * xywh.zw;
     let corner = (p * 2.0 - 1.0) * half;
-    let rotated = vec2(corner.x * sin_cos.x - corner.y * sin_cos.y, corner.x * sin_cos.y + corner.y * sin_cos.x);
+    let rotated = vec2(
+        fwd_mat.x * corner.x + fwd_mat.y * corner.y,
+        fwd_mat.z * corner.x + fwd_mat.w * corner.y,
+    );
     let pos_ndc = xywh.xy + rotated;
 
     var out: VSOut;
@@ -49,7 +52,7 @@ fn vs_main(
     out.grad_start = grad_start;
     out.grad_end = grad_end;
     out.pos_ndc = pos_ndc;
-    out.sin_cos = sin_cos;
+    out.fwd_mat = fwd_mat;
     return out;
 }
 
@@ -79,9 +82,14 @@ fn eval_brush(in: VSOut) -> vec4<f32> {
     let half = 0.5 * in.xywh.zw;
     let rect_min = center_ndc - half;
     let rect_size = in.xywh.zw;
+    let rel = in.pos_ndc - center_ndc;
+    let det = max(
+        in.fwd_mat.x * in.fwd_mat.w - in.fwd_mat.y * in.fwd_mat.z,
+        1e-6,
+    );
     let unrotated_ndc = center_ndc + vec2(
-        (in.pos_ndc.x - center_ndc.x) * in.sin_cos.x + (in.pos_ndc.y - center_ndc.y) * in.sin_cos.y,
-        -(in.pos_ndc.x - center_ndc.x) * in.sin_cos.y + (in.pos_ndc.y - center_ndc.y) * in.sin_cos.x
+        (in.fwd_mat.w * rel.x - in.fwd_mat.y * rel.y) / det,
+        (-in.fwd_mat.z * rel.x + in.fwd_mat.x * rel.y) / det,
     );
     let local = (unrotated_ndc - rect_min) / rect_size;
 
@@ -97,9 +105,13 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let p_px = (in.pos_ndc - center_ndc) * G.ndc_to_px;
     let half_px = 0.5 * in.xywh.zw * G.ndc_to_px;
 
+    let det = max(
+        in.fwd_mat.x * in.fwd_mat.w - in.fwd_mat.y * in.fwd_mat.z,
+        1e-6,
+    );
     let unrotated_px = vec2(
-        p_px.x * in.sin_cos.x + p_px.y * in.sin_cos.y,
-        -p_px.x * in.sin_cos.y + p_px.y * in.sin_cos.x
+        (in.fwd_mat.w * p_px.x - in.fwd_mat.y * p_px.y) / det,
+        (-in.fwd_mat.z * p_px.x + in.fwd_mat.x * p_px.y) / det,
     );
 
     let d = sdf_round_box_px(unrotated_px, half_px, in.radii);

@@ -9,7 +9,7 @@ struct VSOut {
     @location(0) color: vec4<f32>,
     @location(1) @interpolate(flat) uv_rect: vec4<f32>,
     @location(2) xywh: vec4<f32>,
-    @location(3) sin_cos: vec2<f32>,
+    @location(3) fwd_mat: vec4<f32>,
     @location(4) pos_ndc: vec2<f32>,
 };
 
@@ -18,7 +18,7 @@ fn vs_main(
     @location(0) xywh: vec4<f32>,
     @location(1) uv_rect: vec4<f32>,
     @location(2) color: vec4<f32>,
-    @location(3) sin_cos: vec2<f32>,
+    @location(3) fwd_mat: vec4<f32>,
     @builtin(vertex_index) v: u32
 ) -> VSOut {
     var positions = array<vec2<f32>, 6>(
@@ -37,7 +37,7 @@ fn vs_main(
     out.pos = vec4(pos_ndc, 0.0, 1.0);
     out.uv_rect = uv_rect;
     out.xywh = xywh;
-    out.sin_cos = sin_cos;
+    out.fwd_mat = fwd_mat;
     out.color = color;
     out.pos_ndc = pos_ndc;
     return out;
@@ -50,13 +50,13 @@ fn vs_main(
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let half = 0.5 * in.xywh.zw;
     let rel = (in.pos_ndc - in.xywh.xy) / half;
-    // HACK: Inverse-rotate UV so the texture appears rotated within the axis-aligned quad.
-    // Same limitation as text.wgsl - bitmap atlas glyphs cannot be cleanly rotated.
-    let cos = in.sin_cos.x;
-    let sin = in.sin_cos.y;
+    let det = max(
+        in.fwd_mat.x * in.fwd_mat.w - in.fwd_mat.y * in.fwd_mat.z,
+        1e-6,
+    );
     let unrotated_rel = vec2(
-        rel.x * cos + rel.y * sin,
-        -rel.x * sin + rel.y * cos
+        (in.fwd_mat.w * rel.x - in.fwd_mat.y * rel.y) / det,
+        (-in.fwd_mat.z * rel.x + in.fwd_mat.x * rel.y) / det,
     );
     let norm_uv = (unrotated_rel + 1.0) * 0.5;
     if any(norm_uv < vec2(0.0)) || any(norm_uv > vec2(1.0)) {

@@ -11,7 +11,7 @@ struct VSOut {
     @location(2) radii: vec4<f32>,
     @location(3) stroke_px: f32,
     @location(4) pos_ndc: vec2<f32>,
-    @location(5) sin_cos: vec2<f32>,
+    @location(5) fwd_mat: vec4<f32>,
 };
 
 @vertex
@@ -20,7 +20,7 @@ fn vs_main(
     @location(1) radii: vec4<f32>,
     @location(2) stroke_px: f32,
     @location(3) color: vec4<f32>,
-    @location(4) sin_cos: vec2<f32>,
+    @location(4) fwd_mat: vec4<f32>,
     @builtin(vertex_index) v: u32
 ) -> VSOut {
     var positions = array<vec2<f32>, 6>(
@@ -30,7 +30,10 @@ fn vs_main(
     let p = positions[v];
     let half = 0.5 * xywh.zw;
     let corner = (p * 2.0 - 1.0) * half;
-    let rotated = vec2(corner.x * sin_cos.x - corner.y * sin_cos.y, corner.x * sin_cos.y + corner.y * sin_cos.x);
+    let rotated = vec2(
+        fwd_mat.x * corner.x + fwd_mat.y * corner.y,
+        fwd_mat.z * corner.x + fwd_mat.w * corner.y
+    );
     let pos_ndc = xywh.xy + rotated;
 
     var out: VSOut;
@@ -40,7 +43,7 @@ fn vs_main(
     out.stroke_px = stroke_px;
     out.color = color;
     out.pos_ndc = pos_ndc;
-    out.sin_cos = sin_cos;
+    out.fwd_mat = fwd_mat;
     return out;
 }
 
@@ -67,9 +70,13 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let p_px = (in.pos_ndc - center_ndc) * G.ndc_to_px;
     let half_px = 0.5 * in.xywh.zw * G.ndc_to_px;
 
+    let det = max(
+        in.fwd_mat.x * in.fwd_mat.w - in.fwd_mat.y * in.fwd_mat.z,
+        1e-6,
+    );
     let unrotated_px = vec2(
-        p_px.x * in.sin_cos.x + p_px.y * in.sin_cos.y,
-        -p_px.x * in.sin_cos.y + p_px.y * in.sin_cos.x
+        (in.fwd_mat.w * p_px.x - in.fwd_mat.y * p_px.y) / det,
+        (-in.fwd_mat.z * p_px.x + in.fwd_mat.x * p_px.y) / det,
     );
 
     let stroke = max(in.stroke_px, 0.0);

@@ -15,7 +15,7 @@ struct VSOut {
 fn vs_main(
     @location(0) xywh: vec4<f32>,
     @location(1) radii: vec4<f32>,
-    @location(2) sin_cos: vec2<f32>,
+    @location(2) fwd_mat: vec4<f32>,
     @builtin(vertex_index) v: u32,
 ) -> VSOut {
     var positions = array<vec2<f32>, 6>(
@@ -26,7 +26,10 @@ fn vs_main(
     let p = positions[v];
     let half = 0.5 * xywh.zw;
     let corner = (p * 2.0 - 1.0) * half;
-    let rotated = vec2(corner.x * sin_cos.x - corner.y * sin_cos.y, corner.x * sin_cos.y + corner.y * sin_cos.x);
+    let rotated = vec2(
+        fwd_mat.x * corner.x + fwd_mat.y * corner.y,
+        fwd_mat.z * corner.x + fwd_mat.w * corner.y
+    );
     let pos_ndc = xywh.xy + rotated;
 
     var out: VSOut;
