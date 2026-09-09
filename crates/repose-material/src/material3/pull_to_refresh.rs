@@ -173,12 +173,9 @@ pub fn PullToRefresh(
             .child(
                 Box(Modifier::new()
                     .size(Dp(icon_size), Dp(icon_size))
-                    .translate(Dp(icon_size * 0.5).to_px().0, Dp(icon_size * 0.5).to_px().0)
-                    .rotate(rotation)
-                    .translate(
-                        Dp(-icon_size * 0.5).to_px().0,
-                        Dp(-icon_size * 0.5).to_px().0,
-                    ))
+                    .align_items(AlignItems::CENTER)
+                    .justify_content(JustifyContent::CENTER)
+                    .rotate(rotation))
                 .child(if refreshing {
                     Icon(Symbol::new("refresh", '\u{E5D5}'))
                         .size(Sp(24.0))

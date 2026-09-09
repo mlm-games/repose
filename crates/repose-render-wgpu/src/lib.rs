@@ -4274,6 +4274,37 @@ impl WgpuSceneRenderer {
         target_view: &wgpu::TextureView,
         clear_color_override: Option<[f64; 4]>,
     ) {
+        /// AABB of a rect under the *plain affine* part of a transform
+        /// (linear + translation, no origin re-pivot).
+        fn affine_aabb(transform: &Transform, rect: &repose_core::Rect) -> repose_core::Rect {
+            let m = transform.linear();
+            let (tx, ty) = (transform.translate_x, transform.translate_y);
+            let corners = [
+                (rect.x, rect.y),
+                (rect.x + rect.w, rect.y),
+                (rect.x, rect.y + rect.h),
+                (rect.x + rect.w, rect.y + rect.h),
+            ];
+            let mut min_x = f32::MAX;
+            let mut min_y = f32::MAX;
+            let mut max_x = f32::MIN;
+            let mut max_y = f32::MIN;
+            for (x, y) in corners {
+                let wx = m[0] * x + m[1] * y + tx;
+                let wy = m[2] * x + m[3] * y + ty;
+                min_x = min_x.min(wx);
+                min_y = min_y.min(wy);
+                max_x = max_x.max(wx);
+                max_y = max_y.max(wy);
+            }
+            repose_core::Rect {
+                x: min_x,
+                y: min_y,
+                w: (max_x - min_x).max(0.0),
+                h: (max_y - min_y).max(0.0),
+            }
+        }
+
         fn to_ndc(x: f32, y: f32, w: f32, h: f32, fb_w: f32, fb_h: f32) -> [f32; 4] {
             let x0 = (x / fb_w) * 2.0 - 1.0;
             let y0 = 1.0 - (y / fb_h) * 2.0;
@@ -4676,35 +4707,26 @@ impl WgpuSceneRenderer {
                     let fwd = forward_rs_mat(current_transform);
                     let has_linear = fwd != [1.0, 0.0, 0.0, 1.0];
 
-                    let pivot_x = rect.x + rect.w * 0.5;
-                    let pivot_y = rect.y + rect.h * 0.5;
+                    let lin = current_transform.linear();
+                    let tr_x = current_transform.translate_x;
+                    let tr_y = current_transform.translate_y;
 
                     let make_glyph_instance =
                         |gx: f32, gy: f32, gw: f32, gh: f32| -> ([f32; 4], [f32; 4]) {
                             if has_linear {
-                                let corners =
-                                    [(gx, gy), (gx + gw, gy), (gx + gw, gy + gh), (gx, gy + gh)];
-                                let mut min_x = f32::MAX;
-                                let mut max_x = f32::MIN;
-                                let mut min_y = f32::MAX;
-                                let mut max_y = f32::MIN;
-                                for &(x, y) in &corners {
-                                    let dx = x - pivot_x;
-                                    let dy = y - pivot_y;
-                                    let rx = pivot_x + fwd[0] * dx + fwd[1] * dy;
-                                    let ry = pivot_y + fwd[2] * dx + fwd[3] * dy;
-                                    min_x = min_x.min(rx);
-                                    max_x = max_x.max(rx);
-                                    min_y = min_y.min(ry);
-                                    max_y = max_y.max(ry);
-                                }
-                                let bb_w = max_x - min_x;
-                                let bb_h = max_y - min_y;
+                                let gc_x = gx + gw * 0.5;
+                                let gc_y = gy + gh * 0.5;
+                                let wc_x = lin[0] * gc_x + lin[1] * gc_y + tr_x;
+                                let wc_y = lin[2] * gc_x + lin[3] * gc_y + tr_y;
+                                let ww = gw * current_transform.scale_x;
+                                let wh = gh * current_transform.scale_y;
+                                let ex = fwd[0].abs() * ww * 0.5 + fwd[1].abs() * wh * 0.5;
+                                let ey = fwd[2].abs() * ww * 0.5 + fwd[3].abs() * wh * 0.5;
                                 let ndc_tl = to_ndc(
-                                    min_x,
-                                    min_y,
-                                    bb_w,
-                                    bb_h,
+                                    wc_x - ex,
+                                    wc_y - ey,
+                                    ex * 2.0,
+                                    ey * 2.0,
                                     current_target_size.0,
                                     current_target_size.1,
                                 );
@@ -4831,11 +4853,10 @@ impl WgpuSceneRenderer {
 
                                 let tf = |x: f32, y: f32| -> (f32, f32) {
                                     if has_linear {
-                                        let dx = x - pivot_x;
-                                        let dy = y - pivot_y;
-                                        let rx = pivot_x + fwd[0] * dx + fwd[1] * dy;
-                                        let ry = pivot_y + fwd[2] * dx + fwd[3] * dy;
-                                        (rx, ry)
+                                        (
+                                            lin[0] * x + lin[1] * y + ttx,
+                                            lin[2] * x + lin[3] * y + tty,
+                                        )
                                     } else {
                                         (x * scx + ttx, y * scy + tty)
                                     }
@@ -5144,7 +5165,7 @@ impl WgpuSceneRenderer {
 
                     let t_identity = Transform::identity();
                     let current_transform = transform_stack.last().unwrap_or(&t_identity);
-                    let transformed = current_transform.apply_to_rect(*rect);
+                    let transformed = affine_aabb(current_transform, rect);
 
                     let top = scissor_stack.last().copied().unwrap_or(root_clip_rect);
                     let next_scissor = if is_diff {
@@ -5535,7 +5556,7 @@ impl WgpuSceneRenderer {
                         .last()
                         .copied()
                         .unwrap_or(Transform::identity());
-                    let transformed = t.apply_to_rect(*rect);
+                    let transformed = affine_aabb(&t, rect);
                     current_pass.cmds.push(Cmd::Callback {
                         rect: transformed,
                         payload: payload.clone(),
