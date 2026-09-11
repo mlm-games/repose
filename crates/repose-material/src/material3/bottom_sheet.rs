@@ -10,6 +10,8 @@ use repose_ui::{
     overlay::OverlayHandle,
 };
 
+use crate::ripple::{RippleConfig, ripple};
+
 use super::*;
 
 /// Configuration for [`BottomSheet`] / `ModalBottomSheet`.
@@ -160,6 +162,11 @@ pub fn ModalBottomSheet(
     let is_dragging: Rc<RefCell<bool>> =
         remember_state_with_key(format!("mbs_drag_{mbs_id}"), || false);
 
+    let dh_source: Rc<MutableInteractionSource> = remember_with_key(
+        format!("mbs_dh_src_{mbs_id}"),
+        MutableInteractionSource::new,
+    );
+
     // Animated offset: anim_distance_px (off-screen) -> 0px (visible)
     let anim = remember_state_with_key(format!("mbs_anim_{mbs_id}"), || {
         AnimatedValue::new(anim_distance_px, theme().motion.spring)
@@ -204,6 +211,7 @@ pub fn ModalBottomSheet(
                 let drag_anchor_y = drag_anchor_y.clone();
                 let offset_at_drag_start = offset_at_drag_start.clone();
                 let is_dragging = is_dragging.clone();
+                let dh_source = dh_source.clone();
                 move || {
                     let modifier = current_modifier.borrow().clone();
                     let config = current_config.borrow().clone();
@@ -275,7 +283,14 @@ pub fn ModalBottomSheet(
                                 .width(config.drag_handle_width)
                                 .height(config.drag_handle_height)
                                 .background(config.drag_handle_color)
-                                .clip_rounded(Dp(2.0)))),
+                                .clip_rounded(Dp(2.0))
+                                .interaction_source(&dh_source)
+                                .indication(ripple(RippleConfig {
+                                    color: Some(config.content_color),
+                                    bounded: true,
+                                    ..Default::default()
+                                }))
+                                .on_pointer_down(|_| {}))),
                             content,
                         )),
                     );
