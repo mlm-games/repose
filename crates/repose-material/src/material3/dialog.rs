@@ -159,33 +159,79 @@ pub fn Dialog(
 
     let platform_state: Rc<RefCell<(Dp, Dp, PaddingValues)>> =
         remember_with_key(state.key("plat"), || {
-            RefCell::new((
-                super::DialogDefaults::MAX_WIDTH,
-                Dp(800.0),
-                PaddingValues::default(),
-            ))
+            let insets = window_insets();
+            let mut pad = PaddingValues::default();
+            pad.left = Px(insets.left).to_dp();
+            pad.right = Px(insets.right).to_dp();
+            pad.top = Px(insets.top).to_dp();
+            pad.bottom = Px(insets.bottom).to_dp() + Px(insets.ime_bottom).to_dp();
+            let win_w = {
+                let w = get_window_container_width();
+                if w.is_finite() && w > 10.0 {
+                    Dp(w)
+                } else {
+                    Dp(1280.0)
+                }
+            };
+            let win_h = {
+                let h = get_window_container_height();
+                if h.is_finite() && h > 10.0 {
+                    Dp(h)
+                } else {
+                    Dp(800.0)
+                }
+            };
+            let avail_w = (win_w - pad.left - pad.right).max(Dp::ZERO);
+            let avail_h = (win_h - pad.top - pad.bottom).max(Dp::ZERO);
+            let platform_max_w = preferred_dialog_width_dp(win_w, win_h)
+                .min(avail_w)
+                .min(super::DialogDefaults::MAX_WIDTH);
+            RefCell::new((platform_max_w, avail_h, pad))
         });
 
     let spec = AnimationSpec::tween(Duration::from_millis(200), Easing::FastOutSlowIn);
-    let anim = remember_state_with_key(state.key("anim"), || AnimatedValue::new(0.0, spec));
+    let anim_key = state.key("anim");
+    let anim = remember_state_with_key(anim_key.clone(), || AnimatedValue::new(0.0, spec));
     let last_target = remember_state_with_key(state.key("atarget"), || f32::NAN);
     let anim_target = if state.is_visible() { 1.0 } else { 0.0 };
 
     {
+        repose_core::animation_driver::touch(&anim_key);
         let mut a = anim.borrow_mut();
         let mut lt = last_target.borrow_mut();
         if lt.is_nan() || (*lt - anim_target).abs() > 1e-6 {
             a.set_spec(spec);
             a.set_target(anim_target);
             *lt = anim_target;
-        }
-        drop(lt);
-        if a.update() {
+            drop(lt);
+            drop(a);
+            let reg_anim = anim.clone();
+            repose_core::animation_driver::register(
+                anim_key.clone(),
+                Rc::new(RefCell::new(move || reg_anim.borrow_mut().update())),
+            );
             request_frame();
+        } else {
+            let needs_reregister =
+                !repose_core::animation_driver::is_registered(&anim_key) && a.is_animating();
+            drop(lt);
+            drop(a);
+            if needs_reregister {
+                let reg_anim = anim.clone();
+                repose_core::animation_driver::register(
+                    anim_key.clone(),
+                    Rc::new(RefCell::new(move || reg_anim.borrow_mut().update())),
+                );
+                request_frame();
+            }
         }
     }
 
     let progress = *anim.borrow().get();
+    // HACK (compared to jetpack compose): First-frame kick
+    if state.is_visible() && progress < 0.01 {
+        request_frame();
+    }
     let visible = state.is_visible() || progress > 0.01;
 
     if visible {
@@ -300,6 +346,7 @@ pub fn Dialog(
                             .clip_rounded(th.shapes.extra_large)
                             .alpha(alpha)
                             .scale(scale)
+                            .transform_origin(0.5, 0.5)
                             .focus_group()
                             .clickable()
                             .focusable(false)

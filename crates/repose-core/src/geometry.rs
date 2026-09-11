@@ -69,6 +69,17 @@ pub struct Transform {
     pub shear_x: f32,
     /// Vertical shear factor (`y += shear_y * x`), e.g. ASS `\fay`.
     pub shear_y: f32,
+    /// Normalized transform origin in `[0, 1]` (0.5 = center).
+    ///
+    /// This is a *normalized* pivot, not an absolute point. It is only
+    /// meaningful together with the target [`Rect`]: the absolute pivot is
+    /// `rect.x + rect.w * origin_x` (same for y). The paint bake path
+    /// (`LayoutEngine::walk_paint`) is the single source of truth for
+    /// rendering: it resolves the pivot from the node's `Rect`, folds it
+    /// into `translate_x/y`, and pushes a transform with
+    /// `origin_x/y == 0.0`. Renderers consume transforms origin-free.
+    /// Do not interpret `origin_*` as absolute pixels (see
+    /// [`apply_to_point_in_rect`](Self::apply_to_point_in_rect)).
     pub origin_x: f32,
     pub origin_y: f32,
     /// Projective row of the homogeneous 3x3 map: `w = px * x + py * y + pw`
@@ -280,6 +291,7 @@ impl Transform {
     }
 
     pub fn apply_to_point(&self, p: Vec2) -> Vec2 {
+        //
         let ox = self.origin_x;
         let oy = self.origin_y;
         let m = self.linear();
@@ -290,6 +302,33 @@ impl Transform {
             x: m[0] * x + m[1] * y + ox + self.translate_x,
             y: m[2] * x + m[3] * y + oy + self.translate_y,
         }
+    }
+
+    /// Absolute pivot for `r` given the normalized `origin_*` (`[0, 1]`).
+    pub fn pivot_for_rect(&self, r: &Rect) -> Vec2 {
+        Vec2 {
+            x: r.x + r.w * self.origin_x,
+            y: r.y + r.h * self.origin_y,
+        }
+    }
+
+    /// Apply with an explicit absolute pivot (same space as `p`).
+    /// This is the pivot-correct primitive; `apply_to_point` is this with
+    /// `pivot == (origin_x, origin_y)`.
+    pub fn apply_to_point_with_pivot(&self, p: Vec2, pivot: Vec2) -> Vec2 {
+        let m = self.linear();
+        let x = p.x - pivot.x;
+        let y = p.y - pivot.y;
+        Vec2 {
+            x: m[0] * x + m[1] * y + pivot.x + self.translate_x,
+            y: m[2] * x + m[3] * y + pivot.y + self.translate_y,
+        }
+    }
+
+    /// Pivot-correct point mapping for a normalized origin + layout rect.
+    /// Use this for hit-testing / bounds of scaled nodes (e.g. dialogs).
+    pub fn apply_to_point_in_rect(&self, p: Vec2, r: &Rect) -> Vec2 {
+        self.apply_to_point_with_pivot(p, self.pivot_for_rect(r))
     }
 
     pub fn apply_to_rect(&self, r: Rect) -> Rect {
@@ -338,11 +377,19 @@ impl Transform {
     /// newly pushed (inner) node.
     ///
     /// Returns a transform such that `combined.apply_to_point(p) ==
-    /// self.apply_to_point(other.apply_to_point(p))`.
+    /// self.apply_to_point(other.apply_to_point(p))` for the absolute-pivot
+    /// [`apply_to_point`](Self::apply_to_point) primitive.
     ///
-    /// The linear part is composed exactly (via polar decomposition of the
-    /// 2x2 product); origins are inherited from `self`, matching the
-    /// previous behaviour for the shear-free cases.
+    /// Origin semantics: the linear part and translation are composed
+    /// **origin-free** (pure affine composition of `linear()` + translation).
+    /// `origin_*` (normalized `[0, 1]`) cannot be composed part-wise without
+    /// the target rect, so the result inherits the outer (`self`) origin for
+    /// back-compat. Callers that need pivot-correct nesting must bake each
+    /// level against its own `Rect` first (exactly what the paint bake path
+    /// does: resolve pivot from rect, fold into translation, zero the
+    /// origin) and then combine the baked, origin-free transforms. That bake
+    /// path is the single source of truth for rendering; the renderer
+    /// consumes transforms origin-free.
     ///
     /// Affine-only by design: a part-based transform cannot represent a
     /// composed projective map, so `perspective` rows do NOT compose here

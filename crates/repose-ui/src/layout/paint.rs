@@ -159,19 +159,24 @@ impl LayoutEngine {
             while let Some(pid) = cur {
                 if let Some(pnode) = self.tree.get(pid) {
                     if let Some(tf) = &pnode.modifier.transform {
-                        ((tf.scale_x * 1000.0) as i32).hash(&mut h);
-                        ((tf.scale_y * 1000.0) as i32).hash(&mut h);
-                        ((tf.translate_x * 8.0) as i32).hash(&mut h);
-                        ((tf.translate_y * 8.0) as i32).hash(&mut h);
-                        ((tf.rotate * 1000.0) as i32).hash(&mut h);
-                        ((tf.origin_x * 1000.0) as i32).hash(&mut h);
-                        ((tf.origin_y * 1000.0) as i32).hash(&mut h);
+                        tf.scale_x.to_bits().hash(&mut h);
+                        tf.scale_y.to_bits().hash(&mut h);
+                        tf.translate_x.to_bits().hash(&mut h);
+                        tf.translate_y.to_bits().hash(&mut h);
+                        tf.rotate.to_bits().hash(&mut h);
+                        tf.shear_x.to_bits().hash(&mut h);
+                        tf.shear_y.to_bits().hash(&mut h);
+                        tf.origin_x.to_bits().hash(&mut h);
+                        tf.origin_y.to_bits().hash(&mut h);
+                        tf.perspective[0].to_bits().hash(&mut h);
+                        tf.perspective[1].to_bits().hash(&mut h);
+                        tf.perspective[2].to_bits().hash(&mut h);
                     }
                     if let Some(a) = pnode.modifier.alpha {
-                        ((a * 255.0) as i32).hash(&mut h);
+                        a.to_bits().hash(&mut h);
                     }
-                    if pnode.modifier.graphics_layer.is_some() {
-                        1u8.hash(&mut h);
+                    if let Some(g) = pnode.modifier.graphics_layer {
+                        g.to_bits().hash(&mut h);
                     }
                     cur = pnode.parent;
                 } else {
