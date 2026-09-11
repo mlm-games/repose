@@ -234,7 +234,7 @@ pub fn Slider(
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(inact_trk)),
-                    radius: [Px(corner); 4],
+                    radius: [Px::ZERO, Px(corner), Px(corner), Px::ZERO],
                 });
                 let sx = track_x + track_w - corner;
                 scene.nodes.push(SceneNode::Ellipse {
@@ -257,15 +257,14 @@ pub fn Slider(
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(act_trk)),
-                    radius: [Px(corner); 4],
+                    radius: [Px(corner), Px::ZERO, Px::ZERO, Px(corner)],
                 });
             }
             let tick_start = track_x + corner;
             let tick_end = track_x + track_w - corner;
             for (i, &tf) in tick_frac.iter().enumerate() {
                 let tx = tick_start + tf * (tick_end - tick_start);
-                // skip ticks that fall on the stop indicator (last)
-                if i == tick_frac.len() - 1 {
+                if i == 0 || i == tick_frac.len() - 1 {
                     continue;
                 }
                 if tx >= kx - gap && tx <= kx + gap {
@@ -541,7 +540,7 @@ pub fn RangeSlider(
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(inact_trk)),
-                    radius: [Px(corner); 4],
+                    radius: [Px(corner), Px::ZERO, Px::ZERO, Px(corner)],
                 });
                 let sx0 = track_x + corner;
                 scene.nodes.push(SceneNode::Ellipse {
@@ -565,7 +564,7 @@ pub fn RangeSlider(
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(inact_trk)),
-                    radius: [Px(corner); 4],
+                    radius: [Px::ZERO, Px(corner), Px(corner), Px::ZERO],
                 });
                 let sx = track_x + track_w - corner;
                 scene.nodes.push(SceneNode::Ellipse {
@@ -588,7 +587,7 @@ pub fn RangeSlider(
                         h: track_h,
                     },
                     brush: Brush::Solid(mul_c(act_trk)),
-                    radius: [Px(corner); 4],
+                    radius: [Px::ZERO; 4],
                 });
             }
             let tick_start = track_x + corner;
