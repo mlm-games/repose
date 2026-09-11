@@ -200,7 +200,7 @@ pub fn IconButton(icon: View, on_click: impl Fn() + 'static, config: IconButtonC
             dragged: cc.with_alpha_f32(0.12),
             disabled: Color::TRANSPARENT,
         },
-        false,
+        true,
     )
 }
 

@@ -695,6 +695,10 @@ pub fn Switch(checked: bool, on_change: impl Fn(bool) + 'static, config: SwitchC
                 color: Some(th.on_surface),
                 bounded: false,
                 radius: Some(Dp(20.0)),
+                press_offset: Some(Vec2 {
+                    x: Dp(thumb_left + thumb_d * 0.5 - 20.0).to_px().0,
+                    y: (track_h * 0.5 - Dp(20.0)).to_px().0,
+                }),
                 ..Default::default()
             }))
             .absolute()
