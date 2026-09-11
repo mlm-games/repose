@@ -6282,6 +6282,7 @@ impl WgpuSceneRenderer {
         let bind_mask = self.atlas_bind_group_mask();
         let bind_color = self.atlas_bind_group_color();
         let mut clip_depth: u32 = 0;
+        let mut clip_depth_stack: Vec<u32> = Vec::new();
 
         for (pass_index, pass) in std::mem::take(&mut passes).into_iter().enumerate() {
             let (color_view, resolve_target, depth_stencil_view, is_layer) = match pass.target {
@@ -6323,6 +6324,7 @@ impl WgpuSceneRenderer {
             );
 
             if is_layer {
+                clip_depth_stack.push(clip_depth);
                 clip_depth = 0;
             }
 
@@ -6767,9 +6769,11 @@ impl WgpuSceneRenderer {
                     }
                 }
             }
+            if is_layer {
+                clip_depth = clip_depth_stack.pop().unwrap_or(0);
+            }
         }
 
-        // Translator-owned flatten layers are single-frame: remember this
         // frame's ids so the next translation drains their textures.
         self.flatten_layer_ids = flatten_ids_used;
 

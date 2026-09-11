@@ -344,6 +344,7 @@ pub fn Dialog(
                             .justify_content(JustifyContent::CENTER)
                             .background(th.surface_container_high)
                             .clip_rounded(th.shapes.extra_large)
+                            .graphics_layer(1.0)
                             .alpha(alpha)
                             .scale(scale)
                             .transform_origin(0.5, 0.5)

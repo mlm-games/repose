@@ -25,3 +25,6 @@ web-workers.workspace = true
 image = { workspace = true }
 lyon_tessellation = { workspace = true }
 lyon_path = { workspace = true }
+
+[dev-dependencies]
+repose-ui.workspace = true

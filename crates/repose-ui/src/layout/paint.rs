@@ -1821,17 +1821,28 @@ impl LayoutEngine {
                     BlurredEdgeTreatment::Rectangle
                 ),
             });
+            let (shift_x, shift_y) = match modifier
+                .transform
+                .as_ref()
+                .and_then(|tf| tf.inverse_linear())
+            {
+                Some(inv) => (
+                    inv[0] * -layer_rect.x + inv[1] * -layer_rect.y,
+                    inv[2] * -layer_rect.x + inv[3] * -layer_rect.y,
+                ),
+                None => (-layer_rect.x, -layer_rect.y),
+            };
             scene.nodes.push(SceneNode::PushTransform {
                 transform: Transform {
-                    translate_x: -layer_rect.x,
-                    translate_y: -layer_rect.y,
+                    translate_x: shift_x,
+                    translate_y: shift_y,
                     scale_x: 1.0,
                     scale_y: 1.0,
                     rotate: 0.0,
                     shear_x: 0.0,
                     shear_y: 0.0,
-                    origin_x: 0.5,
-                    origin_y: 0.5,
+                    origin_x: 0.0,
+                    origin_y: 0.0,
                     perspective: [0.0, 0.0, 1.0],
                 },
             });

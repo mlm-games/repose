@@ -3075,6 +3075,7 @@ dependencies = [
  "pollster 1.0.1",
  "repose-core",
  "repose-text",
+ "repose-ui",
  "web-workers",
  "wgpu",
  "winit",
