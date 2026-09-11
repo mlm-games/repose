@@ -344,7 +344,6 @@ struct Pipelines {
     image_nv12: wgpu::RenderPipeline,
     blur: wgpu::RenderPipeline,
     blur_content: wgpu::RenderPipeline,
-    clip_a2c: wgpu::RenderPipeline,
     clip_bin: wgpu::RenderPipeline,
     clip_dec: wgpu::RenderPipeline,
     slug: Option<wgpu::RenderPipeline>,
@@ -931,42 +930,11 @@ impl Pipelines {
         });
 
         // Clipping
-        let clip_shader_a2c = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("clip_round_rect_a2c.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "shaders/clip_round_rect_a2c.wgsl"
-            ))),
-        });
         let clip_shader_bin = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("clip_round_rect_bin.wgsl"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
                 "shaders/clip_round_rect_bin.wgsl"
             ))),
-        });
-        let clip_a2c = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("clip pipeline (a2c)"),
-            layout: Some(clip_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &clip_shader_a2c,
-                entry_point: Some("vs_main"),
-                buffers: &[Some(clip_vertex_layout.clone())],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &clip_shader_a2c,
-                entry_point: Some("fs_main"),
-                targets: &[Some(clip_color_target.clone())],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(stencil_for_clip_inc.clone()),
-            multisample: wgpu::MultisampleState {
-                count: sample_count,
-                mask: !0,
-                alpha_to_coverage_enabled: sample_count > 1,
-            },
-            multiview_mask: None,
-            cache: None,
         });
         let clip_bin = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("clip pipeline (bin)"),
@@ -1205,7 +1173,6 @@ impl Pipelines {
             coverage,
             blur,
             blur_content,
-            clip_a2c,
             clip_bin,
             clip_dec,
             slug,
@@ -6437,7 +6404,7 @@ impl WgpuSceneRenderer {
                         cnt: n,
                         scissor,
                         difference,
-                        rounded,
+                        rounded: _,
                     } => {
                         let scissor =
                             clamp_scissor(scissor.0, scissor.1, scissor.2, scissor.3, tw, th);
@@ -6446,9 +6413,15 @@ impl WgpuSceneRenderer {
 
                         if difference {
                             rpass.set_pipeline(&pipes.clip_dec);
-                        } else if self.msaa_samples > 1 && !is_layer && rounded {
-                            rpass.set_pipeline(&pipes.clip_a2c);
                         } else {
+                            // Deliberately whole-pixel (bin) gating at every
+                            // sample count. Clipped content blends with its
+                            // own smooth AA identically on all samples, while
+                            // alpha-to-coverage gates per-sample and leaves a
+                            // GPU-sample-pattern-dependent bright rim along
+                            // rounded corners at fractional geometry. MSAA
+                            // still smooths every content edge inside the
+                            // clip region.
                             rpass.set_pipeline(&pipes.clip_bin);
                         }
 
