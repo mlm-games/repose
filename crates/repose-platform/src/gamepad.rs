@@ -49,6 +49,9 @@ pub(crate) fn apply_stick_deadzone(v: f32) -> f32 {
 pub struct GilrsBackend {
     gilrs: gilrs::Gilrs,
     ff_effects: std::collections::HashMap<u32, gilrs::ff::Effect>,
+    /// Boot synthesis ran (see `poll`): pads already plugged in never
+    /// produce gilrs `Connected` events, so the first poll reports them.
+    boot_done: bool,
 }
 
 #[cfg(all(feature = "gamepad", not(target_os = "android")))]
@@ -58,6 +61,7 @@ impl GilrsBackend {
             Ok(gilrs) => Some(Self {
                 gilrs,
                 ff_effects: std::collections::HashMap::new(),
+                boot_done: false,
             }),
             Err(e) => {
                 log::warn!("gamepad: gilrs init failed ({e}); gamepad input disabled");
@@ -156,6 +160,17 @@ impl GamepadBackend for GilrsBackend {
                 E::Dropped | E::ForceFeedbackEffectCompleted => {}
                 _ => {}
             }
+        }
+        if !self.boot_done {
+            self.boot_done = true;
+            let live: Vec<(GamepadId, String)> = self
+                .gilrs
+                .gamepads()
+                .map(|(gid, pad)| (GamepadId(usize::from(gid) as u32), pad.name().to_string()))
+                .collect();
+            let mut synth = synthesize_boot(live.into_iter(), &out);
+            synth.append(&mut out);
+            out = synth;
         }
         out
     }
@@ -343,6 +358,23 @@ pub fn android_code_to_button(code: u32) -> Option<GamepadButton> {
     })
 }
 
+/// First-poll boot synthesis, pure for tests: `Connected` per live
+/// device, skipping ids this poll already reported, enumeration order
+/// kept so device 0 sorts first for "Press Start" flows.
+#[cfg(all(feature = "gamepad", not(target_os = "android")))]
+fn synthesize_boot(
+    live: impl Iterator<Item = (GamepadId, String)>,
+    reported: &[GamepadEvent],
+) -> Vec<GamepadEvent> {
+    live.filter(|(id, _)| {
+        !reported
+            .iter()
+            .any(|ev| matches!(ev, GamepadEvent::Connected { id: eid, .. } if eid == id))
+    })
+    .map(|(id, name)| GamepadEvent::Connected { id, name })
+    .collect()
+}
+
 /// Placeholder backend for targets without a driver yet.
 pub struct NoBackend;
 
@@ -392,5 +424,56 @@ mod tests {
         assert_eq!(android_code_to_button(29), None); // KEYCODE_A
         assert_eq!(android_code_to_button(98), None); // BUTTON_C
         assert_eq!(android_code_to_button(110), None); // BUTTON_MODE
+    }
+
+    #[cfg(all(feature = "gamepad", not(target_os = "android")))]
+    #[test]
+    fn boot_synthesis_reports_all_live_devices() {
+        let live = vec![
+            (GamepadId(0), "Pad A".to_string()),
+            (GamepadId(1), "Pad B".to_string()),
+        ];
+        let synth = synthesize_boot(live.into_iter(), &[]);
+        assert_eq!(synth.len(), 2);
+        assert!(matches!(
+            &synth[0],
+            GamepadEvent::Connected { id, name }
+            if *id == GamepadId(0) && name == "Pad A"
+        ));
+    }
+
+    #[cfg(all(feature = "gamepad", not(target_os = "android")))]
+    #[test]
+    fn boot_synthesis_skips_self_reported_ids() {
+        let live = vec![
+            (GamepadId(0), "Pad A".to_string()),
+            (GamepadId(1), "Pad B".to_string()),
+        ];
+        let reported = vec![GamepadEvent::Connected {
+            id: GamepadId(1),
+            name: "Pad B".to_string(),
+        }];
+        let synth = synthesize_boot(live.into_iter(), &reported);
+        assert_eq!(synth.len(), 1);
+        assert!(matches!(
+            &synth[0],
+            GamepadEvent::Connected { id, .. } if *id == GamepadId(0)
+        ));
+        let reported = vec![GamepadEvent::Button {
+            id: GamepadId(0),
+            button: GamepadButton::South,
+            pressed: true,
+        }];
+        let live = vec![(GamepadId(0), "Pad A".to_string())];
+        assert_eq!(synthesize_boot(live.into_iter(), &reported).len(), 1);
+    }
+
+    #[cfg(all(feature = "gamepad", not(target_os = "android")))]
+    #[test]
+    fn first_poll_is_empty_without_hardware() {
+        if let Some(mut backend) = GilrsBackend::new() {
+            assert!(backend.poll().is_empty());
+            assert!(backend.poll().is_empty());
+        }
     }
 }
