@@ -121,7 +121,7 @@ fn insert(due: Due, repeat: Repeat, callback: Callback) -> TimerHandle {
 }
 
 fn cancel(id: u64) {
-    REGISTRY.with(|r| {
+    let _ = REGISTRY.try_with(|r| {
         r.borrow_mut().remove(&id);
     });
 }
@@ -229,7 +229,7 @@ pub fn poll() {
     struct Guard;
     impl Drop for Guard {
         fn drop(&mut self) {
-            IN_POLL.with(|f| f.set(false));
+            let _ = IN_POLL.try_with(|f| f.set(false));
         }
     }
     let _guard = Guard;

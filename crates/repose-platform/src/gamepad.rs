@@ -8,7 +8,9 @@
 //!   XInput-WGI / Web Gamepad API), `gamepad` feature.
 //! - android: [`AndroidBackend`] (non-joystick).
 
-use repose_core::input::{GamepadAxis, GamepadButton, GamepadEvent, GamepadId};
+use repose_core::input::{GamepadEvent, GamepadId};
+#[cfg(feature = "gamepad")]
+use repose_core::input::{GamepadAxis, GamepadButton};
 
 /// Hardware poller: drain pending events since the last call.
 pub trait GamepadBackend {
@@ -33,8 +35,10 @@ pub trait GamepadBackend {
 }
 
 /// Stick deadzone applied by all backends before emitting axis events.
+#[cfg(any(all(feature = "gamepad", not(target_os = "android")), test))]
 pub const STICK_DEADZONE: f32 = 0.2;
 
+#[cfg(any(all(feature = "gamepad", not(target_os = "android")), test))]
 pub(crate) fn apply_stick_deadzone(v: f32) -> f32 {
     if v.abs() < STICK_DEADZONE {
         0.0
